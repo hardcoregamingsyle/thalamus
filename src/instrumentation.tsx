@@ -41,7 +41,7 @@ async function reportErrorToVly(errorData: {
   }
 
   try {
-    await fetch(import.meta.env.VITE_VLY_MONITORING_URL, {
+    await fetch(import.meta.env.VITE_VLY_MONITORING_URL!, {
       method: "POST",
       body: JSON.stringify({
         ...errorData,
