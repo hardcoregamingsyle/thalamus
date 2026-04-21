@@ -4,7 +4,7 @@ import { RandomReader, generateRandomString } from "@oslojs/crypto/random";
 
 export const emailOtp = Email({
   id: "email-otp",
-  maxAge: 60 * 15, // 15 minutes
+  maxAge: 60 * 15,
   async generateVerificationToken() {
     const random: RandomReader = {
       read(bytes: Uint8Array) {
@@ -15,8 +15,13 @@ export const emailOtp = Email({
     return generateRandomString(random, alphabet, 6);
   },
   async sendVerificationRequest({ identifier: email, token }) {
+    const apiKey = process.env.BREVO_EMAIL_SENDER;
+    if (!apiKey) {
+      throw new Error("BREVO_EMAIL_SENDER environment variable is not set");
+    }
+
     try {
-      await axios.post(
+      const response = await axios.post(
         "https://api.brevo.com/v3/smtp/email",
         {
           sender: {
@@ -39,14 +44,21 @@ export const emailOtp = Email({
         },
         {
           headers: {
-            "api-key": process.env.BREVO_EMAIL_SENDER,
+            "api-key": apiKey,
             "Content-Type": "application/json",
             Accept: "application/json",
           },
         },
       );
-    } catch (error) {
-      throw new Error(JSON.stringify(error));
+      console.log("Brevo email sent successfully to", email, "status:", response.status);
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        const data = JSON.stringify(error.response?.data);
+        console.error("Brevo API error:", status, data);
+        throw new Error(`Brevo API error ${status}: ${data}`);
+      }
+      throw new Error(`Email send failed: ${String(error)}`);
     }
   },
 });
