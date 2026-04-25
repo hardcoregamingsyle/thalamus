@@ -26,7 +26,7 @@ export const emailOtp = Email({
         {
           sender: {
             name: "AgentAI",
-            email: "welcome@mail.cafoli.in",
+            email: "onboarding@agentaimail.skinticals.com",
           },
           to: [{ email }],
           subject: "Your AgentAI Verification Code",
