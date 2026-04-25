@@ -1,17 +1,9 @@
-import { Button } from "@/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import {
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Dialog } from "@radix-ui/react-dialog";
-import { ChevronDown, ExternalLink } from "lucide-react";
+import { ChevronDown, X, AlertTriangle } from "lucide-react";
 import React, { useEffect, useState } from "react";
 
 type SyncError = {
@@ -36,10 +28,7 @@ async function reportErrorToVly(errorData: {
   lineno?: number;
   colno?: number;
 }) {
-  if (!import.meta.env.VITE_VLY_APP_ID) {
-    return;
-  }
-
+  if (!import.meta.env.VITE_VLY_APP_ID) return;
   try {
     await fetch(import.meta.env.VITE_VLY_MONITORING_URL!, {
       method: "POST",
@@ -49,8 +38,8 @@ async function reportErrorToVly(errorData: {
         projectSemanticIdentifier: import.meta.env.VITE_VLY_APP_ID,
       }),
     });
-  } catch (error) {
-    console.error("Failed to report error to Vly:", error);
+  } catch (e) {
+    console.error("Failed to report error:", e);
   }
 }
 
@@ -62,44 +51,57 @@ function ErrorDialog({
   setError: (error: GenericError | null) => void;
 }) {
   return (
-    <Dialog
-      defaultOpen={true}
-      onOpenChange={() => {
-        setError(null);
-      }}
-    >
-      <DialogContent className="bg-red-700 text-white max-w-4xl">
-        <DialogHeader>
-          <DialogTitle>Runtime Error</DialogTitle>
-        </DialogHeader>
-        A runtime error occurred. Open the vly editor to automatically debug the
-        error.
-        <div className="mt-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+      <div className="relative w-full max-w-2xl mx-4 border border-red-500/60 bg-[#0a0a0a] font-mono shadow-2xl shadow-red-900/30">
+        {/* Header bar */}
+        <div className="flex items-center justify-between px-4 py-2 border-b border-red-500/40 bg-red-950/30">
+          <div className="flex items-center gap-2 text-red-400 text-sm font-bold tracking-widest uppercase">
+            <AlertTriangle className="w-4 h-4" />
+            RUNTIME_ERROR
+          </div>
+          <button
+            onClick={() => setError(null)}
+            className="text-red-400/60 hover:text-red-300 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-5">
+          <div className="text-red-300 text-sm mb-1 opacity-60">// error message</div>
+          <div className="text-red-200 text-sm mb-4 break-all">{error.error}</div>
+
+          {"filename" in error && error.filename && (
+            <div className="text-xs text-red-400/50 mb-4">
+              at {error.filename}:{(error as SyncError).lineno}:{(error as SyncError).colno}
+            </div>
+          )}
+
           <Collapsible>
-            <CollapsibleTrigger>
-              <div className="flex items-center font-bold cursor-pointer">
-                See error details <ChevronDown />
-              </div>
+            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-red-400/70 hover:text-red-300 transition-colors cursor-pointer mb-2">
+              <ChevronDown className="w-3 h-3" />
+              stack trace
             </CollapsibleTrigger>
-            <CollapsibleContent className="max-w-[460px]">
-              <div className="mt-2 p-3 bg-neutral-800 rounded text-white text-sm overflow-x-auto max-h-60 max-w-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                <pre className="whitespace-pre">{error.stack}</pre>
+            <CollapsibleContent>
+              <div className="p-3 bg-black/60 border border-red-900/40 text-red-300/70 text-xs overflow-x-auto max-h-48 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                <pre className="whitespace-pre-wrap break-all">{error.stack}</pre>
               </div>
             </CollapsibleContent>
           </Collapsible>
         </div>
-        <DialogFooter>
-          <a
-            href={`https://vly.ai/project/${import.meta.env.VITE_VLY_APP_ID}`}
-            target="_blank"
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-red-500/20 flex justify-end">
+          <button
+            onClick={() => setError(null)}
+            className="text-xs text-red-400/60 hover:text-red-300 transition-colors tracking-widest uppercase"
           >
-            <Button>
-              <ExternalLink /> Open editor
-            </Button>
-          </a>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            dismiss
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -109,9 +111,7 @@ type ErrorBoundaryState = {
 };
 
 class ErrorBoundary extends React.Component<
-  {
-    children: React.ReactNode;
-  },
+  { children: React.ReactNode },
   ErrorBoundaryState
 > {
   constructor(props: { children: React.ReactNode }) {
@@ -120,26 +120,11 @@ class ErrorBoundary extends React.Component<
   }
 
   static getDerivedStateFromError() {
-    // Update state so the next render will show the fallback UI.
     return { hasError: true };
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // logErrorToMyService(
-    //   error,
-    //   // Example "componentStack":
-    //   //   in ComponentThatThrows (created by App)
-    //   //   in ErrorBoundary (created by App)
-    //   //   in div (created by App)
-    //   //   in App
-    //   info.componentStack,
-    //   // Warning: `captureOwnerStack` is not available in production.
-    //   React.captureOwnerStack(),
-    // );
-    reportErrorToVly({
-      error: error.message,
-      stackTrace: error.stack,
-    });
+    reportErrorToVly({ error: error.message, stackTrace: error.stack });
     this.setState({
       hasError: true,
       error: {
@@ -150,19 +135,14 @@ class ErrorBoundary extends React.Component<
   }
 
   render() {
-    if (this.state.hasError) {
-      // You can render any custom fallback UI
+    if (this.state.hasError && this.state.error) {
       return (
         <ErrorDialog
-          error={{
-            error: "An error occurred",
-            stack: "",
-          }}
-          setError={() => {}}
+          error={this.state.error}
+          setError={(e) => this.setState({ hasError: !!e, error: e })}
         />
       );
     }
-
     return this.props.children;
   }
 }
@@ -177,7 +157,6 @@ export function InstrumentationProvider({
   useEffect(() => {
     const handleError = async (event: ErrorEvent) => {
       try {
-        console.log(event);
         event.preventDefault();
         setError({
           error: event.message,
@@ -186,7 +165,6 @@ export function InstrumentationProvider({
           lineno: event.lineno,
           colno: event.colno,
         });
-
         if (import.meta.env.VITE_VLY_APP_ID) {
           await reportErrorToVly({
             error: event.message,
@@ -196,39 +174,36 @@ export function InstrumentationProvider({
             colno: event.colno,
           });
         }
-      } catch (error) {
-        console.error("Error in handleError:", error);
+      } catch (e) {
+        console.error("Error in handleError:", e);
       }
     };
 
     const handleRejection = async (event: PromiseRejectionEvent) => {
       try {
-        console.error(event);
-
         if (import.meta.env.VITE_VLY_APP_ID) {
           await reportErrorToVly({
-            error: event.reason.message,
-            stackTrace: event.reason.stack,
+            error: event.reason?.message,
+            stackTrace: event.reason?.stack,
           });
         }
-
         setError({
-          error: event.reason.message,
-          stack: event.reason.stack,
+          error: event.reason?.message || "Unhandled promise rejection",
+          stack: event.reason?.stack || "",
         });
-      } catch (error) {
-        console.error("Error in handleRejection:", error);
+      } catch (e) {
+        console.error("Error in handleRejection:", e);
       }
     };
 
     window.addEventListener("error", handleError);
     window.addEventListener("unhandledrejection", handleRejection);
-
     return () => {
       window.removeEventListener("error", handleError);
       window.removeEventListener("unhandledrejection", handleRejection);
     };
   }, []);
+
   return (
     <>
       <ErrorBoundary>{children}</ErrorBoundary>
