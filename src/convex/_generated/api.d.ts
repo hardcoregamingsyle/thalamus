@@ -13,6 +13,7 @@ import type * as aiHelpers from "../aiHelpers.js";
 import type * as auth from "../auth.js";
 import type * as auth_emailOtp from "../auth/emailOtp.js";
 import type * as conversations from "../conversations.js";
+import type * as fileSync from "../fileSync.js";
 import type * as http from "../http.js";
 import type * as users from "../users.js";
 
@@ -28,6 +29,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   "auth/emailOtp": typeof auth_emailOtp;
   conversations: typeof conversations;
+  fileSync: typeof fileSync;
   http: typeof http;
   users: typeof users;
 }>;
