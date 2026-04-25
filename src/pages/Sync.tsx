@@ -21,10 +21,29 @@ export default function SyncPage() {
   const [status, setStatus] = useState<SyncStatus>("idle");
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [repoUrl, setRepoUrl] = useState("");
-  const getProjectFiles = useAction(api.fileSync.getProjectFiles);
+  const getProjectFilesBatch = useAction(api.fileSync.getProjectFilesBatch);
 
   const addLog = (text: string, type: LogLine["type"] = "info") => {
     setLogs((prev) => [...prev, { text, type }]);
+  };
+
+  const fetchAllFiles = async (): Promise<{ path: string; content: string }[]> => {
+    const allFiles: { path: string; content: string }[] = [];
+    const BATCH_SIZE = 20;
+    let offset = 0;
+    let done = false;
+    let total = 0;
+
+    while (!done) {
+      const result = await getProjectFilesBatch({ offset, batchSize: BATCH_SIZE });
+      allFiles.push(...result.files);
+      total = result.total;
+      done = result.done;
+      offset += BATCH_SIZE;
+      addLog(`  Fetched ${Math.min(offset, total)}/${total} files...`, "info");
+    }
+
+    return allFiles;
   };
 
   const handleSync = async (e: React.FormEvent) => {
@@ -47,24 +66,17 @@ export default function SyncPage() {
       addLog(`$ git init`, "cmd");
       addLog(`Initializing sync to GitHub...`, "info");
 
-      // Step 1: Get authenticated user
       addLog(`$ gh auth verify`, "cmd");
       const userRes = await fetch("https://api.github.com/user", { headers: ghHeaders });
       if (!userRes.ok) throw new Error("Invalid GitHub token. Please check your token and try again.");
       const user = await userRes.json();
       addLog(`✓ Authenticated as: ${user.login}`, "success");
 
-      // Step 2: Create or get repo
       addLog(`$ gh repo create ${cleanRepo}`, "cmd");
       const createRes = await fetch("https://api.github.com/user/repos", {
         method: "POST",
         headers: ghHeaders,
-        body: JSON.stringify({
-          name: cleanRepo,
-          description: "AgentAI project synced from vly.ai",
-          private: false,
-          auto_init: false,
-        }),
+        body: JSON.stringify({ name: cleanRepo, description: "AgentAI project synced from vly.ai", private: false, auto_init: false }),
       });
 
       let repo;
@@ -82,17 +94,15 @@ export default function SyncPage() {
 
       setRepoUrl(repo.html_url);
 
-      // Step 3: Fetch all project files from server
       addLog(`$ collecting project files from server...`, "cmd");
-      const filesToSync = await getProjectFiles({});
+      const filesToSync = await fetchAllFiles();
       addLog(`✓ Found ${filesToSync.length} files to sync`, "success");
 
-      // Step 4: Check if repo has commits (empty repo check)
+      // Check if repo has commits
       const branchRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/main`, { headers: ghHeaders });
       const isEmptyRepo = !branchRes.ok;
 
       if (isEmptyRepo) {
-        // For empty repos: use Contents API to create files one by one
         addLog(`$ initializing empty repository...`, "cmd");
         addLog(`Uploading ${filesToSync.length} files via Contents API...`, "info");
 
@@ -103,10 +113,7 @@ export default function SyncPage() {
             const putRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/contents/${file.path}`, {
               method: "PUT",
               headers: ghHeaders,
-              body: JSON.stringify({
-                message: `Add ${file.path}`,
-                content: base64Content,
-              }),
+              body: JSON.stringify({ message: `Add ${file.path}`, content: base64Content }),
             });
             if (putRes.ok) {
               uploaded++;
@@ -135,7 +142,6 @@ export default function SyncPage() {
       const commitData = await commitRes.json();
       const baseTreeSha: string = commitData.tree?.sha;
 
-      // Create blobs
       addLog(`$ creating file blobs (${filesToSync.length} files)...`, "cmd");
       const treeItems: Array<{ path: string; mode: string; type: string; sha: string }> = [];
 
@@ -154,15 +160,12 @@ export default function SyncPage() {
             const errData = await blobRes.json().catch(() => ({}));
             addLog(`⚠ Skipped ${file.path}: ${(errData as { message?: string }).message || blobRes.status}`, "info");
           }
-        } catch {
-          // Skip
-        }
+        } catch { /* skip */ }
       }
 
       addLog(`✓ Created ${treeItems.length} file blobs`, "success");
       if (treeItems.length === 0) throw new Error("No files could be uploaded");
 
-      // Create tree
       addLog(`$ building git tree...`, "cmd");
       const treeRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/trees`, {
         method: "POST",
@@ -175,16 +178,11 @@ export default function SyncPage() {
       }
       const tree = await treeRes.json();
 
-      // Create commit
       addLog(`$ git commit -m "Sync from AgentAI"`, "cmd");
       const commitRes2 = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/commits`, {
         method: "POST",
         headers: ghHeaders,
-        body: JSON.stringify({
-          message: `Sync from AgentAI — ${new Date().toISOString()}`,
-          tree: tree.sha,
-          parents: [latestCommitSha],
-        }),
+        body: JSON.stringify({ message: `Sync from AgentAI — ${new Date().toISOString()}`, tree: tree.sha, parents: [latestCommitSha] }),
       });
       if (!commitRes2.ok) {
         const commitErr = await commitRes2.json().catch(() => ({}));
@@ -192,7 +190,6 @@ export default function SyncPage() {
       }
       const commit = await commitRes2.json();
 
-      // Update branch ref
       addLog(`$ updating branch ref...`, "cmd");
       await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/main`, {
         method: "PATCH",
@@ -212,7 +209,6 @@ export default function SyncPage() {
 
   return (
     <div className="min-h-screen bg-background font-mono flex flex-col">
-      {/* Nav */}
       <nav className="border-b border-border px-6 h-12 flex items-center justify-between">
         <button onClick={() => navigate("/")} className="flex items-center gap-2">
           <Terminal className="h-4 w-4 text-primary terminal-glow" />
@@ -222,20 +218,14 @@ export default function SyncPage() {
       </nav>
 
       <div className="flex-1 flex items-start justify-center p-6 pt-12">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-2xl space-y-4"
-        >
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-2xl space-y-4">
           <div>
             <p className="text-xs text-muted-foreground mb-1">// SYNC_TO_GITHUB</p>
             <h1 className="text-2xl font-bold text-primary terminal-glow flex items-center gap-2">
               <FolderGit2 className="h-6 w-6" />
               GITHUB_SYNC
             </h1>
-            <p className="text-xs text-muted-foreground mt-1">
-              Push the entire project directory to a GitHub repository.
-            </p>
+            <p className="text-xs text-muted-foreground mt-1">Push the entire project directory to a GitHub repository.</p>
           </div>
 
           <div className="border border-border bg-card">
@@ -251,9 +241,7 @@ export default function SyncPage() {
                 <label className="text-xs text-muted-foreground block mb-1">$ github_token</label>
                 <p className="text-xs text-muted-foreground/60 mb-2">
                   Personal access token with <span className="text-primary">repo</span> scope.{" "}
-                  <a href="https://github.com/settings/tokens/new?scopes=repo&description=AgentAI+Sync" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                    Generate one here →
-                  </a>
+                  <a href="https://github.com/settings/tokens/new?scopes=repo&description=AgentAI+Sync" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Generate one here →</a>
                 </p>
                 <div className="flex items-center border border-border bg-background focus-within:border-primary transition-colors">
                   <span className="text-primary text-xs px-2 terminal-glow">$</span>
