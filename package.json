@@ -13,7 +13,9 @@
     "preview": "vite preview",
     "test": "bun test",
     "test:watch": "bun test --watch",
-    "clean": "rm -rf dist node_modules/.cache"
+    "clean": "rm -rf dist node_modules/.cache",
+    "deploy:selfhosted": "bash scripts/deploy-selfhosted.sh",
+    "convex:deploy": "bash scripts/deploy-selfhosted.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.89.0",
