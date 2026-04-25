@@ -12,11 +12,6 @@ interface LogLine {
   type: "info" | "success" | "error" | "cmd";
 }
 
-// All project files embedded directly for reliable GitHub sync
-function getProjectFiles(): { path: string; content: string }[] {
-  return PROJECT_FILES;
-}
-
 export default function SyncPage() {
   const navigate = useNavigate();
   const [token, setToken] = useState("");
@@ -86,27 +81,56 @@ export default function SyncPage() {
 
       // Step 3: Collect files
       addLog(`$ collecting project files...`, "cmd");
-      const filesToSync = getProjectFiles();
+      const filesToSync = PROJECT_FILES;
       addLog(`✓ Found ${filesToSync.length} files to sync`, "success");
 
-      // Step 4: Get current branch state
-      let baseTreeSha: string | null = null;
-      let latestCommitSha: string | null = null;
-
+      // Step 4: Check if repo has commits (empty repo check)
       const branchRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/main`, { headers: ghHeaders });
-      if (branchRes.ok) {
-        const branchData = await branchRes.json();
-        latestCommitSha = branchData.object?.sha || null;
-        if (latestCommitSha) {
-          const commitRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/commits/${latestCommitSha}`, { headers: ghHeaders });
-          if (commitRes.ok) {
-            const commitData = await commitRes.json();
-            baseTreeSha = commitData.tree?.sha || null;
+      const isEmptyRepo = !branchRes.ok;
+
+      if (isEmptyRepo) {
+        // For empty repos: use Contents API to create files one by one (initializes the repo)
+        addLog(`$ initializing empty repository...`, "cmd");
+        addLog(`Uploading files via Contents API...`, "info");
+
+        let uploaded = 0;
+        for (const file of filesToSync) {
+          try {
+            const base64Content = btoa(unescape(encodeURIComponent(file.content)));
+            const putRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/contents/${file.path}`, {
+              method: "PUT",
+              headers: ghHeaders,
+              body: JSON.stringify({
+                message: `Add ${file.path}`,
+                content: base64Content,
+              }),
+            });
+            if (putRes.ok) {
+              uploaded++;
+              addLog(`✓ ${file.path}`, "success");
+            } else {
+              const err = await putRes.json().catch(() => ({}));
+              addLog(`⚠ Skipped ${file.path}: ${(err as { message?: string }).message || putRes.status}`, "info");
+            }
+          } catch {
+            addLog(`⚠ Skipped ${file.path}`, "info");
           }
         }
+
+        addLog(`✓ Uploaded ${uploaded}/${filesToSync.length} files`, "success");
+        addLog(`✓ Repository URL: ${repo.html_url}`, "success");
+        setStatus("success");
+        return;
       }
 
-      // Step 5: Create blobs using base64 encoding (required by GitHub API)
+      // For repos with existing commits: use Git Data API (batch commit)
+      const branchData = await branchRes.json();
+      const latestCommitSha: string = branchData.object?.sha;
+      const commitRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/commits/${latestCommitSha}`, { headers: ghHeaders });
+      const commitData = await commitRes.json();
+      const baseTreeSha: string = commitData.tree?.sha;
+
+      // Create blobs
       addLog(`$ creating file blobs (${filesToSync.length} files)...`, "cmd");
       const treeItems: Array<{ path: string; mode: string; type: string; sha: string }> = [];
 
@@ -118,7 +142,6 @@ export default function SyncPage() {
             headers: ghHeaders,
             body: JSON.stringify({ content: base64Content, encoding: "base64" }),
           });
-
           if (blobRes.ok) {
             const blob = await blobRes.json();
             treeItems.push({ path: file.path, mode: "100644", type: "blob", sha: blob.sha });
@@ -127,66 +150,50 @@ export default function SyncPage() {
             addLog(`⚠ Skipped ${file.path}: ${(errData as { message?: string }).message || blobRes.status}`, "info");
           }
         } catch {
-          // Skip files that fail
+          // Skip
         }
       }
 
       addLog(`✓ Created ${treeItems.length} file blobs`, "success");
-
       if (treeItems.length === 0) throw new Error("No files could be uploaded");
 
-      // Step 6: Create tree
+      // Create tree
       addLog(`$ building git tree...`, "cmd");
-      const treeBody: Record<string, unknown> = { tree: treeItems };
-      if (baseTreeSha) treeBody.base_tree = baseTreeSha;
-
       const treeRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/trees`, {
         method: "POST",
         headers: ghHeaders,
-        body: JSON.stringify(treeBody),
+        body: JSON.stringify({ tree: treeItems, base_tree: baseTreeSha }),
       });
-
       if (!treeRes.ok) {
         const treeErr = await treeRes.json().catch(() => ({}));
         throw new Error(`Failed to create git tree: ${(treeErr as { message?: string }).message || treeRes.status}`);
       }
       const tree = await treeRes.json();
 
-      // Step 7: Create commit
+      // Create commit
       addLog(`$ git commit -m "Sync from AgentAI"`, "cmd");
-      const commitBody: Record<string, unknown> = {
-        message: `Sync from AgentAI — ${new Date().toISOString()}`,
-        tree: tree.sha,
-      };
-      if (latestCommitSha) commitBody.parents = [latestCommitSha];
-
       const commitRes2 = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/commits`, {
         method: "POST",
         headers: ghHeaders,
-        body: JSON.stringify(commitBody),
+        body: JSON.stringify({
+          message: `Sync from AgentAI — ${new Date().toISOString()}`,
+          tree: tree.sha,
+          parents: [latestCommitSha],
+        }),
       });
-
       if (!commitRes2.ok) {
         const commitErr = await commitRes2.json().catch(() => ({}));
         throw new Error(`Failed to create commit: ${(commitErr as { message?: string }).message || commitRes2.status}`);
       }
       const commit = await commitRes2.json();
 
-      // Step 8: Update or create branch ref
+      // Update branch ref
       addLog(`$ updating branch ref...`, "cmd");
-      if (latestCommitSha) {
-        await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/main`, {
-          method: "PATCH",
-          headers: ghHeaders,
-          body: JSON.stringify({ sha: commit.sha, force: true }),
-        });
-      } else {
-        await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs`, {
-          method: "POST",
-          headers: ghHeaders,
-          body: JSON.stringify({ ref: "refs/heads/main", sha: commit.sha }),
-        });
-      }
+      await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/main`, {
+        method: "PATCH",
+        headers: ghHeaders,
+        body: JSON.stringify({ sha: commit.sha, force: true }),
+      });
 
       addLog(`✓ Successfully pushed to ${repo.full_name}`, "success");
       addLog(`✓ Repository URL: ${repo.html_url}`, "success");
@@ -215,7 +222,6 @@ export default function SyncPage() {
           animate={{ opacity: 1, y: 0 }}
           className="w-full max-w-2xl space-y-4"
         >
-          {/* Header */}
           <div>
             <p className="text-xs text-muted-foreground mb-1">// SYNC_TO_GITHUB</p>
             <h1 className="text-2xl font-bold text-primary terminal-glow flex items-center gap-2">
@@ -227,7 +233,6 @@ export default function SyncPage() {
             </p>
           </div>
 
-          {/* Form */}
           <div className="border border-border bg-card">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
               <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
@@ -241,55 +246,31 @@ export default function SyncPage() {
                 <label className="text-xs text-muted-foreground block mb-1">$ github_token</label>
                 <p className="text-xs text-muted-foreground/60 mb-2">
                   Personal access token with <span className="text-primary">repo</span> scope.{" "}
-                  <a
-                    href="https://github.com/settings/tokens/new?scopes=repo&description=AgentAI+Sync"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline"
-                  >
+                  <a href="https://github.com/settings/tokens/new?scopes=repo&description=AgentAI+Sync" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
                     Generate one here →
                   </a>
                 </p>
                 <div className="flex items-center border border-border bg-background focus-within:border-primary transition-colors">
                   <span className="text-primary text-xs px-2 terminal-glow">$</span>
-                  <Input
-                    type="password"
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                  <Input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
                     className="border-0 bg-transparent text-xs font-mono focus-visible:ring-0 focus-visible:ring-offset-0 text-foreground placeholder:text-muted-foreground"
-                    disabled={status === "loading"}
-                    required
-                  />
+                    disabled={status === "loading"} required />
                 </div>
               </div>
 
               <div>
                 <label className="text-xs text-muted-foreground block mb-1">$ repository_name</label>
-                <p className="text-xs text-muted-foreground/60 mb-2">
-                  Name for the GitHub repository (created if it doesn't exist).
-                </p>
+                <p className="text-xs text-muted-foreground/60 mb-2">Name for the GitHub repository (created if it doesn't exist).</p>
                 <div className="flex items-center border border-border bg-background focus-within:border-primary transition-colors">
-                  <span className="text-primary text-xs px-2 terminal-glow">
-                    <Github className="h-3 w-3" />
-                  </span>
-                  <Input
-                    type="text"
-                    value={repoName}
-                    onChange={(e) => setRepoName(e.target.value)}
-                    placeholder="my-agentai-project"
+                  <span className="text-primary text-xs px-2 terminal-glow"><Github className="h-3 w-3" /></span>
+                  <Input type="text" value={repoName} onChange={(e) => setRepoName(e.target.value)} placeholder="my-agentai-project"
                     className="border-0 bg-transparent text-xs font-mono focus-visible:ring-0 focus-visible:ring-offset-0 text-foreground placeholder:text-muted-foreground"
-                    disabled={status === "loading"}
-                    required
-                  />
+                    disabled={status === "loading"} required />
                 </div>
               </div>
 
-              <Button
-                type="submit"
-                disabled={status === "loading" || !token.trim() || !repoName.trim()}
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-mono font-bold rounded-none"
-              >
+              <Button type="submit" disabled={status === "loading" || !token.trim() || !repoName.trim()}
+                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-mono font-bold rounded-none">
                 {status === "loading" ? (
                   <><Loader2 className="h-3 w-3 animate-spin mr-2" />SYNCING...</>
                 ) : (
@@ -299,13 +280,8 @@ export default function SyncPage() {
             </form>
           </div>
 
-          {/* Terminal output */}
           {logs.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="border border-border bg-card"
-            >
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="border border-border bg-card">
               <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
                 <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
                 <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
@@ -314,48 +290,26 @@ export default function SyncPage() {
                 {status === "success" && <CheckCircle className="h-3 w-3 text-primary ml-auto" />}
                 {status === "error" && <XCircle className="h-3 w-3 text-destructive ml-auto" />}
               </div>
-              <div className="p-4 space-y-1 max-h-64 overflow-y-auto">
+              <div className="p-4 space-y-1 max-h-72 overflow-y-auto">
                 {logs.map((log, i) => (
-                  <div
-                    key={i}
-                    className={`text-xs font-mono ${
-                      log.type === "success"
-                        ? "text-primary terminal-glow"
-                        : log.type === "error"
-                        ? "text-destructive"
-                        : log.type === "cmd"
-                        ? "text-amber-400"
-                        : "text-muted-foreground"
-                    }`}
-                  >
-                    {log.text}
-                  </div>
+                  <div key={i} className={`text-xs font-mono ${
+                    log.type === "success" ? "text-primary terminal-glow" :
+                    log.type === "error" ? "text-destructive" :
+                    log.type === "cmd" ? "text-amber-400" : "text-muted-foreground"
+                  }`}>{log.text}</div>
                 ))}
-                {status === "loading" && (
-                  <div className="text-muted-foreground text-xs">
-                    <span className="animate-pulse text-primary">█</span>
-                  </div>
-                )}
+                {status === "loading" && <div className="text-muted-foreground text-xs"><span className="animate-pulse text-primary">█</span></div>}
               </div>
-
               {status === "success" && repoUrl && (
                 <div className="px-4 pb-4">
-                  <a
-                    href={repoUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-xs text-primary hover:underline terminal-glow"
-                  >
-                    <Github className="h-3 w-3" />
-                    {repoUrl}
-                    <ChevronRight className="h-3 w-3" />
+                  <a href={repoUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-primary hover:underline terminal-glow">
+                    <Github className="h-3 w-3" />{repoUrl}<ChevronRight className="h-3 w-3" />
                   </a>
                 </div>
               )}
             </motion.div>
           )}
 
-          {/* Info */}
           <div className="border border-border/50 bg-card/50 p-4">
             <p className="text-xs text-muted-foreground mb-2">// WHAT_GETS_SYNCED</p>
             <div className="space-y-1 text-xs text-muted-foreground">
