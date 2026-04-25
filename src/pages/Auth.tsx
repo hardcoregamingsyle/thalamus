@@ -52,7 +52,10 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     setIsLoading(true);
     setError(null);
     try {
-      const formData = new FormData(event.currentTarget);
+      const email = typeof step === "object" ? step.email : "";
+      const formData = new FormData();
+      formData.set("email", email);
+      formData.set("code", otp);
       await signIn("email-otp", formData);
       const redirect = redirectAfterAuth || "/portal";
       navigate(redirect);
