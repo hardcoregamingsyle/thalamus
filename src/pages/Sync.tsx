@@ -34,35 +34,28 @@ export default function SyncPage() {
 
     const cleanRepo = repoName.trim().replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "");
 
+    const ghHeaders = {
+      Authorization: `token ${token}`,
+      Accept: "application/vnd.github.v3+json",
+      "Content-Type": "application/json",
+    };
+
     try {
       addLog(`$ git init`, "cmd");
       addLog(`Initializing sync to GitHub...`, "info");
 
       // Step 1: Get authenticated user
       addLog(`$ gh auth verify`, "cmd");
-      const userRes = await fetch("https://api.github.com/user", {
-        headers: {
-          Authorization: `token ${token}`,
-          Accept: "application/vnd.github.v3+json",
-        },
-      });
-
-      if (!userRes.ok) {
-        throw new Error("Invalid GitHub token. Please check your token and try again.");
-      }
-
+      const userRes = await fetch("https://api.github.com/user", { headers: ghHeaders });
+      if (!userRes.ok) throw new Error("Invalid GitHub token. Please check your token and try again.");
       const user = await userRes.json();
       addLog(`✓ Authenticated as: ${user.login}`, "success");
 
-      // Step 2: Create repo
-      addLog(`$ gh repo create ${cleanRepo} --public`, "cmd");
+      // Step 2: Create or get repo
+      addLog(`$ gh repo create ${cleanRepo}`, "cmd");
       const createRes = await fetch("https://api.github.com/user/repos", {
         method: "POST",
-        headers: {
-          Authorization: `token ${token}`,
-          Accept: "application/vnd.github.v3+json",
-          "Content-Type": "application/json",
-        },
+        headers: ghHeaders,
         body: JSON.stringify({
           name: cleanRepo,
           description: "AgentAI project synced from vly.ai",
@@ -73,14 +66,8 @@ export default function SyncPage() {
 
       let repo;
       if (createRes.status === 422) {
-        // Repo already exists, use it
         addLog(`Repository already exists, using existing repo...`, "info");
-        const existingRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}`, {
-          headers: {
-            Authorization: `token ${token}`,
-            Accept: "application/vnd.github.v3+json",
-          },
-        });
+        const existingRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}`, { headers: ghHeaders });
         repo = await existingRes.json();
       } else if (!createRes.ok) {
         const err = await createRes.json();
@@ -92,67 +79,48 @@ export default function SyncPage() {
 
       setRepoUrl(repo.html_url);
 
-      // Step 3: Get all project files via the VLY file system
+      // Step 3: Collect files
       addLog(`$ collecting project files...`, "cmd");
-
-      // Collect files from the project using fetch to get the file tree
       const filesToSync = await collectProjectFiles();
       addLog(`✓ Found ${filesToSync.length} files to sync`, "success");
 
-      // Step 4: Get or create the default branch
-      addLog(`$ git push origin main`, "cmd");
-
-      // Get current SHA of main branch (if exists)
+      // Step 4: Get current branch state
       let baseTreeSha: string | null = null;
       let latestCommitSha: string | null = null;
 
-      const branchRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/main`, {
-        headers: {
-          Authorization: `token ${token}`,
-          Accept: "application/vnd.github.v3+json",
-        },
-      });
-
+      const branchRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/main`, { headers: ghHeaders });
       if (branchRes.ok) {
         const branchData = await branchRes.json();
-        latestCommitSha = branchData.object.sha;
-        const commitRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/commits/${latestCommitSha}`, {
-          headers: {
-            Authorization: `token ${token}`,
-            Accept: "application/vnd.github.v3+json",
-          },
-        });
-        const commitData = await commitRes.json();
-        baseTreeSha = commitData.tree.sha;
+        latestCommitSha = branchData.object?.sha || null;
+        if (latestCommitSha) {
+          const commitRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/commits/${latestCommitSha}`, { headers: ghHeaders });
+          if (commitRes.ok) {
+            const commitData = await commitRes.json();
+            baseTreeSha = commitData.tree?.sha || null;
+          }
+        }
       }
 
-      // Step 5: Create blobs for all files
-      addLog(`$ creating file blobs...`, "cmd");
-      const treeItems = [];
+      // Step 5: Create blobs using base64 encoding (required by GitHub API)
+      addLog(`$ creating file blobs (${filesToSync.length} files)...`, "cmd");
+      const treeItems: Array<{ path: string; mode: string; type: string; sha: string }> = [];
 
       for (const file of filesToSync) {
         try {
+          // Encode content as base64
+          const base64Content = btoa(unescape(encodeURIComponent(file.content)));
           const blobRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/blobs`, {
             method: "POST",
-            headers: {
-              Authorization: `token ${token}`,
-              Accept: "application/vnd.github.v3+json",
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              content: file.content,
-              encoding: "utf-8",
-            }),
+            headers: ghHeaders,
+            body: JSON.stringify({ content: base64Content, encoding: "base64" }),
           });
 
           if (blobRes.ok) {
             const blob = await blobRes.json();
-            treeItems.push({
-              path: file.path,
-              mode: "100644",
-              type: "blob",
-              sha: blob.sha,
-            });
+            treeItems.push({ path: file.path, mode: "100644", type: "blob", sha: blob.sha });
+          } else {
+            const errData = await blobRes.json().catch(() => ({}));
+            addLog(`⚠ Skipped ${file.path}: ${errData.message || blobRes.status}`, "info");
           }
         } catch {
           // Skip files that fail
@@ -161,6 +129,8 @@ export default function SyncPage() {
 
       addLog(`✓ Created ${treeItems.length} file blobs`, "success");
 
+      if (treeItems.length === 0) throw new Error("No files could be uploaded");
+
       // Step 6: Create tree
       addLog(`$ building git tree...`, "cmd");
       const treeBody: Record<string, unknown> = { tree: treeItems };
@@ -168,15 +138,14 @@ export default function SyncPage() {
 
       const treeRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/trees`, {
         method: "POST",
-        headers: {
-          Authorization: `token ${token}`,
-          Accept: "application/vnd.github.v3+json",
-          "Content-Type": "application/json",
-        },
+        headers: ghHeaders,
         body: JSON.stringify(treeBody),
       });
 
-      if (!treeRes.ok) throw new Error("Failed to create git tree");
+      if (!treeRes.ok) {
+        const treeErr = await treeRes.json().catch(() => ({}));
+        throw new Error(`Failed to create git tree: ${treeErr.message || treeRes.status}`);
+      }
       const tree = await treeRes.json();
 
       // Step 7: Create commit
@@ -189,15 +158,14 @@ export default function SyncPage() {
 
       const commitRes2 = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/commits`, {
         method: "POST",
-        headers: {
-          Authorization: `token ${token}`,
-          Accept: "application/vnd.github.v3+json",
-          "Content-Type": "application/json",
-        },
+        headers: ghHeaders,
         body: JSON.stringify(commitBody),
       });
 
-      if (!commitRes2.ok) throw new Error("Failed to create commit");
+      if (!commitRes2.ok) {
+        const commitErr = await commitRes2.json().catch(() => ({}));
+        throw new Error(`Failed to create commit: ${commitErr.message || commitRes2.status}`);
+      }
       const commit = await commitRes2.json();
 
       // Step 8: Update or create branch ref
@@ -205,21 +173,13 @@ export default function SyncPage() {
       if (latestCommitSha) {
         await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/main`, {
           method: "PATCH",
-          headers: {
-            Authorization: `token ${token}`,
-            Accept: "application/vnd.github.v3+json",
-            "Content-Type": "application/json",
-          },
+          headers: ghHeaders,
           body: JSON.stringify({ sha: commit.sha, force: true }),
         });
       } else {
         await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs`, {
           method: "POST",
-          headers: {
-            Authorization: `token ${token}`,
-            Accept: "application/vnd.github.v3+json",
-            "Content-Type": "application/json",
-          },
+          headers: ghHeaders,
           body: JSON.stringify({ ref: "refs/heads/main", sha: commit.sha }),
         });
       }
