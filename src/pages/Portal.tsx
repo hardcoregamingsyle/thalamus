@@ -48,7 +48,7 @@ const MODES: { id: Mode; label: string; icon: typeof MessageSquare; desc: string
 ];
 
 export default function Portal() {
-  const { isLoading, isAuthenticated, user, signOut } = useAuth();
+  const { isLoading, isAuthenticated, user, signOut, token } = useAuth();
   const navigate = useNavigate();
   const [activeMode, setActiveMode] = useState<Mode>("chat");
   const [activeConvId, setActiveConvId] = useState<Id<"conversations"> | null>(null);
@@ -56,10 +56,13 @@ export default function Portal() {
   const [isThinking, setIsThinking] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  const conversations = useQuery(api.conversations.list, {}) as Conversation[] | undefined;
+  const conversations = useQuery(
+    api.conversations.list,
+    token ? { token } : "skip"
+  ) as Conversation[] | undefined;
   const messages = useQuery(
     api.conversations.getMessages,
-    activeConvId ? { conversationId: activeConvId } : "skip"
+    activeConvId && token ? { conversationId: activeConvId, token } : "skip"
   ) as Message[] | undefined;
   const createConversation = useMutation(api.conversations.create);
   const deleteConversation = useMutation(api.conversations.remove);
@@ -77,10 +80,12 @@ export default function Portal() {
   }, [messages]);
 
   const handleNewConversation = async () => {
+    if (!token) return;
     try {
       const id = await createConversation({
         title: `${activeMode.toUpperCase()}_${Date.now().toString(36).toUpperCase()}`,
         mode: activeMode,
+        token,
       });
       setActiveConvId(id);
     } catch {
@@ -89,7 +94,7 @@ export default function Portal() {
   };
 
   const handleSend = async () => {
-    if (!input.trim() || isThinking) return;
+    if (!input.trim() || isThinking || !token) return;
 
     let convId = activeConvId;
     if (!convId) {
@@ -97,6 +102,7 @@ export default function Portal() {
         convId = await createConversation({
           title: input.slice(0, 40),
           mode: activeMode,
+          token,
         });
         setActiveConvId(convId);
       } catch {
@@ -110,7 +116,7 @@ export default function Portal() {
     setIsThinking(true);
 
     try {
-      await sendMessage({ conversationId: convId, content: msg, mode: activeMode });
+      await sendMessage({ conversationId: convId, content: msg, mode: activeMode, token });
     } catch {
       toast.error("Agent failed to respond. Try again.");
     } finally {
@@ -251,7 +257,7 @@ export default function Portal() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          deleteConversation({ id: conv._id });
+                          deleteConversation({ id: conv._id, token: token || undefined });
                           if (activeConvId === conv._id) setActiveConvId(null);
                         }}
                         className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"

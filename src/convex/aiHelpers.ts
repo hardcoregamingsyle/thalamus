@@ -1,13 +1,5 @@
-import { getAuthUserId as getConvexAuthUserId } from "@convex-dev/auth/server";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
-
-export const getCurrentUserId = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    return await getConvexAuthUserId(ctx);
-  },
-});
 
 export const getConversationMessages = internalQuery({
   args: { conversationId: v.id("conversations") },

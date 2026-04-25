@@ -10,9 +10,13 @@ export const sendMessage = action({
     conversationId: v.id("conversations"),
     content: v.string(),
     mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code")),
+    token: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<string> => {
-    const userId: Id<"users"> | null = await ctx.runQuery(internal.aiHelpers.getCurrentUserId);
+    const userId: Id<"users"> | null = await ctx.runQuery(
+      internal.customAuthHelpers.getUserIdByToken,
+      { token: args.token || "" }
+    );
     if (!userId) throw new Error("Not authenticated");
 
     await ctx.runMutation(internal.aiHelpers.saveMessage, {

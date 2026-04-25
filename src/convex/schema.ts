@@ -26,8 +26,25 @@ const schema = defineSchema(
       emailVerificationTime: v.optional(v.number()),
       isAnonymous: v.optional(v.boolean()),
       role: v.optional(roleValidator),
-      totalUsageCents: v.optional(v.number()), // total usage in cents
+      totalUsageCents: v.optional(v.number()),
     }).index("email", ["email"]),
+
+    // Custom OTP system - bypasses JWT auth
+    otpCodes: defineTable({
+      email: v.string(),
+      code: v.string(),
+      expiresAt: v.number(),
+      used: v.boolean(),
+    }).index("by_email", ["email"]),
+
+    customSessions: defineTable({
+      userId: v.id("users"),
+      token: v.string(),
+      email: v.string(),
+      expiresAt: v.number(),
+    })
+      .index("by_token", ["token"])
+      .index("by_user", ["userId"]),
 
     conversations: defineTable({
       userId: v.id("users"),
