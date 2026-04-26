@@ -100,6 +100,23 @@ const schema = defineSchema(
     })
       .index("by_session", ["sessionId"])
       .index("by_session_and_path", ["sessionId", "filepath"]),
+
+    // Daytona sandboxes
+    sandboxes: defineTable({
+      userId: v.id("users"),
+      sessionId: v.optional(v.id("teamSessions")),
+      sandboxId: v.string(),
+      status: v.union(v.literal("creating"), v.literal("running"), v.literal("stopped"), v.literal("error")),
+      label: v.optional(v.string()),
+      createdAt: v.number(),
+      stoppedAt: v.optional(v.number()),
+      costCents: v.optional(v.number()),
+      lastCommand: v.optional(v.string()),
+      lastOutput: v.optional(v.string()),
+    })
+      .index("by_user", ["userId"])
+      .index("by_session", ["sessionId"])
+      .index("by_sandbox_id", ["sandboxId"]),
   },
   {
     schemaValidation: false,
