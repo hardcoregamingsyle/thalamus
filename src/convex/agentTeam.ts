@@ -29,7 +29,15 @@ const GEMINI_KEYS = [
 
 let keyIndex = 0;
 
-async function callGemini(prompt: string, systemPrompt: string, maxTokens = 4096): Promise<string> {
+interface GeminiTeamResponse {
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+  };
+}
+
+async function callGemini(prompt: string, systemPrompt: string, maxTokens = 4096): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const maxRetries = GEMINI_KEYS.length;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const key = GEMINI_KEYS[keyIndex % GEMINI_KEYS.length];
@@ -52,10 +60,12 @@ async function callGemini(prompt: string, systemPrompt: string, maxTokens = 4096
         const err = await response.text();
         throw new Error(`Gemini API error ${response.status}: ${err}`);
       }
-      const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+      const data = await response.json() as GeminiTeamResponse;
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!text) throw new Error("No response from Gemini");
-      return text;
+      const inputTokens = data.usageMetadata?.promptTokenCount ?? 0;
+      const outputTokens = data.usageMetadata?.candidatesTokenCount ?? 0;
+      return { text, inputTokens, outputTokens };
     } catch (err) {
       if (attempt === maxRetries - 1) throw err;
     }
@@ -85,7 +95,8 @@ async function performSearch(query: string): Promise<string> {
 
   const searchPrompt = `Search query: "${query}"${ragContext}\n\nProvide a comprehensive, factual answer to this search query. Include relevant code examples, documentation references, best practices, and technical details. Format as a search result summary.`;
   const systemPrompt = `You are a search engine assistant. Provide accurate, detailed search results for technical queries. Include code examples, documentation links, and best practices.`;
-  return await callGemini(searchPrompt, systemPrompt, 2048);
+  const { text } = await callGemini(searchPrompt, systemPrompt, 2048);
+  return text;
 }
 
 // Parse file operations from agent output
@@ -427,7 +438,10 @@ export const runAgentRound = action({
     });
 
     // Call Gemini
-    let rawContent = await callGemini(prompt, systemPrompt, 4096);
+    let geminiResult = await callGemini(prompt, systemPrompt, 4096);
+    let rawContent = geminiResult.text;
+    let totalInputTokens = geminiResult.inputTokens;
+    let totalOutputTokens = geminiResult.outputTokens;
 
     // Parse output for commands
     const parsed = parseAgentOutput(rawContent);
@@ -442,7 +456,10 @@ export const runAgentRound = action({
 
       // Re-call with search results appended
       const promptWithSearch = `${prompt}\n\nYour previous response requested searches. Here are the results:\n\n${searchResults.join("\n\n---\n\n")}\n\nNow provide your complete ${currentPhase} output incorporating these search results.`;
-      rawContent = await callGemini(promptWithSearch, systemPrompt, 4096);
+      const geminiResult2 = await callGemini(promptWithSearch, systemPrompt, 4096);
+      rawContent = geminiResult2.text;
+      totalInputTokens += geminiResult2.inputTokens;
+      totalOutputTokens += geminiResult2.outputTokens;
       const reparsed = parseAgentOutput(rawContent);
       parsed.fileOps.push(...reparsed.fileOps);
       parsed.cleanContent = reparsed.cleanContent;
