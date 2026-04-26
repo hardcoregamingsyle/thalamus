@@ -597,19 +597,42 @@ export default function TeamPortal() {
                       <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        className="border border-green-400/30 bg-green-400/5 p-4 text-center"
+                        className="border border-green-400/30 bg-green-400/5 p-4"
                       >
-                        <CheckCircle className="h-6 w-6 text-green-400 mx-auto mb-2" />
-                        <p className="text-xs text-green-400 font-bold">PROJECT COMPLETE</p>
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <CheckCircle className="h-5 w-5 text-green-400 shrink-0" />
+                          <p className="text-xs text-green-400 font-bold">PROJECT COMPLETE</p>
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-3">
                           {projectFiles.length} files created • {totalMessages} messages • {loopCount} loops
                         </p>
                         <button
                           onClick={() => setActiveTab("files")}
-                          className="mt-2 text-xs text-primary hover:text-primary/80 border border-primary/30 px-3 py-1 transition-colors"
+                          className="mb-4 text-xs text-primary hover:text-primary/80 border border-primary/30 px-3 py-1 transition-colors"
                         >
                           VIEW FILES →
                         </button>
+                        <div className="border-t border-green-400/20 pt-3">
+                          <p className="text-xs text-muted-foreground mb-2">// FOLLOW_UP_TASK</p>
+                          <textarea
+                            value={newTask}
+                            onChange={(e) => setNewTask(e.target.value)}
+                            placeholder="Describe the next task to continue building on this project..."
+                            className="w-full bg-background border border-border text-foreground text-xs font-mono p-2 resize-none outline-none focus:border-primary transition-colors min-h-[70px]"
+                            disabled={isContinuing}
+                          />
+                          <button
+                            onClick={handleContinueSession}
+                            disabled={!newTask.trim() || isContinuing}
+                            className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90 disabled:opacity-50 transition-all"
+                          >
+                            {isContinuing ? (
+                              <><Loader2 className="h-3 w-3 animate-spin" />SETTING UP...</>
+                            ) : (
+                              <><Play className="h-3 w-3" />CONTINUE WITH NEW TASK</>
+                            )}
+                          </button>
+                        </div>
                       </motion.div>
                     )}
 
