@@ -237,12 +237,16 @@ export default function TeamPortal() {
     finally { setIsContinuing(false); }
   };
 
+  const agentRetryCountRef = useRef(0);
+  const MAX_AGENT_RETRIES = 5;
+
   const handleRunNextAgent = useCallback(async (sessionIdOverride?: Id<"teamSessions">) => {
     const sid = sessionIdOverride || activeSessionId;
     if (!sid || !token || isRunning) return;
     setIsRunning(true);
     try {
       const result = await runAgentRound({ sessionId: sid, token });
+      agentRetryCountRef.current = 0; // reset on success
       setCurrentAgent(result.agent);
       await loadSessionData(sid);
       await loadSessions();
@@ -271,7 +275,19 @@ export default function TeamPortal() {
       return result;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Agent failed";
-      toast.error(msg);
+      agentRetryCountRef.current += 1;
+      if (agentRetryCountRef.current <= MAX_AGENT_RETRIES && autoRunRef.current) {
+        // Retry after a delay — don't stop the loop
+        const retryDelay = Math.min(3000 * agentRetryCountRef.current, 15000);
+        toast.warning(`Retrying agent (${agentRetryCountRef.current}/${MAX_AGENT_RETRIES})... ${msg.slice(0, 60)}`);
+        setIsRunning(false);
+        setCurrentAgent(null);
+        setTimeout(() => { if (autoRunRef.current) handleRunNextAgent(sid); }, retryDelay);
+        return;
+      }
+      // Exhausted retries
+      toast.error(`Agent failed after ${MAX_AGENT_RETRIES} retries: ${msg}`);
+      agentRetryCountRef.current = 0;
       autoRunRef.current = false;
       setAutoRun(false);
     } finally {
