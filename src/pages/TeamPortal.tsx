@@ -141,6 +141,7 @@ export default function TeamPortal() {
   const deployProjectFilesAction = useAction(api.sandbox.deployProjectFiles);
   const getPreviewUrlAction = useAction(api.sandbox.getPreviewUrl);
   const autoDeployAndStartAction = useAction(api.sandbox.autoDeployAndStart);
+  const testFileWriteAction = useAction(api.sandbox.testFileWrite);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) navigate("/auth");
@@ -372,7 +373,9 @@ export default function TeamPortal() {
     setIsSandboxLoading(true);
     try {
       const result = await autoDeployAndStartAction({ token, sandboxDbId: activeSandboxId, sessionId: activeSessionId });
-      if (result.previewUrl) {
+      if (result.errors && result.errors.length > 0) {
+        toast.warning(`Deploy: ${result.deployedFiles} files, ${result.errors.length} errors. First: ${result.errors[0].slice(0, 100)}`);
+      } else if (result.previewUrl) {
         setPreviewUrl(result.previewUrl);
         setActiveTab("preview");
         toast.success(`Deployed ${result.deployedFiles} files → Preview ready!`);
@@ -381,6 +384,21 @@ export default function TeamPortal() {
       }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Deploy failed");
+    } finally { setIsSandboxLoading(false); }
+  };
+
+  const handleTestFileWrite = async () => {
+    if (!activeSandboxId || !token) return;
+    setIsSandboxLoading(true);
+    try {
+      const result = await testFileWriteAction({ token, sandboxDbId: activeSandboxId });
+      if (result.success) {
+        toast.success(`File write OK: ${result.output?.slice(0, 100)}`);
+      } else {
+        toast.error(`File write FAILED: ${result.error?.slice(0, 150)}`);
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Test failed");
     } finally { setIsSandboxLoading(false); }
   };
 
@@ -797,6 +815,13 @@ export default function TeamPortal() {
                             <span className="text-xs text-green-400">● RUNNING</span>
                           </div>
                           <div className="flex items-center gap-2">
+                            <button
+                              onClick={handleTestFileWrite}
+                              disabled={isSandboxLoading}
+                              className="flex items-center gap-1 text-xs text-muted-foreground border border-border px-2 py-1 rounded hover:bg-muted/10 disabled:opacity-50 transition-colors"
+                            >
+                              TEST WRITE
+                            </button>
                             {activeSessionId && projectFiles.length > 0 && (
                               <button
                                 onClick={handleAutoDeployAndStart}
