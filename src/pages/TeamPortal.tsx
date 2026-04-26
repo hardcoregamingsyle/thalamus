@@ -906,12 +906,29 @@ export default function TeamPortal() {
                     </div>
                   </div>
                   {previewUrl ? (
-                    <iframe
-                      src={previewUrl}
-                      className="flex-1 w-full border-0"
-                      title="Sandbox Preview"
-                      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                    />
+                    <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8 bg-background">
+                      <Globe className="h-16 w-16 text-green-400/40" />
+                      <div className="text-center max-w-md">
+                        <p className="text-sm font-bold text-foreground mb-2">Preview Ready</p>
+                        <p className="text-xs text-muted-foreground mb-4">
+                          Your app is running in the Daytona sandbox. Open the preview in a new tab to view it.
+                          <br /><span className="text-amber-400">Note: You may need to log in to Daytona once to access the preview.</span>
+                        </p>
+                        <div className="bg-card border border-border rounded-lg p-3 mb-4 text-left">
+                          <p className="text-xs text-muted-foreground mb-1">Preview URL:</p>
+                          <p className="text-xs text-primary font-mono break-all">{previewUrl}</p>
+                        </div>
+                        <a
+                          href={previewUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-lg text-sm font-bold hover:bg-primary/90 transition-colors"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          Open Preview in New Tab
+                        </a>
+                      </div>
+                    </div>
                   ) : (
                     <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
                       <Monitor className="h-16 w-16 text-muted-foreground/20" />
