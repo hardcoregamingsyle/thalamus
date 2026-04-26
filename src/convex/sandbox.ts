@@ -433,3 +433,63 @@ export const listSandboxes = action({
     return (await ctx.runQuery(internal.sandboxHelpers.listUserSandboxes, { userId })) as SandboxRow[];
   },
 });
+
+// Test file write - writes a single test file and returns the result
+export const testFileWrite = action({
+  args: {
+    token: v.string(),
+    sandboxDbId: v.id("sandboxes"),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean; error?: string; output?: string }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, {
+      token: args.token,
+    })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, {
+      sandboxDbId: args.sandboxDbId,
+    })) as SandboxRecord | null;
+
+    if (!sandboxRecord) throw new Error("Sandbox not found");
+    if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
+    if (sandboxRecord.status !== "running") throw new Error("Sandbox is not running");
+
+    const apiKey = getApiKey();
+    const testContent = '{"name":"test","version":"1.0.0","scripts":{"start":"node index.js"}}';
+    
+    // Test 1: Try the multipart upload API
+    const result = await writeFileToSandbox(sandboxRecord.sandboxId, apiKey, "package.json", testContent);
+    
+    if (!result.ok) {
+      // Test 2: Try shell command approach as fallback
+      try {
+        const b64 = Buffer.from(testContent, "utf8").toString("base64");
+        const shellRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify({ command: `echo '${b64}' | base64 -d > /home/daytona/package.json && echo "shell_ok"` }),
+        });
+        const shellData = await shellRes.json() as DaytonaExecResponse;
+        if (shellData.result?.includes("shell_ok")) {
+          return { success: true, output: `Shell fallback worked. Upload API error: ${result.error}` };
+        }
+        return { success: false, error: `Upload API: ${result.error}. Shell: ${shellData.result}` };
+      } catch (shellErr) {
+        return { success: false, error: `Upload API: ${result.error}. Shell error: ${shellErr instanceof Error ? shellErr.message : String(shellErr)}` };
+      }
+    }
+    
+    // Verify the file was written
+    try {
+      const verifyRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ command: "cat /home/daytona/package.json 2>&1 | head -3" }),
+      });
+      const verifyData = await verifyRes.json() as DaytonaExecResponse;
+      return { success: true, output: `File written. Content: ${verifyData.result?.slice(0, 100)}` };
+    } catch {
+      return { success: true, output: "File written (verification failed)" };
+    }
+  },
+});
