@@ -89,6 +89,8 @@ export default function TeamPortal() {
   const [activeTab, setActiveTab] = useState<"chat" | "files">("chat");
   const [selectedFile, setSelectedFile] = useState<ProjectFile | null>(null);
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
+  const [newTask, setNewTask] = useState("");
+  const [isContinuing, setIsContinuing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoRunRef = useRef(false);
 
@@ -98,6 +100,7 @@ export default function TeamPortal() {
   const getSessionMessages = useAction(api.agentTeam.getSessionMessages2);
   const getSessionInfoAction = useAction(api.agentTeam.getSessionInfo);
   const getProjectFilesAction = useAction(api.agentTeam.getProjectFiles);
+  const continueSessionAction = useAction(api.agentTeam.continueSession);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) navigate("/auth");
@@ -156,6 +159,24 @@ export default function TeamPortal() {
       toast.error("Failed to create session");
     } finally {
       setIsRunning(false);
+    }
+  };
+
+  const handleContinueSession = async () => {
+    if (!newTask.trim() || !activeSessionId || !token) return;
+    setIsContinuing(true);
+    try {
+      await continueSessionAction({ sessionId: activeSessionId, newTask: newTask.trim(), token });
+      setNewTask("");
+      setMessages([]);
+      setProjectFiles([]);
+      await loadSessionData(activeSessionId);
+      await loadSessions();
+      toast.success("New task set! Click AUTO_RUN to start.");
+    } catch {
+      toast.error("Failed to continue session");
+    } finally {
+      setIsContinuing(false);
     }
   };
 
