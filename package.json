@@ -20,6 +20,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.89.0",
     "@convex-dev/auth": "^0.0.90",
+    "@daytona/sdk": "^0.169.0",
     "@faker-js/faker": "^10.1.0",
     "@hookform/resolvers": "^5.2.2",
     "@jridgewell/trace-mapping": "^0.3.31",
