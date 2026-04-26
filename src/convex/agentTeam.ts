@@ -8,6 +8,8 @@ import { callGemini, performSearch, parseAgentOutput, AGENT_SYSTEM_PROMPTS } fro
 const PIPELINE = ["Analyser", "Coder", "Optimiser", "Tester", "Hacker", "Critic"];
 const MAX_MESSAGES = 60;
 const RAG_BASE_URL = "https://leadshello-graph-rag-and-chroma-db.hf.space";
+const DAYTONA_API = "https://app.daytona.io/api";
+const MAX_CMD_LOOPS = 10; // max sandbox command iterations per agent round
 
 type SessionRow = {
   _id: Id<"teamSessions">;
@@ -23,6 +25,37 @@ type SessionRow = {
 };
 type MsgRow = { _id: Id<"agentMessages">; agent: string; content: string; round?: number; messageIndex?: number };
 type FileRow = { _id: Id<"projectFiles">; filepath: string; content: string; lastModifiedBy: string };
+type SandboxDbRow = { _id: Id<"sandboxes">; sandboxId: string; lastCommand?: string; lastOutput?: string; status: string; createdAt: number };
+
+interface DaytonaExecResponse {
+  result?: string;
+  exitCode?: number;
+}
+
+async function executeSandboxCommand(sandboxId: string, command: string): Promise<{ output: string; exitCode: number }> {
+  const apiKey = process.env.DAYTONA_API_KEY;
+  if (!apiKey) return { output: "[SANDBOX UNAVAILABLE: DAYTONA_API_KEY not set]", exitCode: 1 };
+
+  try {
+    const res = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({ command }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      return { output: `[SANDBOX ERROR ${res.status}: ${text.slice(0, 200)}]`, exitCode: 1 };
+    }
+    const data = await res.json() as DaytonaExecResponse;
+    return { output: data.result ?? "", exitCode: data.exitCode ?? 0 };
+  } catch (err) {
+    return { output: `[SANDBOX EXCEPTION: ${err instanceof Error ? err.message : String(err)}]`, exitCode: 1 };
+  }
+}
 
 export const ragAddDocument = action({
   args: { id: v.string(), text: v.string(), token: v.optional(v.string()) },
@@ -105,17 +138,20 @@ export const runAgentRound = action({
         projectFiles.map((f) => `--- ${f.filepath} ---\n${f.content.slice(0, 2000)}${f.content.length > 2000 ? "\n...(truncated)" : ""}`).join("\n\n")
       : "";
 
-    // Fetch sandbox output for non-Analyser agents
+    // Fetch sandbox for non-Analyser agents
+    let sandboxDbId: Id<"sandboxes"> | null = null;
+    let sandboxDaytonaId: string | null = null;
     let sandboxContext = "";
     if (currentPhase !== "Analyser") {
-      type SandboxRow = { sandboxId: string; lastCommand?: string; lastOutput?: string; status: string };
       const sandbox = (await ctx.runQuery(internal.sandboxHelpers.getSandboxBySession, {
         sessionId: args.sessionId,
-      })) as SandboxRow | null;
-      if (sandbox && sandbox.status === "running" && (sandbox.lastCommand || sandbox.lastOutput)) {
-        sandboxContext = `\n\nSANDBOX OUTPUT (live execution environment):\n`;
-        if (sandbox.lastCommand) sandboxContext += `$ ${sandbox.lastCommand}\n`;
-        if (sandbox.lastOutput) sandboxContext += `${sandbox.lastOutput.slice(0, 3000)}${sandbox.lastOutput.length > 3000 ? "\n...(truncated)" : ""}`;
+      })) as SandboxDbRow | null;
+      if (sandbox && sandbox.status === "running") {
+        sandboxDbId = sandbox._id;
+        sandboxDaytonaId = sandbox.sandboxId;
+        if (sandbox.lastCommand || sandbox.lastOutput) {
+          sandboxContext = `\n\nLAST SANDBOX OUTPUT:\n$ ${sandbox.lastCommand ?? ""}\n${(sandbox.lastOutput ?? "").slice(0, 2000)}`;
+        }
       }
     }
 
@@ -138,8 +174,9 @@ export const runAgentRound = action({
     let totalInputTokens = geminiResult.inputTokens;
     let totalOutputTokens = geminiResult.outputTokens;
 
-    const parsed = parseAgentOutput(rawContent);
+    let parsed = parseAgentOutput(rawContent);
 
+    // Handle search operations
     if (parsed.searchOps.length > 0) {
       const searchResults: string[] = [];
       for (const searchOp of parsed.searchOps) {
@@ -152,18 +189,69 @@ export const runAgentRound = action({
       totalInputTokens += geminiResult2.inputTokens;
       totalOutputTokens += geminiResult2.outputTokens;
       const reparsed = parseAgentOutput(rawContent);
+      parsed = reparsed;
       parsed.fileOps.push(...reparsed.fileOps);
-      parsed.cleanContent = reparsed.cleanContent;
-      Object.assign(parsed, {
-        testerResult: reparsed.testerResult ?? parsed.testerResult,
-        testerFailReason: reparsed.testerFailReason ?? parsed.testerFailReason,
-        hackerResult: reparsed.hackerResult ?? parsed.hackerResult,
-        criticResult: reparsed.criticResult ?? parsed.criticResult,
-      });
     }
 
+    // Handle sandbox RUN-CMD loop (non-Analyser only, up to MAX_CMD_LOOPS iterations)
+    if (currentPhase !== "Analyser" && sandboxDaytonaId && parsed.cmdOps.length > 0) {
+      let cmdLoopCount = 0;
+      let currentPrompt = prompt;
+      let currentParsed = parsed;
+
+      while (currentParsed.cmdOps.length > 0 && cmdLoopCount < MAX_CMD_LOOPS) {
+        const cmdResults: string[] = [];
+
+        for (const cmdOp of currentParsed.cmdOps) {
+          const { output, exitCode } = await executeSandboxCommand(sandboxDaytonaId, cmdOp.command);
+          const resultStr = `$ ${cmdOp.command}\n${output.slice(0, 2000)}${output.length > 2000 ? "\n...(truncated)" : ""}\n[exit code: ${exitCode}]`;
+          cmdResults.push(resultStr);
+
+          // Update sandbox record with last command/output
+          if (sandboxDbId) {
+            const elapsedHours = 0; // cost tracked separately per sandbox
+            void elapsedHours;
+            await ctx.runMutation(internal.sandboxHelpers.updateSandboxCommand, {
+              sandboxDbId,
+              lastCommand: cmdOp.command,
+              lastOutput: output.slice(0, 2000),
+              costCents: Math.round(elapsedHours * 7.5 * 100) / 100,
+            });
+          }
+        }
+
+        // Feed command results back to agent
+        const promptWithCmds = `${currentPrompt}\n\nYour previous response ran sandbox commands. Here are the results:\n\n${cmdResults.join("\n\n---\n\n")}\n\nBased on these results, provide your updated ${currentPhase} output. If you need to run more commands, use RUN-CMD again. If done, provide your final output without any RUN-CMD commands.`;
+
+        const geminiResultCmd = await callGemini(promptWithCmds, systemPrompt, 4096);
+        rawContent = geminiResultCmd.text;
+        totalInputTokens += geminiResultCmd.inputTokens;
+        totalOutputTokens += geminiResultCmd.outputTokens;
+
+        currentParsed = parseAgentOutput(rawContent);
+        // Accumulate file ops from each iteration
+        parsed.fileOps.push(...currentParsed.fileOps);
+        parsed.cleanContent = currentParsed.cleanContent;
+        Object.assign(parsed, {
+          testerResult: currentParsed.testerResult ?? parsed.testerResult,
+          testerFailReason: currentParsed.testerFailReason ?? parsed.testerFailReason,
+          hackerResult: currentParsed.hackerResult ?? parsed.hackerResult,
+          criticResult: currentParsed.criticResult ?? parsed.criticResult,
+        });
+
+        currentPrompt = promptWithCmds;
+        cmdLoopCount++;
+      }
+    }
+
+    // Execute file operations
     let fileOpsCount = 0;
-    for (const fileOp of parsed.fileOps) {
+    // Deduplicate file ops (last write wins per filepath)
+    const fileOpsMap = new Map<string, typeof parsed.fileOps[0]>();
+    for (const op of parsed.fileOps) {
+      fileOpsMap.set(op.filepath, op);
+    }
+    for (const fileOp of fileOpsMap.values()) {
       if (fileOp.type === "create" || fileOp.type === "edit") {
         await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
           sessionId: args.sessionId,
@@ -185,12 +273,6 @@ export const runAgentRound = action({
     const inputCostCents = (totalInputTokens / 1_000_000) * 35;
     const outputCostCents = (totalOutputTokens / 1_000_000) * 145;
     const costCents = Math.ceil(inputCostCents + outputCostCents);
-
-    const user = await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId });
-    if (user) {
-      const userDoc = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: "" });
-      void userDoc;
-    }
     await ctx.runMutation(internal.sandboxHelpers.addUserCost, { userId, costCents });
 
     const newTotalMessages = totalMessages + 1;
