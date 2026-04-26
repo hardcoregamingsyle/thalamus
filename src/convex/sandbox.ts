@@ -393,13 +393,13 @@ export const listSandboxes = action({
   },
 });
 
-// Test file write - tries both methods and returns rich diagnostic output
+// Test file write - tries both methods and returns diagnostic output as a string
 export const testFileWrite = action({
   args: {
     token: v.string(),
     sandboxDbId: v.id("sandboxes"),
   },
-  handler: async (ctx, args): Promise<{ success: boolean; method?: string; sandboxId?: string; uploadApiStatus?: number; uploadApiBody?: string; shellResult?: string; verifyResult?: string; error?: string }> => {
+  handler: async (ctx, args): Promise<{ success: boolean; output: string }> => {
     const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
 
@@ -466,6 +466,14 @@ export const testFileWrite = action({
     const success = uploadApiStatus === 200 || shellResult.includes("write_ok");
     const method = uploadApiStatus === 200 ? "multipart" : shellResult.includes("write_ok") ? "shell" : "none";
 
-    return { success, method, sandboxId, uploadApiStatus, uploadApiBody, shellResult, verifyResult };
+    const output = [
+      `sandboxId: ${sandboxId}`,
+      `uploadAPI: ${uploadApiStatus} - ${uploadApiBody}`,
+      `shell: ${shellResult}`,
+      `verify: ${verifyResult}`,
+      `result: ${method}`,
+    ].join("\n");
+
+    return { success, output };
   },
 });
