@@ -63,9 +63,27 @@ async function callGemini(prompt: string, systemPrompt: string, maxTokens = 4096
   throw new Error("All Gemini API keys exhausted");
 }
 
+const RAG_BASE_URL = "https://leadshello-graph-rag-and-chroma-db.hf.space";
+
 // Perform a web search using Gemini's grounding (simulated via a search prompt)
+// Also queries ChromaDB for relevant context if available
 async function performSearch(query: string): Promise<string> {
-  const searchPrompt = `Search query: "${query}"\n\nProvide a comprehensive, factual answer to this search query. Include relevant code examples, documentation references, best practices, and technical details. Format as a search result summary.`;
+  let ragContext = "";
+  try {
+    const params = new URLSearchParams({ query, n_results: "3" });
+    const ragResponse = await fetch(`${RAG_BASE_URL}/query_vector?${params.toString()}`);
+    if (ragResponse.ok) {
+      const ragData = await ragResponse.json() as { documents?: string[][] };
+      const docs = ragData.documents?.[0];
+      if (docs && docs.length > 0) {
+        ragContext = `\n\nRELEVANT KNOWLEDGE BASE CONTEXT:\n${docs.join("\n---\n")}`;
+      }
+    }
+  } catch {
+    // RAG unavailable, proceed without it
+  }
+
+  const searchPrompt = `Search query: "${query}"${ragContext}\n\nProvide a comprehensive, factual answer to this search query. Include relevant code examples, documentation references, best practices, and technical details. Format as a search result summary.`;
   const systemPrompt = `You are a search engine assistant. Provide accurate, detailed search results for technical queries. Include code examples, documentation links, and best practices.`;
   return await callGemini(searchPrompt, systemPrompt, 2048);
 }
@@ -275,6 +293,73 @@ type SessionRow = {
 };
 type MsgRow = { _id: Id<"agentMessages">; agent: string; content: string; round?: number; messageIndex?: number };
 type FileRow = { _id: Id<"projectFiles">; filepath: string; content: string; lastModifiedBy: string };
+
+// Add document to ChromaDB + GraphRAG
+export const ragAddDocument = action({
+  args: {
+    id: v.string(),
+    text: v.string(),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const response = await fetch(`${RAG_BASE_URL}/add_document`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: args.id, text: args.text }),
+    });
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`RAG add_document failed: ${err}`);
+    }
+    return await response.json();
+  },
+});
+
+// Trigger GraphRAG indexing
+export const ragRunIndex = action({
+  args: { token: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const response = await fetch(`${RAG_BASE_URL}/run_graphrag_index`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`GraphRAG indexing failed: ${err}`);
+    }
+    return await response.json();
+  },
+});
+
+// Query ChromaDB vector search
+export const ragQueryVector = action({
+  args: {
+    query: v.string(),
+    nResults: v.optional(v.number()),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const params = new URLSearchParams({
+      query: args.query,
+      n_results: String(args.nResults ?? 3),
+    });
+    const response = await fetch(`${RAG_BASE_URL}/query_vector?${params.toString()}`);
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`ChromaDB query failed: ${err}`);
+    }
+    return await response.json();
+  },
+});
 
 export const createSession = action({
   args: { task: v.string(), token: v.optional(v.string()) },
