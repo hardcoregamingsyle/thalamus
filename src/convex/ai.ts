@@ -57,7 +57,10 @@ export const sendMessage = action({
       response.content[0]?.type === "text" ? response.content[0].text : "No response";
     const tokensUsed: number =
       (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0);
-    const costCents: number = Math.ceil((tokensUsed / 1_000_000) * 900);
+    // Claude 3.5 Sonnet pricing: $0.35/M input, $1.45/M output (in cents)
+    const inputCostCents = ((response.usage?.input_tokens || 0) / 1_000_000) * 35;
+    const outputCostCents = ((response.usage?.output_tokens || 0) / 1_000_000) * 145;
+    const costCents: number = Math.ceil(inputCostCents + outputCostCents);
 
     await ctx.runMutation(internal.aiHelpers.saveAssistantMessage, {
       conversationId: args.conversationId,

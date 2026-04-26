@@ -614,3 +614,25 @@ export const getProjectFiles = action({
     return files.map((f) => ({ filepath: f.filepath, content: f.content, lastModifiedBy: f.lastModifiedBy }));
   },
 });
+
+export const continueSession = action({
+  args: {
+    sessionId: v.id("teamSessions"),
+    newTask: v.string(),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
+    if (!session) throw new Error("Session not found");
+    if (session.userId !== userId) throw new Error("Not authorized");
+
+    // Reset session for new task while keeping history
+    await ctx.runMutation(internal.agentTeamHelpers.resetSessionForNewTask, {
+      sessionId: args.sessionId,
+      newTask: args.newTask,
+    });
+  },
+});

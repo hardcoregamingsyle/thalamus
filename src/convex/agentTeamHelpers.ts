@@ -167,3 +167,22 @@ export const getFileByPath = internalQuery({
     return files[0] || null;
   },
 });
+
+export const resetSessionForNewTask = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    newTask: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      task: args.newTask,
+      title: args.newTask.slice(0, 60),
+      status: "idle",
+      currentAgent: undefined,
+      round: 0,
+      loopCount: 0,
+      phase: "Analyser",
+      totalMessages: 0,
+    });
+  },
+});
