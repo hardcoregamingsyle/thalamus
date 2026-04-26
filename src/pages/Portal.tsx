@@ -20,6 +20,7 @@ import {
   DollarSign,
   Menu,
   X,
+  Users,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import ReactMarkdown from "react-markdown";
@@ -183,6 +184,14 @@ export default function Portal() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate("/team")}
+              className="flex items-center gap-1 text-xs border border-border text-muted-foreground px-2 py-1 hover:border-primary hover:text-primary transition-all"
+              title="Agent Team"
+            >
+              <Users className="h-3 w-3" />
+              <span className="hidden sm:block">TEAM</span>
+            </button>
             <span className="text-xs text-muted-foreground hidden sm:block truncate max-w-[120px]">
               {user?.email || "guest"}
             </span>

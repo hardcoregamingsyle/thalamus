@@ -15,6 +15,7 @@ const AuthPage = lazy(() => import("./pages/Auth.tsx"));
 const Portal = lazy(() => import("./pages/Portal.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const SyncPage = lazy(() => import("./pages/Sync.tsx"));
+const TeamPortal = lazy(() => import("./pages/TeamPortal.tsx"));
 
 // Simple loading fallback for route transitions
 function RouteLoading() {
@@ -65,6 +66,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/" element={<Landing />} />
               <Route path="/auth" element={<AuthPage redirectAfterAuth="/portal" />} />
               <Route path="/portal" element={<Portal />} />
+              <Route path="/team" element={<TeamPortal />} />
               <Route path="/sync" element={<SyncPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
