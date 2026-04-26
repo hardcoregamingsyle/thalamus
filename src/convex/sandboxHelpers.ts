@@ -97,3 +97,13 @@ export const listUserSandboxes = internalQuery({
       .take(20);
   },
 });
+
+export const updatePreviewUrl = internalMutation({
+  args: {
+    sandboxDbId: v.id("sandboxes"),
+    previewUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sandboxDbId, { previewUrl: args.previewUrl });
+  },
+});
