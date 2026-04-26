@@ -32,13 +32,14 @@ interface GeminiTeamResponse {
 }
 
 export async function callGemini(prompt: string, systemPrompt: string, maxTokens = 4096): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
-  const maxRetries = GEMINI_KEYS.length;
+  const maxRetries = GEMINI_KEYS.length * 2; // try each key twice
+  let lastError: unknown;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const key = GEMINI_KEYS[keyIndex % GEMINI_KEYS.length];
-    keyIndex++;
+    keyIndex = (keyIndex + 1) % GEMINI_KEYS.length;
     try {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${key}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -50,22 +51,28 @@ export async function callGemini(prompt: string, systemPrompt: string, maxTokens
         }
       );
       if (!response.ok) {
-        if (response.status === 429 || response.status === 403) continue;
-        throw new Error(`Gemini API error ${response.status}: ${await response.text()}`);
+        // On any error status, try next key
+        const errText = await response.text().catch(() => "");
+        lastError = new Error(`Gemini API error ${response.status}: ${errText.slice(0, 200)}`);
+        continue;
       }
       const data = await response.json() as GeminiTeamResponse;
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) throw new Error("No response from Gemini");
+      if (!text) {
+        lastError = new Error("No response from Gemini");
+        continue;
+      }
       return {
         text,
         inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
         outputTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
       };
     } catch (err) {
-      if (attempt === maxRetries - 1) throw err;
+      lastError = err;
+      // Network error - try next key
     }
   }
-  throw new Error("All Gemini API keys exhausted");
+  throw lastError ?? new Error("All Gemini API keys exhausted");
 }
 
 const RAG_BASE_URL = "https://leadshello-graph-rag-and-chroma-db.hf.space";
