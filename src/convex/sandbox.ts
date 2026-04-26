@@ -3,15 +3,38 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { Daytona } from "@daytona/sdk";
 
 // $0.075 per hour = 7.5 cents per hour
 const COST_CENTS_PER_HOUR = 7.5;
+const DAYTONA_API = "https://app.daytona.io/api";
 
-function getDaytona() {
+function getApiKey(): string {
   const apiKey = process.env.DAYTONA_API_KEY;
   if (!apiKey) throw new Error("DAYTONA_API_KEY not configured");
-  return new Daytona({ apiKey });
+  return apiKey;
+}
+
+function daytonaHeaders(apiKey: string) {
+  return {
+    "Authorization": `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+  };
+}
+
+async function daytonaFetch(path: string, options: RequestInit = {}): Promise<unknown> {
+  const apiKey = getApiKey();
+  const res = await fetch(`${DAYTONA_API}${path}`, {
+    ...options,
+    headers: { ...daytonaHeaders(apiKey), ...(options.headers as Record<string, string> || {}) },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Daytona API error ${res.status}: ${text.slice(0, 200)}`);
+  }
+  const text = await res.text();
+  if (!text) return {};
+  return JSON.parse(text);
 }
 
 interface SandboxRecord {
@@ -19,6 +42,16 @@ interface SandboxRecord {
   userId: Id<"users">;
   createdAt: number;
   status: string;
+}
+
+interface DaytonaSandbox {
+  id: string;
+  state?: string;
+}
+
+interface DaytonaExecResponse {
+  result?: string;
+  exitCode?: number;
 }
 
 // Create a new sandbox
@@ -34,13 +67,14 @@ export const createSandbox = action({
     })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
 
-    const daytona = getDaytona();
-
-    // Create sandbox with language only (1 vCPU default)
-    const sandbox = await daytona.create({
-      language: "typescript",
-      envVars: { NODE_ENV: "development" },
-    });
+    // Create sandbox via REST API (1 vCPU default)
+    const sandbox = await daytonaFetch("/sandbox", {
+      method: "POST",
+      body: JSON.stringify({
+        language: "typescript",
+        envVars: { NODE_ENV: "development" },
+      }),
+    }) as DaytonaSandbox;
 
     const sandboxDbId = await ctx.runMutation(internal.sandboxHelpers.insertSandbox, {
       userId,
@@ -76,10 +110,12 @@ export const executeCommand = action({
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
     if (sandboxRecord.status !== "running") throw new Error("Sandbox is not running");
 
-    const daytona = getDaytona();
-    const sandbox = await daytona.get(sandboxRecord.sandboxId);
+    // Execute command via toolbox REST API
+    const response = await daytonaFetch(`/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
+      method: "POST",
+      body: JSON.stringify({ command: args.command }),
+    }) as DaytonaExecResponse;
 
-    const response = await sandbox.process.executeCommand(args.command);
     const output = response.result ?? "";
     const exitCode = response.exitCode ?? 0;
 
@@ -119,11 +155,24 @@ export const uploadFile = action({
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
     if (sandboxRecord.status !== "running") throw new Error("Sandbox is not running");
 
-    const daytona = getDaytona();
-    const sandbox = await daytona.get(sandboxRecord.sandboxId);
+    // Upload file via toolbox REST API using multipart form
+    const apiKey = getApiKey();
+    const blob = new Blob([args.content], { type: "application/octet-stream" });
+    const formData = new FormData();
+    formData.append("file", blob, args.path.split("/").pop() || "file");
 
-    const buffer = Buffer.from(args.content, "utf-8");
-    await sandbox.fs.uploadFile(buffer, args.path);
+    const res = await fetch(
+      `${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/files/upload?path=${encodeURIComponent(args.path)}`,
+      {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${apiKey}` },
+        body: formData,
+      }
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`File upload failed ${res.status}: ${text.slice(0, 200)}`);
+    }
 
     return { success: true };
   },
@@ -154,12 +203,22 @@ export const deployProjectFiles = action({
       sessionId: args.sessionId,
     })) as Array<{ filepath: string; content: string }>;
 
-    const daytona = getDaytona();
-    const sandbox = await daytona.get(sandboxRecord.sandboxId);
+    const apiKey = getApiKey();
 
     for (const file of files) {
-      const buffer = Buffer.from(file.content, "utf-8");
-      await sandbox.fs.uploadFile(buffer, `/workspace/${file.filepath}`);
+      const targetPath = `/workspace/${file.filepath}`;
+      const blob = new Blob([file.content], { type: "application/octet-stream" });
+      const formData = new FormData();
+      formData.append("file", blob, file.filepath.split("/").pop() || "file");
+
+      await fetch(
+        `${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/files/upload?path=${encodeURIComponent(targetPath)}`,
+        {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${apiKey}` },
+          body: formData,
+        }
+      );
     }
 
     return { filesDeployed: files.length };
@@ -185,11 +244,9 @@ export const stopSandbox = action({
     if (!sandboxRecord) throw new Error("Sandbox not found");
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
 
-    const daytona = getDaytona();
-
+    // Delete sandbox via REST API
     try {
-      const sandbox = await daytona.get(sandboxRecord.sandboxId);
-      await daytona.delete(sandbox);
+      await daytonaFetch(`/sandbox/${sandboxRecord.sandboxId}`, { method: "DELETE" });
     } catch {
       // Sandbox may already be gone
     }
