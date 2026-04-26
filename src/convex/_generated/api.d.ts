@@ -19,6 +19,8 @@ import type * as customAuth from "../customAuth.js";
 import type * as customAuthHelpers from "../customAuthHelpers.js";
 import type * as fileSync from "../fileSync.js";
 import type * as http from "../http.js";
+import type * as sandbox from "../sandbox.js";
+import type * as sandboxHelpers from "../sandboxHelpers.js";
 import type * as users from "../users.js";
 
 import type {
@@ -39,6 +41,8 @@ declare const fullApi: ApiFromModules<{
   customAuthHelpers: typeof customAuthHelpers;
   fileSync: typeof fileSync;
   http: typeof http;
+  sandbox: typeof sandbox;
+  sandboxHelpers: typeof sandboxHelpers;
   users: typeof users;
 }>;
 
