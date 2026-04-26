@@ -114,8 +114,8 @@ export const executeCommand = action({
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
     if (sandboxRecord.status !== "running") throw new Error("Sandbox is not running");
 
-    // Execute command via toolbox REST API - always from /workspace
-    const wrappedCommand = args.command.startsWith("cd ") ? args.command : `cd /workspace && ${args.command}`;
+    // Execute command via toolbox REST API - always from /home/daytona (sandbox home dir)
+    const wrappedCommand = args.command.startsWith("cd ") ? args.command : `cd /home/daytona && ${args.command}`;
     const response = await daytonaFetch(`/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
       method: "POST",
       body: JSON.stringify({ command: wrappedCommand }),
@@ -202,9 +202,9 @@ export const autoDeployAndStart = action({
 
     const apiKey = getApiKey();
 
-    // Upload all files to /workspace/
+    // Upload all files to /home/daytona/
     for (const file of files) {
-      const targetPath = `/workspace/${file.filepath}`;
+      const targetPath = `/home/daytona/${file.filepath}`;
       const blob = new Blob([file.content], { type: "application/octet-stream" });
       const formData = new FormData();
       formData.append("file", blob, file.filepath.split("/").pop() || "file");
@@ -225,7 +225,7 @@ export const autoDeployAndStart = action({
       await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
         method: "POST",
         headers: { ...daytonaHeaders(apiKey) },
-        body: JSON.stringify({ command: "cd /workspace && npm install 2>&1 | tail -5 && npm start &" }),
+        body: JSON.stringify({ command: "cd /home/daytona && npm install 2>&1 | tail -5 && npm start &" }),
       });
     } catch { /* ignore start errors */ }
 
@@ -318,7 +318,7 @@ export const deployProjectFiles = action({
     const apiKey = getApiKey();
 
     for (const file of files) {
-      const targetPath = `/workspace/${file.filepath}`;
+      const targetPath = `/home/daytona/${file.filepath}`;
       const blob = new Blob([file.content], { type: "application/octet-stream" });
       const formData = new FormData();
       formData.append("file", blob, file.filepath.split("/").pop() || "file");

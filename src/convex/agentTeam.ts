@@ -36,8 +36,8 @@ interface DaytonaExecResponse {
 async function executeSandboxCommand(sandboxId: string, command: string): Promise<{ output: string; exitCode: number }> {
   const apiKey = process.env.DAYTONA_API_KEY || DAYTONA_API_KEY_FALLBACK;
 
-  // Always run commands from /workspace directory
-  const wrappedCommand = command.startsWith("cd ") ? command : `cd /workspace && ${command}`;
+  // Always run commands from /home/daytona (sandbox home directory)
+  const wrappedCommand = command.startsWith("cd ") ? command : `cd /home/daytona && ${command}`;
 
   try {
     const res = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
