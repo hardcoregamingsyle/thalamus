@@ -105,13 +105,27 @@ export const runAgentRound = action({
         projectFiles.map((f) => `--- ${f.filepath} ---\n${f.content.slice(0, 2000)}${f.content.length > 2000 ? "\n...(truncated)" : ""}`).join("\n\n")
       : "";
 
+    // Fetch sandbox output for non-Analyser agents
+    let sandboxContext = "";
+    if (currentPhase !== "Analyser") {
+      type SandboxRow = { sandboxId: string; lastCommand?: string; lastOutput?: string; status: string };
+      const sandbox = (await ctx.runQuery(internal.sandboxHelpers.getSandboxBySession, {
+        sessionId: args.sessionId,
+      })) as SandboxRow | null;
+      if (sandbox && sandbox.status === "running" && (sandbox.lastCommand || sandbox.lastOutput)) {
+        sandboxContext = `\n\nSANDBOX OUTPUT (live execution environment):\n`;
+        if (sandbox.lastCommand) sandboxContext += `$ ${sandbox.lastCommand}\n`;
+        if (sandbox.lastOutput) sandboxContext += `${sandbox.lastOutput.slice(0, 3000)}${sandbox.lastOutput.length > 3000 ? "\n...(truncated)" : ""}`;
+      }
+    }
+
     const systemPrompt = AGENT_SYSTEM_PROMPTS[currentPhase] || AGENT_SYSTEM_PROMPTS["Analyser"];
 
     let prompt: string;
     if (prevMessages.length === 0) {
-      prompt = `TASK: ${session.task}\n\nYou are the first agent. Provide your ${currentPhase} output.${filesContext}`;
+      prompt = `TASK: ${session.task}\n\nYou are the first agent. Provide your ${currentPhase} output.${filesContext}${sandboxContext}`;
     } else {
-      prompt = `TASK: ${session.task}\n\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nLOOP: ${loopCount + 1}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
+      prompt = `TASK: ${session.task}\n\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nLOOP: ${loopCount + 1}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
     }
 
     await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
