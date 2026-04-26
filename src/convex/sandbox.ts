@@ -58,24 +58,50 @@ interface DaytonaPreviewUrl {
   url?: string;
 }
 
-// Helper: write a file to sandbox via shell command (base64 encoded to handle special chars)
-async function writeFileToSandbox(sandboxId: string, apiKey: string, filepath: string, content: string): Promise<void> {
-  // Create parent directory
-  const dir = filepath.includes("/") ? filepath.substring(0, filepath.lastIndexOf("/")) : "";
-  if (dir) {
-    await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ command: `mkdir -p /home/daytona/${dir}` }),
-    }).catch(() => {});
+// Helper: write a file to sandbox via Daytona file upload API (correct multipart format)
+async function writeFileToSandbox(sandboxId: string, apiKey: string, filepath: string, content: string): Promise<{ ok: boolean; error?: string }> {
+  const absolutePath = `/home/daytona/${filepath}`;
+  
+  // Use the correct Daytona upload API format: multipart with files[0].path and files[0].file fields
+  const boundary = `----FormBoundary${Date.now()}`;
+  const contentBytes = Buffer.from(content, "utf8");
+  
+  // Build multipart body manually
+  const parts: Buffer[] = [];
+  // files[0].path field
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="files[0].path"\r\n\r\n${absolutePath}\r\n`
+  ));
+  // files[0].file field
+  const filename = filepath.split("/").pop() || "file";
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="files[0].file"; filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`
+  ));
+  parts.push(contentBytes);
+  parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+  
+  const body = Buffer.concat(parts);
+  
+  try {
+    const res = await fetch(
+      `${DAYTONA_API}/toolbox/${sandboxId}/toolbox/files/upload`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        },
+        body,
+      }
+    );
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      return { ok: false, error: `Upload API error ${res.status}: ${errText.slice(0, 200)}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
-  // Write file content using base64 to handle special characters
-  const b64 = Buffer.from(content, "utf8").toString("base64");
-  await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json", "Accept": "application/json" },
-    body: JSON.stringify({ command: `echo '${b64}' | base64 -d > /home/daytona/${filepath}` }),
-  }).catch(() => {});
 }
 
 // Create a new sandbox
@@ -202,7 +228,7 @@ export const autoDeployAndStart = action({
     sandboxDbId: v.id("sandboxes"),
     sessionId: v.id("teamSessions"),
   },
-  handler: async (ctx, args): Promise<{ previewUrl: string | null; deployedFiles: number }> => {
+  handler: async (ctx, args): Promise<{ previewUrl: string | null; deployedFiles: number; errors: string[] }> => {
     const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, {
       token: args.token,
     })) as Id<"users"> | null;
@@ -220,11 +246,19 @@ export const autoDeployAndStart = action({
       sessionId: args.sessionId,
     })) as Array<{ filepath: string; content: string }>;
 
-    const apiKey = getApiKey();
+    if (files.length === 0) {
+      return { previewUrl: null, deployedFiles: 0, errors: ["No files to deploy"] };
+    }
 
-    // Write all files using shell commands (base64 encoded)
+    const apiKey = getApiKey();
+    const errors: string[] = [];
+
+    // Write all files using the upload API
     for (const file of files) {
-      await writeFileToSandbox(sandboxRecord.sandboxId, apiKey, file.filepath, file.content);
+      const result = await writeFileToSandbox(sandboxRecord.sandboxId, apiKey, file.filepath, file.content);
+      if (!result.ok && result.error) {
+        errors.push(`${file.filepath}: ${result.error}`);
+      }
     }
 
     // Run npm install and start in background
@@ -249,7 +283,7 @@ export const autoDeployAndStart = action({
       }
     } catch { /* preview URL may not be available yet */ }
 
-    return { previewUrl, deployedFiles: files.length };
+    return { previewUrl, deployedFiles: files.length, errors };
   },
 });
 
