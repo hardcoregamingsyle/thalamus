@@ -398,17 +398,13 @@ export default function TeamPortal() {
     setIsSandboxLoading(true);
     try {
       const result = await testFileWriteAction({ token, sandboxDbId: activeSandboxId });
-      const lines = [
-        `Sandbox: ${result.sandboxId?.slice(-8)}`,
-        `Upload API: HTTP ${result.uploadApiStatus} → ${result.uploadApiBody?.slice(0, 60)}`,
-        `Shell: ${result.shellResult?.slice(0, 80)}`,
-        `Verify: ${result.verifyResult?.slice(0, 80)}`,
-      ].join(" | ");
       if (result.success) {
-        toast.success(`✓ File write OK (${result.method}): ${lines}`);
+        toast.success(`✓ File write OK`);
       } else {
-        toast.error(`✗ File write FAILED: ${lines}`);
+        toast.error(`✗ File write FAILED`);
       }
+      // Show output in terminal
+      setSandboxOutput(prev => [...prev, { cmd: "TEST WRITE", out: result.output, code: result.success ? 0 : 1 }]);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Test failed");
     } finally { setIsSandboxLoading(false); }
