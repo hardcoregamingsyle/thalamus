@@ -97,9 +97,14 @@ export interface SearchOp {
   query: string;
 }
 
+export interface CmdOp {
+  command: string;
+}
+
 export interface ParsedOutput {
   fileOps: FileOp[];
   searchOps: SearchOp[];
+  cmdOps: CmdOp[];
   cleanContent: string;
   testerResult?: "pass" | "fail";
   testerFailReason?: string;
@@ -110,6 +115,7 @@ export interface ParsedOutput {
 export function parseAgentOutput(content: string): ParsedOutput {
   const fileOps: FileOp[] = [];
   const searchOps: SearchOp[] = [];
+  const cmdOps: CmdOp[] = [];
   let cleanContent = content;
 
   const createRegex = /<<<<<CREATEFILE="([^"]+)">>>>>([\s\S]*?)<<<<<END\.CREATEFILE>>>>>/g;
@@ -133,6 +139,12 @@ export function parseAgentOutput(content: string): ParsedOutput {
   for (const m of content.matchAll(/<<<<<SEARCH-TOOL="([^"]+)">>>>>/g)) {
     searchOps.push({ query: m[1] });
     cleanContent = cleanContent.replace(m[0], `[SEARCHING: ${m[1]}]`);
+  }
+
+  // Parse RUN-CMD commands
+  for (const m of content.matchAll(/<<<<<RUN-CMD="([^"]+)">>>>>/g)) {
+    cmdOps.push({ command: m[1] });
+    cleanContent = cleanContent.replace(m[0], `[CMD: ${m[1]}]`);
   }
 
   let testerResult: "pass" | "fail" | undefined;
@@ -161,8 +173,23 @@ export function parseAgentOutput(content: string): ParsedOutput {
   if (content.match(/<<<<<pass>>>>>/i) && !content.includes("<<<<<fail>>>>>")) criticResult = "pass";
   else if (content.includes("<<<<<Fail>>>>>") || content.includes("<<<<<fail>>>>>")) criticResult = "fail";
 
-  return { fileOps, searchOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult };
+  return { fileOps, searchOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult };
 }
+
+const SANDBOX_CMD_INSTRUCTIONS = `
+You have access to a live sandbox environment. You can run shell commands to test, build, install dependencies, and verify your work:
+
+Run a command:
+<<<<<RUN-CMD="your shell command here">>>>>
+
+Examples:
+<<<<<RUN-CMD="npm install">>>>> 
+<<<<<RUN-CMD="node index.js">>>>> 
+<<<<<RUN-CMD="npm test">>>>> 
+<<<<<RUN-CMD="ls -la">>>>> 
+
+After you use RUN-CMD, you will receive the output and can run more commands or adjust your work based on the results. Use this to verify your implementation works correctly.
+`;
 
 export const AGENT_SYSTEM_PROMPTS: Record<string, string> = {
   Analyser: `You are the Analyser agent in a vibe coding team building a complete project from scratch.
@@ -204,7 +231,8 @@ RULES:
 - Create EVERY file needed for the project to work
 - Include ALL config files (package.json, tsconfig.json, etc.)
 - Write COMPLETE, WORKING code - no placeholders, no TODOs
-- Start with "## Implementation" header`,
+- Start with "## Implementation" header
+${SANDBOX_CMD_INSTRUCTIONS}`,
 
   Optimiser: `You are the Optimiser agent in a vibe coding team.
 
@@ -218,7 +246,8 @@ Search for optimization techniques:
 <<<<<SEARCH-TOOL="optimization technique">>>>> 
 
 Focus on: performance, bundle size, caching, algorithms, memory usage.
-Start with "## Optimisation" header`,
+Start with "## Optimisation" header
+${SANDBOX_CMD_INSTRUCTIONS}`,
 
   Tester: `You are the Tester agent in a vibe coding team.
 
@@ -232,7 +261,8 @@ After testing, you MUST output ONE of these:
 - If all tests pass: <<<<<test.success>>>>>
 - If tests fail: <<<<<test.failed="detailed reasons and bugs found">>>>> 
 
-Start with "## Testing" header`,
+Start with "## Testing" header
+${SANDBOX_CMD_INSTRUCTIONS}`,
 
   Hacker: `You are the Hacker agent in a vibe coding team.
 
@@ -246,7 +276,8 @@ After security review, you MUST output ONE of these:
 - If secure: <<<<<pass>>>>>
 - If critical vulnerabilities remain: <<<<<Fail>>>>>
 
-Start with "## Security Analysis" header`,
+Start with "## Security Analysis" header
+${SANDBOX_CMD_INSTRUCTIONS}`,
 
   Critic: `You are the Critic agent in a vibe coding team.
 
@@ -256,5 +287,6 @@ After review, you MUST output ONE of these:
 - If project is complete and good: <<<<<pass>>>>>
 - If significant issues remain: <<<<<Fail>>>>>
 
-Start with "## Critical Review" header`,
+Start with "## Critical Review" header
+${SANDBOX_CMD_INSTRUCTIONS}`,
 };
