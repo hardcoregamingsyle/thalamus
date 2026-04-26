@@ -114,10 +114,11 @@ export const executeCommand = action({
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
     if (sandboxRecord.status !== "running") throw new Error("Sandbox is not running");
 
-    // Execute command via toolbox REST API
+    // Execute command via toolbox REST API - always from /workspace
+    const wrappedCommand = args.command.startsWith("cd ") ? args.command : `cd /workspace && ${args.command}`;
     const response = await daytonaFetch(`/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
       method: "POST",
-      body: JSON.stringify({ command: args.command }),
+      body: JSON.stringify({ command: wrappedCommand }),
     }) as DaytonaExecResponse;
 
     const output = response.result ?? "";
