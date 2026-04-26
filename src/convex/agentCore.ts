@@ -70,51 +70,59 @@ interface GeminiTeamResponse {
   usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
 }
 
+const RETRIES_PER_KEY = 3; // retry same key this many times before moving on
+
 export async function callGemini(prompt: string, systemPrompt: string, maxTokens = 4096): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
-  const maxRetries = GEMINI_KEYS.length * 3; // try each key three times
   let lastError: unknown;
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
+  // Try each key, retrying the same key RETRIES_PER_KEY times before switching
+  for (let keyAttempt = 0; keyAttempt < GEMINI_KEYS.length; keyAttempt++) {
     const key = GEMINI_KEYS[keyIndex % GEMINI_KEYS.length];
     keyIndex = (keyIndex + 1) % GEMINI_KEYS.length;
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
-          }),
+
+    for (let retry = 0; retry < RETRIES_PER_KEY; retry++) {
+      try {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: systemPrompt }] },
+              contents: [{ role: "user", parts: [{ text: prompt }] }],
+              generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
+            }),
+          }
+        );
+        if (!response.ok) {
+          const errText = await response.text().catch(() => "");
+          lastError = new Error(`Gemini API error ${response.status}: ${errText.slice(0, 200)}`);
+          if (response.status === 429 || response.status >= 500) {
+            // Wait before retrying same key; longer for rate limits
+            const delay = response.status === 429 ? 3000 * (retry + 1) : 1500 * (retry + 1);
+            await new Promise(r => setTimeout(r, delay));
+            continue; // retry same key
+          }
+          break; // non-retryable error (4xx other than 429) — move to next key
         }
-      );
-      if (!response.ok) {
-        const errText = await response.text().catch(() => "");
-        lastError = new Error(`Gemini API error ${response.status}: ${errText.slice(0, 200)}`);
-        // For rate limit (429) or server errors (500/503), wait before retrying
-        if (response.status === 429 || response.status >= 500) {
-          const delay = response.status === 429 ? 2000 : 1000;
-          await new Promise(r => setTimeout(r, delay));
+        const data = await response.json() as GeminiTeamResponse;
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) {
+          lastError = new Error("No response from Gemini");
+          await new Promise(r => setTimeout(r, 1000));
+          continue; // retry same key
         }
-        continue;
+        return {
+          text,
+          inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
+          outputTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
+        };
+      } catch (err) {
+        lastError = err;
+        // Network error - wait then retry same key
+        await new Promise(r => setTimeout(r, 1000 * (retry + 1)));
       }
-      const data = await response.json() as GeminiTeamResponse;
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) {
-        lastError = new Error("No response from Gemini");
-        continue;
-      }
-      return {
-        text,
-        inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
-        outputTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
-      };
-    } catch (err) {
-      lastError = err;
-      // Network error - brief wait then try next key
-      await new Promise(r => setTimeout(r, 500));
     }
+    // All retries for this key exhausted, move to next key
   }
   throw lastError ?? new Error("All Gemini API keys exhausted");
 }
