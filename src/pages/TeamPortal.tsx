@@ -374,8 +374,14 @@ export default function TeamPortal() {
     try {
       const result = await autoDeployAndStartAction({ token, sandboxDbId: activeSandboxId, sessionId: activeSessionId });
       if (result.errors && result.errors.length > 0) {
-        toast.warning(`Deploy: ${result.deployedFiles} files, ${result.errors.length} errors. First: ${result.errors[0].slice(0, 100)}`);
-      } else if (result.previewUrl) {
+        setSandboxOutput(prev => [...prev, {
+          cmd: "DEPLOY",
+          out: `Deployed ${result.deployedFiles} files with ${result.errors.length} error(s):\n${result.errors.slice(0, 5).join("\n")}`,
+          code: 1,
+        }]);
+        toast.warning(`Deploy: ${result.deployedFiles} files, ${result.errors.length} errors`);
+      }
+      if (result.previewUrl) {
         setPreviewUrl(result.previewUrl);
         setActiveTab("preview");
         toast.success(`Deployed ${result.deployedFiles} files → Preview ready!`);
@@ -392,10 +398,16 @@ export default function TeamPortal() {
     setIsSandboxLoading(true);
     try {
       const result = await testFileWriteAction({ token, sandboxDbId: activeSandboxId });
+      const lines = [
+        `Sandbox: ${result.sandboxId?.slice(-8)}`,
+        `Upload API: HTTP ${result.uploadApiStatus} → ${result.uploadApiBody?.slice(0, 60)}`,
+        `Shell: ${result.shellResult?.slice(0, 80)}`,
+        `Verify: ${result.verifyResult?.slice(0, 80)}`,
+      ].join(" | ");
       if (result.success) {
-        toast.success(`File write OK: ${result.output?.slice(0, 100)}`);
+        toast.success(`✓ File write OK (${result.method}): ${lines}`);
       } else {
-        toast.error(`File write FAILED: ${result.error?.slice(0, 150)}`);
+        toast.error(`✗ File write FAILED: ${lines}`);
       }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Test failed");
