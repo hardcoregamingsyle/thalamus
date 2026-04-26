@@ -1,17 +1,24 @@
 "use node";
-import { action, internalMutation, internalQuery } from "./_generated/server";
+import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { Daytona } from "@daytona/sdk";
 
-// $0.075 per hour = 0.075/3600 per second = 7.5 cents per hour
+// $0.075 per hour = 7.5 cents per hour
 const COST_CENTS_PER_HOUR = 7.5;
 
 function getDaytona() {
   const apiKey = process.env.DAYTONA_API_KEY;
   if (!apiKey) throw new Error("DAYTONA_API_KEY not configured");
   return new Daytona({ apiKey });
+}
+
+interface SandboxRecord {
+  sandboxId: string;
+  userId: Id<"users">;
+  createdAt: number;
+  status: string;
 }
 
 // Create a new sandbox
@@ -29,12 +36,10 @@ export const createSandbox = action({
 
     const daytona = getDaytona();
 
-    // Create ephemeral sandbox with 1 vCPU
+    // Create sandbox with language only (1 vCPU default)
     const sandbox = await daytona.create({
       language: "typescript",
-      resources: { cpu: 1, memory: 2, disk: 8 },
-      ephemeral: true,
-      autoStopInterval: 30, // auto-stop after 30 min idle
+      envVars: { NODE_ENV: "development" },
     });
 
     const sandboxDbId = await ctx.runMutation(internal.sandboxHelpers.insertSandbox, {
@@ -46,7 +51,7 @@ export const createSandbox = action({
       createdAt: Date.now(),
     });
 
-    return { sandboxDbId, sandboxId: sandbox.id };
+    return { sandboxDbId: sandboxDbId as string, sandboxId: sandbox.id };
   },
 });
 
@@ -65,7 +70,7 @@ export const executeCommand = action({
 
     const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, {
       sandboxDbId: args.sandboxDbId,
-    })) as { sandboxId: string; userId: Id<"users">; createdAt: number; status: string } | null;
+    })) as SandboxRecord | null;
 
     if (!sandboxRecord) throw new Error("Sandbox not found");
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
@@ -78,7 +83,6 @@ export const executeCommand = action({
     const output = response.result ?? "";
     const exitCode = response.exitCode ?? 0;
 
-    // Calculate cost so far
     const elapsedHours = (Date.now() - sandboxRecord.createdAt) / 3600000;
     const costCents = Math.round(elapsedHours * COST_CENTS_PER_HOUR * 100) / 100;
 
@@ -109,7 +113,7 @@ export const uploadFile = action({
 
     const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, {
       sandboxDbId: args.sandboxDbId,
-    })) as { sandboxId: string; userId: Id<"users">; status: string } | null;
+    })) as SandboxRecord | null;
 
     if (!sandboxRecord) throw new Error("Sandbox not found");
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
@@ -140,7 +144,7 @@ export const deployProjectFiles = action({
 
     const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, {
       sandboxDbId: args.sandboxDbId,
-    })) as { sandboxId: string; userId: Id<"users">; status: string } | null;
+    })) as SandboxRecord | null;
 
     if (!sandboxRecord) throw new Error("Sandbox not found");
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
@@ -153,7 +157,6 @@ export const deployProjectFiles = action({
     const daytona = getDaytona();
     const sandbox = await daytona.get(sandboxRecord.sandboxId);
 
-    // Upload all files
     for (const file of files) {
       const buffer = Buffer.from(file.content, "utf-8");
       await sandbox.fs.uploadFile(buffer, `/workspace/${file.filepath}`);
@@ -177,7 +180,7 @@ export const stopSandbox = action({
 
     const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, {
       sandboxDbId: args.sandboxDbId,
-    })) as { sandboxId: string; userId: Id<"users">; createdAt: number; status: string } | null;
+    })) as SandboxRecord | null;
 
     if (!sandboxRecord) throw new Error("Sandbox not found");
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
@@ -200,7 +203,6 @@ export const stopSandbox = action({
       stoppedAt: Date.now(),
     });
 
-    // Add cost to user total
     await ctx.runMutation(internal.sandboxHelpers.addUserCost, {
       userId,
       costCents,
@@ -210,15 +212,28 @@ export const stopSandbox = action({
   },
 });
 
+interface SandboxRow {
+  _id: string;
+  sandboxId: string;
+  status: string;
+  label?: string;
+  createdAt: number;
+  stoppedAt?: number;
+  costCents?: number;
+  lastCommand?: string;
+  lastOutput?: string;
+  sessionId?: string;
+}
+
 // List user sandboxes
 export const listSandboxes = action({
   args: { token: v.string() },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<SandboxRow[]> => {
     const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, {
       token: args.token,
     })) as Id<"users"> | null;
     if (!userId) return [];
 
-    return await ctx.runQuery(internal.sandboxHelpers.listUserSandboxes, { userId });
+    return (await ctx.runQuery(internal.sandboxHelpers.listUserSandboxes, { userId })) as SandboxRow[];
   },
 });
