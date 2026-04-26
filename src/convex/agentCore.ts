@@ -71,14 +71,14 @@ interface GeminiTeamResponse {
 }
 
 export async function callGemini(prompt: string, systemPrompt: string, maxTokens = 4096): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
-  const maxRetries = GEMINI_KEYS.length * 2; // try each key twice
+  const maxRetries = GEMINI_KEYS.length * 3; // try each key three times
   let lastError: unknown;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const key = GEMINI_KEYS[keyIndex % GEMINI_KEYS.length];
     keyIndex = (keyIndex + 1) % GEMINI_KEYS.length;
     try {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${key}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -90,9 +90,13 @@ export async function callGemini(prompt: string, systemPrompt: string, maxTokens
         }
       );
       if (!response.ok) {
-        // On any error status, try next key
         const errText = await response.text().catch(() => "");
         lastError = new Error(`Gemini API error ${response.status}: ${errText.slice(0, 200)}`);
+        // For rate limit (429) or server errors (500/503), wait before retrying
+        if (response.status === 429 || response.status >= 500) {
+          const delay = response.status === 429 ? 2000 : 1000;
+          await new Promise(r => setTimeout(r, delay));
+        }
         continue;
       }
       const data = await response.json() as GeminiTeamResponse;
@@ -108,7 +112,8 @@ export async function callGemini(prompt: string, systemPrompt: string, maxTokens
       };
     } catch (err) {
       lastError = err;
-      // Network error - try next key
+      // Network error - brief wait then try next key
+      await new Promise(r => setTimeout(r, 500));
     }
   }
   throw lastError ?? new Error("All Gemini API keys exhausted");
