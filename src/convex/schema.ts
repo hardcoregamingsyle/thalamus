@@ -113,6 +113,7 @@ const schema = defineSchema(
       costCents: v.optional(v.number()),
       lastCommand: v.optional(v.string()),
       lastOutput: v.optional(v.string()),
+      previewUrl: v.optional(v.string()),
     })
       .index("by_user", ["userId"])
       .index("by_session", ["sessionId"])

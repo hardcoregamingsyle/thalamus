@@ -54,6 +54,10 @@ interface DaytonaExecResponse {
   exitCode?: number;
 }
 
+interface DaytonaPreviewUrl {
+  url?: string;
+}
+
 // Create a new sandbox
 export const createSandbox = action({
   args: {
@@ -133,6 +137,114 @@ export const executeCommand = action({
   },
 });
 
+// Get preview URL for a sandbox port (default port 3000)
+export const getPreviewUrl = action({
+  args: {
+    token: v.string(),
+    sandboxDbId: v.id("sandboxes"),
+    port: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<{ previewUrl: string | null }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, {
+      token: args.token,
+    })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, {
+      sandboxDbId: args.sandboxDbId,
+    })) as SandboxRecord | null;
+
+    if (!sandboxRecord) throw new Error("Sandbox not found");
+    if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
+
+    const port = args.port ?? 3000;
+    try {
+      const data = await daytonaFetch(`/sandbox/${sandboxRecord.sandboxId}/ports/${port}/preview-url`) as DaytonaPreviewUrl;
+      const previewUrl = data.url ?? null;
+      if (previewUrl) {
+        await ctx.runMutation(internal.sandboxHelpers.updatePreviewUrl, {
+          sandboxDbId: args.sandboxDbId,
+          previewUrl,
+        });
+      }
+      return { previewUrl };
+    } catch {
+      return { previewUrl: null };
+    }
+  },
+});
+
+// Auto-deploy project files and start the app
+export const autoDeployAndStart = action({
+  args: {
+    token: v.string(),
+    sandboxDbId: v.id("sandboxes"),
+    sessionId: v.id("teamSessions"),
+  },
+  handler: async (ctx, args): Promise<{ previewUrl: string | null; deployedFiles: number }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, {
+      token: args.token,
+    })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, {
+      sandboxDbId: args.sandboxDbId,
+    })) as SandboxRecord | null;
+
+    if (!sandboxRecord) throw new Error("Sandbox not found");
+    if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
+    if (sandboxRecord.status !== "running") throw new Error("Sandbox is not running");
+
+    const files = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, {
+      sessionId: args.sessionId,
+    })) as Array<{ filepath: string; content: string }>;
+
+    const apiKey = getApiKey();
+
+    // Upload all files to /workspace/
+    for (const file of files) {
+      const targetPath = `/workspace/${file.filepath}`;
+      const blob = new Blob([file.content], { type: "application/octet-stream" });
+      const formData = new FormData();
+      formData.append("file", blob, file.filepath.split("/").pop() || "file");
+      try {
+        await fetch(
+          `${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/files/upload?path=${encodeURIComponent(targetPath)}`,
+          {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${apiKey}` },
+            body: formData,
+          }
+        );
+      } catch { /* skip failed uploads */ }
+    }
+
+    // Run npm install and start in background
+    try {
+      await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
+        method: "POST",
+        headers: { ...daytonaHeaders(apiKey) },
+        body: JSON.stringify({ command: "cd /workspace && npm install 2>&1 | tail -5 && npm start &" }),
+      });
+    } catch { /* ignore start errors */ }
+
+    // Get preview URL for port 3000
+    let previewUrl: string | null = null;
+    try {
+      const data = await daytonaFetch(`/sandbox/${sandboxRecord.sandboxId}/ports/3000/preview-url`) as DaytonaPreviewUrl;
+      previewUrl = data.url ?? null;
+      if (previewUrl) {
+        await ctx.runMutation(internal.sandboxHelpers.updatePreviewUrl, {
+          sandboxDbId: args.sandboxDbId,
+          previewUrl,
+        });
+      }
+    } catch { /* preview URL may not be available yet */ }
+
+    return { previewUrl, deployedFiles: files.length };
+  },
+});
+
 // Upload a file to sandbox
 export const uploadFile = action({
   args: {
@@ -155,7 +267,6 @@ export const uploadFile = action({
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
     if (sandboxRecord.status !== "running") throw new Error("Sandbox is not running");
 
-    // Upload file via toolbox REST API using multipart form
     const apiKey = getApiKey();
     const blob = new Blob([args.content], { type: "application/octet-stream" });
     const formData = new FormData();
@@ -244,12 +355,9 @@ export const stopSandbox = action({
     if (!sandboxRecord) throw new Error("Sandbox not found");
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
 
-    // Delete sandbox via REST API
     try {
       await daytonaFetch(`/sandbox/${sandboxRecord.sandboxId}`, { method: "DELETE" });
-    } catch {
-      // Sandbox may already be gone
-    }
+    } catch { /* Sandbox may already be gone */ }
 
     const elapsedHours = (Date.now() - sandboxRecord.createdAt) / 3600000;
     const costCents = Math.round(elapsedHours * COST_CENTS_PER_HOUR * 100) / 100;
@@ -280,6 +388,7 @@ interface SandboxRow {
   lastCommand?: string;
   lastOutput?: string;
   sessionId?: string;
+  previewUrl?: string;
 }
 
 // List user sandboxes
