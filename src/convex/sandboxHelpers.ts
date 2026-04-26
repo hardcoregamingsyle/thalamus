@@ -30,6 +30,18 @@ export const getSandbox = internalQuery({
   },
 });
 
+export const getSandboxBySession = internalQuery({
+  args: { sessionId: v.id("teamSessions") },
+  handler: async (ctx, args) => {
+    const sandboxes = await ctx.db
+      .query("sandboxes")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .order("desc")
+      .take(1);
+    return sandboxes[0] ?? null;
+  },
+});
+
 export const updateSandboxCommand = internalMutation({
   args: {
     sandboxDbId: v.id("sandboxes"),
