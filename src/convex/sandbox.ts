@@ -58,6 +58,26 @@ interface DaytonaPreviewUrl {
   url?: string;
 }
 
+// Helper: write a file to sandbox via shell command (base64 encoded to handle special chars)
+async function writeFileToSandbox(sandboxId: string, apiKey: string, filepath: string, content: string): Promise<void> {
+  // Create parent directory
+  const dir = filepath.includes("/") ? filepath.substring(0, filepath.lastIndexOf("/")) : "";
+  if (dir) {
+    await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ command: `mkdir -p /home/daytona/${dir}` }),
+    }).catch(() => {});
+  }
+  // Write file content using base64 to handle special characters
+  const b64 = Buffer.from(content, "utf8").toString("base64");
+  await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({ command: `echo '${b64}' | base64 -d > /home/daytona/${filepath}` }),
+  }).catch(() => {});
+}
+
 // Create a new sandbox
 export const createSandbox = action({
   args: {
@@ -202,30 +222,17 @@ export const autoDeployAndStart = action({
 
     const apiKey = getApiKey();
 
-    // Upload all files to /home/daytona/
+    // Write all files using shell commands (base64 encoded)
     for (const file of files) {
-      const targetPath = `/home/daytona/${file.filepath}`;
-      const blob = new Blob([file.content], { type: "application/octet-stream" });
-      const formData = new FormData();
-      formData.append("file", blob, file.filepath.split("/").pop() || "file");
-      try {
-        await fetch(
-          `${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/files/upload?path=${encodeURIComponent(targetPath)}`,
-          {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${apiKey}` },
-            body: formData,
-          }
-        );
-      } catch { /* skip failed uploads */ }
+      await writeFileToSandbox(sandboxRecord.sandboxId, apiKey, file.filepath, file.content);
     }
 
     // Run npm install and start in background
     try {
       await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
         method: "POST",
-        headers: { ...daytonaHeaders(apiKey) },
-        body: JSON.stringify({ command: "cd /home/daytona && npm install 2>&1 | tail -5 && npm start &" }),
+        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ command: "cd /home/daytona && npm install 2>&1 | tail -5 && (npm start &) 2>&1 | head -3" }),
       });
     } catch { /* ignore start errors */ }
 
@@ -318,19 +325,7 @@ export const deployProjectFiles = action({
     const apiKey = getApiKey();
 
     for (const file of files) {
-      const targetPath = `/home/daytona/${file.filepath}`;
-      const blob = new Blob([file.content], { type: "application/octet-stream" });
-      const formData = new FormData();
-      formData.append("file", blob, file.filepath.split("/").pop() || "file");
-
-      await fetch(
-        `${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/files/upload?path=${encodeURIComponent(targetPath)}`,
-        {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${apiKey}` },
-          body: formData,
-        }
-      );
+      await writeFileToSandbox(sandboxRecord.sandboxId, apiKey, file.filepath, file.content);
     }
 
     return { filesDeployed: files.length };
