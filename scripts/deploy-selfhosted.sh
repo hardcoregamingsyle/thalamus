@@ -1,13 +1,13 @@
 #!/bin/bash
 # Deploy Convex functions to self-hosted instance
 SELF_HOSTED_URL="https://leadshello-agent-ai.hf.space"
-ADMIN_KEY="leadshello-agent-ai|01e46350b80a68cb0bd6660e0d01f3afd038968dd0120d8d88244ebbc9402fa92c537ddc67"
+ADMIN_KEY="leadshello-agent-ai|01616f09335f2d17d0dac5d1723b5598a0d57c70a50f30027d1adfd0ceb64b85b7ad6b482a"
 
 echo "Deploying to self-hosted Convex at $SELF_HOSTED_URL..."
 
 cat > /tmp/convex-selfhosted.env << 'EOF'
 CONVEX_SELF_HOSTED_URL="https://leadshello-agent-ai.hf.space"
-CONVEX_SELF_HOSTED_ADMIN_KEY="leadshello-agent-ai|01e46350b80a68cb0bd6660e0d01f3afd038968dd0120d8d88244ebbc9402fa92c537ddc67"
+CONVEX_SELF_HOSTED_ADMIN_KEY="leadshello-agent-ai|01616f09335f2d17d0dac5d1723b5598a0d57c70a50f30027d1adfd0ceb64b85b7ad6b482a"
 EOF
 
 npx convex deploy --env-file /tmp/convex-selfhosted.env
