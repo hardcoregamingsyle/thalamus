@@ -73,6 +73,9 @@ const schema = defineSchema(
       status: v.union(v.literal("running"), v.literal("completed"), v.literal("idle")),
       currentAgent: v.optional(v.string()),
       round: v.optional(v.number()),
+      loopCount: v.optional(v.number()),
+      phase: v.optional(v.string()),
+      totalMessages: v.optional(v.number()),
     })
       .index("by_user", ["userId"]),
 
@@ -80,11 +83,23 @@ const schema = defineSchema(
     agentMessages: defineTable({
       sessionId: v.id("teamSessions"),
       userId: v.id("users"),
-      agent: v.string(), // "user" | "Analyser" | "Coder" | "Optimiser" | "Tester" | "Hacker" | "Critic"
+      agent: v.string(),
       content: v.string(),
       round: v.optional(v.number()),
+      messageIndex: v.optional(v.number()),
     })
       .index("by_session", ["sessionId"]),
+
+    // Project files created by agents
+    projectFiles: defineTable({
+      sessionId: v.id("teamSessions"),
+      userId: v.id("users"),
+      filepath: v.string(),
+      content: v.string(),
+      lastModifiedBy: v.string(),
+    })
+      .index("by_session", ["sessionId"])
+      .index("by_session_and_path", ["sessionId", "filepath"]),
   },
   {
     schemaValidation: false,
