@@ -7,11 +7,11 @@ import { Id } from "./_generated/dataModel";
 // $0.075 per hour = 7.5 cents per hour
 const COST_CENTS_PER_HOUR = 7.5;
 const DAYTONA_API = "https://app.daytona.io/api";
+// Hardcoded fallback - same key used in agentTeam.ts
+const DAYTONA_API_KEY_FALLBACK = "dtn_7f36b63fc707555bd843029875fb29caf44e4607c2b3ab29a28c73c737e450b5";
 
 function getApiKey(): string {
-  const apiKey = process.env.DAYTONA_API_KEY;
-  if (!apiKey) throw new Error("DAYTONA_API_KEY not configured");
-  return apiKey;
+  return process.env.DAYTONA_API_KEY || DAYTONA_API_KEY_FALLBACK;
 }
 
 function daytonaHeaders(apiKey: string) {

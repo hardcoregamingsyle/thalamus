@@ -9,6 +9,7 @@ const PIPELINE = ["Analyser", "Coder", "Optimiser", "Tester", "Hacker", "Critic"
 const MAX_MESSAGES = 60;
 const RAG_BASE_URL = "https://leadshello-graph-rag-and-chroma-db.hf.space";
 const DAYTONA_API = "https://app.daytona.io/api";
+const DAYTONA_API_KEY_FALLBACK = "dtn_7f36b63fc707555bd843029875fb29caf44e4607c2b3ab29a28c73c737e450b5";
 const MAX_CMD_LOOPS = 10; // max sandbox command iterations per agent round
 
 type SessionRow = {
@@ -33,8 +34,7 @@ interface DaytonaExecResponse {
 }
 
 async function executeSandboxCommand(sandboxId: string, command: string): Promise<{ output: string; exitCode: number }> {
-  const apiKey = process.env.DAYTONA_API_KEY;
-  if (!apiKey) return { output: "[SANDBOX UNAVAILABLE: DAYTONA_API_KEY not set]", exitCode: 1 };
+  const apiKey = process.env.DAYTONA_API_KEY || DAYTONA_API_KEY_FALLBACK;
 
   try {
     const res = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
