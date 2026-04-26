@@ -29,7 +29,6 @@ const schema = defineSchema(
       totalUsageCents: v.optional(v.number()),
     }).index("email", ["email"]),
 
-    // Custom OTP system - bypasses JWT auth
     otpCodes: defineTable({
       email: v.string(),
       code: v.string(),
@@ -65,6 +64,27 @@ const schema = defineSchema(
     })
       .index("by_conversation", ["conversationId"])
       .index("by_user", ["userId"]),
+
+    // Multi-agent team sessions
+    teamSessions: defineTable({
+      userId: v.id("users"),
+      title: v.string(),
+      task: v.string(),
+      status: v.union(v.literal("running"), v.literal("completed"), v.literal("idle")),
+      currentAgent: v.optional(v.string()),
+      round: v.optional(v.number()),
+    })
+      .index("by_user", ["userId"]),
+
+    // Agent messages in team sessions
+    agentMessages: defineTable({
+      sessionId: v.id("teamSessions"),
+      userId: v.id("users"),
+      agent: v.string(), // "user" | "Analyser" | "Coder" | "Optimiser" | "Tester" | "Hacker" | "Critic"
+      content: v.string(),
+      round: v.optional(v.number()),
+    })
+      .index("by_session", ["sessionId"]),
   },
   {
     schemaValidation: false,
