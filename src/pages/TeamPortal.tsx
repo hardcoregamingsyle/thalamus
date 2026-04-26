@@ -211,7 +211,10 @@ export default function TeamPortal() {
       setTask("");
       await loadSessions();
       await loadSessionData(sessionId);
-      toast.success("Session created! Click AUTO RUN to start.");
+      toast.success("Session created! Starting agents...");
+      // Auto-start running immediately
+      autoRunRef.current = true;
+      setAutoRun(true);
     } catch { toast.error("Failed to create session"); }
     finally { setIsRunning(false); }
   };
@@ -226,7 +229,10 @@ export default function TeamPortal() {
       setProjectFiles([]);
       await loadSessionData(activeSessionId);
       await loadSessions();
-      toast.success("New task set! Click AUTO RUN to start.");
+      toast.success("New task set! Starting agents...");
+      // Auto-start running immediately
+      autoRunRef.current = true;
+      setAutoRun(true);
     } catch { toast.error("Failed to continue session"); }
     finally { setIsContinuing(false); }
   };
@@ -275,11 +281,14 @@ export default function TeamPortal() {
   }, [activeSessionId, token, isRunning, runAgentRound, loadSessionData, loadSessions, activeSandboxId, activeSandbox, autoDeployAndStartAction]);
 
   useEffect(() => {
-    if (!autoRun || isRunning || !activeSessionId || !sessionInfo) return;
-    if (sessionInfo.status === "completed" || sessionInfo.totalMessages >= MAX_MESSAGES) {
-      setAutoRun(false); autoRunRef.current = false; return;
+    if (!autoRun || isRunning || !activeSessionId) return;
+    // If sessionInfo not loaded yet, still try to run (session was just created)
+    if (sessionInfo) {
+      if (sessionInfo.status === "completed" || sessionInfo.totalMessages >= MAX_MESSAGES) {
+        setAutoRun(false); autoRunRef.current = false; return;
+      }
     }
-    const timer = setTimeout(() => { if (autoRunRef.current) handleRunNextAgent(); }, 500);
+    const timer = setTimeout(() => { if (autoRunRef.current) handleRunNextAgent(); }, 800);
     return () => clearTimeout(timer);
   }, [autoRun, isRunning, sessionInfo, activeSessionId, handleRunNextAgent]);
 
@@ -494,7 +503,7 @@ export default function TeamPortal() {
                       <textarea
                         value={task}
                         onChange={(e) => setTask(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter" && e.ctrlKey) handleCreateSession(); }}
+                        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleCreateSession(); } }}
                         placeholder="Build a React todo app with TypeScript, Tailwind, and local storage..."
                         className="w-full bg-background border border-border rounded-lg p-3 text-sm text-foreground placeholder:text-muted-foreground/50 resize-none focus:outline-none focus:border-primary transition-colors"
                         rows={4}
