@@ -7,7 +7,6 @@ import { Id } from "./_generated/dataModel";
 // $0.075 per hour = 7.5 cents per hour
 const COST_CENTS_PER_HOUR = 7.5;
 const DAYTONA_API = "https://app.daytona.io/api";
-// Hardcoded fallback - same key used in agentTeam.ts
 const DAYTONA_API_KEY_FALLBACK = "dtn_7f36b63fc707555bd843029875fb29caf44e4607c2b3ab29a28c73c737e450b5";
 
 function getApiKey(): string {
@@ -58,47 +57,52 @@ interface DaytonaPreviewUrl {
   url?: string;
 }
 
-// Helper: write a file to sandbox via Daytona file upload API (correct multipart format)
-async function writeFileToSandbox(sandboxId: string, apiKey: string, filepath: string, content: string): Promise<{ ok: boolean; error?: string }> {
+// Unified file write: tries multipart upload API first, falls back to base64 shell command
+async function writeFileToSandbox(sandboxId: string, apiKey: string, filepath: string, content: string): Promise<{ ok: boolean; method?: string; error?: string }> {
   const absolutePath = `/home/daytona/${filepath}`;
-  
-  // Use the correct Daytona upload API format: multipart with files[0].path and files[0].file fields
+
+  // Method 1: Daytona multipart upload API (files[i].path + files[i].file)
   const boundary = `----FormBoundary${Date.now()}`;
   const contentBytes = Buffer.from(content, "utf8");
-  
-  // Build multipart body manually
   const parts: Buffer[] = [];
-  // files[0].path field
-  parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="files[0].path"\r\n\r\n${absolutePath}\r\n`
-  ));
-  // files[0].file field
+  parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="files[0].path"\r\n\r\n${absolutePath}\r\n`));
   const filename = filepath.split("/").pop() || "file";
-  parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="files[0].file"; filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`
-  ));
+  parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="files[0].file"; filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`));
   parts.push(contentBytes);
   parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
-  
   const body = Buffer.concat(parts);
-  
+
   try {
-    const res = await fetch(
-      `${DAYTONA_API}/toolbox/${sandboxId}/toolbox/files/upload`,
-      {
+    const res = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/files/upload`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": `multipart/form-data; boundary=${boundary}` },
+      body,
+    });
+    if (res.ok) return { ok: true, method: "multipart" };
+    const errText = await res.text().catch(() => "");
+    // Fall through to shell method
+    const uploadErr = `Upload API ${res.status}: ${errText.slice(0, 100)}`;
+
+    // Method 2: base64 shell command fallback
+    const dir = filepath.includes("/") ? filepath.substring(0, filepath.lastIndexOf("/")) : "";
+    if (dir) {
+      await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
         method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": `multipart/form-data; boundary=${boundary}`,
-        },
-        body,
-      }
-    );
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      return { ok: false, error: `Upload API error ${res.status}: ${errText.slice(0, 200)}` };
+        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ command: `mkdir -p /home/daytona/${dir}` }),
+      }).catch(() => {});
     }
-    return { ok: true };
+    const b64 = Buffer.from(content, "utf8").toString("base64");
+    const shellRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ command: `printf '%s' '${b64}' | base64 -d > ${absolutePath} && echo ok` }),
+    });
+    if (shellRes.ok) {
+      const shellData = await shellRes.json() as DaytonaExecResponse;
+      if (shellData.result?.includes("ok")) return { ok: true, method: "shell" };
+    }
+    return { ok: false, error: `${uploadErr}; shell also failed` };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -229,65 +233,46 @@ export const autoDeployAndStart = action({
     sessionId: v.id("teamSessions"),
   },
   handler: async (ctx, args): Promise<{ previewUrl: string | null; deployedFiles: number; errors: string[] }> => {
-    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, {
-      token: args.token,
-    })) as Id<"users"> | null;
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
 
-    const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, {
-      sandboxDbId: args.sandboxDbId,
-    })) as SandboxRecord | null;
-
+    const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, { sandboxDbId: args.sandboxDbId })) as SandboxRecord | null;
     if (!sandboxRecord) throw new Error("Sandbox not found");
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
     if (sandboxRecord.status !== "running") throw new Error("Sandbox is not running");
 
-    const files = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, {
-      sessionId: args.sessionId,
-    })) as Array<{ filepath: string; content: string }>;
-
-    if (files.length === 0) {
-      return { previewUrl: null, deployedFiles: 0, errors: ["No files to deploy"] };
-    }
+    const files = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.sessionId })) as Array<{ filepath: string; content: string }>;
+    if (files.length === 0) return { previewUrl: null, deployedFiles: 0, errors: ["No files to deploy"] };
 
     const apiKey = getApiKey();
     const errors: string[] = [];
 
-    // Write all files using the upload API
     for (const file of files) {
       const result = await writeFileToSandbox(sandboxRecord.sandboxId, apiKey, file.filepath, file.content);
-      if (!result.ok && result.error) {
-        errors.push(`${file.filepath}: ${result.error}`);
-      }
+      if (!result.ok && result.error) errors.push(`${file.filepath}: ${result.error}`);
     }
 
     // Run npm install and start in background
     try {
       await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json", "Accept": "application/json" },
+        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({ command: "cd /home/daytona && npm install 2>&1 | tail -5 && (npm start &) 2>&1 | head -3" }),
       });
-    } catch { /* ignore start errors */ }
+    } catch { /* ignore */ }
 
-    // Get preview URL for port 3000
     let previewUrl: string | null = null;
     try {
       const data = await daytonaFetch(`/sandbox/${sandboxRecord.sandboxId}/ports/3000/preview-url`) as DaytonaPreviewUrl;
       previewUrl = data.url ?? null;
-      if (previewUrl) {
-        await ctx.runMutation(internal.sandboxHelpers.updatePreviewUrl, {
-          sandboxDbId: args.sandboxDbId,
-          previewUrl,
-        });
-      }
+      if (previewUrl) await ctx.runMutation(internal.sandboxHelpers.updatePreviewUrl, { sandboxDbId: args.sandboxDbId, previewUrl });
     } catch { /* preview URL may not be available yet */ }
 
     return { previewUrl, deployedFiles: files.length, errors };
   },
 });
 
-// Upload a file to sandbox
+// Upload a file to sandbox (aligned with writeFileToSandbox)
 export const uploadFile = action({
   args: {
     token: v.string(),
@@ -295,39 +280,19 @@ export const uploadFile = action({
     path: v.string(),
     content: v.string(),
   },
-  handler: async (ctx, args): Promise<{ success: boolean }> => {
-    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, {
-      token: args.token,
-    })) as Id<"users"> | null;
+  handler: async (ctx, args): Promise<{ success: boolean; method?: string }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
 
-    const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, {
-      sandboxDbId: args.sandboxDbId,
-    })) as SandboxRecord | null;
-
+    const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, { sandboxDbId: args.sandboxDbId })) as SandboxRecord | null;
     if (!sandboxRecord) throw new Error("Sandbox not found");
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
     if (sandboxRecord.status !== "running") throw new Error("Sandbox is not running");
 
     const apiKey = getApiKey();
-    const blob = new Blob([args.content], { type: "application/octet-stream" });
-    const formData = new FormData();
-    formData.append("file", blob, args.path.split("/").pop() || "file");
-
-    const res = await fetch(
-      `${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/files/upload?path=${encodeURIComponent(args.path)}`,
-      {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${apiKey}` },
-        body: formData,
-      }
-    );
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`File upload failed ${res.status}: ${text.slice(0, 200)}`);
-    }
-
-    return { success: true };
+    const result = await writeFileToSandbox(sandboxRecord.sandboxId, apiKey, args.path, args.content);
+    if (!result.ok) throw new Error(result.error || "File upload failed");
+    return { success: true, method: result.method };
   },
 });
 
@@ -338,31 +303,25 @@ export const deployProjectFiles = action({
     sandboxDbId: v.id("sandboxes"),
     sessionId: v.id("teamSessions"),
   },
-  handler: async (ctx, args): Promise<{ filesDeployed: number }> => {
-    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, {
-      token: args.token,
-    })) as Id<"users"> | null;
+  handler: async (ctx, args): Promise<{ filesDeployed: number; errors: string[] }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
 
-    const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, {
-      sandboxDbId: args.sandboxDbId,
-    })) as SandboxRecord | null;
-
+    const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, { sandboxDbId: args.sandboxDbId })) as SandboxRecord | null;
     if (!sandboxRecord) throw new Error("Sandbox not found");
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
     if (sandboxRecord.status !== "running") throw new Error("Sandbox is not running");
 
-    const files = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, {
-      sessionId: args.sessionId,
-    })) as Array<{ filepath: string; content: string }>;
-
+    const files = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.sessionId })) as Array<{ filepath: string; content: string }>;
     const apiKey = getApiKey();
+    const errors: string[] = [];
 
     for (const file of files) {
-      await writeFileToSandbox(sandboxRecord.sandboxId, apiKey, file.filepath, file.content);
+      const result = await writeFileToSandbox(sandboxRecord.sandboxId, apiKey, file.filepath, file.content);
+      if (!result.ok && result.error) errors.push(`${file.filepath}: ${result.error}`);
     }
 
-    return { filesDeployed: files.length };
+    return { filesDeployed: files.length, errors };
   },
 });
 
@@ -434,62 +393,79 @@ export const listSandboxes = action({
   },
 });
 
-// Test file write - writes a single test file and returns the result
+// Test file write - tries both methods and returns rich diagnostic output
 export const testFileWrite = action({
   args: {
     token: v.string(),
     sandboxDbId: v.id("sandboxes"),
   },
-  handler: async (ctx, args): Promise<{ success: boolean; error?: string; output?: string }> => {
-    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, {
-      token: args.token,
-    })) as Id<"users"> | null;
+  handler: async (ctx, args): Promise<{ success: boolean; method?: string; sandboxId?: string; uploadApiStatus?: number; uploadApiBody?: string; shellResult?: string; verifyResult?: string; error?: string }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
 
-    const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, {
-      sandboxDbId: args.sandboxDbId,
-    })) as SandboxRecord | null;
-
+    const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, { sandboxDbId: args.sandboxDbId })) as SandboxRecord | null;
     if (!sandboxRecord) throw new Error("Sandbox not found");
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
     if (sandboxRecord.status !== "running") throw new Error("Sandbox is not running");
 
     const apiKey = getApiKey();
-    const testContent = '{"name":"test","version":"1.0.0","scripts":{"start":"node index.js"}}';
-    
-    // Test 1: Try the multipart upload API
-    const result = await writeFileToSandbox(sandboxRecord.sandboxId, apiKey, "package.json", testContent);
-    
-    if (!result.ok) {
-      // Test 2: Try shell command approach as fallback
-      try {
-        const b64 = Buffer.from(testContent, "utf8").toString("base64");
-        const shellRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json", "Accept": "application/json" },
-          body: JSON.stringify({ command: `echo '${b64}' | base64 -d > /home/daytona/package.json && echo "shell_ok"` }),
-        });
-        const shellData = await shellRes.json() as DaytonaExecResponse;
-        if (shellData.result?.includes("shell_ok")) {
-          return { success: true, output: `Shell fallback worked. Upload API error: ${result.error}` };
-        }
-        return { success: false, error: `Upload API: ${result.error}. Shell: ${shellData.result}` };
-      } catch (shellErr) {
-        return { success: false, error: `Upload API: ${result.error}. Shell error: ${shellErr instanceof Error ? shellErr.message : String(shellErr)}` };
-      }
-    }
-    
-    // Verify the file was written
+    const sandboxId = sandboxRecord.sandboxId;
+    const testContent = '{"name":"test","version":"1.0.0","main":"index.js","scripts":{"start":"node index.js"}}';
+
+    // Try multipart upload API and capture raw response
+    const boundary = `----FormBoundaryTest${Date.now()}`;
+    const contentBytes = Buffer.from(testContent, "utf8");
+    const parts: Buffer[] = [];
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="files[0].path"\r\n\r\n/home/daytona/package.json\r\n`));
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="files[0].file"; filename="package.json"\r\nContent-Type: application/octet-stream\r\n\r\n`));
+    parts.push(contentBytes);
+    parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+    const body = Buffer.concat(parts);
+
+    let uploadApiStatus = 0;
+    let uploadApiBody = "";
     try {
-      const verifyRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
+      const uploadRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/files/upload`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify({ command: "cat /home/daytona/package.json 2>&1 | head -3" }),
+        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": `multipart/form-data; boundary=${boundary}` },
+        body,
+      });
+      uploadApiStatus = uploadRes.status;
+      uploadApiBody = (await uploadRes.text().catch(() => "")).slice(0, 200);
+    } catch (e) {
+      uploadApiBody = e instanceof Error ? e.message : String(e);
+    }
+
+    // Try shell command approach
+    const b64 = Buffer.from(testContent, "utf8").toString("base64");
+    let shellResult = "";
+    try {
+      const shellRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ command: `printf '%s' '${b64}' | base64 -d > /home/daytona/package.json && echo "write_ok" && cat /home/daytona/package.json | head -1` }),
+      });
+      const shellData = await shellRes.json() as DaytonaExecResponse;
+      shellResult = shellData.result?.slice(0, 200) ?? `HTTP ${shellRes.status}`;
+    } catch (e) {
+      shellResult = e instanceof Error ? e.message : String(e);
+    }
+
+    // Verify with ls
+    let verifyResult = "";
+    try {
+      const verifyRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ command: "ls -la /home/daytona/ && cat /home/daytona/package.json 2>/dev/null | head -2" }),
       });
       const verifyData = await verifyRes.json() as DaytonaExecResponse;
-      return { success: true, output: `File written. Content: ${verifyData.result?.slice(0, 100)}` };
-    } catch {
-      return { success: true, output: "File written (verification failed)" };
-    }
+      verifyResult = verifyData.result?.slice(0, 300) ?? "";
+    } catch { /* ignore */ }
+
+    const success = uploadApiStatus === 200 || shellResult.includes("write_ok");
+    const method = uploadApiStatus === 200 ? "multipart" : shellResult.includes("write_ok") ? "shell" : "none";
+
+    return { success, method, sandboxId, uploadApiStatus, uploadApiBody, shellResult, verifyResult };
   },
 });
