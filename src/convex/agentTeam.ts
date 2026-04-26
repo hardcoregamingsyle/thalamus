@@ -112,16 +112,14 @@ function parseAgentOutput(content: string): ParsedOutput {
   }
 
   // Parse DELETE commands
-  const deleteRegex = /<<<<<DELETE="([^"]+)">>>>>/ ;
-  const deleteMatches = content.matchAll(/<<<<<DELETE="([^"]+)">>>>>/ as RegExp);
+  const deleteMatches = content.matchAll(new RegExp('<<<<<DELETE="([^"]+)">>>>>', 'g'));
   for (const m of deleteMatches) {
     fileOps.push({ type: "delete", filepath: m[1] });
     cleanContent = cleanContent.replace(m[0], `[FILE DELETED: ${m[1]}]`);
   }
 
   // Parse SEARCH commands
-  const searchRegex = /<<<<<SEARCH-TOOL="([^"]+)">>>>>/ ;
-  const searchMatches = content.matchAll(/<<<<<SEARCH-TOOL="([^"]+)">>>>>/ as RegExp);
+  const searchMatches = content.matchAll(new RegExp('<<<<<SEARCH-TOOL="([^"]+)">>>>>', 'g'));
   for (const m of searchMatches) {
     searchOps.push({ query: m[1] });
     cleanContent = cleanContent.replace(m[0], `[SEARCHING: ${m[1]}]`);
