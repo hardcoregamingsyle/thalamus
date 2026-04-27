@@ -1,4 +1,4 @@
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, query } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 
@@ -91,6 +91,47 @@ export const listSessionsQuery = internalQuery({
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .order("desc")
       .take(50);
+  },
+});
+
+export const updateStreamingOutput = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    currentAgentOutput: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      currentAgentOutput: args.currentAgentOutput,
+    });
+  },
+});
+
+// Public reactive query — frontend subscribes to this for live updates
+export const watchSession = query({
+  args: { sessionId: v.id("teamSessions") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.sessionId);
+  },
+});
+
+export const watchMessages = query({
+  args: { sessionId: v.id("teamSessions") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("agentMessages")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .order("asc")
+      .take(200);
+  },
+});
+
+export const watchFiles = query({
+  args: { sessionId: v.id("teamSessions") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("projectFiles")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .take(500);
   },
 });
 

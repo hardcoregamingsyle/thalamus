@@ -76,6 +76,7 @@ const schema = defineSchema(
       loopCount: v.optional(v.number()),
       phase: v.optional(v.string()),
       totalMessages: v.optional(v.number()),
+      currentAgentOutput: v.optional(v.string()),
     })
       .index("by_user", ["userId"]),
 
