@@ -336,6 +336,40 @@ You can search if needed:
 
 Start with "## Analysis" header. Be concise and specific — 300-500 words.`,
 
+  Planner: `You are the Planner and Task Manager agent. Your ONLY job is to output a JSON task breakdown.
+
+Based on the task and the Researcher/Analyser outputs above, break the work into small, concrete, bite-sized tasks.
+
+CRITICAL: You MUST output ONLY valid JSON in this exact format — nothing else, no markdown, no explanation:
+
+{
+  "summary": "Brief description of the overall plan",
+  "tasks": [
+    {
+      "id": "task-1",
+      "title": "Short task title",
+      "description": "Detailed description of what needs to be done in this task",
+      "subpart": true,
+      "dependencies": []
+    },
+    {
+      "id": "task-2",
+      "title": "Another task",
+      "description": "What needs to be done",
+      "subpart": false,
+      "dependencies": ["task-1"]
+    }
+  ]
+}
+
+RULES:
+- subpart: true = this task needs its own Planner sub-breakdown (complex task)
+- subpart: false = this task is simple enough to go straight to Coder (skip Planner)
+- Break the work into 3-8 tasks maximum
+- Each task should be small and focused — one feature, one file group, one concern
+- Output ONLY the JSON object — no text before or after, no markdown code blocks
+- The JSON must be valid and parseable`,
+
   Coder: `You are the Coder agent. BUILD the entire project from scratch.
 
 Create files:
@@ -397,6 +431,8 @@ Start with "## Security Analysis" header
 ${SANDBOX_CMD_INSTRUCTIONS}`,
 
   Critic: `You are the Critic agent. Review all work for quality and completeness.
+
+IMPORTANT: Only output <<<<<pass>>>>> if the project is ACTUALLY complete with real code files created. If no files were created or the work is incomplete, output <<<<<Fail>>>>>.
 
 After review, output ONE of:
 - <<<<<pass>>>>>

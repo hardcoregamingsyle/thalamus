@@ -370,6 +370,20 @@ export const runAgentRound = action({
           plannerTasksJson: JSON.stringify(plannerOutput.tasks),
         });
         plannerTasks = plannerOutput.tasks;
+      } else {
+        // Planner failed to output valid JSON — create a default single task so we don't skip to final_review
+        const defaultTasks: PlannerTask[] = [{
+          id: "task-1",
+          title: session.task.slice(0, 80),
+          description: `Complete the full implementation: ${session.task}`,
+          subpart: false,
+          dependencies: [],
+        }];
+        await ctx.runMutation(internal.agentTeamHelpers.updatePlannerTasks, {
+          sessionId: args.sessionId,
+          plannerTasksJson: JSON.stringify(defaultTasks),
+        });
+        plannerTasks = defaultTasks;
       }
     }
 
@@ -411,17 +425,11 @@ export const runAgentRound = action({
     if (executionPhase === "planning") {
       // Planning phase: advance through PLANNING_PIPELINE
       if (currentPhase === "Planner") {
-        // Planning done — move to tasks phase (or final_review if no tasks)
-        if (plannerTasks.length > 0) {
-          newExecutionPhase = "tasks";
-          newTaskIndex = 0;
-          const taskPipeline = getPipeline("tasks", plannerTasks, 0, false);
-          nextPhase = taskPipeline[0];
-        } else {
-          // No tasks parsed — go straight to final review
-          newExecutionPhase = "final_review";
-          nextPhase = FINAL_REVIEW_PIPELINE_SKIP_CODER[0];
-        }
+        // Planning done — ALWAYS move to tasks phase (fallback task was created above if needed)
+        newExecutionPhase = "tasks";
+        newTaskIndex = 0;
+        const taskPipeline = getPipeline("tasks", plannerTasks, 0, false);
+        nextPhase = taskPipeline[0];
       } else {
         nextPhase = PLANNING_PIPELINE[currentPipelineIdx + 1] || "Planner";
       }
