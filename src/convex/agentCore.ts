@@ -285,7 +285,7 @@ export interface PlannerTask {
   id: string;
   title: string;
   description: string;
-  subpart: boolean; // if true, Planner is skipped when processing this task
+  subpart: boolean; // if true, Planner runs for this task; if false, Planner is skipped
   dependencies?: string[]; // task ids this depends on
 }
 
