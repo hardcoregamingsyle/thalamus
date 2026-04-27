@@ -70,8 +70,11 @@ export const createSessionMutation = internalMutation({
       status: "idle",
       round: 0,
       loopCount: 0,
-      phase: "Analyser",
+      phase: "Researcher",
       totalMessages: 0,
+      executionPhase: "planning",
+      currentTaskIndex: 0,
+      finalReviewCoderEnabled: false,
     });
   },
 });
@@ -209,6 +212,44 @@ export const getFileByPath = internalQuery({
   },
 });
 
+export const updatePlannerTasks = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    plannerTasksJson: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      plannerTasksJson: args.plannerTasksJson,
+    });
+  },
+});
+
+export const updateSessionFull = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    status: v.union(v.literal("running"), v.literal("completed"), v.literal("idle")),
+    currentAgent: v.optional(v.string()),
+    loopCount: v.optional(v.number()),
+    phase: v.optional(v.string()),
+    totalMessages: v.optional(v.number()),
+    executionPhase: v.optional(v.string()),
+    currentTaskIndex: v.optional(v.number()),
+    finalReviewCoderEnabled: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      status: args.status,
+      currentAgent: args.currentAgent,
+      loopCount: args.loopCount,
+      phase: args.phase,
+      totalMessages: args.totalMessages,
+      executionPhase: args.executionPhase,
+      currentTaskIndex: args.currentTaskIndex,
+      finalReviewCoderEnabled: args.finalReviewCoderEnabled,
+    });
+  },
+});
+
 export const resetSessionForNewTask = internalMutation({
   args: {
     sessionId: v.id("teamSessions"),
@@ -222,8 +263,12 @@ export const resetSessionForNewTask = internalMutation({
       currentAgent: undefined,
       round: 0,
       loopCount: 0,
-      phase: "Analyser",
+      phase: "Researcher",
       totalMessages: 0,
+      executionPhase: "planning",
+      currentTaskIndex: 0,
+      plannerTasksJson: undefined,
+      finalReviewCoderEnabled: false,
     });
   },
 });
