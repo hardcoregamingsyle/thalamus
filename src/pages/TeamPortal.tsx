@@ -3,7 +3,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
-import { useAction } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
@@ -45,6 +45,8 @@ interface TeamSession {
   phase: string;
   totalMessages: number;
   loopCount: number;
+  currentAgent?: string;
+  currentAgentOutput?: string;
 }
 
 interface ProjectFile {
@@ -105,9 +107,6 @@ export default function TeamPortal() {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<TeamSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<Id<"teamSessions"> | null>(null);
-  const [messages, setMessages] = useState<AgentMessage[]>([]);
-  const [sessionInfo, setSessionInfo] = useState<TeamSession | null>(null);
-  const [projectFiles, setProjectFiles] = useState<ProjectFile[]>([]);
   const [task, setTask] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [currentAgent, setCurrentAgent] = useState<string | null>(null);
@@ -129,12 +128,51 @@ export default function TeamPortal() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const sandboxOutputRef = useRef<HTMLDivElement>(null);
 
+  // Reactive queries — live updates from Convex
+  const liveSession = useQuery(
+    api.agentTeamHelpers.watchSession,
+    activeSessionId ? { sessionId: activeSessionId } : "skip"
+  );
+  const liveMessages = useQuery(
+    api.agentTeamHelpers.watchMessages,
+    activeSessionId ? { sessionId: activeSessionId } : "skip"
+  );
+  const liveFiles = useQuery(
+    api.agentTeamHelpers.watchFiles,
+    activeSessionId ? { sessionId: activeSessionId } : "skip"
+  );
+
+  // Derive state from reactive queries
+  const sessionInfo = liveSession ? {
+    _id: liveSession._id,
+    title: liveSession.title,
+    status: liveSession.status,
+    round: liveSession.round ?? 0,
+    task: liveSession.task,
+    phase: liveSession.phase ?? "Researcher",
+    totalMessages: liveSession.totalMessages ?? 0,
+    loopCount: liveSession.loopCount ?? 0,
+    currentAgent: liveSession.currentAgent,
+    currentAgentOutput: liveSession.currentAgentOutput,
+  } as TeamSession : null;
+
+  const messages: AgentMessage[] = (liveMessages ?? []).map((m) => ({
+    _id: m._id as string,
+    agent: m.agent,
+    content: m.content,
+    round: m.round,
+    messageIndex: m.messageIndex,
+  }));
+
+  const projectFiles: ProjectFile[] = (liveFiles ?? []).map((f) => ({
+    filepath: f.filepath,
+    content: f.content,
+    lastModifiedBy: f.lastModifiedBy,
+  }));
+
   const createSession = useAction(api.agentTeam.createSession);
   const runAgentRound = useAction(api.agentTeam.runAgentRound);
   const listSessionsAction = useAction(api.agentTeam.listSessions);
-  const getSessionMessages = useAction(api.agentTeam.getSessionMessages2);
-  const getSessionInfoAction = useAction(api.agentTeam.getSessionInfo);
-  const getProjectFilesAction = useAction(api.agentTeam.getProjectFiles);
   const continueSessionAction = useAction(api.agentTeam.continueSession);
 
   const createSandboxAction = useAction(api.sandbox.createSandbox);
@@ -173,7 +211,6 @@ export default function TeamPortal() {
       const data = await listSandboxesAction({ token });
       const rows = data as SandboxRow[];
       setSandboxes(rows);
-      // Auto-select running sandbox
       const running = rows.find(s => s.status === "running");
       if (running && !activeSandboxId) {
         setActiveSandboxId(running._id as Id<"sandboxes">);
@@ -183,25 +220,10 @@ export default function TeamPortal() {
     } catch { /* ignore */ }
   };
 
-  const loadSessionData = useCallback(async (sessionId: Id<"teamSessions">) => {
-    if (!token) return;
-    try {
-      const [msgs, info, files] = await Promise.all([
-        getSessionMessages({ sessionId, token }),
-        getSessionInfoAction({ sessionId, token }),
-        getProjectFilesAction({ sessionId, token }),
-      ]);
-      setMessages(msgs as AgentMessage[]);
-      setSessionInfo(info as TeamSession | null);
-      setProjectFiles(files as ProjectFile[]);
-    } catch { /* ignore */ }
-  }, [token, getSessionMessages, getSessionInfoAction, getProjectFilesAction]);
-
   const handleSelectSession = async (sessionId: Id<"teamSessions">) => {
     setActiveSessionId(sessionId);
     setAutoRun(false);
     autoRunRef.current = false;
-    await loadSessionData(sessionId);
   };
 
   const handleCreateSession = async () => {
@@ -210,13 +232,9 @@ export default function TeamPortal() {
     try {
       const sessionId = await createSession({ task: task.trim(), token });
       setActiveSessionId(sessionId);
-      setMessages([]);
-      setProjectFiles([]);
       setTask("");
       await loadSessions();
-      await loadSessionData(sessionId);
       toast.success("Session created! Starting agents...");
-      // Auto-start running immediately
       autoRunRef.current = true;
       setAutoRun(true);
     } catch { toast.error("Failed to create session"); }
@@ -229,12 +247,8 @@ export default function TeamPortal() {
     try {
       await continueSessionAction({ sessionId: activeSessionId, newTask: newTask.trim(), token });
       setNewTask("");
-      setMessages([]);
-      setProjectFiles([]);
-      await loadSessionData(activeSessionId);
       await loadSessions();
       toast.success("New task set! Starting agents...");
-      // Auto-start running immediately
       autoRunRef.current = true;
       setAutoRun(true);
     } catch { toast.error("Failed to continue session"); }
@@ -250,14 +264,12 @@ export default function TeamPortal() {
     setIsRunning(true);
     try {
       const result = await runAgentRound({ sessionId: sid, token });
-      agentRetryCountRef.current = 0; // reset on success
+      agentRetryCountRef.current = 0;
       setCurrentAgent(result.agent);
-      await loadSessionData(sid);
       await loadSessions();
 
       if (result.fileOpsCount > 0) {
         toast.success(`${result.agent}: ${result.fileOpsCount} file(s) modified`);
-        // Auto-deploy to sandbox if one is active and linked to this session
         if (activeSandboxId && activeSandbox?.sessionId === sid) {
           try {
             const deployResult = await autoDeployAndStartAction({ token, sandboxDbId: activeSandboxId, sessionId: sid });
@@ -281,7 +293,6 @@ export default function TeamPortal() {
       const msg = err instanceof Error ? err.message : "Agent failed";
       agentRetryCountRef.current += 1;
       if (agentRetryCountRef.current <= MAX_AGENT_RETRIES && autoRunRef.current) {
-        // Retry after a delay — don't stop the loop
         const retryDelay = Math.min(3000 * agentRetryCountRef.current, 15000);
         toast.warning(`Retrying agent (${agentRetryCountRef.current}/${MAX_AGENT_RETRIES})... ${msg.slice(0, 60)}`);
         setIsRunning(false);
@@ -289,7 +300,6 @@ export default function TeamPortal() {
         setTimeout(() => { if (autoRunRef.current) handleRunNextAgent(sid); }, retryDelay);
         return;
       }
-      // Exhausted retries
       toast.error(`Agent failed after ${MAX_AGENT_RETRIES} retries: ${msg}`);
       agentRetryCountRef.current = 0;
       autoRunRef.current = false;
@@ -298,11 +308,10 @@ export default function TeamPortal() {
       setIsRunning(false);
       setCurrentAgent(null);
     }
-  }, [activeSessionId, token, isRunning, runAgentRound, loadSessionData, loadSessions, activeSandboxId, activeSandbox, autoDeployAndStartAction]);
+  }, [activeSessionId, token, isRunning, runAgentRound, loadSessions, activeSandboxId, activeSandbox, autoDeployAndStartAction]);
 
   useEffect(() => {
     if (!autoRun || isRunning || !activeSessionId) return;
-    // If sessionInfo not loaded yet, still try to run (session was just created)
     if (sessionInfo) {
       if (sessionInfo.status === "completed" || sessionInfo.totalMessages >= MAX_MESSAGES) {
         setAutoRun(false); autoRunRef.current = false; return;
@@ -406,7 +415,6 @@ export default function TeamPortal() {
       } else {
         toast.error(`✗ File write FAILED`);
       }
-      // Show output in terminal
       setSandboxOutput(prev => [...prev, { cmd: "TEST WRITE", out: result.output, code: result.success ? 0 : 1 }]);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Test failed");
@@ -429,6 +437,10 @@ export default function TeamPortal() {
   const currentPhase = sessionInfo?.phase ?? "Researcher";
   const totalMessages = sessionInfo?.totalMessages ?? 0;
   const loopCount = sessionInfo?.loopCount ?? 0;
+
+  // Streaming output: show currentAgentOutput while running
+  const streamingAgent = sessionInfo?.currentAgent ?? currentAgent;
+  const streamingOutput = sessionInfo?.currentAgentOutput ?? "";
 
   if (isLoading) {
     return (
@@ -474,214 +486,183 @@ export default function TeamPortal() {
             <p className="text-xs text-muted-foreground mb-2 font-bold">PIPELINE</p>
             <div className="space-y-1">
               {PIPELINE.map((agent, idx) => {
-                const isActive = currentAgent === agent || (isRunning && sessionInfo?.phase === agent);
+                const isActive = currentAgent === agent || (isRunning && sessionInfo?.phase === agent) || (sessionInfo?.status === "running" && sessionInfo?.currentAgent === agent);
                 const isNext = !isRunning && sessionInfo && currentPhase === agent && sessionInfo.status !== "completed";
-                const isDone = sessionInfo && sessionInfo.status !== "completed" && PIPELINE.indexOf(currentPhase) > idx && loopCount === 0;
+                const isDone = sessionInfo && sessionInfo.status !== "completed"
+                  ? PIPELINE.indexOf(agent) < PIPELINE.indexOf(currentPhase)
+                  : sessionInfo?.status === "completed";
                 return (
-                  <div key={agent} className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${isActive ? "bg-primary/10" : ""}`}>
-                    <span className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold ${AGENT_COLORS[agent]} bg-current/10 ${isActive ? "animate-pulse" : ""}`} style={{ backgroundColor: "transparent", border: "1px solid currentColor" }}>
+                  <div key={agent} className={`flex items-center gap-2 px-2 py-1 rounded text-xs transition-all ${isActive ? "bg-primary/10" : ""}`}>
+                    <span className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold ${AGENT_COLORS[agent]} ${isActive ? "animate-pulse" : ""}`} style={{ border: "1px solid currentColor" }}>
                       {AGENT_ICONS[agent]}
                     </span>
                     <span className={`${AGENT_COLORS[agent]} ${isActive ? "font-bold" : "opacity-70"} flex-1`}>{agent}</span>
-                    {isActive && <Loader2 className="h-2.5 w-2.5 animate-spin text-primary" />}
-                    {isNext && !isActive && <span className="text-primary text-xs">▶</span>}
-                    {isDone && <CheckCircle className="h-2.5 w-2.5 text-green-400" />}
+                    {isDone && <CheckCircle className="h-3 w-3 text-green-400" />}
+                    {isNext && !isActive && <span className="text-amber-400 text-xs">→</span>}
                   </div>
                 );
               })}
             </div>
           </div>
 
-          {/* Sessions */}
-          <div className="p-2 border-b border-border flex items-center justify-between">
-            <p className="text-xs text-muted-foreground font-bold">SESSIONS</p>
-            <button onClick={loadSessions} className="text-muted-foreground hover:text-primary transition-colors">
-              <RefreshCw className="h-3 w-3" />
-            </button>
-          </div>
-          <ScrollArea className="flex-1">
-            <div className="p-2 space-y-1">
-              {sessions.length === 0 && <p className="text-xs text-muted-foreground px-2 py-4 text-center opacity-50">No sessions</p>}
+          {/* Sessions list */}
+          <div className="flex-1 overflow-y-auto p-2">
+            <p className="text-xs text-muted-foreground mb-2 font-bold px-1">SESSIONS</p>
+            <div className="space-y-1">
               {sessions.map((s) => (
-                <div
+                <button
                   key={s._id}
                   onClick={() => handleSelectSession(s._id)}
-                  className={`px-2 py-2 cursor-pointer text-xs transition-all rounded border ${
-                    activeSessionId === s._id
-                      ? "bg-primary/10 text-primary border-primary/30"
-                      : "text-muted-foreground hover:text-foreground border-transparent hover:border-border"
-                  }`}
+                  className={`w-full text-left px-2 py-2 rounded text-xs transition-colors ${activeSessionId === s._id ? "bg-primary/20 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
                 >
-                  <div className="truncate font-medium">{s.title}</div>
-                  <div className="flex gap-1 mt-0.5">
-                    <span className={`text-xs ${s.status === "completed" ? "text-green-400" : "text-amber-400"}`}>{s.status}</span>
-                    <span className="text-muted-foreground/40">•</span>
-                    <span className="text-muted-foreground/60">{s.totalMessages}/{MAX_MESSAGES}</span>
+                  <div className="truncate font-bold">{s.title}</div>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <span className={`w-1.5 h-1.5 rounded-full ${s.status === "completed" ? "bg-green-400" : s.status === "running" ? "bg-primary animate-pulse" : "bg-muted-foreground"}`} />
+                    <span className="opacity-60">{s.phase}</span>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
-          </ScrollArea>
+          </div>
+
+          {/* New session input */}
+          <div className="p-2 border-t border-border">
+            <textarea
+              value={task}
+              onChange={(e) => setTask(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleCreateSession(); } }}
+              placeholder="New task..."
+              className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary"
+              rows={2}
+            />
+            <button
+              onClick={handleCreateSession}
+              disabled={!task.trim() || isRunning}
+              className="w-full mt-1 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs rounded hover:bg-primary/20 disabled:opacity-50 transition-colors font-bold"
+            >
+              {isRunning ? <Loader2 className="h-3 w-3 animate-spin mx-auto" /> : "START"}
+            </button>
+          </div>
         </div>
 
-        {/* Main area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {!activeSessionId ? (
-            /* New session form */
-            <div className="flex-1 flex items-center justify-center p-8">
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-xl">
-                <div className="border border-border bg-card rounded-lg overflow-hidden shadow-xl">
-                  <div className="bg-primary/5 border-b border-border px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                        <Users className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <h2 className="font-bold text-foreground">Agent Team</h2>
-                        <p className="text-xs text-muted-foreground">7 agents • Researcher → Analyser → Coder → Optimiser → Tester → Hacker → Critic</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    <div>
-                      <label className="text-xs text-muted-foreground block mb-2 font-bold">DESCRIBE YOUR PROJECT</label>
-                      <textarea
-                        value={task}
-                        onChange={(e) => setTask(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleCreateSession(); } }}
-                        placeholder="Build a React todo app with TypeScript, Tailwind, and local storage..."
-                        className="w-full bg-background border border-border rounded-lg p-3 text-sm text-foreground placeholder:text-muted-foreground/50 resize-none focus:outline-none focus:border-primary transition-colors"
-                        rows={4}
-                        disabled={isRunning}
-                      />
-                    </div>
-                    <button
-                      onClick={handleCreateSession}
-                      disabled={!task.trim() || isRunning}
-                      className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground py-3 rounded-lg font-bold text-sm hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                    >
-                      {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                      START SESSION
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
+        {/* Main content */}
+        {!activeSessionId ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <Users className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4" />
+              <p className="text-sm font-bold text-foreground mb-1">No Session Selected</p>
+              <p className="text-xs text-muted-foreground">Create a new task or select an existing session</p>
             </div>
-          ) : (
-            <>
-              {/* Tab bar */}
-              <div className="border-b border-border bg-card flex items-center gap-1 px-4 h-10 shrink-0">
-                {[
-                  { id: "chat", label: "Chat", icon: Users },
-                  { id: "files", label: `Files (${projectFiles.length})`, icon: FileCode },
-                  { id: "sandbox", label: "Sandbox", icon: Terminal },
-                  { id: "preview", label: "Preview", icon: Monitor },
-                ].map(({ id, label, icon: Icon }) => (
+          </div>
+        ) : (
+          <>
+            {/* Tab bar */}
+            <div className="flex flex-col flex-1 overflow-hidden">
+              <div className="flex items-center border-b border-border bg-card px-4 gap-1 shrink-0">
+                {(["chat", "files", "sandbox", "preview"] as const).map((tab) => (
                   <button
-                    key={id}
-                    onClick={() => setActiveTab(id as typeof activeTab)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded transition-colors ${
-                      activeTab === id ? "bg-primary/10 text-primary font-bold" : "text-muted-foreground hover:text-foreground"
-                    }`}
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 ${activeTab === tab ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
                   >
-                    <Icon className="h-3 w-3" />
-                    {label}
-                    {id === "preview" && previewUrl && <span className="w-1.5 h-1.5 rounded-full bg-green-400 ml-0.5" />}
+                    {tab === "files" ? `FILES (${projectFiles.length})` : tab.toUpperCase()}
                   </button>
                 ))}
                 <div className="ml-auto flex items-center gap-2">
-                  {autoRun ? (
-                    <button onClick={handleStopAutoRun} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-destructive/10 text-destructive rounded hover:bg-destructive/20 transition-colors font-bold">
-                      <Square className="h-3 w-3" />
-                      STOP
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleAutoRun}
-                      disabled={isRunning || sessionInfo?.status === "completed"}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary/10 text-primary rounded hover:bg-primary/20 disabled:opacity-50 transition-colors font-bold"
-                    >
-                      {isRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-                      AUTO RUN
-                    </button>
+                  {sessionInfo && sessionInfo.status !== "completed" && (
+                    <>
+                      {autoRun ? (
+                        <button onClick={handleStopAutoRun} className="flex items-center gap-1 px-3 py-1 bg-red-400/10 border border-red-400/30 text-red-400 text-xs rounded hover:bg-red-400/20 transition-colors font-bold">
+                          <Square className="h-3 w-3" />
+                          STOP
+                        </button>
+                      ) : (
+                        <button onClick={handleAutoRun} disabled={isRunning} className="flex items-center gap-1 px-3 py-1 bg-primary/10 border border-primary/30 text-primary text-xs rounded hover:bg-primary/20 disabled:opacity-50 transition-colors font-bold">
+                          {isRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                          {isRunning ? "RUNNING" : "AUTO RUN"}
+                        </button>
+                      )}
+                      <button onClick={() => handleRunNextAgent()} disabled={isRunning || autoRun} className="flex items-center gap-1 px-3 py-1 bg-muted border border-border text-muted-foreground text-xs rounded hover:bg-muted/80 disabled:opacity-50 transition-colors">
+                        <RefreshCw className="h-3 w-3" />
+                        STEP
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
 
-              {/* Chat tab - WhatsApp style */}
+              {/* Chat tab */}
               {activeTab === "chat" && (
                 <div className="flex-1 flex flex-col overflow-hidden">
-                  {/* Chat header */}
-                  <div className="px-4 py-2 border-b border-border bg-card/50 flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                      <Users className="h-4 w-4 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-foreground truncate max-w-xs">{sessionInfo?.title || "Session"}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {isRunning ? (
-                          <span className="text-primary animate-pulse">● {currentAgent || currentPhase} is working...</span>
-                        ) : sessionInfo?.status === "completed" ? (
-                          <span className="text-green-400">✓ Completed</span>
-                        ) : (
-                          <span>Next: {currentPhase}</span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Messages - WhatsApp style */}
-                  <ScrollArea className="flex-1 bg-background/50">
-                    <div className="p-4 space-y-3">
-                      {/* Task bubble (right side - user) */}
-                      <div className="flex justify-end">
-                        <div className="max-w-[75%]">
-                          <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-3 shadow-sm">
-                            <p className="text-xs font-bold mb-1 opacity-70">TASK</p>
-                            <p className="text-sm leading-relaxed">{sessionInfo?.task}</p>
-                          </div>
-                          <p className="text-xs text-muted-foreground text-right mt-1 px-1">You</p>
+                  <ScrollArea className="flex-1 p-4">
+                    <div className="space-y-4 max-w-4xl mx-auto">
+                      {/* Session info banner */}
+                      {sessionInfo && (
+                        <div className="bg-card border border-border rounded-lg p-3 text-xs">
+                          <p className="font-bold text-foreground mb-1 truncate">{sessionInfo.task}</p>
+                          <p className="text-muted-foreground">7 agents • Researcher → Analyser → Coder → Optimiser → Tester → Hacker → Critic</p>
                         </div>
-                      </div>
+                      )}
 
-                      {/* Agent messages (left side) */}
-                      {messages.map((msg, idx) => (
+                      {/* Messages */}
+                      {messages.map((msg) => (
                         <motion.div
                           key={msg._id}
-                          initial={{ opacity: 0, x: -10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: idx * 0.02 }}
-                          className="flex items-start gap-2"
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="flex items-start gap-3"
                         >
-                          {/* Avatar */}
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 border ${AGENT_COLORS[msg.agent] || "text-foreground"} ${AGENT_BG[msg.agent] || "bg-muted/20 border-border"}`}>
                             {AGENT_ICONS[msg.agent] || msg.agent[0]}
                           </div>
-                          <div className="max-w-[75%]">
+                          <div className="flex-1 min-w-0">
                             <p className={`text-xs font-bold mb-1 ${AGENT_COLORS[msg.agent] || "text-foreground"}`}>{msg.agent}</p>
                             <div className={`rounded-2xl rounded-tl-sm px-4 py-3 border shadow-sm ${AGENT_BG[msg.agent] || "bg-card border-border"}`}>
-                              <div className="text-xs text-foreground/90 leading-relaxed prose prose-invert prose-xs max-w-none">
+                              <div className="prose prose-sm prose-invert max-w-none text-xs leading-relaxed">
                                 <ReactMarkdown>{msg.content}</ReactMarkdown>
                               </div>
                             </div>
-                            {msg.round !== undefined && (
-                              <p className="text-xs text-muted-foreground/50 mt-1 px-1">Round {msg.round + 1} • #{msg.messageIndex}</p>
-                            )}
                           </div>
                         </motion.div>
                       ))}
 
-                      {/* Typing indicator */}
-                      {isRunning && (
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-start gap-2">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 border ${AGENT_COLORS[currentAgent || currentPhase] || "text-primary"} ${AGENT_BG[currentAgent || currentPhase] || "bg-primary/10 border-primary/20"}`}>
-                            {AGENT_ICONS[currentAgent || currentPhase] || "?"}
+                      {/* Live streaming output */}
+                      {sessionInfo?.status === "running" && streamingAgent && streamingOutput && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="flex items-start gap-3"
+                        >
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 border animate-pulse ${AGENT_COLORS[streamingAgent] || "text-primary"} ${AGENT_BG[streamingAgent] || "bg-primary/10 border-primary/20"}`}>
+                            {AGENT_ICONS[streamingAgent] || streamingAgent[0]}
                           </div>
-                          <div className={`rounded-2xl rounded-tl-sm px-4 py-3 border ${AGENT_BG[currentAgent || currentPhase] || "bg-card border-border"}`}>
-                            <div className="flex gap-1 items-center">
-                              <div className="w-1.5 h-1.5 rounded-full bg-current animate-bounce" style={{ animationDelay: "0ms" }} />
-                              <div className="w-1.5 h-1.5 rounded-full bg-current animate-bounce" style={{ animationDelay: "150ms" }} />
-                              <div className="w-1.5 h-1.5 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} />
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-xs font-bold mb-1 ${AGENT_COLORS[streamingAgent] || "text-primary"}`}>
+                              {streamingAgent} <span className="text-muted-foreground font-normal animate-pulse">● live</span>
+                            </p>
+                            <div className={`rounded-2xl rounded-tl-sm px-4 py-3 border shadow-sm ${AGENT_BG[streamingAgent] || "bg-card border-border"}`}>
+                              <div className="prose prose-sm prose-invert max-w-none text-xs leading-relaxed">
+                                <ReactMarkdown>{streamingOutput}</ReactMarkdown>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {/* Thinking indicator (before output arrives) */}
+                      {sessionInfo?.status === "running" && streamingAgent && !streamingOutput && (
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="flex items-start gap-3"
+                        >
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 border animate-pulse ${AGENT_COLORS[streamingAgent] || "text-primary"} ${AGENT_BG[streamingAgent] || "bg-primary/10 border-primary/20"}`}>
+                            {AGENT_ICONS[streamingAgent] || "?"}
+                          </div>
+                          <div className={`rounded-2xl rounded-tl-sm px-4 py-3 border ${AGENT_BG[streamingAgent] || "bg-card border-border"}`}>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              <span>{streamingAgent} is thinking...</span>
                             </div>
                           </div>
                         </motion.div>
@@ -691,26 +672,24 @@ export default function TeamPortal() {
                     </div>
                   </ScrollArea>
 
-                  {/* Follow-up task input (when completed) */}
+                  {/* Continue session input */}
                   {sessionInfo?.status === "completed" && (
-                    <div className="border-t border-border bg-card p-3">
-                      <p className="text-xs text-muted-foreground mb-2 font-bold">FOLLOW-UP TASK</p>
+                    <div className="p-4 border-t border-border bg-card">
+                      <p className="text-xs text-green-400 font-bold mb-2">✓ Session complete — start a new task:</p>
                       <div className="flex gap-2">
                         <input
-                          type="text"
                           value={newTask}
                           onChange={(e) => setNewTask(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && handleContinueSession()}
-                          placeholder="Describe the next task..."
-                          className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary transition-colors"
-                          disabled={isContinuing}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleContinueSession(); }}
+                          placeholder="New task for this session..."
+                          className="flex-1 bg-background border border-border rounded px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
                         />
                         <button
                           onClick={handleContinueSession}
                           disabled={!newTask.trim() || isContinuing}
-                          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                          className="px-4 py-2 bg-primary/10 border border-primary/30 text-primary text-xs rounded hover:bg-primary/20 disabled:opacity-50 transition-colors font-bold"
                         >
-                          {isContinuing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                          {isContinuing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
                         </button>
                       </div>
                     </div>
@@ -721,39 +700,47 @@ export default function TeamPortal() {
               {/* Files tab */}
               {activeTab === "files" && (
                 <div className="flex-1 flex overflow-hidden">
-                  <div className="w-48 border-r border-border bg-card/50 flex flex-col">
-                    <div className="p-2 border-b border-border">
-                      <p className="text-xs font-bold text-muted-foreground">PROJECT FILES ({projectFiles.length})</p>
-                    </div>
-                    <ScrollArea className="flex-1">
-                      <div className="p-2 space-y-0.5">
-                        {projectFiles.length === 0 && <p className="text-xs text-muted-foreground p-2 opacity-50">No files yet</p>}
-                        {projectFiles.map((f) => (
-                          <button
-                            key={f.filepath}
-                            onClick={() => setSelectedFile(f)}
-                            className={`w-full text-left px-2 py-1.5 text-xs rounded transition-colors truncate ${selectedFile?.filepath === f.filepath ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
-                          >
-                            {f.filepath}
-                          </button>
-                        ))}
-                      </div>
-                    </ScrollArea>
-                  </div>
-                  <div className="flex-1 overflow-hidden">
-                    {selectedFile ? (
-                      <div className="h-full flex flex-col">
-                        <div className="px-4 py-2 border-b border-border bg-card/50 flex items-center justify-between">
-                          <span className="text-xs font-bold text-primary">{selectedFile.filepath}</span>
-                          <span className="text-xs text-muted-foreground">by {selectedFile.lastModifiedBy}</span>
+                  {/* File list */}
+                  <div className="w-48 border-r border-border bg-card overflow-y-auto">
+                    <div className="p-2">
+                      <p className="text-xs text-muted-foreground font-bold mb-2 px-1">PROJECT FILES</p>
+                      {projectFiles.length === 0 ? (
+                        <p className="text-xs text-muted-foreground px-1">No files yet</p>
+                      ) : (
+                        <div className="space-y-0.5">
+                          {projectFiles.map((f) => (
+                            <button
+                              key={f.filepath}
+                              onClick={() => setSelectedFile(f)}
+                              className={`w-full text-left px-2 py-1.5 rounded text-xs transition-colors ${selectedFile?.filepath === f.filepath ? "bg-primary/20 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                            >
+                              <div className="flex items-center gap-1">
+                                <FileCode className="h-3 w-3 shrink-0" />
+                                <span className="truncate">{f.filepath.split("/").pop()}</span>
+                              </div>
+                              <div className="text-xs opacity-50 truncate pl-4">{f.filepath}</div>
+                            </button>
+                          ))}
                         </div>
-                        <ScrollArea className="flex-1">
-                          <pre className="p-4 text-xs text-foreground/80 whitespace-pre-wrap break-all font-mono leading-relaxed">{selectedFile.content}</pre>
-                        </ScrollArea>
+                      )}
+                    </div>
+                  </div>
+                  {/* File content */}
+                  <div className="flex-1 overflow-auto bg-background">
+                    {selectedFile ? (
+                      <div className="p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <FileCode className="h-4 w-4 text-primary" />
+                          <span className="text-xs font-bold text-foreground">{selectedFile.filepath}</span>
+                          <span className={`text-xs ${AGENT_COLORS[selectedFile.lastModifiedBy] || "text-muted-foreground"}`}>by {selectedFile.lastModifiedBy}</span>
+                        </div>
+                        <pre className="text-xs text-foreground/80 whitespace-pre-wrap font-mono leading-relaxed bg-card border border-border rounded-lg p-4 overflow-auto">
+                          {selectedFile.content}
+                        </pre>
                       </div>
                     ) : (
-                      <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs">
-                        Select a file to view
+                      <div className="flex items-center justify-center h-full">
+                        <p className="text-xs text-muted-foreground">Select a file to view</p>
                       </div>
                     )}
                   </div>
@@ -762,155 +749,96 @@ export default function TeamPortal() {
 
               {/* Sandbox tab */}
               {activeTab === "sandbox" && (
-                <div className="flex-1 flex overflow-hidden">
+                <div className="flex-1 flex flex-col overflow-hidden">
                   {/* Sandbox list */}
-                  <div className="w-48 border-r border-border bg-card/50 flex flex-col shrink-0">
-                    <div className="p-2 border-b border-border flex items-center justify-between">
-                      <p className="text-xs font-bold text-muted-foreground">SANDBOXES</p>
+                  <div className="px-4 py-2 border-b border-border bg-card flex items-center gap-2 flex-wrap">
+                    <Terminal className="h-3 w-3 text-amber-400" />
+                    <span className="text-xs font-bold text-amber-400">SANDBOX</span>
+                    <div className="flex gap-1 flex-wrap">
+                      {sandboxes.filter(s => s.status === "running").map((s) => (
+                        <button
+                          key={s._id}
+                          onClick={() => { setActiveSandboxId(s._id as Id<"sandboxes">); setActiveSandbox(s); }}
+                          className={`text-xs px-2 py-0.5 rounded border transition-colors ${activeSandboxId === s._id ? "bg-amber-400/20 border-amber-400/40 text-amber-400" : "border-border text-muted-foreground hover:border-amber-400/40"}`}
+                        >
+                          {s.label || s.sandboxId.slice(0, 8)}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="ml-auto flex items-center gap-2">
+                      {activeSandboxId && (
+                        <>
+                          <button onClick={handleTestFileWrite} disabled={isSandboxLoading} className="text-xs text-muted-foreground border border-border px-2 py-1 rounded hover:border-amber-400/40 disabled:opacity-50 transition-colors">
+                            {isSandboxLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "TEST WRITE"}
+                          </button>
+                          <button onClick={handleGetPreviewUrl} disabled={isSandboxLoading} className="text-xs text-green-400 border border-green-400/30 px-2 py-1 rounded hover:bg-green-400/10 disabled:opacity-50 transition-colors">
+                            {isSandboxLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "PREVIEW"}
+                          </button>
+                          {activeSessionId && (
+                            <button onClick={handleAutoDeployAndStart} disabled={isSandboxLoading || projectFiles.length === 0} className="text-xs text-primary border border-primary/30 px-2 py-1 rounded hover:bg-primary/10 disabled:opacity-50 transition-colors">
+                              {isSandboxLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "DEPLOY"}
+                            </button>
+                          )}
+                          <button onClick={() => handleStopSandbox(activeSandboxId)} disabled={isSandboxLoading} className="text-xs text-red-400 border border-red-400/30 px-2 py-1 rounded hover:bg-red-400/10 disabled:opacity-50 transition-colors">
+                            {isSandboxLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {activeSandbox ? (
+                    <>
+                      {/* Terminal output */}
+                      <div className="flex-1 overflow-y-auto bg-background p-4 font-mono text-xs">
+                        {sandboxOutput.length === 0 ? (
+                          <p className="text-muted-foreground">$ Ready. Type a command below.</p>
+                        ) : (
+                          sandboxOutput.map((entry, i) => (
+                            <div key={i} className="mb-3">
+                              <p className="text-amber-400">$ {entry.cmd}</p>
+                              <pre className={`whitespace-pre-wrap mt-1 ${entry.code === 0 ? "text-foreground/80" : "text-red-400"}`}>{entry.out}</pre>
+                            </div>
+                          ))
+                        )}
+                        <div ref={sandboxOutputRef} />
+                      </div>
+                      {/* Command input */}
+                      <div className="border-t border-border bg-card p-2 flex items-center gap-2">
+                        <span className="text-amber-400 text-xs">$</span>
+                        <input
+                          value={sandboxCommand}
+                          onChange={(e) => setSandboxCommand(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleExecuteCommand(); }}
+                          placeholder="Enter command..."
+                          className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
+                        />
+                        <button
+                          onClick={handleExecuteCommand}
+                          disabled={!sandboxCommand.trim() || isSandboxLoading}
+                          className="text-xs text-amber-400 border border-amber-400/30 px-2 py-1 rounded hover:bg-amber-400/10 disabled:opacity-50 transition-colors"
+                        >
+                          {isSandboxLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "RUN"}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+                      <Box className="h-12 w-12 text-amber-400/20" />
+                      <div className="text-center">
+                        <p className="text-sm font-bold text-foreground mb-1">No Active Sandbox</p>
+                        <p className="text-xs text-muted-foreground">Create a sandbox to execute commands in an isolated environment</p>
+                      </div>
                       <button
                         onClick={handleCreateSandbox}
                         disabled={isSandboxLoading}
-                        className="text-primary hover:text-primary/80 transition-colors"
-                        title="Create sandbox"
+                        className="flex items-center gap-2 px-4 py-2 bg-amber-400/10 border border-amber-400/30 text-amber-400 text-sm rounded-lg hover:bg-amber-400/20 disabled:opacity-50 transition-colors font-bold"
                       >
-                        {isSandboxLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                        {isSandboxLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                        CREATE SANDBOX (1 vCPU • $0.075/hr)
                       </button>
                     </div>
-                    <ScrollArea className="flex-1">
-                      <div className="p-2 space-y-1">
-                        {sandboxes.length === 0 && (
-                          <div className="p-3 text-center">
-                            <Box className="h-6 w-6 text-muted-foreground/30 mx-auto mb-2" />
-                            <p className="text-xs text-muted-foreground/50">No sandboxes</p>
-                            <button
-                              onClick={handleCreateSandbox}
-                              disabled={isSandboxLoading}
-                              className="mt-2 text-xs text-primary hover:underline"
-                            >
-                              Create one
-                            </button>
-                          </div>
-                        )}
-                        {sandboxes.map((sb) => (
-                          <div
-                            key={sb._id}
-                            onClick={() => { setActiveSandboxId(sb._id as Id<"sandboxes">); setActiveSandbox(sb); if (sb.previewUrl) setPreviewUrl(sb.previewUrl); }}
-                            className={`px-2 py-2 cursor-pointer text-xs rounded border transition-all ${activeSandboxId === sb._id ? "bg-amber-400/10 border-amber-400/30 text-amber-400" : "border-transparent text-muted-foreground hover:border-border"}`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="truncate">{sb.label || sb.sandboxId.slice(0, 8)}</span>
-                              {sb.status === "running" && (
-                                <button onClick={(e) => { e.stopPropagation(); handleStopSandbox(sb._id as Id<"sandboxes">); }} className="text-destructive hover:text-destructive/80">
-                                  <Trash2 className="h-3 w-3" />
-                                </button>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <span className={`w-1.5 h-1.5 rounded-full ${sb.status === "running" ? "bg-green-400" : "bg-muted-foreground"}`} />
-                              <span className="text-muted-foreground/60">{sb.status}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </ScrollArea>
-                  </div>
-
-                  {/* Terminal */}
-                  <div className="flex-1 flex flex-col overflow-hidden">
-                    {activeSandboxId ? (
-                      <>
-                        <div className="px-4 py-2 border-b border-border bg-card flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Terminal className="h-3 w-3 text-amber-400" />
-                            <span className="text-xs text-amber-400 font-bold">DAYTONA SANDBOX</span>
-                            <span className="text-xs text-green-400">● RUNNING</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={handleTestFileWrite}
-                              disabled={isSandboxLoading}
-                              className="flex items-center gap-1 text-xs text-muted-foreground border border-border px-2 py-1 rounded hover:bg-muted/10 disabled:opacity-50 transition-colors"
-                            >
-                              TEST WRITE
-                            </button>
-                            {activeSessionId && projectFiles.length > 0 && (
-                              <button
-                                onClick={handleAutoDeployAndStart}
-                                disabled={isSandboxLoading}
-                                className="flex items-center gap-1 text-xs text-primary border border-primary/30 px-2 py-1 rounded hover:bg-primary/10 disabled:opacity-50 transition-colors"
-                              >
-                                <Globe className="h-3 w-3" />
-                                DEPLOY & START
-                              </button>
-                            )}
-                            <button
-                              onClick={handleGetPreviewUrl}
-                              disabled={isSandboxLoading}
-                              className="flex items-center gap-1 text-xs text-amber-400 border border-amber-400/30 px-2 py-1 rounded hover:bg-amber-400/10 disabled:opacity-50 transition-colors"
-                            >
-                              <Monitor className="h-3 w-3" />
-                              GET PREVIEW
-                            </button>
-                          </div>
-                        </div>
-                        <ScrollArea className="flex-1 bg-background">
-                          <div className="p-4 font-mono text-xs space-y-2">
-                            {sandboxOutput.length === 0 && (
-                              <p className="text-muted-foreground/50">// Sandbox ready. Type a command below.</p>
-                            )}
-                            {sandboxOutput.map((entry, i) => (
-                              <div key={i} className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-amber-400">$</span>
-                                  <span className="text-foreground">{entry.cmd}</span>
-                                </div>
-                                {entry.out && (
-                                  <pre className={`pl-4 whitespace-pre-wrap break-all text-xs ${entry.code !== 0 ? "text-red-400" : "text-green-400/80"}`}>{entry.out}</pre>
-                                )}
-                                {entry.code !== 0 && <span className="pl-4 text-red-400 text-xs">exit: {entry.code}</span>}
-                              </div>
-                            ))}
-                            <div ref={sandboxOutputRef} />
-                          </div>
-                        </ScrollArea>
-                        <div className="border-t border-border bg-card p-2 flex items-center gap-2">
-                          <span className="text-amber-400 text-xs">$</span>
-                          <input
-                            type="text"
-                            value={sandboxCommand}
-                            onChange={(e) => setSandboxCommand(e.target.value)}
-                            onKeyDown={(e) => e.key === "Enter" && handleExecuteCommand()}
-                            placeholder="echo 'hello world'"
-                            className="flex-1 bg-transparent text-foreground text-xs font-mono outline-none placeholder:text-muted-foreground/40"
-                            disabled={isSandboxLoading}
-                          />
-                          <button
-                            onClick={handleExecuteCommand}
-                            disabled={!sandboxCommand.trim() || isSandboxLoading}
-                            className="text-xs text-amber-400 border border-amber-400/30 px-2 py-1 rounded hover:bg-amber-400/10 disabled:opacity-50 transition-colors"
-                          >
-                            {isSandboxLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "RUN"}
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
-                        <Box className="h-12 w-12 text-amber-400/20" />
-                        <div className="text-center">
-                          <p className="text-sm font-bold text-foreground mb-1">No Active Sandbox</p>
-                          <p className="text-xs text-muted-foreground">Create a sandbox to execute commands in an isolated environment</p>
-                        </div>
-                        <button
-                          onClick={handleCreateSandbox}
-                          disabled={isSandboxLoading}
-                          className="flex items-center gap-2 px-4 py-2 bg-amber-400/10 border border-amber-400/30 text-amber-400 text-sm rounded-lg hover:bg-amber-400/20 disabled:opacity-50 transition-colors font-bold"
-                        >
-                          {isSandboxLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                          CREATE SANDBOX (1 vCPU • $0.075/hr)
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
               )}
 
@@ -986,9 +914,9 @@ export default function TeamPortal() {
                   )}
                 </div>
               )}
-            </>
-          )}
-        </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

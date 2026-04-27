@@ -172,21 +172,42 @@ export const runAgentRound = action({
       round: session.round, loopCount, phase: currentPhase, totalMessages,
     });
 
+    // Clear previous streaming output
+    await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+      sessionId: args.sessionId,
+      currentAgentOutput: `[${currentPhase} is thinking...]`,
+    });
+
     let geminiResult = await callGemini(prompt, systemPrompt, 4096);
     let rawContent = geminiResult.text;
     let totalInputTokens = geminiResult.inputTokens;
     let totalOutputTokens = geminiResult.outputTokens;
 
-    let parsed = parseAgentOutput(rawContent);
+    // Save initial output to DB so frontend can see it live
+    const initialParsed = parseAgentOutput(rawContent);
+    await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+      sessionId: args.sessionId,
+      currentAgentOutput: initialParsed.cleanContent,
+    });
+
+    let parsed = initialParsed;
 
     // Handle scrape operations (Researcher agent primarily, but any agent can use it)
     if (parsed.scrapeOps.length > 0) {
+      await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+        sessionId: args.sessionId,
+        currentAgentOutput: `${parsed.cleanContent}\n\n[Scraping ${parsed.scrapeOps.length} URL(s)...]`,
+      });
       const scrapeResults: string[] = [];
       for (const scrapeOp of parsed.scrapeOps) {
         const result = await performScrape(scrapeOp.url);
         scrapeResults.push(`SCRAPED CONTENT from "${scrapeOp.url}":\n${result}`);
       }
       const promptWithScrapes = `${prompt}\n\nYour previous response requested URL scrapes. Here are the full contents:\n\n${scrapeResults.join("\n\n---\n\n")}\n\nNow provide your complete ${currentPhase} output incorporating all this scraped information. Include ALL relevant details.`;
+      await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+        sessionId: args.sessionId,
+        currentAgentOutput: `${parsed.cleanContent}\n\n[Scraping complete. Generating final response...]`,
+      });
       const geminiResult2 = await callGemini(promptWithScrapes, systemPrompt, 4096);
       rawContent = geminiResult2.text;
       totalInputTokens += geminiResult2.inputTokens;
@@ -194,16 +215,28 @@ export const runAgentRound = action({
       const reparsed = parseAgentOutput(rawContent);
       parsed = reparsed;
       parsed.fileOps.push(...reparsed.fileOps);
+      await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+        sessionId: args.sessionId,
+        currentAgentOutput: parsed.cleanContent,
+      });
     }
 
     // Handle search operations
     if (parsed.searchOps.length > 0) {
+      await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+        sessionId: args.sessionId,
+        currentAgentOutput: `${parsed.cleanContent}\n\n[Searching ${parsed.searchOps.length} query(ies)...]`,
+      });
       const searchResults: string[] = [];
       for (const searchOp of parsed.searchOps) {
         const result = await performSearch(searchOp.query);
         searchResults.push(`SEARCH RESULT for "${searchOp.query}":\n${result}`);
       }
       const promptWithSearch = `${prompt}\n\nYour previous response requested searches. Here are the results:\n\n${searchResults.join("\n\n---\n\n")}\n\nNow provide your complete ${currentPhase} output incorporating these search results.`;
+      await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+        sessionId: args.sessionId,
+        currentAgentOutput: `${parsed.cleanContent}\n\n[Search complete. Generating final response...]`,
+      });
       const geminiResult3 = await callGemini(promptWithSearch, systemPrompt, 4096);
       rawContent = geminiResult3.text;
       totalInputTokens += geminiResult3.inputTokens;
@@ -211,6 +244,10 @@ export const runAgentRound = action({
       const reparsed = parseAgentOutput(rawContent);
       parsed = reparsed;
       parsed.fileOps.push(...reparsed.fileOps);
+      await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+        sessionId: args.sessionId,
+        currentAgentOutput: parsed.cleanContent,
+      });
     }
 
     // Handle sandbox RUN-CMD loop (non-Researcher, non-Analyser only, up to MAX_CMD_LOOPS iterations)
@@ -223,6 +260,10 @@ export const runAgentRound = action({
         const cmdResults: string[] = [];
 
         for (const cmdOp of currentParsed.cmdOps) {
+          await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+            sessionId: args.sessionId,
+            currentAgentOutput: `${parsed.cleanContent}\n\n[Running: ${cmdOp.command}]`,
+          });
           const { output, exitCode } = await executeSandboxCommand(sandboxDaytonaId, cmdOp.command);
           const resultStr = `$ ${cmdOp.command}\n${output.slice(0, 2000)}${output.length > 2000 ? "\n...(truncated)" : ""}\n[exit code: ${exitCode}]`;
           cmdResults.push(resultStr);
@@ -254,6 +295,11 @@ export const runAgentRound = action({
           testerFailReason: currentParsed.testerFailReason ?? parsed.testerFailReason,
           hackerResult: currentParsed.hackerResult ?? parsed.hackerResult,
           criticResult: currentParsed.criticResult ?? parsed.criticResult,
+        });
+
+        await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+          sessionId: args.sessionId,
+          currentAgentOutput: parsed.cleanContent,
         });
 
         currentPrompt = promptWithCmds;
@@ -322,6 +368,12 @@ export const runAgentRound = action({
     }
 
     if (newTotalMessages >= MAX_MESSAGES) { done = true; nextPhase = "completed"; }
+
+    // Clear streaming output when done
+    await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+      sessionId: args.sessionId,
+      currentAgentOutput: "",
+    });
 
     await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
       sessionId: args.sessionId,
