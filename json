@@ -1,0 +1,7 @@
+{
+  "tasks": [
+    {"id": "1", "title": "Setup", "description": "...", "subpart": false},
+    {"id": "2", "title": "Core Logic", "description": "...", "subpart": true}
+  ],
+  "summary": "..."
+}
