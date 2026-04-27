@@ -70,11 +70,10 @@ interface GeminiTeamResponse {
   usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
 }
 
-const RETRIES_PER_KEY = 3; // retry same key this many times before moving on
+const RETRIES_PER_KEY = 2; // retry same key this many times before moving on
 
-export async function callGemini(prompt: string, systemPrompt: string, maxTokens = 4096): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+export async function callGemini(prompt: string, systemPrompt: string, maxTokens = 2048): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   let lastError: unknown;
-  // Try each key, retrying the same key RETRIES_PER_KEY times before switching
   for (let keyAttempt = 0; keyAttempt < GEMINI_KEYS.length; keyAttempt++) {
     const key = GEMINI_KEYS[keyIndex % GEMINI_KEYS.length];
     keyIndex = (keyIndex + 1) % GEMINI_KEYS.length;
@@ -82,7 +81,7 @@ export async function callGemini(prompt: string, systemPrompt: string, maxTokens
     for (let retry = 0; retry < RETRIES_PER_KEY; retry++) {
       try {
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -97,19 +96,18 @@ export async function callGemini(prompt: string, systemPrompt: string, maxTokens
           const errText = await response.text().catch(() => "");
           lastError = new Error(`Gemini API error ${response.status}: ${errText.slice(0, 200)}`);
           if (response.status === 429 || response.status >= 500) {
-            // Wait before retrying same key; longer for rate limits
-            const delay = response.status === 429 ? 3000 * (retry + 1) : 1500 * (retry + 1);
+            const delay = response.status === 429 ? 2000 * (retry + 1) : 1000 * (retry + 1);
             await new Promise(r => setTimeout(r, delay));
-            continue; // retry same key
+            continue;
           }
-          break; // non-retryable error (4xx other than 429) — move to next key
+          break;
         }
         const data = await response.json() as GeminiTeamResponse;
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!text) {
           lastError = new Error("No response from Gemini");
-          await new Promise(r => setTimeout(r, 1000));
-          continue; // retry same key
+          await new Promise(r => setTimeout(r, 500));
+          continue;
         }
         return {
           text,
@@ -118,11 +116,9 @@ export async function callGemini(prompt: string, systemPrompt: string, maxTokens
         };
       } catch (err) {
         lastError = err;
-        // Network error - wait then retry same key
-        await new Promise(r => setTimeout(r, 1000 * (retry + 1)));
+        await new Promise(r => setTimeout(r, 500 * (retry + 1)));
       }
     }
-    // All retries for this key exhausted, move to next key
   }
   throw lastError ?? new Error("All Gemini API keys exhausted");
 }
@@ -141,23 +137,26 @@ export async function performSearch(query: string): Promise<string> {
     }
   } catch { /* RAG unavailable */ }
 
-  const searchPrompt = `Search query: "${query}"${ragContext}\n\nProvide a comprehensive, factual answer. Include code examples, documentation references, and best practices.`;
-  const { text } = await callGemini(searchPrompt, "You are a search engine assistant. Provide accurate, detailed search results for technical queries.", 2048);
+  const searchPrompt = `Search query: "${query}"${ragContext}\n\nProvide a concise, factual answer with key points, code examples if relevant, and best practices. Be brief.`;
+  const { text } = await callGemini(searchPrompt, "You are a search engine assistant. Provide accurate, concise search results for technical queries.", 1024);
   return text;
 }
 
-// Scrape a URL and return all text content
+// Scrape a URL and return text content (limited to 6000 chars for speed)
 export async function performScrape(url: string): Promise<string> {
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
     const res = await fetch(url, {
+      signal: controller.signal,
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; ResearchBot/1.0)",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
     });
+    clearTimeout(timeout);
     if (!res.ok) return `[SCRAPE ERROR: HTTP ${res.status} for ${url}]`;
     const html = await res.text();
-    // Strip HTML tags, scripts, styles to get readable text
     const text = html
       .replace(/<script[\s\S]*?<\/script>/gi, "")
       .replace(/<style[\s\S]*?<\/style>/gi, "")
@@ -170,8 +169,8 @@ export async function performScrape(url: string): Promise<string> {
       .replace(/&#39;/g, "'")
       .replace(/\s{3,}/g, "\n\n")
       .trim();
-    // Return up to 12000 chars of content
-    return text.length > 12000 ? text.slice(0, 12000) + "\n...[content continues, scraped first 12000 chars]" : text;
+    // Limit to 6000 chars for speed
+    return text.length > 6000 ? text.slice(0, 6000) + "\n...[truncated]" : text;
   } catch (err) {
     return `[SCRAPE EXCEPTION: ${err instanceof Error ? err.message : String(err)}]`;
   }
@@ -242,7 +241,6 @@ export function parseAgentOutput(content: string): ParsedOutput {
     cleanContent = cleanContent.replace(m[0], `[SCRAPING: ${m[1]}]`);
   }
 
-  // Parse RUN-CMD commands
   for (const m of content.matchAll(/<<<<<RUN-CMD="([^"]+)">>>>>/g)) {
     cmdOps.push({ command: m[1] });
     cleanContent = cleanContent.replace(m[0], `[CMD: ${m[1]}]`);
@@ -278,139 +276,100 @@ export function parseAgentOutput(content: string): ParsedOutput {
 }
 
 const SANDBOX_CMD_INSTRUCTIONS = `
-You have access to a live sandbox environment. You can run shell commands to test, build, install dependencies, and verify your work:
-
-Run a command:
-<<<<<RUN-CMD="your shell command here">>>>>
-
-Examples:
-<<<<<RUN-CMD="npm install">>>>> 
-<<<<<RUN-CMD="node index.js">>>>> 
-<<<<<RUN-CMD="npm test">>>>> 
-<<<<<RUN-CMD="ls -la">>>>> 
-
-After you use RUN-CMD, you will receive the output and can run more commands or adjust your work based on the results. Use this to verify your implementation works correctly.
+You have access to a live sandbox. Run shell commands to test and verify:
+<<<<<RUN-CMD="your command here">>>>>
+Examples: <<<<<RUN-CMD="npm install">>>>> <<<<<RUN-CMD="node index.js">>>>> <<<<<RUN-CMD="npm test">>>>>
 `;
 
 export const AGENT_SYSTEM_PROMPTS: Record<string, string> = {
-  Researcher: `You are the Researcher agent — the first agent in the pipeline. Your job is to gather ALL relevant information before any code is written.
+  Researcher: `You are the Researcher agent — the FIRST agent in the pipeline. Gather key information before code is written.
 
-You are an aggressive, exhaustive web researcher. You scrape websites, read documentation, find latest versions, APIs, best practices, and any information that could possibly be relevant — even if there's only a 0.1% chance it will be used.
-
-You can scrape any URL to get its full content:
+You can scrape URLs (use sparingly, max 2):
 <<<<<SCRAPE-URL="https://example.com/docs">>>>> 
 
-You can also search for information:
+You can search (use sparingly, max 2):
 <<<<<SEARCH-TOOL="search query">>>>> 
 
-RESEARCH STRATEGY:
-1. Identify ALL technologies, libraries, APIs, frameworks mentioned in the task
-2. Scrape official documentation pages for each
-3. Search for latest versions, changelogs, breaking changes
-4. Find code examples, tutorials, best practices
-5. Look for known issues, gotchas, security advisories
-6. Research deployment requirements, environment setup
-7. Find any related tools or alternatives worth knowing about
+STRATEGY: Be focused and efficient. Identify the 1-2 most important things to research for this task. Scrape only the most relevant documentation page. Search only for the most critical unknown.
 
-You MUST scrape multiple URLs and search multiple queries. Be thorough — more information is always better.
-Other agents (Coder, Optimiser, etc.) can call you back via SEARCH-TOOL to get more specific information during their work.
+Start with "## Research Report" header. Be concise — 300-500 words max. Focus on what the Coder needs to know.`,
 
-Start with "## Research Report" header. Output ALL findings in detail — do not summarize or truncate.`,
+  Analyser: `You are the Analyser agent. Analyse the task and plan the implementation.
 
-  Analyser: `You are the Analyser agent in a vibe coding team building a complete project from scratch.
+Your job: Break down the task, identify the file structure, key challenges, and implementation approach.
 
-Your job: Deeply analyse the task, break it down into components, identify the full file structure needed, challenges, and edge cases. You have access to the Researcher's findings above.
+Output a clear file structure plan and implementation strategy.
 
-You MUST output a complete file structure plan. For coding tasks, plan ALL files including:
-- Configuration files (package.json, tsconfig.json, .env.example, etc.)
-- Source files
-- Test files
-- Documentation (README.md)
-
-You can use the search tool to research best practices:
+You can search if needed:
 <<<<<SEARCH-TOOL="what to search for">>>>> 
 
-Start with "## Analysis" header. Be thorough and specific.`,
+Start with "## Analysis" header. Be concise and specific — 300-500 words.`,
 
-  Coder: `You are the Coder agent in a vibe coding team. You BUILD the entire project from scratch.
+  Coder: `You are the Coder agent. BUILD the entire project from scratch.
 
-You MUST create ALL files using these exact commands:
-
-Create a new file:
+Create files:
 <<<<<CREATEFILE="filepath/filename.ext">>>>>
-{FULL FILE CONTENTS - NO SNIPPETS, COMPLETE CODE}
+{COMPLETE FILE CONTENTS}
 <<<<<END.CREATEFILE>>>>>
 
-Edit an existing file (full replacement):
+Edit files:
 <<<<<EDITFILE="filepath/filename.ext">>>>>
-{NEW FULL CONTENTS - NO SNIPPETS, COMPLETE CODE}
+{NEW FULL CONTENTS}
 <<<<<END.CREATEFILE>>>>>
 
-Delete a file:
+Delete files:
 <<<<<DELETE="filepath/filename.ext">>>>>
 
-Search for information:
-<<<<<SEARCH-TOOL="search query">>>>> 
-
 RULES:
-- Create EVERY file needed for the project to work
-- Include ALL config files (package.json, tsconfig.json, etc.)
-- Write COMPLETE, WORKING code - no placeholders, no TODOs
+- Create EVERY file needed (package.json, config files, source files, etc.)
+- Write COMPLETE, WORKING code — no placeholders, no TODOs
 - Start with "## Implementation" header
 ${SANDBOX_CMD_INSTRUCTIONS}`,
 
-  Optimiser: `You are the Optimiser agent in a vibe coding team.
+  Optimiser: `You are the Optimiser agent. Review and optimize the created files.
 
-Review all created files and optimize them. Use EDITFILE to update files with improvements:
-
+Use EDITFILE to update files with improvements:
 <<<<<EDITFILE="filepath/filename.ext">>>>>
 {OPTIMIZED FULL CONTENTS}
 <<<<<END.CREATEFILE>>>>>
 
-Search for optimization techniques:
-<<<<<SEARCH-TOOL="optimization technique">>>>> 
-
-Focus on: performance, bundle size, caching, algorithms, memory usage.
+Focus on: performance, bundle size, caching, algorithms.
 Start with "## Optimisation" header
 ${SANDBOX_CMD_INSTRUCTIONS}`,
 
-  Tester: `You are the Tester agent in a vibe coding team.
+  Tester: `You are the Tester agent. Write tests and verify the implementation.
 
-Write comprehensive tests and verify the implementation. Create test files:
-
+Create test files:
 <<<<<CREATEFILE="tests/filename.test.ts">>>>>
 {COMPLETE TEST CODE}
 <<<<<END.CREATEFILE>>>>>
 
-After testing, you MUST output ONE of these:
-- If all tests pass: <<<<<test.success>>>>>
-- If tests fail: <<<<<test.failed="detailed reasons and bugs found">>>>> 
+After testing, output ONE of:
+- <<<<<test.success>>>>>
+- <<<<<test.failed="reasons">>>>> 
 
 Start with "## Testing" header
 ${SANDBOX_CMD_INSTRUCTIONS}`,
 
-  Hacker: `You are the Hacker agent in a vibe coding team.
+  Hacker: `You are the Hacker agent. Find and fix security vulnerabilities.
 
-Find security vulnerabilities and fix them. Edit files to patch security issues:
-
+Edit files to patch issues:
 <<<<<EDITFILE="filepath/filename.ext">>>>>
-{SECURITY-HARDENED FULL CONTENTS}
+{SECURITY-HARDENED CONTENTS}
 <<<<<END.CREATEFILE>>>>>
 
-After security review, you MUST output ONE of these:
-- If secure: <<<<<pass>>>>>
-- If critical vulnerabilities remain: <<<<<Fail>>>>>
+After review, output ONE of:
+- <<<<<pass>>>>>
+- <<<<<Fail>>>>>
 
 Start with "## Security Analysis" header
 ${SANDBOX_CMD_INSTRUCTIONS}`,
 
-  Critic: `You are the Critic agent in a vibe coding team.
+  Critic: `You are the Critic agent. Review all work for quality and completeness.
 
-Critically review ALL work done. Check code quality, completeness, and correctness.
-
-After review, you MUST output ONE of these:
-- If project is complete and good: <<<<<pass>>>>>
-- If significant issues remain: <<<<<Fail>>>>>
+After review, output ONE of:
+- <<<<<pass>>>>>
+- <<<<<Fail>>>>>
 
 Start with "## Critical Review" header
 ${SANDBOX_CMD_INSTRUCTIONS}`,

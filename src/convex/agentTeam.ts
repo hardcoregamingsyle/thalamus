@@ -178,7 +178,7 @@ export const runAgentRound = action({
       currentAgentOutput: `[${currentPhase} is thinking...]`,
     });
 
-    let geminiResult = await callGemini(prompt, systemPrompt, 4096);
+    let geminiResult = await callGemini(prompt, systemPrompt, 2048);
     let rawContent = geminiResult.text;
     let totalInputTokens = geminiResult.inputTokens;
     let totalOutputTokens = geminiResult.outputTokens;
@@ -192,23 +192,24 @@ export const runAgentRound = action({
 
     let parsed = initialParsed;
 
-    // Handle scrape operations (Researcher agent primarily, but any agent can use it)
+    // Handle scrape operations — limit to max 2 for speed
     if (parsed.scrapeOps.length > 0) {
+      const limitedScrapeOps = parsed.scrapeOps.slice(0, 2);
       await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
         sessionId: args.sessionId,
-        currentAgentOutput: `${parsed.cleanContent}\n\n[Scraping ${parsed.scrapeOps.length} URL(s)...]`,
+        currentAgentOutput: `${parsed.cleanContent}\n\n[Scraping ${limitedScrapeOps.length} URL(s)...]`,
       });
       const scrapeResults: string[] = [];
-      for (const scrapeOp of parsed.scrapeOps) {
+      for (const scrapeOp of limitedScrapeOps) {
         const result = await performScrape(scrapeOp.url);
         scrapeResults.push(`SCRAPED CONTENT from "${scrapeOp.url}":\n${result}`);
       }
-      const promptWithScrapes = `${prompt}\n\nYour previous response requested URL scrapes. Here are the full contents:\n\n${scrapeResults.join("\n\n---\n\n")}\n\nNow provide your complete ${currentPhase} output incorporating all this scraped information. Include ALL relevant details.`;
+      const promptWithScrapes = `${prompt}\n\nURL scrape results:\n\n${scrapeResults.join("\n\n---\n\n")}\n\nNow provide your complete ${currentPhase} output incorporating this information. Be concise.`;
       await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
         sessionId: args.sessionId,
         currentAgentOutput: `${parsed.cleanContent}\n\n[Scraping complete. Generating final response...]`,
       });
-      const geminiResult2 = await callGemini(promptWithScrapes, systemPrompt, 4096);
+      const geminiResult2 = await callGemini(promptWithScrapes, systemPrompt, 2048);
       rawContent = geminiResult2.text;
       totalInputTokens += geminiResult2.inputTokens;
       totalOutputTokens += geminiResult2.outputTokens;
@@ -221,23 +222,24 @@ export const runAgentRound = action({
       });
     }
 
-    // Handle search operations
+    // Handle search operations — limit to max 2 for speed
     if (parsed.searchOps.length > 0) {
+      const limitedSearchOps = parsed.searchOps.slice(0, 2);
       await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
         sessionId: args.sessionId,
-        currentAgentOutput: `${parsed.cleanContent}\n\n[Searching ${parsed.searchOps.length} query(ies)...]`,
+        currentAgentOutput: `${parsed.cleanContent}\n\n[Searching ${limitedSearchOps.length} query(ies)...]`,
       });
       const searchResults: string[] = [];
-      for (const searchOp of parsed.searchOps) {
+      for (const searchOp of limitedSearchOps) {
         const result = await performSearch(searchOp.query);
         searchResults.push(`SEARCH RESULT for "${searchOp.query}":\n${result}`);
       }
-      const promptWithSearch = `${prompt}\n\nYour previous response requested searches. Here are the results:\n\n${searchResults.join("\n\n---\n\n")}\n\nNow provide your complete ${currentPhase} output incorporating these search results.`;
+      const promptWithSearch = `${prompt}\n\nSearch results:\n\n${searchResults.join("\n\n---\n\n")}\n\nNow provide your complete ${currentPhase} output incorporating these results. Be concise.`;
       await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
         sessionId: args.sessionId,
         currentAgentOutput: `${parsed.cleanContent}\n\n[Search complete. Generating final response...]`,
       });
-      const geminiResult3 = await callGemini(promptWithSearch, systemPrompt, 4096);
+      const geminiResult3 = await callGemini(promptWithSearch, systemPrompt, 2048);
       rawContent = geminiResult3.text;
       totalInputTokens += geminiResult3.inputTokens;
       totalOutputTokens += geminiResult3.outputTokens;
