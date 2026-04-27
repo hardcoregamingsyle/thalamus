@@ -295,14 +295,27 @@ export interface PlannerOutput {
 }
 
 export function parsePlannerOutput(content: string): PlannerOutput | null {
-  // Find the first { and try to parse JSON from there
-  const start = content.indexOf("{");
-  if (start === -1) return null;
-  // Try progressively larger substrings to find valid JSON
-  for (let end = content.length; end > start; end = content.lastIndexOf("}", end - 1)) {
+  // First try to extract JSON from markdown code blocks (
+  const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
+  if (jsonMatch) {
+    try {
+      const json = JSON.parse(jsonMatch[1]);
+      if (Array.isArray(json.tasks) && json.tasks.length > 0) {
+        return { tasks: json.tasks, summary: json.summary ?? "" };
+      }
+    } catch (err) {
+      console.error("Failed to parse JSON from markdown code block:", err);
+    }
+  }
+
+  // Try to find JSON in the content
+  const jsonStart = content.indexOf("{");
+  if (jsonStart === -1) return null;
+
+  for (let end = content.length; end > jsonStart; end = content.lastIndexOf("}", end - 1)) {
     if (end === -1) break;
     try {
-      const candidate = content.slice(start, end + 1);
+      const candidate = content.slice(jsonStart, end + 1);
       const json = JSON.parse(candidate) as { tasks?: PlannerTask[]; summary?: string };
       if (json.tasks && Array.isArray(json.tasks) && json.tasks.length > 0) {
         return { tasks: json.tasks, summary: json.summary ?? "" };
