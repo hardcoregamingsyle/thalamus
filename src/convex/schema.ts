@@ -77,6 +77,11 @@ const schema = defineSchema(
       phase: v.optional(v.string()),
       totalMessages: v.optional(v.number()),
       currentAgentOutput: v.optional(v.string()),
+      // Planner task breakdown
+      plannerTasksJson: v.optional(v.string()), // JSON string of PlannerTask[]
+      currentTaskIndex: v.optional(v.number()),  // which task we're on
+      executionPhase: v.optional(v.string()),    // "planning" | "tasks" | "final_review"
+      finalReviewCoderEnabled: v.optional(v.boolean()), // true if critic failed in final review
     })
       .index("by_user", ["userId"]),
 

@@ -281,6 +281,37 @@ You have access to a live sandbox. Run shell commands to test and verify:
 Examples: <<<<<RUN-CMD="npm install">>>>> <<<<<RUN-CMD="node index.js">>>>> <<<<<RUN-CMD="npm test">>>>>
 `;
 
+export interface PlannerTask {
+  id: string;
+  title: string;
+  description: string;
+  subpart: boolean; // if true, Planner is skipped when processing this task
+  dependencies?: string[]; // task ids this depends on
+}
+
+export interface PlannerOutput {
+  tasks: PlannerTask[];
+  summary: string;
+}
+
+export function parsePlannerOutput(content: string): PlannerOutput | null {
+  // Find the first { and try to parse JSON from there
+  const start = content.indexOf("{");
+  if (start === -1) return null;
+  // Try progressively larger substrings to find valid JSON
+  for (let end = content.length; end > start; end = content.lastIndexOf("}", end - 1)) {
+    if (end === -1) break;
+    try {
+      const candidate = content.slice(start, end + 1);
+      const json = JSON.parse(candidate) as { tasks?: PlannerTask[]; summary?: string };
+      if (json.tasks && Array.isArray(json.tasks) && json.tasks.length > 0) {
+        return { tasks: json.tasks, summary: json.summary ?? "" };
+      }
+    } catch { /* keep trying */ }
+  }
+  return null;
+}
+
 export const AGENT_SYSTEM_PROMPTS: Record<string, string> = {
   Researcher: `You are the Researcher agent — the FIRST agent in the pipeline. Gather key information before code is written.
 

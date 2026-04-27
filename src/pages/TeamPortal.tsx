@@ -47,6 +47,10 @@ interface TeamSession {
   loopCount: number;
   currentAgent?: string;
   currentAgentOutput?: string;
+  executionPhase?: string;
+  currentTaskIndex?: number;
+  plannerTasksJson?: string;
+  finalReviewCoderEnabled?: boolean;
 }
 
 interface ProjectFile {
@@ -72,6 +76,7 @@ interface SandboxRow {
 const AGENT_COLORS: Record<string, string> = {
   Researcher: "text-cyan-400",
   Analyser: "text-blue-400",
+  Planner: "text-violet-400",
   Coder: "text-emerald-400",
   Optimiser: "text-amber-400",
   Tester: "text-green-400",
@@ -82,6 +87,7 @@ const AGENT_COLORS: Record<string, string> = {
 const AGENT_BG: Record<string, string> = {
   Researcher: "bg-cyan-400/10 border-cyan-400/20",
   Analyser: "bg-blue-400/10 border-blue-400/20",
+  Planner: "bg-violet-400/10 border-violet-400/20",
   Coder: "bg-emerald-400/10 border-emerald-400/20",
   Optimiser: "bg-amber-400/10 border-amber-400/20",
   Tester: "bg-green-400/10 border-green-400/20",
@@ -92,6 +98,7 @@ const AGENT_BG: Record<string, string> = {
 const AGENT_ICONS: Record<string, string> = {
   Researcher: "🔍",
   Analyser: "A",
+  Planner: "P",
   Coder: "C",
   Optimiser: "O",
   Tester: "T",
@@ -99,8 +106,8 @@ const AGENT_ICONS: Record<string, string> = {
   Critic: "R",
 };
 
-const PIPELINE = ["Researcher", "Analyser", "Coder", "Optimiser", "Tester", "Hacker", "Critic"];
-const MAX_MESSAGES = 60;
+const PIPELINE = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Tester", "Hacker", "Critic"];
+const MAX_MESSAGES = 600;
 
 export default function TeamPortal() {
   const { isLoading, isAuthenticated, user, signOut, token } = useAuth();
@@ -154,6 +161,10 @@ export default function TeamPortal() {
     loopCount: liveSession.loopCount ?? 0,
     currentAgent: liveSession.currentAgent,
     currentAgentOutput: liveSession.currentAgentOutput,
+    executionPhase: (liveSession as Record<string, unknown>).executionPhase as string | undefined,
+    currentTaskIndex: (liveSession as Record<string, unknown>).currentTaskIndex as number | undefined,
+    plannerTasksJson: (liveSession as Record<string, unknown>).plannerTasksJson as string | undefined,
+    finalReviewCoderEnabled: (liveSession as Record<string, unknown>).finalReviewCoderEnabled as boolean | undefined,
   } as TeamSession : null;
 
   const messages: AgentMessage[] = (liveMessages ?? []).map((m) => ({
@@ -442,6 +453,16 @@ export default function TeamPortal() {
   const streamingAgent = sessionInfo?.currentAgent ?? currentAgent;
   const streamingOutput = sessionInfo?.currentAgentOutput ?? "";
 
+  // Execution phase display
+  const execPhase = sessionInfo?.executionPhase ?? "planning";
+  const taskIndex = sessionInfo?.currentTaskIndex ?? 0;
+  let plannerTasks: Array<{ id: string; title: string; description: string; subpart: boolean }> = [];
+  try {
+    if (sessionInfo?.plannerTasksJson) plannerTasks = JSON.parse(sessionInfo.plannerTasksJson);
+  } catch { /* ignore */ }
+
+  const execPhaseLabel = execPhase === "planning" ? "📋 PLANNING" : execPhase === "final_review" ? "🔍 FINAL REVIEW" : `⚙️ TASK ${taskIndex + 1}/${plannerTasks.length || "?"}`;
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -464,6 +485,7 @@ export default function TeamPortal() {
         <div className="flex items-center gap-3">
           {sessionInfo && (
             <div className="hidden sm:flex items-center gap-2 text-xs">
+              <span className="text-cyan-400 font-bold">{execPhaseLabel}</span>
               <span className="text-amber-400 font-bold">{totalMessages}/{MAX_MESSAGES}</span>
               {loopCount > 0 && <span className="text-red-400">loop {loopCount}</span>}
               <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${sessionInfo.status === "completed" ? "bg-green-400/20 text-green-400" : sessionInfo.status === "running" ? "bg-primary/20 text-primary animate-pulse" : "bg-muted text-muted-foreground"}`}>
@@ -485,7 +507,7 @@ export default function TeamPortal() {
           <div className="p-3 border-b border-border">
             <p className="text-xs text-muted-foreground mb-2 font-bold">PIPELINE</p>
             <div className="space-y-1">
-              {PIPELINE.map((agent, idx) => {
+              {PIPELINE.map((agent) => {
                 const isActive = currentAgent === agent || (isRunning && sessionInfo?.phase === agent) || (sessionInfo?.status === "running" && sessionInfo?.currentAgent === agent);
                 const isNext = !isRunning && sessionInfo && currentPhase === agent && sessionInfo.status !== "completed";
                 const isDone = sessionInfo && sessionInfo.status !== "completed"
@@ -503,6 +525,23 @@ export default function TeamPortal() {
                 );
               })}
             </div>
+            {/* Task list from Planner */}
+            {plannerTasks.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs text-muted-foreground mb-1 font-bold">TASKS ({plannerTasks.length})</p>
+                <div className="space-y-1">
+                  {plannerTasks.map((t, i) => (
+                    <div key={t.id} className={`flex items-start gap-1.5 px-1 py-1 rounded text-xs ${i === taskIndex && execPhase === "tasks" ? "bg-cyan-400/10" : ""}`}>
+                      <span className={`shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold mt-0.5 ${i < taskIndex || execPhase === "final_review" ? "bg-green-400/20 text-green-400" : i === taskIndex && execPhase === "tasks" ? "bg-cyan-400/20 text-cyan-400" : "bg-muted text-muted-foreground"}`}>
+                        {i < taskIndex || execPhase === "final_review" ? "✓" : i + 1}
+                      </span>
+                      <span className={`flex-1 leading-tight ${i === taskIndex && execPhase === "tasks" ? "text-cyan-400 font-bold" : "text-muted-foreground"}`}>{t.title}</span>
+                      {t.subpart && <span className="text-amber-400/60 text-xs shrink-0">sub</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Sessions list */}
@@ -600,7 +639,7 @@ export default function TeamPortal() {
                       {sessionInfo && (
                         <div className="bg-card border border-border rounded-lg p-3 text-xs">
                           <p className="font-bold text-foreground mb-1 truncate">{sessionInfo.task}</p>
-                          <p className="text-muted-foreground">7 agents • Researcher → Analyser → Coder → Optimiser → Tester → Hacker → Critic</p>
+                          <p className="text-muted-foreground">{execPhaseLabel} • 8 agents: Researcher → Analyser → Planner → Coder → Optimiser → Tester → Hacker → Critic</p>
                         </div>
                       )}
 
