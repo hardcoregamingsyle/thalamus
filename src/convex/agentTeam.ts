@@ -3,9 +3,9 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { callGemini, performSearch, parseAgentOutput, AGENT_SYSTEM_PROMPTS } from "./agentCore";
+import { callGemini, performSearch, performScrape, parseAgentOutput, AGENT_SYSTEM_PROMPTS } from "./agentCore";
 
-const PIPELINE = ["Analyser", "Coder", "Optimiser", "Tester", "Hacker", "Critic"];
+const PIPELINE = ["Researcher", "Analyser", "Coder", "Optimiser", "Tester", "Hacker", "Critic"];
 const MAX_MESSAGES = 60;
 const RAG_BASE_URL = "https://leadshello-graph-rag-and-chroma-db.hf.space";
 const DAYTONA_API = "https://app.daytona.io/api";
@@ -129,7 +129,7 @@ export const runAgentRound = action({
       throw new Error("Maximum message limit (60) reached");
     }
 
-    const currentPhase = session.phase ?? "Analyser";
+    const currentPhase = session.phase ?? "Researcher";
     const loopCount = session.loopCount ?? 0;
 
     const prevMessages = (await ctx.runQuery(internal.agentTeamHelpers.getSessionMessages, { sessionId: args.sessionId })) as MsgRow[];
@@ -141,11 +141,11 @@ export const runAgentRound = action({
         projectFiles.map((f) => `--- ${f.filepath} ---\n${f.content.slice(0, 2000)}${f.content.length > 2000 ? "\n...(truncated)" : ""}`).join("\n\n")
       : "";
 
-    // Fetch sandbox for non-Analyser agents
+    // Fetch sandbox for non-research/analysis agents
     let sandboxDbId: Id<"sandboxes"> | null = null;
     let sandboxDaytonaId: string | null = null;
     let sandboxContext = "";
-    if (currentPhase !== "Analyser") {
+    if (currentPhase !== "Researcher" && currentPhase !== "Analyser") {
       const sandbox = (await ctx.runQuery(internal.sandboxHelpers.getSandboxBySession, {
         sessionId: args.sessionId,
       })) as SandboxDbRow | null;
@@ -158,11 +158,11 @@ export const runAgentRound = action({
       }
     }
 
-    const systemPrompt = AGENT_SYSTEM_PROMPTS[currentPhase] || AGENT_SYSTEM_PROMPTS["Analyser"];
+    const systemPrompt = AGENT_SYSTEM_PROMPTS[currentPhase] || AGENT_SYSTEM_PROMPTS["Researcher"];
 
     let prompt: string;
     if (prevMessages.length === 0) {
-      prompt = `TASK: ${session.task}\n\nYou are the first agent. Provide your ${currentPhase} output.${filesContext}${sandboxContext}`;
+      prompt = `TASK: ${session.task}\n\nYou are the first agent (Researcher). Gather all relevant information for this task.${filesContext}${sandboxContext}`;
     } else {
       prompt = `TASK: ${session.task}\n\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nLOOP: ${loopCount + 1}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
     }
@@ -179,15 +179,15 @@ export const runAgentRound = action({
 
     let parsed = parseAgentOutput(rawContent);
 
-    // Handle search operations
-    if (parsed.searchOps.length > 0) {
-      const searchResults: string[] = [];
-      for (const searchOp of parsed.searchOps) {
-        const result = await performSearch(searchOp.query);
-        searchResults.push(`SEARCH RESULT for "${searchOp.query}":\n${result}`);
+    // Handle scrape operations (Researcher agent primarily, but any agent can use it)
+    if (parsed.scrapeOps.length > 0) {
+      const scrapeResults: string[] = [];
+      for (const scrapeOp of parsed.scrapeOps) {
+        const result = await performScrape(scrapeOp.url);
+        scrapeResults.push(`SCRAPED CONTENT from "${scrapeOp.url}":\n${result}`);
       }
-      const promptWithSearch = `${prompt}\n\nYour previous response requested searches. Here are the results:\n\n${searchResults.join("\n\n---\n\n")}\n\nNow provide your complete ${currentPhase} output incorporating these search results.`;
-      const geminiResult2 = await callGemini(promptWithSearch, systemPrompt, 4096);
+      const promptWithScrapes = `${prompt}\n\nYour previous response requested URL scrapes. Here are the full contents:\n\n${scrapeResults.join("\n\n---\n\n")}\n\nNow provide your complete ${currentPhase} output incorporating all this scraped information. Include ALL relevant details.`;
+      const geminiResult2 = await callGemini(promptWithScrapes, systemPrompt, 4096);
       rawContent = geminiResult2.text;
       totalInputTokens += geminiResult2.inputTokens;
       totalOutputTokens += geminiResult2.outputTokens;
@@ -196,8 +196,25 @@ export const runAgentRound = action({
       parsed.fileOps.push(...reparsed.fileOps);
     }
 
-    // Handle sandbox RUN-CMD loop (non-Analyser only, up to MAX_CMD_LOOPS iterations)
-    if (currentPhase !== "Analyser" && sandboxDaytonaId && parsed.cmdOps.length > 0) {
+    // Handle search operations
+    if (parsed.searchOps.length > 0) {
+      const searchResults: string[] = [];
+      for (const searchOp of parsed.searchOps) {
+        const result = await performSearch(searchOp.query);
+        searchResults.push(`SEARCH RESULT for "${searchOp.query}":\n${result}`);
+      }
+      const promptWithSearch = `${prompt}\n\nYour previous response requested searches. Here are the results:\n\n${searchResults.join("\n\n---\n\n")}\n\nNow provide your complete ${currentPhase} output incorporating these search results.`;
+      const geminiResult3 = await callGemini(promptWithSearch, systemPrompt, 4096);
+      rawContent = geminiResult3.text;
+      totalInputTokens += geminiResult3.inputTokens;
+      totalOutputTokens += geminiResult3.outputTokens;
+      const reparsed = parseAgentOutput(rawContent);
+      parsed = reparsed;
+      parsed.fileOps.push(...reparsed.fileOps);
+    }
+
+    // Handle sandbox RUN-CMD loop (non-Researcher, non-Analyser only, up to MAX_CMD_LOOPS iterations)
+    if (currentPhase !== "Researcher" && currentPhase !== "Analyser" && sandboxDaytonaId && parsed.cmdOps.length > 0) {
       let cmdLoopCount = 0;
       let currentPrompt = prompt;
       let currentParsed = parsed;
@@ -210,9 +227,8 @@ export const runAgentRound = action({
           const resultStr = `$ ${cmdOp.command}\n${output.slice(0, 2000)}${output.length > 2000 ? "\n...(truncated)" : ""}\n[exit code: ${exitCode}]`;
           cmdResults.push(resultStr);
 
-          // Update sandbox record with last command/output
           if (sandboxDbId) {
-            const elapsedHours = 0; // cost tracked separately per sandbox
+            const elapsedHours = 0;
             void elapsedHours;
             await ctx.runMutation(internal.sandboxHelpers.updateSandboxCommand, {
               sandboxDbId,
@@ -223,7 +239,6 @@ export const runAgentRound = action({
           }
         }
 
-        // Feed command results back to agent
         const promptWithCmds = `${currentPrompt}\n\nYour previous response ran sandbox commands. Here are the results:\n\n${cmdResults.join("\n\n---\n\n")}\n\nBased on these results, provide your updated ${currentPhase} output. If you need to run more commands, use RUN-CMD again. If done, provide your final output without any RUN-CMD commands.`;
 
         const geminiResultCmd = await callGemini(promptWithCmds, systemPrompt, 4096);
@@ -232,7 +247,6 @@ export const runAgentRound = action({
         totalOutputTokens += geminiResultCmd.outputTokens;
 
         currentParsed = parseAgentOutput(rawContent);
-        // Accumulate file ops from each iteration
         parsed.fileOps.push(...currentParsed.fileOps);
         parsed.cleanContent = currentParsed.cleanContent;
         Object.assign(parsed, {
@@ -249,7 +263,6 @@ export const runAgentRound = action({
 
     // Execute file operations
     let fileOpsCount = 0;
-    // Deduplicate file ops (last write wins per filepath)
     const fileOpsMap = new Map<string, typeof parsed.fileOps[0]>();
     for (const op of parsed.fileOps) {
       fileOpsMap.set(op.filepath, op);
@@ -294,13 +307,13 @@ export const runAgentRound = action({
     let done = false;
 
     if (currentPhase === "Tester") {
-      if (parsed.testerResult === "fail") { nextPhase = "Analyser"; newLoopCount = loopCount + 1; }
+      if (parsed.testerResult === "fail") { nextPhase = "Researcher"; newLoopCount = loopCount + 1; }
       else { nextPhase = "Hacker"; }
     } else if (currentPhase === "Hacker") {
-      if (parsed.hackerResult === "fail") { nextPhase = "Analyser"; newLoopCount = loopCount + 1; }
+      if (parsed.hackerResult === "fail") { nextPhase = "Researcher"; newLoopCount = loopCount + 1; }
       else { nextPhase = "Critic"; }
     } else if (currentPhase === "Critic") {
-      if (parsed.criticResult === "fail") { nextPhase = "Analyser"; newLoopCount = loopCount + 1; }
+      if (parsed.criticResult === "fail") { nextPhase = "Researcher"; newLoopCount = loopCount + 1; }
       else { nextPhase = "completed"; done = true; }
     } else {
       const idx = PIPELINE.indexOf(currentPhase);
@@ -320,7 +333,15 @@ export const runAgentRound = action({
       totalMessages: newTotalMessages,
     });
 
-    return { agent: currentPhase, content: parsed.cleanContent, done, nextAgent: nextPhase, loopCount: newLoopCount, totalMessages: newTotalMessages, fileOpsCount };
+    return {
+      agent: currentPhase,
+      content: parsed.cleanContent,
+      done,
+      nextAgent: nextPhase,
+      loopCount: newLoopCount,
+      totalMessages: newTotalMessages,
+      fileOpsCount,
+    };
   },
 });
 
