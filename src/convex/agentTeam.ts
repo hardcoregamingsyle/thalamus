@@ -178,7 +178,7 @@ export const runAgentRound = action({
       currentAgentOutput: `[${currentPhase} is thinking...]`,
     });
 
-    let geminiResult = await callGemini(prompt, systemPrompt, 2048);
+    let geminiResult = await callGemini(prompt, systemPrompt);
     let rawContent = geminiResult.text;
     let totalInputTokens = geminiResult.inputTokens;
     let totalOutputTokens = geminiResult.outputTokens;
@@ -209,7 +209,7 @@ export const runAgentRound = action({
         sessionId: args.sessionId,
         currentAgentOutput: `${parsed.cleanContent}\n\n[Scraping complete. Generating final response...]`,
       });
-      const geminiResult2 = await callGemini(promptWithScrapes, systemPrompt, 2048);
+      const geminiResult2 = await callGemini(promptWithScrapes, systemPrompt);
       rawContent = geminiResult2.text;
       totalInputTokens += geminiResult2.inputTokens;
       totalOutputTokens += geminiResult2.outputTokens;
@@ -239,7 +239,7 @@ export const runAgentRound = action({
         sessionId: args.sessionId,
         currentAgentOutput: `${parsed.cleanContent}\n\n[Search complete. Generating final response...]`,
       });
-      const geminiResult3 = await callGemini(promptWithSearch, systemPrompt, 2048);
+      const geminiResult3 = await callGemini(promptWithSearch, systemPrompt);
       rawContent = geminiResult3.text;
       totalInputTokens += geminiResult3.inputTokens;
       totalOutputTokens += geminiResult3.outputTokens;
@@ -284,7 +284,7 @@ export const runAgentRound = action({
 
         const promptWithCmds = `${currentPrompt}\n\nYour previous response ran sandbox commands. Here are the results:\n\n${cmdResults.join("\n\n---\n\n")}\n\nBased on these results, provide your updated ${currentPhase} output. If you need to run more commands, use RUN-CMD again. If done, provide your final output without any RUN-CMD commands.`;
 
-        const geminiResultCmd = await callGemini(promptWithCmds, systemPrompt, 4096);
+        const geminiResultCmd = await callGemini(promptWithCmds, systemPrompt);
         rawContent = geminiResultCmd.text;
         totalInputTokens += geminiResultCmd.inputTokens;
         totalOutputTokens += geminiResultCmd.outputTokens;

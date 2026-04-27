@@ -72,7 +72,7 @@ interface GeminiTeamResponse {
 
 const RETRIES_PER_KEY = 2; // retry same key this many times before moving on
 
-export async function callGemini(prompt: string, systemPrompt: string, maxTokens = 2048): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+export async function callGemini(prompt: string, systemPrompt: string, _maxTokens?: number): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   let lastError: unknown;
   for (let keyAttempt = 0; keyAttempt < GEMINI_KEYS.length; keyAttempt++) {
     const key = GEMINI_KEYS[keyIndex % GEMINI_KEYS.length];
@@ -81,14 +81,14 @@ export async function callGemini(prompt: string, systemPrompt: string, maxTokens
     for (let retry = 0; retry < RETRIES_PER_KEY; retry++) {
       try {
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17:generateContent?key=${key}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               system_instruction: { parts: [{ text: systemPrompt }] },
               contents: [{ role: "user", parts: [{ text: prompt }] }],
-              generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
+              generationConfig: { temperature: 0.7 },
             }),
           }
         );
@@ -138,7 +138,7 @@ export async function performSearch(query: string): Promise<string> {
   } catch { /* RAG unavailable */ }
 
   const searchPrompt = `Search query: "${query}"${ragContext}\n\nProvide a concise, factual answer with key points, code examples if relevant, and best practices. Be brief.`;
-  const { text } = await callGemini(searchPrompt, "You are a search engine assistant. Provide accurate, concise search results for technical queries.", 1024);
+  const { text } = await callGemini(searchPrompt, "You are a search engine assistant. Provide accurate, detailed search results for technical queries.");
   return text;
 }
 
