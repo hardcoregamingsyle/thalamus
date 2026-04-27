@@ -658,7 +658,7 @@ export default function TeamPortal() {
                             <p className={`text-xs font-bold mb-1 ${AGENT_COLORS[msg.agent] || "text-foreground"}`}>{msg.agent}</p>
                             <div className={`rounded-2xl rounded-tl-sm px-4 py-3 border shadow-sm ${AGENT_BG[msg.agent] || "bg-card border-border"}`}>
                               <div className="text-xs text-foreground/90 leading-relaxed prose prose-invert prose-xs max-w-none">
-                                <ReactMarkdown>{msg.content.length > 800 ? msg.content.slice(0, 800) + "\n\n*[truncated — see Files tab for full output]*" : msg.content}</ReactMarkdown>
+                                <ReactMarkdown>{msg.content}</ReactMarkdown>
                               </div>
                             </div>
                             {msg.round !== undefined && (
