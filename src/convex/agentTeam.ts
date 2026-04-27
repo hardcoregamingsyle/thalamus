@@ -20,7 +20,7 @@ const RAG_BASE_URL = "https://leadshello-graph-rag-and-chroma-db.hf.space";
 // Planning pipeline (no Coder/Optimiser/Tester/Hacker/Critic)
 const PLANNING_PIPELINE = ["Researcher", "Analyser", "Planner"];
 
-// Per-task pipeline (Planner skipped if task.subpart === true)
+// Per-task pipeline (Planner runs if task.subpart === true, skipped if false)
 const TASK_PIPELINE_FULL = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Tester", "Hacker", "Critic"];
 const TASK_PIPELINE_SUBPART = ["Researcher", "Analyser", "Coder", "Optimiser", "Tester", "Hacker", "Critic"];
 
@@ -84,7 +84,8 @@ function getPipeline(executionPhase: string, tasks: PlannerTask[], taskIndex: nu
   // "tasks" phase
   const task = tasks[taskIndex];
   if (!task) return TASK_PIPELINE_FULL;
-  return task.subpart ? TASK_PIPELINE_SUBPART : TASK_PIPELINE_FULL;
+  // subpart=true → Planner runs (FULL pipeline); subpart=false → Planner skipped (SUBPART pipeline)
+  return task.subpart ? TASK_PIPELINE_FULL : TASK_PIPELINE_SUBPART;
 }
 
 // ─── RAG actions ──────────────────────────────────────────────────────────────
