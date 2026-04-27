@@ -7,10 +7,11 @@ import { Id } from "./_generated/dataModel";
 // $0.075 per hour = 7.5 cents per hour
 const COST_CENTS_PER_HOUR = 7.5;
 const DAYTONA_API = "https://app.daytona.io/api";
-const DAYTONA_API_KEY_FALLBACK = "dtn_7f36b63fc707555bd843029875fb29caf44e4607c2b3ab29a28c73c737e450b5";
+// Hardcoded API key (primary)
+const DAYTONA_API_KEY = "dtn_7f36b63fc707555bd843029875fb29caf44e4607c2b3ab29a28c73c737e450b5";
 
 function getApiKey(): string {
-  return process.env.DAYTONA_API_KEY || DAYTONA_API_KEY_FALLBACK;
+  return process.env.DAYTONA_API_KEY || DAYTONA_API_KEY;
 }
 
 function daytonaHeaders(apiKey: string) {
@@ -57,6 +58,99 @@ interface DaytonaPreviewUrl {
   url?: string;
 }
 
+// Check sandbox status via Daytona API and wake it if not running.
+// Returns true if sandbox is running (or was successfully started), false otherwise.
+async function checkAndWakeSandbox(sandboxId: string): Promise<{ running: boolean; error?: string }> {
+  const apiKey = getApiKey();
+  try {
+    // Check current status
+    const res = await fetch(`${DAYTONA_API}/sandbox/${sandboxId}`, {
+      headers: daytonaHeaders(apiKey),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      return { running: false, error: `Status check failed: ${res.status} ${text.slice(0, 100)}` };
+    }
+    const data = await res.json() as DaytonaSandbox;
+    const state = (data.state ?? "").toLowerCase();
+
+    if (state === "running" || state === "started") {
+      return { running: true };
+    }
+
+    // Sandbox is not running — attempt to start it
+    const startRes = await fetch(`${DAYTONA_API}/sandbox/${sandboxId}/start`, {
+      method: "POST",
+      headers: daytonaHeaders(apiKey),
+    });
+    if (!startRes.ok) {
+      const startText = await startRes.text().catch(() => "");
+      return { running: false, error: `Failed to start sandbox: ${startRes.status} ${startText.slice(0, 100)}` };
+    }
+
+    // Wait up to 30 seconds for sandbox to become ready
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const pollRes = await fetch(`${DAYTONA_API}/sandbox/${sandboxId}`, {
+          headers: daytonaHeaders(apiKey),
+        });
+        if (pollRes.ok) {
+          const pollData = await pollRes.json() as DaytonaSandbox;
+          const pollState = (pollData.state ?? "").toLowerCase();
+          if (pollState === "running" || pollState === "started") {
+            return { running: true };
+          }
+        }
+      } catch { /* keep polling */ }
+    }
+
+    return { running: false, error: "Sandbox did not become ready within 30 seconds" };
+  } catch (err) {
+    return { running: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// Execute a command with sandbox wake-up retry logic
+async function executeCommandWithRetry(sandboxId: string, command: string): Promise<{ output: string; exitCode: number }> {
+  const apiKey = getApiKey();
+  const wrappedCommand = command.startsWith("cd ") ? command : `cd /home/daytona && ${command}`;
+
+  const doExecute = async (): Promise<{ output: string; exitCode: number; status: number }> => {
+    const res = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
+      method: "POST",
+      headers: daytonaHeaders(apiKey),
+      body: JSON.stringify({ command: wrappedCommand }),
+    });
+    const status = res.status;
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      return { output: `[SANDBOX ERROR ${status}: ${text.slice(0, 200)}]`, exitCode: 1, status };
+    }
+    const data = await res.json() as DaytonaExecResponse;
+    return { output: data.result ?? "", exitCode: data.exitCode ?? 0, status };
+  };
+
+  // First attempt
+  const first = await doExecute();
+  if (first.status !== 400 || !first.output.includes("not running")) {
+    return { output: first.output, exitCode: first.exitCode };
+  }
+
+  // 400 "Sandbox is not running" — try to wake it
+  const wake = await checkAndWakeSandbox(sandboxId);
+  if (!wake.running) {
+    return {
+      output: `[SANDBOX WAKE FAILED: ${wake.error ?? "unknown error"}. Please restart the sandbox manually.]`,
+      exitCode: 1,
+    };
+  }
+
+  // Retry after wake
+  const retry = await doExecute();
+  return { output: retry.output, exitCode: retry.exitCode };
+}
+
 // Unified file write: tries multipart upload API first, falls back to base64 shell command
 async function writeFileToSandbox(sandboxId: string, apiKey: string, filepath: string, content: string): Promise<{ ok: boolean; method?: string; error?: string }> {
   const absolutePath = `/home/daytona/${filepath}`;
@@ -80,7 +174,6 @@ async function writeFileToSandbox(sandboxId: string, apiKey: string, filepath: s
     });
     if (res.ok) return { ok: true, method: "multipart" };
     const errText = await res.text().catch(() => "");
-    // Fall through to shell method
     const uploadErr = `Upload API ${res.status}: ${errText.slice(0, 100)}`;
 
     // Method 2: base64 shell command fallback
@@ -143,7 +236,7 @@ export const createSandbox = action({
   },
 });
 
-// Execute a command in a sandbox
+// Execute a command in a sandbox — with automatic wake-up if sandbox is stopped
 export const executeCommand = action({
   args: {
     token: v.string(),
@@ -162,17 +255,25 @@ export const executeCommand = action({
 
     if (!sandboxRecord) throw new Error("Sandbox not found");
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
-    if (sandboxRecord.status !== "running") throw new Error("Sandbox is not running");
 
-    // Execute command via toolbox REST API - always from /home/daytona (sandbox home dir)
-    const wrappedCommand = args.command.startsWith("cd ") ? args.command : `cd /home/daytona && ${args.command}`;
-    const response = await daytonaFetch(`/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
-      method: "POST",
-      body: JSON.stringify({ command: wrappedCommand }),
-    }) as DaytonaExecResponse;
+    // Check and wake sandbox if needed (don't throw if DB says stopped — Daytona may still have it)
+    if (sandboxRecord.status !== "running") {
+      const wake = await checkAndWakeSandbox(sandboxRecord.sandboxId);
+      if (wake.running) {
+        // Update DB status to running
+        await ctx.runMutation(internal.sandboxHelpers.updateSandboxStatus, {
+          sandboxDbId: args.sandboxDbId,
+          status: "running",
+        });
+      } else {
+        return {
+          output: `[SANDBOX NOT RUNNING: ${wake.error ?? "Sandbox is stopped. Please create a new sandbox."}]`,
+          exitCode: 1,
+        };
+      }
+    }
 
-    const output = response.result ?? "";
-    const exitCode = response.exitCode ?? 0;
+    const { output, exitCode } = await executeCommandWithRetry(sandboxRecord.sandboxId, args.command);
 
     const elapsedHours = (Date.now() - sandboxRecord.createdAt) / 3600000;
     const costCents = Math.round(elapsedHours * COST_CENTS_PER_HOUR * 100) / 100;
@@ -239,7 +340,13 @@ export const autoDeployAndStart = action({
     const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, { sandboxDbId: args.sandboxDbId })) as SandboxRecord | null;
     if (!sandboxRecord) throw new Error("Sandbox not found");
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
-    if (sandboxRecord.status !== "running") throw new Error("Sandbox is not running");
+
+    // Wake sandbox if needed
+    if (sandboxRecord.status !== "running") {
+      const wake = await checkAndWakeSandbox(sandboxRecord.sandboxId);
+      if (!wake.running) throw new Error(`Sandbox is not running: ${wake.error}`);
+      await ctx.runMutation(internal.sandboxHelpers.updateSandboxStatus, { sandboxDbId: args.sandboxDbId, status: "running" });
+    }
 
     const files = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.sessionId })) as Array<{ filepath: string; content: string }>;
     if (files.length === 0) return { previewUrl: null, deployedFiles: 0, errors: ["No files to deploy"] };

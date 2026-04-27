@@ -107,3 +107,13 @@ export const updatePreviewUrl = internalMutation({
     await ctx.db.patch(args.sandboxDbId, { previewUrl: args.previewUrl });
   },
 });
+
+export const updateSandboxStatus = internalMutation({
+  args: {
+    sandboxDbId: v.id("sandboxes"),
+    status: v.union(v.literal("creating"), v.literal("running"), v.literal("stopped"), v.literal("error")),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sandboxDbId, { status: args.status });
+  },
+});

@@ -55,24 +55,68 @@ interface DaytonaExecResponse {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+async function wakeSandbox(sandboxId: string, apiKey: string): Promise<boolean> {
+  try {
+    const startRes = await fetch(`${DAYTONA_API}/sandbox/${sandboxId}/start`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json", "Accept": "application/json" },
+    });
+    if (!startRes.ok) return false;
+    // Wait up to 30s for sandbox to be ready
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const pollRes = await fetch(`${DAYTONA_API}/sandbox/${sandboxId}`, {
+          headers: { "Authorization": `Bearer ${apiKey}`, "Accept": "application/json" },
+        });
+        if (pollRes.ok) {
+          const pollData = await pollRes.json() as { state?: string };
+          const state = (pollData.state ?? "").toLowerCase();
+          if (state === "running" || state === "started") return true;
+        }
+      } catch { /* keep polling */ }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 async function executeSandboxCommand(sandboxId: string, command: string): Promise<{ output: string; exitCode: number }> {
   const apiKey = process.env.DAYTONA_API_KEY || DAYTONA_API_KEY_FALLBACK;
   const wrappedCommand = command.startsWith("cd ") ? command : `cd /home/daytona && ${command}`;
-  try {
-    const res = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ command: wrappedCommand }),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      return { output: `[SANDBOX ERROR ${res.status}: ${text.slice(0, 200)}]`, exitCode: 1 };
+
+  const doExec = async (): Promise<{ output: string; exitCode: number; httpStatus: number }> => {
+    try {
+      const res = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ command: wrappedCommand }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        return { output: `[SANDBOX ERROR ${res.status}: ${text.slice(0, 200)}]`, exitCode: 1, httpStatus: res.status };
+      }
+      const data = await res.json() as DaytonaExecResponse;
+      return { output: data.result ?? "", exitCode: data.exitCode ?? 0, httpStatus: 200 };
+    } catch (err) {
+      return { output: `[SANDBOX EXCEPTION: ${err instanceof Error ? err.message : String(err)}]`, exitCode: 1, httpStatus: 0 };
     }
-    const data = await res.json() as DaytonaExecResponse;
-    return { output: data.result ?? "", exitCode: data.exitCode ?? 0 };
-  } catch (err) {
-    return { output: `[SANDBOX EXCEPTION: ${err instanceof Error ? err.message : String(err)}]`, exitCode: 1 };
+  };
+
+  // First attempt
+  const first = await doExec();
+  if (first.httpStatus !== 400) return { output: first.output, exitCode: first.exitCode };
+
+  // 400 error — sandbox may not be running, try to wake it
+  const woke = await wakeSandbox(sandboxId, apiKey);
+  if (!woke) {
+    return { output: `[SANDBOX NOT RUNNING: Failed to wake sandbox. Please restart it manually.]`, exitCode: 1 };
   }
+
+  // Retry after wake
+  const retry = await doExec();
+  return { output: retry.output, exitCode: retry.exitCode };
 }
 
 // Determine which pipeline to use based on execution phase and current task
