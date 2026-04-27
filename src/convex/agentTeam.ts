@@ -304,7 +304,9 @@ export const runAgentRound = action({
 
     // Get the current pipeline
     const pipeline = getPipeline(executionPhase, plannerTasks, currentTaskIndex, finalReviewCoderEnabled);
-    const currentPhase = session.phase ?? pipeline[0];
+    // Validate currentPhase is in the pipeline — if not (stale from old session), reset to first agent
+    const rawPhase = session.phase ?? pipeline[0];
+    const currentPhase = pipeline.includes(rawPhase) ? rawPhase : pipeline[0];
 
     // Build context
     const prevMessages = (await ctx.runQuery(internal.agentTeamHelpers.getSessionMessages, { sessionId: args.sessionId })) as MsgRow[];

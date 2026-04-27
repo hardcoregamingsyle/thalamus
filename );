@@ -1,0 +1,22 @@
+const candidates: string[] = [];
+if (codeBlockMatch) candidates.push(codeBlockMatch[1].trim());
+
+// Also try raw JSON extraction from the first { to the last }
+const start = content.indexOf("{");
+if (start !== -1) {
+  for (let end = content.length; end > start; end = content.lastIndexOf("}", end - 1)) {
+    if (end === -1) break;
+    candidates.push(content.slice(start, end + 1));
+    break; // just try the largest candidate first
+  }
+}
+
+for (const candidate of candidates) {
+  try {
+    const json = JSON.parse(candidate) as { tasks?: PlannerTask[]; summary?: string };
+    if (json.tasks && Array.isArray(json.tasks) && json.tasks.length > 0) {
+      return { tasks: json.tasks, summary: json.summary ?? "" };
+    }
+  } catch { /* keep trying */ }
+}
+return null;
