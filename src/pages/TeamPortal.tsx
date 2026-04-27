@@ -68,6 +68,7 @@ interface SandboxRow {
 }
 
 const AGENT_COLORS: Record<string, string> = {
+  Researcher: "text-cyan-400",
   Analyser: "text-blue-400",
   Coder: "text-emerald-400",
   Optimiser: "text-amber-400",
@@ -77,6 +78,7 @@ const AGENT_COLORS: Record<string, string> = {
 };
 
 const AGENT_BG: Record<string, string> = {
+  Researcher: "bg-cyan-400/10 border-cyan-400/20",
   Analyser: "bg-blue-400/10 border-blue-400/20",
   Coder: "bg-emerald-400/10 border-emerald-400/20",
   Optimiser: "bg-amber-400/10 border-amber-400/20",
@@ -86,6 +88,7 @@ const AGENT_BG: Record<string, string> = {
 };
 
 const AGENT_ICONS: Record<string, string> = {
+  Researcher: "🔍",
   Analyser: "A",
   Coder: "C",
   Optimiser: "O",
@@ -94,7 +97,7 @@ const AGENT_ICONS: Record<string, string> = {
   Critic: "R",
 };
 
-const PIPELINE = ["Analyser", "Coder", "Optimiser", "Tester", "Hacker", "Critic"];
+const PIPELINE = ["Researcher", "Analyser", "Coder", "Optimiser", "Tester", "Hacker", "Critic"];
 const MAX_MESSAGES = 60;
 
 export default function TeamPortal() {
@@ -270,8 +273,8 @@ export default function TeamPortal() {
         toast.success("🎉 Project complete!");
         autoRunRef.current = false;
         setAutoRun(false);
-      } else if (result.nextAgent === "Analyser" && result.loopCount > 0) {
-        toast.warning(`Loop ${result.loopCount}: Restarting from Analyser...`);
+      } else if ((result.nextAgent === "Researcher" || result.nextAgent === "Analyser") && result.loopCount > 0) {
+        toast.warning(`Loop ${result.loopCount}: Restarting from ${result.nextAgent}...`);
       }
       return result;
     } catch (err: unknown) {
@@ -423,7 +426,7 @@ export default function TeamPortal() {
     } finally { setIsSandboxLoading(false); }
   };
 
-  const currentPhase = sessionInfo?.phase ?? "Analyser";
+  const currentPhase = sessionInfo?.phase ?? "Researcher";
   const totalMessages = sessionInfo?.totalMessages ?? 0;
   const loopCount = sessionInfo?.loopCount ?? 0;
 
@@ -535,7 +538,7 @@ export default function TeamPortal() {
                       </div>
                       <div>
                         <h2 className="font-bold text-foreground">Agent Team</h2>
-                        <p className="text-xs text-muted-foreground">6 agents • Analyser → Coder → Optimiser → Tester → Hacker → Critic</p>
+                        <p className="text-xs text-muted-foreground">7 agents • Researcher → Analyser → Coder → Optimiser → Tester → Hacker → Critic</p>
                       </div>
                     </div>
                   </div>

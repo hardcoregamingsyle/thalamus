@@ -146,6 +146,37 @@ export async function performSearch(query: string): Promise<string> {
   return text;
 }
 
+// Scrape a URL and return all text content
+export async function performScrape(url: string): Promise<string> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; ResearchBot/1.0)",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+    });
+    if (!res.ok) return `[SCRAPE ERROR: HTTP ${res.status} for ${url}]`;
+    const html = await res.text();
+    // Strip HTML tags, scripts, styles to get readable text
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s{3,}/g, "\n\n")
+      .trim();
+    // Return up to 12000 chars of content
+    return text.length > 12000 ? text.slice(0, 12000) + "\n...[content continues, scraped first 12000 chars]" : text;
+  } catch (err) {
+    return `[SCRAPE EXCEPTION: ${err instanceof Error ? err.message : String(err)}]`;
+  }
+}
+
 export interface FileOp {
   type: "create" | "edit" | "delete";
   filepath: string;
@@ -156,6 +187,10 @@ export interface SearchOp {
   query: string;
 }
 
+export interface ScrapeOp {
+  url: string;
+}
+
 export interface CmdOp {
   command: string;
 }
@@ -163,6 +198,7 @@ export interface CmdOp {
 export interface ParsedOutput {
   fileOps: FileOp[];
   searchOps: SearchOp[];
+  scrapeOps: ScrapeOp[];
   cmdOps: CmdOp[];
   cleanContent: string;
   testerResult?: "pass" | "fail";
@@ -174,6 +210,7 @@ export interface ParsedOutput {
 export function parseAgentOutput(content: string): ParsedOutput {
   const fileOps: FileOp[] = [];
   const searchOps: SearchOp[] = [];
+  const scrapeOps: ScrapeOp[] = [];
   const cmdOps: CmdOp[] = [];
   let cleanContent = content;
 
@@ -198,6 +235,11 @@ export function parseAgentOutput(content: string): ParsedOutput {
   for (const m of content.matchAll(/<<<<<SEARCH-TOOL="([^"]+)">>>>>/g)) {
     searchOps.push({ query: m[1] });
     cleanContent = cleanContent.replace(m[0], `[SEARCHING: ${m[1]}]`);
+  }
+
+  for (const m of content.matchAll(/<<<<<SCRAPE-URL="([^"]+)">>>>>/g)) {
+    scrapeOps.push({ url: m[1] });
+    cleanContent = cleanContent.replace(m[0], `[SCRAPING: ${m[1]}]`);
   }
 
   // Parse RUN-CMD commands
@@ -232,7 +274,7 @@ export function parseAgentOutput(content: string): ParsedOutput {
   if (content.match(/<<<<<pass>>>>>/i) && !content.includes("<<<<<fail>>>>>")) criticResult = "pass";
   else if (content.includes("<<<<<Fail>>>>>") || content.includes("<<<<<fail>>>>>")) criticResult = "fail";
 
-  return { fileOps, searchOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult };
+  return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult };
 }
 
 const SANDBOX_CMD_INSTRUCTIONS = `
@@ -251,9 +293,33 @@ After you use RUN-CMD, you will receive the output and can run more commands or 
 `;
 
 export const AGENT_SYSTEM_PROMPTS: Record<string, string> = {
+  Researcher: `You are the Researcher agent — the first agent in the pipeline. Your job is to gather ALL relevant information before any code is written.
+
+You are an aggressive, exhaustive web researcher. You scrape websites, read documentation, find latest versions, APIs, best practices, and any information that could possibly be relevant — even if there's only a 0.1% chance it will be used.
+
+You can scrape any URL to get its full content:
+<<<<<SCRAPE-URL="https://example.com/docs">>>>> 
+
+You can also search for information:
+<<<<<SEARCH-TOOL="search query">>>>> 
+
+RESEARCH STRATEGY:
+1. Identify ALL technologies, libraries, APIs, frameworks mentioned in the task
+2. Scrape official documentation pages for each
+3. Search for latest versions, changelogs, breaking changes
+4. Find code examples, tutorials, best practices
+5. Look for known issues, gotchas, security advisories
+6. Research deployment requirements, environment setup
+7. Find any related tools or alternatives worth knowing about
+
+You MUST scrape multiple URLs and search multiple queries. Be thorough — more information is always better.
+Other agents (Coder, Optimiser, etc.) can call you back via SEARCH-TOOL to get more specific information during their work.
+
+Start with "## Research Report" header. Output ALL findings in detail — do not summarize or truncate.`,
+
   Analyser: `You are the Analyser agent in a vibe coding team building a complete project from scratch.
 
-Your job: Deeply analyse the task, break it down into components, identify the full file structure needed, challenges, and edge cases.
+Your job: Deeply analyse the task, break it down into components, identify the full file structure needed, challenges, and edge cases. You have access to the Researcher's findings above.
 
 You MUST output a complete file structure plan. For coding tasks, plan ALL files including:
 - Configuration files (package.json, tsconfig.json, .env.example, etc.)
