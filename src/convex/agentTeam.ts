@@ -267,6 +267,7 @@ async function runSingleAgentCall(
     let cmdLoopCount = 0;
     let currentPrompt = prompt;
     let currentParsed = parsed;
+    const allCmdResults: string[] = []; // accumulate ALL command results for Tester evaluation
 
     while (currentParsed.cmdOps.length > 0 && cmdLoopCount < MAX_CMD_LOOPS) {
       const cmdResults: string[] = [];
@@ -278,6 +279,7 @@ async function runSingleAgentCall(
         const { output, exitCode } = await executeSandboxCommand(sandboxDaytonaId, cmdOp.command);
         const resultStr = `$ ${cmdOp.command}\n${output.slice(0, 2000)}${output.length > 2000 ? "\n...(truncated)" : ""}\n[exit code: ${exitCode}]`;
         cmdResults.push(resultStr);
+        allCmdResults.push(resultStr);
         if (sandboxDbId) {
           await ctx.runMutation(internal.sandboxHelpers.updateSandboxCommand, {
             sandboxDbId,
@@ -307,6 +309,35 @@ async function runSingleAgentCall(
       });
       currentPrompt = promptWithCmds;
       cmdLoopCount++;
+    }
+
+    // For Tester: if no explicit pass/fail was set after running commands, force a final evaluation
+    if (currentPhase === "Tester" && !parsed.testerResult && allCmdResults.length > 0) {
+      const evalPrompt = `${currentPrompt}\n\nALL COMMAND RESULTS SO FAR:\n${allCmdResults.join("\n\n---\n\n")}\n\nBased on the ACTUAL command output above, you MUST now output your final verdict:\n- If ALL tests passed (no errors, no failures, exit code 0): output <<<<<test.success>>>>>\n- If ANY test failed, errored, or had non-zero exit code: output <<<<<test.failed="exact error message from output">>>>>`;
+      const evalResult = await callGemini(evalPrompt, systemPrompt);
+      rawContent = evalResult.text;
+      totalInputTokens += evalResult.inputTokens;
+      totalOutputTokens += evalResult.outputTokens;
+      const evalParsed = parseAgentOutput(rawContent);
+      parsed.testerResult = evalParsed.testerResult ?? parsed.testerResult;
+      parsed.testerFailReason = evalParsed.testerFailReason ?? parsed.testerFailReason;
+      parsed.cleanContent = evalParsed.cleanContent;
+      await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+        sessionId,
+        currentAgentOutput: parsed.cleanContent,
+      });
+    }
+  }
+
+  // For Tester: if no sandbox available but no pass/fail set, default to fail (can't verify without running)
+  if (currentPhase === "Tester" && !parsed.testerResult && !sandboxDaytonaId) {
+    // No sandbox — Tester can't actually run tests, so it should fail
+    // But we allow it to pass if it explicitly said so in its output
+    // Check if the raw content contains any indication of passing
+    const hasExplicitPass = rawContent.includes("<<<<<test.success>>>>>") || rawContent.toLowerCase().includes("all tests pass");
+    if (!hasExplicitPass) {
+      parsed.testerResult = "fail";
+      parsed.testerFailReason = "No sandbox available to run tests — cannot verify";
     }
   }
 
