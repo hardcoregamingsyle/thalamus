@@ -354,26 +354,107 @@ export const autoDeployAndStart = action({
     const apiKey = getApiKey();
     const errors: string[] = [];
 
+    // Deploy all files
     for (const file of files) {
       const result = await writeFileToSandbox(sandboxRecord.sandboxId, apiKey, file.filepath, file.content);
       if (!result.ok && result.error) errors.push(`${file.filepath}: ${result.error}`);
     }
 
-    // Run npm install and start in background
+    // Detect project type and determine start command
+    const filePaths = files.map(f => f.filepath);
+    const hasPackageJson = filePaths.some(f => f === "package.json" || f.endsWith("/package.json"));
+    const hasNextConfig = filePaths.some(f => f.includes("next.config"));
+    const hasViteConfig = filePaths.some(f => f.includes("vite.config"));
+    const hasDockerfile = filePaths.some(f => f.toLowerCase() === "dockerfile");
+    const hasRequirements = filePaths.some(f => f === "requirements.txt");
+    const hasMainPy = filePaths.some(f => f === "main.py" || f === "app.py" || f === "server.py");
+
+    // Read package.json to find the right start script
+    let startCmd = "";
+    const pkgFile = files.find(f => f.filepath === "package.json" || f.filepath.endsWith("/package.json"));
+    if (pkgFile) {
+      try {
+        const pkg = JSON.parse(pkgFile.content) as { scripts?: Record<string, string> };
+        const scripts = pkg.scripts ?? {};
+        if (hasNextConfig && scripts.dev) {
+          startCmd = `npm run dev -- --port 3000 --hostname 0.0.0.0`;
+        } else if (hasViteConfig && scripts.dev) {
+          startCmd = `npm run dev -- --port 3000 --host 0.0.0.0`;
+        } else if (scripts.start) {
+          startCmd = `PORT=3000 npm start`;
+        } else if (scripts.dev) {
+          startCmd = `npm run dev`;
+        } else if (scripts.serve) {
+          startCmd = `npm run serve`;
+        }
+      } catch { /* ignore parse errors */ }
+    }
+
+    // Fallback start commands
+    if (!startCmd) {
+      if (hasMainPy || hasRequirements) {
+        startCmd = `pip install -r requirements.txt 2>/dev/null; python main.py 2>/dev/null || python app.py 2>/dev/null || python server.py`;
+      } else if (hasPackageJson) {
+        startCmd = `PORT=3000 npm start 2>/dev/null || npm run dev 2>/dev/null`;
+      } else {
+        startCmd = `node index.js 2>/dev/null || node server.js 2>/dev/null || node app.js`;
+      }
+    }
+
+    // Install dependencies first, then start app in background
+    const installAndStart = `cd /home/daytona && ${hasPackageJson ? "npm install --legacy-peer-deps 2>&1 | tail -3 && " : ""}${hasRequirements ? "pip install -r requirements.txt 2>&1 | tail -3 && " : ""}nohup ${startCmd} > /tmp/app.log 2>&1 &`;
+
     try {
       await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ command: "cd /home/daytona && npm install 2>&1 | tail -5 && (npm start &) 2>&1 | head -3" }),
+        body: JSON.stringify({ command: installAndStart }),
       });
     } catch { /* ignore */ }
 
+    // Wait for app to start (poll port 3000 up to 30 seconds)
+    let appStarted = false;
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const checkRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ command: "curl -s -o /dev/null -w '%{http_code}' http://localhost:3000 2>/dev/null || echo 'not_ready'" }),
+        });
+        if (checkRes.ok) {
+          const checkData = await checkRes.json() as DaytonaExecResponse;
+          const result = checkData.result ?? "";
+          if (result.includes("200") || result.includes("301") || result.includes("302") || result.includes("304")) {
+            appStarted = true;
+            break;
+          }
+        }
+      } catch { /* keep polling */ }
+    }
+
+    // Get preview URL
     let previewUrl: string | null = null;
     try {
       const data = await daytonaFetch(`/sandbox/${sandboxRecord.sandboxId}/ports/3000/preview-url`) as DaytonaPreviewUrl;
       previewUrl = data.url ?? null;
       if (previewUrl) await ctx.runMutation(internal.sandboxHelpers.updatePreviewUrl, { sandboxDbId: args.sandboxDbId, previewUrl });
     } catch { /* preview URL may not be available yet */ }
+
+    if (!appStarted && !previewUrl) {
+      // Try to get app logs for debugging
+      try {
+        const logRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ command: "tail -20 /tmp/app.log 2>/dev/null || echo 'No logs'" }),
+        });
+        if (logRes.ok) {
+          const logData = await logRes.json() as DaytonaExecResponse;
+          if (logData.result) errors.push(`App logs: ${logData.result.slice(0, 500)}`);
+        }
+      } catch { /* ignore */ }
+    }
 
     return { previewUrl, deployedFiles: files.length, errors };
   },
