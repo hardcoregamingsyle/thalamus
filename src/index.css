@@ -183,6 +183,72 @@ body::after {
   text-shadow: 0 0 8px oklch(0.78 0.18 75 / 0.6);
 }
 
+/* ── VFX Animations ─────────────────────────────────────────────────────────── */
+
+/* Neon border pulse */
+@keyframes neon-pulse {
+  0%, 100% { box-shadow: 0 0 5px oklch(0.72 0.18 142 / 0.3), 0 0 10px oklch(0.72 0.18 142 / 0.1); }
+  50% { box-shadow: 0 0 10px oklch(0.72 0.18 142 / 0.6), 0 0 20px oklch(0.72 0.18 142 / 0.3), 0 0 40px oklch(0.72 0.18 142 / 0.1); }
+}
+
+.neon-pulse {
+  animation: neon-pulse 2s ease-in-out infinite;
+}
+
+/* Matrix rain effect for active agents */
+@keyframes matrix-drop {
+  0% { transform: translateY(-100%); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+/* Glitch effect */
+@keyframes glitch {
+  0%, 100% { transform: translate(0); }
+  20% { transform: translate(-2px, 1px); }
+  40% { transform: translate(2px, -1px); }
+  60% { transform: translate(-1px, 2px); }
+  80% { transform: translate(1px, -2px); }
+}
+
+.glitch:hover {
+  animation: glitch 0.3s ease-in-out;
+}
+
+/* Shimmer effect */
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, transparent 0%, oklch(0.72 0.18 142 / 0.1) 50%, transparent 100%);
+  background-size: 200% auto;
+  animation: shimmer 3s linear infinite;
+}
+
+/* Floating animation */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+
+.float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Typewriter effect */
+@keyframes typewriter {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+/* Agent active glow */
+.agent-active {
+  animation: neon-pulse 1.5s ease-in-out infinite;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 5px;
