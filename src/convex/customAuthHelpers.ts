@@ -90,11 +90,12 @@ export const getUserByToken = query({
   handler: async (ctx, args) => {
     if (!args.token) return null;
 
-    const session = await ctx.db
+    const sessions = await ctx.db
       .query("customSessions")
       .withIndex("by_token", (q) => q.eq("token", args.token))
-      .unique();
+      .take(1);
 
+    const session = sessions[0];
     if (!session || session.expiresAt < Date.now()) return null;
 
     return await ctx.db.get(session.userId);
