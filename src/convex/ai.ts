@@ -209,3 +209,25 @@ export const sendMessage = action({
     return responseContent;
   },
 });
+
+// ── VLY Gateway Test Action ────────────────────────────────────────────────────
+export const testVlyHaiku = action({
+  args: { model: v.optional(v.string()) },
+  handler: async (_ctx, args): Promise<{ success: boolean; response?: string; error?: string; raw?: unknown }> => {
+    const { vly } = await import('../lib/vly-integrations');
+    const modelName = args.model ?? "claude-haiku-4-5";
+    try {
+      const result = await vly.ai.completion({
+        model: modelName,
+        messages: [{ role: 'user', content: 'Say hello in one sentence.' }],
+        maxTokens: 100
+      });
+      if (result.success && result.data) {
+        return { success: true, response: result.data.choices[0]?.message?.content ?? "No content", raw: result };
+      }
+      return { success: false, error: result.error ?? "Unknown error", raw: result };
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+});
