@@ -72,7 +72,7 @@ interface GeminiTeamResponse {
 
 const RETRIES_PER_KEY = 2;
 
-// ── Highest thinking mode: gemini-2.5-flash-preview-04-17 with max thinking budget ──
+// ── Highest thinking mode: gemini-3.1-flash-lite-preview with max thinking ──
 export async function callGemini(prompt: string, systemPrompt: string, _maxTokens?: number): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   let lastError: unknown;
   for (let keyAttempt = 0; keyAttempt < GEMINI_KEYS.length; keyAttempt++) {
@@ -82,7 +82,7 @@ export async function callGemini(prompt: string, systemPrompt: string, _maxToken
     for (let retry = 0; retry < RETRIES_PER_KEY; retry++) {
       try {
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17:generateContent?key=${key}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${key}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -91,9 +91,9 @@ export async function callGemini(prompt: string, systemPrompt: string, _maxToken
               contents: [{ role: "user", parts: [{ text: prompt }] }],
               generationConfig: {
                 temperature: 0.7,
-                // Max thinking budget — highest reasoning level
-                thinkingConfig: { thinkingBudget: -1 },
               },
+              // Highest thinking level for gemini-3.1-flash-lite-preview
+              thinkingConfig: { thinkingLevel: "high" },
             }),
           }
         );
