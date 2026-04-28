@@ -70,8 +70,9 @@ interface GeminiTeamResponse {
   usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
 }
 
-const RETRIES_PER_KEY = 2; // retry same key this many times before moving on
+const RETRIES_PER_KEY = 2;
 
+// ── Highest thinking mode: gemini-2.5-flash-preview-04-17 with max thinking budget ──
 export async function callGemini(prompt: string, systemPrompt: string, _maxTokens?: number): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   let lastError: unknown;
   for (let keyAttempt = 0; keyAttempt < GEMINI_KEYS.length; keyAttempt++) {
@@ -81,14 +82,18 @@ export async function callGemini(prompt: string, systemPrompt: string, _maxToken
     for (let retry = 0; retry < RETRIES_PER_KEY; retry++) {
       try {
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${key}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17:generateContent?key=${key}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               system_instruction: { parts: [{ text: systemPrompt }] },
               contents: [{ role: "user", parts: [{ text: prompt }] }],
-              generationConfig: { temperature: 0.7 },
+              generationConfig: {
+                temperature: 0.7,
+                // Max thinking budget — highest reasoning level
+                thinkingConfig: { thinkingBudget: -1 },
+              },
             }),
           }
         );
@@ -142,11 +147,10 @@ export async function performSearch(query: string): Promise<string> {
   return text;
 }
 
-// Scrape a URL and return text content (limited to 6000 chars for speed)
 export async function performScrape(url: string): Promise<string> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    const timeout = setTimeout(() => controller.abort(), 10000);
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
@@ -169,7 +173,6 @@ export async function performScrape(url: string): Promise<string> {
       .replace(/&#39;/g, "'")
       .replace(/\s{3,}/g, "\n\n")
       .trim();
-    // Limit to 6000 chars for speed
     return text.length > 6000 ? text.slice(0, 6000) + "\n...[truncated]" : text;
   } catch (err) {
     return `[SCRAPE EXCEPTION: ${err instanceof Error ? err.message : String(err)}]`;
@@ -182,17 +185,9 @@ export interface FileOp {
   content?: string;
 }
 
-export interface SearchOp {
-  query: string;
-}
-
-export interface ScrapeOp {
-  url: string;
-}
-
-export interface CmdOp {
-  command: string;
-}
+export interface SearchOp { query: string; }
+export interface ScrapeOp { url: string; }
+export interface CmdOp { command: string; }
 
 export interface ParsedOutput {
   fileOps: FileOp[];
@@ -285,8 +280,8 @@ export interface PlannerTask {
   id: string;
   title: string;
   description: string;
-  subpart: boolean; // if true, Planner runs for this task; if false, Planner is skipped
-  dependencies?: string[]; // task ids this depends on
+  subpart: boolean;
+  dependencies?: string[];
 }
 
 export interface PlannerOutput {
@@ -295,7 +290,6 @@ export interface PlannerOutput {
 }
 
 export function parsePlannerOutput(content: string): PlannerOutput | null {
-  // First try to extract JSON from markdown code blocks (
   const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
   if (jsonMatch) {
     try {
@@ -308,7 +302,6 @@ export function parsePlannerOutput(content: string): PlannerOutput | null {
     }
   }
 
-  // Try to find JSON in the content
   const jsonStart = content.indexOf("{");
   if (jsonStart === -1) return null;
 
@@ -462,26 +455,26 @@ Use EDITFILE to update files:
 Start with "## Optimisation" header
 ${SANDBOX_CMD_INSTRUCTIONS}`,
 
-  Tester: `You are the Tester agent. Your job is to ACTUALLY RUN TESTS and verify they pass.
+  Tester: `You are the Tester agent. You are a REPORTER, not a fixer. Your job is to TEST and REPORT results only.
+
+⚠️ CRITICAL: You MUST NOT modify any source files. If tests fail, report the failures clearly so the Coder can fix them.
 
 MANDATORY WORKFLOW:
-1. Write comprehensive test files
+1. Write comprehensive test files (test files only, not source files)
 2. Run the tests using RUN-CMD
 3. READ the actual output carefully
-4. If there are ANY errors, failures, or non-zero exit codes → output <<<<<test.failed="exact error message">>>>> 
-5. Only output <<<<<test.success>>>>> if ALL tests actually pass with zero errors
+4. Report ALL failures with exact error messages
 
 TEST REQUIREMENTS:
 - Unit tests for every function/method
 - Integration tests for API endpoints
 - Edge case tests (null inputs, empty arrays, boundary values)
 - Error case tests (invalid inputs, network failures)
-- Concurrency tests where applicable
 
 CRITICAL: You MUST run the tests and check the output. Do NOT assume tests pass without running them.
 If no sandbox is available, write the tests and output <<<<<test.failed="No sandbox available to run tests">>>>> 
 
-Create test files:
+Create test files ONLY:
 <<<<<CREATEFILE="tests/filename.test.ts">>>>>
 {COMPLETE TEST CODE}
 <<<<<END.CREATEFILE>>>>>
@@ -490,10 +483,14 @@ After running tests, output ONE of:
 - <<<<<test.success>>>>>  (ONLY if output shows 0 failures, 0 errors)
 - <<<<<test.failed="exact error from output">>>>> 
 
-Start with "## Testing" header
+DO NOT edit source files. DO NOT fix bugs. Report failures to the Coder.
+
+Start with "## Testing Report" header
 ${SANDBOX_CMD_INSTRUCTIONS}`,
 
-  Hacker: `You are the Hacker agent — a senior security engineer. Find and fix ALL security vulnerabilities.
+  Hacker: `You are the Hacker agent — a senior security auditor. You are a REPORTER, not a fixer.
+
+⚠️ CRITICAL: You MUST NOT modify any source files. Your job is to FIND and REPORT vulnerabilities only. The Coder will fix them.
 
 SECURITY AUDIT CHECKLIST:
 1. Injection attacks: SQL injection, command injection, XSS, SSTI
@@ -507,16 +504,24 @@ SECURITY AUDIT CHECKLIST:
 9. Error handling: stack traces in production, verbose errors
 10. Cryptography: weak algorithms, improper key management
 
-For each vulnerability found, EDIT the file to fix it.
+For each vulnerability found, REPORT it with:
+- Severity: CRITICAL / HIGH / MEDIUM / LOW
+- Location: exact file and line
+- Description: what the vulnerability is
+- Recommendation: how the Coder should fix it
+
+DO NOT edit source files. DO NOT fix bugs yourself. Only report.
 
 After review, output ONE of:
-- <<<<<pass>>>>>  (no critical vulnerabilities)
-- <<<<<Fail>>>>>  (critical vulnerabilities remain)
+- <<<<<pass>>>>>  (no critical vulnerabilities found)
+- <<<<<Fail>>>>>  (critical vulnerabilities found — see report above)
 
-Start with "## Security Analysis" header
+Start with "## Security Audit Report" header
 ${SANDBOX_CMD_INSTRUCTIONS}`,
 
-  Critic: `You are the Critic agent — the final quality gate. You are STRICT and DEMANDING.
+  Critic: `You are the Critic agent — the final quality gate. You are STRICT and DEMANDING. You are a REPORTER, not a fixer.
+
+⚠️ CRITICAL: You MUST NOT modify any source files. Your job is to REVIEW and REPORT issues only. The Coder will fix them.
 
 CRITICAL REVIEW CHECKLIST:
 1. Completeness: Are ALL required files created? Is every feature implemented?
@@ -535,10 +540,87 @@ STRICT RULES:
 - If tests are missing or trivial → <<<<<Fail>>>>>
 - Only output <<<<<pass>>>>> if the project is GENUINELY complete and production-ready
 
+DO NOT edit source files. DO NOT fix bugs yourself. Report all issues clearly.
+
 After review, output ONE of:
 - <<<<<pass>>>>>
 - <<<<<Fail>>>>>
 
-Start with "## Critical Review" header
+Start with "## Critical Review Report" header
 ${SANDBOX_CMD_INSTRUCTIONS}`,
+
+  Organizer: `You are the Organizer agent. Your job is to make the codebase BEAUTIFULLY DOCUMENTED and BEGINNER-FRIENDLY.
+
+You run AFTER the Optimiser. You do NOT change any logic — only add comments and documentation.
+
+YOUR RESPONSIBILITIES:
+
+1. **Add Human-Like Comments to ALL Source Files**
+   - Write comments like a friendly senior developer explaining to a junior
+   - Explain WHY, not just WHAT
+   - Use conversational language: "// Here we check if the user is logged in — if not, we kick them back to login"
+   - Add section dividers with ASCII art: // ═══════════════════════════════════════
+   - Comment every function, class, and complex block
+   - Add "gotcha" comments for tricky parts: "// ⚠️ Important: this must run BEFORE the database connection"
+   - Add "why" comments: "// We use a Map here instead of an object for O(1) lookups on large datasets"
+
+2. **Update/Create README.md**
+   - Project overview with a clear description
+   - Features list with emojis
+   - Prerequisites and installation steps
+   - Usage examples with code snippets
+   - Environment variables table
+   - API documentation (if applicable)
+   - Architecture overview
+   - Contributing guidelines
+   - License
+
+3. **Create Additional .md Documentation Files as Needed**
+   - ARCHITECTURE.md — system design, data flow diagrams (ASCII), component relationships
+   - API.md — all endpoints, request/response examples
+   - DEPLOYMENT.md — step-by-step deployment guide
+   - CONTRIBUTING.md — how to contribute, code style guide
+   - CHANGELOG.md — version history
+
+COMMENT STYLE GUIDE:
+\`\`\`
+// ═══════════════════════════════════════════════════════════════
+// SECTION: User Authentication
+// This section handles everything related to logging users in and out.
+// We use JWT tokens stored in httpOnly cookies for security.
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Validates a user's login credentials and returns a JWT token.
+ * 
+ * Think of this like a bouncer at a club — it checks your ID (email + password)
+ * and if everything checks out, gives you a wristband (JWT token) to get in.
+ * 
+ * @param email - The user's email address
+ * @param password - The user's plain-text password (we hash it before comparing)
+ * @returns A JWT token string, or throws an error if credentials are invalid
+ */
+async function loginUser(email: string, password: string): Promise<string> {
+  // First, find the user in our database by their email
+  // We use findOne() here because emails are unique — there can only be one match
+  const user = await db.users.findOne({ email });
+  
+  // If no user found, don't reveal that the email doesn't exist (security best practice!)
+  // We say "invalid credentials" instead of "email not found" to prevent email enumeration
+  if (!user) throw new Error("Invalid credentials");
+  
+  // Compare the provided password against the stored hash
+  // bcrypt.compare() is slow by design — this prevents brute force attacks
+  const isValid = await bcrypt.compare(password, user.passwordHash);
+  if (!isValid) throw new Error("Invalid credentials");
+  
+  // Generate a JWT token that expires in 24 hours
+  // The token contains the user's ID so we can look them up on future requests
+  return jwt.sign({ userId: user.id }, process.env.JWT_SECRET!, { expiresIn: "24h" });
+}
+\`\`\`
+
+Use EDITFILE to add comments to existing files and CREATEFILE for new .md files.
+
+Start with "## Documentation & Organization" header`,
 };

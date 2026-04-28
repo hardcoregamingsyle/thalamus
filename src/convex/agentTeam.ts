@@ -14,19 +14,18 @@ const RAG_BASE_URL = "https://leadshello-graph-rag-and-chroma-db.hf.space";
 
 // ─── Execution phases ─────────────────────────────────────────────────────────
 // "planning"      → Researcher → Analyser → Planner (produces JSON task list)
-// "tasks"         → For each task: Researcher → Analyser → [Planner if !subpart] → Coder → Optimiser → Tester → Hacker → Critic
-// "final_review"  → Researcher → Analyser → Optimiser → Tester → Hacker → Critic (Coder+Planner skipped unless critic fails)
+// "tasks"         → For each task: Researcher → Analyser → [Planner if subpart] → Coder → Optimiser → Organizer → Tester → Hacker → Critic
+// "final_review"  → Researcher → Analyser → Optimiser → Organizer → Tester → Hacker → Critic
 
-// Planning pipeline (no Coder/Optimiser/Tester/Hacker/Critic)
 const PLANNING_PIPELINE = ["Researcher", "Analyser", "Planner"];
 
-// Per-task pipeline (Planner runs if task.subpart === true, skipped if false)
-const TASK_PIPELINE_FULL = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Tester", "Hacker", "Critic"];
-const TASK_PIPELINE_SUBPART = ["Researcher", "Analyser", "Coder", "Optimiser", "Tester", "Hacker", "Critic"];
+// Per-task pipeline — Organizer runs after Optimiser
+const TASK_PIPELINE_FULL = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
+const TASK_PIPELINE_SUBPART = ["Researcher", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
 
-// Final review pipeline (Coder+Planner skipped unless critic failed)
-const FINAL_REVIEW_PIPELINE_SKIP_CODER = ["Researcher", "Analyser", "Optimiser", "Tester", "Hacker", "Critic"];
-const FINAL_REVIEW_PIPELINE_WITH_CODER = ["Researcher", "Analyser", "Coder", "Optimiser", "Tester", "Hacker", "Critic"];
+// Final review pipeline
+const FINAL_REVIEW_PIPELINE_SKIP_CODER = ["Researcher", "Analyser", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
+const FINAL_REVIEW_PIPELINE_WITH_CODER = ["Researcher", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type SessionRow = {
