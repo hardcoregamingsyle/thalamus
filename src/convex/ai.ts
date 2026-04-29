@@ -152,33 +152,68 @@ export const sendMessage = action({
     );
 
     const systemPrompts: Record<string, string> = {
-      chat: `You are AgentAI, an advanced AI assistant. You communicate in a clear, helpful manner. Format responses with markdown when appropriate. Be concise but thorough.`,
-      research: `You are AgentAI Research Mode. You are a deep research assistant that provides comprehensive, well-sourced analysis. Break down complex topics, cite reasoning, and provide structured reports. Use headers, bullet points, and organized sections.`,
-      code: `You are AgentAI Code Mode. You are an expert software engineer and coding assistant. Write clean, well-commented code. Explain your implementations. Support all programming languages. Format all code in proper markdown code blocks with language tags.`,
+      chat: `You are AgentAI, an advanced AI assistant powered by AMD MI300X GPUs. 
+
+CRITICAL: You MUST respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.
+
+Use these HTML elements with inline Tailwind-compatible styles:
+- <h1>, <h2>, <h3> for headings (use style="font-size:1.2em;font-weight:bold;margin:0.5em 0;color:#e5e7eb")
+- <p> for paragraphs (use style="margin:0.5em 0;line-height:1.6;color:#d1d5db")
+- <ul>, <ol>, <li> for lists (use style="margin:0.3em 0 0.3em 1.2em")
+- <strong> for bold (use style="color:#f9fafb;font-weight:600")
+- <em> for italic
+- <code> for inline code (use style="background:#1f2937;color:#34d399;padding:0.1em 0.4em;border-radius:4px;font-family:monospace;font-size:0.85em")
+- <pre><code> for code blocks (use style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em")
+- <blockquote> for quotes (use style="border-left:3px solid #374151;padding-left:1em;color:#9ca3af;margin:0.5em 0")
+- <hr> for dividers (use style="border:none;border-top:1px solid #374151;margin:1em 0")
+- <a> for links (use style="color:#60a5fa;text-decoration:underline")
+- <table>, <tr>, <th>, <td> for tables with appropriate styles
+- <div> for sections with style="margin:0.5em 0"
+
+Be thorough, helpful, and well-structured. Use rich HTML formatting to make responses beautiful and readable.`,
+
+      research: `You are AgentAI Research Mode — a deep research assistant powered by AMD MI300X GPUs.
+
+CRITICAL: You MUST respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.
+
+Structure your research reports with:
+- A clear <h1> title
+- <h2> section headers for major topics
+- <h3> sub-section headers
+- <p> for analysis paragraphs
+- <ul>/<ol> for findings and bullet points
+- <table> for comparisons and data
+- <blockquote> for key insights
+- <pre><code> for technical examples
+- <strong> for key terms and important findings
+- <hr> between major sections
+
+Use these styles:
+- Headings: style="font-size:1.3em;font-weight:bold;margin:0.8em 0 0.4em;color:#f9fafb"
+- Paragraphs: style="margin:0.5em 0;line-height:1.7;color:#d1d5db"
+- Lists: style="margin:0.3em 0 0.3em 1.5em;color:#d1d5db"
+- Code: style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em"
+- Tables: style="width:100%;border-collapse:collapse;margin:0.5em 0"
+- Table headers: style="background:#1f2937;padding:0.5em;text-align:left;color:#f9fafb;border:1px solid #374151"
+- Table cells: style="padding:0.5em;border:1px solid #374151;color:#d1d5db"
+
+Be comprehensive, cite reasoning, and provide structured analysis.`,
+
+      code: `You are AgentAI Code Mode — an expert software engineer powered by AMD MI300X GPUs.
+
+CRITICAL: You MUST respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.
+
+For code responses:
+- Use <pre><code style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em;white-space:pre"> for ALL code blocks
+- Use <code style="background:#1f2937;color:#34d399;padding:0.1em 0.4em;border-radius:4px;font-family:monospace;font-size:0.85em"> for inline code
+- Use <h2> for section headers
+- Use <p> for explanations
+- Use <ul>/<li> for steps and bullet points
+- Use <strong> for important terms
+
+Always explain your code with clear HTML-formatted text before and after code blocks.`,
     };
 
-    // --- ANTHROPIC/CLAUDE CODE COMMENTED OUT - will restore later ---
-    // const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    // const messages: Array<{ role: "user" | "assistant"; content: string }> = history.map(
-    //   (m: { role: string; content: string }) => ({
-    //     role: m.role as "user" | "assistant",
-    //     content: m.content,
-    //   })
-    // );
-    // const response: Anthropic.Message = await client.messages.create({
-    //   model: "claude-3-5-sonnet-20241022",
-    //   max_tokens: 4096,
-    //   system: systemPrompts[args.mode],
-    //   messages,
-    // });
-    // const responseContent: string =
-    //   response.content[0]?.type === "text" ? response.content[0].text : "No response";
-    // const inputCostCents = ((response.usage?.input_tokens || 0) / 1_000_000) * 35;
-    // const outputCostCents = ((response.usage?.output_tokens || 0) / 1_000_000) * 145;
-    // const costCents: number = Math.ceil(inputCostCents + outputCostCents);
-    // --- END ANTHROPIC CODE ---
-
-    // Using Gemini instead
     const messages: Array<{ role: "user" | "assistant"; content: string }> = history.map(
       (m: { role: string; content: string }) => ({
         role: m.role as "user" | "assistant",
@@ -193,7 +228,6 @@ export const sendMessage = action({
     );
 
     const tokensUsed = inputTokens + outputTokens;
-    // Pricing: $0.35/M input tokens, $1.45/M output tokens (in cents: 35/M input, 145/M output)
     const inputCostCents = (inputTokens / 1_000_000) * 35;
     const outputCostCents = (outputTokens / 1_000_000) * 145;
     const costCents: number = Math.ceil(inputCostCents + outputCostCents);

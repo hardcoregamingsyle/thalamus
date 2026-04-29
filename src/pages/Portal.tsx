@@ -1,5 +1,5 @@
 import { useAuth } from "@/hooks/use-auth";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
@@ -10,8 +10,6 @@ import {
   MessageSquare, Search, Plus, Trash2, LogOut,
   Send, Loader2, DollarSign, Menu, X, Users, Cpu,
 } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import ReactMarkdown from "react-markdown";
 import TeamPortalInline from "./TeamPortalInline";
 
 type Mode = "chat" | "research" | "code";
@@ -37,6 +35,11 @@ const MODES: { id: Mode; label: string; icon: typeof MessageSquare; desc: string
   { id: "code", label: "CODE", icon: Users, desc: "Multi-agent AI system", color: "text-violet-400" },
 ];
 
+// Detect if content is HTML
+function isHtml(content: string): boolean {
+  return /<[a-z][\s\S]*>/i.test(content);
+}
+
 export default function Portal() {
   const { isLoading, isAuthenticated, user, signOut, token } = useAuth();
   const navigate = useNavigate();
@@ -45,6 +48,7 @@ export default function Portal() {
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const conversations = useQuery(
     api.conversations.list,
@@ -63,9 +67,8 @@ export default function Portal() {
   }, [isLoading, isAuthenticated, navigate]);
 
   useEffect(() => {
-    const el = document.getElementById("messages-end");
-    el?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isThinking]);
 
   const handleNewConversation = async () => {
     if (!token) return;
@@ -196,7 +199,8 @@ export default function Portal() {
                 </button>
               </div>
 
-              <ScrollArea className="flex-1">
+              {/* Native scrollable conversation list */}
+              <div className="flex-1 overflow-y-auto min-h-0">
                 <div className="px-2 pb-2 space-y-0.5">
                   {filteredConvs.length === 0 ? (
                     <p className="text-[10px] text-muted-foreground px-2 py-4 text-center">No sessions yet</p>
@@ -229,12 +233,12 @@ export default function Portal() {
                     ))
                   )}
                 </div>
-              </ScrollArea>
+              </div>
             </motion.aside>
           )}
         </AnimatePresence>
 
-        {/* Agent Teams mode — full inline TeamPortal */}
+        {/* Agent Teams / CODE mode — full inline TeamPortal */}
         {activeMode === "code" && (
           <div className="flex-1 flex flex-col overflow-hidden min-w-0">
             {/* Mode switcher strip */}
@@ -261,7 +265,7 @@ export default function Portal() {
         {/* Chat / Research mode */}
         {activeMode !== "code" && (
           <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-            {/* Mode indicator */}
+            {/* Mode indicator bar */}
             <div className="shrink-0 px-4 py-2 border-b border-border bg-card/50 flex items-center gap-3">
               {MODES.filter(m => m.id !== "code").map(mode => (
                 <button
@@ -286,8 +290,8 @@ export default function Portal() {
               </button>
             </div>
 
-            {/* Messages */}
-            <ScrollArea className="flex-1">
+            {/* Messages — native scrollable */}
+            <div className="flex-1 overflow-y-auto min-h-0">
               <div className="p-4 space-y-4 max-w-4xl mx-auto">
                 {!activeConvId ? (
                   <div className="flex flex-col items-center justify-center h-64 gap-4">
@@ -326,29 +330,19 @@ export default function Portal() {
                         }`}>
                           {msg.role === "user" ? "U" : <Cpu className="h-3.5 w-3.5" />}
                         </div>
-                        <div className={`flex-1 max-w-2xl ${msg.role === "user" ? "items-end" : "items-start"} flex flex-col gap-1`}>
-                          <div className={`rounded-xl px-4 py-3 text-xs leading-relaxed ${
+                        <div className={`flex-1 max-w-2xl flex flex-col gap-1 ${msg.role === "user" ? "items-end" : "items-start"}`}>
+                          <div className={`rounded-xl px-4 py-3 text-xs leading-relaxed w-full ${
                             msg.role === "user"
                               ? "bg-primary/15 border border-primary/30 text-foreground"
                               : "bg-card border border-border text-foreground"
                           }`}>
-                            {msg.role === "assistant" ? (
-                              <ReactMarkdown
-                                components={{
-                                  code: ({ children, className }) => {
-                                    const isBlock = className?.includes("language-");
-                                    return isBlock ? (
-                                      <pre className="bg-background border border-border rounded-lg p-3 overflow-x-auto my-2">
-                                        <code className="text-[11px] text-primary">{children}</code>
-                                      </pre>
-                                    ) : (
-                                      <code className="bg-background border border-border px-1 py-0.5 rounded text-primary text-[11px]">{children}</code>
-                                    );
-                                  },
-                                }}
-                              >
-                                {msg.content}
-                              </ReactMarkdown>
+                            {msg.role === "assistant" && isHtml(msg.content) ? (
+                              <div
+                                className="prose-html"
+                                dangerouslySetInnerHTML={{ __html: msg.content }}
+                              />
+                            ) : msg.role === "assistant" ? (
+                              <pre className="whitespace-pre-wrap font-mono text-xs">{msg.content}</pre>
                             ) : (
                               <span>{msg.content}</span>
                             )}
@@ -383,11 +377,11 @@ export default function Portal() {
                         </div>
                       </motion.div>
                     )}
-                    <div id="messages-end" />
+                    <div ref={messagesEndRef} />
                   </>
                 )}
               </div>
-            </ScrollArea>
+            </div>
 
             {/* Input */}
             <div className="shrink-0 p-4 border-t border-border bg-card/50">
