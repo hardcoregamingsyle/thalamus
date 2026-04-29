@@ -1,5 +1,9 @@
 # Project Name
 
+<div align="center">
+
+</div>
+
 <!-- AI Agent: Update this section with the actual project name and purpose -->
 
 ## Overview
