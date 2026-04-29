@@ -658,7 +658,7 @@ export default function Landing() {
               <ExternalLink className="h-3 w-3" />
               AMD Developer
             </a>
-            <span>Powered by <a href="https://vly.ai" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">vly.ai</a></span>
+            <span className="text-muted-foreground">© 2025 AgentAI</span>
           </div>
         </div>
       </footer>

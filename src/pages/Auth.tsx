@@ -219,9 +219,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
             <div className="px-6 py-3 border-t border-border text-xs text-center text-muted-foreground">
               Secured by{" "}
-              <a href="https://vly.ai" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                vly.ai
-              </a>
+              <span className="text-primary">AgentAI</span>
               {" "}• AMD Developer Hackathon 2025
             </div>
           </div>
