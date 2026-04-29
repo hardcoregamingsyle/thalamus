@@ -34,7 +34,7 @@ interface Message {
 const MODES: { id: Mode; label: string; icon: typeof MessageSquare; desc: string; color: string }[] = [
   { id: "chat", label: "CHAT", icon: MessageSquare, desc: "General conversation", color: "text-primary" },
   { id: "research", label: "RESEARCH", icon: Search, desc: "Deep research & analysis", color: "text-accent" },
-  { id: "code", label: "CODE", icon: Code2, desc: "Vibe coding assistant", color: "text-violet-400" },
+  { id: "code", label: "AGENT TEAMS", icon: Users, desc: "Multi-agent AI system", color: "text-violet-400" },
 ];
 
 export default function Portal() {
@@ -146,13 +146,6 @@ export default function Portal() {
               <span>${usageDollars}</span>
             </div>
             <button
-              onClick={() => navigate("/team")}
-              className="flex items-center gap-1.5 text-xs border border-primary/40 text-primary px-3 py-1.5 rounded hover:bg-primary/10 transition-all"
-            >
-              <Users className="h-3 w-3" />
-              <span className="hidden sm:block">AGENT TEAM</span>
-            </button>
-            <button
               onClick={signOut}
               className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10"
             >
@@ -178,7 +171,10 @@ export default function Portal() {
                 {MODES.map(mode => (
                   <button
                     key={mode.id}
-                    onClick={() => { setActiveMode(mode.id); setActiveConvId(null); }}
+                    onClick={() => {
+                      if (mode.id === "code") { navigate("/team"); return; }
+                      setActiveMode(mode.id); setActiveConvId(null);
+                    }}
                     className={`w-full flex items-center gap-2 px-3 py-2 rounded text-xs transition-all ${
                       activeMode === mode.id
                         ? "bg-primary/15 border border-primary/30 text-primary"
