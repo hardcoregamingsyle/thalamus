@@ -34,7 +34,7 @@ interface Message {
 const MODES: { id: Mode; label: string; icon: typeof MessageSquare; desc: string; color: string }[] = [
   { id: "chat", label: "CHAT", icon: MessageSquare, desc: "General conversation", color: "text-primary" },
   { id: "research", label: "RESEARCH", icon: Search, desc: "Deep research & analysis", color: "text-accent" },
-  { id: "code", label: "AGENT TEAMS", icon: Users, desc: "Multi-agent AI system", color: "text-violet-400" },
+  { id: "code", label: "CODE", icon: Users, desc: "Multi-agent AI system", color: "text-violet-400" },
 ];
 
 export default function Portal() {
@@ -282,7 +282,7 @@ export default function Portal() {
                 className="flex items-center gap-1.5 px-3 py-1 rounded text-xs text-muted-foreground hover:text-violet-400 hover:bg-muted/50 transition-all ml-auto"
               >
                 <Users className="h-3 w-3" />
-                AGENT TEAMS
+                CODE
               </button>
             </div>
 
