@@ -1,0 +1,14 @@
+// ✅ Good
+export const myAction = action({
+  args: { token: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, 
+      { token: args.token || "" }
+    );
+    if (!userId) throw new Error("Not authenticated");
+    
+    // Use indexed query
+    const items = await ctx.runQuery(internal.myHelpers.getByUser, { userId });
+    // ...
+  },
+});
