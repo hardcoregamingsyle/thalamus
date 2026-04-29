@@ -360,14 +360,16 @@ export const autoDeployAndStart = action({
       if (!result.ok && result.error) errors.push(`${file.filepath}: ${result.error}`);
     }
 
-    // Detect project type and determine start command
+    // Detect project type from file list
     const filePaths = files.map(f => f.filepath);
     const hasPackageJson = filePaths.some(f => f === "package.json" || f.endsWith("/package.json"));
     const hasNextConfig = filePaths.some(f => f.includes("next.config"));
     const hasViteConfig = filePaths.some(f => f.includes("vite.config"));
-    const hasDockerfile = filePaths.some(f => f.toLowerCase() === "dockerfile");
+    const hasDockerCompose = filePaths.some(f => f === "docker-compose.yml" || f === "docker-compose.yaml");
     const hasRequirements = filePaths.some(f => f === "requirements.txt");
-    const hasMainPy = filePaths.some(f => f === "main.py" || f === "app.py" || f === "server.py");
+    const hasPyproject = filePaths.some(f => f === "pyproject.toml");
+    const hasMainPy = filePaths.some(f => f === "main.py" || f === "app.py" || f === "server.py" || f.endsWith("/main.py") || f.endsWith("/app.py"));
+    const isPython = hasRequirements || hasPyproject || hasMainPy;
 
     // Read package.json to find the right start script
     let startCmd = "";
@@ -390,68 +392,109 @@ export const autoDeployAndStart = action({
       } catch { /* ignore parse errors */ }
     }
 
+    // Python project detection — find the right entry point
+    if (!startCmd && isPython) {
+      // Check if it's FastAPI/uvicorn
+      const mainPyFile = files.find(f => f.filepath === "main.py" || f.filepath.endsWith("/main.py"));
+      const appPyFile = files.find(f => f.filepath === "app.py" || f.filepath.endsWith("/app.py"));
+      const reqFile = files.find(f => f.filepath === "requirements.txt");
+      const hasFastapi = reqFile?.content.toLowerCase().includes("fastapi") || mainPyFile?.content.toLowerCase().includes("fastapi") || appPyFile?.content.toLowerCase().includes("fastapi");
+      const hasFlask = reqFile?.content.toLowerCase().includes("flask") || mainPyFile?.content.toLowerCase().includes("flask") || appPyFile?.content.toLowerCase().includes("flask");
+      const hasDjango = reqFile?.content.toLowerCase().includes("django");
+      const hasUvicorn = reqFile?.content.toLowerCase().includes("uvicorn");
+
+      const installCmd = `pip install -r requirements.txt 2>&1 | tail -5`;
+      if (hasFastapi || hasUvicorn) {
+        const entryFile = mainPyFile ? "main.py" : appPyFile ? "app.py" : "main.py";
+        const moduleName = entryFile.replace(".py", "");
+        startCmd = `${installCmd} && uvicorn ${moduleName}:app --host 0.0.0.0 --port 3000 --reload`;
+      } else if (hasFlask) {
+        const entryFile = appPyFile ? "app.py" : mainPyFile ? "main.py" : "app.py";
+        startCmd = `${installCmd} && FLASK_APP=${entryFile} FLASK_RUN_HOST=0.0.0.0 FLASK_RUN_PORT=3000 flask run`;
+      } else if (hasDjango) {
+        startCmd = `${installCmd} && python manage.py runserver 0.0.0.0:3000`;
+      } else {
+        // Generic Python — try main.py then app.py
+        const entryFile = mainPyFile ? "main.py" : appPyFile ? "app.py" : "server.py";
+        startCmd = `${installCmd} && python ${entryFile}`;
+      }
+    }
+
     // Fallback start commands
     if (!startCmd) {
-      if (hasMainPy || hasRequirements) {
-        startCmd = `pip install -r requirements.txt 2>/dev/null; python main.py 2>/dev/null || python app.py 2>/dev/null || python server.py`;
-      } else if (hasPackageJson) {
+      if (hasPackageJson) {
         startCmd = `PORT=3000 npm start 2>/dev/null || npm run dev 2>/dev/null`;
       } else {
         startCmd = `node index.js 2>/dev/null || node server.js 2>/dev/null || node app.js`;
       }
     }
 
-    // Install dependencies first, then start app in background
-    const installAndStart = `cd /home/daytona && ${hasPackageJson ? "npm install --legacy-peer-deps 2>&1 | tail -3 && " : ""}${hasRequirements ? "pip install -r requirements.txt 2>&1 | tail -3 && " : ""}nohup ${startCmd} > /tmp/app.log 2>&1 &`;
+    // Install Node dependencies if needed
+    const nodeInstall = hasPackageJson ? "npm install --legacy-peer-deps 2>&1 | tail -3 && " : "";
+
+    // For docker-compose projects, use docker-compose up
+    let launchCmd: string;
+    if (hasDockerCompose) {
+      launchCmd = `cd /home/daytona && ${nodeInstall}docker-compose up -d 2>&1 | tail -5`;
+    } else {
+      launchCmd = `cd /home/daytona && ${nodeInstall}nohup ${startCmd} > /tmp/app.log 2>&1 &`;
+    }
 
     try {
       await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ command: installAndStart }),
+        body: JSON.stringify({ command: launchCmd }),
       });
     } catch { /* ignore */ }
 
-    // Wait for app to start (poll port 3000 up to 30 seconds)
+    // Wait for app to start — check port 3000 (and fallback ports 8000, 8080)
+    const portsToCheck = [3000, 8000, 8080, 5000];
+    let appPort = 3000;
     let appStarted = false;
-    for (let i = 0; i < 10; i++) {
+
+    for (let i = 0; i < 12; i++) {
       await new Promise(r => setTimeout(r, 3000));
-      try {
-        const checkRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ command: "curl -s -o /dev/null -w '%{http_code}' http://localhost:3000 2>/dev/null || echo 'not_ready'" }),
-        });
-        if (checkRes.ok) {
-          const checkData = await checkRes.json() as DaytonaExecResponse;
-          const result = checkData.result ?? "";
-          if (result.includes("200") || result.includes("301") || result.includes("302") || result.includes("304")) {
-            appStarted = true;
-            break;
+      for (const port of portsToCheck) {
+        try {
+          const checkRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ command: `curl -s -o /dev/null -w '%{http_code}' http://localhost:${port}/ 2>/dev/null || echo 'not_ready'` }),
+          });
+          if (checkRes.ok) {
+            const checkData = await checkRes.json() as DaytonaExecResponse;
+            const result = checkData.result ?? "";
+            if (result.match(/^[23]\d\d/) || result.includes("200") || result.includes("301") || result.includes("302")) {
+              appStarted = true;
+              appPort = port;
+              break;
+            }
           }
-        }
-      } catch { /* keep polling */ }
+        } catch { /* keep polling */ }
+      }
+      if (appStarted) break;
     }
 
-    // Get preview URL
+    // Get preview URL for the detected port
     let previewUrl: string | null = null;
     try {
-      const data = await daytonaFetch(`/sandbox/${sandboxRecord.sandboxId}/ports/3000/preview-url`) as DaytonaPreviewUrl;
+      const data = await daytonaFetch(`/sandbox/${sandboxRecord.sandboxId}/ports/${appPort}/preview-url`) as DaytonaPreviewUrl;
       previewUrl = data.url ?? null;
       if (previewUrl) await ctx.runMutation(internal.sandboxHelpers.updatePreviewUrl, { sandboxDbId: args.sandboxDbId, previewUrl });
     } catch { /* preview URL may not be available yet */ }
 
-    if (!appStarted && !previewUrl) {
+    if (!appStarted) {
       // Try to get app logs for debugging
       try {
         const logRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
           method: "POST",
           headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ command: "tail -20 /tmp/app.log 2>/dev/null || echo 'No logs'" }),
+          body: JSON.stringify({ command: "tail -30 /tmp/app.log 2>/dev/null || echo 'No logs available'" }),
         });
         if (logRes.ok) {
           const logData = await logRes.json() as DaytonaExecResponse;
-          if (logData.result) errors.push(`App logs: ${logData.result.slice(0, 500)}`);
+          if (logData.result) errors.push(`App startup logs: ${logData.result.slice(0, 800)}`);
         }
       } catch { /* ignore */ }
     }

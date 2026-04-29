@@ -419,6 +419,21 @@ CRITICAL RULES:
 7. Write clean, readable, well-commented code
 8. Handle edge cases
 
+🚨 PORT REQUIREMENT — MANDATORY:
+ALL web servers, APIs, and applications MUST listen on PORT 3000 and bind to 0.0.0.0.
+This is non-negotiable — the preview system only supports port 3000.
+
+- Node.js/Express: app.listen(3000, '0.0.0.0', ...)
+- Python/FastAPI: uvicorn.run(app, host="0.0.0.0", port=3000)
+- Python/Flask: app.run(host='0.0.0.0', port=3000)
+- Python/Django: manage.py runserver 0.0.0.0:3000
+- Vite: vite --port 3000 --host 0.0.0.0
+- Next.js: next dev -p 3000 -H 0.0.0.0
+- Any other framework: ALWAYS use port 3000, host 0.0.0.0
+
+For docker-compose.yml, always map "3000:3000" for the main web service.
+For Dockerfile, always EXPOSE 3000.
+
 Create files:
 <<<<<CREATEFILE="filepath/filename.ext">>>>>
 {COMPLETE FILE CONTENTS — EVERY LINE}
@@ -446,6 +461,8 @@ OPTIMIZATION CHECKLIST:
 6. Error handling: proper error boundaries, graceful degradation
 7. Logging: structured logging, error tracking
 8. Configuration: environment-based config, secrets management
+
+🚨 PORT REQUIREMENT: Ensure ALL web servers still listen on PORT 3000 and 0.0.0.0 after optimization.
 
 Use EDITFILE to update files:
 <<<<<EDITFILE="filepath/filename.ext">>>>>
