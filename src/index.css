@@ -296,3 +296,24 @@ body::after {
 
 /* Import terminal font */
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+
+/* HTML prose rendering for AI responses */
+.prose-html {
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--color-foreground);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+.prose-html h1, .prose-html h2, .prose-html h3, .prose-html h4 {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-weight: 700;
+  margin: 0.6em 0 0.3em;
+  color: oklch(0.95 0.02 25);
+}
+.prose-html p { margin: 0.4em 0; }
+.prose-html ul, .prose-html ol { margin: 0.3em 0 0.3em 1.4em; }
+.prose-html li { margin: 0.15em 0; }
+.prose-html pre { overflow-x: auto; margin: 0.5em 0; }
+.prose-html table { width: 100%; border-collapse: collapse; margin: 0.5em 0; }
+.prose-html a { color: oklch(0.65 0.15 250); }
+.prose-html blockquote { border-left: 3px solid var(--color-border); padding-left: 0.8em; margin: 0.5em 0; }
