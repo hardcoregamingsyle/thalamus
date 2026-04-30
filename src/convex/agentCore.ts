@@ -271,9 +271,23 @@ export function parseAgentOutput(content: string): ParsedOutput {
 }
 
 const SANDBOX_CMD_INSTRUCTIONS = `
-You have access to a live sandbox. Run shell commands to test and verify:
+You have access to a live sandbox (Daytona cloud environment). Run shell commands to test and verify:
 <<<<<RUN-CMD="your command here">>>>>
-Examples: <<<<<RUN-CMD="npm install">>>>> <<<<<RUN-CMD="node index.js">>>>> <<<<<RUN-CMD="npm test">>>>>
+
+PACKAGE MANAGER: Always use BUN (not npm, not yarn, not pnpm).
+- Install deps: <<<<<RUN-CMD="bun install">>>>>
+- Run script: <<<<<RUN-CMD="bun run dev">>>>>
+- Run tests: <<<<<RUN-CMD="bun test">>>>>
+- Add package: <<<<<RUN-CMD="bun add express">>>>>
+- Add dev dep: <<<<<RUN-CMD="bun add -d typescript">>>>>
+- Execute file: <<<<<RUN-CMD="bun index.ts">>>>>
+- Execute JS: <<<<<RUN-CMD="bun index.js">>>>>
+
+NEVER use: npm install, npm run, yarn, pnpm
+ALWAYS use: bun install, bun run, bun add, bun test
+
+For Python projects, use pip/python as normal.
+For system commands, use standard shell (bash/sh).
 `;
 
 export interface PlannerTask {
@@ -418,6 +432,12 @@ CRITICAL RULES:
 6. Follow security best practices (no hardcoded secrets, sanitize inputs, etc.)
 7. Write clean, readable, well-commented code
 8. Handle edge cases
+9. ALWAYS use BUN as the package manager — NEVER use npm, yarn, or pnpm
+   - package.json scripts must use "bun run ..." not "npm run ..."
+   - Installation: bun install (not npm install)
+   - Adding packages: bun add <pkg> (not npm install <pkg>)
+   - Running scripts: bun run <script> (not npm run <script>)
+   - Direct execution: bun <file.ts> (not ts-node or node)
 
 🚨 PORT REQUIREMENT — MANDATORY:
 ALL web servers, APIs, and applications MUST listen on PORT 3000 and bind to 0.0.0.0.
