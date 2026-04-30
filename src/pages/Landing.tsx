@@ -3,18 +3,10 @@ import { useNavigate } from "react-router";
 import { useAuth } from "@/hooks/use-auth";
 import { useState, useEffect } from "react";
 import {
-  Cpu, Zap, Brain, Code2, Shield, ChevronRight, ExternalLink,
+  Cpu, Zap, Brain, Code2, Shield, ChevronRight,
   Users, Rocket, Globe, Terminal, Activity, Search, FileCode,
   CheckCircle, ArrowRight, Layers, GitBranch, Eye, Lock,
 } from "lucide-react";
-
-// ── Judges ────────────────────────────────────────────────────────────────────
-const JUDGES = [
-  { name: "Sanem Avcil", role: "AI & Blockchain Advisor", company: "Kaisvault", img: "https://cdn.builder.io/api/v1/image/assets%2F972274c44a2d4c658b0fa440848d24a1%2F65da17e9ad4b415da2e398b2efa2002d" },
-  { name: "Rahul Gupta", role: "Head of AI Foundry", company: "Evergreen", img: "https://cdn.builder.io/api/v1/image/assets%2F972274c44a2d4c658b0fa440848d24a1%2Fb3c2d7b34eac49b5a2a0f563fdd91b69" },
-  { name: "Vishal Paul", role: "Senior Software Engineer", company: "PayPal", img: "https://cdn.builder.io/api/v1/image/assets%2F972274c44a2d4c658b0fa440848d24a1%2Fff0c43e7c97847f8be0f2f439fecd290" },
-  { name: "Pawel Czech", role: "CEO", company: "NativelyAI", img: "https://cdn.builder.io/api/v1/image/assets%2F972274c44a2d4c658b0fa440848d24a1%2F3debee6a46d44a2da556a6564c7bd7bd" },
-];
 
 // ── Agent pipeline data ────────────────────────────────────────────────────────
 const AGENTS = [
@@ -53,7 +45,7 @@ const FEATURES = [
   },
   {
     icon: FileCode,
-    title: "Live Daytona Sandbox",
+    title: "Live Cloud Sandbox",
     desc: "Code runs in a real cloud sandbox. Tests execute, commands run, previews deploy — all live.",
     color: "text-emerald-400",
     border: "border-emerald-400/20 hover:border-emerald-400/50",
@@ -72,6 +64,13 @@ const FEATURES = [
     color: "text-red-400",
     border: "border-red-400/20 hover:border-red-400/50",
   },
+];
+
+const TECH_STACK = [
+  { title: "Gemini 3.1 Flash-Lite", sub: "Highest thinking mode", desc: "Maximum reasoning budget per agent call. Deep, deliberate outputs with full thinking enabled.", color: "border-primary/40 hover:border-primary", icon: Brain },
+  { title: "Convex Real-Time DB", sub: "Live reactive queries", desc: "Every agent output streams live to the UI. No polling — pure reactive subscriptions.", color: "border-cyan-400/40 hover:border-cyan-400", icon: Activity },
+  { title: "Daytona Cloud Sandbox", sub: "Live code execution", desc: "Every project deploys to a real cloud sandbox. Commands run, tests execute, previews go live.", color: "border-emerald-400/40 hover:border-emerald-400", icon: Globe },
+  { title: "GraphRAG + ChromaDB", sub: "Per-session grounding", desc: "Knowledge base grounding for every session. Agents retrieve relevant context before acting.", color: "border-violet-400/40 hover:border-violet-400", icon: Search },
 ];
 
 // ── Particle background ────────────────────────────────────────────────────────
@@ -105,7 +104,7 @@ function LivePipeline() {
         <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
         <div className="w-2.5 h-2.5 rounded-full bg-accent" />
         <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-        <span className="text-[11px] text-muted-foreground ml-2 font-mono">agent_team — live session</span>
+        <span className="text-[11px] text-muted-foreground ml-2 font-mono">aphantic_team — live session</span>
         <div className="ml-auto flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-[10px] text-emerald-400 font-mono">RUNNING</span>
@@ -165,16 +164,12 @@ export default function Landing() {
             <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center">
               <Cpu className="h-3.5 w-3.5 text-primary" />
             </div>
-            <span className="text-primary font-bold text-sm tracking-widest amd-glow">AGENT_AI</span>
+            <span className="text-primary font-bold text-sm tracking-widest">APHANTIC_AI</span>
             <span className="hidden sm:block text-[10px] text-muted-foreground border border-border px-2 py-0.5 rounded-full">
-              AMD Developer Hackathon 2025
+              by Aphantic Corporations
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <a href="https://lablab.ai/ai-hackathons/amd-developer" target="_blank" rel="noopener noreferrer"
-              className="hidden sm:flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors">
-              <ExternalLink className="h-3 w-3" />lablab.ai
-            </a>
             <button onClick={handleLaunch}
               className="flex items-center gap-1.5 text-xs border border-primary text-primary px-4 py-1.5 rounded-lg hover:bg-primary hover:text-primary-foreground transition-all font-bold">
               {isLoading ? "..." : isAuthenticated ? "OPEN PORTAL" : "TRY IT"}
@@ -195,43 +190,37 @@ export default function Landing() {
 
         <div className="relative max-w-7xl mx-auto px-6 py-24 grid lg:grid-cols-2 gap-16 items-center">
           <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.7 }}>
-            {/* Hackathon badge */}
+            {/* Brand badge */}
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
               className="inline-flex items-center gap-2 border border-primary/30 bg-primary/8 text-primary text-[10px] font-bold px-3 py-1.5 rounded-full mb-6">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              AMD DEVELOPER HACKATHON 2025 — TRACK 2: FINE-TUNING
+              APHANTIC AI — BY APHANTIC CORPORATIONS
             </motion.div>
 
             <h1 className="text-5xl md:text-6xl font-bold leading-[1.1] mb-5">
               <span className="text-foreground">A 9-Agent</span>
               <br />
-              <span className="text-primary amd-glow">AI Coding</span>
+              <span className="text-primary">AI Coding</span>
               <br />
               <span className="text-foreground">System</span>
             </h1>
 
             <p className="text-muted-foreground text-sm leading-relaxed mb-3 max-w-lg">
-              AgentAI orchestrates <span className="text-foreground font-semibold">9 specialized AI agents</span> — Researcher, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, and Critic — to build complete, production-ready software from a single prompt.
+              Aphantic AI orchestrates <span className="text-foreground font-semibold">9 specialized AI agents</span> — Researcher, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, and Critic — to build complete, production-ready software from a single prompt.
             </p>
 
             <p className="text-muted-foreground text-xs leading-relaxed mb-8 max-w-lg">
-              Built on <span className="text-accent font-bold">AMD Instinct MI300X GPUs</span> with ROCm. 
-              Fine-tuning <span className="text-primary font-bold">Llama 3 8B</span> for domain-specific coding intelligence — custom API endpoints coming soon.
+              Powered by <span className="text-primary font-bold">Gemini 3.1 Flash-Lite</span> with maximum thinking mode. 
+              Every agent runs with full reasoning budget — deep, deliberate, production-grade outputs.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-3 mb-10">
               <motion.button onClick={handleLaunch} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                 className="flex items-center justify-center gap-2 px-7 py-3.5 bg-primary text-primary-foreground text-sm font-bold rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20">
                 <Terminal className="h-4 w-4" />
-                LAUNCH AGENT PORTAL
+                LAUNCH APHANTIC PORTAL
                 <ChevronRight className="h-4 w-4" />
               </motion.button>
-              <motion.a href="https://lablab.ai/ai-hackathons/amd-developer" target="_blank" rel="noopener noreferrer"
-                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                className="flex items-center justify-center gap-2 px-5 py-3.5 border border-border text-muted-foreground text-sm rounded-xl hover:border-primary/50 hover:text-primary transition-all">
-                <ExternalLink className="h-4 w-4" />
-                Hackathon Page
-              </motion.a>
             </div>
 
             {/* Key metrics */}
@@ -239,7 +228,7 @@ export default function Landing() {
               {[
                 { val: "9", label: "Specialized Agents", color: "text-primary" },
                 { val: "600", label: "Max Messages/Session", color: "text-accent" },
-                { val: "Llama 3 8B", label: "Fine-Tuned Model", color: "text-violet-400" },
+                { val: "Gemini 3.1", label: "AI Model", color: "text-violet-400" },
               ].map((m, i) => (
                 <div key={i} className={i > 0 ? "border-l border-border pl-6" : ""}>
                   <div className={`font-bold text-base ${m.color}`}>{m.val}</div>
@@ -262,15 +251,15 @@ export default function Landing() {
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-12">
             <p className="text-xs text-muted-foreground mb-2 font-bold tracking-widest">HOW IT WORKS</p>
             <h2 className="text-3xl font-bold text-foreground">
-              One prompt. <span className="text-primary amd-glow">Nine agents.</span> Complete software.
+              One prompt. <span className="text-primary">Nine agents.</span> Complete software.
             </h2>
           </motion.div>
 
           <div className="grid md:grid-cols-3 gap-4 mb-12">
             {[
-              { step: "01", title: "You describe the project", desc: "Type what you want to build. AgentAI handles everything from research to deployment.", icon: Terminal },
+              { step: "01", title: "You describe the project", desc: "Type what you want to build. Aphantic AI handles everything from research to deployment.", icon: Terminal },
               { step: "02", title: "Agents plan & execute", desc: "The Planner breaks it into 12-20 atomic tasks. Each agent runs its specialized role in sequence.", icon: Layers },
-              { step: "03", title: "Production-ready output", desc: "Complete codebase, tests, docs, security audit — deployed to a live Daytona sandbox.", icon: Rocket },
+              { step: "03", title: "Production-ready output", desc: "Complete codebase, tests, docs, security audit — deployed to a live cloud sandbox.", icon: Rocket },
             ].map((item, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
                 className="border border-border bg-card rounded-xl p-6 relative overflow-hidden group hover:border-primary/40 transition-all">
@@ -301,7 +290,7 @@ export default function Landing() {
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-12">
             <p className="text-xs text-muted-foreground mb-2 font-bold tracking-widest">CAPABILITIES</p>
             <h2 className="text-3xl font-bold text-foreground">
-              Built to be a <span className="text-primary amd-glow">Level 4.5 Agent</span>
+              Built to be a <span className="text-primary">Level 4.5 Agent</span>
             </h2>
             <p className="text-sm text-muted-foreground mt-2 max-w-xl">
               Not a chatbot. Not a code autocomplete. A full autonomous software engineering system.
@@ -321,56 +310,27 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── AMD Tech Stack ───────────────────────────────────────────────────── */}
+      {/* ── Tech Stack ───────────────────────────────────────────────────────── */}
       <section className="border-t border-border py-20">
         <div className="max-w-7xl mx-auto px-6">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-10">
+          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-12">
             <p className="text-xs text-muted-foreground mb-2 font-bold tracking-widest">INFRASTRUCTURE</p>
             <h2 className="text-3xl font-bold text-foreground">
-              Powered by <span className="text-accent amd-glow-orange">AMD Hardware</span>
+              Powered by <span className="text-primary">Aphantic Infrastructure</span>
             </h2>
+            <p className="text-sm text-muted-foreground mt-2 max-w-xl">
+              Enterprise-grade AI infrastructure. Every component chosen for reliability, speed, and scale.
+            </p>
           </motion.div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {[
-              { title: "AMD Instinct MI300X", sub: "192GB HBM3 memory", desc: "World's most powerful AI accelerator. Fine-tuning Llama 3 8B with full parameter training.", color: "border-accent/40 hover:border-accent", icon: Cpu },
-              { title: "ROCm Platform", sub: "Open-source GPU compute", desc: "AMD's answer to CUDA. Full PyTorch support, HIP kernels, and optimized ML primitives.", color: "border-primary/40 hover:border-primary", icon: Code2 },
-              { title: "Llama 3 8B Fine-Tune", sub: "Domain-specific training", desc: "Custom fine-tuned model for coding intelligence. Trained on AMD hardware, served via vLLM.", color: "border-violet-400/40 hover:border-violet-400", icon: Brain },
-              { title: "Daytona Sandbox", sub: "Live code execution", desc: "Every generated project runs in a real cloud environment. Tests pass, previews deploy.", color: "border-emerald-400/40 hover:border-emerald-400", icon: Globe },
-            ].map((item, i) => (
+            {TECH_STACK.map((item, i) => (
               <motion.div key={item.title} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
                 className={`border ${item.color} bg-card rounded-xl p-5 transition-all`}>
-                <item.icon className="h-5 w-5 text-muted-foreground mb-3" />
-                <h3 className="text-sm font-bold text-foreground mb-0.5">{item.title}</h3>
-                <p className="text-[10px] text-primary font-bold mb-2">{item.sub}</p>
+                <item.icon className="h-5 w-5 text-primary mb-3" />
+                <h3 className="text-sm font-bold text-foreground mb-1">{item.title}</h3>
+                <p className="text-[10px] text-primary mb-2 font-bold">{item.sub}</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Judges ──────────────────────────────────────────────────────────── */}
-      <section className="border-t border-border py-20 bg-card/20">
-        <div className="max-w-7xl mx-auto px-6">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-10">
-            <p className="text-xs text-muted-foreground mb-2 font-bold tracking-widest">JUDGING PANEL</p>
-            <h2 className="text-3xl font-bold text-foreground">
-              Who's <span className="text-primary amd-glow">Evaluating</span>
-            </h2>
-          </motion.div>
-
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {JUDGES.map((judge, i) => (
-              <motion.div key={judge.name} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
-                className="border border-border bg-card rounded-xl p-5 text-center hover:border-primary/30 transition-all group">
-                <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-border group-hover:border-primary/30 transition-all mx-auto mb-3">
-                  <img src={judge.img} alt={judge.name} className="w-full h-full object-cover"
-                    onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(judge.name)}&background=1a1a1a&color=ed1c24&size=56`; }} />
-                </div>
-                <p className="text-xs font-bold text-foreground mb-0.5">{judge.name}</p>
-                <p className="text-[10px] text-muted-foreground mb-2">{judge.role}</p>
-                <span className="text-[10px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full">{judge.company}</span>
               </motion.div>
             ))}
           </div>
@@ -386,15 +346,15 @@ export default function Landing() {
                 <Rocket className="h-7 w-7 text-primary" />
               </div>
               <h2 className="text-2xl font-bold text-foreground mb-2">
-                See it in <span className="text-primary amd-glow">action</span>
+                See it in <span className="text-primary">action</span>
               </h2>
               <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
-                Give AgentAI a project description. Watch 9 agents plan, build, test, and deploy it — live.
+                Give Aphantic AI a project description. Watch 9 agents plan, build, test, and deploy it — live.
               </p>
               <motion.button onClick={handleLaunch} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                 className="flex items-center justify-center gap-2 px-8 py-3.5 bg-primary text-primary-foreground text-sm font-bold rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 mx-auto">
                 <Terminal className="h-4 w-4" />
-                LAUNCH AGENT PORTAL
+                LAUNCH APHANTIC PORTAL
                 <ArrowRight className="h-4 w-4" />
               </motion.button>
             </div>
@@ -409,16 +369,10 @@ export default function Landing() {
             <div className="w-5 h-5 rounded bg-primary/20 border border-primary/30 flex items-center justify-center">
               <Cpu className="h-2.5 w-2.5 text-primary" />
             </div>
-            <span className="text-xs text-muted-foreground">AgentAI — AMD Developer Hackathon 2025</span>
+            <span className="text-xs text-muted-foreground">Aphantic AI — by Aphantic Corporations</span>
           </div>
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <a href="https://lablab.ai/ai-hackathons/amd-developer" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors flex items-center gap-1">
-              <ExternalLink className="h-3 w-3" />lablab.ai
-            </a>
-            <a href="https://www.amd.com/en/developer/ai-dev-program.html" target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors flex items-center gap-1">
-              <ExternalLink className="h-3 w-3" />AMD Developer
-            </a>
-            <span>© 2025 AgentAI</span>
+            <span>© 2025 Aphantic Corporations</span>
           </div>
         </div>
       </footer>

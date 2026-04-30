@@ -76,7 +76,7 @@ export default function SyncPage() {
       const createRes = await fetch("https://api.github.com/user/repos", {
         method: "POST",
         headers: ghHeaders,
-        body: JSON.stringify({ name: cleanRepo, description: "AgentAI project synced from vly.ai", private: false, auto_init: false }),
+        body: JSON.stringify({ name: cleanRepo, description: "Aphantic AI project synced", private: false, auto_init: false }),
       });
 
       let repo;
@@ -178,11 +178,11 @@ export default function SyncPage() {
       }
       const tree = await treeRes.json();
 
-      addLog(`$ git commit -m "Sync from AgentAI"`, "cmd");
+      addLog(`$ git commit -m "Sync from Aphantic AI"`, "cmd");
       const commitRes2 = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/commits`, {
         method: "POST",
         headers: ghHeaders,
-        body: JSON.stringify({ message: `Sync from AgentAI — ${new Date().toISOString()}`, tree: tree.sha, parents: [latestCommitSha] }),
+        body: JSON.stringify({ message: `Sync from Aphantic AI — ${new Date().toISOString()}`, tree: tree.sha, parents: [latestCommitSha] }),
       });
       if (!commitRes2.ok) {
         const commitErr = await commitRes2.json().catch(() => ({}));
@@ -212,7 +212,7 @@ export default function SyncPage() {
       <nav className="border-b border-border px-6 h-12 flex items-center justify-between">
         <button onClick={() => navigate("/")} className="flex items-center gap-2">
           <Terminal className="h-4 w-4 text-primary terminal-glow" />
-          <span className="text-primary font-bold text-sm tracking-widest terminal-glow">AGENT_AI</span>
+                  <span className="text-primary font-bold text-sm tracking-widest terminal-glow">APHANTIC_AI</span>
         </button>
         <span className="text-xs text-muted-foreground">// GITHUB_SYNC</span>
       </nav>
@@ -241,7 +241,7 @@ export default function SyncPage() {
                 <label className="text-xs text-muted-foreground block mb-1">$ github_token</label>
                 <p className="text-xs text-muted-foreground/60 mb-2">
                   Personal access token with <span className="text-primary">repo</span> scope.{" "}
-                  <a href="https://github.com/settings/tokens/new?scopes=repo&description=AgentAI+Sync" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Generate one here →</a>
+                  <a href="https://github.com/settings/tokens/new?scopes=repo&description=Aphantic+AI+Sync" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Generate one here →</a>
                 </p>
                 <div className="flex items-center border border-border bg-background focus-within:border-primary transition-colors">
                   <span className="text-primary text-xs px-2 terminal-glow">$</span>
