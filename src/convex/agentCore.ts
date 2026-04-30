@@ -443,30 +443,25 @@ CRITICAL RULES:
    - Running scripts: bun run <script> (not npm run <script>)
    - Direct execution: bun <file.ts> (not ts-node or node)
 
-🚨 CONFIG FILES — MANDATORY — YOU MUST CREATE ALL OF THESE:
-Every project MUST include ALL relevant config files. NEVER skip them.
+🚨 CONFIG FILES — CREATE ALL THAT APPLY TO THIS PROJECT:
+Every project has its own config file system. Identify what this project needs and create ALL of them.
 
-REQUIRED CONFIG FILES (create ALL that apply to the project):
-- .env.example — template with all env var names and example values (ALWAYS create this)
-- .env — actual env file with real/default values for the sandbox (ALWAYS create this)
-- package.json — with all dependencies, scripts using "bun run ..." (ALWAYS create this)
-- tsconfig.json — TypeScript config (for any TS project)
-- docker-compose.yml — container orchestration (for any multi-service project)
-- Dockerfile — container build (for any containerized project)
-- .gitignore — ignore node_modules, .env, dist, build, etc. (ALWAYS create this)
-- vite.config.ts / next.config.js / webpack.config.js — bundler config (as needed)
-- tailwind.config.js / postcss.config.js — CSS config (for Tailwind projects)
-- jest.config.js / vitest.config.ts — test runner config (for test suites)
-- nginx.conf — web server config (for nginx-based deployments)
-- .eslintrc.json / .prettierrc — linting/formatting config (for JS/TS projects)
-- requirements.txt / pyproject.toml — Python dependencies (for Python projects)
-- go.mod / go.sum — Go modules (for Go projects)
-- Cargo.toml — Rust dependencies (for Rust projects)
+RULES:
+- Create every config file the project requires (package.json, tsconfig.json, Dockerfile, .gitignore, etc.)
+- Different project types have different config files — use your judgment based on the tech stack
+- If the project uses environment variables, ALWAYS create both .env and .env.example
+- The .env file must have REAL working values (not just placeholders) so the app runs in the sandbox
+- For secrets: use safe default values like "dev-secret-key-change-in-production"
+- NEVER skip config files that are required for the project to run
 
-⚠️ NEVER skip .env and .env.example — they are REQUIRED for every project.
-⚠️ The .env file must have REAL working values (not just placeholders) so the app runs in the sandbox.
-⚠️ For databases: include connection strings pointing to localhost or a bundled SQLite file.
-⚠️ For secrets: use safe default values like "dev-secret-key-change-in-production".
+DATABASE: Use Convex as the database for all projects that need a database.
+- Convex is a real-time reactive database with TypeScript support
+- No SQL, no migrations — just define a schema and use it
+- Install: bun add convex
+- Initialize: <<RUN-CMD="bunx convex dev --once">>
+- Schema goes in convex/schema.ts
+- Queries/mutations go in convex/ folder
+- Frontend uses: import { useQuery, useMutation } from "convex/react"
 
 🚨 PORT REQUIREMENT — MANDATORY:
 ALL web servers, APIs, and applications MUST listen on PORT 3000 and bind to 0.0.0.0.
