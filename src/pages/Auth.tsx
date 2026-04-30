@@ -76,8 +76,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center">
             <Cpu className="h-3.5 w-3.5 text-primary" />
           </div>
-          <span className="text-primary font-bold text-sm tracking-widest amd-glow">AGENT_AI</span>
-          <span className="text-[10px] text-muted-foreground">× AMD Hackathon</span>
+          <span className="text-primary font-bold text-sm tracking-widest amd-glow">APHANTIC_AI</span>
+          <span className="text-[10px] text-muted-foreground">by Aphantic Corporations</span>
         </button>
       </nav>
 
@@ -219,8 +219,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
             <div className="px-6 py-3 border-t border-border text-xs text-center text-muted-foreground">
               Secured by{" "}
-              <span className="text-primary">AgentAI</span>
-              {" "}• AMD Developer Hackathon 2025
+              <span className="text-primary">Aphantic AI</span>
+              {" "}• by Aphantic Corporations
             </div>
           </div>
         </motion.div>

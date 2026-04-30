@@ -727,7 +727,7 @@ export default function TeamPortal() {
               <Cpu className="h-8 w-8 text-primary" />
             </motion.div>
           </div>
-          <p className="text-primary font-mono text-sm animate-pulse terminal-glow">INITIALIZING AGENT_TEAM...</p>
+          <p className="text-primary font-mono text-sm animate-pulse terminal-glow">INITIALIZING APHANTIC_TEAM...</p>
         </motion.div>
       </div>
     );
@@ -764,7 +764,7 @@ export default function TeamPortal() {
                 <Users className="h-3.5 w-3.5 text-primary relative z-10" />
                 {(isRunning || autoRun) && <ParticleEffect active={true} />}
               </motion.div>
-              <span className="text-primary font-bold text-sm tracking-widest terminal-glow">AGENT_TEAM</span>
+              <span className="text-primary font-bold text-sm tracking-widest terminal-glow">APHANTIC_TEAM</span>
             </div>
             {sessionInfo && (
               <motion.div
@@ -858,7 +858,7 @@ export default function TeamPortal() {
             >
               {/* Mobile close button */}
               <div className="md:hidden flex items-center justify-between px-3 py-2 border-b border-border">
-                <span className="text-xs font-bold text-primary">AGENT_TEAM</span>
+                <span className="text-xs font-bold text-primary">APHANTIC_TEAM</span>
                 <button onClick={() => setSidebarOpen(false)} className="p-1 rounded text-muted-foreground hover:text-foreground">
                   <X className="h-4 w-4" />
                 </button>
