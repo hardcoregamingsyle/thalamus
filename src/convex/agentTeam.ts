@@ -312,7 +312,7 @@ async function runSingleAgentCall(
 
     // For Tester: if no explicit pass/fail was set after running commands, force a final evaluation
     if (currentPhase === "Tester" && !parsed.testerResult && allCmdResults.length > 0) {
-      const evalPrompt = `${currentPrompt}\n\nALL COMMAND RESULTS SO FAR:\n${allCmdResults.join("\n\n---\n\n")}\n\nBased on the ACTUAL command output above, you MUST now output your final verdict:\n- If ALL tests passed (no errors, no failures, exit code 0): output <<<<<test.success>>>>>\n- If ANY test failed, errored, or had non-zero exit code: output <<<<<test.failed="exact error message from output">>>>>`;
+      const evalPrompt = `${currentPrompt}\n\nALL COMMAND RESULTS SO FAR:\n${allCmdResults.join("\n\n---\n\n")}\n\nBased on the ACTUAL command output above, you MUST now output your final verdict:\n- If ALL tests passed (no errors, no failures, exit code 0): output <<test.success>>\n- If ANY test failed, errored, or had non-zero exit code: output <<test.failed="exact error message from output">>`;
       const evalResult = await callGemini(evalPrompt, systemPrompt);
       rawContent = evalResult.text;
       totalInputTokens += evalResult.inputTokens;
@@ -333,7 +333,7 @@ async function runSingleAgentCall(
     // No sandbox — Tester can't actually run tests, so it should fail
     // But we allow it to pass if it explicitly said so in its output
     // Check if the raw content contains any indication of passing
-    const hasExplicitPass = rawContent.includes("<<<<<test.success>>>>>") || rawContent.toLowerCase().includes("all tests pass");
+    const hasExplicitPass = rawContent.includes("<<test.success>>") || rawContent.includes("<<<<<test.success>>>>>") || rawContent.toLowerCase().includes("all tests pass");
     if (!hasExplicitPass) {
       parsed.testerResult = "fail";
       parsed.testerFailReason = "No sandbox available to run tests — cannot verify";
