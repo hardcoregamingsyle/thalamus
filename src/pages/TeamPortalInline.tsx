@@ -424,7 +424,7 @@ export default function TeamPortalInline({ token }: { token: string }) {
       const result = await stopSandboxAction({ token, sandboxDbId });
       if (activeSandboxId === sandboxDbId) { setActiveSandboxId(null); setActiveSandbox(null); setPreviewUrl(null); }
       await loadSandboxes();
-      toast.success(`Sandbox stopped. Cost: $${(result.costCents / 100).toFixed(4)}`);
+      toast.success(`Sandbox stopped. Cost: ${Math.ceil(result.costCents * 15).toLocaleString()} AB`);
     } catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Failed"); }
     finally { setIsSandboxLoading(false); }
   };
