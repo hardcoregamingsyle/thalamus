@@ -27,6 +27,7 @@ const schema = defineSchema(
       isAnonymous: v.optional(v.boolean()),
       role: v.optional(roleValidator),
       totalUsageCents: v.optional(v.number()),
+      agentBucksBalance: v.optional(v.number()), // purchased AgentBucks balance
     }).index("email", ["email"]),
 
     otpCodes: defineTable({

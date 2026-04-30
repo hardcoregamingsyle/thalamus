@@ -81,8 +81,26 @@ export const addUserCost = internalMutation({
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     if (!user) return;
+    // Deduct from AgentBucks balance (1 cent = 15 AgentBucks)
+    const agentBucksToDeduct = args.costCents * 15;
+    const currentBalance = user.agentBucksBalance ?? 0;
     await ctx.db.patch(args.userId, {
       totalUsageCents: (user.totalUsageCents ?? 0) + args.costCents,
+      agentBucksBalance: Math.max(0, currentBalance - agentBucksToDeduct),
+    });
+  },
+});
+
+export const addAgentBucks = internalMutation({
+  args: {
+    userId: v.id("users"),
+    agentBucks: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user) return;
+    await ctx.db.patch(args.userId, {
+      agentBucksBalance: (user.agentBucksBalance ?? 0) + args.agentBucks,
     });
   },
 });
