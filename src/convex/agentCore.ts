@@ -271,17 +271,27 @@ export function parseAgentOutput(content: string): ParsedOutput {
 }
 
 const SANDBOX_CMD_INSTRUCTIONS = `
-You have access to a live sandbox (Daytona cloud environment). Run shell commands to test and verify:
-<<<<<RUN-CMD="your command here">>>>>
+You have access to a live sandbox (Daytona cloud environment). Run shell commands using this EXACT format:
+
+<<<<<RUN-CMD="command here">>>>>
+
+⚠️ CRITICAL SYNTAX RULE: The tag MUST start with EXACTLY 5 less-than signs (<<<<<) and end with EXACTLY 5 greater-than signs (>>>>>).
+- CORRECT:   <<<<<RUN-CMD="bun install">>>>>
+- WRONG:     <<<<<RUN-CMD="bun install">>
+- WRONG:     <<<<<RUN-CMD="bun install">>>
+- WRONG:     <<<<<RUN-CMD="bun install">>>>
+- WRONG:     <<<<RUN-CMD="bun install">>>>>
+Count carefully: < < < < < at the start, > > > > > at the end. Five of each.
 
 PACKAGE MANAGER: Always use BUN (not npm, not yarn, not pnpm).
-- Install deps: <<<<<RUN-CMD="bun install">>>>>
-- Run script: <<<<<RUN-CMD="bun run dev">>>>>
-- Run tests: <<<<<RUN-CMD="bun test">>>>>
-- Add package: <<<<<RUN-CMD="bun add express">>>>>
-- Add dev dep: <<<<<RUN-CMD="bun add -d typescript">>>>>
-- Execute file: <<<<<RUN-CMD="bun index.ts">>>>>
-- Execute JS: <<<<<RUN-CMD="bun index.js">>>>>
+- Install deps:    <<<<<RUN-CMD="bun install">>>>>
+- Run script:      <<<<<RUN-CMD="bun run dev">>>>>
+- Run tests:       <<<<<RUN-CMD="bun test">>>>>
+- Add package:     <<<<<RUN-CMD="bun add express">>>>>
+- Add dev dep:     <<<<<RUN-CMD="bun add -d typescript">>>>>
+- Execute file:    <<<<<RUN-CMD="bun index.ts">>>>>
+- Execute JS:      <<<<<RUN-CMD="bun index.js">>>>>
+- Start server:    <<<<<RUN-CMD="bun run start">>>>>
 
 NEVER use: npm install, npm run, yarn, pnpm
 ALWAYS use: bun install, bun run, bun add, bun test
