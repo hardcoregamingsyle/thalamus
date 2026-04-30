@@ -55,6 +55,7 @@ export const verifyAndCreateSession = internalMutation({
         email: args.email,
         name: args.email.split("@")[0],
         totalUsageCents: 0,
+        agentBucksBalance: 5000, // 5000 free AgentBucks on signup (~$3.33 worth)
       });
     }
 

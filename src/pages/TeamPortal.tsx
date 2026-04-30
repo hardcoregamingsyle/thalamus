@@ -11,7 +11,7 @@ import {
   Terminal, Box, Globe, ExternalLink, Play, Square, Send, FileCode,
   Monitor, Sun, Moon, ChevronRight, Zap, Activity, Clock, Layers,
   MessageSquare, StopCircle, ListPlus, Sparkles, Cpu, Shield, Search,
-  Code2, CheckSquare, AlertCircle, Menu, X,
+  Code2, CheckSquare, AlertCircle, Menu, X, Coins,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
