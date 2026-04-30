@@ -14,7 +14,7 @@ export function useAuth() {
 
   const user = useQuery(
     api.customAuthHelpers.getUserByToken,
-    token ? { token } : "skip"
+    token && token.length >= 32 ? { token } : "skip"
   );
 
   const signOutMutation = useMutation(api.customAuthHelpers.signOut);
