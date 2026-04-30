@@ -68,6 +68,136 @@ interface QueuedMessage {
   timestamp: number;
 }
 
+// ── Planner Output Card ────────────────────────────────────────────────────────
+interface PlannerTask {
+  id: string;
+  title: string;
+  description: string;
+  subpart: boolean;
+  dependencies?: string[];
+}
+
+interface PlannerData {
+  summary: string;
+  tasks: PlannerTask[];
+}
+
+function parsePlannerContent(content: string): PlannerData | null {
+  // Try JSON code block first
+  const jsonBlockMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
+  if (jsonBlockMatch) {
+    try {
+      const data = JSON.parse(jsonBlockMatch[1]);
+      if (data && Array.isArray(data.tasks) && data.tasks.length > 0) {
+        return { summary: data.summary || "", tasks: data.tasks };
+      }
+    } catch { /* ignore */ }
+  }
+  // Try raw JSON object in content
+  const jsonStart = content.indexOf('{');
+  if (jsonStart !== -1) {
+    for (let end = content.length; end > jsonStart; end = content.lastIndexOf('}', end - 1)) {
+      if (end === -1) break;
+      try {
+        const candidate = content.slice(jsonStart, end + 1);
+        const data = JSON.parse(candidate) as { tasks?: PlannerTask[]; summary?: string };
+        if (data.tasks && Array.isArray(data.tasks) && data.tasks.length > 0) {
+          return { summary: data.summary || "", tasks: data.tasks };
+        }
+      } catch { /* keep trying */ }
+    }
+  }
+  return null;
+}
+
+function PlannerOutputCard({ data, currentTaskIndex }: { data: PlannerData; currentTaskIndex?: number }) {
+  const completedCount = currentTaskIndex ?? 0;
+  return (
+    <div className="w-full space-y-3">
+      {/* Summary */}
+      {data.summary && (
+        <div className="bg-violet-400/10 border border-violet-400/30 rounded-xl px-4 py-3">
+          <p className="text-[10px] font-bold text-violet-400 mb-1 tracking-widest">PROJECT PLAN</p>
+          <p className="text-xs text-foreground leading-relaxed">{data.summary}</p>
+        </div>
+      )}
+      {/* Task count */}
+      <div className="flex items-center justify-between px-1">
+        <p className="text-[10px] font-bold text-muted-foreground tracking-widest">{data.tasks.length} TASKS PLANNED</p>
+        {completedCount > 0 && (
+          <p className="text-[10px] text-violet-400">{completedCount}/{data.tasks.length} complete</p>
+        )}
+      </div>
+      {/* Tasks */}
+      <div className="space-y-2">
+        {data.tasks.map((task, i) => {
+          const isDone = i < completedCount;
+          const isActive = i === completedCount;
+          return (
+            <motion.div
+              key={task.id || i}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.04 }}
+              className={`flex items-start gap-3 px-3 py-2.5 rounded-xl border transition-all ${
+                isDone
+                  ? "border-border/30 bg-muted/10 opacity-50"
+                  : isActive
+                  ? "border-violet-400/40 bg-violet-400/8"
+                  : "border-border/40 bg-card/50"
+              }`}
+            >
+              {/* Number / check */}
+              <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
+                isDone ? "bg-emerald-400/20 text-emerald-400" : isActive ? "bg-violet-400/20 text-violet-400" : "bg-muted/30 text-muted-foreground"
+              }`}>
+                {isDone ? "✓" : i + 1}
+              </div>
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                  <p className={`text-xs font-bold ${isDone ? "line-through text-muted-foreground" : isActive ? "text-violet-400" : "text-foreground"}`}>
+                    {task.title}
+                  </p>
+                  {task.subpart && (
+                    <span className="text-[9px] bg-amber-400/15 text-amber-400 border border-amber-400/30 px-1.5 py-0.5 rounded-full font-bold">COMPLEX</span>
+                  )}
+                  {isActive && (
+                    <motion.span
+                      animate={{ opacity: [1, 0.4, 1] }}
+                      transition={{ duration: 1, repeat: Infinity }}
+                      className="text-[9px] bg-violet-400/20 text-violet-400 border border-violet-400/40 px-1.5 py-0.5 rounded-full font-bold"
+                    >
+                      IN PROGRESS
+                    </motion.span>
+                  )}
+                </div>
+                {task.description && (
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">{task.description}</p>
+                )}
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MessageContent({ msg, currentTaskIndex }: { msg: { _id?: string; agent: string; content: string }; currentTaskIndex?: number }) {
+  if (msg.agent === "Planner") {
+    const plannerData = parsePlannerContent(msg.content);
+    if (plannerData && plannerData.tasks.length > 0) {
+      return <PlannerOutputCard data={plannerData} currentTaskIndex={currentTaskIndex} />;
+    }
+  }
+  return (
+    <div className="prose prose-sm prose-invert max-w-none text-xs leading-relaxed">
+      <ReactMarkdown>{msg.content}</ReactMarkdown>
+    </div>
+  );
+}
+
 // ── Agent config ───────────────────────────────────────────────────────────────
 const AGENT_COLORS: Record<string, string> = {
   Researcher: "text-cyan-400",
@@ -956,14 +1086,14 @@ export default function TeamPortal() {
                             {!msg.isUser && (
                               <p className={`text-xs font-bold mb-1 ${AGENT_COLORS[msg.agent] || "text-foreground"}`}>{msg.agent}</p>
                             )}
-                            <div className={`rounded-2xl px-4 py-3 border shadow-sm max-w-[85%] ${
+                            <div className={`rounded-2xl px-4 py-3 border shadow-sm ${
                               msg.isUser
-                                ? "rounded-tr-sm bg-primary/10 border-primary/30 text-foreground"
-                                : `rounded-tl-sm ${AGENT_BG[msg.agent] || "bg-card border-border"}`
+                                ? "rounded-tr-sm bg-primary/10 border-primary/30 text-foreground max-w-[85%]"
+                                : msg.agent === "Planner"
+                                ? "rounded-tl-sm bg-violet-400/5 border-violet-400/20 w-full"
+                                : `rounded-tl-sm ${AGENT_BG[msg.agent] || "bg-card border-border"} max-w-[85%]`
                             }`}>
-                              <div className="prose prose-sm prose-invert max-w-none text-xs leading-relaxed">
-                                <ReactMarkdown>{msg.content}</ReactMarkdown>
-                              </div>
+                              <MessageContent msg={msg} currentTaskIndex={sessionInfo?.currentTaskIndex} />
                             </div>
                           </div>
                           {msg.isUser && (
@@ -999,10 +1129,15 @@ export default function TeamPortal() {
                                 transition={{ duration: 1, repeat: Infinity }}
                               >● live</motion.span>
                             </p>
-                            <div className={`rounded-2xl rounded-tl-sm px-4 py-3 border shadow-sm ${AGENT_BG[streamingAgent] || "bg-card border-border"}`}>
-                              <div className="prose prose-sm prose-invert max-w-none text-xs leading-relaxed">
-                                <ReactMarkdown>{streamingOutput}</ReactMarkdown>
-                              </div>
+                            <div className={`rounded-2xl rounded-tl-sm px-4 py-3 border shadow-sm ${
+                              streamingAgent === "Planner"
+                                ? "bg-violet-400/5 border-violet-400/20 w-full"
+                                : AGENT_BG[streamingAgent] || "bg-card border-border"
+                            }`}>
+                              <MessageContent
+                                msg={{ _id: "streaming", agent: streamingAgent, content: streamingOutput }}
+                                currentTaskIndex={sessionInfo?.currentTaskIndex}
+                              />
                             </div>
                           </div>
                         </motion.div>
