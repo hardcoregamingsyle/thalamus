@@ -88,14 +88,14 @@ export const verifyAndCreateSession = internalMutation({
 export const getUserByToken = query({
   args: { token: v.string() },
   handler: async (ctx, args) => {
-    if (!args.token) return null;
+    // Skip obviously invalid tokens (must be 64 hex chars)
+    if (!args.token || args.token.length < 32) return null;
 
-    const sessions = await ctx.db
+    const session = await ctx.db
       .query("customSessions")
       .withIndex("by_token", (q) => q.eq("token", args.token))
-      .take(1);
+      .unique();
 
-    const session = sessions[0];
     if (!session || session.expiresAt < Date.now()) return null;
 
     return await ctx.db.get(session.userId);
