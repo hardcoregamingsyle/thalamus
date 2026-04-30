@@ -11,7 +11,7 @@ import {
   Terminal, Box, Globe, ExternalLink, Play, Square, Send, FileCode,
   Monitor, Sun, Moon, ChevronRight, Zap, Activity, Clock, Layers,
   MessageSquare, StopCircle, ListPlus, Sparkles, Cpu, Shield, Search,
-  Code2, CheckSquare, AlertCircle,
+  Code2, CheckSquare, AlertCircle, Menu, X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -331,6 +331,7 @@ export default function TeamPortal() {
   const [messageInput, setMessageInput] = useState("");
   const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>([]);
   const [userMessages, setUserMessages] = useState<AgentMessage[]>([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoRunRef = useRef(false);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
@@ -683,6 +684,18 @@ export default function TeamPortal() {
     finally { setIsSandboxLoading(false); }
   };
 
+  const handleRunSandboxCommand = async () => {
+    if (!sandboxCommand.trim() || !activeSandboxId || !token) return;
+    const cmd = sandboxCommand.trim();
+    setSandboxCommand("");
+    setIsSandboxLoading(true);
+    try {
+      const result = await executeCommandAction({ token, sandboxDbId: activeSandboxId, command: cmd });
+      setSandboxOutput(prev => [...prev, { cmd, out: result.output, code: result.exitCode }]);
+    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Command failed"); }
+    finally { setIsSandboxLoading(false); }
+  };
+
   // Derived state
   const currentPhase = sessionInfo?.phase ?? "Researcher";
   const totalMessages = sessionInfo?.totalMessages ?? 0;
@@ -731,8 +744,15 @@ export default function TeamPortal() {
           transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
           style={{ width: "50%" }}
         />
-        <div className="flex items-center justify-between px-4 h-12">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between px-3 h-12">
+          <div className="flex items-center gap-2">
+            {/* Hamburger for mobile */}
+            <button
+              onClick={() => setSidebarOpen(o => !o)}
+              className="md:hidden p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+            >
+              {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+            </button>
             <button onClick={() => navigate("/portal")} className="text-muted-foreground hover:text-primary transition-all p-1.5 rounded-lg hover:bg-primary/10 group">
               <ArrowLeft className="h-4 w-4 group-hover:-translate-x-0.5 transition-transform" />
             </button>
@@ -758,7 +778,7 @@ export default function TeamPortal() {
               </motion.div>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {sessionInfo && (
               <div className="hidden sm:flex items-center gap-2 text-xs">
                 <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted/50 border border-border">
@@ -788,17 +808,15 @@ export default function TeamPortal() {
               <motion.div
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-400/10 border border-violet-400/30 text-xs text-violet-400 font-bold"
+                className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-400/10 border border-violet-400/30 text-xs text-violet-400 font-bold"
               >
                 <Clock className="h-3 w-3" />
-                {messageQueue.length} queued
+                {messageQueue.length}
               </motion.div>
             )}
-            <span className="text-xs text-muted-foreground hidden sm:block truncate max-w-[100px]">{user?.email || "guest"}</span>
             <button
               onClick={() => setIsDark(d => !d)}
               className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
-              title="Toggle theme"
             >
               {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
             </button>
@@ -809,119 +827,155 @@ export default function TeamPortal() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* ── Sidebar ───────────────────────────────────────────────────────────── */}
-        <div className="w-52 shrink-0 border-r border-border bg-card flex flex-col overflow-hidden">
-          {/* Pipeline status */}
-          <div className="shrink-0 p-3 border-b border-border">
-            <p className="text-xs text-muted-foreground mb-2 font-bold flex items-center gap-1.5">
-              <Layers className="h-3 w-3" />
-              PIPELINE
-            </p>
-            <div className="space-y-0.5">
-              {PIPELINE.map((agent) => {
-                const isActive = (isRunning || autoRun) && (sessionInfo?.currentAgent === agent || (sessionInfo?.status === "running" && currentPhase === agent));
-                const isNext = !isRunning && sessionInfo && currentPhase === agent && sessionInfo.status !== "completed";
-                const isDone = sessionInfo && sessionInfo.status !== "completed"
-                  ? PIPELINE.indexOf(agent) < PIPELINE.indexOf(currentPhase)
-                  : sessionInfo?.status === "completed";
-                return (
-                  <motion.div
-                    key={agent}
-                    className={`flex items-center gap-2 px-2 py-1 rounded-lg text-xs transition-all ${isActive ? "bg-primary/10 border border-primary/20" : "hover:bg-muted/50"}`}
-                    animate={isActive ? { x: [0, 1, 0] } : {}}
-                    transition={{ duration: 0.5, repeat: Infinity }}
-                  >
-                    <div className={`w-4 h-4 rounded-md flex items-center justify-center text-xs font-bold shrink-0 ${AGENT_COLORS[agent]} ${isActive ? "animate-pulse" : ""}`}
-                      style={{ border: "1px solid currentColor", opacity: isDone ? 0.5 : 1 }}>
-                      {AGENT_ICONS[agent]}
-                    </div>
-                    <span className={`${AGENT_COLORS[agent]} ${isActive ? "font-bold" : isDone ? "opacity-40" : "opacity-70"} flex-1 truncate`}>{agent}</span>
-                    {isDone && <CheckCircle className="h-3 w-3 text-green-400 shrink-0" />}
-                    {isNext && !isActive && <ChevronRight className="h-3 w-3 text-amber-400 shrink-0" />}
-                    {isActive && (
-                      <motion.div
-                        className="w-1.5 h-1.5 rounded-full bg-primary shrink-0"
-                        animate={{ scale: [1, 1.5, 1], opacity: [1, 0.5, 1] }}
-                        transition={{ duration: 0.8, repeat: Infinity }}
-                      />
-                    )}
-                  </motion.div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Task list */}
-          {plannerTasks.length > 0 && (
-            <div className="shrink-0 p-3 border-b border-border max-h-40 overflow-y-auto">
-              <p className="text-xs text-muted-foreground mb-2 font-bold flex items-center gap-1.5">
-                <CheckSquare className="h-3 w-3" />
-                TASKS ({taskIndex}/{plannerTasks.length})
-              </p>
-              <div className="space-y-1">
-                {plannerTasks.map((t, i) => (
-                  <div key={t.id} className={`flex items-start gap-1.5 text-xs ${i < taskIndex ? "opacity-40" : i === taskIndex ? "opacity-100" : "opacity-60"}`}>
-                    <div className={`w-3.5 h-3.5 rounded-full shrink-0 mt-0.5 flex items-center justify-center ${i < taskIndex ? "bg-green-400" : i === taskIndex ? "bg-primary animate-pulse" : "bg-muted border border-border"}`}>
-                      {i < taskIndex && <CheckCircle className="h-2 w-2 text-background" />}
-                    </div>
-                    <span className={`truncate ${i === taskIndex ? "text-foreground font-bold" : "text-muted-foreground"}`}>{t.title}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Sessions list — own scrollbar */}
-          <div className="flex-1 overflow-y-auto p-2 min-h-0">
-            <p className="text-xs text-muted-foreground mb-2 font-bold px-1 flex items-center gap-1.5">
-              <MessageSquare className="h-3 w-3" />
-              SESSIONS
-            </p>
-            <div className="space-y-1">
-              {sessions.map((s) => (
-                <motion.button
-                  key={s._id}
-                  onClick={() => handleSelectSession(s._id)}
-                  whileHover={{ x: 2 }}
-                  className={`w-full text-left px-2 py-2 rounded-lg text-xs transition-all ${activeSessionId === s._id ? "bg-primary/15 text-primary border border-primary/20" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
-                >
-                  <div className="truncate font-bold">{s.title}</div>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    <motion.div
-                      className={`w-1.5 h-1.5 rounded-full ${s.status === "completed" ? "bg-green-400" : s.status === "running" ? "bg-primary" : "bg-muted-foreground"}`}
-                      animate={s.status === "running" ? { scale: [1, 1.3, 1] } : {}}
-                      transition={{ duration: 1, repeat: Infinity }}
-                    />
-                    <span className="opacity-60 truncate">{s.phase}</span>
-                  </div>
-                </motion.button>
-              ))}
-            </div>
-          </div>
-
-          {/* New session input */}
-          <div className="shrink-0 p-2 border-t border-border bg-card">
-            <textarea
-              value={task}
-              onChange={(e) => setTask(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleCreateSession(); } }}
-              placeholder="New task..."
-              className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary transition-colors"
-              rows={2}
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* ── Mobile overlay backdrop ────────────────────────────────────────── */}
+        <AnimatePresence>
+          {sidebarOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="md:hidden fixed inset-0 bg-background/80 backdrop-blur-sm z-30"
+              onClick={() => setSidebarOpen(false)}
             />
-            <motion.button
-              onClick={handleCreateSession}
-              disabled={!task.trim() || isRunning}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="w-full mt-1 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs rounded-lg hover:bg-primary/20 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-1.5"
+          )}
+        </AnimatePresence>
+
+        {/* ── Sidebar ───────────────────────────────────────────────────────────── */}
+        <AnimatePresence>
+          {(sidebarOpen || true) && (
+            <motion.div
+              initial={false}
+              className={`
+                shrink-0 border-r border-border bg-card flex flex-col overflow-hidden
+                md:relative md:translate-x-0 md:w-52
+                ${sidebarOpen
+                  ? "fixed left-0 top-0 bottom-0 w-72 z-40 translate-x-0"
+                  : "fixed left-0 top-0 bottom-0 w-72 z-40 -translate-x-full md:translate-x-0 md:static md:w-52"
+                }
+                transition-transform duration-200
+              `}
             >
-              {isRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-              {isRunning ? "RUNNING..." : "START SESSION"}
-            </motion.button>
-          </div>
-        </div>
+              {/* Mobile close button */}
+              <div className="md:hidden flex items-center justify-between px-3 py-2 border-b border-border">
+                <span className="text-xs font-bold text-primary">AGENT_TEAM</span>
+                <button onClick={() => setSidebarOpen(false)} className="p-1 rounded text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Pipeline status */}
+              <div className="shrink-0 p-3 border-b border-border">
+                <p className="text-xs text-muted-foreground mb-2 font-bold flex items-center gap-1.5">
+                  <Layers className="h-3 w-3" />
+                  PIPELINE
+                </p>
+                <div className="space-y-0.5">
+                  {PIPELINE.map((agent) => {
+                    const isActive = (isRunning || autoRun) && (sessionInfo?.currentAgent === agent || (sessionInfo?.status === "running" && currentPhase === agent));
+                    const isNext = !isRunning && sessionInfo && currentPhase === agent && sessionInfo.status !== "completed";
+                    const isDone = sessionInfo && sessionInfo.status !== "completed"
+                      ? PIPELINE.indexOf(agent) < PIPELINE.indexOf(currentPhase)
+                      : sessionInfo?.status === "completed";
+                    return (
+                      <motion.div
+                        key={agent}
+                        className={`flex items-center gap-2 px-2 py-1 rounded-lg text-xs transition-all ${isActive ? "bg-primary/10 border border-primary/20" : "hover:bg-muted/50"}`}
+                        animate={isActive ? { x: [0, 1, 0] } : {}}
+                        transition={{ duration: 0.5, repeat: Infinity }}
+                      >
+                        <div className={`w-4 h-4 rounded-md flex items-center justify-center text-xs font-bold shrink-0 ${AGENT_COLORS[agent]} ${isActive ? "animate-pulse" : ""}`}
+                          style={{ border: "1px solid currentColor", opacity: isDone ? 0.5 : 1 }}>
+                          {AGENT_ICONS[agent]}
+                        </div>
+                        <span className={`${AGENT_COLORS[agent]} ${isActive ? "font-bold" : isDone ? "opacity-40" : "opacity-70"} flex-1 truncate`}>{agent}</span>
+                        {isDone && <CheckCircle className="h-3 w-3 text-green-400 shrink-0" />}
+                        {isNext && !isActive && <ChevronRight className="h-3 w-3 text-amber-400 shrink-0" />}
+                        {isActive && (
+                          <motion.div
+                            className="w-1.5 h-1.5 rounded-full bg-primary shrink-0"
+                            animate={{ scale: [1, 1.5, 1], opacity: [1, 0.5, 1] }}
+                            transition={{ duration: 0.8, repeat: Infinity }}
+                          />
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Task list */}
+              {plannerTasks.length > 0 && (
+                <div className="shrink-0 p-3 border-b border-border max-h-40 overflow-y-auto">
+                  <p className="text-xs text-muted-foreground mb-2 font-bold flex items-center gap-1.5">
+                    <CheckSquare className="h-3 w-3" />
+                    TASKS ({taskIndex}/{plannerTasks.length})
+                  </p>
+                  <div className="space-y-1">
+                    {plannerTasks.map((t, i) => (
+                      <div key={t.id} className={`flex items-start gap-1.5 text-xs ${i < taskIndex ? "opacity-40" : i === taskIndex ? "opacity-100" : "opacity-60"}`}>
+                        <div className={`w-3.5 h-3.5 rounded-full shrink-0 mt-0.5 flex items-center justify-center ${i < taskIndex ? "bg-green-400" : i === taskIndex ? "bg-primary animate-pulse" : "bg-muted border border-border"}`}>
+                          {i < taskIndex && <CheckCircle className="h-2 w-2 text-background" />}
+                        </div>
+                        <span className={`truncate ${i === taskIndex ? "text-foreground font-bold" : "text-muted-foreground"}`}>{t.title}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Sessions list */}
+              <div className="flex-1 overflow-y-auto p-2 min-h-0">
+                <p className="text-xs text-muted-foreground mb-2 font-bold px-1 flex items-center gap-1.5">
+                  <MessageSquare className="h-3 w-3" />
+                  SESSIONS
+                </p>
+                <div className="space-y-1">
+                  {sessions.map((s) => (
+                    <motion.button
+                      key={s._id}
+                      onClick={() => { handleSelectSession(s._id); setSidebarOpen(false); }}
+                      whileHover={{ x: 2 }}
+                      className={`w-full text-left px-2 py-2 rounded-lg text-xs transition-all ${activeSessionId === s._id ? "bg-primary/15 text-primary border border-primary/20" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
+                    >
+                      <div className="truncate font-bold">{s.title}</div>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <motion.div
+                          className={`w-1.5 h-1.5 rounded-full ${s.status === "completed" ? "bg-green-400" : s.status === "running" ? "bg-primary" : "bg-muted-foreground"}`}
+                          animate={s.status === "running" ? { scale: [1, 1.3, 1] } : {}}
+                          transition={{ duration: 1, repeat: Infinity }}
+                        />
+                        <span className="opacity-60 truncate">{s.phase}</span>
+                      </div>
+                    </motion.button>
+                  ))}
+                </div>
+              </div>
+
+              {/* New session input */}
+              <div className="shrink-0 p-2 border-t border-border bg-card">
+                <textarea
+                  value={task}
+                  onChange={(e) => setTask(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleCreateSession(); setSidebarOpen(false); } }}
+                  placeholder="New task..."
+                  className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary transition-colors"
+                  rows={2}
+                />
+                <motion.button
+                  onClick={() => { handleCreateSession(); setSidebarOpen(false); }}
+                  disabled={!task.trim() || isRunning}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="w-full mt-1 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs rounded-lg hover:bg-primary/20 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-1.5"
+                >
+                  {isRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                  {isRunning ? "RUNNING..." : "START SESSION"}
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* ── Main content ──────────────────────────────────────────────────────── */}
         {!activeSessionId ? (
@@ -929,7 +983,7 @@ export default function TeamPortal() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="text-center"
+              className="text-center px-4"
             >
               <motion.div
                 className="w-20 h-20 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4"
@@ -939,16 +993,23 @@ export default function TeamPortal() {
                 <Users className="h-10 w-10 text-primary/40" />
               </motion.div>
               <p className="text-sm font-bold text-foreground mb-1">No Session Selected</p>
-              <p className="text-xs text-muted-foreground">Create a new task or select an existing session</p>
+              <p className="text-xs text-muted-foreground mb-4">Create a new task or select an existing session</p>
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="md:hidden flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/30 text-primary text-xs rounded-lg hover:bg-primary/20 transition-all mx-auto"
+              >
+                <Menu className="h-3.5 w-3.5" />
+                OPEN SESSIONS
+              </button>
             </motion.div>
           </div>
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-            {/* ── Tab header — FIXED, never scrollable ─────────────────────────── */}
+            {/* ── Tab header ─────────────────────────────────────────────────── */}
             <div className="shrink-0 border-b border-border bg-card/90 backdrop-blur-sm z-10">
-              <div className="flex items-center justify-between px-3 py-2">
-                {/* Tabs */}
-                <div className="flex items-center gap-1">
+              <div className="flex items-center justify-between px-2 py-2">
+                {/* Tabs — scrollable on mobile */}
+                <div className="flex items-center gap-1 overflow-x-auto scrollbar-none flex-1 min-w-0">
                   {(["chat", "files", "sandbox", "preview"] as const).map((tab) => {
                     const icons = { chat: MessageSquare, files: FileCode, sandbox: Terminal, preview: Globe };
                     const Icon = icons[tab];
@@ -959,26 +1020,26 @@ export default function TeamPortal() {
                         onClick={() => setActiveTab(tab)}
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
                           isActive
                             ? "bg-primary/15 text-primary border border-primary/30"
                             : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                         }`}
                       >
                         <Icon className="h-3 w-3" />
-                        {tab.toUpperCase()}
+                        <span className="hidden sm:block">{tab.toUpperCase()}</span>
                         {tab === "files" && projectFiles.length > 0 && (
-                          <span className="bg-primary/20 text-primary text-xs px-1 rounded-full">{projectFiles.length}</span>
+                          <span className="bg-primary/20 text-primary text-[10px] px-1 rounded-full">{projectFiles.length}</span>
                         )}
                         {tab === "chat" && messageQueue.length > 0 && (
-                          <span className="bg-violet-400/20 text-violet-400 text-xs px-1 rounded-full">{messageQueue.length}</span>
+                          <span className="bg-violet-400/20 text-violet-400 text-[10px] px-1 rounded-full">{messageQueue.length}</span>
                         )}
                       </motion.button>
                     );
                   })}
                 </div>
                 {/* Controls */}
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1 shrink-0 ml-1">
                   {sessionInfo?.status !== "completed" && (
                     <>
                       {autoRun ? (
@@ -986,10 +1047,10 @@ export default function TeamPortal() {
                           onClick={handleStopAutoRun}
                           whileHover={{ scale: 1.05 }}
                           whileTap={{ scale: 0.95 }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-400/10 border border-red-400/30 text-red-400 text-xs rounded-lg hover:bg-red-400/20 transition-all font-bold"
+                          className="flex items-center gap-1 px-2 py-1.5 bg-red-400/10 border border-red-400/30 text-red-400 text-xs rounded-lg hover:bg-red-400/20 transition-all font-bold"
                         >
                           <StopCircle className="h-3 w-3" />
-                          STOP
+                          <span className="hidden sm:block">STOP</span>
                         </motion.button>
                       ) : (
                         <motion.button
@@ -997,10 +1058,10 @@ export default function TeamPortal() {
                           disabled={isRunning}
                           whileHover={{ scale: 1.05 }}
                           whileTap={{ scale: 0.95 }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs rounded-lg hover:bg-primary/20 disabled:opacity-50 transition-all font-bold"
+                          className="flex items-center gap-1 px-2 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs rounded-lg hover:bg-primary/20 disabled:opacity-50 transition-all font-bold"
                         >
                           {isRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-                          {isRunning ? "RUNNING" : "AUTO RUN"}
+                          <span className="hidden sm:block">RUN</span>
                         </motion.button>
                       )}
                       <motion.button
@@ -1011,7 +1072,6 @@ export default function TeamPortal() {
                         className="flex items-center gap-1 px-2 py-1.5 bg-muted border border-border text-muted-foreground text-xs rounded-lg hover:bg-muted/80 disabled:opacity-50 transition-all"
                       >
                         <RefreshCw className="h-3 w-3" />
-                        STEP
                       </motion.button>
                     </>
                   )}
@@ -1024,47 +1084,19 @@ export default function TeamPortal() {
               {/* CHAT TAB */}
               {activeTab === "chat" && (
                 <div className="h-full flex flex-col overflow-hidden">
-                  {/* Messages — own scrollbar */}
-                  <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4">
-                    {/* Session info banner */}
-                    {sessionInfo && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="bg-card border border-border rounded-xl p-3 text-xs relative overflow-hidden"
-                      >
+                  {/* Messages */}
+                  <div className="flex-1 overflow-y-auto min-h-0 p-3 space-y-4">
+                    {allMessages.length === 0 && !sessionInfo?.currentAgentOutput && (
+                      <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
                         <motion.div
-                          className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-primary/5"
-                          animate={{ x: ["-100%", "100%"] }}
-                          transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                        />
-                        <p className="font-bold text-foreground mb-1 truncate relative z-10">{sessionInfo.task}</p>
-                        <p className="text-muted-foreground relative z-10">8 agents • Researcher → Analyser → Planner → Coder → Optimiser → Tester → Hacker → Critic</p>
-                      </motion.div>
-                    )}
-
-                    {/* Queue display */}
-                    {messageQueue.length > 0 && (
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="bg-violet-400/5 border border-violet-400/20 rounded-xl p-3 text-xs"
-                      >
-                        <p className="text-violet-400 font-bold mb-2 flex items-center gap-1.5">
-                          <Clock className="h-3 w-3" />
-                          MESSAGE QUEUE ({messageQueue.length})
-                        </p>
-                        {messageQueue.map((q, i) => (
-                          <div key={q.id} className="flex items-center gap-2 text-muted-foreground mb-1">
-                            <span className="text-violet-400 font-bold">{i + 1}.</span>
-                            <span className="truncate">{q.text}</span>
-                            <button
-                              onClick={() => setMessageQueue(prev => prev.filter(m => m.id !== q.id))}
-                              className="ml-auto text-red-400 hover:text-red-300 shrink-0"
-                            >×</button>
-                          </div>
-                        ))}
-                      </motion.div>
+                          animate={{ scale: [1, 1.05, 1] }}
+                          transition={{ duration: 2, repeat: Infinity }}
+                          className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center"
+                        >
+                          <Sparkles className="h-6 w-6 text-primary/40" />
+                        </motion.div>
+                        <p className="text-xs text-muted-foreground">Agents will appear here as they work</p>
+                      </div>
                     )}
 
                     {/* All messages (agent + user) */}
@@ -1075,10 +1107,10 @@ export default function TeamPortal() {
                           initial={{ opacity: 0, y: 10, scale: 0.98 }}
                           animate={{ opacity: 1, y: 0, scale: 1 }}
                           transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                          className={`flex items-start gap-3 ${msg.isUser ? "flex-row-reverse" : ""}`}
+                          className={`flex items-start gap-2 ${msg.isUser ? "flex-row-reverse" : ""}`}
                         >
                           {!msg.isUser && (
-                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border ${AGENT_BG[msg.agent] || "bg-muted/20 border-border"}`}>
+                            <div className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border ${AGENT_BG[msg.agent] || "bg-muted/20 border-border"}`}>
                               {AGENT_EMOJI[msg.agent] || msg.agent[0]}
                             </div>
                           )}
@@ -1086,18 +1118,18 @@ export default function TeamPortal() {
                             {!msg.isUser && (
                               <p className={`text-xs font-bold mb-1 ${AGENT_COLORS[msg.agent] || "text-foreground"}`}>{msg.agent}</p>
                             )}
-                            <div className={`rounded-2xl px-4 py-3 border shadow-sm ${
+                            <div className={`rounded-2xl px-3 py-2.5 border shadow-sm ${
                               msg.isUser
-                                ? "rounded-tr-sm bg-primary/10 border-primary/30 text-foreground max-w-[85%]"
+                                ? "rounded-tr-sm bg-primary/10 border-primary/30 text-foreground max-w-[90%]"
                                 : msg.agent === "Planner"
                                 ? "rounded-tl-sm bg-violet-400/5 border-violet-400/20 w-full"
-                                : `rounded-tl-sm ${AGENT_BG[msg.agent] || "bg-card border-border"} max-w-[85%]`
+                                : `rounded-tl-sm ${AGENT_BG[msg.agent] || "bg-card border-border"} max-w-[90%]`
                             }`}>
                               <MessageContent msg={msg} currentTaskIndex={sessionInfo?.currentTaskIndex} />
                             </div>
                           </div>
                           {msg.isUser && (
-                            <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border bg-primary/10 border-primary/30 text-primary">
+                            <div className="w-7 h-7 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border bg-primary/10 border-primary/30 text-primary">
                               👤
                             </div>
                           )}
@@ -1112,10 +1144,10 @@ export default function TeamPortal() {
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0 }}
-                          className="flex items-start gap-3"
+                          className="flex items-start gap-2"
                         >
                           <motion.div
-                            className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border ${AGENT_BG[streamingAgent] || "bg-primary/10 border-primary/20"}`}
+                            className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border ${AGENT_BG[streamingAgent] || "bg-primary/10 border-primary/20"}`}
                             animate={{ boxShadow: ["0 0 0px rgba(0,0,0,0)", "0 0 12px rgba(var(--primary),0.3)", "0 0 0px rgba(0,0,0,0)"] }}
                             transition={{ duration: 1.5, repeat: Infinity }}
                           >
@@ -1129,7 +1161,7 @@ export default function TeamPortal() {
                                 transition={{ duration: 1, repeat: Infinity }}
                               >● live</motion.span>
                             </p>
-                            <div className={`rounded-2xl rounded-tl-sm px-4 py-3 border shadow-sm ${
+                            <div className={`rounded-2xl rounded-tl-sm px-3 py-2.5 border shadow-sm ${
                               streamingAgent === "Planner"
                                 ? "bg-violet-400/5 border-violet-400/20 w-full"
                                 : AGENT_BG[streamingAgent] || "bg-card border-border"
@@ -1151,17 +1183,16 @@ export default function TeamPortal() {
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           exit={{ opacity: 0 }}
-                          className="flex items-start gap-3"
+                          className="flex items-start gap-2"
                         >
-                          <motion.div
-                            className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border ${AGENT_BG[streamingAgent] || "bg-primary/10 border-primary/20"}`}
-                            animate={{ scale: [1, 1.05, 1] }}
-                            transition={{ duration: 1, repeat: Infinity }}
-                          >
-                            {AGENT_EMOJI[streamingAgent] || "?"}
-                          </motion.div>
-                          <div className={`rounded-2xl rounded-tl-sm px-4 py-3 border ${AGENT_BG[streamingAgent] || "bg-card border-border"}`}>
-                            <TypingDots />
+                          <div className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border ${AGENT_BG[streamingAgent] || "bg-primary/10 border-primary/20"}`}>
+                            {AGENT_EMOJI[streamingAgent] || streamingAgent[0]}
+                          </div>
+                          <div className="flex-1">
+                            <p className={`text-xs font-bold mb-1 ${AGENT_COLORS[streamingAgent] || "text-primary"}`}>{streamingAgent}</p>
+                            <div className={`rounded-2xl rounded-tl-sm px-3 py-2 border ${AGENT_BG[streamingAgent] || "bg-card border-border"} inline-flex`}>
+                              <TypingDots />
+                            </div>
                           </div>
                         </motion.div>
                       )}
@@ -1170,86 +1201,60 @@ export default function TeamPortal() {
                     <div ref={messagesEndRef} />
                   </div>
 
-                  {/* ── Message input — ALWAYS VISIBLE ──────────────────────────── */}
-                  <div className="shrink-0 border-t border-border bg-card/80 backdrop-blur-sm p-3">
-                    {/* Queue indicator */}
+                  {/* Message input */}
+                  <div className="shrink-0 p-3 border-t border-border bg-card/50">
                     {messageQueue.length > 0 && (
-                      <div className="flex items-center gap-2 mb-2 text-xs text-violet-400">
+                      <div className="mb-2 flex items-center gap-2 text-xs text-violet-400">
                         <Clock className="h-3 w-3" />
-                        <span>{messageQueue.length} message(s) queued — will send after current task</span>
+                        <span>{messageQueue.length} message(s) queued</span>
                       </div>
                     )}
-                    <div className="flex gap-2 items-end">
+                    <div className="flex gap-2">
                       <div className="flex-1 relative">
                         <textarea
                           ref={messageInputRef}
                           value={messageInput}
                           onChange={(e) => setMessageInput(e.target.value)}
                           onKeyDown={handleMessageKeyDown}
-                          placeholder={
-                            !activeSessionId ? "Create a session first..." :
-                            isRunning || autoRun ? "Type a message (Enter to queue, Ctrl+Enter to queue explicitly)..." :
-                            "Type a message (Enter to send, Ctrl+Enter to queue)..."
-                          }
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary transition-all min-h-[36px] max-h-[120px]"
+                          placeholder={isRunning || autoRun ? "Type to queue a message..." : "Send a message or new task..."}
                           rows={1}
-                          style={{ height: "auto" }}
-                          onInput={(e) => {
-                            const t = e.target as HTMLTextAreaElement;
-                            t.style.height = "auto";
-                            t.style.height = Math.min(t.scrollHeight, 120) + "px";
-                          }}
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary/60 transition-colors"
+                          style={{ minHeight: "40px", maxHeight: "100px" }}
                         />
                       </div>
-                      <div className="flex flex-col gap-1 shrink-0">
-                        {/* Stop button (when running) */}
-                        {(isRunning || autoRun) && (
-                          <motion.button
-                            onClick={handleStopAutoRun}
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            className="p-2 bg-red-400/10 border border-red-400/30 text-red-400 rounded-xl hover:bg-red-400/20 transition-all"
-                            title="Stop after current agent"
-                          >
-                            <StopCircle className="h-4 w-4" />
-                          </motion.button>
-                        )}
-                        {/* Queue button */}
-                        <motion.button
-                          onClick={handleQueueMessage}
-                          disabled={!messageInput.trim() || !activeSessionId}
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          className="p-2 bg-violet-400/10 border border-violet-400/30 text-violet-400 rounded-xl hover:bg-violet-400/20 disabled:opacity-40 transition-all"
-                          title="Queue message (Ctrl+Enter)"
-                        >
-                          <ListPlus className="h-4 w-4" />
-                        </motion.button>
-                        {/* Send button */}
+                      <div className="flex flex-col gap-1">
                         <motion.button
                           onClick={handleSendMessage}
-                          disabled={!messageInput.trim() || !activeSessionId}
+                          disabled={!messageInput.trim()}
                           whileHover={{ scale: 1.05 }}
                           whileTap={{ scale: 0.95 }}
-                          className="p-2 bg-primary/10 border border-primary/30 text-primary rounded-xl hover:bg-primary/20 disabled:opacity-40 transition-all"
-                          title="Send message (Enter)"
+                          className="px-3 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-bold hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center gap-1"
                         >
-                          <Send className="h-4 w-4" />
+                          <Send className="h-3 w-3" />
+                          <span className="hidden sm:block">SEND</span>
                         </motion.button>
+                        {(isRunning || autoRun) && (
+                          <motion.button
+                            onClick={handleQueueMessage}
+                            disabled={!messageInput.trim()}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            className="px-3 py-2 bg-violet-400/10 border border-violet-400/30 text-violet-400 rounded-xl text-xs font-bold hover:bg-violet-400/20 disabled:opacity-50 transition-all flex items-center gap-1"
+                          >
+                            <ListPlus className="h-3 w-3" />
+                          </motion.button>
+                        )}
                       </div>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1.5 opacity-60">
-                      Enter to send • Ctrl+Enter to queue • Shift+Enter for new line
-                    </p>
                   </div>
                 </div>
               )}
 
               {/* FILES TAB */}
               {activeTab === "files" && (
-                <div className="h-full flex overflow-hidden">
-                  {/* File list — own scrollbar */}
-                  <div className="w-52 shrink-0 border-r border-border overflow-y-auto bg-card/50">
+                <div className="h-full flex flex-col md:flex-row overflow-hidden">
+                  {/* File list */}
+                  <div className="md:w-52 shrink-0 border-b md:border-b-0 md:border-r border-border overflow-y-auto bg-card/50 max-h-48 md:max-h-none">
                     <div className="p-2">
                       <p className="text-xs text-muted-foreground mb-2 font-bold px-1 flex items-center gap-1.5">
                         <FileCode className="h-3 w-3" />
@@ -1260,43 +1265,40 @@ export default function TeamPortal() {
                       ) : (
                         <div className="space-y-0.5">
                           {projectFiles.map((f) => (
-                            <motion.button
+                            <button
                               key={f.filepath}
                               onClick={() => setSelectedFile(f)}
-                              whileHover={{ x: 2 }}
-                              className={`w-full text-left px-2 py-1.5 rounded-lg text-xs transition-all ${selectedFile?.filepath === f.filepath ? "bg-primary/15 text-primary border border-primary/20" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
+                              className={`w-full text-left px-2 py-1.5 rounded text-xs transition-all truncate ${
+                                selectedFile?.filepath === f.filepath
+                                  ? "bg-primary/15 text-primary"
+                                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                              }`}
                             >
                               <div className="truncate font-mono">{f.filepath}</div>
-                              <div className={`text-xs mt-0.5 ${AGENT_COLORS[f.lastModifiedBy] || "text-muted-foreground"} opacity-70`}>{f.lastModifiedBy}</div>
-                            </motion.button>
+                              <div className="text-[10px] opacity-60 truncate">{f.lastModifiedBy}</div>
+                            </button>
                           ))}
                         </div>
                       )}
                     </div>
                   </div>
-                  {/* File content — own scrollbar */}
-                  <div className="flex-1 overflow-y-auto min-w-0">
+                  {/* File content */}
+                  <div className="flex-1 overflow-auto min-h-0 min-w-0">
                     {selectedFile ? (
-                      <div className="p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div>
-                            <p className="text-xs font-bold text-foreground font-mono">{selectedFile.filepath}</p>
-                            <p className={`text-xs ${AGENT_COLORS[selectedFile.lastModifiedBy] || "text-muted-foreground"}`}>by {selectedFile.lastModifiedBy}</p>
-                          </div>
-                          <button
-                            onClick={() => { navigator.clipboard.writeText(selectedFile.content); toast.success("Copied!"); }}
-                            className="text-xs text-muted-foreground hover:text-primary border border-border px-2 py-1 rounded-lg transition-colors"
-                          >Copy</button>
+                      <div className="h-full flex flex-col">
+                        <div className="shrink-0 px-3 py-2 border-b border-border bg-card/50 flex items-center justify-between">
+                          <span className="text-xs font-mono text-primary truncate">{selectedFile.filepath}</span>
+                          <span className="text-[10px] text-muted-foreground shrink-0 ml-2">{selectedFile.lastModifiedBy}</span>
                         </div>
-                        <pre className="text-xs text-foreground bg-background border border-border rounded-xl p-4 overflow-x-auto font-mono leading-relaxed whitespace-pre-wrap break-all">
+                        <pre className="flex-1 overflow-auto p-3 text-xs font-mono text-foreground/80 leading-relaxed whitespace-pre-wrap break-all">
                           {selectedFile.content}
                         </pre>
                       </div>
                     ) : (
                       <div className="h-full flex items-center justify-center">
                         <div className="text-center">
-                          <FileCode className="h-12 w-12 text-muted-foreground/20 mx-auto mb-3" />
-                          <p className="text-sm text-muted-foreground">Select a file to view</p>
+                          <FileCode className="h-8 w-8 text-muted-foreground/20 mx-auto mb-2" />
+                          <p className="text-xs text-muted-foreground">Select a file to view</p>
                         </div>
                       </div>
                     )}
@@ -1308,78 +1310,89 @@ export default function TeamPortal() {
               {activeTab === "sandbox" && (
                 <div className="h-full flex flex-col overflow-hidden">
                   {/* Sandbox header */}
-                  <div className="shrink-0 px-4 py-2 border-b border-border bg-card/50 flex items-center justify-between">
+                  <div className="shrink-0 px-3 py-2 border-b border-border bg-card/50 flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
                       <Terminal className="h-3.5 w-3.5 text-amber-400" />
-                      <span className="text-xs font-bold text-amber-400">SANDBOX TERMINAL</span>
+                      <span className="text-xs font-bold text-amber-400">SANDBOX</span>
                       {activeSandbox && (
-                        <span className={`text-xs px-2 py-0.5 rounded-full border ${activeSandbox.status === "running" ? "bg-green-400/10 text-green-400 border-green-400/30" : "bg-muted text-muted-foreground border-border"}`}>
-                          {activeSandbox.status}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold ${
+                          activeSandbox.status === "running" ? "bg-green-400/10 text-green-400 border-green-400/30" : "bg-muted text-muted-foreground border-border"
+                        }`}>
+                          {activeSandbox.status.toUpperCase()}
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      {activeSandbox && (
-                        <>
-                          <button onClick={handleGetPreviewUrl} disabled={isSandboxLoading} className="text-xs text-muted-foreground hover:text-primary border border-border px-2 py-1 rounded-lg transition-colors">
-                            {isSandboxLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "Preview"}
-                          </button>
-                          <button onClick={handleTestFileWrite} disabled={isSandboxLoading} className="text-xs text-muted-foreground hover:text-amber-400 border border-border px-2 py-1 rounded-lg transition-colors">
-                            Test Write
-                          </button>
-                          {activeSessionId && (
-                            <button onClick={handleAutoDeployAndStart} disabled={isSandboxLoading || projectFiles.length === 0} className="text-xs text-primary border border-primary/30 px-2 py-1 rounded-lg hover:bg-primary/10 transition-colors">
-                              Deploy
-                            </button>
-                          )}
-                          <button onClick={() => handleStopSandbox(activeSandboxId!)} disabled={isSandboxLoading} className="text-xs text-red-400 border border-red-400/30 px-2 py-1 rounded-lg hover:bg-red-400/10 transition-colors">
-                            Stop
-                          </button>
-                        </>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {activeSandboxId && activeSessionId && (
+                        <motion.button
+                          onClick={handleAutoDeployAndStart}
+                          disabled={isSandboxLoading || projectFiles.length === 0}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          className="flex items-center gap-1 px-2 py-1 bg-primary/10 border border-primary/30 text-primary text-xs rounded-lg hover:bg-primary/20 disabled:opacity-50 transition-all font-bold"
+                        >
+                          {isSandboxLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Globe className="h-3 w-3" />}
+                          DEPLOY
+                        </motion.button>
+                      )}
+                      {activeSandboxId && (
+                        <motion.button
+                          onClick={() => activeSandboxId && handleStopSandbox(activeSandboxId)}
+                          disabled={isSandboxLoading}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          className="flex items-center gap-1 px-2 py-1 bg-red-400/10 border border-red-400/30 text-red-400 text-xs rounded-lg hover:bg-red-400/20 disabled:opacity-50 transition-all font-bold"
+                        >
+                          <Square className="h-3 w-3" />
+                          STOP
+                        </motion.button>
                       )}
                     </div>
                   </div>
 
-                  {activeSandbox ? (
+                  {activeSandboxId ? (
                     <>
-                      {/* Terminal output — own scrollbar */}
-                      <div className="flex-1 overflow-y-auto min-h-0 p-3 bg-background font-mono text-xs">
-                        {sandboxOutput.length === 0 ? (
-                          <p className="text-muted-foreground">$ ready for commands...</p>
-                        ) : (
-                          sandboxOutput.map((entry, i) => (
-                            <motion.div
-                              key={i}
-                              initial={{ opacity: 0, y: 5 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className="mb-3"
-                            >
-                              <p className="text-amber-400">$ {entry.cmd}</p>
-                              <pre className={`whitespace-pre-wrap break-all mt-1 ${entry.code === 0 ? "text-green-400/80" : "text-red-400/80"}`}>
-                                {entry.out || "(no output)"}
-                              </pre>
-                            </motion.div>
-                          ))
+                      {/* Output */}
+                      <div className="flex-1 overflow-y-auto min-h-0 p-3 font-mono text-xs space-y-2 bg-background/50">
+                        {sandboxOutput.length === 0 && (
+                          <p className="text-muted-foreground/50">No commands run yet...</p>
                         )}
+                        {sandboxOutput.map((entry, i) => (
+                          <div key={i} className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-primary">$</span>
+                              <span className="text-foreground">{entry.cmd}</span>
+                            </div>
+                            <pre className={`pl-4 whitespace-pre-wrap break-all ${entry.code === 0 ? "text-muted-foreground" : "text-red-400"}`}>
+                              {entry.out}
+                            </pre>
+                          </div>
+                        ))}
                         <div ref={sandboxOutputEndRef} />
                       </div>
                       {/* Command input */}
-                      <div className="shrink-0 border-t border-border p-2 flex gap-2">
-                        <span className="text-amber-400 text-xs self-center shrink-0">$</span>
-                        <input
-                          value={sandboxCommand}
-                          onChange={(e) => setSandboxCommand(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") handleExecuteCommand(); }}
-                          placeholder="Enter command..."
-                          className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none font-mono"
-                        />
-                        <button
-                          onClick={handleExecuteCommand}
-                          disabled={!sandboxCommand.trim() || isSandboxLoading}
-                          className="text-xs text-amber-400 border border-amber-400/30 px-2 py-1 rounded-lg hover:bg-amber-400/10 disabled:opacity-50 transition-colors"
-                        >
-                          {isSandboxLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "RUN"}
-                        </button>
+                      <div className="shrink-0 p-3 border-t border-border bg-card/50">
+                        <div className="flex gap-2">
+                          <div className="flex items-center gap-2 flex-1 bg-background border border-border rounded-xl px-3 py-2">
+                            <span className="text-primary text-xs font-mono shrink-0">$</span>
+                            <input
+                              value={sandboxCommand}
+                              onChange={(e) => setSandboxCommand(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter") handleRunSandboxCommand(); }}
+                              placeholder="Enter command..."
+                              className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none font-mono"
+                            />
+                          </div>
+                          <motion.button
+                            onClick={handleRunSandboxCommand}
+                            disabled={!sandboxCommand.trim() || isSandboxLoading}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            className="px-3 py-2 bg-amber-400/10 border border-amber-400/30 text-amber-400 rounded-xl text-xs font-bold hover:bg-amber-400/20 disabled:opacity-50 transition-all"
+                          >
+                            {isSandboxLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                          </motion.button>
+                        </div>
                       </div>
                     </>
                   ) : (
@@ -1412,11 +1425,11 @@ export default function TeamPortal() {
               {/* PREVIEW TAB */}
               {activeTab === "preview" && (
                 <div className="h-full flex flex-col overflow-hidden">
-                  <div className="shrink-0 px-4 py-2 border-b border-border bg-card/50 flex items-center justify-between">
+                  <div className="shrink-0 px-3 py-2 border-b border-border bg-card/50 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Globe className="h-3.5 w-3.5 text-green-400" />
                       <span className="text-xs font-bold text-green-400">WEB PREVIEW</span>
-                      {previewUrl && <span className="text-xs text-muted-foreground truncate max-w-xs">{previewUrl}</span>}
+                      {previewUrl && <span className="text-xs text-muted-foreground truncate max-w-[120px] sm:max-w-xs">{previewUrl}</span>}
                     </div>
                     <div className="flex items-center gap-2">
                       {previewUrl && (
@@ -1433,16 +1446,10 @@ export default function TeamPortal() {
                     </div>
                   </div>
                   {previewUrl ? (
-                    <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
-                      <motion.div
-                        animate={{ scale: [1, 1.02, 1] }}
-                        transition={{ duration: 3, repeat: Infinity }}
-                      >
-                        <Globe className="h-16 w-16 text-green-400/40" />
-                      </motion.div>
-                      <div className="text-center max-w-md">
+                    <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
+                      <Globe className="h-12 w-12 text-green-400/40" />
+                      <div className="text-center max-w-sm w-full">
                         <p className="text-sm font-bold text-foreground mb-2">Preview Ready</p>
-                        <p className="text-xs text-muted-foreground mb-4">Your app is running in the Daytona sandbox.</p>
                         <div className="bg-card border border-border rounded-xl p-3 mb-4 text-left">
                           <p className="text-xs text-muted-foreground mb-1">Preview URL:</p>
                           <p className="text-xs text-primary font-mono break-all">{previewUrl}</p>
@@ -1453,19 +1460,19 @@ export default function TeamPortal() {
                           rel="noopener noreferrer"
                           whileHover={{ scale: 1.02 }}
                           whileTap={{ scale: 0.98 }}
-                          className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all"
+                          className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all"
                         >
                           <ExternalLink className="h-4 w-4" />
-                          Open Preview in New Tab
+                          Open Preview
                         </motion.a>
                       </div>
                     </div>
                   ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
-                      <Monitor className="h-16 w-16 text-muted-foreground/20" />
+                    <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
+                      <Monitor className="h-12 w-12 text-muted-foreground/20" />
                       <div className="text-center">
                         <p className="text-sm font-bold text-foreground mb-1">No Preview Available</p>
-                        <p className="text-xs text-muted-foreground mb-4">Deploy your project and start the app to see a live preview</p>
+                        <p className="text-xs text-muted-foreground mb-4">Deploy your project to see a live preview</p>
                         {activeSandboxId && activeSessionId && (
                           <motion.button
                             onClick={handleAutoDeployAndStart}
