@@ -158,16 +158,29 @@ export default function Portal() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Mobile overlay */}
+        <AnimatePresence>
+          {sidebarOpen && activeMode !== "code" && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="md:hidden fixed inset-0 bg-background/80 backdrop-blur-sm z-30"
+              onClick={() => setSidebarOpen(false)}
+            />
+          )}
+        </AnimatePresence>
+
         {/* Sidebar — only show for chat/research modes */}
         <AnimatePresence>
           {sidebarOpen && activeMode !== "code" && (
             <motion.aside
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 220, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
+              initial={{ x: -220, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -220, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="shrink-0 border-r border-border bg-card flex flex-col overflow-hidden"
+              className="fixed md:relative left-0 top-0 bottom-0 z-40 md:z-auto w-[220px] shrink-0 border-r border-border bg-card flex flex-col overflow-hidden"
             >
               {/* Mode tabs */}
               <div className="shrink-0 p-3 border-b border-border space-y-1">
