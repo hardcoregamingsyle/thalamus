@@ -65,13 +65,7 @@ export const verifyAndCreateSession = internalMutation({
 
     const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
 
-    // Delete old sessions for this user
-    const oldSessions = await ctx.db
-      .query("customSessions")
-      .withIndex("by_user", (q) => q.eq("userId", userId as never))
-      .take(10);
-    await Promise.all(oldSessions.map((s) => ctx.db.delete(s._id)));
-
+    // Keep old sessions (multi-device support) — just create a new one
     // Create new session
     await ctx.db.insert("customSessions", {
       userId: userId as never,
