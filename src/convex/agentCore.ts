@@ -208,46 +208,47 @@ export function parseAgentOutput(content: string): ParsedOutput {
   const cmdOps: CmdOp[] = [];
   let cleanContent = content;
 
-  const createRegex = /<<<<<CREATEFILE="([^"]+)">>>>>([\s\S]*?)<<<<<END\.CREATEFILE>>>>>/g;
+  // Support both <<TAG>> (new) and <<<<<TAG>>>>> (legacy) formats
+  const createRegex = /(?:<<<<<|<<)CREATEFILE="([^"]+)"(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.CREATEFILE(?:>>>>>|>>)/g;
   let match;
   while ((match = createRegex.exec(content)) !== null) {
     fileOps.push({ type: "create", filepath: match[1], content: match[2].trim() });
     cleanContent = cleanContent.replace(match[0], `[FILE CREATED: ${match[1]}]`);
   }
 
-  const editRegex = /<<<<<EDITFILE="([^"]+)">>>>>([\s\S]*?)<<<<<END\.CREATEFILE>>>>>/g;
+  const editRegex = /(?:<<<<<|<<)EDITFILE="([^"]+)"(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.CREATEFILE(?:>>>>>|>>)/g;
   while ((match = editRegex.exec(content)) !== null) {
     fileOps.push({ type: "edit", filepath: match[1], content: match[2].trim() });
     cleanContent = cleanContent.replace(match[0], `[FILE EDITED: ${match[1]}]`);
   }
 
-  for (const m of content.matchAll(/<<<<<DELETE="([^"]+)">>>>>/g)) {
+  for (const m of content.matchAll(/(?:<<<<<|<<)DELETE="([^"]+)"(?:>>>>>|>>)/g)) {
     fileOps.push({ type: "delete", filepath: m[1] });
     cleanContent = cleanContent.replace(m[0], `[FILE DELETED: ${m[1]}]`);
   }
 
-  for (const m of content.matchAll(/<<<<<SEARCH-TOOL="([^"]+)">>>>>/g)) {
+  for (const m of content.matchAll(/(?:<<<<<|<<)SEARCH-TOOL="([^"]+)"(?:>>>>>|>>)/g)) {
     searchOps.push({ query: m[1] });
     cleanContent = cleanContent.replace(m[0], `[SEARCHING: ${m[1]}]`);
   }
 
-  for (const m of content.matchAll(/<<<<<SCRAPE-URL="([^"]+)">>>>>/g)) {
+  for (const m of content.matchAll(/(?:<<<<<|<<)SCRAPE-URL="([^"]+)"(?:>>>>>|>>)/g)) {
     scrapeOps.push({ url: m[1] });
     cleanContent = cleanContent.replace(m[0], `[SCRAPING: ${m[1]}]`);
   }
 
-  for (const m of content.matchAll(/<<<<<RUN-CMD="([^"]+)">>>>>/g)) {
+  for (const m of content.matchAll(/(?:<<<<<|<<)RUN-CMD="([^"]+)"(?:>>>>>|>>)/g)) {
     cmdOps.push({ command: m[1] });
     cleanContent = cleanContent.replace(m[0], `[CMD: ${m[1]}]`);
   }
 
   let testerResult: "pass" | "fail" | undefined;
   let testerFailReason: string | undefined;
-  if (content.includes("<<<<<test.success>>>>>")) {
+  if (content.includes("<<test.success>>") || content.includes("<<<<<test.success>>>>>")) {
     testerResult = "pass";
-    cleanContent = cleanContent.replace(/<<<<<test\.success>>>>>/g, "[TEST: PASSED ✓]");
+    cleanContent = cleanContent.replace(/(?:<<<<<|<<)test\.success(?:>>>>>|>>)/g, "[TEST: PASSED ✓]");
   }
-  const testerFailMatch = content.match(/<<<<<test\.failed="([^"]*)">>>>>/);
+  const testerFailMatch = content.match(/(?:<<<<<|<<)test\.failed="([^"]*)"(?:>>>>>|>>)/);
   if (testerFailMatch) {
     testerResult = "fail";
     testerFailReason = testerFailMatch[1];
@@ -255,43 +256,36 @@ export function parseAgentOutput(content: string): ParsedOutput {
   }
 
   let hackerResult: "pass" | "fail" | undefined;
-  if (content.match(/<<<<<pass>>>>>/i) && !content.includes("<<<<<fail>>>>>")) {
+  const hasPass = content.match(/(?:<<<<<|<<)pass(?:>>>>>|>>)/i);
+  const hasFail = content.match(/(?:<<<<<|<<)[Ff]ail(?:>>>>>|>>)/);
+  if (hasPass && !hasFail) {
     hackerResult = "pass";
-    cleanContent = cleanContent.replace(/<<<<<pass>>>>>/gi, "[SECURITY: PASSED ✓]");
-  } else if (content.includes("<<<<<Fail>>>>>") || content.includes("<<<<<fail>>>>>")) {
+    cleanContent = cleanContent.replace(/(?:<<<<<|<<)pass(?:>>>>>|>>)/gi, "[SECURITY: PASSED ✓]");
+  } else if (hasFail) {
     hackerResult = "fail";
-    cleanContent = cleanContent.replace(/<<<<<[Ff]ail>>>>>/g, "[SECURITY: FAILED]");
+    cleanContent = cleanContent.replace(/(?:<<<<<|<<)[Ff]ail(?:>>>>>|>>)/g, "[SECURITY: FAILED]");
   }
 
   let criticResult: "pass" | "fail" | undefined;
-  if (content.match(/<<<<<pass>>>>>/i) && !content.includes("<<<<<fail>>>>>")) criticResult = "pass";
-  else if (content.includes("<<<<<Fail>>>>>") || content.includes("<<<<<fail>>>>>")) criticResult = "fail";
+  if (hasPass && !hasFail) criticResult = "pass";
+  else if (hasFail) criticResult = "fail";
 
   return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult };
 }
 
 const SANDBOX_CMD_INSTRUCTIONS = `
-You have access to a live sandbox (Daytona cloud environment). Run shell commands using this EXACT format:
+You have access to a live sandbox (Daytona cloud environment). Run shell commands using this format:
 
-<<<<<RUN-CMD="command here">>>>>
-
-⚠️ CRITICAL SYNTAX RULE: The tag MUST start with EXACTLY 5 less-than signs (<<<<<) and end with EXACTLY 5 greater-than signs (>>>>>).
-- CORRECT:   <<<<<RUN-CMD="bun install">>>>>
-- WRONG:     <<<<<RUN-CMD="bun install">>
-- WRONG:     <<<<<RUN-CMD="bun install">>>
-- WRONG:     <<<<<RUN-CMD="bun install">>>>
-- WRONG:     <<<<RUN-CMD="bun install">>>>>
-Count carefully: < < < < < at the start, > > > > > at the end. Five of each.
+<<RUN-CMD="command here">>
 
 PACKAGE MANAGER: Always use BUN (not npm, not yarn, not pnpm).
-- Install deps:    <<<<<RUN-CMD="bun install">>>>>
-- Run script:      <<<<<RUN-CMD="bun run dev">>>>>
-- Run tests:       <<<<<RUN-CMD="bun test">>>>>
-- Add package:     <<<<<RUN-CMD="bun add express">>>>>
-- Add dev dep:     <<<<<RUN-CMD="bun add -d typescript">>>>>
-- Execute file:    <<<<<RUN-CMD="bun index.ts">>>>>
-- Execute JS:      <<<<<RUN-CMD="bun index.js">>>>>
-- Start server:    <<<<<RUN-CMD="bun run start">>>>>
+- Install deps:    <<RUN-CMD="bun install">>
+- Run script:      <<RUN-CMD="bun run dev">>
+- Run tests:       <<RUN-CMD="bun test">>
+- Add package:     <<RUN-CMD="bun add express">>
+- Add dev dep:     <<RUN-CMD="bun add -d typescript">>
+- Execute file:    <<RUN-CMD="bun index.ts">>
+- Start server:    <<RUN-CMD="bun run start">>
 
 NEVER use: npm install, npm run, yarn, pnpm
 ALWAYS use: bun install, bun run, bun add, bun test
@@ -346,10 +340,10 @@ export const AGENT_SYSTEM_PROMPTS: Record<string, string> = {
   Researcher: `You are the Researcher agent — the FIRST agent in the pipeline. Your job is to gather COMPREHENSIVE, DEEP information before any code is written.
 
 You can scrape URLs (use up to 3):
-<<<<<SCRAPE-URL="https://example.com/docs">>>>> 
+<<SCRAPE-URL="https://example.com/docs">>
 
 You can search (use up to 3):
-<<<<<SEARCH-TOOL="search query">>>>> 
+<<SEARCH-TOOL="search query">>
 
 RESEARCH STRATEGY — Be EXHAUSTIVE:
 1. Identify ALL technologies, libraries, APIs, frameworks in the task
@@ -380,7 +374,7 @@ ANALYSIS REQUIREMENTS:
 12. Testing strategy
 
 You can search if needed:
-<<<<<SEARCH-TOOL="what to search for">>>>> 
+<<SEARCH-TOOL="what to search for">>
 
 Start with "## Analysis" header. Be EXTREMELY detailed — 800-1500 words. Leave nothing out.`,
 
@@ -465,17 +459,17 @@ For docker-compose.yml, always map "3000:3000" for the main web service.
 For Dockerfile, always EXPOSE 3000.
 
 Create files:
-<<<<<CREATEFILE="filepath/filename.ext">>>>>
+<<CREATEFILE="filepath/filename.ext">>
 {COMPLETE FILE CONTENTS — EVERY LINE}
-<<<<<END.CREATEFILE>>>>>
+<<END.CREATEFILE>>
 
 Edit files:
-<<<<<EDITFILE="filepath/filename.ext">>>>>
+<<EDITFILE="filepath/filename.ext">>
 {NEW FULL CONTENTS — EVERY LINE}
-<<<<<END.CREATEFILE>>>>>
+<<END.CREATEFILE>>
 
 Delete files:
-<<<<<DELETE="filepath/filename.ext">>>>>
+<<DELETE="filepath/filename.ext">>
 
 Start with "## Implementation" header
 ${SANDBOX_CMD_INSTRUCTIONS}`,
@@ -490,16 +484,14 @@ OPTIMIZATION CHECKLIST:
 5. Security: rate limiting, input sanitization, CORS, CSP headers
 6. Error handling: proper error boundaries, graceful degradation
 7. Logging: structured logging, error tracking
-8. Configuration: environment-based config, secrets management
+8. Configuration: environment-based configuration
 
-🚨 PORT REQUIREMENT: Ensure ALL web servers still listen on PORT 3000 and 0.0.0.0 after optimization.
-
-Use EDITFILE to update files:
-<<<<<EDITFILE="filepath/filename.ext">>>>>
+Use EDITFILE to modify existing files:
+<<EDITFILE="filepath/filename.ext">>
 {OPTIMIZED FULL CONTENTS}
-<<<<<END.CREATEFILE>>>>>
+<<END.CREATEFILE>>
 
-Start with "## Optimisation" header
+Start with "## Optimization Report" header
 ${SANDBOX_CMD_INSTRUCTIONS}`,
 
   Tester: `You are the Tester agent. You are a REPORTER, not a fixer. Your job is to TEST and REPORT results only.
@@ -519,16 +511,16 @@ TEST REQUIREMENTS:
 - Error case tests (invalid inputs, network failures)
 
 CRITICAL: You MUST run the tests and check the output. Do NOT assume tests pass without running them.
-If no sandbox is available, write the tests and output <<<<<test.failed="No sandbox available to run tests">>>>> 
+If no sandbox is available, write the tests and output <<test.failed="No sandbox available to run tests">>
 
 Create test files ONLY:
-<<<<<CREATEFILE="tests/filename.test.ts">>>>>
+<<CREATEFILE="tests/filename.test.ts">>
 {COMPLETE TEST CODE}
-<<<<<END.CREATEFILE>>>>>
+<<END.CREATEFILE>>
 
 After running tests, output ONE of:
-- <<<<<test.success>>>>>  (ONLY if output shows 0 failures, 0 errors)
-- <<<<<test.failed="exact error from output">>>>> 
+- <<test.success>>  (ONLY if output shows 0 failures, 0 errors)
+- <<test.failed="exact error from output">>
 
 DO NOT edit source files. DO NOT fix bugs. Report failures to the Coder.
 
@@ -560,8 +552,8 @@ For each vulnerability found, REPORT it with:
 DO NOT edit source files. DO NOT fix bugs yourself. Only report.
 
 After review, output ONE of:
-- <<<<<pass>>>>>  (no critical vulnerabilities found)
-- <<<<<Fail>>>>>  (critical vulnerabilities found — see report above)
+- <<pass>>  (no critical vulnerabilities found)
+- <<Fail>>  (critical vulnerabilities found — see report above)
 
 Start with "## Security Audit Report" header
 ${SANDBOX_CMD_INSTRUCTIONS}`,
@@ -581,17 +573,17 @@ CRITICAL REVIEW CHECKLIST:
 8. Error handling: Are errors handled gracefully?
 
 STRICT RULES:
-- If ANY required files are missing → <<<<<Fail>>>>>
-- If core functionality is not implemented → <<<<<Fail>>>>>
-- If there are obvious bugs that would prevent the app from running → <<<<<Fail>>>>>
-- If tests are missing or trivial → <<<<<Fail>>>>>
-- Only output <<<<<pass>>>>> if the project is GENUINELY complete and production-ready
+- If ANY required files are missing → <<Fail>>
+- If core functionality is not implemented → <<Fail>>
+- If there are obvious bugs that would prevent the app from running → <<Fail>>
+- If tests are missing or trivial → <<Fail>>
+- Only output <<pass>> if the project is GENUINELY complete and production-ready
 
 DO NOT edit source files. DO NOT fix bugs yourself. Report all issues clearly.
 
 After review, output ONE of:
-- <<<<<pass>>>>>
-- <<<<<Fail>>>>>
+- <<pass>>
+- <<Fail>>
 
 Start with "## Critical Review Report" header
 ${SANDBOX_CMD_INSTRUCTIONS}`,
@@ -629,45 +621,14 @@ YOUR RESPONSIBILITIES:
    - CONTRIBUTING.md — how to contribute, code style guide
    - CHANGELOG.md — version history
 
-COMMENT STYLE GUIDE:
-\`\`\`
-// ═══════════════════════════════════════════════════════════════
-// SECTION: User Authentication
-// This section handles everything related to logging users in and out.
-// We use JWT tokens stored in httpOnly cookies for security.
-// ═══════════════════════════════════════════════════════════════
+Use EDITFILE to add comments to existing files and CREATEFILE for new .md files:
+<<EDITFILE="filepath/filename.ext">>
+{FILE WITH ADDED COMMENTS}
+<<END.CREATEFILE>>
 
-/**
- * Validates a user's login credentials and returns a JWT token.
- * 
- * Think of this like a bouncer at a club — it checks your ID (email + password)
- * and if everything checks out, gives you a wristband (JWT token) to get in.
- * 
- * @param email - The user's email address
- * @param password - The user's plain-text password (we hash it before comparing)
- * @returns A JWT token string, or throws an error if credentials are invalid
- */
-async function loginUser(email: string, password: string): Promise<string> {
-  // First, find the user in our database by their email
-  // We use findOne() here because emails are unique — there can only be one match
-  const user = await db.users.findOne({ email });
-  
-  // If no user found, don't reveal that the email doesn't exist (security best practice!)
-  // We say "invalid credentials" instead of "email not found" to prevent email enumeration
-  if (!user) throw new Error("Invalid credentials");
-  
-  // Compare the provided password against the stored hash
-  // bcrypt.compare() is slow by design — this prevents brute force attacks
-  const isValid = await bcrypt.compare(password, user.passwordHash);
-  if (!isValid) throw new Error("Invalid credentials");
-  
-  // Generate a JWT token that expires in 24 hours
-  // The token contains the user's ID so we can look them up on future requests
-  return jwt.sign({ userId: user.id }, process.env.JWT_SECRET!, { expiresIn: "24h" });
-}
-\`\`\`
-
-Use EDITFILE to add comments to existing files and CREATEFILE for new .md files.
+<<CREATEFILE="README.md">>
+{README CONTENT}
+<<END.CREATEFILE>>
 
 Start with "## Documentation & Organization" header`,
 };
