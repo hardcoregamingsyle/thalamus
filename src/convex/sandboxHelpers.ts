@@ -81,12 +81,20 @@ export const addUserCost = internalMutation({
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     if (!user) return;
-    // Deduct from AgentBucks balance (1 cent = 15 AgentBucks)
+    // Deduct from AgentBucks: daily first, then purchased
     const agentBucksToDeduct = args.costCents * 15;
-    const currentBalance = user.agentBucksBalance ?? 0;
+    const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? (user.agentBucksBalance ?? 0);
+    const purchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
+
+    let remainingDeduct = agentBucksToDeduct;
+    const newDaily = Math.max(0, daily - remainingDeduct);
+    remainingDeduct = Math.max(0, remainingDeduct - daily);
+    const newPurchased = Math.max(0, purchased - remainingDeduct);
+
     await ctx.db.patch(args.userId, {
       totalUsageCents: (user.totalUsageCents ?? 0) + args.costCents,
-      agentBucksBalance: Math.max(0, currentBalance - agentBucksToDeduct),
+      dailyAgentBucks: newDaily,
+      purchasedAgentBucks: newPurchased,
     });
   },
 });
@@ -99,8 +107,10 @@ export const addAgentBucks = internalMutation({
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     if (!user) return;
+    // Purchased AgentBucks never reset
+    const currentPurchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
     await ctx.db.patch(args.userId, {
-      agentBucksBalance: (user.agentBucksBalance ?? 0) + args.agentBucks,
+      purchasedAgentBucks: currentPurchased + args.agentBucks,
     });
   },
 });

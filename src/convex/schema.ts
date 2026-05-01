@@ -27,7 +27,9 @@ const schema = defineSchema(
       isAnonymous: v.optional(v.boolean()),
       role: v.optional(roleValidator),
       totalUsageCents: v.optional(v.number()),
-      agentBucksBalance: v.optional(v.number()), // purchased AgentBucks balance
+      agentBucksBalance: v.optional(v.number()), // legacy field
+      dailyAgentBucks: v.optional(v.number()),     // resets daily at midnight IST
+      purchasedAgentBucks: v.optional(v.number()), // never resets
     }).index("email", ["email"]),
 
     otpCodes: defineTable({

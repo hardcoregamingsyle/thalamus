@@ -8,7 +8,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
   MessageSquare, Search, Plus, Trash2, LogOut,
-  Send, Loader2, Menu, X, Users, Cpu, Zap, Star, Coins,
+  Send, Loader2, Menu, X, Users, Cpu, Zap,
 } from "lucide-react";
 import TeamPortalInline from "./TeamPortalInline";
 
@@ -40,98 +40,6 @@ function isHtml(content: string): boolean {
   return /<[a-z][\s\S]*>/i.test(content);
 }
 
-// ── AgentBucks pricing tiers ───────────────────────────────────────────────────
-const PRICING_TIERS = [
-  { label: "Starter", price: 5, bucks: 7500, bonus: 0, color: "border-border hover:border-primary/50", badge: null },
-  { label: "Builder", price: 10, bucks: 15000, bonus: 500, color: "border-primary/40 hover:border-primary", badge: "POPULAR" },
-  { label: "Pro", price: 25, bucks: 37500, bonus: 2500, color: "border-accent/40 hover:border-accent", badge: "BEST VALUE" },
-  { label: "Studio", price: 50, bucks: 75000, bonus: 7500, color: "border-violet-400/40 hover:border-violet-400", badge: null },
-];
-
-function AgentBucksModal({ onClose }: { onClose: () => void }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        onClick={e => e.stopPropagation()}
-        className="bg-card border border-border rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Zap className="h-5 w-5 text-amber-400" />
-              <h2 className="text-lg font-bold text-foreground">AgentBucks</h2>
-            </div>
-            <p className="text-xs text-muted-foreground">$1 = 1,500 AgentBucks • Power your AI agents</p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Pricing grid */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          {PRICING_TIERS.map((tier) => (
-            <motion.div
-              key={tier.label}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className={`relative border ${tier.color} bg-card rounded-xl p-4 cursor-pointer transition-all`}
-              onClick={() => {
-                toast.info("Payment integration coming soon! Contact us to top up.");
-                onClose();
-              }}
-            >
-              {tier.badge && (
-                <span className="absolute -top-2 left-3 text-[9px] font-bold bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
-                  {tier.badge}
-                </span>
-              )}
-              <p className="text-xs font-bold text-muted-foreground mb-1">{tier.label}</p>
-              <p className="text-2xl font-bold text-foreground mb-1">${tier.price}</p>
-              <p className="text-sm font-bold text-amber-400">{(tier.bucks + tier.bonus).toLocaleString()} <span className="text-xs text-muted-foreground">AgentBucks</span></p>
-              {tier.bonus > 0 && (
-                <p className="text-[10px] text-emerald-400 mt-1">+{tier.bonus.toLocaleString()} bonus</p>
-              )}
-            </motion.div>
-          ))}
-        </div>
-
-        {/* What AgentBucks power */}
-        <div className="border border-border rounded-xl p-4 bg-muted/20">
-          <p className="text-xs font-bold text-foreground mb-3">What AgentBucks power:</p>
-          <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-            {[
-              { label: "Agent message", cost: "~1 AB" },
-              { label: "Research query", cost: "~5 AB" },
-              { label: "Full planning phase", cost: "~50 AB" },
-              { label: "Complete project build", cost: "~500 AB" },
-            ].map(item => (
-              <div key={item.label} className="flex items-center justify-between">
-                <span>{item.label}</span>
-                <span className="text-amber-400 font-bold">{item.cost}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <p className="text-[10px] text-muted-foreground text-center mt-4">
-          New accounts receive 5,000 free AgentBucks to get started.
-        </p>
-      </motion.div>
-    </motion.div>
-  );
-}
-
 export default function Portal() {
   const { isLoading, isAuthenticated, user, signOut, token } = useAuth();
   const navigate = useNavigate();
@@ -140,7 +48,6 @@ export default function Portal() {
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [showPricing, setShowPricing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const conversations = useQuery(
@@ -205,7 +112,12 @@ export default function Portal() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  const agentBucksBalance = (user as { agentBucksBalance?: number } | null)?.agentBucksBalance ?? 0;
+  // Total balance = daily + purchased
+  const typedUser = user as { dailyAgentBucks?: number; purchasedAgentBucks?: number; agentBucksBalance?: number } | null;
+  const dailyAB = typedUser?.dailyAgentBucks ?? typedUser?.agentBucksBalance ?? 0;
+  const purchasedAB = typedUser?.purchasedAgentBucks ?? 0;
+  const totalAB = dailyAB + purchasedAB;
+
   const filteredConvs = conversations?.filter((c: Conversation) => c.mode === activeMode) || [];
 
   if (isLoading) {
@@ -221,11 +133,6 @@ export default function Portal() {
 
   return (
     <div className="h-screen flex flex-col bg-background font-mono overflow-hidden">
-      {/* Pricing modal */}
-      <AnimatePresence>
-        {showPricing && <AgentBucksModal onClose={() => setShowPricing(false)} />}
-      </AnimatePresence>
-
       {/* Header */}
       <header className="shrink-0 border-b border-border bg-card/80 backdrop-blur-sm z-20">
         <div className="flex items-center justify-between px-4 h-12">
@@ -242,16 +149,11 @@ export default function Portal() {
             <span className="hidden sm:block text-[10px] text-muted-foreground border border-border px-1.5 py-0.5 rounded">PORTAL</span>
           </div>
           <div className="flex items-center gap-2">
-            {/* AgentBucks balance */}
-            <motion.button
-              onClick={() => setShowPricing(true)}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="flex items-center gap-1.5 text-xs border border-amber-400/30 bg-amber-400/10 text-amber-400 px-2.5 py-1 rounded-lg hover:bg-amber-400/20 transition-all font-bold"
-            >
+            {/* AgentBucks balance — display only, no pricing modal */}
+            <div className="flex items-center gap-1.5 text-xs border border-amber-400/30 bg-amber-400/10 text-amber-400 px-2.5 py-1 rounded-lg font-bold">
               <Zap className="h-3 w-3" />
-              <span>{agentBucksBalance.toLocaleString()} AB</span>
-            </motion.button>
+              <span>{totalAB.toLocaleString()} AB</span>
+            </div>
             <button
               onClick={signOut}
               className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10"
@@ -420,110 +322,84 @@ export default function Portal() {
                       <Cpu className="h-8 w-8 text-primary" />
                     </motion.div>
                     <div className="text-center">
-                      <p className="text-sm font-bold text-foreground mb-1">Aphantic AI Portal</p>
-                      <p className="text-xs text-muted-foreground">Start a new session or select an existing one</p>
+                      <p className="text-sm font-bold text-foreground">APHANTIC_AI</p>
+                      <p className="text-xs text-muted-foreground mt-1">Start a new session or select one from the sidebar</p>
                     </div>
-                    <button
-                      onClick={handleNewConversation}
-                      className="flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/30 text-primary text-xs rounded-lg hover:bg-primary/20 transition-all"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      NEW SESSION
-                    </button>
+                  </div>
+                ) : messages === undefined ? (
+                  <div className="flex items-center justify-center h-32">
+                    <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                  </div>
+                ) : messages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-32 gap-2">
+                    <p className="text-xs text-muted-foreground">Send a message to begin</p>
                   </div>
                 ) : (
-                  <>
-                    {(messages || []).map((msg: Message) => (
-                      <motion.div
-                        key={msg._id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}
-                      >
-                        <div className={`w-7 h-7 rounded-lg border flex items-center justify-center text-xs font-bold shrink-0 ${
-                          msg.role === "user"
-                            ? "bg-primary/20 border-primary/40 text-primary"
-                            : "bg-card border-border text-muted-foreground"
-                        }`}>
-                          {msg.role === "user" ? "U" : <Cpu className="h-3.5 w-3.5" />}
-                        </div>
-                        <div className={`flex-1 max-w-2xl flex flex-col gap-1 ${msg.role === "user" ? "items-end" : "items-start"}`}>
-                          <div className={`rounded-xl px-4 py-3 text-xs leading-relaxed w-full ${
-                            msg.role === "user"
-                              ? "bg-primary/15 border border-primary/30 text-foreground"
-                              : "bg-card border border-border text-foreground"
-                          }`}>
-                            {msg.role === "assistant" && isHtml(msg.content) ? (
-                              <div
-                                className="prose-html"
-                                dangerouslySetInnerHTML={{ __html: msg.content }}
-                              />
-                            ) : msg.role === "assistant" ? (
-                              <pre className="whitespace-pre-wrap font-mono text-xs">{msg.content}</pre>
-                            ) : (
-                              <span>{msg.content}</span>
-                            )}
-                          </div>
-                          {msg.costCents !== undefined && msg.costCents > 0 && (
-                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                              <Zap className="h-2.5 w-2.5 text-amber-400" />
-                              {Math.ceil(msg.costCents * 15).toLocaleString()} AB
-                            </span>
-                          )}
-                        </div>
-                      </motion.div>
-                    ))}
-                    {isThinking && (
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="flex gap-3"
-                      >
-                        <div className="w-7 h-7 rounded-lg border border-primary/40 bg-primary/10 flex items-center justify-center">
-                          <Cpu className="h-3.5 w-3.5 text-primary animate-pulse" />
-                        </div>
-                        <div className="bg-card border border-border rounded-xl px-4 py-3 flex items-center gap-2">
-                          {[0, 1, 2].map(i => (
-                            <motion.div
-                              key={i}
-                              className="w-1.5 h-1.5 rounded-full bg-primary"
-                              animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }}
-                              transition={{ duration: 0.8, delay: i * 0.15, repeat: Infinity }}
-                            />
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-                    <div ref={messagesEndRef} />
-                  </>
+                  messages.map((msg: Message) => (
+                    <motion.div
+                      key={msg._id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                    >
+                      <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${
+                        msg.role === "user"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-card border border-border text-foreground"
+                      }`}>
+                        {msg.role === "assistant" && isHtml(msg.content) ? (
+                          <div dangerouslySetInnerHTML={{ __html: msg.content }} />
+                        ) : (
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                        )}
+                        {msg.costCents !== undefined && msg.costCents > 0 && (
+                          <p className="text-[9px] opacity-50 mt-1 text-right">
+                            {Math.ceil(msg.costCents * 15).toLocaleString()} AB
+                          </p>
+                        )}
+                      </div>
+                    </motion.div>
+                  ))
                 )}
+                {isThinking && (
+                  <div className="flex justify-start">
+                    <div className="bg-card border border-border rounded-2xl px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        {[0, 1, 2].map(i => (
+                          <motion.div
+                            key={i}
+                            className="w-1.5 h-1.5 rounded-full bg-primary"
+                            animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }}
+                            transition={{ duration: 0.8, delay: i * 0.15, repeat: Infinity }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
               </div>
             </div>
 
             {/* Input */}
-            <div className="shrink-0 p-4 border-t border-border bg-card/50">
-              <div className="max-w-4xl mx-auto flex gap-3">
-                <div className="flex-1 relative">
-                  <textarea
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder={`Ask Aphantic AI anything... (${activeMode} mode)`}
-                    rows={1}
-                    className="w-full bg-background border border-border rounded-xl px-4 py-3 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary/60 transition-colors"
-                    style={{ minHeight: "44px", maxHeight: "120px" }}
-                  />
-                </div>
-                <motion.button
+            <div className="shrink-0 border-t border-border bg-card/80 backdrop-blur-sm p-3">
+              <div className="max-w-4xl mx-auto flex gap-2">
+                <textarea
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={`Message ${activeMode === "research" ? "Researcher" : "APHANTIC_AI"}...`}
+                  rows={1}
+                  className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 resize-none transition-colors"
+                  style={{ minHeight: "36px", maxHeight: "120px" }}
+                />
+                <button
                   onClick={handleSend}
                   disabled={!input.trim() || isThinking}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-bold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+                  className="px-3 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center gap-1.5 text-xs font-bold"
                 >
-                  {isThinking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  <span className="hidden sm:block">SEND</span>
-                </motion.button>
+                  {isThinking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                </button>
               </div>
             </div>
           </div>
