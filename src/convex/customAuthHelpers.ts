@@ -157,9 +157,9 @@ export const ensureDailyBalance = mutation({
     if (!session || session.expiresAt < Date.now()) return;
     const user = await ctx.db.get(session.userId);
     if (!user) return;
-    // Only patch if dailyAgentBucks is not initialized (undefined, null, or 0)
+    // Patch if dailyAgentBucks is uninitialized or stale (undefined, null, 0, or old small values < 1M)
     const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks;
-    if (daily === undefined || daily === null || daily === 0) {
+    if (!daily || daily < 1_000_000) {
       await ctx.db.patch(session.userId, {
         dailyAgentBucks: 10_000_000,
         purchasedAgentBucks: (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0,

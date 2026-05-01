@@ -1214,12 +1214,12 @@ export default function TeamPortal() {
                         <textarea
                           ref={messageInputRef}
                           value={messageInput}
-                          onChange={(e) => setMessageInput(e.target.value)}
+                          onChange={(e) => { setMessageInput(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px"; }}
                           onKeyDown={handleMessageKeyDown}
                           placeholder={isRunning || autoRun ? "Type to queue a message..." : "Send a message or new task..."}
                           rows={1}
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary/60 transition-colors"
-                          style={{ minHeight: "40px", maxHeight: "100px" }}
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary/60 transition-colors whitespace-pre-wrap"
+                          style={{ minHeight: "40px", maxHeight: "160px" }}
                         />
                       </div>
                       <div className="flex flex-col gap-1">

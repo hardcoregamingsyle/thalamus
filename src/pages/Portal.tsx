@@ -51,15 +51,13 @@ export default function Portal() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const ensureDailyBalance = useMutation(api.customAuthHelpers.ensureDailyBalance);
+  const hasInitializedRef = useRef(false);
 
-  // Initialize daily balance for existing users (one-time migration: only when unset or zero)
+  // Initialize daily balance for existing users (one-time per session)
   useEffect(() => {
-    if (token && user !== undefined && user !== null) {
-      const typedU = user as { dailyAgentBucks?: number };
-      const daily = typedU.dailyAgentBucks;
-      if (daily === undefined || daily === null || daily === 0) {
-        ensureDailyBalance({ token }).catch(() => {});
-      }
+    if (token && user !== undefined && user !== null && !hasInitializedRef.current) {
+      hasInitializedRef.current = true;
+      ensureDailyBalance({ token }).catch(() => {});
     }
   }, [token, user, ensureDailyBalance]);
 
