@@ -55,7 +55,7 @@ export const verifyAndCreateSession = internalMutation({
         email: args.email,
         name: args.email.split("@")[0],
         totalUsageCents: 0,
-        dailyAgentBucks: 5000,   // 5000 free daily credits on signup
+        dailyAgentBucks: 10_000_000,   // 10M free daily credits on signup
         purchasedAgentBucks: 0,
       });
     }
@@ -157,10 +157,10 @@ export const ensureDailyBalance = mutation({
     if (!session || session.expiresAt < Date.now()) return;
     const user = await ctx.db.get(session.userId);
     if (!user) return;
-    // Only patch if dailyAgentBucks is not set
-    if (user.dailyAgentBucks === undefined || user.dailyAgentBucks === null) {
+    // Only patch if dailyAgentBucks is not set or is the old 5000 value
+    if (user.dailyAgentBucks === undefined || user.dailyAgentBucks === null || user.dailyAgentBucks <= 5000) {
       await ctx.db.patch(session.userId, {
-        dailyAgentBucks: 5000,
+        dailyAgentBucks: 10_000_000,
         purchasedAgentBucks: user.purchasedAgentBucks ?? 0,
       });
     }

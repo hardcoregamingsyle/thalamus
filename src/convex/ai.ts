@@ -228,9 +228,10 @@ Always explain your code with clear HTML-formatted text before and after code bl
     );
 
     const tokensUsed = inputTokens + outputTokens;
-    const inputCostCents = (inputTokens / 1_000_000) * 35;
-    const outputCostCents = (outputTokens / 1_000_000) * 145;
-    const costCents: number = Math.ceil(inputCostCents + outputCostCents);
+    // Gemini 2.0 Flash Lite pricing: $0.075/1M input, $0.30/1M output
+    const inputCostCents = (inputTokens / 1_000_000) * 7.5;
+    const outputCostCents = (outputTokens / 1_000_000) * 30;
+    const costCents: number = Math.max(1, Math.ceil(inputCostCents + outputCostCents));
 
     await ctx.runMutation(internal.aiHelpers.saveAssistantMessage, {
       conversationId: args.conversationId,
