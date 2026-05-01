@@ -1,11 +1,10 @@
 import { internalMutation } from "./_generated/server";
 import { Doc } from "./_generated/dataModel";
 
-// Reset dailyAgentBucks to 5000 for all users at midnight IST
+// Reset dailyAgentBucks to 10,000,000 for all users at midnight IST
 export const resetDailyAgentBucks = internalMutation({
   args: {},
   handler: async (ctx) => {
-    // Process in batches of 100 to avoid timeouts
     let cursor: string | null = null;
     let processed = 0;
 
@@ -17,7 +16,7 @@ export const resetDailyAgentBucks = internalMutation({
 
       await Promise.all(
         batch.page.map((user: Doc<"users">) =>
-          ctx.db.patch(user._id, { dailyAgentBucks: 5000 })
+          ctx.db.patch(user._id, { dailyAgentBucks: 10_000_000 })
         )
       );
 

@@ -92,8 +92,7 @@ export async function callGemini(prompt: string, systemPrompt: string, _maxToken
               generationConfig: {
                 temperature: 0.7,
               },
-              // Highest thinking level for gemini-3.1-flash-lite-preview
-              thinkingConfig: { thinkingLevel: "high" },
+              // thinkingConfig removed — not supported by this model
             }),
           }
         );

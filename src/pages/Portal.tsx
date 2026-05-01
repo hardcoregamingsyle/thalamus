@@ -364,9 +364,9 @@ export default function Portal() {
                         ) : (
                           <p className="whitespace-pre-wrap">{msg.content}</p>
                         )}
-                        {msg.costCents !== undefined && msg.costCents > 0 && (
+                          {msg.costCents !== undefined && msg.costCents > 0 && (
                           <p className="text-[9px] opacity-50 mt-1 text-right">
-                            {Math.ceil(msg.costCents * 15).toLocaleString()} AB
+                            {Math.ceil(msg.costCents * 15_000).toLocaleString()} AB
                           </p>
                         )}
                       </div>

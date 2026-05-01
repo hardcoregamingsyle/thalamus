@@ -81,8 +81,8 @@ export const addUserCost = internalMutation({
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     if (!user) return;
-    // Deduct from AgentBucks: daily first, then purchased
-    const agentBucksToDeduct = args.costCents * 15;
+    // Deduct from AgentBucks: purchased first, then daily (1 cent = 15,000 AB; $1 = 1,500,000 AB)
+    const agentBucksToDeduct = args.costCents * 15000;
     const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? (user.agentBucksBalance ?? 0);
     const purchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
 

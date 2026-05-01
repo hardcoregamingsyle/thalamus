@@ -52,8 +52,8 @@ export const saveAssistantMessage = internalMutation({
     const user = await ctx.db.get(args.userId);
     if (user) {
       const current = (user as { totalUsageCents?: number }).totalUsageCents || 0;
-      // Deduct from AgentBucks: daily first, then purchased (1 cent = 15 AB)
-      const agentBucksToDeduct = args.costCents * 15;
+      // Deduct from AgentBucks: purchased first, then daily (1 cent = 15,000 AB; $1 = 1,500,000 AB)
+      const agentBucksToDeduct = args.costCents * 15000;
       const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? 0;
       const purchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
 
