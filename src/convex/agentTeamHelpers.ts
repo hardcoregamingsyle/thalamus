@@ -272,3 +272,47 @@ export const resetSessionForNewTask = internalMutation({
     });
   },
 });
+
+export const updateDeployCommands = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    deployCommandsJson: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      deployCommandsJson: args.deployCommandsJson,
+    });
+  },
+});
+
+export const upsertProjectFile = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    userId: v.id("users"),
+    filepath: v.string(),
+    content: v.string(),
+    lastModifiedBy: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("projectFiles")
+      .withIndex("by_session_and_path", (q) =>
+        q.eq("sessionId", args.sessionId).eq("filepath", args.filepath)
+      )
+      .take(1);
+    if (existing[0]) {
+      await ctx.db.patch(existing[0]._id, {
+        content: args.content,
+        lastModifiedBy: args.lastModifiedBy,
+      });
+    } else {
+      await ctx.db.insert("projectFiles", {
+        sessionId: args.sessionId,
+        userId: args.userId,
+        filepath: args.filepath,
+        content: args.content,
+        lastModifiedBy: args.lastModifiedBy,
+      });
+    }
+  },
+});
