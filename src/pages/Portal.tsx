@@ -50,6 +50,18 @@ export default function Portal() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const ensureDailyBalance = useMutation(api.customAuthHelpers.ensureDailyBalance);
+
+  // Initialize daily balance for existing users (migration)
+  useEffect(() => {
+    if (token && user !== undefined && user !== null) {
+      const typedU = user as { dailyAgentBucks?: number };
+      if (typedU.dailyAgentBucks === undefined || typedU.dailyAgentBucks === null) {
+        ensureDailyBalance({ token }).catch(() => {});
+      }
+    }
+  }, [token, user, ensureDailyBalance]);
+
   const conversations = useQuery(
     api.conversations.list,
     token ? { token } : "skip"

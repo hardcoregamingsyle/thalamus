@@ -144,3 +144,25 @@ export const signOut = mutation({
     if (sessions[0]) await ctx.db.delete(sessions[0]._id);
   },
 });
+
+// Ensure existing users have dailyAgentBucks initialized (migration for pre-existing accounts)
+export const ensureDailyBalance = mutation({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    if (!args.token || args.token.length < 32) return;
+    const session = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .unique();
+    if (!session || session.expiresAt < Date.now()) return;
+    const user = await ctx.db.get(session.userId);
+    if (!user) return;
+    // Only patch if dailyAgentBucks is not set
+    if (user.dailyAgentBucks === undefined || user.dailyAgentBucks === null) {
+      await ctx.db.patch(session.userId, {
+        dailyAgentBucks: 5000,
+        purchasedAgentBucks: user.purchasedAgentBucks ?? 0,
+      });
+    }
+  },
+});
