@@ -104,7 +104,7 @@ function LivePipeline() {
         <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
         <div className="w-2.5 h-2.5 rounded-full bg-accent" />
         <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-        <span className="text-[11px] text-muted-foreground ml-2 font-mono">aphantic_team — live session</span>
+        <span className="text-[11px] text-muted-foreground ml-2 font-mono">thalamus_team — live session</span>
         <div className="ml-auto flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-[10px] text-emerald-400 font-mono">RUNNING</span>
@@ -164,7 +164,7 @@ export default function Landing() {
             <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center">
               <Cpu className="h-3.5 w-3.5 text-primary" />
             </div>
-            <span className="text-primary font-bold text-sm tracking-widest">APHANTIC_AI</span>
+            <span className="text-primary font-bold text-sm tracking-widest">THALAMUS_AI</span>
             <span className="hidden sm:block text-[10px] text-muted-foreground border border-border px-2 py-0.5 rounded-full">
               by Aphantic Corporations
             </span>
@@ -194,7 +194,7 @@ export default function Landing() {
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
               className="inline-flex items-center gap-2 border border-primary/30 bg-primary/8 text-primary text-[10px] font-bold px-3 py-1.5 rounded-full mb-6">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              APHANTIC AI — BY APHANTIC CORPORATIONS
+              THALAMUS AI — BY APHANTIC CORPORATIONS
             </motion.div>
 
             <h1 className="text-5xl md:text-6xl font-bold leading-[1.1] mb-5">
@@ -206,7 +206,7 @@ export default function Landing() {
             </h1>
 
             <p className="text-muted-foreground text-sm leading-relaxed mb-3 max-w-lg">
-              Aphantic AI orchestrates <span className="text-foreground font-semibold">9 specialized AI agents</span> — Researcher, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, and Critic — to build complete, production-ready software from a single prompt.
+              Thalamus AI orchestrates <span className="text-foreground font-semibold">9 specialized AI agents</span> — Researcher, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, and Critic — to build complete, production-ready software from a single prompt.
             </p>
 
             <p className="text-muted-foreground text-xs leading-relaxed mb-8 max-w-lg">
@@ -218,7 +218,7 @@ export default function Landing() {
               <motion.button onClick={handleLaunch} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                 className="flex items-center justify-center gap-2 px-7 py-3.5 bg-primary text-primary-foreground text-sm font-bold rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20">
                 <Terminal className="h-4 w-4" />
-                LAUNCH APHANTIC PORTAL
+                LAUNCH THALAMUS PORTAL
                 <ChevronRight className="h-4 w-4" />
               </motion.button>
             </div>
@@ -257,7 +257,7 @@ export default function Landing() {
 
           <div className="grid md:grid-cols-3 gap-4 mb-12">
             {[
-              { step: "01", title: "You describe the project", desc: "Type what you want to build. Aphantic AI handles everything from research to deployment.", icon: Terminal },
+              { step: "01", title: "You describe the project", desc: "Type what you want to build. Thalamus AI handles everything from research to deployment.", icon: Terminal },
               { step: "02", title: "Agents plan & execute", desc: "The Planner breaks it into 12-20 atomic tasks. Each agent runs its specialized role in sequence.", icon: Layers },
               { step: "03", title: "Production-ready output", desc: "Complete codebase, tests, docs, security audit — deployed to a live cloud sandbox.", icon: Rocket },
             ].map((item, i) => (
@@ -316,7 +316,7 @@ export default function Landing() {
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-12">
             <p className="text-xs text-muted-foreground mb-2 font-bold tracking-widest">INFRASTRUCTURE</p>
             <h2 className="text-3xl font-bold text-foreground">
-              Powered by <span className="text-primary">Aphantic Infrastructure</span>
+              Powered by <span className="text-primary">Thalamus Infrastructure</span>
             </h2>
             <p className="text-sm text-muted-foreground mt-2 max-w-xl">
               Enterprise-grade AI infrastructure. Every component chosen for reliability, speed, and scale.
@@ -349,12 +349,12 @@ export default function Landing() {
                 See it in <span className="text-primary">action</span>
               </h2>
               <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
-                Give Aphantic AI a project description. Watch 9 agents plan, build, test, and deploy it — live.
+                Give Thalamus AI a project description. Watch 9 agents plan, build, test, and deploy it — live.
               </p>
               <motion.button onClick={handleLaunch} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                 className="flex items-center justify-center gap-2 px-8 py-3.5 bg-primary text-primary-foreground text-sm font-bold rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 mx-auto">
                 <Terminal className="h-4 w-4" />
-                LAUNCH APHANTIC PORTAL
+                LAUNCH THALAMUS PORTAL
                 <ArrowRight className="h-4 w-4" />
               </motion.button>
             </div>
@@ -369,10 +369,10 @@ export default function Landing() {
             <div className="w-5 h-5 rounded bg-primary/20 border border-primary/30 flex items-center justify-center">
               <Cpu className="h-2.5 w-2.5 text-primary" />
             </div>
-            <span className="text-xs text-muted-foreground">Aphantic AI — by Aphantic Corporations</span>
+            <span className="text-xs text-muted-foreground">Thalamus AI — by Aphantic Corporations</span>
           </div>
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <span>© 2025 Aphantic Corporations</span>
+            <span>© 2025 Aphantic Corporations — Thalamus AI</span>
           </div>
         </div>
       </footer>
