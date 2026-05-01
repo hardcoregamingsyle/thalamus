@@ -57,10 +57,11 @@ export const saveAssistantMessage = internalMutation({
       const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? 0;
       const purchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
 
+      // Purchased credits deducted first (business logic), then daily
       let remainingDeduct = agentBucksToDeduct;
-      const newDaily = Math.max(0, daily - remainingDeduct);
-      remainingDeduct = Math.max(0, remainingDeduct - daily);
       const newPurchased = Math.max(0, purchased - remainingDeduct);
+      remainingDeduct = Math.max(0, remainingDeduct - purchased);
+      const newDaily = Math.max(0, daily - remainingDeduct);
 
       await ctx.db.patch(args.userId, {
         totalUsageCents: current + args.costCents,
