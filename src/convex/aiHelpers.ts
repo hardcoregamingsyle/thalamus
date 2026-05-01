@@ -52,7 +52,21 @@ export const saveAssistantMessage = internalMutation({
     const user = await ctx.db.get(args.userId);
     if (user) {
       const current = (user as { totalUsageCents?: number }).totalUsageCents || 0;
-      await ctx.db.patch(args.userId, { totalUsageCents: current + args.costCents });
+      // Deduct from AgentBucks: daily first, then purchased (1 cent = 15 AB)
+      const agentBucksToDeduct = args.costCents * 15;
+      const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? 0;
+      const purchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
+
+      let remainingDeduct = agentBucksToDeduct;
+      const newDaily = Math.max(0, daily - remainingDeduct);
+      remainingDeduct = Math.max(0, remainingDeduct - daily);
+      const newPurchased = Math.max(0, purchased - remainingDeduct);
+
+      await ctx.db.patch(args.userId, {
+        totalUsageCents: current + args.costCents,
+        dailyAgentBucks: newDaily,
+        purchasedAgentBucks: newPurchased,
+      });
     }
   },
 });
