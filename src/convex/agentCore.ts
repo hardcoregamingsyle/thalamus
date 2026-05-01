@@ -299,20 +299,24 @@ You have access to a live sandbox (Daytona cloud environment). Run shell command
 
 <<RUN-CMD="command here">>
 
-PACKAGE MANAGER: Always use BUN (not npm, not yarn, not pnpm).
-- Install deps:    <<RUN-CMD="bun install">>
-- Run script:      <<RUN-CMD="bun run dev">>
-- Run tests:       <<RUN-CMD="bun test">>
-- Add package:     <<RUN-CMD="bun add express">>
-- Add dev dep:     <<RUN-CMD="bun add -d typescript">>
-- Execute file:    <<RUN-CMD="bun index.ts">>
-- Start server:    <<RUN-CMD="bun run start">>
+PACKAGE MANAGER: Use the appropriate package manager for the project type:
+- Node.js/TypeScript: use npm, yarn, pnpm, or bun — whichever the project uses (check package.json for lock files)
+  - npm:  <<RUN-CMD="npm install">>  <<RUN-CMD="npm run dev">>
+  - bun:  <<RUN-CMD="bun install">>  <<RUN-CMD="bun run dev">>
+  - yarn: <<RUN-CMD="yarn install">> <<RUN-CMD="yarn dev">>
+  - pnpm: <<RUN-CMD="pnpm install">> <<RUN-CMD="pnpm dev">>
+- Python: use pip or poetry as appropriate
+  - pip:    <<RUN-CMD="pip install -r requirements.txt">>
+  - poetry: <<RUN-CMD="poetry install">>
+- Android/Kotlin/Java: use gradle
+  - <<RUN-CMD="./gradlew assembleDebug">>
+- Rust: use cargo
+  - <<RUN-CMD="cargo build">>
+- Go: use go modules
+  - <<RUN-CMD="go mod tidy">> <<RUN-CMD="go build ./...">>
+- For system commands, use standard shell (bash/sh).
 
-NEVER use: npm install, npm run, yarn, pnpm
-ALWAYS use: bun install, bun run, bun add, bun test
-
-For Python projects, use pip/python as normal.
-For system commands, use standard shell (bash/sh).
+Always detect the project type from existing files (package.json, requirements.txt, build.gradle, Cargo.toml, go.mod, etc.) and use the correct toolchain.
 `;
 
 export interface PlannerTask {
@@ -450,7 +454,7 @@ CRITICAL RULES:
 6. Follow security best practices (no hardcoded secrets, sanitize inputs, etc.)
 7. Write clean, readable, well-commented code
 8. Handle edge cases
-9. ALWAYS use BUN as the package manager — NEVER use npm, yarn, or pnpm
+9. Use the appropriate package manager for the project type — detect from lock files (package-lock.json → npm, bun.lockb → bun, yarn.lock → yarn, pnpm-lock.yaml → pnpm, requirements.txt → pip, build.gradle → gradle, Cargo.toml → cargo, go.mod → go)
 
 FILE CREATION FORMAT:
 <<CREATEFILE="path/to/file.ts">>
@@ -460,26 +464,29 @@ file content here
 DEPLOY COMMANDS — MANDATORY:
 After creating all files, you MUST set deploy commands using this exact format:
 <<DEPLOY-COMMANDS>>
-"bun install"
-"bun run build"
-"bun run start"
+"<install command>"
+"<build command>"
+"<start command>"
 <<END.DEPLOY-COMMAND>>
 
 Rules for deploy commands:
 - Each command on its own line, wrapped in double quotes
 - Commands run in order, stop on first failure
 - Include: install deps → build → start server
-- Use BUN for Node.js projects (bun install, bun run dev, etc.)
-- For Python: pip install -r requirements.txt, then python main.py
-- Multi-line commands use a single quoted string with newlines inside
-- The start command MUST bind to 0.0.0.0 and port 3000 for preview to work
-  - Node/Bun: PORT=3000 bun run start OR bun run dev -- --port 3000 --host 0.0.0.0
-  - Python FastAPI: uvicorn main:app --host 0.0.0.0 --port 3000
-  - Python Flask: FLASK_RUN_HOST=0.0.0.0 FLASK_RUN_PORT=3000 flask run
+- Use the correct toolchain for the project type:
+  - Node.js (npm):  npm install → npm run build → npm start
+  - Node.js (bun):  bun install → bun run build → PORT=3000 bun run start
+  - Node.js (yarn): yarn install → yarn build → yarn start
+  - Python FastAPI: pip install -r requirements.txt → uvicorn main:app --host 0.0.0.0 --port 3000
+  - Python Flask:   pip install -r requirements.txt → FLASK_RUN_HOST=0.0.0.0 FLASK_RUN_PORT=3000 flask run
+  - Android APK:    ./gradlew assembleDebug (no port binding needed)
+  - Rust:           cargo build --release → ./target/release/app
+  - Go:             go mod tidy → go build -o app → PORT=3000 ./app
+- The start command MUST bind to 0.0.0.0 and port 3000 for web preview to work (skip for non-web projects like APKs)
 
 SANDBOX COMMANDS (for running commands in the live sandbox):
-<<RUN-CMD="bun install">>
-<<RUN-CMD="bun run build">>
+<<RUN-CMD="<install command>">>
+<<RUN-CMD="<build command>">>
 
 CONFIG FILES — CREATE ALL THAT APPLY:
 - package.json with all dependencies and scripts
@@ -508,11 +515,11 @@ If you find issues, fix them using the file creation format:
 optimised content
 <<END.CREATEFILE>>
 
-If deploy commands need updating after optimisation:
+If deploy commands need updating after optimisation, use the correct toolchain for the project type:
 <<DEPLOY-COMMANDS>>
-"bun install"
-"bun run build"
-"bun run start"
+"<install command>"
+"<build command>"
+"<start command>"
 <<END.DEPLOY-COMMAND>>
 
 Start with "## Optimisation Report" header. Be specific about what you changed and why.`,
@@ -551,8 +558,12 @@ Use the file creation format for test files:
 test content
 <<END.CREATEFILE>>
 
-If you have a sandbox, run the tests:
-<<RUN-CMD="bun test">>
+If you have a sandbox, run the tests using the appropriate test runner for the project:
+- Node.js (bun): <<RUN-CMD="bun test">>
+- Node.js (npm/jest): <<RUN-CMD="npm test">>
+- Python: <<RUN-CMD="pytest">>
+- Rust: <<RUN-CMD="cargo test">>
+- Go: <<RUN-CMD="go test ./...">>
 
 After running tests, output your verdict:
 - If ALL tests passed: <<test.success>>
