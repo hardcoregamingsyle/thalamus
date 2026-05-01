@@ -157,11 +157,12 @@ export const ensureDailyBalance = mutation({
     if (!session || session.expiresAt < Date.now()) return;
     const user = await ctx.db.get(session.userId);
     if (!user) return;
-    // Only patch if dailyAgentBucks is not set or is the old 5000 value
-    if (user.dailyAgentBucks === undefined || user.dailyAgentBucks === null || user.dailyAgentBucks <= 5000) {
+    // Only patch if dailyAgentBucks is not initialized (undefined, null, or 0)
+    const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks;
+    if (daily === undefined || daily === null || daily === 0) {
       await ctx.db.patch(session.userId, {
         dailyAgentBucks: 10_000_000,
-        purchasedAgentBucks: user.purchasedAgentBucks ?? 0,
+        purchasedAgentBucks: (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0,
       });
     }
   },
