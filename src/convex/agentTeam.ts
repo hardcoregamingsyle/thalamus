@@ -480,7 +480,8 @@ export const runAgentRound = action({
     }
 
     // Cost accounting
-    const costCents = Math.ceil((inputTokens / 1_000_000) * 35 + (outputTokens / 1_000_000) * 145);
+    // Gemini 3.1 Flash Lite Preview: $0.60/1M input, $2.40/1M output
+    const costCents = Math.ceil((inputTokens / 1_000_000) * 60 + (outputTokens / 1_000_000) * 240);
     await ctx.runMutation(internal.sandboxHelpers.addUserCost, { userId, costCents });
 
     const newTotalMessages = totalMessages + 1;

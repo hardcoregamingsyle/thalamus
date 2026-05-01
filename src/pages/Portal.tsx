@@ -52,11 +52,12 @@ export default function Portal() {
 
   const ensureDailyBalance = useMutation(api.customAuthHelpers.ensureDailyBalance);
 
-  // Initialize daily balance for existing users (migration)
+  // Initialize daily balance for existing users (one-time migration: only when unset or zero)
   useEffect(() => {
     if (token && user !== undefined && user !== null) {
       const typedU = user as { dailyAgentBucks?: number };
-      if (typedU.dailyAgentBucks === undefined || typedU.dailyAgentBucks === null) {
+      const daily = typedU.dailyAgentBucks;
+      if (daily === undefined || daily === null || daily === 0) {
         ensureDailyBalance({ token }).catch(() => {});
       }
     }
