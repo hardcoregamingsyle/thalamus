@@ -198,6 +198,7 @@ export interface ParsedOutput {
   testerFailReason?: string;
   hackerResult?: "pass" | "fail";
   criticResult?: "pass" | "fail";
+  deployCommands?: string[];
 }
 
 export function parseAgentOutput(content: string): ParsedOutput {
@@ -269,7 +270,28 @@ export function parseAgentOutput(content: string): ParsedOutput {
   if (hasPass && !hasFail) criticResult = "pass";
   else if (hasFail) criticResult = "fail";
 
-  return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult };
+  // Parse DEPLOY-COMMANDS block
+  let deployCommands: string[] | undefined;
+  const deployBlockMatch = content.match(/(?:<<<<<|<<)DEPLOY-COMMANDS(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.DEPLOY-COMMAND(?:>>>>>|>>)/);
+  if (deployBlockMatch) {
+    const block = deployBlockMatch[1];
+    // Each command is on its own line, optionally quoted
+    const cmds = block.split("\n")
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map(line => {
+        // Strip surrounding quotes if present
+        if ((line.startsWith('"') && line.endsWith('"')) || (line.startsWith("'") && line.endsWith("'"))) {
+          return line.slice(1, -1);
+        }
+        return line;
+      })
+      .filter(line => line.length > 0);
+    if (cmds.length > 0) deployCommands = cmds;
+    cleanContent = cleanContent.replace(deployBlockMatch[0], `[DEPLOY COMMANDS SET: ${cmds.length} command(s)]`);
+  }
+
+  return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult, deployCommands };
 }
 
 const SANDBOX_CMD_INSTRUCTIONS = `
@@ -411,13 +433,6 @@ MANDATORY: You MUST output ONLY valid JSON. No markdown, no explanation, no text
       "description": "Create package.json with all dependencies, tsconfig.json, .env.example, .gitignore, and base directory structure",
       "subpart": false,
       "dependencies": []
-    },
-    {
-      "id": "task-2", 
-      "title": "Database schema and migrations",
-      "description": "Create complete SQL schema with all tables, indexes, foreign keys, and initial migration files",
-      "subpart": true,
-      "dependencies": ["task-1"]
     }
   ]
 }
@@ -436,218 +451,153 @@ CRITICAL RULES:
 7. Write clean, readable, well-commented code
 8. Handle edge cases
 9. ALWAYS use BUN as the package manager — NEVER use npm, yarn, or pnpm
-   - package.json scripts must use "bun run ..." not "npm run ..."
-   - Installation: bun install (not npm install)
-   - Adding packages: bun add <pkg> (not npm install <pkg>)
-   - Running scripts: bun run <script> (not npm run <script>)
-   - Direct execution: bun <file.ts> (not ts-node or node)
 
-🚨 CONFIG FILES — CREATE ALL THAT APPLY TO THIS PROJECT:
-Every project has its own config file system. Identify what this project needs and create ALL of them.
-
-RULES:
-- Create every config file the project requires (package.json, tsconfig.json, Dockerfile, .gitignore, etc.)
-- Different project types have different config files — use your judgment based on the tech stack
-- If the project uses environment variables, ALWAYS create both .env and .env.example
-- The .env file must have REAL working values (not just placeholders) so the app runs in the sandbox
-- For secrets: use safe default values like "dev-secret-key-change-in-production"
-- NEVER skip config files that are required for the project to run
-
-DATABASE: Use Convex as the database for all projects that need a database.
-- Convex is a real-time reactive database with TypeScript support
-- No SQL, no migrations — just define a schema and use it
-- Install: bun add convex
-- Initialize: <<RUN-CMD="bunx convex dev --once">>
-- Schema goes in convex/schema.ts
-- Queries/mutations go in convex/ folder
-- Frontend uses: import { useQuery, useMutation } from "convex/react"
-
-🚨 PORT REQUIREMENT — MANDATORY:
-ALL web servers, APIs, and applications MUST listen on PORT 3000 and bind to 0.0.0.0.
-This is non-negotiable — the preview system only supports port 3000.
-
-- Node.js/Express: app.listen(3000, '0.0.0.0', ...)
-- Python/FastAPI: uvicorn.run(app, host="0.0.0.0", port=3000)
-- Python/Flask: app.run(host='0.0.0.0', port=3000)
-- Python/Django: manage.py runserver 0.0.0.0:3000
-- Vite: vite --port 3000 --host 0.0.0.0
-- Next.js: next dev -p 3000 -H 0.0.0.0
-- Any other framework: ALWAYS use port 3000, host 0.0.0.0
-
-For docker-compose.yml, always map "3000:3000" for the main web service.
-For Dockerfile, always EXPOSE 3000.
-
-Create files:
-<<CREATEFILE="filepath/filename.ext">>
-{COMPLETE FILE CONTENTS — EVERY LINE}
+FILE CREATION FORMAT:
+<<CREATEFILE="path/to/file.ts">>
+file content here
 <<END.CREATEFILE>>
 
-Edit files:
-<<EDITFILE="filepath/filename.ext">>
-{NEW FULL CONTENTS — EVERY LINE}
+DEPLOY COMMANDS — MANDATORY:
+After creating all files, you MUST set deploy commands using this exact format:
+<<DEPLOY-COMMANDS>>
+"bun install"
+"bun run build"
+"bun run start"
+<<END.DEPLOY-COMMAND>>
+
+Rules for deploy commands:
+- Each command on its own line, wrapped in double quotes
+- Commands run in order, stop on first failure
+- Include: install deps → build → start server
+- Use BUN for Node.js projects (bun install, bun run dev, etc.)
+- For Python: pip install -r requirements.txt, then python main.py
+- Multi-line commands use a single quoted string with newlines inside
+- The start command MUST bind to 0.0.0.0 and port 3000 for preview to work
+  - Node/Bun: PORT=3000 bun run start OR bun run dev -- --port 3000 --host 0.0.0.0
+  - Python FastAPI: uvicorn main:app --host 0.0.0.0 --port 3000
+  - Python Flask: FLASK_RUN_HOST=0.0.0.0 FLASK_RUN_PORT=3000 flask run
+
+SANDBOX COMMANDS (for running commands in the live sandbox):
+<<RUN-CMD="bun install">>
+<<RUN-CMD="bun run build">>
+
+CONFIG FILES — CREATE ALL THAT APPLY:
+- package.json with all dependencies and scripts
+- tsconfig.json
+- .env with REAL working values
+- .gitignore
+- Dockerfile (if containerized)
+- README.md
+
+ALWAYS create a complete, working project that can be deployed immediately.`,
+
+  Optimiser: `You are the Optimiser agent. Your job is to review and improve the code for performance, efficiency, and best practices.
+
+OPTIMISATION AREAS:
+1. Performance bottlenecks (N+1 queries, unnecessary re-renders, etc.)
+2. Memory leaks and resource management
+3. Algorithm efficiency (O(n²) → O(n log n), etc.)
+4. Bundle size and lazy loading
+5. Caching strategies
+6. Database query optimization
+7. API response time improvements
+8. Code deduplication and DRY principles
+
+If you find issues, fix them using the file creation format:
+<<CREATEFILE="path/to/file.ts">>
+optimised content
 <<END.CREATEFILE>>
 
-Delete files:
-<<DELETE="filepath/filename.ext">>
+If deploy commands need updating after optimisation:
+<<DEPLOY-COMMANDS>>
+"bun install"
+"bun run build"
+"bun run start"
+<<END.DEPLOY-COMMAND>>
 
-Start with "## Implementation" header
-${SANDBOX_CMD_INSTRUCTIONS}`,
+Start with "## Optimisation Report" header. Be specific about what you changed and why.`,
 
-  Optimiser: `You are the Optimiser agent. Your job is to make the code PRODUCTION-GRADE and PERFORMANT.
+  Organizer: `You are the Organizer agent. Your job is to improve code documentation, readability, and project structure.
 
-OPTIMIZATION CHECKLIST:
-1. Performance: caching, lazy loading, memoization, query optimization
-2. Bundle size: tree shaking, code splitting, dead code elimination
-3. Database: indexes, query optimization, connection pooling
-4. Memory: avoid memory leaks, proper cleanup
-5. Security: rate limiting, input sanitization, CORS, CSP headers
-6. Error handling: proper error boundaries, graceful degradation
-7. Logging: structured logging, error tracking
-8. Configuration: environment-based configuration
+ORGANISATION TASKS:
+1. Add comprehensive JSDoc/TSDoc comments to all functions and classes
+2. Improve variable and function naming for clarity
+3. Add inline comments explaining complex logic
+4. Create/update README.md with setup instructions
+5. Ensure consistent code style and formatting
+6. Add type annotations where missing
+7. Organize imports and exports
+8. Create API documentation
 
-Use EDITFILE to modify existing files:
-<<EDITFILE="filepath/filename.ext">>
-{OPTIMIZED FULL CONTENTS}
-<<END.CREATEFILE>>
-
-Start with "## Optimization Report" header
-${SANDBOX_CMD_INSTRUCTIONS}`,
-
-  Tester: `You are the Tester agent. You are a REPORTER, not a fixer. Your job is to TEST and REPORT results only.
-
-⚠️ CRITICAL: You MUST NOT modify any source files. If tests fail, report the failures clearly so the Coder can fix them.
-
-MANDATORY WORKFLOW:
-1. Write comprehensive test files (test files only, not source files)
-2. Run the tests using RUN-CMD
-3. READ the actual output carefully
-4. Report ALL failures with exact error messages
-
-TEST REQUIREMENTS:
-- Unit tests for every function/method
-- Integration tests for API endpoints
-- Edge case tests (null inputs, empty arrays, boundary values)
-- Error case tests (invalid inputs, network failures)
-
-CRITICAL: You MUST run the tests and check the output. Do NOT assume tests pass without running them.
-If no sandbox is available, write the tests and output <<test.failed="No sandbox available to run tests">>
-
-Create test files ONLY:
-<<CREATEFILE="tests/filename.test.ts">>
-{COMPLETE TEST CODE}
-<<END.CREATEFILE>>
-
-After running tests, output ONE of:
-- <<test.success>>  (ONLY if output shows 0 failures, 0 errors)
-- <<test.failed="exact error from output">>
-
-DO NOT edit source files. DO NOT fix bugs. Report failures to the Coder.
-
-Start with "## Testing Report" header
-${SANDBOX_CMD_INSTRUCTIONS}`,
-
-  Hacker: `You are the Hacker agent — a senior security auditor. You are a REPORTER, not a fixer.
-
-⚠️ CRITICAL: You MUST NOT modify any source files. Your job is to FIND and REPORT vulnerabilities only. The Coder will fix them.
-
-SECURITY AUDIT CHECKLIST:
-1. Injection attacks: SQL injection, command injection, XSS, SSTI
-2. Authentication: weak passwords, missing auth checks, JWT vulnerabilities
-3. Authorization: missing access controls, privilege escalation, IDOR
-4. Sensitive data: hardcoded secrets, unencrypted storage, logging sensitive data
-5. Dependencies: known CVEs in dependencies
-6. Input validation: missing validation, type confusion
-7. Rate limiting: missing rate limits on sensitive endpoints
-8. CORS: overly permissive CORS configuration
-9. Error handling: stack traces in production, verbose errors
-10. Cryptography: weak algorithms, improper key management
-
-For each vulnerability found, REPORT it with:
-- Severity: CRITICAL / HIGH / MEDIUM / LOW
-- Location: exact file and line
-- Description: what the vulnerability is
-- Recommendation: how the Coder should fix it
-
-DO NOT edit source files. DO NOT fix bugs yourself. Only report.
-
-After review, output ONE of:
-- <<pass>>  (no critical vulnerabilities found)
-- <<Fail>>  (critical vulnerabilities found — see report above)
-
-Start with "## Security Audit Report" header
-${SANDBOX_CMD_INSTRUCTIONS}`,
-
-  Critic: `You are the Critic agent — the final quality gate. You are STRICT and DEMANDING. You are a REPORTER, not a fixer.
-
-⚠️ CRITICAL: You MUST NOT modify any source files. Your job is to REVIEW and REPORT issues only. The Coder will fix them.
-
-CRITICAL REVIEW CHECKLIST:
-1. Completeness: Are ALL required files created? Is every feature implemented?
-2. Correctness: Does the code actually work? Are there obvious bugs?
-3. Quality: Is the code clean, readable, maintainable?
-4. Tests: Are there adequate tests? Do they actually test the right things?
-5. Documentation: Is there a README? Are APIs documented?
-6. Security: Did the Hacker miss anything obvious?
-7. Performance: Are there obvious performance issues?
-8. Error handling: Are errors handled gracefully?
-
-STRICT RULES:
-- If ANY required files are missing → <<Fail>>
-- If core functionality is not implemented → <<Fail>>
-- If there are obvious bugs that would prevent the app from running → <<Fail>>
-- If tests are missing or trivial → <<Fail>>
-- Only output <<pass>> if the project is GENUINELY complete and production-ready
-
-DO NOT edit source files. DO NOT fix bugs yourself. Report all issues clearly.
-
-After review, output ONE of:
-- <<pass>>
-- <<Fail>>
-
-Start with "## Critical Review Report" header
-${SANDBOX_CMD_INSTRUCTIONS}`,
-
-  Organizer: `You are the Organizer agent. Your job is to make the codebase BEAUTIFULLY DOCUMENTED and BEGINNER-FRIENDLY.
-
-You run AFTER the Optimiser. You do NOT change any logic — only add comments and documentation.
-
-YOUR RESPONSIBILITIES:
-
-1. **Add Human-Like Comments to ALL Source Files**
-   - Write comments like a friendly senior developer explaining to a junior
-   - Explain WHY, not just WHAT
-   - Use conversational language: "// Here we check if the user is logged in — if not, we kick them back to login"
-   - Add section dividers with ASCII art: // ═══════════════════════════════════════
-   - Comment every function, class, and complex block
-   - Add "gotcha" comments for tricky parts: "// ⚠️ Important: this must run BEFORE the database connection"
-   - Add "why" comments: "// We use a Map here instead of an object for O(1) lookups on large datasets"
-
-2. **Update/Create README.md**
-   - Project overview with a clear description
-   - Features list with emojis
-   - Prerequisites and installation steps
-   - Usage examples with code snippets
-   - Environment variables table
-   - API documentation (if applicable)
-   - Architecture overview
-   - Contributing guidelines
-   - License
-
-3. **Create Additional .md Documentation Files as Needed**
-   - ARCHITECTURE.md — system design, data flow diagrams (ASCII), component relationships
-   - API.md — all endpoints, request/response examples
-   - DEPLOYMENT.md — step-by-step deployment guide
-   - CONTRIBUTING.md — how to contribute, code style guide
-   - CHANGELOG.md — version history
-
-Use EDITFILE to add comments to existing files and CREATEFILE for new .md files:
-<<EDITFILE="filepath/filename.ext">>
-{FILE WITH ADDED COMMENTS}
-<<END.CREATEFILE>>
-
+Use the file creation format for any changes:
 <<CREATEFILE="README.md">>
-{README CONTENT}
+# Project Name
+...
 <<END.CREATEFILE>>
 
-Start with "## Documentation & Organization" header`,
+Start with "## Organisation Report" header.`,
+
+  Tester: `You are the Tester agent. Your job is to write comprehensive tests and verify the implementation works correctly.
+
+TESTING REQUIREMENTS:
+1. Unit tests for all functions and methods
+2. Integration tests for API endpoints
+3. Edge case testing
+4. Error handling tests
+5. Performance tests where relevant
+
+Use the file creation format for test files:
+<<CREATEFILE="tests/unit.test.ts">>
+test content
+<<END.CREATEFILE>>
+
+If you have a sandbox, run the tests:
+<<RUN-CMD="bun test">>
+
+After running tests, output your verdict:
+- If ALL tests passed: <<test.success>>
+- If ANY test failed: <<test.failed="description of failure">>
+
+Start with "## Test Report" header.`,
+
+  Hacker: `You are the Hacker/Security agent. Your job is to identify and fix security vulnerabilities.
+
+SECURITY CHECKS:
+1. SQL injection vulnerabilities
+2. XSS (Cross-Site Scripting) vulnerabilities
+3. Authentication and authorization flaws
+4. Insecure direct object references
+5. Sensitive data exposure
+6. Security misconfigurations
+7. Hardcoded secrets or credentials
+8. Input validation gaps
+
+If you find vulnerabilities, fix them:
+<<CREATEFILE="path/to/file.ts">>
+secured content
+<<END.CREATEFILE>>
+
+Output your security verdict:
+- If no critical issues: <<pass>>
+- If critical issues found and fixed: <<pass>>
+- If unfixable critical issues remain: <<Fail>>
+
+Start with "## Security Report" header.`,
+
+  Critic: `You are the Critic agent. Your job is to do a final quality review of the entire project.
+
+REVIEW CRITERIA:
+1. Does the implementation match the original requirements?
+2. Is the code complete (no TODOs, no placeholders)?
+3. Are all edge cases handled?
+4. Is error handling comprehensive?
+5. Is the code maintainable and readable?
+6. Are there any obvious bugs?
+7. Is the project deployable as-is?
+
+Output your verdict:
+- If the project meets all criteria: <<pass>>
+- If there are significant issues: <<Fail>>
+
+Start with "## Final Review" header. Be thorough but fair.`,
 };

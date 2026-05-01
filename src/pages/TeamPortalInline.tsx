@@ -8,7 +8,7 @@ import {
   Loader2, Plus, CheckCircle, Terminal, Box, Globe, ExternalLink,
   Play, Square, Send, FileCode, Monitor, ChevronRight, Activity,
   MessageSquare, StopCircle, ListPlus, Cpu, Shield, Search, Code2,
-  CheckSquare, AlertCircle,
+  CheckSquare, AlertCircle, RefreshCw,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -37,6 +37,7 @@ interface TeamSession {
   currentTaskIndex?: number;
   plannerTasksJson?: string;
   finalReviewCoderEnabled?: boolean;
+  deployCommandsJson?: string;
 }
 
 interface ProjectFile {
@@ -258,6 +259,11 @@ export default function TeamPortalInline({ token }: { token: string }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const sandboxOutputEndRef = useRef<HTMLDivElement>(null);
 
+  // Deploy commands state
+  const [deployCommands, setDeployCommands] = useState<string[]>([]);
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [deployLog, setDeployLog] = useState<Array<{ cmd: string; output: string; exitCode: number }>>([]);
+
   // Reactive queries
   const liveSession = useQuery(api.agentTeamHelpers.watchSession, activeSessionId ? { sessionId: activeSessionId } : "skip");
   const liveMessages = useQuery(api.agentTeamHelpers.watchMessages, activeSessionId ? { sessionId: activeSessionId } : "skip");
@@ -304,6 +310,8 @@ export default function TeamPortalInline({ token }: { token: string }) {
   const getPreviewUrlAction = useAction(api.sandbox.getPreviewUrl);
   const autoDeployAndStartAction = useAction(api.sandbox.autoDeployAndStart);
   const testFileWriteAction = useAction(api.sandbox.testFileWrite);
+  const syncSandboxFilesAction = useAction(api.sandbox.syncSandboxFiles);
+  const runDeployCommandsAction = useAction(api.sandbox.runDeployCommands);
 
   useEffect(() => { if (token) { loadSessions(); loadSandboxes(); } }, [token]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [allMessages, sessionInfo?.currentAgentOutput]);
@@ -560,6 +568,58 @@ export default function TeamPortalInline({ token }: { token: string }) {
       setSandboxOutput(prev => [...prev, { cmd: "TEST WRITE", out: result.output, code: result.success ? 0 : 1 }]);
     } catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Test failed"); }
     finally { setIsSandboxLoading(false); }
+  };
+
+  // Sync deploy commands from session
+  useEffect(() => {
+    if (sessionInfo) {
+      const raw = (sessionInfo as unknown as Record<string, unknown>).deployCommandsJson as string | undefined;
+      if (raw) {
+        try {
+          const cmds = JSON.parse(raw) as string[];
+          if (Array.isArray(cmds)) setDeployCommands(cmds);
+        } catch { /* ignore */ }
+      }
+    }
+  }, [sessionInfo]);
+
+  const handleSyncFiles = async () => {
+    if (!activeSandboxId || !activeSessionId || !token) return;
+    setIsSandboxLoading(true);
+    try {
+      const result = await syncSandboxFilesAction({ token, sandboxDbId: activeSandboxId, sessionId: activeSessionId });
+      toast.success(`Synced ${result.synced} files from sandbox`);
+      if (result.errors.length > 0) toast.warning(`${result.errors.length} file(s) failed to sync`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setIsSandboxLoading(false);
+    }
+  };
+
+  const handleRunDeployCommands = async () => {
+    if (!activeSandboxId || !token || deployCommands.length === 0) return;
+    setIsDeploying(true);
+    setDeployLog([]);
+    setActiveTab("sandbox");
+    try {
+      const result = await runDeployCommandsAction({ token, sandboxDbId: activeSandboxId, commands: deployCommands });
+      setDeployLog(result.results);
+      const failed = result.results.find(r => r.exitCode !== 0);
+      if (failed) {
+        toast.error(`Deploy failed at: ${failed.cmd}`);
+      } else {
+        toast.success("Deploy commands completed successfully!");
+        // Try to get preview URL
+        if (activeSandboxId) {
+          setTimeout(() => handleGetPreviewUrl(), 2000);
+        }
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Deploy failed");
+    } finally {
+      setIsDeploying(false);
+    }
   };
 
   // Derived state
@@ -886,8 +946,19 @@ export default function TeamPortalInline({ token }: { token: string }) {
                           <Globe className="h-3 w-3" />PREVIEW
                         </button>
                         {activeSessionId && (
+                          <button onClick={handleSyncFiles} disabled={isSandboxLoading} className="flex items-center gap-1 px-2 py-1 bg-cyan-400/10 border border-cyan-400/30 text-cyan-400 text-[10px] rounded hover:bg-cyan-400/20 disabled:opacity-50 transition-all">
+                            <RefreshCw className="h-3 w-3" />SYNC FILES
+                          </button>
+                        )}
+                        {deployCommands.length > 0 && (
+                          <button onClick={handleRunDeployCommands} disabled={isSandboxLoading || isDeploying} className="flex items-center gap-1 px-2 py-1 bg-violet-400/10 border border-violet-400/30 text-violet-400 text-[10px] rounded hover:bg-violet-400/20 disabled:opacity-50 transition-all">
+                            {isDeploying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                            DEPLOY ({deployCommands.length})
+                          </button>
+                        )}
+                        {activeSessionId && (
                           <button onClick={handleAutoDeployAndStart} disabled={isSandboxLoading || projectFiles.length === 0} className="flex items-center gap-1 px-2 py-1 bg-primary/10 border border-primary/30 text-primary text-[10px] rounded hover:bg-primary/20 disabled:opacity-50 transition-all">
-                            <Play className="h-3 w-3" />DEPLOY
+                            <Play className="h-3 w-3" />DEPLOY ALL
                           </button>
                         )}
                         <button onClick={() => handleStopSandbox(activeSandboxId)} disabled={isSandboxLoading} className="flex items-center gap-1 px-2 py-1 bg-destructive/10 border border-destructive/30 text-destructive text-[10px] rounded hover:bg-destructive/20 disabled:opacity-50 transition-all">

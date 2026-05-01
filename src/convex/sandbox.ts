@@ -708,3 +708,99 @@ export const testFileWrite = action({
     return { success, output };
   },
 });
+
+// Sync files from sandbox filesystem to Convex projectFiles
+export const syncSandboxFiles = action({
+  args: {
+    token: v.string(),
+    sandboxDbId: v.id("sandboxes"),
+    sessionId: v.id("teamSessions"),
+  },
+  handler: async (ctx, args): Promise<{ synced: number; errors: string[] }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, { sandboxDbId: args.sandboxDbId })) as SandboxRecord | null;
+    if (!sandboxRecord) throw new Error("Sandbox not found");
+    if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
+
+    const apiKey = getApiKey();
+    const errors: string[] = [];
+    let synced = 0;
+
+    // Get list of files in /home/daytona (excluding node_modules, .git, etc.)
+    const listRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ command: `find /home/daytona -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' -not -path '*/.next/*' -not -path '*/__pycache__/*' -not -name '*.pyc' -not -name '*.log' 2>/dev/null | head -200` }),
+    });
+
+    if (!listRes.ok) return { synced: 0, errors: ["Failed to list files"] };
+    const listData = await listRes.json() as DaytonaExecResponse;
+    const filePaths = (listData.result ?? "").split("\n").filter(p => p.trim() && p.startsWith("/home/daytona/"));
+
+    // Read each file and upsert to Convex
+    for (const absPath of filePaths) {
+      const relPath = absPath.replace("/home/daytona/", "");
+      if (!relPath) continue;
+
+      try {
+        const readRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ command: `cat "${absPath}" 2>/dev/null | head -c 100000` }),
+        });
+        if (!readRes.ok) { errors.push(`Failed to read ${relPath}`); continue; }
+        const readData = await readRes.json() as DaytonaExecResponse;
+        const content = readData.result ?? "";
+
+        await ctx.runMutation(internal.agentTeamHelpers.upsertProjectFile, {
+          sessionId: args.sessionId,
+          userId,
+          filepath: relPath,
+          content,
+          lastModifiedBy: "sandbox-sync",
+        });
+        synced++;
+      } catch (err) {
+        errors.push(`${relPath}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    return { synced, errors };
+  },
+});
+
+// Run deploy commands sequentially in the sandbox
+export const runDeployCommands = action({
+  args: {
+    token: v.string(),
+    sandboxDbId: v.id("sandboxes"),
+    commands: v.array(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ results: Array<{ cmd: string; output: string; exitCode: number }> }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, { sandboxDbId: args.sandboxDbId })) as SandboxRecord | null;
+    if (!sandboxRecord) throw new Error("Sandbox not found");
+    if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
+
+    // Wake sandbox if needed
+    if (sandboxRecord.status !== "running") {
+      const wake = await checkAndWakeSandbox(sandboxRecord.sandboxId);
+      if (!wake.running) throw new Error(`Sandbox is not running: ${wake.error}`);
+      await ctx.runMutation(internal.sandboxHelpers.updateSandboxStatus, { sandboxDbId: args.sandboxDbId, status: "running" });
+    }
+
+    const results: Array<{ cmd: string; output: string; exitCode: number }> = [];
+    for (const cmd of args.commands) {
+      const { output, exitCode } = await executeCommandWithRetry(sandboxRecord.sandboxId, cmd);
+      results.push({ cmd, output, exitCode });
+      // Stop on failure
+      if (exitCode !== 0) break;
+    }
+
+    return { results };
+  },
+});

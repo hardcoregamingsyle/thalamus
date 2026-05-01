@@ -479,6 +479,14 @@ export const runAgentRound = action({
       }
     }
 
+    // After saving agent message, check for deploy commands
+    if (parsed.deployCommands && parsed.deployCommands.length > 0) {
+      await ctx.runMutation(internal.agentTeamHelpers.updateDeployCommands, {
+        sessionId: args.sessionId,
+        deployCommandsJson: JSON.stringify(parsed.deployCommands),
+      });
+    }
+
     // Cost accounting
     // Gemini 3.1 Flash Lite Preview: $0.60/1M input, $2.40/1M output
     const costCents = Math.ceil((inputTokens / 1_000_000) * 60 + (outputTokens / 1_000_000) * 240);

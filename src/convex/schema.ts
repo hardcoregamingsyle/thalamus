@@ -85,6 +85,8 @@ const schema = defineSchema(
       currentTaskIndex: v.optional(v.number()),  // which task we're on
       executionPhase: v.optional(v.string()),    // "planning" | "tasks" | "final_review"
       finalReviewCoderEnabled: v.optional(v.boolean()), // true if critic failed in final review
+      // Deploy commands set by agents
+      deployCommandsJson: v.optional(v.string()), // JSON string of string[]
     })
       .index("by_user", ["userId"]),
 
