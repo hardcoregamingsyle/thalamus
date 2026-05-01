@@ -136,7 +136,7 @@ export default function Portal() {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-6 w-6 text-primary animate-spin" />
-          <p className="text-primary font-mono text-xs animate-pulse">INITIALIZING APHANTIC_AI...</p>
+          <p className="text-primary font-mono text-xs animate-pulse">INITIALIZING THALAMUS_AI...</p>
         </div>
       </div>
     );
@@ -155,7 +155,7 @@ export default function Portal() {
               <div className="w-6 h-6 rounded bg-primary/20 border border-primary/40 flex items-center justify-center">
                 <Cpu className="h-3 w-3 text-primary" />
               </div>
-              <span className="text-primary font-bold text-sm tracking-widest amd-glow">APHANTIC_AI</span>
+              <span className="text-primary font-bold text-sm tracking-widest amd-glow">THALAMUS_AI</span>
             </div>
             <span className="hidden sm:block text-[10px] text-muted-foreground border border-border px-1.5 py-0.5 rounded">PORTAL</span>
           </div>
@@ -333,7 +333,7 @@ export default function Portal() {
                       <Cpu className="h-8 w-8 text-primary" />
                     </motion.div>
                     <div className="text-center">
-                      <p className="text-sm font-bold text-foreground">APHANTIC_AI</p>
+                      <p className="text-sm font-bold text-foreground">THALAMUS_AI</p>
                       <p className="text-xs text-muted-foreground mt-1">Start a new session or select one from the sidebar</p>
                     </div>
                   </div>
@@ -399,7 +399,7 @@ export default function Portal() {
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={`Message ${activeMode === "research" ? "Researcher" : "APHANTIC_AI"}...`}
+                  placeholder={`Message ${activeMode === "research" ? "Researcher" : "THALAMUS_AI"}...`}
                   rows={1}
                   className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 resize-none transition-colors whitespace-pre-wrap"
                   style={{ minHeight: "36px", maxHeight: "120px" }}
