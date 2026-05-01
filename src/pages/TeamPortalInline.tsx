@@ -791,12 +791,12 @@ export default function TeamPortalInline({ token }: { token: string }) {
                     <textarea
                       ref={undefined}
                       value={messageInput}
-                      onChange={e => setMessageInput(e.target.value)}
+                      onChange={e => { setMessageInput(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px"; }}
                       onKeyDown={handleMessageKeyDown}
                       placeholder={isRunning ? "Agents running... Enter to queue, Ctrl+Enter to force queue" : "Send a message or follow-up..."}
                       rows={1}
-                      className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary/60 transition-colors"
-                      style={{ minHeight: "36px", maxHeight: "100px" }}
+                      className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary/60 transition-colors whitespace-pre-wrap"
+                      style={{ minHeight: "36px", maxHeight: "160px" }}
                     />
                     {(isRunning || autoRun) ? (
                       <>
