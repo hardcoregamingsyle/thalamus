@@ -401,7 +401,7 @@ export default function Portal() {
                   onKeyDown={handleKeyDown}
                   placeholder={`Message ${activeMode === "research" ? "Researcher" : "APHANTIC_AI"}...`}
                   rows={1}
-                  className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 resize-none transition-colors"
+                  className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 resize-none transition-colors whitespace-pre-wrap"
                   style={{ minHeight: "36px", maxHeight: "120px" }}
                 />
                 <button

@@ -959,7 +959,7 @@ export default function TeamPortal() {
                   onChange={(e) => setTask(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleCreateSession(); setSidebarOpen(false); } }}
                   placeholder="New task..."
-                  className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary transition-colors"
+                  className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary transition-colors whitespace-pre-wrap"
                   rows={2}
                 />
                 <motion.button
