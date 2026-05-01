@@ -389,7 +389,13 @@ export default function TeamPortalInline({ token }: { token: string }) {
           try {
             const deployResult = await autoDeployAndStartAction({ token, sandboxDbId: activeSandboxId, sessionId: sid });
             if (deployResult.previewUrl) { setPreviewUrl(deployResult.previewUrl); toast.success(`Deployed → Preview ready`); }
-          } catch { /* best-effort */ }
+            else if (deployResult.errors.length > 0) {
+              toast.warning(`Deploy: ${deployResult.errors[0].slice(0, 100)}`, { duration: 6000 });
+            }
+          } catch (deployErr) {
+            const deployMsg = deployErr instanceof Error ? deployErr.message : "Deploy failed";
+            toast.warning(`Auto-deploy: ${deployMsg.slice(0, 100)}`, { duration: 6000 });
+          }
         }
       }
       if (result.done) {
@@ -543,7 +549,10 @@ export default function TeamPortalInline({ token }: { token: string }) {
       const result = await autoDeployAndStartAction({ token, sandboxDbId: activeSandboxId, sessionId: activeSessionId });
       if (result.previewUrl) { setPreviewUrl(result.previewUrl); setActiveTab("preview"); toast.success(`Deployed ${result.deployedFiles} files → Preview ready!`); }
       else toast.success(`Deployed ${result.deployedFiles} files. App starting...`);
-    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Deploy failed"); }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Deploy failed";
+      toast.error(msg.slice(0, 150), { duration: 8000 });
+    }
     finally { setIsSandboxLoading(false); }
   };
 

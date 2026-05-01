@@ -30,7 +30,7 @@ async function daytonaFetch(path: string, options: RequestInit = {}): Promise<un
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Daytona API error ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(`Daytona API error ${res.status}: ${text.slice(0, 300)}`);
   }
   const text = await res.text();
   if (!text) return {};
@@ -59,23 +59,23 @@ interface DaytonaPreviewUrl {
 }
 
 // Check sandbox status via Daytona API and wake it if not running.
-// Returns true if sandbox is running (or was successfully started), false otherwise.
-async function checkAndWakeSandbox(sandboxId: string): Promise<{ running: boolean; error?: string }> {
+// Always checks the live Daytona state (not just DB state).
+async function checkAndWakeSandbox(sandboxId: string): Promise<{ running: boolean; state?: string; error?: string }> {
   const apiKey = getApiKey();
   try {
-    // Check current status
+    // Check current status from Daytona directly
     const res = await fetch(`${DAYTONA_API}/sandbox/${sandboxId}`, {
       headers: daytonaHeaders(apiKey),
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      return { running: false, error: `Status check failed: ${res.status} ${text.slice(0, 100)}` };
+      return { running: false, error: `Status check failed: ${res.status} ${text.slice(0, 200)}` };
     }
     const data = await res.json() as DaytonaSandbox;
     const state = (data.state ?? "").toLowerCase();
 
     if (state === "running" || state === "started") {
-      return { running: true };
+      return { running: true, state };
     }
 
     // Sandbox is not running — attempt to start it
@@ -85,11 +85,11 @@ async function checkAndWakeSandbox(sandboxId: string): Promise<{ running: boolea
     });
     if (!startRes.ok) {
       const startText = await startRes.text().catch(() => "");
-      return { running: false, error: `Failed to start sandbox: ${startRes.status} ${startText.slice(0, 100)}` };
+      return { running: false, state, error: `Failed to start sandbox: ${startRes.status} ${startText.slice(0, 200)}` };
     }
 
-    // Wait up to 30 seconds for sandbox to become ready
-    for (let i = 0; i < 10; i++) {
+    // Wait up to 60 seconds for sandbox to become ready
+    for (let i = 0; i < 20; i++) {
       await new Promise(r => setTimeout(r, 3000));
       try {
         const pollRes = await fetch(`${DAYTONA_API}/sandbox/${sandboxId}`, {
@@ -99,13 +99,13 @@ async function checkAndWakeSandbox(sandboxId: string): Promise<{ running: boolea
           const pollData = await pollRes.json() as DaytonaSandbox;
           const pollState = (pollData.state ?? "").toLowerCase();
           if (pollState === "running" || pollState === "started") {
-            return { running: true };
+            return { running: true, state: pollState };
           }
         }
       } catch { /* keep polling */ }
     }
 
-    return { running: false, error: "Sandbox did not become ready within 30 seconds" };
+    return { running: false, state, error: "Sandbox did not become ready within 60 seconds" };
   } catch (err) {
     return { running: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -125,7 +125,7 @@ async function executeCommandWithRetry(sandboxId: string, command: string): Prom
     const status = res.status;
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      return { output: `[SANDBOX ERROR ${status}: ${text.slice(0, 200)}]`, exitCode: 1, status };
+      return { output: `[SANDBOX ERROR ${status}: ${text.slice(0, 300)}]`, exitCode: 1, status };
     }
     const data = await res.json() as DaytonaExecResponse;
     return { output: data.result ?? "", exitCode: data.exitCode ?? 0, status };
@@ -133,29 +133,41 @@ async function executeCommandWithRetry(sandboxId: string, command: string): Prom
 
   // First attempt
   const first = await doExecute();
-  if (first.status !== 400 || !first.output.includes("not running")) {
-    return { output: first.output, exitCode: first.exitCode };
+  // If sandbox is not running (400 or 503), try to wake it
+  if ((first.status === 400 && first.output.toLowerCase().includes("not running")) ||
+      first.status === 503 || first.status === 502) {
+    const wake = await checkAndWakeSandbox(sandboxId);
+    if (!wake.running) {
+      return {
+        output: `[SANDBOX WAKE FAILED: ${wake.error ?? "unknown error"}. Please restart the sandbox manually.]`,
+        exitCode: 1,
+      };
+    }
+    // Retry after wake
+    const retry = await doExecute();
+    return { output: retry.output, exitCode: retry.exitCode };
   }
 
-  // 400 "Sandbox is not running" — try to wake it
-  const wake = await checkAndWakeSandbox(sandboxId);
-  if (!wake.running) {
-    return {
-      output: `[SANDBOX WAKE FAILED: ${wake.error ?? "unknown error"}. Please restart the sandbox manually.]`,
-      exitCode: 1,
-    };
-  }
-
-  // Retry after wake
-  const retry = await doExecute();
-  return { output: retry.output, exitCode: retry.exitCode };
+  return { output: first.output, exitCode: first.exitCode };
 }
 
 // Unified file write: tries multipart upload API first, falls back to base64 shell command
 async function writeFileToSandbox(sandboxId: string, apiKey: string, filepath: string, content: string): Promise<{ ok: boolean; method?: string; error?: string }> {
   const absolutePath = `/home/daytona/${filepath}`;
 
-  // Method 1: Daytona multipart upload API (files[i].path + files[i].file)
+  // Ensure parent directory exists first
+  const dir = filepath.includes("/") ? filepath.substring(0, filepath.lastIndexOf("/")) : "";
+  if (dir) {
+    try {
+      await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ command: `mkdir -p /home/daytona/${dir}` }),
+      });
+    } catch { /* ignore */ }
+  }
+
+  // Method 1: Daytona multipart upload API
   const boundary = `----FormBoundary${Date.now()}`;
   const contentBytes = Buffer.from(content, "utf8");
   const parts: Buffer[] = [];
@@ -176,24 +188,50 @@ async function writeFileToSandbox(sandboxId: string, apiKey: string, filepath: s
     const errText = await res.text().catch(() => "");
     const uploadErr = `Upload API ${res.status}: ${errText.slice(0, 100)}`;
 
-    // Method 2: base64 shell command fallback
-    const dir = filepath.includes("/") ? filepath.substring(0, filepath.lastIndexOf("/")) : "";
-    if (dir) {
+    // Method 2: base64 shell command fallback (chunked for large files)
+    const b64 = Buffer.from(content, "utf8").toString("base64");
+    // Split into chunks to avoid shell arg length limits
+    const CHUNK_SIZE = 50000;
+    if (b64.length <= CHUNK_SIZE) {
+      const shellRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ command: `printf '%s' '${b64}' | base64 -d > ${absolutePath} && echo ok` }),
+      });
+      if (shellRes.ok) {
+        const shellData = await shellRes.json() as DaytonaExecResponse;
+        if (shellData.result?.includes("ok")) return { ok: true, method: "shell" };
+      }
+    } else {
+      // Large file: write in chunks
+      const chunks = [];
+      for (let i = 0; i < b64.length; i += CHUNK_SIZE) {
+        chunks.push(b64.slice(i, i + CHUNK_SIZE));
+      }
+      // Write first chunk
       await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ command: `mkdir -p /home/daytona/${dir}` }),
-      }).catch(() => {});
-    }
-    const b64 = Buffer.from(content, "utf8").toString("base64");
-    const shellRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ command: `printf '%s' '${b64}' | base64 -d > ${absolutePath} && echo ok` }),
-    });
-    if (shellRes.ok) {
-      const shellData = await shellRes.json() as DaytonaExecResponse;
-      if (shellData.result?.includes("ok")) return { ok: true, method: "shell" };
+        body: JSON.stringify({ command: `printf '%s' '${chunks[0]}' > /tmp/_b64_chunk` }),
+      });
+      // Append remaining chunks
+      for (let i = 1; i < chunks.length; i++) {
+        await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ command: `printf '%s' '${chunks[i]}' >> /tmp/_b64_chunk` }),
+        });
+      }
+      // Decode and write final file
+      const finalRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ command: `base64 -d /tmp/_b64_chunk > ${absolutePath} && echo ok` }),
+      });
+      if (finalRes.ok) {
+        const finalData = await finalRes.json() as DaytonaExecResponse;
+        if (finalData.result?.includes("ok")) return { ok: true, method: "shell-chunked" };
+      }
     }
     return { ok: false, error: `${uploadErr}; shell also failed` };
   } catch (err) {
@@ -341,10 +379,13 @@ export const autoDeployAndStart = action({
     if (!sandboxRecord) throw new Error("Sandbox not found");
     if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
 
-    // Wake sandbox if needed
+    // ALWAYS check live Daytona state and wake if needed (sandbox may auto-sleep)
+    const wake = await checkAndWakeSandbox(sandboxRecord.sandboxId);
+    if (!wake.running) {
+      throw new Error(`Sandbox is not running (state: ${wake.state ?? "unknown"}): ${wake.error ?? "Could not wake sandbox. Please stop and create a new sandbox."}`);
+    }
+    // Update DB status to match live state
     if (sandboxRecord.status !== "running") {
-      const wake = await checkAndWakeSandbox(sandboxRecord.sandboxId);
-      if (!wake.running) throw new Error(`Sandbox is not running: ${wake.error}`);
       await ctx.runMutation(internal.sandboxHelpers.updateSandboxStatus, { sandboxDbId: args.sandboxDbId, status: "running" });
     }
 
@@ -392,9 +433,8 @@ export const autoDeployAndStart = action({
       } catch { /* ignore parse errors */ }
     }
 
-    // Python project detection — find the right entry point
+    // Python project detection
     if (!startCmd && isPython) {
-      // Check if it's FastAPI/uvicorn
       const mainPyFile = files.find(f => f.filepath === "main.py" || f.filepath.endsWith("/main.py"));
       const appPyFile = files.find(f => f.filepath === "app.py" || f.filepath.endsWith("/app.py"));
       const reqFile = files.find(f => f.filepath === "requirements.txt");
@@ -414,7 +454,6 @@ export const autoDeployAndStart = action({
       } else if (hasDjango) {
         startCmd = `${installCmd} && python manage.py runserver 0.0.0.0:3000`;
       } else {
-        // Generic Python — try main.py then app.py
         const entryFile = mainPyFile ? "main.py" : appPyFile ? "app.py" : "server.py";
         startCmd = `${installCmd} && python ${entryFile}`;
       }
@@ -430,7 +469,7 @@ export const autoDeployAndStart = action({
     }
 
     // Install Node dependencies if needed
-    const nodeInstall = hasPackageJson ? "npm install --legacy-peer-deps 2>&1 | tail -3 && " : "";
+    const nodeInstall = hasPackageJson ? "npm install --legacy-peer-deps 2>&1 | tail -5 && " : "";
 
     // For docker-compose projects, use docker-compose up
     let launchCmd: string;
@@ -440,13 +479,27 @@ export const autoDeployAndStart = action({
       launchCmd = `cd /home/daytona && ${nodeInstall}nohup ${startCmd} > /tmp/app.log 2>&1 &`;
     }
 
+    // Execute launch command and capture output for diagnostics
+    let launchOutput = "";
     try {
-      await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
+      const launchRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({ command: launchCmd }),
       });
-    } catch { /* ignore */ }
+      if (launchRes.ok) {
+        const launchData = await launchRes.json() as DaytonaExecResponse;
+        launchOutput = launchData.result ?? "";
+        if (launchData.exitCode && launchData.exitCode !== 0) {
+          errors.push(`Launch command failed (exit ${launchData.exitCode}): ${launchOutput.slice(0, 300)}`);
+        }
+      } else {
+        const errText = await launchRes.text().catch(() => "");
+        errors.push(`Launch command HTTP ${launchRes.status}: ${errText.slice(0, 200)}`);
+      }
+    } catch (err) {
+      errors.push(`Launch exception: ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     // Wait for app to start — check port 3000 (and fallback ports 8000, 8080)
     const portsToCheck = [3000, 8000, 8080, 5000];
@@ -485,18 +538,19 @@ export const autoDeployAndStart = action({
     } catch { /* preview URL may not be available yet */ }
 
     if (!appStarted) {
-      // Try to get app logs for debugging
+      // Get app logs for debugging
       try {
         const logRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
           method: "POST",
           headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ command: "tail -30 /tmp/app.log 2>/dev/null || echo 'No logs available'" }),
+          body: JSON.stringify({ command: "tail -50 /tmp/app.log 2>/dev/null || echo 'No logs available'" }),
         });
         if (logRes.ok) {
           const logData = await logRes.json() as DaytonaExecResponse;
-          if (logData.result) errors.push(`App startup logs: ${logData.result.slice(0, 800)}`);
+          if (logData.result) errors.push(`App startup logs:\n${logData.result.slice(0, 1000)}`);
         }
       } catch { /* ignore */ }
+      if (launchOutput) errors.push(`Launch output: ${launchOutput.slice(0, 300)}`);
     }
 
     return { previewUrl, deployedFiles: files.length, errors };
