@@ -110,6 +110,128 @@ function playSound(type: "send" | "receive" | "complete" | "error" | "queue") {
   } catch { /* ignore */ }
 }
 
+
+// ── Planner Output Card ────────────────────────────────────────────────────────
+interface PlannerTask {
+  id: string;
+  title: string;
+  description: string;
+  subpart: boolean;
+  dependencies?: string[];
+}
+
+interface PlannerData {
+  summary: string;
+  tasks: PlannerTask[];
+}
+
+function parsePlannerContent(content: string): PlannerData | null {
+  const jsonBlockMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
+  if (jsonBlockMatch) {
+    try {
+      const data = JSON.parse(jsonBlockMatch[1]);
+      if (data && Array.isArray(data.tasks) && data.tasks.length > 0) {
+        return { summary: data.summary || "", tasks: data.tasks };
+      }
+    } catch { /* ignore */ }
+  }
+  const jsonStart = content.indexOf("{");
+  if (jsonStart !== -1) {
+    for (let end = content.length; end > jsonStart; end = content.lastIndexOf("}", end - 1)) {
+      if (end === -1) break;
+      try {
+        const candidate = content.slice(jsonStart, end + 1);
+        const data = JSON.parse(candidate) as { tasks?: PlannerTask[]; summary?: string };
+        if (data.tasks && Array.isArray(data.tasks) && data.tasks.length > 0) {
+          return { summary: data.summary || "", tasks: data.tasks };
+        }
+      } catch { /* keep trying */ }
+    }
+  }
+  return null;
+}
+
+function PlannerOutputCard({ data, currentTaskIndex }: { data: PlannerData; currentTaskIndex?: number }) {
+  const completedCount = currentTaskIndex ?? 0;
+  return (
+    <div className="w-full space-y-3">
+      {data.summary && (
+        <div className="bg-violet-400/10 border border-violet-400/30 rounded-xl px-4 py-3">
+          <p className="text-[10px] font-bold text-violet-400 mb-1 tracking-widest">PROJECT PLAN</p>
+          <p className="text-xs text-foreground leading-relaxed">{data.summary}</p>
+        </div>
+      )}
+      <div className="flex items-center justify-between px-1">
+        <p className="text-[10px] font-bold text-muted-foreground tracking-widest">{data.tasks.length} TASKS PLANNED</p>
+        {completedCount > 0 && (
+          <p className="text-[10px] text-violet-400">{completedCount}/{data.tasks.length} complete</p>
+        )}
+      </div>
+      <div className="space-y-2">
+        {data.tasks.map((task, i) => {
+          const isDone = i < completedCount;
+          const isActive = i === completedCount;
+          return (
+            <motion.div
+              key={task.id || i}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.04 }}
+              className={`flex items-start gap-3 px-3 py-2.5 rounded-xl border transition-all ${
+                isDone ? "border-border/30 bg-muted/10 opacity-50"
+                : isActive ? "border-violet-400/40 bg-violet-400/8"
+                : "border-border/40 bg-card/50"
+              }`}
+            >
+              <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
+                isDone ? "bg-emerald-400/20 text-emerald-400" : isActive ? "bg-violet-400/20 text-violet-400" : "bg-muted/30 text-muted-foreground"
+              }`}>
+                {isDone ? "✓" : i + 1}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                  <p className={`text-xs font-bold ${isDone ? "line-through text-muted-foreground" : isActive ? "text-violet-400" : "text-foreground"}`}>
+                    {task.title}
+                  </p>
+                  {task.subpart && (
+                    <span className="text-[9px] bg-amber-400/15 text-amber-400 border border-amber-400/30 px-1.5 py-0.5 rounded-full font-bold">COMPLEX</span>
+                  )}
+                  {isActive && (
+                    <motion.span
+                      animate={{ opacity: [1, 0.4, 1] }}
+                      transition={{ duration: 1, repeat: Infinity }}
+                      className="text-[9px] bg-violet-400/20 text-violet-400 border border-violet-400/40 px-1.5 py-0.5 rounded-full font-bold"
+                    >
+                      IN PROGRESS
+                    </motion.span>
+                  )}
+                </div>
+                {task.description && (
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">{task.description}</p>
+                )}
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MessageContent({ msg, currentTaskIndex }: { msg: { _id?: string; agent: string; content: string }; currentTaskIndex?: number }) {
+  if (msg.agent === "Planner") {
+    const plannerData = parsePlannerContent(msg.content);
+    if (plannerData && plannerData.tasks.length > 0) {
+      return <PlannerOutputCard data={plannerData} currentTaskIndex={currentTaskIndex} />;
+    }
+  }
+  return (
+    <div className="prose prose-sm prose-invert max-w-none text-xs leading-relaxed">
+      <ReactMarkdown>{msg.content}</ReactMarkdown>
+    </div>
+  );
+}
+
 // ── TeamPortalInline — embeddable agent team UI ────────────────────────────────
 export default function TeamPortalInline({ token }: { token: string }) {
   const [sessions, setSessions] = useState<TeamSession[]>([]);
@@ -596,7 +718,7 @@ export default function TeamPortalInline({ token }: { token: string }) {
                   key={tab}
                   onClick={() => setActiveTab(tab)}
                   className={`px-4 py-2 text-[10px] font-bold transition-all border-b-2 ${
-                    activeTab === tab ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+                    activeTab === tab ? "border-primary text-primary" : "border-transparent hover:text-foreground hover:border-current"
                   }`}
                 >
                   {tab.toUpperCase()}
@@ -630,22 +752,7 @@ export default function TeamPortalInline({ token }: { token: string }) {
                           <div className={`rounded-xl px-4 py-3 text-xs leading-relaxed ${
                             msg.isUser ? "bg-primary/15 border border-primary/30 text-foreground" : "bg-card border border-border text-foreground"
                           }`}>
-                            <ReactMarkdown
-                              components={{
-                                code: ({ children, className }) => {
-                                  const isBlock = className?.includes("language-");
-                                  return isBlock ? (
-                                    <pre className="bg-background border border-border rounded-lg p-3 overflow-x-auto my-2">
-                                      <code className="text-[11px] text-primary">{children}</code>
-                                    </pre>
-                                  ) : (
-                                    <code className="bg-background border border-border px-1 py-0.5 rounded text-primary text-[11px]">{children}</code>
-                                  );
-                                },
-                              }}
-                            >
-                              {msg.content}
-                            </ReactMarkdown>
+                            <MessageContent msg={msg} currentTaskIndex={sessionInfo?.currentTaskIndex} />
                           </div>
                         </div>
                       </motion.div>
@@ -828,10 +935,6 @@ export default function TeamPortalInline({ token }: { token: string }) {
                       <p className="text-sm font-bold text-foreground mb-1">No Active Sandbox</p>
                       <p className="text-xs text-muted-foreground">Create a sandbox to execute commands</p>
                     </div>
-                    <button onClick={handleCreateSandbox} disabled={isSandboxLoading} className="flex items-center gap-2 px-4 py-2 bg-amber-400/10 border border-amber-400/30 text-amber-400 text-sm rounded-xl hover:bg-amber-400/20 disabled:opacity-50 transition-all font-bold">
-                      {isSandboxLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                      CREATE SANDBOX ($0.075/hr)
-                    </button>
                   </div>
                 )}
               </div>
