@@ -1228,12 +1228,12 @@ export default function TeamPortal() {
                           )}
                           <div className={`flex-1 min-w-0 ${msg.isUser ? "flex flex-col items-end" : ""}`}>
                             {!msg.isUser && (
-                              <div className="flex items-baseline gap-2 mb-1">
-                                <p className={`text-xs font-bold ${AGENT_COLORS[msg.agent] || "text-foreground"}`}>{msg.agent}</p>
+                              <>
+                                <p className={`text-xs font-bold mb-0 ${AGENT_COLORS[msg.agent] || "text-foreground"}`}>{msg.agent}</p>
                                 {msg.modelUsed && (
-                                  <span className="text-[9px] text-muted-foreground/60 font-mono">{msg.modelUsed}</span>
+                                  <span className="text-[9px] text-muted-foreground/50 font-mono leading-none mb-1">{msg.modelUsed}</span>
                                 )}
-                              </div>
+                              </>
                             )}
                             <div className={`rounded-2xl px-3 py-2.5 border shadow-sm ${
                               msg.isUser
@@ -1243,12 +1243,12 @@ export default function TeamPortal() {
                                 : `rounded-tl-sm ${AGENT_BG[msg.agent] || "bg-card border-border"} max-w-[90%]`
                             }`}>
                               <MessageContent msg={msg} currentTaskIndex={sessionInfo?.currentTaskIndex} />
-                              {!msg.isUser && msg.agentBucksDeducted !== undefined && msg.agentBucksDeducted > 0 && (
-                                <p className="text-[9px] text-muted-foreground/50 mt-1.5 text-right font-mono">
-                                  -{msg.agentBucksDeducted.toLocaleString()} AB
-                                </p>
-                              )}
                             </div>
+                            {!msg.isUser && msg.agentBucksDeducted !== undefined && msg.agentBucksDeducted > 0 && (
+                              <span className="text-[9px] text-muted-foreground/40 font-mono mt-0.5">
+                                -{msg.agentBucksDeducted.toLocaleString()} AB
+                              </span>
+                            )}
                           </div>
                           {msg.isUser && (
                             <div className="w-7 h-7 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border bg-primary/10 border-primary/30 text-primary">
