@@ -90,16 +90,23 @@ const schema = defineSchema(
       totalMessages: v.optional(v.number()),
       currentAgentOutput: v.optional(v.string()),
       // Planner task breakdown
-      plannerTasksJson: v.optional(v.string()), // JSON string of PlannerTask[]
-      currentTaskIndex: v.optional(v.number()),  // which task we're on
-      executionPhase: v.optional(v.string()),    // "planning" | "tasks" | "final_review"
-      finalReviewCoderEnabled: v.optional(v.boolean()), // true if critic failed in final review
+      plannerTasksJson: v.optional(v.string()),
+      currentTaskIndex: v.optional(v.number()),
+      executionPhase: v.optional(v.string()),
+      finalReviewCoderEnabled: v.optional(v.boolean()),
       // Deploy commands set by agents
-      deployCommandsJson: v.optional(v.string()), // JSON string of string[]
-      // Per-task summaries — JSON string of { taskIndex: number, summary: string }[]
+      deployCommandsJson: v.optional(v.string()),
+      // Per-task summaries
       taskSummariesJson: v.optional(v.string()),
       // Current task difficulty
-      currentTaskDifficulty: v.optional(v.string()), // "normal" | "hard" | "extreme"
+      currentTaskDifficulty: v.optional(v.string()),
+      // Per-task message counter (resets on task change)
+      taskMessageCount: v.optional(v.number()),
+      // Modal Upgrade: when active, sonnet→opus47, haiku→opus46
+      taskUpgradeActive: v.optional(v.boolean()),
+      taskUpgradeMessagesLeft: v.optional(v.number()),
+      // JSON string of { taskIndex: number, title: string, reason: string }[]
+      unfixableTasksJson: v.optional(v.string()),
     })
       .index("by_user", ["userId"]),
 

@@ -246,6 +246,10 @@ export const updateSessionFull = internalMutation({
     executionPhase: v.optional(v.string()),
     currentTaskIndex: v.optional(v.number()),
     finalReviewCoderEnabled: v.optional(v.boolean()),
+    taskMessageCount: v.optional(v.number()),
+    taskUpgradeActive: v.optional(v.boolean()),
+    taskUpgradeMessagesLeft: v.optional(v.number()),
+    unfixableTasksJson: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.sessionId, {
@@ -257,6 +261,10 @@ export const updateSessionFull = internalMutation({
       executionPhase: args.executionPhase,
       currentTaskIndex: args.currentTaskIndex,
       finalReviewCoderEnabled: args.finalReviewCoderEnabled,
+      taskMessageCount: args.taskMessageCount,
+      taskUpgradeActive: args.taskUpgradeActive,
+      taskUpgradeMessagesLeft: args.taskUpgradeMessagesLeft,
+      unfixableTasksJson: args.unfixableTasksJson,
     });
   },
 });
