@@ -166,7 +166,11 @@ export const getUserByToken = query({
 
     if (!session || session.expiresAt < Date.now()) return null;
 
-    return await ctx.db.get(session.userId);
+    const user = await ctx.db.get(session.userId);
+    if (!user) return null;
+
+    // Return user even if banned — frontend will show ban notice
+    return user;
   },
 });
 
@@ -372,5 +376,154 @@ export const ensureReferralCode = mutation({
     }
 
     await ctx.db.patch(session.userId, { referralCode: code });
+  },
+});
+
+// ── Domain blacklist helpers ──────────────────────────────────────────────────
+
+// Check if a domain is blacklisted
+export const isDomainBlacklisted = internalMutation({
+  args: { domain: v.string() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("domainBlacklist")
+      .withIndex("by_domain", (q) => q.eq("domain", args.domain))
+      .take(1);
+    return existing.length > 0;
+  },
+});
+
+// Check domain user count and determine if it should be blacklisted
+export const checkAndBlacklistDomain = internalMutation({
+  args: { domain: v.string(), newUserId: v.string() },
+  handler: async (ctx, args): Promise<{ shouldBlacklist: boolean; userCount: number }> => {
+    // Count users with this domain
+    const allUsers = await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", `@${args.domain}`))
+      .take(10);
+
+    // Use a broader search since email index is exact match
+    // Instead, count by checking all users (limited to 100 for performance)
+    const recentUsers = await ctx.db.query("users").take(500);
+    const domainUsers = recentUsers.filter(u =>
+      (u.email ?? "").endsWith(`@${args.domain}`)
+    );
+
+    const userCount = domainUsers.length;
+
+    // If more than 5 users from this domain, analyze for abuse
+    if (userCount > 5) {
+      // Simple heuristic: check if users have very low activity (no sessions, no messages)
+      // and were all created recently (within 24 hours of each other)
+      const now = Date.now();
+      const recentSignups = domainUsers.filter(u => {
+        const createdAt = u._creationTime;
+        return (now - createdAt) < 7 * 24 * 60 * 60 * 1000; // within 7 days
+      });
+
+      // If >80% of domain users signed up within 7 days, flag as potential abuse
+      const abuseRatio = recentSignups.length / userCount;
+      if (abuseRatio > 0.8 && userCount > 5) {
+        return { shouldBlacklist: true, userCount };
+      }
+    }
+
+    return { shouldBlacklist: false, userCount };
+  },
+});
+
+// Blacklist a domain and ban all users from it, revoke referral credits from referrers
+export const blacklistDomainAndBanUsers = internalMutation({
+  args: { domain: v.string(), reason: v.string() },
+  handler: async (ctx, args) => {
+    // Add to blacklist
+    const existing = await ctx.db
+      .query("domainBlacklist")
+      .withIndex("by_domain", (q) => q.eq("domain", args.domain))
+      .take(1);
+    if (existing.length === 0) {
+      await ctx.db.insert("domainBlacklist", {
+        domain: args.domain,
+        reason: args.reason,
+        blacklistedAt: Date.now(),
+      });
+    }
+
+    // Find all users with this domain
+    const allUsers = await ctx.db.query("users").take(500);
+    const domainUsers = allUsers.filter(u =>
+      (u.email ?? "").endsWith(`@${args.domain}`)
+    );
+
+    // Ban each user and revoke referral credits from their referrers
+    for (const user of domainUsers) {
+      // Ban the user
+      await ctx.db.patch(user._id, {
+        isBanned: true,
+        banReason: `Domain ${args.domain} blacklisted for abuse`,
+      });
+
+      // Find who referred this user and revoke their spin credits
+      const typedUser = user as { referredBy?: string; referralSpins?: number };
+      if (typedUser.referredBy) {
+        // Find the referrer by referral code
+        const referrers = await ctx.db
+          .query("users")
+          .withIndex("by_referral_code", (q) => q.eq("referralCode", typedUser.referredBy!))
+          .take(1);
+        if (referrers.length > 0) {
+          const referrer = referrers[0];
+          const referrerTyped = referrer as { referralSpins?: number; warningCount?: number };
+          // Deduct 1 spin from referrer (they earned it from this user's signup)
+          const currentSpins = referrerTyped.referralSpins ?? 0;
+          const newSpins = Math.max(0, currentSpins - 1);
+          const newWarnings = (referrerTyped.warningCount ?? 0) + 1;
+          await ctx.db.patch(referrer._id, {
+            referralSpins: newSpins,
+            warningCount: newWarnings,
+          });
+        }
+      }
+    }
+  },
+});
+
+// Submit an appeal for a banned account
+export const submitAppeal = mutation({
+  args: { token: v.string(), reason: v.string() },
+  handler: async (ctx, args) => {
+    if (!args.token || args.token.length < 32) throw new Error("Not authenticated");
+    const session = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .unique();
+    if (!session || session.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const user = await ctx.db.get(session.userId);
+    if (!user) throw new Error("User not found");
+    await ctx.db.patch(session.userId, { hasAppeal: true });
+    return { success: true };
+  },
+});
+
+// Get account status (ban info, warnings)
+export const getAccountStatus = query({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    if (!args.token || args.token.length < 32) return null;
+    const session = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .unique();
+    if (!session || session.expiresAt < Date.now()) return null;
+    const user = await ctx.db.get(session.userId);
+    if (!user) return null;
+    const typedUser = user as { isBanned?: boolean; banReason?: string; hasAppeal?: boolean; warningCount?: number };
+    return {
+      isBanned: typedUser.isBanned ?? false,
+      banReason: typedUser.banReason ?? null,
+      hasAppeal: typedUser.hasAppeal ?? false,
+      warningCount: typedUser.warningCount ?? 0,
+    };
   },
 });

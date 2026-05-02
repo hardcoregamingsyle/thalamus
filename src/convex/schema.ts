@@ -28,11 +28,16 @@ const schema = defineSchema(
       role: v.optional(roleValidator),
       totalUsageCents: v.optional(v.number()),
       agentBucksBalance: v.optional(v.number()), // legacy field
-      dailyAgentBucks: v.optional(v.number()),     // resets daily at midnight IST
-      purchasedAgentBucks: v.optional(v.number()), // never resets
-      referralCode: v.optional(v.string()),        // unique 6-char code (all caps)
-      referralSpins: v.optional(v.number()),       // number of spins available
-      referredBy: v.optional(v.string()),          // referral code used at signup
+      dailyAgentBucks: v.optional(v.number()),
+      purchasedAgentBucks: v.optional(v.number()),
+      referralCode: v.optional(v.string()),
+      referralSpins: v.optional(v.number()),
+      referredBy: v.optional(v.string()),
+      // Account status
+      isBanned: v.optional(v.boolean()),          // true if account is banned
+      banReason: v.optional(v.string()),           // reason for ban
+      hasAppeal: v.optional(v.boolean()),          // true if appeal submitted
+      warningCount: v.optional(v.number()),        // number of warnings received
     }).index("email", ["email"])
       .index("by_referral_code", ["referralCode"]),
 
@@ -149,6 +154,14 @@ const schema = defineSchema(
       .index("by_user", ["userId"])
       .index("by_session", ["sessionId"])
       .index("by_sandbox_id", ["sandboxId"]),
+
+    // Domain blacklist — domains blocked from registration
+    domainBlacklist: defineTable({
+      domain: v.string(),           // e.g. "tempmail.com"
+      reason: v.string(),           // "temp_mail" | "abuse" | "manual"
+      blacklistedAt: v.number(),
+      userCount: v.optional(v.number()),
+    }).index("by_domain", ["domain"]),
   },
   {
     schemaValidation: false,
