@@ -1,1 +1,0 @@
-import{c as o}from"./index-gAuGDyLh.js";const t=[["path",{d:"m9 18 6-6-6-6",key:"mthhwq"}]],c=o("chevron-right",t);const e=[["path",{d:"M12 19h8",key:"baeox8"}],["path",{d:"m4 17 6-6-6-6",key:"1yngyt"}]],a=o("terminal",e);export{c as C,a as T};
