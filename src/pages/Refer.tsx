@@ -53,14 +53,23 @@ function SpinWheel({ spinning, rotation, onSpinEnd }: { spinning: boolean; rotat
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
-      // Label
+      // Label — draw from center outward, centered in segment
+      const midAngle = (startAngle + endAngle) / 2;
+      const textRadius = radius * 0.65;
+      const tx = center + Math.cos(midAngle) * textRadius;
+      const ty = center + Math.sin(midAngle) * textRadius;
       ctx.save();
-      ctx.translate(center, center);
-      ctx.rotate((startAngle + endAngle) / 2);
-      ctx.textAlign = "right";
-      ctx.fillStyle = "#fff";
-      ctx.font = "bold 11px monospace";
-      ctx.fillText(seg.label, radius - 10, 4);
+      ctx.translate(tx, ty);
+      ctx.rotate(midAngle + Math.PI / 2);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = "bold 13px monospace";
+      // Shadow for readability
+      ctx.shadowColor = "rgba(0,0,0,0.8)";
+      ctx.shadowBlur = 4;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(seg.label, 0, 0);
+      ctx.shadowBlur = 0;
       ctx.restore();
     }
 

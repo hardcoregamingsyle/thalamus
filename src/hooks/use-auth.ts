@@ -34,8 +34,9 @@ export function useAuth() {
         await sendOtpAction({ email });
         return { started: true };
       } else {
-        // Step 2: Verify OTP
-        const result = await verifyOtpAction({ email, code });
+        // Step 2: Verify OTP — pass referralCode if present in formData
+        const referralCode = formData.get("referralCode") as string | null;
+        const result = await verifyOtpAction({ email, code, ...(referralCode ? { referralCode } : {}) });
         localStorage.setItem(SESSION_KEY, result.token);
         setToken(result.token);
         return result;

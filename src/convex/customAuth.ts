@@ -65,7 +65,7 @@ export const sendOtp = action({
 // Verify OTP and create session
 export const verifyOtp = action({
   args: { email: v.string(), code: v.string(), referralCode: v.optional(v.string()) },
-  handler: async (ctx, args): Promise<{ token: string; userId: string }> => {
+  handler: async (ctx, args): Promise<{ token: string; userId: string; isNewUser: boolean; referralSpins: number }> => {
     const email = args.email.toLowerCase().trim();
     const code = args.code.trim();
 

@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Zap, Gift, Tag, MessageCircle, Mail, ExternalLink, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 
 // Credit packs — price in ₹ ($1 = ₹100)
 const CREDIT_PACKS = [
@@ -81,16 +83,34 @@ function BuyCreditsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-export default function CreditModal({ open, onClose, totalAB, dailyAB, purchasedAB }: CreditModalProps) {
+interface CreditModalPropsExtended extends CreditModalProps {
+  token?: string;
+}
+
+export default function CreditModal({ open, onClose, totalAB, dailyAB, purchasedAB, token }: CreditModalPropsExtended) {
   const navigate = useNavigate();
   const [promoCode, setPromoCode] = useState("");
   const [showBuyModal, setShowBuyModal] = useState(false);
   const [selectedPack, setSelectedPack] = useState<typeof CREDIT_PACKS[0] | null>(null);
+  const [isApplyingPromo, setIsApplyingPromo] = useState(false);
+  const applyPromoMutation = useMutation(api.customAuthHelpers.applyPromoCode);
 
-  const handlePromoSubmit = () => {
-    if (!promoCode.trim()) return;
-    toast.info("Promo codes are coming soon! Contact the owner to apply a code.");
-    setPromoCode("");
+  const handlePromoSubmit = async () => {
+    if (!promoCode.trim() || !token) return;
+    setIsApplyingPromo(true);
+    try {
+      const result = await applyPromoMutation({ token, code: promoCode.trim() });
+      if (result.success) {
+        toast.success(result.message);
+        setPromoCode("");
+      } else {
+        toast.error(result.message);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to apply promo code");
+    } finally {
+      setIsApplyingPromo(false);
+    }
   };
 
   return (
@@ -211,10 +231,10 @@ export default function CreditModal({ open, onClose, totalAB, dailyAB, purchased
                     />
                     <button
                       onClick={handlePromoSubmit}
-                      disabled={!promoCode.trim()}
+                      disabled={!promoCode.trim() || isApplyingPromo}
                       className="px-4 py-2 bg-primary/10 border border-primary/30 text-primary text-xs font-bold rounded-xl hover:bg-primary/20 disabled:opacity-50 transition-all"
                     >
-                      Apply
+                      {isApplyingPromo ? "..." : "Apply"}
                     </button>
                   </div>
                 </div>
