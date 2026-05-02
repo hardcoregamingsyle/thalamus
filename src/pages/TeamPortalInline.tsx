@@ -68,13 +68,13 @@ interface QueuedMessage {
 
 // ── Agent config ───────────────────────────────────────────────────────────────
 const AGENT_COLORS: Record<string, string> = {
-  Researcher: "text-cyan-400", Analyser: "text-blue-400", Planner: "text-violet-400",
+  "R&D Team": "text-cyan-400", Researcher: "text-cyan-400", Analyser: "text-blue-400", Planner: "text-violet-400",
   Coder: "text-emerald-400", Optimiser: "text-amber-400", Organizer: "text-orange-400",
   Tester: "text-green-400", Hacker: "text-red-400", "Red Team": "text-red-400", Critic: "text-purple-400", User: "text-primary",
 };
 
 const AGENT_BG: Record<string, string> = {
-  Researcher: "bg-cyan-400/10 border-cyan-400/30", Analyser: "bg-blue-400/10 border-blue-400/30",
+  "R&D Team": "bg-cyan-400/10 border-cyan-400/30", Researcher: "bg-cyan-400/10 border-cyan-400/30", Analyser: "bg-blue-400/10 border-blue-400/30",
   Planner: "bg-violet-400/10 border-violet-400/30", Coder: "bg-emerald-400/10 border-emerald-400/30",
   Optimiser: "bg-amber-400/10 border-amber-400/30", Organizer: "bg-orange-400/10 border-orange-400/30",
   Tester: "bg-green-400/10 border-green-400/30", Hacker: "bg-red-400/10 border-red-400/30", "Red Team": "bg-red-400/10 border-red-400/30",
@@ -82,7 +82,7 @@ const AGENT_BG: Record<string, string> = {
 };
 
 const AGENT_ICONS: Record<string, string> = {
-  Researcher: "🔍", Analyser: "A", Planner: "P", Coder: "C",
+  "R&D Team": "🔬", Researcher: "🔬", Analyser: "A", Planner: "P", Coder: "C",
   Optimiser: "O", Organizer: "📝", Tester: "T", Hacker: "🔴", "Red Team": "🔴", Critic: "R", User: "U",
 };
 

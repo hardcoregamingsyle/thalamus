@@ -10,7 +10,7 @@ import {
 
 // ── Agent pipeline data ────────────────────────────────────────────────────────
 const AGENTS = [
-  { name: "Researcher", abbr: "R", color: "text-cyan-400", bg: "bg-cyan-400/10 border-cyan-400/30", desc: "Deep web research & knowledge gathering" },
+  { name: "R&D Team", abbr: "🔬", color: "text-cyan-400", bg: "bg-cyan-400/10 border-cyan-400/30", desc: "Deep web research & knowledge gathering" },
   { name: "Analyser", abbr: "A", color: "text-blue-400", bg: "bg-blue-400/10 border-blue-400/30", desc: "Architecture planning & tech analysis" },
   { name: "Planner", abbr: "P", color: "text-violet-400", bg: "bg-violet-400/10 border-violet-400/30", desc: "Task decomposition into 12-20 atomic steps" },
   { name: "Coder", abbr: "C", color: "text-emerald-400", bg: "bg-emerald-400/10 border-emerald-400/30", desc: "Full production-ready implementation" },
@@ -206,7 +206,7 @@ export default function Landing() {
             </h1>
 
             <p className="text-muted-foreground text-sm leading-relaxed mb-3 max-w-lg">
-              Thalamus AI orchestrates <span className="text-foreground font-semibold">9 specialized AI agents</span> — Researcher, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Red Team, and Critic — to build complete, production-ready software from a single prompt.
+              Thalamus AI orchestrates <span className="text-foreground font-semibold">9 specialized AI agents</span> — R&D Team, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Red Team, and Critic — to build complete, production-ready software from a single prompt.
             </p>
 
             <p className="text-muted-foreground text-xs leading-relaxed mb-8 max-w-lg">
