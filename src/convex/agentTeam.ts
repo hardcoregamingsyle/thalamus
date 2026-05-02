@@ -279,13 +279,17 @@ Now synthesize this into a comprehensive Research Report.`;
   totalInputTokens += organiserResult.inputTokens;
   totalOutputTokens += organiserResult.outputTokens;
 
+  // Build the combined message: Planner breakdown + Organiser final report
+  const plannerSection = `## R&D Team — Research Plan\n\n**Topic:** ${researchPlan.topic || topic}\n\n**Research Subtopics (${subtopics.length}):**\n${subtopics.map((s, i) => `${i + 1}. **${s.title}** — ${s.why}`).join("\n")}`;
+  const combinedOutput = `${plannerSection}\n\n---\n\n${organiserResult.text}`;
+
   await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
     sessionId,
-    currentAgentOutput: organiserResult.text,
+    currentAgentOutput: combinedOutput,
   });
 
   return {
-    rawContent: organiserResult.text,
+    rawContent: combinedOutput,
     inputTokens: totalInputTokens,
     outputTokens: totalOutputTokens,
   };
