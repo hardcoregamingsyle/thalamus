@@ -773,8 +773,15 @@ export const runAgentRound = action({
       const redTeamContext = `PROJECT TASK: ${session.task}\n\nCURRENT PHASE: ${phaseLabel}\n\nPROJECT FILES:\n${projectFiles.map(f => `--- ${f.filepath} ---\n${f.content.slice(0, 2000)}`).join("\n\n").slice(0, 12000)}\n\nPREVIOUS AGENT OUTPUTS:\n${contextLines.slice(0, 4000)}`;
       agentResult = await runRedTeam(ctx, args.sessionId, redTeamContext);
     } else {
+      // Context-aware Analyser routing:
+      // - Planning phase (first time): use haiku for deeper analysis
+      // - Tasks/subtasks phase: use gemini (cheaper, faster)
+      let agentModelTier: ModelTier | undefined = undefined;
+      if (currentPhase === "Analyser" && executionPhase !== "planning") {
+        agentModelTier = "gemini";
+      }
       agentResult = await runSingleAgentCall(
-        ctx, args.sessionId, userId, currentPhase, prompt, systemPrompt, sandboxDaytonaId, sandboxDbId
+        ctx, args.sessionId, userId, currentPhase, prompt, systemPrompt, sandboxDaytonaId, sandboxDbId, agentModelTier
       );
     }
     const { rawContent, inputTokens, outputTokens } = agentResult;
