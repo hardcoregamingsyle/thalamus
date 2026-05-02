@@ -91,6 +91,28 @@ const AGENT_ICONS: Record<string, string> = {
 };
 
 const PIPELINE = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
+
+// Team display names and sub-agents for pipeline visualization
+const PIPELINE_DISPLAY: Record<string, { displayName: string; subAgents: Array<{ name: string; abbr: string; color: string }> }> = {
+  Researcher: {
+    displayName: "R&D Team",
+    subAgents: [
+      { name: "ResearchPlanner", abbr: "RP", color: "text-cyan-300" },
+      { name: "DataTaker", abbr: "DT", color: "text-cyan-300" },
+      { name: "ResearchOrganiser", abbr: "RO", color: "text-cyan-300" },
+    ],
+  },
+  Hacker: {
+    displayName: "Red Team",
+    subAgents: [
+      { name: "VulnerabilitySpotter", abbr: "VS", color: "text-red-300" },
+      { name: "DataCorruptor", abbr: "DC", color: "text-red-300" },
+      { name: "ZeroDayExploiter", abbr: "ZD", color: "text-red-300" },
+      { name: "FrameworkAuditor", abbr: "FA", color: "text-red-300" },
+      { name: "RedTeamOrchestrator", abbr: "RTO", color: "text-red-300" },
+    ],
+  },
+};
 const MAX_MESSAGES = 600;
 
 function playSound(type: "send" | "receive" | "complete" | "error" | "queue") {
@@ -1032,18 +1054,41 @@ export default function TeamPortalInline({ token }: { token: string }) {
           <p className="text-[10px] text-muted-foreground font-bold mb-2">PIPELINE</p>
           <div className="space-y-0.5">
             {PIPELINE.map((agent) => {
-              const isActive = streamingAgent === agent;
+              const isActive = streamingAgent === agent || (agent === "Researcher" && streamingAgent === "R&D Team") || (agent === "Hacker" && streamingAgent === "Red Team");
               const isDone = sessionInfo && PIPELINE.indexOf(agent) < PIPELINE.indexOf(sessionInfo.phase ?? "");
               const isNext = sessionInfo?.phase === agent && !isActive;
+              const display = PIPELINE_DISPLAY[agent];
+              const displayName = display?.displayName ?? agent;
+              const subAgents = display?.subAgents ?? [];
               return (
-                <div key={agent} className={`flex items-center gap-2 px-2 py-1 rounded text-[10px] transition-all ${isActive ? "bg-primary/10 border border-primary/20" : "hover:bg-muted/30"}`}>
-                  <div className={`w-4 h-4 rounded flex items-center justify-center text-xs font-bold shrink-0 ${AGENT_COLORS[agent]} ${isActive ? "animate-pulse" : ""}`}>
-                    {AGENT_ICONS[agent]}
+                <div key={agent}>
+                  <div className={`flex items-center gap-2 px-2 py-1 rounded text-[10px] transition-all ${isActive ? "bg-primary/10 border border-primary/20" : "hover:bg-muted/30"}`}>
+                    <div className={`w-4 h-4 rounded flex items-center justify-center text-xs font-bold shrink-0 ${AGENT_COLORS[agent]} ${isActive ? "animate-pulse" : ""}`}>
+                      {AGENT_ICONS[agent]}
+                    </div>
+                    <span className={`flex-1 ${isActive ? AGENT_COLORS[agent] + " font-bold" : "text-muted-foreground"}`}>{displayName}</span>
+                    {subAgents.length > 0 && (
+                      <span className={`text-[8px] ${isActive ? AGENT_COLORS[agent] + "/70" : "text-muted-foreground/40"}`}>({subAgents.length})</span>
+                    )}
+                    {isDone && <CheckCircle className="h-3 w-3 text-green-400 shrink-0" />}
+                    {isNext && !isActive && <ChevronRight className="h-3 w-3 text-amber-400 shrink-0" />}
+                    {isActive && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse shrink-0" />}
                   </div>
-                  <span className={`flex-1 ${isActive ? AGENT_COLORS[agent] + " font-bold" : "text-muted-foreground"}`}>{agent}</span>
-                  {isDone && <CheckCircle className="h-3 w-3 text-green-400 shrink-0" />}
-                  {isNext && !isActive && <ChevronRight className="h-3 w-3 text-amber-400 shrink-0" />}
-                  {isActive && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse shrink-0" />}
+                  {/* Show sub-agents when active */}
+                  {isActive && subAgents.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      className="ml-6 mt-0.5 space-y-0.5 overflow-hidden"
+                    >
+                      {subAgents.map((sub) => (
+                        <div key={sub.name} className={`flex items-center gap-1.5 px-2 py-0.5 rounded border border-dashed ${AGENT_BG[agent] || "bg-muted/10 border-border"}`}>
+                          <span className={`text-[8px] font-bold ${sub.color} shrink-0`}>{sub.abbr}</span>
+                          <span className={`text-[8px] ${sub.color}/80 truncate`}>{sub.name}</span>
+                        </div>
+                      ))}
+                    </motion.div>
+                  )}
                 </div>
               );
             })}
@@ -1129,12 +1174,18 @@ export default function TeamPortalInline({ token }: { token: string }) {
             <p className="text-xs text-muted-foreground mb-4">Create a new session or select an existing one to start the multi-agent pipeline</p>
           </div>
           <div className="flex flex-wrap gap-2 justify-center">
-            {PIPELINE.map(agent => (
-              <div key={agent} className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] ${AGENT_BG[agent]} ${AGENT_COLORS[agent]}`}>
-                <span>{AGENT_ICONS[agent]}</span>
-                <span>{agent}</span>
-              </div>
-            ))}
+            {PIPELINE.map(agent => {
+              const display = PIPELINE_DISPLAY[agent];
+              const displayName = display?.displayName ?? agent;
+              const subCount = display?.subAgents.length ?? 0;
+              return (
+                <div key={agent} className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] ${AGENT_BG[agent]} ${AGENT_COLORS[agent]}`}>
+                  <span>{AGENT_ICONS[agent]}</span>
+                  <span>{displayName}</span>
+                  {subCount > 0 && <span className="text-[8px] opacity-60">({subCount})</span>}
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : (
