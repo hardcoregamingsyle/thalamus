@@ -3,7 +3,7 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { callGemini, performSearch, performScrape, parseAgentOutput, parsePlannerOutput, AGENT_SYSTEM_PROMPTS, PlannerTask, CLAUDE_PRICING, calcClaudeCost } from "./agentCore";
+import { callGemini, performSearch, performScrape, parseAgentOutput, parsePlannerOutput, AGENT_SYSTEM_PROMPTS, PlannerTask, CLAUDE_PRICING, calcClaudeCost, calcAgentBucksFromTokens } from "./agentCore";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_MESSAGES = 600;
@@ -666,15 +666,15 @@ export const runAgentRound = action({
       });
     }
 
-    // Cost accounting
+    // Cost accounting — new formula: AB = (tokens / 1M) * costPerMillion * 1,500,000
     // Current model: Gemini 3.1 Flash Lite Preview: $0.60/1M input, $2.40/1M output
-    // Future Claude models (via Amazon Bedrock) — use calcClaudeCost() from agentCore when switching:
+    // Future Claude models (via Amazon Bedrock) — swap these rates when switching:
     //   claude-haiku-4-5:  $1.80/1M input, $7.20/1M output
     //   claude-sonnet-4-6: $5.40/1M input, $26.50/1M output
     //   claude-opus-4-6:   $7.44/1M input, $42.00/1M output
     //   claude-opus-4-7:   $12.00/1M input, $60.00/1M output
-    const costCents = Math.ceil((inputTokens / 1_000_000) * 60 + (outputTokens / 1_000_000) * 240);
-    await ctx.runMutation(internal.sandboxHelpers.addUserCost, { userId, costCents });
+    const agentBucksToDeduct = calcAgentBucksFromTokens(inputTokens, outputTokens, 0.60, 2.40);
+    await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId, agentBucksToDeduct });
 
     const newTotalMessages = totalMessages + 1;
     await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {

@@ -46,6 +46,44 @@ export function calcClaudeCost(model: ClaudeModel, inputTokens: number, outputTo
        + (outputTokens / 1_000_000) * pricing.outputCentsPerMillion;
 }
 
+/**
+ * Calculate AgentBucks to deduct using the new formula:
+ * AB = (tokens / 1,000,000) * costPerMillion * 1,500,000
+ *
+ * @param inputTokens - Number of input tokens
+ * @param outputTokens - Number of output tokens
+ * @param inputCostPerMillion - Input cost in USD dollars per 1M tokens
+ * @param outputCostPerMillion - Output cost in USD dollars per 1M tokens
+ * @returns Total AgentBucks to deduct (integer, rounded up)
+ */
+export function calcAgentBucksFromTokens(
+  inputTokens: number,
+  outputTokens: number,
+  inputCostPerMillion: number,
+  outputCostPerMillion: number,
+): number {
+  const inputAB = (inputTokens / 1_000_000) * inputCostPerMillion * 1_500_000;
+  const outputAB = (outputTokens / 1_000_000) * outputCostPerMillion * 1_500_000;
+  return Math.ceil(inputAB + outputAB);
+}
+
+/**
+ * Calculate AgentBucks for a Claude model call using the new formula.
+ * @param model - The Claude model identifier
+ * @param inputTokens - Number of input tokens
+ * @param outputTokens - Number of output tokens
+ * @returns AgentBucks to deduct (integer, rounded up)
+ */
+export function calcClaudeAgentBucks(model: ClaudeModel, inputTokens: number, outputTokens: number): number {
+  const pricing = CLAUDE_PRICING[model];
+  return calcAgentBucksFromTokens(
+    inputTokens,
+    outputTokens,
+    pricing.inputCentsPerMillion / 100,  // convert cents to dollars
+    pricing.outputCentsPerMillion / 100,
+  );
+}
+
 const GEMINI_KEYS = [
   "AIzaSyB6LdCRxGz27Xpj-K8-EiOVBQRvl0SPzyQ",
   "AIzaSyBZHdEWGlYTpr26fVGGWBOHxn4dRKkd-9Y",
