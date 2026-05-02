@@ -50,6 +50,7 @@ export default function Portal() {
   const [isThinking, setIsThinking] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [creditModalOpen, setCreditModalOpen] = useState(false);
+  const [spinNotifOpen, setSpinNotifOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const ensureDailyBalance = useMutation(api.customAuthHelpers.ensureDailyBalance);
@@ -60,6 +61,15 @@ export default function Portal() {
     if (token && user !== undefined && user !== null && !hasInitializedRef.current) {
       hasInitializedRef.current = true;
       ensureDailyBalance({ token }).catch(() => {});
+      // Check if user just signed up via referral (has spins but hasn't been notified)
+      const notifKey = `spin_notif_shown_${token.slice(0, 8)}`;
+      if (!localStorage.getItem(notifKey)) {
+        const typedUser = user as { referralSpins?: number; referredBy?: string };
+        if (typedUser.referralSpins && typedUser.referralSpins > 0 && typedUser.referredBy) {
+          localStorage.setItem(notifKey, "1");
+          setTimeout(() => setSpinNotifOpen(true), 1500);
+        }
+      }
     }
   }, [token, user, ensureDailyBalance]);
 
@@ -420,7 +430,57 @@ export default function Portal() {
           </div>
         )}
       </div>
-      <CreditModal open={creditModalOpen} onClose={() => setCreditModalOpen(false)} totalAB={totalAB} dailyAB={dailyAB} purchasedAB={purchasedAB} />
+      <CreditModal open={creditModalOpen} onClose={() => setCreditModalOpen(false)} totalAB={totalAB} dailyAB={dailyAB} purchasedAB={purchasedAB} token={token ?? undefined} />
+
+      {/* Spin notification popup */}
+      <AnimatePresence>
+        {spinNotifOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSpinNotifOpen(false)}
+              className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.85, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.85, y: 20 }}
+              className="relative z-10 bg-card border border-amber-400/40 rounded-2xl shadow-2xl p-8 text-center max-w-sm w-full font-mono"
+            >
+              <motion.div
+                animate={{ rotate: [0, -15, 15, -10, 10, 0], scale: [1, 1.2, 1] }}
+                transition={{ duration: 0.8, delay: 0.2 }}
+                className="text-5xl mb-4"
+              >
+                🎰
+              </motion.div>
+              <h2 className="text-lg font-bold text-foreground mb-2">You Got a Free Spin!</h2>
+              <p className="text-sm text-muted-foreground mb-1">
+                You signed up using a referral link.
+              </p>
+              <p className="text-sm text-amber-400 font-bold mb-6">
+                1 free spin has been added to your account!
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setSpinNotifOpen(false); navigate("/refer"); }}
+                  className="flex-1 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all"
+                >
+                  Spin Now 🎡
+                </button>
+                <button
+                  onClick={() => setSpinNotifOpen(false)}
+                  className="flex-1 bg-muted text-muted-foreground px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-muted/80 transition-all"
+                >
+                  Later
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

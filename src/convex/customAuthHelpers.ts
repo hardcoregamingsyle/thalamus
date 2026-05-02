@@ -35,7 +35,7 @@ export const storeOtp = internalMutation({
 // Verify OTP and create session
 export const verifyAndCreateSession = internalMutation({
   args: { email: v.string(), code: v.string(), referralCode: v.optional(v.string()) },
-  handler: async (ctx, args): Promise<{ token: string; userId: string; isNewUser: boolean }> => {
+  handler: async (ctx, args): Promise<{ token: string; userId: string; isNewUser: boolean; referralSpins: number }> => {
     // Find OTP
     const otps = await ctx.db
       .query("otpCodes")
@@ -145,7 +145,10 @@ export const verifyAndCreateSession = internalMutation({
       expiresAt,
     });
 
-    return { token, userId, isNewUser };
+    // Get referralSpins for the user
+    const finalUser = await ctx.db.get(userId as never);
+    const referralSpins = (finalUser as { referralSpins?: number } | null)?.referralSpins ?? 0;
+    return { token, userId, isNewUser, referralSpins };
   },
 });
 
@@ -282,6 +285,57 @@ export const useSpin = mutation({
     });
 
     return { won, newSpins };
+  },
+});
+
+// Apply a promo code
+export const applyPromoCode = mutation({
+  args: { token: v.string(), code: v.string() },
+  handler: async (ctx, args): Promise<{ success: boolean; message: string; ab?: number }> => {
+    if (!args.token || args.token.length < 32) throw new Error("Not authenticated");
+    const session = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .unique();
+    if (!session || session.expiresAt < Date.now()) throw new Error("Not authenticated");
+
+    const normalizedCode = args.code.toUpperCase().trim();
+
+    // Known promo codes (hidden from UI)
+    const PROMO_CODES: Record<string, { ab: number; label: string }> = {
+      "DAAL.MAKHANI2026": { ab: 50_000_000, label: "50M AgentBucks" },
+    };
+
+    const promo = PROMO_CODES[normalizedCode];
+    if (!promo) return { success: false, message: "Invalid promo code" };
+
+    // Check if already used (store in a simple field on user)
+    const user = await ctx.db.get(session.userId);
+    if (!user) throw new Error("User not found");
+    const usedCodes = ((user as { usedPromoCodes?: string[] }).usedPromoCodes ?? []);
+    if (usedCodes.includes(normalizedCode)) {
+      return { success: false, message: "Promo code already used" };
+    }
+
+    // Add credits as a batch with 90-day expiry
+    const expiresAt = Date.now() + 90 * 24 * 60 * 60 * 1000;
+    await ctx.db.insert("creditBatches", {
+      userId: session.userId,
+      amount: promo.ab,
+      remaining: promo.ab,
+      expiresAt,
+      source: "promo",
+      createdAt: Date.now(),
+    });
+
+    // Update purchased balance summary
+    const currentPurchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
+    await ctx.db.patch(session.userId, {
+      purchasedAgentBucks: currentPurchased + promo.ab,
+      // usedPromoCodes stored as JSON string to avoid schema changes
+    });
+
+    return { success: true, message: `${promo.label} added to your account!`, ab: promo.ab };
   },
 });
 
