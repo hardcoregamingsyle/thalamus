@@ -1,15 +1,16 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useQuery, useMutation } from "convex/react";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
   Loader2, Plus, CheckCircle, Terminal, Box, Globe, ExternalLink,
-  Play, Square, Send, FileCode, Monitor, ChevronRight, ChevronDown, Activity,
+  Play, Square, Send, FileCode, Monitor, ChevronRight, Activity,
   MessageSquare, StopCircle, ListPlus, Cpu, Shield, Search, Code2,
-  CheckSquare, AlertCircle, RefreshCw, Folder, FolderOpen, Upload, Download,
+  CheckSquare, AlertCircle, RefreshCw, Upload,
 } from "lucide-react";
+import { FileTreeView, FileTreeFile, FileTreeNode } from "@/components/FileTree";
 import ReactMarkdown from "react-markdown";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -233,123 +234,204 @@ function MessageContent({ msg, currentTaskIndex }: { msg: { _id?: string; agent:
   );
 }
 
-// ── File Tree Component ────────────────────────────────────────────────────────
-interface FileTreeNode {
-  name: string;
-  path: string;
-  type: "file" | "folder";
-  children?: FileTreeNode[];
-  file?: { filepath: string; content: string; lastModifiedBy: string };
-}
-
-function buildFileTree(files: Array<{ filepath: string; content: string; lastModifiedBy: string }>): FileTreeNode[] {
-  // Use a simple recursive map approach
-  const rootMap = new Map<string, FileTreeNode>();
-
-  function getOrCreateFolder(map: Map<string, FileTreeNode>, name: string, fullPath: string): FileTreeNode {
-    if (!map.has(name)) {
-      map.set(name, { name, path: fullPath, type: "folder", children: [] });
-    }
-    return map.get(name)!;
-  }
-
-  for (const file of files) {
-    const parts = file.filepath.split("/").filter(Boolean);
-    let currentMap = rootMap;
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const fullPath = parts.slice(0, i + 1).join("/");
-      const isLast = i === parts.length - 1;
-
-      if (isLast) {
-        // It's a file — add to current map if not already there
-        if (!currentMap.has(part)) {
-          currentMap.set(part, { name: part, path: fullPath, type: "file", file });
-        }
-      } else {
-        // It's a folder — get or create it, then descend into its children map
-        const folder = getOrCreateFolder(currentMap, part, fullPath);
-        // Build a child map from the folder's children array
-        if (!folder.children) folder.children = [];
-        const childMap = new Map<string, FileTreeNode>();
-        for (const child of folder.children) childMap.set(child.name, child);
-        // Replace folder's children with a proxy that stays in sync
-        // We'll use a special property to track the child map
-        (folder as FileTreeNode & { _map: Map<string, FileTreeNode> })._map = childMap;
-        currentMap = childMap;
-      }
-    }
-  }
-
-  // Sync all _map entries back into children arrays
-  function finalize(map: Map<string, FileTreeNode>): FileTreeNode[] {
-    const nodes: FileTreeNode[] = [];
-    for (const node of map.values()) {
-      const n = node as FileTreeNode & { _map?: Map<string, FileTreeNode> };
-      if (n._map) {
-        n.children = finalize(n._map);
-        delete n._map;
-      }
-      nodes.push(node);
-    }
-    // Sort: folders first, then files, both alphabetically
-    return nodes.sort((a, b) => {
-      if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-  }
-
-  return finalize(rootMap);
-}
-
-function FileTreeNode({
-  node,
-  depth,
-  selectedPath,
-  onSelect,
+// ── Files Tab for TeamPortalInline ────────────────────────────────────────────
+function FilesTabInline({
+  projectFiles, selectedFile, setSelectedFile, activeSessionId, token,
 }: {
-  node: FileTreeNode;
-  depth: number;
-  selectedPath: string | null;
-  onSelect: (file: { filepath: string; content: string; lastModifiedBy: string }) => void;
+  projectFiles: ProjectFile[];
+  selectedFile: ProjectFile | null;
+  setSelectedFile: (f: ProjectFile | null) => void;
+  activeSessionId: Id<"teamSessions"> | null;
+  token: string;
 }) {
-  const [expanded, setExpanded] = useState(depth < 2);
+  const deleteFileMutation = useMutation(api.agentTeamHelpers.deleteFilePublic);
+  const renameFileMutation = useMutation(api.agentTeamHelpers.renameFilePublic);
+  const createFileMutation = useMutation(api.agentTeamHelpers.createFilePublic);
+  const duplicateFileMutation = useMutation(api.agentTeamHelpers.duplicateFilePublic);
 
-  if (node.type === "file") {
-    const isSelected = selectedPath === node.path;
-    return (
-      <button
-        onClick={() => node.file && onSelect(node.file)}
-        className={`w-full text-left flex items-center gap-1.5 px-2 py-1 rounded text-[10px] transition-all ${
-          isSelected ? "bg-primary/15 border border-primary/20 text-primary" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-        }`}
-        style={{ paddingLeft: `${8 + depth * 12}px` }}
-      >
-        <FileCode className="h-3 w-3 shrink-0" />
-        <span className="truncate">{node.name}</span>
-      </button>
-    );
-  }
+  const handleDelete = async (node: FileTreeNode) => {
+    if (!activeSessionId || !token) return;
+    try {
+      if (node.type === "folder") {
+        // Delete all files under this folder
+        const toDelete = projectFiles.filter(f => f.filepath === node.path || f.filepath.startsWith(node.path + "/"));
+        await Promise.all(toDelete.map(f => deleteFileMutation({ sessionId: activeSessionId, filepath: f.filepath, token })));
+        toast.success(`Folder "${node.name}" deleted`);
+      } else {
+        await deleteFileMutation({ sessionId: activeSessionId, filepath: node.path, token });
+        if (selectedFile?.filepath === node.path) setSelectedFile(null);
+        toast.success(`File "${node.name}" deleted`);
+      }
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Delete failed"); }
+  };
+
+  const handleRename = async (node: FileTreeNode, newName: string) => {
+    if (!activeSessionId || !token || !newName.trim()) return;
+    try {
+      if (node.type === "folder") {
+        // Rename all files under this folder
+        const toRename = projectFiles.filter(f => f.filepath === node.path || f.filepath.startsWith(node.path + "/"));
+        const parentDir = node.path.includes("/") ? node.path.substring(0, node.path.lastIndexOf("/")) : "";
+        const newFolderPath = parentDir ? `${parentDir}/${newName.trim()}` : newName.trim();
+        await Promise.all(toRename.map(f => {
+          const newPath = newFolderPath + f.filepath.slice(node.path.length);
+          return renameFileMutation({ sessionId: activeSessionId, oldPath: f.filepath, newPath, token });
+        }));
+        toast.success(`Folder renamed to "${newName}"`);
+      } else {
+        const dir = node.path.includes("/") ? node.path.substring(0, node.path.lastIndexOf("/")) : "";
+        const newPath = dir ? `${dir}/${newName.trim()}` : newName.trim();
+        await renameFileMutation({ sessionId: activeSessionId, oldPath: node.path, newPath, token });
+        if (selectedFile?.filepath === node.path) setSelectedFile({ ...selectedFile, filepath: newPath });
+        toast.success(`Renamed to "${newName}"`);
+      }
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Rename failed"); }
+  };
+
+  const handleDuplicate = async (node: FileTreeNode) => {
+    if (!activeSessionId || !token) return;
+    try {
+      if (node.type === "file") {
+        const dir = node.path.includes("/") ? node.path.substring(0, node.path.lastIndexOf("/")) : "";
+        const ext = node.name.includes(".") ? node.name.substring(node.name.lastIndexOf(".")) : "";
+        const base = node.name.includes(".") ? node.name.substring(0, node.name.lastIndexOf(".")) : node.name;
+        const newPath = dir ? `${dir}/${base}_copy${ext}` : `${base}_copy${ext}`;
+        await duplicateFileMutation({ sessionId: activeSessionId, sourcePath: node.path, destPath: newPath, token });
+        toast.success(`Duplicated as "${base}_copy${ext}"`);
+      } else {
+        toast.info("Folder duplication not supported yet");
+      }
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Duplicate failed"); }
+  };
+
+  const handleDownload = (node: FileTreeNode) => {
+    if (node.type === "file" && node.file) {
+      const a = document.createElement("a");
+      a.href = `data:text/plain;charset=utf-8,${encodeURIComponent(node.file.content)}`;
+      a.download = node.name;
+      a.click();
+    } else if (node.type === "folder") {
+      // Download all files in folder as a zip-like text
+      const folderFiles = projectFiles.filter(f => f.filepath.startsWith(node.path + "/") || f.filepath === node.path);
+      const content = folderFiles.map(f => `=== ${f.filepath} ===\n${f.content}`).join("\n\n");
+      const a = document.createElement("a");
+      a.href = `data:text/plain;charset=utf-8,${encodeURIComponent(content)}`;
+      a.download = `${node.name}.txt`;
+      a.click();
+    }
+  };
+
+  const handleCreateFile = async (parentPath: string) => {
+    if (!activeSessionId || !token) return;
+    const name = prompt("File name:");
+    if (!name?.trim()) return;
+    const filepath = parentPath ? `${parentPath}/${name.trim()}` : name.trim();
+    try {
+      await createFileMutation({ sessionId: activeSessionId, filepath, content: "", token });
+      toast.success(`Created "${name}"`);
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Create failed"); }
+  };
+
+  const handleCreateFolder = async (parentPath: string) => {
+    if (!activeSessionId || !token) return;
+    const name = prompt("Folder name:");
+    if (!name?.trim()) return;
+    const filepath = parentPath ? `${parentPath}/${name.trim()}/.gitkeep` : `${name.trim()}/.gitkeep`;
+    try {
+      await createFileMutation({ sessionId: activeSessionId, filepath, content: "", token });
+      toast.success(`Folder "${name}" created`);
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Create failed"); }
+  };
+
+  const handleMove = async (sourcePath: string, destFolderPath: string) => {
+    if (!activeSessionId || !token) return;
+    const fileName = sourcePath.split("/").pop() ?? sourcePath;
+    const newPath = destFolderPath ? `${destFolderPath}/${fileName}` : fileName;
+    if (newPath === sourcePath) return;
+    try {
+      await renameFileMutation({ sessionId: activeSessionId, oldPath: sourcePath, newPath, token });
+      if (selectedFile?.filepath === sourcePath) setSelectedFile({ ...selectedFile, filepath: newPath });
+      toast.success(`Moved to ${destFolderPath || "root"}`);
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Move failed"); }
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!activeSessionId || !token) return;
+    const files = Array.from(e.target.files ?? []);
+    for (const file of files) {
+      try {
+        const text = await file.text();
+        await createFileMutation({ sessionId: activeSessionId, filepath: file.name, content: text, token });
+        toast.success(`Uploaded "${file.name}"`);
+      } catch { toast.error(`Failed to upload "${file.name}"`); }
+    }
+    e.target.value = "";
+  };
+
+  const treeFiles: FileTreeFile[] = projectFiles.map(f => ({ filepath: f.filepath, content: f.content, lastModifiedBy: f.lastModifiedBy }));
 
   return (
-    <div>
-      <button
-        onClick={() => setExpanded(e => !e)}
-        className="w-full text-left flex items-center gap-1.5 px-2 py-1 rounded text-[10px] text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-all"
-        style={{ paddingLeft: `${8 + depth * 12}px` }}
-      >
-        {expanded ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
-        {expanded ? <FolderOpen className="h-3 w-3 shrink-0 text-amber-400" /> : <Folder className="h-3 w-3 shrink-0 text-amber-400" />}
-        <span className="truncate font-medium">{node.name}</span>
-      </button>
-      {expanded && node.children && (
-        <div>
-          {node.children.map(child => (
-            <FileTreeNode key={child.path} node={child} depth={depth + 1} selectedPath={selectedPath} onSelect={onSelect} />
-          ))}
+    <div className="h-full flex overflow-hidden">
+      {/* File tree sidebar */}
+      <div className="w-56 shrink-0 border-r border-border flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="shrink-0 px-3 py-2 border-b border-border bg-card/50 flex items-center justify-between gap-1">
+          <span className="text-[10px] font-bold text-foreground">{projectFiles.length} FILES</span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => handleCreateFile("")}
+              className="flex items-center gap-0.5 px-1.5 py-0.5 bg-primary/10 border border-primary/30 text-primary text-[9px] rounded hover:bg-primary/20 transition-all"
+              title="New File"
+            >+ File</button>
+            <button
+              onClick={() => handleCreateFolder("")}
+              className="flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-400/10 border border-amber-400/30 text-amber-400 text-[9px] rounded hover:bg-amber-400/20 transition-all"
+              title="New Folder"
+            >+ Folder</button>
+            <label className="cursor-pointer flex items-center gap-0.5 px-1.5 py-0.5 bg-muted/50 border border-border text-muted-foreground text-[9px] rounded hover:bg-muted transition-all" title="Upload">
+              <Upload className="h-2.5 w-2.5" />
+              <input type="file" multiple className="hidden" onChange={handleUpload} />
+            </label>
+          </div>
         </div>
-      )}
+        {/* Tree */}
+        <FileTreeView
+          files={treeFiles}
+          selectedPath={selectedFile?.filepath ?? null}
+          onSelect={(f) => setSelectedFile(f)}
+          onDelete={handleDelete}
+          onDuplicate={handleDuplicate}
+          onRename={handleRename}
+          onDownload={handleDownload}
+          onCreateFile={handleCreateFile}
+          onCreateFolder={handleCreateFolder}
+          onMove={handleMove}
+        />
+      </div>
+      {/* File content */}
+      <div className="flex-1 overflow-y-auto min-w-0">
+        {selectedFile ? (
+          <div className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <FileCode className="h-4 w-4 text-primary" />
+              <span className="text-xs font-bold text-primary truncate">{selectedFile.filepath}</span>
+              <span className="text-[10px] text-muted-foreground ml-auto shrink-0">by {selectedFile.lastModifiedBy}</span>
+              <a
+                href={`data:text/plain;charset=utf-8,${encodeURIComponent(selectedFile.content)}`}
+                download={selectedFile.filepath.split("/").pop() ?? "file"}
+                className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 bg-primary/10 border border-primary/30 text-primary text-[9px] rounded hover:bg-primary/20 transition-all"
+              >DL</a>
+            </div>
+            <pre className="text-[11px] text-foreground bg-background border border-border rounded-xl p-4 overflow-x-auto whitespace-pre-wrap break-words">
+              {selectedFile.content}
+            </pre>
+          </div>
+        ) : (
+          <div className="h-full flex items-center justify-center">
+            <p className="text-xs text-muted-foreground">Select a file to view</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1009,99 +1091,13 @@ export default function TeamPortalInline({ token }: { token: string }) {
 
             {/* FILES TAB */}
             {activeTab === "files" && (
-              <div className="h-full flex overflow-hidden">
-                {/* File tree sidebar */}
-                <div className="w-56 shrink-0 border-r border-border flex flex-col overflow-hidden">
-                  {/* Header with upload */}
-                  <div className="shrink-0 px-3 py-2 border-b border-border bg-card/50 flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <Folder className="h-3.5 w-3.5 text-amber-400" />
-                      <span className="text-[10px] font-bold text-foreground">{projectFiles.length} FILES</span>
-                    </div>
-                    <label className="cursor-pointer flex items-center gap-1 px-1.5 py-0.5 bg-primary/10 border border-primary/30 text-primary text-[9px] rounded hover:bg-primary/20 transition-all">
-                      <Upload className="h-2.5 w-2.5" />
-                      UPLOAD
-                      <input
-                        type="file"
-                        multiple
-                        className="hidden"
-                        onChange={async (e) => {
-                          const files = Array.from(e.target.files ?? []);
-                          for (const file of files) {
-                            const text = await file.text();
-                            if (activeSessionId && token) {
-                              try {
-                                await (async () => {
-                                  const { api: convexApi } = await import("@/convex/_generated/api");
-                                  void convexApi;
-                                })().catch(() => {});
-                                // Use upsertFile via the sandbox uploadFile action
-                                const { useAction: _ua } = await import("convex/react");
-                                void _ua;
-                              } catch { /* ignore */ }
-                              // Direct approach: save via agentTeamHelpers through a mutation
-                              // We'll use the existing testFileWrite pattern but for real upload
-                              toast.info(`Uploading ${file.name}...`);
-                              try {
-                                if (activeSandboxId) {
-                                  const uploadFileAction = (await import("@/convex/_generated/api")).api.sandbox.uploadFile;
-                                  void uploadFileAction;
-                                }
-                              } catch { /* ignore */ }
-                              // Fallback: show the file in the UI by adding to projectFiles via a direct mutation
-                              toast.success(`${file.name} uploaded`);
-                            }
-                          }
-                          e.target.value = "";
-                        }}
-                      />
-                    </label>
-                  </div>
-                  {/* Tree */}
-                  <div className="flex-1 overflow-y-auto p-1">
-                    {projectFiles.length === 0 ? (
-                      <p className="text-[10px] text-muted-foreground p-3 text-center">No files yet</p>
-                    ) : (
-                      buildFileTree(projectFiles).map(node => (
-                        <FileTreeNode
-                          key={node.path}
-                          node={node}
-                          depth={0}
-                          selectedPath={selectedFile?.filepath ?? null}
-                          onSelect={setSelectedFile}
-                        />
-                      ))
-                    )}
-                  </div>
-                </div>
-                {/* File content */}
-                <div className="flex-1 overflow-y-auto min-w-0">
-                  {selectedFile ? (
-                    <div className="p-4">
-                      <div className="flex items-center gap-2 mb-3">
-                        <FileCode className="h-4 w-4 text-primary" />
-                        <span className="text-xs font-bold text-primary truncate">{selectedFile.filepath}</span>
-                        <span className="text-[10px] text-muted-foreground ml-auto shrink-0">by {selectedFile.lastModifiedBy}</span>
-                        <a
-                          href={`data:text/plain;charset=utf-8,${encodeURIComponent(selectedFile.content)}`}
-                          download={selectedFile.filepath.split("/").pop() ?? "file"}
-                          className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 bg-primary/10 border border-primary/30 text-primary text-[9px] rounded hover:bg-primary/20 transition-all"
-                        >
-                          <Download className="h-2.5 w-2.5" />
-                          DL
-                        </a>
-                      </div>
-                      <pre className="text-[11px] text-foreground bg-background border border-border rounded-xl p-4 overflow-x-auto whitespace-pre-wrap break-words">
-                        {selectedFile.content}
-                      </pre>
-                    </div>
-                  ) : (
-                    <div className="h-full flex items-center justify-center">
-                      <p className="text-xs text-muted-foreground">Select a file to view</p>
-                    </div>
-                  )}
-                </div>
-              </div>
+              <FilesTabInline
+                projectFiles={projectFiles}
+                selectedFile={selectedFile}
+                setSelectedFile={setSelectedFile}
+                activeSessionId={activeSessionId}
+                token={token}
+              />
             )}
 
             {/* SANDBOX TAB */}
