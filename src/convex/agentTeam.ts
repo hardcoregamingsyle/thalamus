@@ -8,7 +8,7 @@ import { callGemini, callModel, calcAgentBucksForTier, performSearch, performScr
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_MESSAGES = 600;
 const MAX_TASK_MESSAGES = 100;        // per-task message limit
-const MODAL_UPGRADE_TRIGGER = 30;     // messages in task before upgrade activates on rejection (cumulative across restarts)
+const MODAL_UPGRADE_TRIGGER = 40;     // messages in task before upgrade activates on rejection (cumulative across restarts)
 const MODAL_UPGRADE_DURATION = 30;    // messages the upgrade lasts
 const DAYTONA_API = "https://app.daytona.io/api";
 const DAYTONA_API_KEY_FALLBACK = "dtn_7f36b63fc707555bd843029875fb29caf44e4607c2b3ab29a28c73c737e450b5";
