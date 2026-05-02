@@ -1,5 +1,5 @@
 "use node";
-import { action } from "./_generated/server";
+import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
@@ -798,6 +798,319 @@ export const runAgentRound = action({
       totalMessages: newTotalMessages,
       fileOpsCount,
     };
+  },
+});
+
+// ─── Background self-scheduling runner ───────────────────────────────────────
+// This internal action runs one agent round and schedules the next one.
+// Because it uses ctx.scheduler, it continues even when the browser tab is closed.
+export const backgroundRunSession = internalAction({
+  args: { sessionId: v.id("teamSessions") },
+  handler: async (ctx, args): Promise<void> => {
+    // Get session state
+    const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
+    if (!session) return;
+    if (session.status === "completed") return;
+    if (session.status === "running") {
+      // Already running from another invocation — skip to avoid double-running
+      return;
+    }
+
+    try {
+      // Run one agent round using the existing runAgentRound logic
+      // We call it via the internal path by re-using the handler logic
+      const result = await ctx.runAction(internal.agentTeam.backgroundRunOneRound, { sessionId: args.sessionId });
+      
+      // If not done, schedule the next round immediately
+      if (!result.done) {
+        await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunSession, { sessionId: args.sessionId });
+      }
+    } catch (err) {
+      console.error("backgroundRunSession error:", err);
+      // On error, mark session as idle so user can retry
+      await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
+        sessionId: args.sessionId,
+        status: "idle",
+        currentAgent: undefined,
+        round: session.round,
+        loopCount: session.loopCount,
+        phase: session.phase,
+        totalMessages: session.totalMessages,
+      });
+    }
+  },
+});
+
+// Internal action that runs one round (same logic as runAgentRound but internal)
+export const backgroundRunOneRound = internalAction({
+  args: { sessionId: v.id("teamSessions") },
+  handler: async (ctx, args): Promise<{ done: boolean }> => {
+    const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
+    if (!session) return { done: true };
+    if (session.status === "completed") return { done: true };
+
+    const userId = session.userId;
+    const totalMessages = session.totalMessages ?? 0;
+    if (totalMessages >= MAX_MESSAGES) {
+      await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
+        sessionId: args.sessionId, status: "completed", currentAgent: undefined,
+        round: session.round, loopCount: session.loopCount, phase: "completed", totalMessages,
+      });
+      return { done: true };
+    }
+
+    const executionPhase = session.executionPhase ?? "planning";
+    const currentTaskIndex = session.currentTaskIndex ?? 0;
+    const loopCount = session.loopCount ?? 0;
+    const finalReviewCoderEnabled = session.finalReviewCoderEnabled ?? false;
+
+    let plannerTasks: PlannerTask[] = [];
+    if (session.plannerTasksJson) {
+      try { plannerTasks = JSON.parse(session.plannerTasksJson) as PlannerTask[]; } catch { /* ignore */ }
+    }
+
+    const pipeline = getPipeline(executionPhase, plannerTasks, currentTaskIndex, finalReviewCoderEnabled);
+    const rawPhase = session.phase ?? pipeline[0];
+    const currentPhase = pipeline.includes(rawPhase) ? rawPhase : pipeline[0];
+
+    const prevMessages = (await ctx.runQuery(internal.agentTeamHelpers.getSessionMessages, { sessionId: args.sessionId })) as MsgRow[];
+    const projectFiles = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.sessionId })) as FileRow[];
+
+    // Build task summaries context for new tasks
+    let taskSummaries: Array<{ taskIndex: number; summary: string }> = [];
+    if (session.taskSummariesJson) {
+      try { taskSummaries = JSON.parse(session.taskSummariesJson) as Array<{ taskIndex: number; summary: string }>; } catch { /* ignore */ }
+    }
+
+    // For tasks phase: only show messages from current task (not previous tasks)
+    // Previous tasks are represented by their summaries
+    let contextMessages = prevMessages;
+    if (executionPhase === "tasks" && currentTaskIndex > 0) {
+      // Find messages from current task only (after the last Summarizer message)
+      const summarizerMessages = prevMessages.filter(m => m.agent === "Summarizer");
+      if (summarizerMessages.length > 0) {
+        const lastSummarizerIdx = prevMessages.lastIndexOf(summarizerMessages[summarizerMessages.length - 1]);
+        contextMessages = prevMessages.slice(lastSummarizerIdx + 1);
+      }
+    }
+
+    const contextLines = contextMessages.slice(-20).map((m) => `[${m.agent}]: ${m.content.slice(0, 1500)}`).join("\n\n---\n\n");
+    const filesContext = projectFiles.length > 0
+      ? `\n\nCURRENT PROJECT FILES (${projectFiles.length} files):\n` +
+        projectFiles.map((f) => `--- ${f.filepath} ---\n${f.content.slice(0, 1500)}${f.content.length > 1500 ? "\n...(truncated)" : ""}`).join("\n\n")
+      : "";
+
+    // Task context
+    let taskContext = "";
+    if (executionPhase === "tasks" && plannerTasks.length > 0) {
+      const currentTask = plannerTasks[currentTaskIndex];
+      if (currentTask) {
+        taskContext = `\n\nCURRENT TASK (${currentTaskIndex + 1}/${plannerTasks.length}): ${currentTask.title}\n${currentTask.description}`;
+        // Add summaries of completed tasks
+        if (taskSummaries.length > 0) {
+          const completedSummaries = taskSummaries.filter(s => s.taskIndex < currentTaskIndex);
+          if (completedSummaries.length > 0) {
+            taskContext += `\n\nCOMPLETED TASKS SUMMARY:\n${completedSummaries.map(s => `Task ${s.taskIndex + 1}: ${s.summary}`).join("\n")}`;
+          }
+        }
+      }
+    }
+
+    // Fetch sandbox
+    let sandboxDbId: Id<"sandboxes"> | null = null;
+    let sandboxDaytonaId: string | null = null;
+    let sandboxContext = "";
+    if (currentPhase !== "Researcher" && currentPhase !== "Analyser" && currentPhase !== "Planner") {
+      const sandbox = (await ctx.runQuery(internal.sandboxHelpers.getSandboxBySession, { sessionId: args.sessionId })) as SandboxDbRow | null;
+      if (sandbox && sandbox.status === "running") {
+        sandboxDbId = sandbox._id;
+        sandboxDaytonaId = sandbox.sandboxId;
+        if (sandbox.lastCommand || sandbox.lastOutput) {
+          sandboxContext = `\n\nLAST SANDBOX OUTPUT:\n$ ${sandbox.lastCommand ?? ""}\n${(sandbox.lastOutput ?? "").slice(0, 1500)}`;
+        }
+      }
+    }
+
+    const systemPrompt = AGENT_SYSTEM_PROMPTS[currentPhase] || AGENT_SYSTEM_PROMPTS["Researcher"];
+    const phaseLabel = executionPhase === "planning" ? "PLANNING PHASE" : executionPhase === "final_review" ? "FINAL REVIEW" : `TASK ${currentTaskIndex + 1}/${plannerTasks.length}`;
+    const prompt = prevMessages.length === 0
+      ? `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\n\nYou are the first agent (${currentPhase}). Begin your work.${filesContext}${sandboxContext}`
+      : `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nLOOP: ${loopCount + 1}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
+
+    await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
+      sessionId: args.sessionId, status: "running", currentAgent: currentPhase,
+      round: session.round, loopCount, phase: currentPhase, totalMessages,
+    });
+
+    // Determine model tier for this agent
+    let agentTier: ModelTier = (AGENT_MODEL_MAP[currentPhase] as ModelTier) ?? "gemini";
+    const currentDifficulty = (session.currentTaskDifficulty ?? "normal") as TaskDifficulty;
+    if (currentPhase === "Coder") {
+      agentTier = DIFFICULTY_CODER_MODEL[currentDifficulty] ?? "gemini";
+    } else if (["DataCorruptor", "ZeroDayExploiter"].includes(currentPhase)) {
+      const override = DIFFICULTY_REDTEAM_SONNET_OVERRIDE[currentDifficulty];
+      if (override) agentTier = override;
+    }
+
+    // Run the agent
+    let agentResult: { rawContent: string; inputTokens: number; outputTokens: number; tier: ModelTier };
+    if (currentPhase === "Researcher") {
+      const r = await runResearchTeam(ctx, args.sessionId, session.task + (taskContext ? `\n\nCurrent task context: ${taskContext}` : ""));
+      agentResult = { ...r, tier: "gemini" };
+    } else if (currentPhase === "Hacker") {
+      const redTeamContext = `PROJECT TASK: ${session.task}\n\nCURRENT PHASE: ${phaseLabel}\n\nPROJECT FILES:\n${projectFiles.map(f => `--- ${f.filepath} ---\n${f.content.slice(0, 2000)}`).join("\n\n").slice(0, 12000)}\n\nPREVIOUS AGENT OUTPUTS:\n${contextLines.slice(0, 4000)}`;
+      const r = await runRedTeam(ctx, args.sessionId, redTeamContext);
+      agentResult = { ...r, tier: "gemini" };
+    } else {
+      agentResult = await runSingleAgentCall(ctx, args.sessionId, userId, currentPhase, prompt, systemPrompt, sandboxDaytonaId, sandboxDbId, agentTier);
+    }
+
+    const { rawContent, inputTokens, outputTokens, tier } = agentResult;
+    const parsed = parseAgentOutput(rawContent);
+
+    // Planner: extract task list
+    if (currentPhase === "Planner" && executionPhase === "planning") {
+      const plannerOutput = parsePlannerOutput(rawContent);
+      if (plannerOutput && plannerOutput.tasks.length > 0) {
+        await ctx.runMutation(internal.agentTeamHelpers.updatePlannerTasks, { sessionId: args.sessionId, plannerTasksJson: JSON.stringify(plannerOutput.tasks) });
+        plannerTasks = plannerOutput.tasks;
+      } else {
+        const defaultTasks: PlannerTask[] = [{ id: "task-1", title: session.task.slice(0, 80), description: `Complete the full implementation: ${session.task}`, subpart: false, dependencies: [] }];
+        await ctx.runMutation(internal.agentTeamHelpers.updatePlannerTasks, { sessionId: args.sessionId, plannerTasksJson: JSON.stringify(defaultTasks) });
+        plannerTasks = defaultTasks;
+      }
+    }
+
+    // File operations
+    let fileOpsCount = 0;
+    const fileOpsMap = new Map<string, typeof parsed.fileOps[0]>();
+    for (const op of parsed.fileOps) { fileOpsMap.set(op.filepath, op); }
+    for (const fileOp of fileOpsMap.values()) {
+      if (fileOp.type === "create" || fileOp.type === "edit") {
+        await ctx.runMutation(internal.agentTeamHelpers.upsertFile, { sessionId: args.sessionId, userId, filepath: fileOp.filepath, content: fileOp.content || "", agent: currentPhase });
+        fileOpsCount++;
+      } else if (fileOp.type === "delete") {
+        await ctx.runMutation(internal.agentTeamHelpers.deleteFile, { sessionId: args.sessionId, filepath: fileOp.filepath });
+        fileOpsCount++;
+      }
+    }
+
+    if (parsed.deployCommands && parsed.deployCommands.length > 0) {
+      await ctx.runMutation(internal.agentTeamHelpers.updateDeployCommands, { sessionId: args.sessionId, deployCommandsJson: JSON.stringify(parsed.deployCommands) });
+    }
+
+    // Cost accounting
+    const agentBucksToDeduct = calcAgentBucksForTier(tier, inputTokens, outputTokens);
+    await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId, agentBucksToDeduct });
+
+    const newTotalMessages = totalMessages + 1;
+    const modelLabel = tier === "gemini" ? "gemini-flash-lite" : tier === "haiku" ? "claude-haiku-4-5" : tier === "sonnet" ? "claude-sonnet-4-6" : tier === "opus46" ? "claude-opus-4-6" : "claude-opus-4-7";
+    await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
+      sessionId: args.sessionId, userId, agent: currentPhase, content: parsed.cleanContent, round: loopCount, messageIndex: newTotalMessages,
+      modelUsed: modelLabel, agentBucksDeducted: agentBucksToDeduct,
+    });
+
+    // Determine next state
+    let nextPhase: string;
+    let newLoopCount = loopCount;
+    let done = false;
+    let newExecutionPhase = executionPhase;
+    let newTaskIndex = currentTaskIndex;
+    let newFinalReviewCoderEnabled = finalReviewCoderEnabled;
+    const currentPipelineIdx = pipeline.indexOf(currentPhase);
+
+    if (executionPhase === "planning") {
+      if (currentPhase === "Planner") {
+        newExecutionPhase = "tasks";
+        newTaskIndex = 0;
+        const taskPipeline = getPipeline("tasks", plannerTasks, 0, false);
+        nextPhase = taskPipeline[0];
+        // Parse difficulty from planner output
+        const difficulty = parseDifficultyFromPlannerOutput(rawContent);
+        await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+          sessionId: args.sessionId, status: "idle", currentAgent: taskPipeline[0], loopCount: newLoopCount,
+          phase: taskPipeline[0], totalMessages: newTotalMessages, executionPhase: "tasks", currentTaskIndex: 0,
+          finalReviewCoderEnabled: false,
+        });
+        await ctx.runMutation(internal.agentTeamHelpers.updateTaskDifficulty, { sessionId: args.sessionId, difficulty });
+        return { done: false };
+      } else {
+        nextPhase = PLANNING_PIPELINE[currentPipelineIdx + 1] || "Planner";
+      }
+    } else if (executionPhase === "tasks") {
+      const taskPipeline = getPipeline("tasks", plannerTasks, currentTaskIndex, false);
+      if (currentPhase === "Tester" && parsed.testerResult === "fail") {
+        nextPhase = taskPipeline[0]; newLoopCount = loopCount + 1;
+      } else if (currentPhase === "Hacker" && parsed.hackerResult === "fail") {
+        nextPhase = taskPipeline[0]; newLoopCount = loopCount + 1;
+      } else if (currentPhase === "Critic") {
+        if (parsed.criticResult === "fail") {
+          nextPhase = taskPipeline[0]; newLoopCount = loopCount + 1;
+        } else {
+          nextPhase = "Summarizer";
+        }
+      } else if (currentPhase === "Summarizer") {
+        // Store summary
+        const newSummaries = [...taskSummaries, { taskIndex: currentTaskIndex, summary: parsed.cleanContent.slice(0, 500) }];
+        await ctx.runMutation(internal.agentTeamHelpers.updateTaskSummaries, { sessionId: args.sessionId, taskSummariesJson: JSON.stringify(newSummaries) });
+        const nextTaskIndex = currentTaskIndex + 1;
+        if (nextTaskIndex < plannerTasks.length) {
+          newTaskIndex = nextTaskIndex;
+          const nextTaskPipeline = getPipeline("tasks", plannerTasks, nextTaskIndex, false);
+          nextPhase = nextTaskPipeline[0];
+        } else {
+          newExecutionPhase = "final_review"; newFinalReviewCoderEnabled = false;
+          nextPhase = FINAL_REVIEW_PIPELINE_SKIP_CODER[0];
+        }
+      } else {
+        const nextIdx = taskPipeline.indexOf(currentPhase) + 1;
+        nextPhase = taskPipeline[nextIdx] || "Critic";
+      }
+    } else {
+      const reviewPipeline = finalReviewCoderEnabled ? FINAL_REVIEW_PIPELINE_WITH_CODER : FINAL_REVIEW_PIPELINE_SKIP_CODER;
+      if (currentPhase === "Critic") {
+        if (parsed.criticResult === "fail") {
+          if (!finalReviewCoderEnabled) {
+            newFinalReviewCoderEnabled = true; nextPhase = FINAL_REVIEW_PIPELINE_WITH_CODER[0]; newLoopCount = loopCount + 1;
+          } else {
+            nextPhase = "completed"; done = true;
+          }
+        } else {
+          nextPhase = "completed"; done = true;
+        }
+      } else {
+        const nextIdx = reviewPipeline.indexOf(currentPhase) + 1;
+        nextPhase = reviewPipeline[nextIdx] || "Critic";
+      }
+    }
+
+    if (newTotalMessages >= MAX_MESSAGES) { done = true; nextPhase = "completed"; }
+
+    await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, { sessionId: args.sessionId, currentAgentOutput: "" });
+    await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+      sessionId: args.sessionId, status: done ? "completed" : "idle",
+      currentAgent: done ? undefined : nextPhase, loopCount: newLoopCount,
+      phase: done ? "completed" : nextPhase, totalMessages: newTotalMessages,
+      executionPhase: done ? "completed" : newExecutionPhase, currentTaskIndex: newTaskIndex,
+      finalReviewCoderEnabled: newFinalReviewCoderEnabled,
+    });
+
+    return { done };
+  },
+});
+
+// Public action to start background execution (called from frontend once)
+export const startBackgroundSession = action({
+  args: { sessionId: v.id("teamSessions"), token: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<void> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+    const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
+    if (!session) throw new Error("Session not found");
+    if (session.userId !== userId) throw new Error("Not authorized");
+    if (session.status === "completed") throw new Error("Session already completed");
+    // Schedule the background runner — it will self-schedule until done
+    await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunSession, { sessionId: args.sessionId });
   },
 });
 
