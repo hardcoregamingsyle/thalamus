@@ -825,8 +825,19 @@ export default function TeamPortalInline({ token }: { token: string }) {
     return () => clearTimeout(timer);
   }, [autoRun, isRunning, sessionInfo, activeSessionId, handleRunNextAgent]);
 
+  const setManualUpgradeMutation = useMutation(api.agentTeamHelpers.setManualUpgrade);
   const handleAutoRun = () => { if (!activeSessionId || !token) return; autoRunRef.current = true; setAutoRun(true); handleRunNextAgent(); };
   const handleStopAutoRun = () => { autoRunRef.current = false; setAutoRun(false); toast.info("Stopped after current agent completes"); };
+
+  const handleToggleManualUpgrade = async () => {
+    if (!activeSessionId || !token) return;
+    const current = (sessionInfo as unknown as Record<string, unknown>)?.manualUpgradeEnabled as boolean | undefined;
+    const newVal = !current;
+    try {
+      await setManualUpgradeMutation({ sessionId: activeSessionId, enabled: newVal, token });
+      toast.success(newVal ? "⚡ Manual Upgrade armed — will activate on next rejection" : "Manual Upgrade disarmed");
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to toggle upgrade"); }
+  };
 
   const handleSendMessage = async () => {
     const text = messageInput.trim();
@@ -1201,6 +1212,30 @@ export default function TeamPortalInline({ token }: { token: string }) {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-muted-foreground">{sessionInfo?.totalMessages ?? 0}/{MAX_MESSAGES} msgs</span>
+                {/* Manual Upgrade button */}
+                {activeSessionId && sessionInfo?.status !== "completed" && (
+                  (() => {
+                    const upgradeActive = (sessionInfo as unknown as Record<string, unknown>)?.taskUpgradeActive as boolean | undefined;
+                    const manualEnabled = (sessionInfo as unknown as Record<string, unknown>)?.manualUpgradeEnabled as boolean | undefined;
+                    const isDisabled = !!upgradeActive; // disabled when upgrade is already active
+                    return (
+                      <button
+                        onClick={handleToggleManualUpgrade}
+                        disabled={isDisabled}
+                        title={isDisabled ? "Upgrade already active" : manualEnabled ? "Click to disarm manual upgrade" : "Arm manual upgrade — activates on next rejection"}
+                        className={`flex items-center gap-1 px-2 py-1 text-[10px] rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                          isDisabled
+                            ? "bg-amber-400/20 border-amber-400/40 text-amber-400"
+                            : manualEnabled
+                            ? "bg-amber-400/20 border-amber-400/50 text-amber-400 animate-pulse"
+                            : "bg-muted/50 border-border text-muted-foreground hover:border-amber-400/50 hover:text-amber-400"
+                        }`}
+                      >
+                        ⚡{isDisabled ? "UPGRADING" : manualEnabled ? "ARMED" : "UPGRADE"}
+                      </button>
+                    );
+                  })()
+                )}
                 {autoRun ? (
                   <button onClick={handleStopAutoRun} className="flex items-center gap-1 px-2 py-1 bg-destructive/10 border border-destructive/30 text-destructive text-[10px] rounded hover:bg-destructive/20 transition-all">
                     <Square className="h-3 w-3" />STOP

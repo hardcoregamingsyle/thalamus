@@ -250,6 +250,7 @@ export const updateSessionFull = internalMutation({
     taskUpgradeActive: v.optional(v.boolean()),
     taskUpgradeMessagesLeft: v.optional(v.number()),
     unfixableTasksJson: v.optional(v.string()),
+    manualUpgradeEnabled: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.sessionId, {
@@ -265,6 +266,7 @@ export const updateSessionFull = internalMutation({
       taskUpgradeActive: args.taskUpgradeActive,
       taskUpgradeMessagesLeft: args.taskUpgradeMessagesLeft,
       unfixableTasksJson: args.unfixableTasksJson,
+      manualUpgradeEnabled: args.manualUpgradeEnabled,
     });
   },
 });
@@ -468,5 +470,16 @@ export const duplicateFilePublic = mutation({
         });
       }
     }
+  },
+});
+
+export const setManualUpgrade = mutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    enabled: v.boolean(),
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, { manualUpgradeEnabled: args.enabled });
   },
 });

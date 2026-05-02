@@ -53,6 +53,7 @@ type SessionRow = {
   taskUpgradeActive?: boolean;        // true = Modal Upgrade is active
   taskUpgradeMessagesLeft?: number;   // messages remaining in upgrade window
   unfixableTasksJson?: string;        // JSON string of { taskIndex: number, title: string }[]
+  manualUpgradeEnabled?: boolean;     // user-activated: force upgrade on next rejection
 };
 type MsgRow = { _id: Id<"agentMessages">; agent: string; content: string; round?: number; messageIndex?: number };
 type FileRow = { _id: Id<"projectFiles">; filepath: string; content: string; lastModifiedBy: string };
@@ -717,6 +718,7 @@ export const runAgentRound = action({
     const taskMessageCount = session.taskMessageCount ?? 0;
     const taskUpgradeActive = session.taskUpgradeActive ?? false;
     const taskUpgradeMessagesLeft = session.taskUpgradeMessagesLeft ?? 0;
+    const manualUpgradeEnabled = session.manualUpgradeEnabled ?? false;
     let unfixableTasks: Array<{ taskIndex: number; title: string }> = [];
     try {
       if (session.unfixableTasksJson) unfixableTasks = JSON.parse(session.unfixableTasksJson);
@@ -982,17 +984,28 @@ export const runAgentRound = action({
 
       if (isRejection) {
         // Check if we should activate Modal Upgrade or skip task
-        if (!taskUpgradeActive && newTaskMessageCount >= MODAL_UPGRADE_TRIGGER) {
+        // Manual upgrade: activate immediately on rejection if user enabled it
+        if (!taskUpgradeActive && (manualUpgradeEnabled || newTaskMessageCount >= MODAL_UPGRADE_TRIGGER)) {
           // Activate Modal Upgrade for next 30 messages
           newTaskUpgradeActive = true;
           newTaskUpgradeMessagesLeft = MODAL_UPGRADE_DURATION;
           nextPhase = taskPipeline[0]; // restart task with upgraded models
           newLoopCount = loopCount + 1;
+          const upgradeReason = manualUpgradeEnabled ? "manually activated by user" : `${newTaskMessageCount} messages used`;
           // Save a system message about the upgrade
           await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
             sessionId: args.sessionId, userId, agent: "System",
-            content: `⚡ MODAL UPGRADE ACTIVATED: Task "${plannerTasks[currentTaskIndex]?.title ?? `Task ${currentTaskIndex + 1}`}" has been struggling (${newTaskMessageCount} messages). Upgrading all agents to maximum capability (Sonnet→Opus 4.7, Haiku→Opus 4.6) for the next ${MODAL_UPGRADE_DURATION} messages.`,
+            content: `⚡ MODAL UPGRADE ACTIVATED (${upgradeReason}): Task "${plannerTasks[currentTaskIndex]?.title ?? `Task ${currentTaskIndex + 1}`}" is being upgraded. All agents now running at maximum capability (Sonnet→Opus 4.7, Haiku→Opus 4.6) for the next ${MODAL_UPGRADE_DURATION} messages.`,
             round: loopCount, messageIndex: newTotalMessages + 0.5,
+          });
+          // Disable manual upgrade flag now that it's been consumed
+          await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+            sessionId: args.sessionId, status: "running", currentAgent: currentPhase,
+            loopCount: newLoopCount, phase: currentPhase, totalMessages: newTotalMessages,
+            executionPhase, currentTaskIndex, finalReviewCoderEnabled,
+            taskMessageCount: newTaskMessageCount, taskUpgradeActive: true,
+            taskUpgradeMessagesLeft: MODAL_UPGRADE_DURATION, unfixableTasksJson: JSON.stringify(newUnfixableTasks),
+            manualUpgradeEnabled: false,
           });
         } else if (taskUpgradeActive && newTaskUpgradeMessagesLeft <= 0) {
           // Upgrade expired and still rejected — skip this task
