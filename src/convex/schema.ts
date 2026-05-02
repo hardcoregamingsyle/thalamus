@@ -107,6 +107,8 @@ const schema = defineSchema(
       taskUpgradeMessagesLeft: v.optional(v.number()),
       // JSON string of { taskIndex: number, title: string, reason: string }[]
       unfixableTasksJson: v.optional(v.string()),
+      // Manual upgrade: user-activated flag to force Modal Upgrade on next rejection
+      manualUpgradeEnabled: v.optional(v.boolean()),
     })
       .index("by_user", ["userId"]),
 
