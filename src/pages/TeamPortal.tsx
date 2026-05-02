@@ -9,9 +9,9 @@ import { toast } from "sonner";
 import {
   Loader2, LogOut, Plus, Users, ArrowLeft, RefreshCw, CheckCircle,
   Terminal, Box, Globe, ExternalLink, Play, Square, Send, FileCode,
-  Monitor, Sun, Moon, ChevronRight, Zap, Activity, Clock, Layers,
+  Monitor, Sun, Moon, ChevronRight, ChevronDown, Zap, Activity, Clock, Layers,
   MessageSquare, StopCircle, ListPlus, Sparkles, Cpu, Shield, Search,
-  Code2, CheckSquare, AlertCircle, Menu, X, Coins,
+  Code2, CheckSquare, AlertCircle, Menu, X, Coins, Folder, FolderOpen, Upload, Download,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -312,6 +312,91 @@ function GlowPulse({ color = "primary" }: { color?: string }) {
       animate={{ opacity: [0, 0.5, 0] }}
       transition={{ duration: 2, repeat: Infinity }}
     />
+  );
+}
+
+// ── FileTree component (shared with TeamPortalInline) ─────────────────────────
+interface FileTreeNode {
+  name: string;
+  path: string;
+  isFile: boolean;
+  content?: string;
+  lastModifiedBy?: string;
+  children?: FileTreeNode[];
+}
+
+function buildFileTree(files: Array<{ filepath: string; content: string; lastModifiedBy: string }>): FileTreeNode[] {
+  const root: Record<string, FileTreeNode> = {};
+  for (const file of files) {
+    const parts = file.filepath.replace(/^\//, "").split("/");
+    let current = root;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isLast = i === parts.length - 1;
+      const fullPath = parts.slice(0, i + 1).join("/");
+      if (!current[part]) {
+        current[part] = isLast
+          ? { name: part, path: fullPath, isFile: true, content: file.content, lastModifiedBy: file.lastModifiedBy }
+          : { name: part, path: fullPath, isFile: false, children: [] };
+      }
+      if (!isLast) {
+        if (!current[part].children) current[part].children = [];
+        current = current[part].children as unknown as Record<string, FileTreeNode>;
+      }
+    }
+  }
+  function sortNodes(nodes: FileTreeNode[]): FileTreeNode[] {
+    return nodes
+      .sort((a, b) => {
+        if (a.isFile !== b.isFile) return a.isFile ? 1 : -1;
+        return a.name.localeCompare(b.name);
+      })
+      .map(n => n.children ? { ...n, children: sortNodes(n.children) } : n);
+  }
+  return sortNodes(Object.values(root));
+}
+
+function FileTreeNodeComponent({
+  node, depth, selectedPath, onSelect,
+}: {
+  node: FileTreeNode;
+  depth: number;
+  selectedPath: string | null;
+  onSelect: (node: FileTreeNode) => void;
+}) {
+  const [expanded, setExpanded] = useState(depth < 2);
+  if (!node.isFile) {
+    return (
+      <div>
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="w-full text-left flex items-center gap-1.5 px-2 py-1 rounded text-[11px] text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-all"
+          style={{ paddingLeft: `${8 + depth * 12}px` }}
+        >
+          {expanded ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
+          {expanded ? <FolderOpen className="h-3 w-3 shrink-0 text-amber-400" /> : <Folder className="h-3 w-3 shrink-0 text-amber-400" />}
+          <span className="truncate font-medium">{node.name}</span>
+        </button>
+        {expanded && node.children && (
+          <div>
+            {node.children.map(child => (
+              <FileTreeNodeComponent key={child.path} node={child} depth={depth + 1} selectedPath={selectedPath} onSelect={onSelect} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+  const isSelected = selectedPath === node.path;
+  return (
+    <button
+      onClick={() => onSelect(node)}
+      className={`w-full text-left flex items-center gap-1.5 px-2 py-1 rounded text-[11px] transition-all ${isSelected ? "bg-primary/15 text-primary border border-primary/20" : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"}`}
+      style={{ paddingLeft: `${8 + depth * 12}px` }}
+    >
+      <FileCode className="h-3 w-3 shrink-0 opacity-60" />
+      <span className="truncate">{node.name}</span>
+    </button>
   );
 }
 
@@ -1253,32 +1338,50 @@ export default function TeamPortal() {
               {/* FILES TAB */}
               {activeTab === "files" && (
                 <div className="h-full flex flex-col md:flex-row overflow-hidden">
-                  {/* File list */}
-                  <div className="md:w-52 shrink-0 border-b md:border-b-0 md:border-r border-border overflow-y-auto bg-card/50 max-h-48 md:max-h-none">
-                    <div className="p-2">
-                      <p className="text-xs text-muted-foreground mb-2 font-bold px-1 flex items-center gap-1.5">
-                        <FileCode className="h-3 w-3" />
-                        FILES ({projectFiles.length})
-                      </p>
+                  {/* File tree sidebar */}
+                  <div className="md:w-56 shrink-0 border-b md:border-b-0 md:border-r border-border overflow-y-auto bg-card/50 max-h-48 md:max-h-none flex flex-col">
+                    {/* Header with upload */}
+                    <div className="shrink-0 px-3 py-2 border-b border-border flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-muted-foreground tracking-widest">FILES ({projectFiles.length})</span>
+                      <label className="cursor-pointer flex items-center gap-1 px-2 py-1 bg-primary/10 border border-primary/30 text-primary text-[10px] rounded hover:bg-primary/20 transition-all">
+                        <Upload className="h-3 w-3" />
+                        <span>Upload</span>
+                        <input
+                          type="file"
+                          multiple
+                          className="hidden"
+                          onChange={async (e) => {
+                            const files = Array.from(e.target.files ?? []);
+                            for (const file of files) {
+                              const text = await file.text();
+                              if (activeSessionId && token) {
+                                try {
+                                  await (window as unknown as { __uploadFile?: (path: string, content: string) => Promise<void> }).__uploadFile?.(file.name, text);
+                                } catch { /* ignore */ }
+                              }
+                            }
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
+                    {/* Tree */}
+                    <div className="flex-1 overflow-y-auto p-1">
                       {projectFiles.length === 0 ? (
-                        <p className="text-xs text-muted-foreground px-1">No files yet</p>
+                        <p className="text-[10px] text-muted-foreground p-3 text-center">No files yet</p>
                       ) : (
-                        <div className="space-y-0.5">
-                          {projectFiles.map((f) => (
-                            <button
-                              key={f.filepath}
-                              onClick={() => setSelectedFile(f)}
-                              className={`w-full text-left px-2 py-1.5 rounded text-xs transition-all truncate ${
-                                selectedFile?.filepath === f.filepath
-                                  ? "bg-primary/15 text-primary"
-                                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                              }`}
-                            >
-                              <div className="truncate font-mono">{f.filepath}</div>
-                              <div className="text-[10px] opacity-60 truncate">{f.lastModifiedBy}</div>
-                            </button>
-                          ))}
-                        </div>
+                        buildFileTree(projectFiles).map(node => (
+                          <FileTreeNodeComponent
+                            key={node.path}
+                            node={node}
+                            depth={0}
+                            selectedPath={selectedFile?.filepath ?? null}
+                            onSelect={(n) => {
+                              const f = projectFiles.find(pf => pf.filepath === n.path);
+                              if (f) setSelectedFile(f);
+                            }}
+                          />
+                        ))
                       )}
                     </div>
                   </div>
@@ -1286,9 +1389,18 @@ export default function TeamPortal() {
                   <div className="flex-1 overflow-auto min-h-0 min-w-0">
                     {selectedFile ? (
                       <div className="h-full flex flex-col">
-                        <div className="shrink-0 px-3 py-2 border-b border-border bg-card/50 flex items-center justify-between">
+                        <div className="shrink-0 px-3 py-2 border-b border-border bg-card/50 flex items-center justify-between gap-2">
                           <span className="text-xs font-mono text-primary truncate">{selectedFile.filepath}</span>
-                          <span className="text-[10px] text-muted-foreground shrink-0 ml-2">{selectedFile.lastModifiedBy}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[10px] text-muted-foreground">{selectedFile.lastModifiedBy}</span>
+                            <a
+                              href={`data:text/plain;charset=utf-8,${encodeURIComponent(selectedFile.content)}`}
+                              download={selectedFile.filepath.split("/").pop() ?? "file"}
+                              className="flex items-center gap-1 px-2 py-1 bg-primary/10 border border-primary/30 text-primary text-[10px] rounded hover:bg-primary/20 transition-all"
+                            >
+                              <Download className="h-3 w-3" />
+                            </a>
+                          </div>
                         </div>
                         <pre className="flex-1 overflow-auto p-3 text-xs font-mono text-foreground/80 leading-relaxed whitespace-pre-wrap break-all">
                           {selectedFile.content}
