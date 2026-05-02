@@ -63,16 +63,17 @@ export function calcClaudeAgentBucks(model: ClaudeModel, inputTokens: number, ou
 export type ModelTier = "gemini" | "haiku" | "sonnet" | "opus46" | "opus47";
 
 // Default model per agent (Code Mode)
+// Analyser: haiku for planning phase, gemini for task/subtask phase (see agentTeam.ts override)
 export const AGENT_MODEL_MAP: Record<string, ModelTier> = {
   // Planning phase
   Researcher: "gemini",
-  Analyser: "sonnet",
+  Analyser: "haiku",     // haiku for first-time/planning; overridden to gemini in task/subtask
   Planner: "haiku",
   // Task execution
-  Coder: "gemini",       // overridden by difficulty
+  Coder: "sonnet",       // sonnet-4-6 by default; overridden by difficulty
   Optimiser: "sonnet",
-  Organizer: "sonnet",
-  Tester: "gemini",
+  Organizer: "gemini",   // gemini-3.1-flash-lite-preview
+  Tester: "haiku",       // haiku-4-5
   Summarizer: "gemini",
   // Red Team sub-agents
   VulnerabilitySpotter: "haiku",
@@ -90,7 +91,7 @@ export const AGENT_MODEL_MAP: Record<string, ModelTier> = {
 
 // Difficulty → Coder model override
 export const DIFFICULTY_CODER_MODEL: Record<string, ModelTier> = {
-  normal: "gemini",
+  normal: "sonnet",      // sonnet-4-6 for normal tasks
   hard: "opus46",
   extreme: "opus47",
 };
