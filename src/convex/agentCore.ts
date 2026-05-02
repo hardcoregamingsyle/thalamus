@@ -70,16 +70,16 @@ export const AGENT_MODEL_MAP: Record<string, ModelTier> = {
   Analyser: "haiku",     // haiku for first-time/planning; overridden to gemini in task/subtask
   Planner: "haiku",
   // Task execution
-  Coder: "sonnet",       // sonnet-4-6 by default; overridden by difficulty
+  Coder: "sonnet",       // sonnet-4-6; overridden by difficulty
   Optimiser: "sonnet",
   Organizer: "gemini",   // gemini-3.1-flash-lite-preview
   Tester: "haiku",       // haiku-4-5
   Summarizer: "gemini",
   // Red Team sub-agents
-  VulnerabilitySpotter: "haiku",
-  DataCorruptor: "sonnet",
-  ZeroDayExploiter: "sonnet",
-  FrameworkAuditor: "haiku",
+  VulnerabilitySpotter: "gemini",  // fast scan, gemini is sufficient
+  DataCorruptor: "haiku",          // haiku-4-5
+  ZeroDayExploiter: "sonnet",      // sonnet-4-6
+  FrameworkAuditor: "sonnet",      // sonnet-4-6; overridden to opus46/opus47 by difficulty
   RedTeamOrchestrator: "gemini",
   // Final review
   Critic: "gemini",
@@ -92,6 +92,13 @@ export const AGENT_MODEL_MAP: Record<string, ModelTier> = {
 // Difficulty → Coder model override
 export const DIFFICULTY_CODER_MODEL: Record<string, ModelTier> = {
   normal: "sonnet",      // sonnet-4-6 for normal tasks
+  hard: "opus46",
+  extreme: "opus47",
+};
+
+// Difficulty → FrameworkAuditor model override
+export const DIFFICULTY_FRAMEWORK_AUDITOR_MODEL: Record<string, ModelTier> = {
+  normal: "sonnet",
   hard: "opus46",
   extreme: "opus47",
 };
