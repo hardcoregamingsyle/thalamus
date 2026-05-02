@@ -172,6 +172,166 @@ export const ragQueryVector = action({
   },
 });
 
+// ─── Auto-RAG: vectorize a single file into the RAG/vector DB ─────────────────
+export const vectorizeFile = internalAction({
+  args: { sessionId: v.id("teamSessions"), filepath: v.string(), content: v.string() },
+  handler: async (_ctx, args): Promise<void> => {
+    if (!args.content.trim() || args.content.length < 10) return; // skip empty files
+    const docId = `${args.sessionId}:${args.filepath}`;
+    const text = `FILE: ${args.filepath}\n\n${args.content.slice(0, 8000)}`;
+    try {
+      await fetch(`${RAG_BASE_URL}/add_document`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: docId, text }),
+      });
+    } catch { /* RAG unavailable — non-fatal */ }
+  },
+});
+
+// ─── Vectorize all files in a session (runs GraphRAG index after) ─────────────
+// Public wrapper for frontend to call
+export const vectorizeSessionPublic = action({
+  args: { sessionId: v.id("teamSessions"), token: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<{ indexed: number }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+    await ctx.scheduler.runAfter(0, internal.agentTeam.vectorizeSession, { sessionId: args.sessionId });
+    return { indexed: 0 };
+  },
+});
+
+export const vectorizeSession = internalAction({
+  args: { sessionId: v.id("teamSessions"), token: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<{ indexed: number }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+    const files = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.sessionId })) as FileRow[];
+    let indexed = 0;
+    for (const file of files) {
+      if (!file.content.trim() || file.content.length < 10) continue;
+      const docId = `${args.sessionId}:${file.filepath}`;
+      const text = `FILE: ${file.filepath}\n\n${file.content.slice(0, 8000)}`;
+      try {
+        const res = await fetch(`${RAG_BASE_URL}/add_document`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: docId, text }),
+        });
+        if (res.ok) indexed++;
+      } catch { /* non-fatal */ }
+    }
+    // Run GraphRAG index after all documents are added
+    try {
+      await fetch(`${RAG_BASE_URL}/run_graphrag_index`, { method: "POST", headers: { "Content-Type": "application/json" } });
+    } catch { /* non-fatal */ }
+    return { indexed };
+  },
+});
+
+// ─── GitHub import: fetch all files from a public GitHub repo ─────────────────
+// Uses the public GitHub API — no token required for public repos
+export const importFromGithub = action({
+  args: {
+    sessionId: v.id("teamSessions"),
+    repoUrl: v.string(), // e.g. "https://github.com/owner/repo" or "owner/repo"
+    branch: v.optional(v.string()), // defaults to "main"
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ imported: number; errors: string[] }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    // Parse owner/repo from URL
+    let ownerRepo = args.repoUrl.trim();
+    ownerRepo = ownerRepo.replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/$/, "");
+    const parts = ownerRepo.split("/");
+    if (parts.length < 2) throw new Error("Invalid GitHub URL. Use format: owner/repo or https://github.com/owner/repo");
+    const owner = parts[0];
+    const repo = parts[1];
+    const branch = args.branch ?? "main";
+
+    // Get the file tree from GitHub API
+    const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
+    const treeRes = await fetch(treeUrl, {
+      headers: { "Accept": "application/vnd.github.v3+json", "User-Agent": "Thalamus-AI/1.0" },
+    });
+
+    if (!treeRes.ok) {
+      // Try "master" branch if "main" fails
+      if (branch === "main") {
+        const masterUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/master?recursive=1`;
+        const masterRes = await fetch(masterUrl, {
+          headers: { "Accept": "application/vnd.github.v3+json", "User-Agent": "Thalamus-AI/1.0" },
+        });
+        if (!masterRes.ok) throw new Error(`GitHub API error: ${masterRes.status}. Make sure the repo is public.`);
+        const masterData = await masterRes.json() as { tree: Array<{ path: string; type: string; url: string; size?: number }> };
+        return await processGithubTree(ctx, masterData.tree, owner, repo, "master", args.sessionId, userId);
+      }
+      throw new Error(`GitHub API error: ${treeRes.status}. Make sure the repo is public.`);
+    }
+
+    const treeData = await treeRes.json() as { tree: Array<{ path: string; type: string; url: string; size?: number }> };
+    return await processGithubTree(ctx, treeData.tree, owner, repo, branch, args.sessionId, userId);
+  },
+});
+
+// Helper to process GitHub tree and import files
+async function processGithubTree(
+  ctx: { runMutation: Function; scheduler: { runAfter: Function } },
+  tree: Array<{ path: string; type: string; url: string; size?: number }>,
+  owner: string,
+  repo: string,
+  branch: string,
+  sessionId: Id<"teamSessions">,
+  userId: Id<"users">,
+): Promise<{ imported: number; errors: string[] }> {
+  // Filter to only files (not directories), skip binary files and large files
+  const SKIP_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".mp4", ".mp3", ".zip", ".tar", ".gz", ".pdf", ".bin", ".exe", ".dll", ".so", ".dylib"];
+  const MAX_FILE_SIZE = 100_000; // 100KB
+
+  const fileNodes = tree.filter(node =>
+    node.type === "blob" &&
+    (node.size ?? 0) < MAX_FILE_SIZE &&
+    !SKIP_EXTENSIONS.some(ext => node.path.toLowerCase().endsWith(ext)) &&
+    !node.path.includes("node_modules/") &&
+    !node.path.includes(".git/") &&
+    !node.path.includes("dist/") &&
+    !node.path.includes("build/")
+  ).slice(0, 200); // max 200 files
+
+  const errors: string[] = [];
+  let imported = 0;
+
+  // Fetch files in batches of 10 to avoid rate limiting
+  for (let i = 0; i < fileNodes.length; i += 10) {
+    const batch = fileNodes.slice(i, i + 10);
+    await Promise.all(batch.map(async (node) => {
+      try {
+        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${node.path}`;
+        const res = await fetch(rawUrl, { headers: { "User-Agent": "Thalamus-AI/1.0" } });
+        if (!res.ok) { errors.push(`Failed to fetch ${node.path}: ${res.status}`); return; }
+        const content = await res.text();
+        await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
+          sessionId, userId, filepath: node.path, content, agent: "GitHub Import",
+        });
+        imported++;
+      } catch (err) {
+        errors.push(`Error importing ${node.path}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }));
+    // Small delay between batches to avoid rate limiting
+    if (i + 10 < fileNodes.length) await new Promise(r => setTimeout(r, 200));
+  }
+
+  // Vectorize all imported files into RAG
+  if (imported > 0) {
+    await ctx.scheduler.runAfter(0, internal.agentTeam.vectorizeSession, { sessionId, token: undefined });
+  }
+
+  return { imported, errors };
+}
+
 // ─── Session management ───────────────────────────────────────────────────────
 export const createSession = action({
   args: { task: v.string(), token: v.optional(v.string()) },

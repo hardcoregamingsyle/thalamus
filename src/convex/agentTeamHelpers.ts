@@ -1,6 +1,7 @@
 import { internalMutation, internalQuery, query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 
 export const saveAgentMessage = internalMutation({
   args: {
@@ -172,6 +173,12 @@ export const upsertFile = internalMutation({
         lastModifiedBy: args.agent,
       });
     }
+    // Auto-vectorize this file into RAG in the background (non-blocking)
+    await ctx.scheduler.runAfter(0, internal.agentTeam.vectorizeFile, {
+      sessionId: args.sessionId,
+      filepath: args.filepath,
+      content: args.content,
+    });
   },
 });
 

@@ -9,6 +9,7 @@ import {
   Play, Square, Send, FileCode, Monitor, ChevronRight, Activity,
   MessageSquare, StopCircle, ListPlus, Cpu, Shield, Search, Code2,
   CheckSquare, AlertCircle, RefreshCw, Upload, Menu, X, PanelLeftClose, PanelLeftOpen,
+  Github, Database,
 } from "lucide-react";
 import { FileTreeView, FileTreeFile, FileTreeNode } from "@/components/FileTree";
 import ReactMarkdown from "react-markdown";
@@ -250,6 +251,47 @@ function FilesTabInline({
   const renameFileMutation = useMutation(api.agentTeamHelpers.renameFilePublic);
   const createFileMutation = useMutation(api.agentTeamHelpers.createFilePublic);
   const duplicateFileMutation = useMutation(api.agentTeamHelpers.duplicateFilePublic);
+  const importFromGithubAction = useAction(api.agentTeam.importFromGithub);
+  const vectorizeSessionAction = useAction(api.agentTeam.vectorizeSessionPublic);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isVectorizing, setIsVectorizing] = useState(false);
+  const [showGithubModal, setShowGithubModal] = useState(false);
+  const [githubUrl, setGithubUrl] = useState("");
+  const [githubBranch, setGithubBranch] = useState("main");
+
+  const handleGithubImport = async () => {
+    if (!activeSessionId || !token || !githubUrl.trim()) return;
+    setIsImporting(true);
+    try {
+      const result = await importFromGithubAction({
+        sessionId: activeSessionId,
+        repoUrl: githubUrl.trim(),
+        branch: githubBranch.trim() || "main",
+        token,
+      });
+      toast.success(`Imported ${result.imported} files from GitHub`);
+      if (result.errors.length > 0) toast.warning(`${result.errors.length} file(s) failed to import`);
+      setShowGithubModal(false);
+      setGithubUrl("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "GitHub import failed");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleVectorizeAll = async () => {
+    if (!activeSessionId || !token) return;
+    setIsVectorizing(true);
+    try {
+      const result = await vectorizeSessionAction({ sessionId: activeSessionId, token });
+      toast.success(`Vectorized ${result.indexed} files into RAG database`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Vectorization failed");
+    } finally {
+      setIsVectorizing(false);
+    }
+  };
 
   const handleDelete = async (node: FileTreeNode) => {
     if (!activeSessionId || !token) return;
@@ -373,27 +415,116 @@ function FilesTabInline({
   const treeFiles: FileTreeFile[] = projectFiles.map(f => ({ filepath: f.filepath, content: f.content, lastModifiedBy: f.lastModifiedBy }));
 
   return (
-    <div className="h-full flex overflow-hidden">
+    <div className="h-full flex overflow-hidden relative">
+      {/* GitHub Import Modal */}
+      <AnimatePresence>
+        {showGithubModal && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+              onClick={() => setShowGithubModal(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative z-10 bg-card border border-border rounded-2xl shadow-2xl p-6 w-full max-w-md"
+            >
+              <div className="flex items-center gap-2 mb-4">
+                <Github className="h-5 w-5 text-foreground" />
+                <h3 className="text-sm font-bold text-foreground">Import from GitHub</h3>
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">
+                Import files from any <strong>public</strong> GitHub repository. No access token required.
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] font-bold text-muted-foreground block mb-1">REPOSITORY URL</label>
+                  <input
+                    value={githubUrl}
+                    onChange={e => setGithubUrl(e.target.value)}
+                    placeholder="https://github.com/owner/repo or owner/repo"
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-muted-foreground block mb-1">BRANCH (optional)</label>
+                  <input
+                    value={githubBranch}
+                    onChange={e => setGithubBranch(e.target.value)}
+                    placeholder="main"
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
+                  />
+                </div>
+                <div className="bg-amber-400/10 border border-amber-400/20 rounded-lg px-3 py-2">
+                  <p className="text-[10px] text-amber-400">
+                    ⚠ Files will be imported into the current session. Binary files, node_modules, and files over 100KB are skipped. Max 200 files.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={() => setShowGithubModal(false)}
+                  className="flex-1 px-4 py-2 border border-border text-muted-foreground text-xs rounded-xl hover:bg-muted/50 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleGithubImport}
+                  disabled={isImporting || !githubUrl.trim()}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-xs rounded-xl hover:bg-primary/90 disabled:opacity-50 transition-all font-bold"
+                >
+                  {isImporting ? <><Loader2 className="h-3 w-3 animate-spin" />Importing...</> : <><Github className="h-3 w-3" />Import</>}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* File tree sidebar */}
       <div className="w-56 shrink-0 border-r border-border flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="shrink-0 px-3 py-2 border-b border-border bg-card/50 flex items-center justify-between gap-1">
-          <span className="text-[10px] font-bold text-foreground">{projectFiles.length} FILES</span>
-          <div className="flex items-center gap-1">
+        <div className="shrink-0 px-3 py-2 border-b border-border bg-card/50 flex flex-col gap-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-foreground">{projectFiles.length} FILES</span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handleCreateFile("")}
+                className="flex items-center gap-0.5 px-1.5 py-0.5 bg-primary/10 border border-primary/30 text-primary text-[9px] rounded hover:bg-primary/20 transition-all"
+                title="New File"
+              >+ File</button>
+              <button
+                onClick={() => handleCreateFolder("")}
+                className="flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-400/10 border border-amber-400/30 text-amber-400 text-[9px] rounded hover:bg-amber-400/20 transition-all"
+                title="New Folder"
+              >+ Folder</button>
+              <label className="cursor-pointer flex items-center gap-0.5 px-1.5 py-0.5 bg-muted/50 border border-border text-muted-foreground text-[9px] rounded hover:bg-muted transition-all" title="Upload">
+                <Upload className="h-2.5 w-2.5" />
+                <input type="file" multiple className="hidden" onChange={handleUpload} />
+              </label>
+            </div>
+          </div>
+          {/* GitHub import + Vectorize buttons */}
+          <div className="flex gap-1">
             <button
-              onClick={() => handleCreateFile("")}
-              className="flex items-center gap-0.5 px-1.5 py-0.5 bg-primary/10 border border-primary/30 text-primary text-[9px] rounded hover:bg-primary/20 transition-all"
-              title="New File"
-            >+ File</button>
+              onClick={() => setShowGithubModal(true)}
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-muted/50 border border-border text-muted-foreground text-[9px] rounded hover:bg-muted hover:text-foreground transition-all"
+            >
+              <Github className="h-2.5 w-2.5" />GitHub
+            </button>
             <button
-              onClick={() => handleCreateFolder("")}
-              className="flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-400/10 border border-amber-400/30 text-amber-400 text-[9px] rounded hover:bg-amber-400/20 transition-all"
-              title="New Folder"
-            >+ Folder</button>
-            <label className="cursor-pointer flex items-center gap-0.5 px-1.5 py-0.5 bg-muted/50 border border-border text-muted-foreground text-[9px] rounded hover:bg-muted transition-all" title="Upload">
-              <Upload className="h-2.5 w-2.5" />
-              <input type="file" multiple className="hidden" onChange={handleUpload} />
-            </label>
+              onClick={handleVectorizeAll}
+              disabled={isVectorizing || projectFiles.length === 0}
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-muted/50 border border-border text-muted-foreground text-[9px] rounded hover:bg-muted hover:text-foreground disabled:opacity-50 transition-all"
+              title="Vectorize all files into RAG database"
+            >
+              {isVectorizing ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Database className="h-2.5 w-2.5" />}
+              RAG
+            </button>
           </div>
         </div>
         {/* Tree */}
