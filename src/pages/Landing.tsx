@@ -10,15 +10,33 @@ import {
 
 // ── Agent pipeline data ────────────────────────────────────────────────────────
 const AGENTS = [
-  { name: "R&D Team", abbr: "🔬", color: "text-cyan-400", bg: "bg-cyan-400/10 border-cyan-400/30", desc: "Deep web research & knowledge gathering" },
-  { name: "Analyser", abbr: "A", color: "text-blue-400", bg: "bg-blue-400/10 border-blue-400/30", desc: "Architecture planning & tech analysis" },
-  { name: "Planner", abbr: "P", color: "text-violet-400", bg: "bg-violet-400/10 border-violet-400/30", desc: "Task decomposition into 12-20 atomic steps" },
-  { name: "Coder", abbr: "C", color: "text-emerald-400", bg: "bg-emerald-400/10 border-emerald-400/30", desc: "Full production-ready implementation" },
-  { name: "Optimiser", abbr: "O", color: "text-amber-400", bg: "bg-amber-400/10 border-amber-400/30", desc: "Performance, security & bundle optimization" },
-  { name: "Organizer", abbr: "📝", color: "text-orange-400", bg: "bg-orange-400/10 border-orange-400/30", desc: "Human-readable docs & README generation" },
-  { name: "Tester", abbr: "T", color: "text-green-400", bg: "bg-green-400/10 border-green-400/30", desc: "Automated test suite execution & reporting" },
-  { name: "Red Team", abbr: "🔴", color: "text-red-400", bg: "bg-red-400/10 border-red-400/30", desc: "4-agent security audit: vulnerability spotting, data integrity testing, logic flaw analysis & framework review" },
-  { name: "Critic", abbr: "Q", color: "text-purple-400", bg: "bg-purple-400/10 border-purple-400/30", desc: "Final quality gate & completeness review" },
+  {
+    name: "R&D Team", abbr: "🔬", color: "text-cyan-400", bg: "bg-cyan-400/10 border-cyan-400/30",
+    desc: "Deep web research & knowledge gathering",
+    subAgents: [
+      { name: "ResearchPlanner", abbr: "RP", desc: "Breaks topic into subtopics & search queries" },
+      { name: "DataTaker", abbr: "DT", desc: "Searches web & scrapes URLs for raw data" },
+      { name: "ResearchOrganiser", abbr: "RO", desc: "Synthesizes data into final research report" },
+    ],
+  },
+  { name: "Analyser", abbr: "A", color: "text-blue-400", bg: "bg-blue-400/10 border-blue-400/30", desc: "Architecture planning & tech analysis", subAgents: [] },
+  { name: "Planner", abbr: "P", color: "text-violet-400", bg: "bg-violet-400/10 border-violet-400/30", desc: "Task decomposition into 12-20 atomic steps", subAgents: [] },
+  { name: "Coder", abbr: "C", color: "text-emerald-400", bg: "bg-emerald-400/10 border-emerald-400/30", desc: "Full production-ready implementation", subAgents: [] },
+  { name: "Optimiser", abbr: "O", color: "text-amber-400", bg: "bg-amber-400/10 border-amber-400/30", desc: "Performance, security & bundle optimization", subAgents: [] },
+  { name: "Organizer", abbr: "📝", color: "text-orange-400", bg: "bg-orange-400/10 border-orange-400/30", desc: "Human-readable docs & README generation", subAgents: [] },
+  { name: "Tester", abbr: "T", color: "text-green-400", bg: "bg-green-400/10 border-green-400/30", desc: "Automated test suite execution & reporting", subAgents: [] },
+  {
+    name: "Red Team", abbr: "🔴", color: "text-red-400", bg: "bg-red-400/10 border-red-400/30",
+    desc: "5-agent security audit pipeline",
+    subAgents: [
+      { name: "VulnerabilitySpotter", abbr: "VS", desc: "Static code vulnerability scanning (Gemini)" },
+      { name: "DataCorruptor", abbr: "DC", desc: "Adversarial data integrity testing (Haiku)" },
+      { name: "ZeroDayExploiter", abbr: "ZD", desc: "Logic flaw & boundary analysis (Sonnet)" },
+      { name: "FrameworkAuditor", abbr: "FA", desc: "Tech stack security audit (Sonnet/Opus)" },
+      { name: "RedTeamOrchestrator", abbr: "RTO", desc: "Consolidates all findings (Gemini)" },
+    ],
+  },
+  { name: "Critic", abbr: "Q", color: "text-purple-400", bg: "bg-purple-400/10 border-purple-400/30", desc: "Final quality gate & completeness review", subAgents: [] },
 ];
 
 const FEATURES = [
@@ -115,28 +133,50 @@ function LivePipeline() {
           const isDone = i < activeIdx;
           const isActive = i === activeIdx;
           return (
-            <motion.div
-              key={agent.name}
-              animate={isActive ? { scale: [1, 1.01, 1] } : {}}
-              transition={{ duration: 0.8, repeat: isActive ? Infinity : 0 }}
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg border transition-all ${
-                isActive
-                  ? `${agent.bg} shadow-sm`
-                  : isDone
-                  ? "border-border/30 bg-muted/20 opacity-60"
-                  : "border-border/20 bg-transparent opacity-40"
-              }`}
-            >
-              <div className={`w-5 h-5 rounded border flex items-center justify-center text-[9px] font-bold shrink-0 ${agent.bg} ${agent.color}`}>
-                {isDone ? "✓" : agent.abbr}
-              </div>
-              <span className={`text-[11px] font-bold font-mono ${isActive ? agent.color : isDone ? "text-muted-foreground" : "text-muted-foreground/40"}`}>
-                {agent.name}
-              </span>
-              <span className={`text-[10px] ml-auto font-mono ${isActive ? "text-emerald-400 animate-pulse" : isDone ? "text-muted-foreground/50" : "text-muted-foreground/20"}`}>
-                {isActive ? "RUNNING..." : isDone ? "✓ DONE" : "QUEUED"}
-              </span>
-            </motion.div>
+            <div key={agent.name}>
+              <motion.div
+                animate={isActive ? { scale: [1, 1.01, 1] } : {}}
+                transition={{ duration: 0.8, repeat: isActive ? Infinity : 0 }}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg border transition-all ${
+                  isActive
+                    ? `${agent.bg} shadow-sm`
+                    : isDone
+                    ? "border-border/30 bg-muted/20 opacity-60"
+                    : "border-border/20 bg-transparent opacity-40"
+                }`}
+              >
+                <div className={`w-5 h-5 rounded border flex items-center justify-center text-[9px] font-bold shrink-0 ${agent.bg} ${agent.color}`}>
+                  {isDone ? "✓" : agent.abbr}
+                </div>
+                <span className={`text-[11px] font-bold font-mono ${isActive ? agent.color : isDone ? "text-muted-foreground" : "text-muted-foreground/40"}`}>
+                  {agent.name}
+                </span>
+                {agent.subAgents.length > 0 && (
+                  <span className={`text-[9px] font-mono ml-1 ${isActive ? agent.color + "/70" : "text-muted-foreground/30"}`}>
+                    ({agent.subAgents.length} sub-agents)
+                  </span>
+                )}
+                <span className={`text-[10px] ml-auto font-mono ${isActive ? "text-emerald-400 animate-pulse" : isDone ? "text-muted-foreground/50" : "text-muted-foreground/20"}`}>
+                  {isActive ? "RUNNING..." : isDone ? "✓ DONE" : "QUEUED"}
+                </span>
+              </motion.div>
+              {/* Show sub-agents when active */}
+              {isActive && agent.subAgents.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  className="ml-8 mt-1 space-y-0.5"
+                >
+                  {agent.subAgents.map((sub, si) => (
+                    <div key={sub.name} className={`flex items-center gap-2 px-2 py-1 rounded border border-dashed ${agent.bg} opacity-80`}>
+                      <span className={`text-[9px] font-bold font-mono ${agent.color}`}>{sub.abbr}</span>
+                      <span className={`text-[9px] font-mono ${agent.color}/80`}>{sub.name}</span>
+                      <span className="text-[8px] text-muted-foreground ml-auto">{sub.desc}</span>
+                    </div>
+                  ))}
+                </motion.div>
+              )}
+            </div>
           );
         })}
       </div>
@@ -278,6 +318,13 @@ export default function Landing() {
                 className={`border ${agent.bg} rounded-xl p-3 text-center group hover:scale-105 transition-all cursor-default`}>
                 <div className={`text-lg font-bold ${agent.color} mb-1`}>{agent.abbr}</div>
                 <div className={`text-[9px] font-bold ${agent.color}`}>{agent.name}</div>
+                {agent.subAgents.length > 0 && (
+                  <div className="text-[8px] text-muted-foreground mt-1">
+                    {agent.subAgents.map((sub, si) => (
+                      <span key={sub.name} className="text-[8px] font-mono">{sub.abbr} • {sub.desc}</span>
+                    ))}
+                  </div>
+                )}
               </motion.div>
             ))}
           </div>

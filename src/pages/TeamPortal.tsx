@@ -240,6 +240,29 @@ const AGENT_EMOJI: Record<string, string> = {
 };
 
 const PIPELINE = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Organizer", "Tester", "Red Team", "Critic"];
+
+// Display names and sub-agents for teams
+const PIPELINE_DISPLAY: Record<string, { displayName: string; subAgents: Array<{ name: string; abbr: string; color: string }> }> = {
+  Researcher: {
+    displayName: "R&D Team",
+    subAgents: [
+      { name: "ResearchPlanner", abbr: "RP", color: "text-cyan-300" },
+      { name: "DataTaker", abbr: "DT", color: "text-cyan-300" },
+      { name: "ResearchOrganiser", abbr: "RO", color: "text-cyan-300" },
+    ],
+  },
+  "Red Team": {
+    displayName: "Red Team",
+    subAgents: [
+      { name: "VulnerabilitySpotter", abbr: "VS", color: "text-red-300" },
+      { name: "DataCorruptor", abbr: "DC", color: "text-red-300" },
+      { name: "ZeroDayExploiter", abbr: "ZD", color: "text-red-300" },
+      { name: "FrameworkAuditor", abbr: "FA", color: "text-red-300" },
+      { name: "RedTeamOrchestrator", abbr: "RTO", color: "text-red-300" },
+    ],
+  },
+};
+
 const MAX_MESSAGES = 600;
 
 // ── Sound effects ──────────────────────────────────────────────────────────────
@@ -1171,28 +1194,55 @@ export default function TeamPortal() {
                     const isDone = sessionInfo && sessionInfo.status !== "completed"
                       ? PIPELINE.indexOf(agent) < PIPELINE.indexOf(currentPhase)
                       : sessionInfo?.status === "completed";
+                    const display = PIPELINE_DISPLAY[agent];
+                    const displayName = display?.displayName ?? agent;
+                    const subAgents = display?.subAgents ?? [];
                     return (
-                      <motion.div
-                        key={agent}
-                        className={`flex items-center gap-2 px-2 py-1 rounded-lg text-xs transition-all ${isActive ? "bg-primary/10 border border-primary/20" : "hover:bg-muted/50"}`}
-                        animate={isActive ? { x: [0, 1, 0] } : {}}
-                        transition={{ duration: 0.5, repeat: Infinity }}
-                      >
-                        <div className={`w-4 h-4 rounded-md flex items-center justify-center text-xs font-bold shrink-0 ${AGENT_COLORS[agent]} ${isActive ? "animate-pulse" : ""}`}
-                          style={{ border: "1px solid currentColor", opacity: isDone ? 0.5 : 1 }}>
-                          {AGENT_ICONS[agent]}
-                        </div>
-                        <span className={`${AGENT_COLORS[agent]} ${isActive ? "font-bold" : isDone ? "opacity-40" : "opacity-70"} flex-1 truncate`}>{agent}</span>
-                        {isDone && <CheckCircle className="h-3 w-3 text-green-400 shrink-0" />}
-                        {isNext && !isActive && <ChevronRight className="h-3 w-3 text-amber-400 shrink-0" />}
-                        {isActive && (
-                          <motion.div
-                            className="w-1.5 h-1.5 rounded-full bg-primary shrink-0"
-                            animate={{ scale: [1, 1.5, 1], opacity: [1, 0.5, 1] }}
-                            transition={{ duration: 0.8, repeat: Infinity }}
-                          />
-                        )}
-                      </motion.div>
+                      <div key={agent}>
+                        <motion.div
+                          className={`flex items-center gap-2 px-2 py-1 rounded-lg text-xs transition-all ${isActive ? "bg-primary/10 border border-primary/20" : "hover:bg-muted/50"}`}
+                          animate={isActive ? { x: [0, 1, 0] } : {}}
+                          transition={{ duration: 0.5, repeat: Infinity }}
+                        >
+                          <div className={`w-4 h-4 rounded-md flex items-center justify-center text-xs font-bold shrink-0 ${AGENT_COLORS[agent]} ${isActive ? "animate-pulse" : ""}`}
+                            style={{ border: "1px solid currentColor", opacity: isDone ? 0.5 : 1 }}>
+                            {AGENT_ICONS[agent]}
+                          </div>
+                          <span className={`${AGENT_COLORS[agent]} ${isActive ? "font-bold" : isDone ? "opacity-40" : "opacity-70"} flex-1 truncate`}>{displayName}</span>
+                          {subAgents.length > 0 && (
+                            <span className={`text-[8px] font-mono ${isActive ? AGENT_COLORS[agent] + "/70" : "text-muted-foreground/30"}`}>
+                              {subAgents.length}↓
+                            </span>
+                          )}
+                          {isDone && <CheckCircle className="h-3 w-3 text-green-400 shrink-0" />}
+                          {isNext && !isActive && <ChevronRight className="h-3 w-3 text-amber-400 shrink-0" />}
+                          {isActive && (
+                            <motion.div
+                              className="w-1.5 h-1.5 rounded-full bg-primary shrink-0"
+                              animate={{ scale: [1, 1.5, 1], opacity: [1, 0.5, 1] }}
+                              transition={{ duration: 0.8, repeat: Infinity }}
+                            />
+                          )}
+                        </motion.div>
+                        {/* Show sub-agents when active */}
+                        <AnimatePresence>
+                          {isActive && subAgents.length > 0 && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="ml-6 mt-0.5 space-y-0.5 overflow-hidden"
+                            >
+                              {subAgents.map((sub) => (
+                                <div key={sub.name} className={`flex items-center gap-1.5 px-2 py-0.5 rounded border border-dashed ${AGENT_BG[agent] || "bg-muted/10 border-border/30"} opacity-80`}>
+                                  <span className={`text-[8px] font-bold font-mono ${sub.color}`}>{sub.abbr}</span>
+                                  <span className={`text-[8px] font-mono ${sub.color}/80 truncate`}>{sub.name}</span>
+                                </div>
+                              ))}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
                     );
                   })}
                 </div>
