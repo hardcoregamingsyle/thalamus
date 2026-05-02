@@ -323,37 +323,54 @@ interface FileTreeNode {
   content?: string;
   lastModifiedBy?: string;
   children?: FileTreeNode[];
+  _childMap?: Map<string, FileTreeNode>;
 }
 
 function buildFileTree(files: Array<{ filepath: string; content: string; lastModifiedBy: string }>): FileTreeNode[] {
-  const root: Record<string, FileTreeNode> = {};
-  for (const file of files) {
-    const parts = file.filepath.replace(/^\//, "").split("/");
-    let current = root;
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isLast = i === parts.length - 1;
-      const fullPath = parts.slice(0, i + 1).join("/");
-      if (!current[part]) {
-        current[part] = isLast
-          ? { name: part, path: fullPath, isFile: true, content: file.content, lastModifiedBy: file.lastModifiedBy }
-          : { name: part, path: fullPath, isFile: false, children: [] };
-      }
-      if (!isLast) {
-        if (!current[part].children) current[part].children = [];
-        current = current[part].children as unknown as Record<string, FileTreeNode>;
-      }
+  // Use a Map at each level so children are keyed by name (not array index)
+  type NodeMap = Map<string, FileTreeNode>;
+
+  function insertIntoMap(nodeMap: NodeMap, parts: string[], file: { filepath: string; content: string; lastModifiedBy: string }, depth: number) {
+    const part = parts[depth];
+    const isLast = depth === parts.length - 1;
+    const fullPath = parts.slice(0, depth + 1).join("/");
+
+    if (!nodeMap.has(part)) {
+      nodeMap.set(part, isLast
+        ? { name: part, path: fullPath, isFile: true, content: file.content, lastModifiedBy: file.lastModifiedBy }
+        : { name: part, path: fullPath, isFile: false, children: [] }
+      );
+    }
+
+    if (!isLast) {
+      const node = nodeMap.get(part)!;
+      if (!node._childMap) node._childMap = new Map();
+      insertIntoMap(node._childMap, parts, file, depth + 1);
     }
   }
-  function sortNodes(nodes: FileTreeNode[]): FileTreeNode[] {
-    return nodes
-      .sort((a, b) => {
-        if (a.isFile !== b.isFile) return a.isFile ? 1 : -1;
-        return a.name.localeCompare(b.name);
-      })
-      .map(n => n.children ? { ...n, children: sortNodes(n.children) } : n);
+
+  const rootMap: NodeMap = new Map();
+  for (const file of files) {
+    const parts = file.filepath.replace(/^\//, "").split("/").filter(Boolean);
+    if (parts.length > 0) insertIntoMap(rootMap, parts, file, 0);
   }
-  return sortNodes(Object.values(root));
+
+  function finalizeNode(node: FileTreeNode): FileTreeNode {
+    if (node._childMap) {
+      node.children = sortNodes([...node._childMap.values()].map(finalizeNode));
+      delete node._childMap;
+    }
+    return node;
+  }
+
+  function sortNodes(nodes: FileTreeNode[]): FileTreeNode[] {
+    return nodes.sort((a, b) => {
+      if (a.isFile !== b.isFile) return a.isFile ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
+  return sortNodes([...rootMap.values()].map(finalizeNode));
 }
 
 function FileTreeNodeComponent({

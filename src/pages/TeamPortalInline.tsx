@@ -243,46 +243,64 @@ interface FileTreeNode {
 }
 
 function buildFileTree(files: Array<{ filepath: string; content: string; lastModifiedBy: string }>): FileTreeNode[] {
-  const root: Record<string, FileTreeNode> = {};
+  // Use a simple recursive map approach
+  const rootMap = new Map<string, FileTreeNode>();
+
+  function getOrCreateFolder(map: Map<string, FileTreeNode>, name: string, fullPath: string): FileTreeNode {
+    if (!map.has(name)) {
+      map.set(name, { name, path: fullPath, type: "folder", children: [] });
+    }
+    return map.get(name)!;
+  }
 
   for (const file of files) {
-    const parts = file.filepath.split("/");
-    let current = root;
-    let currentPath = "";
+    const parts = file.filepath.split("/").filter(Boolean);
+    let currentMap = rootMap;
 
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
-      currentPath = currentPath ? `${currentPath}/${part}` : part;
-      const isFile = i === parts.length - 1;
+      const fullPath = parts.slice(0, i + 1).join("/");
+      const isLast = i === parts.length - 1;
 
-      if (!current[part]) {
-        current[part] = {
-          name: part,
-          path: currentPath,
-          type: isFile ? "file" : "folder",
-          children: isFile ? undefined : [],
-          file: isFile ? file : undefined,
-        };
-      }
-      if (!isFile) {
-        current = current[part].children as unknown as Record<string, FileTreeNode>;
+      if (isLast) {
+        // It's a file — add to current map if not already there
+        if (!currentMap.has(part)) {
+          currentMap.set(part, { name: part, path: fullPath, type: "file", file });
+        }
+      } else {
+        // It's a folder — get or create it, then descend into its children map
+        const folder = getOrCreateFolder(currentMap, part, fullPath);
+        // Build a child map from the folder's children array
+        if (!folder.children) folder.children = [];
+        const childMap = new Map<string, FileTreeNode>();
+        for (const child of folder.children) childMap.set(child.name, child);
+        // Replace folder's children with a proxy that stays in sync
+        // We'll use a special property to track the child map
+        (folder as FileTreeNode & { _map: Map<string, FileTreeNode> })._map = childMap;
+        currentMap = childMap;
       }
     }
   }
 
-  function sortNodes(nodes: FileTreeNode[]): FileTreeNode[] {
-    return nodes
-      .sort((a, b) => {
-        if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      })
-      .map(node => ({
-        ...node,
-        children: node.children ? sortNodes(node.children) : undefined,
-      }));
+  // Sync all _map entries back into children arrays
+  function finalize(map: Map<string, FileTreeNode>): FileTreeNode[] {
+    const nodes: FileTreeNode[] = [];
+    for (const node of map.values()) {
+      const n = node as FileTreeNode & { _map?: Map<string, FileTreeNode> };
+      if (n._map) {
+        n.children = finalize(n._map);
+        delete n._map;
+      }
+      nodes.push(node);
+    }
+    // Sort: folders first, then files, both alphabetically
+    return nodes.sort((a, b) => {
+      if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
   }
 
-  return sortNodes(Object.values(root));
+  return finalize(rootMap);
 }
 
 function FileTreeNode({
