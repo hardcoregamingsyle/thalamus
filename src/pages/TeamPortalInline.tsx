@@ -21,6 +21,8 @@ interface AgentMessage {
   round?: number;
   messageIndex?: number;
   isUser?: boolean;
+  modelUsed?: string;
+  agentBucksDeducted?: number;
 }
 
 interface TeamSession {
@@ -491,6 +493,8 @@ export default function TeamPortalInline({ token }: { token: string }) {
 
   const agentMessages: AgentMessage[] = (liveMessages ?? []).map((m) => ({
     _id: m._id as string, agent: m.agent, content: m.content, round: m.round, messageIndex: m.messageIndex,
+    modelUsed: (m as Record<string, unknown>).modelUsed as string | undefined,
+    agentBucksDeducted: (m as Record<string, unknown>).agentBucksDeducted as number | undefined,
   }));
 
   const allMessages: AgentMessage[] = [...agentMessages, ...userMessages].sort((a, b) =>
@@ -1020,11 +1024,21 @@ export default function TeamPortalInline({ token }: { token: string }) {
                           {AGENT_ICONS[msg.agent] || msg.agent[0]}
                         </div>
                         <div className={`flex-1 max-w-2xl flex flex-col gap-1 ${msg.isUser ? "items-end" : "items-start"}`}>
-                          <span className={`text-[10px] font-bold ${AGENT_COLORS[msg.agent] || "text-muted-foreground"}`}>{msg.agent}</span>
+                          <div className={`flex items-baseline gap-2 ${msg.isUser ? "flex-row-reverse" : ""}`}>
+                            <span className={`text-[10px] font-bold ${AGENT_COLORS[msg.agent] || "text-muted-foreground"}`}>{msg.agent}</span>
+                            {!msg.isUser && msg.modelUsed && (
+                              <span className="text-[9px] text-muted-foreground/60 font-mono">{msg.modelUsed}</span>
+                            )}
+                          </div>
                           <div className={`rounded-xl px-4 py-3 text-xs leading-relaxed ${
                             msg.isUser ? "bg-primary/15 border border-primary/30 text-foreground" : "bg-card border border-border text-foreground"
                           }`}>
                             <MessageContent msg={msg} currentTaskIndex={sessionInfo?.currentTaskIndex} />
+                            {!msg.isUser && msg.agentBucksDeducted !== undefined && msg.agentBucksDeducted > 0 && (
+                              <p className="text-[9px] text-muted-foreground/50 mt-1.5 text-right font-mono">
+                                -{msg.agentBucksDeducted.toLocaleString()} AB
+                              </p>
+                            )}
                           </div>
                         </div>
                       </motion.div>

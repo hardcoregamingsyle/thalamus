@@ -364,17 +364,20 @@ async function runSingleAgentCall(
   systemPrompt: string,
   sandboxDaytonaId: string | null,
   sandboxDbId: Id<"sandboxes"> | null,
-): Promise<{ rawContent: string; inputTokens: number; outputTokens: number }> {
+  modelTier?: ModelTier,
+): Promise<{ rawContent: string; inputTokens: number; outputTokens: number; tier: ModelTier }> {
+  const tier: ModelTier = modelTier ?? (AGENT_MODEL_MAP[currentPhase] as ModelTier) ?? "gemini";
+
   // Set thinking indicator
   await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
     sessionId,
     currentAgentOutput: `[${currentPhase} is thinking...]`,
   });
 
-  let geminiResult = await callGemini(prompt, systemPrompt);
-  let rawContent = geminiResult.text;
-  let totalInputTokens = geminiResult.inputTokens;
-  let totalOutputTokens = geminiResult.outputTokens;
+  let modelResult = await callModel(prompt, systemPrompt, tier);
+  let rawContent = modelResult.text;
+  let totalInputTokens = modelResult.inputTokens;
+  let totalOutputTokens = modelResult.outputTokens;
 
   // Show initial output
   const initialParsed = parseAgentOutput(rawContent);
@@ -398,10 +401,10 @@ async function runSingleAgentCall(
       scrapeResults.push(`SCRAPED CONTENT from "${scrapeOp.url}":\n${result}`);
     }
     const promptWithScrapes = `${prompt}\n\nURL scrape results:\n\n${scrapeResults.join("\n\n---\n\n")}\n\nNow provide your complete ${currentPhase} output incorporating this information.`;
-    const geminiResult2 = await callGemini(promptWithScrapes, systemPrompt);
-    rawContent = geminiResult2.text;
-    totalInputTokens += geminiResult2.inputTokens;
-    totalOutputTokens += geminiResult2.outputTokens;
+    const modelResult2 = await callModel(promptWithScrapes, systemPrompt, tier);
+    rawContent = modelResult2.text;
+    totalInputTokens += modelResult2.inputTokens;
+    totalOutputTokens += modelResult2.outputTokens;
     parsed = parseAgentOutput(rawContent);
     await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
       sessionId,
@@ -422,10 +425,10 @@ async function runSingleAgentCall(
       searchResults.push(`SEARCH RESULT for "${searchOp.query}":\n${result}`);
     }
     const promptWithSearch = `${prompt}\n\nSearch results:\n\n${searchResults.join("\n\n---\n\n")}\n\nNow provide your complete ${currentPhase} output incorporating these results.`;
-    const geminiResult3 = await callGemini(promptWithSearch, systemPrompt);
-    rawContent = geminiResult3.text;
-    totalInputTokens += geminiResult3.inputTokens;
-    totalOutputTokens += geminiResult3.outputTokens;
+    const modelResult3 = await callModel(promptWithSearch, systemPrompt, tier);
+    rawContent = modelResult3.text;
+    totalInputTokens += modelResult3.inputTokens;
+    totalOutputTokens += modelResult3.outputTokens;
     parsed = parseAgentOutput(rawContent);
     await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
       sessionId,
@@ -461,10 +464,10 @@ async function runSingleAgentCall(
         }
       }
       const promptWithCmds = `${currentPrompt}\n\nSandbox command results:\n\n${cmdResults.join("\n\n---\n\n")}\n\nProvide your updated ${currentPhase} output. Use RUN-CMD again if needed, or provide final output without RUN-CMD.`;
-      const geminiResultCmd = await callGemini(promptWithCmds, systemPrompt);
-      rawContent = geminiResultCmd.text;
-      totalInputTokens += geminiResultCmd.inputTokens;
-      totalOutputTokens += geminiResultCmd.outputTokens;
+      const modelResultCmd = await callModel(promptWithCmds, systemPrompt, tier);
+      rawContent = modelResultCmd.text;
+      totalInputTokens += modelResultCmd.inputTokens;
+      totalOutputTokens += modelResultCmd.outputTokens;
       currentParsed = parseAgentOutput(rawContent);
       parsed.fileOps.push(...currentParsed.fileOps);
       parsed.cleanContent = currentParsed.cleanContent;
@@ -485,7 +488,7 @@ async function runSingleAgentCall(
     // For Tester: if no explicit pass/fail was set after running commands, force a final evaluation
     if (currentPhase === "Tester" && !parsed.testerResult && allCmdResults.length > 0) {
       const evalPrompt = `${currentPrompt}\n\nALL COMMAND RESULTS SO FAR:\n${allCmdResults.join("\n\n---\n\n")}\n\nBased on the ACTUAL command output above, you MUST now output your final verdict:\n- If ALL tests passed (no errors, no failures, exit code 0): output <<test.success>>\n- If ANY test failed, errored, or had non-zero exit code: output <<test.failed="exact error message from output">>`;
-      const evalResult = await callGemini(evalPrompt, systemPrompt);
+      const evalResult = await callModel(evalPrompt, systemPrompt, tier);
       rawContent = evalResult.text;
       totalInputTokens += evalResult.inputTokens;
       totalOutputTokens += evalResult.outputTokens;
@@ -512,7 +515,7 @@ async function runSingleAgentCall(
     }
   }
 
-  return { rawContent, inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+  return { rawContent, inputTokens: totalInputTokens, outputTokens: totalOutputTokens, tier };
 }
 
 // ─── Main runAgentRound action ────────────────────────────────────────────────
@@ -603,7 +606,7 @@ export const runAgentRound = action({
     });
 
     // Run the agent — use Research Team for Researcher slot, Red Team for Hacker slot
-    let agentResult: { rawContent: string; inputTokens: number; outputTokens: number };
+    let agentResult: { rawContent: string; inputTokens: number; outputTokens: number; tier?: ModelTier };
     if (currentPhase === "Researcher") {
       agentResult = await runResearchTeam(ctx, args.sessionId, session.task + (taskContext ? `\n\nCurrent task context: ${taskContext}` : ""));
     } else if (currentPhase === "Hacker") {
@@ -615,6 +618,7 @@ export const runAgentRound = action({
       );
     }
     const { rawContent, inputTokens, outputTokens } = agentResult;
+    const usedTier: ModelTier = agentResult.tier ?? "gemini";
 
     const parsed = parseAgentOutput(rawContent);
 
@@ -668,19 +672,22 @@ export const runAgentRound = action({
       });
     }
 
-    // Cost accounting — new formula: AB = (tokens / 1M) * costPerMillion * 1,500,000
-    // Current model: Gemini 3.1 Flash Lite Preview: $0.60/1M input, $2.40/1M output
-    // Future Claude models (via Amazon Bedrock) — swap these rates when switching:
-    //   claude-haiku-4-5:  $1.80/1M input, $7.20/1M output
-    //   claude-sonnet-4-6: $5.40/1M input, $26.50/1M output
-    //   claude-opus-4-6:   $7.44/1M input, $42.00/1M output
-    //   claude-opus-4-7:   $12.00/1M input, $60.00/1M output
-    const agentBucksToDeduct = calcAgentBucksFromTokens(inputTokens, outputTokens, 0.60, 2.40);
+    // Cost accounting — use tier-based pricing
+    const TIER_MODEL_NAMES: Record<ModelTier, string> = {
+      gemini: "gemini-3.1-flash-lite",
+      haiku: "claude-haiku-4-5",
+      sonnet: "claude-sonnet-4-6",
+      opus46: "claude-opus-4-6",
+      opus47: "claude-opus-4-7",
+    };
+    const agentBucksToDeduct = calcAgentBucksForTier(usedTier, inputTokens, outputTokens);
     await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId, agentBucksToDeduct });
 
     const newTotalMessages = totalMessages + 1;
     await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
       sessionId: args.sessionId, userId, agent: currentPhase, content: parsed.cleanContent, round: loopCount, messageIndex: newTotalMessages,
+      modelUsed: TIER_MODEL_NAMES[usedTier],
+      agentBucksDeducted: agentBucksToDeduct,
     });
 
     // ─── Determine next state ─────────────────────────────────────────────────
