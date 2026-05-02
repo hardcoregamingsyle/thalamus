@@ -184,7 +184,7 @@ function parseBedrockCredentials(): { accessKeyId: string; secretAccessKey: stri
   };
 }
 
-// SigV4 signing implementation using Node.js crypto
+// SigV4 signing implementation using Web Crypto API (works in all Convex runtimes)
 async function signBedrockRequest(
   method: string,
   url: string,
@@ -193,8 +193,22 @@ async function signBedrockRequest(
   secretAccessKey: string,
   region: string,
 ): Promise<Record<string, string>> {
-  // Import crypto from Node.js (available in Convex "use node" actions)
-  const { createHmac, createHash } = await import("crypto");
+  const crypto = globalThis.crypto;
+  const enc = new TextEncoder();
+
+  const sha256 = async (data: string | Uint8Array): Promise<string> => {
+    const encoded = typeof data === "string" ? enc.encode(data) : data;
+    const buf: ArrayBuffer = encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer;
+    const hash = await crypto.subtle.digest("SHA-256", buf);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+  };
+
+  const hmac = async (key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> => {
+    const rawKey = key instanceof Uint8Array ? key.buffer as ArrayBuffer : key;
+    const k = await crypto.subtle.importKey("raw", rawKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const encoded = enc.encode(data);
+    return crypto.subtle.sign("HMAC", k, encoded.buffer as ArrayBuffer);
+  };
 
   const now = new Date();
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, ""); // YYYYMMDDTHHMMSSZ
@@ -217,7 +231,7 @@ async function signBedrockRequest(
   const signedHeaders = sortedHeaderKeys.join(";");
 
   // Hash payload
-  const hashedPayload = createHash("sha256").update(body).digest("hex");
+  const hashedPayload = await sha256(body);
 
   // Canonical request
   const canonicalRequest = [
@@ -236,16 +250,17 @@ async function signBedrockRequest(
     algorithm,
     amzDate,
     credentialScope,
-    createHash("sha256").update(canonicalRequest).digest("hex"),
+    await sha256(canonicalRequest),
   ].join("\n");
 
   // Signing key derivation
-  const kSecret = Buffer.from(`AWS4${secretAccessKey}`, "utf8");
-  const kDate = createHmac("sha256", kSecret).update(dateStamp).digest();
-  const kRegion = createHmac("sha256", kDate).update(region).digest();
-  const kService = createHmac("sha256", kRegion).update(service).digest();
-  const kSigning = createHmac("sha256", kService).update("aws4_request").digest();
-  const signature = createHmac("sha256", kSigning).update(stringToSign).digest("hex");
+  const kSecret = enc.encode(`AWS4${secretAccessKey}`);
+  const kDate = await hmac(kSecret, dateStamp);
+  const kRegion = await hmac(kDate, region);
+  const kService = await hmac(kRegion, service);
+  const kSigning = await hmac(kService, "aws4_request");
+  const sigBuf = await hmac(kSigning, stringToSign);
+  const signature = Array.from(new Uint8Array(sigBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
 
   // Authorization header
   const authorization = `${algorithm} Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
