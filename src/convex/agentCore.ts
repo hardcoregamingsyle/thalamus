@@ -128,17 +128,59 @@ const MAX_OUTPUT_TOKENS: Record<ClaudeModel, number> = {
   "claude-opus-4-7": 4000,
 };
 
-// Parse AWS credentials from env var
-// Format: "ACCESSKEYID:SECRETACCESSKEY:REGION" or "ACCESSKEYID:SECRETACCESSKEY" (defaults to us-east-1)
-function parseBedrockCredentials(): { accessKeyId: string; secretAccessKey: string; region: string } | null {
+// Parse Bedrock credentials from env var
+// Supports multiple formats:
+// 1. Standard AWS: "AKIAXXXXXX:secretkey:us-east-1"
+// 2. Custom Bedrock key (base64 encoded): "ABSKQmVkcm9ja0FQSUtleS..."
+// 3. Raw custom key: "BedrockAPIKey-xxx:secret"
+function parseBedrockCredentials(): { accessKeyId: string; secretAccessKey: string; region: string; isCustomKey: boolean } | null {
   const raw = process.env.AWS_BEDROCK_API_KEY;
   if (!raw) return null;
-  const parts = raw.split(":");
-  if (parts.length < 2) return null;
+
+  // Try to detect if it's a base64-encoded custom key
+  // Base64 strings are typically longer and contain only base64 chars
+  const isBase64 = /^[A-Za-z0-9+/]+=*$/.test(raw) && raw.length > 40;
+  
+  let decoded = raw;
+  if (isBase64) {
+    try {
+      decoded = Buffer.from(raw, "base64").toString("utf8").replace(/^\0+/, ""); // strip leading null bytes
+    } catch {
+      decoded = raw;
+    }
+  }
+
+  // Check if it's a standard AWS access key (starts with AKIA, ASIA, AROA, etc.)
+  const isStandardAWS = /^(AKIA|ASIA|AROA|AIDA)[A-Z0-9]{16}/.test(decoded);
+  
+  if (isStandardAWS) {
+    const parts = decoded.split(":");
+    if (parts.length < 2) return null;
+    return {
+      accessKeyId: parts[0],
+      secretAccessKey: parts.slice(1, parts.length > 2 ? parts.length - 1 : 2).join(":"),
+      region: parts.length > 2 ? parts[parts.length - 1] : "us-east-1",
+      isCustomKey: false,
+    };
+  }
+
+  // Custom Bedrock API key format: "KeyId:Secret" or just the full key as Bearer token
+  const colonIdx = decoded.indexOf(":");
+  if (colonIdx > 0) {
+    return {
+      accessKeyId: decoded.substring(0, colonIdx),
+      secretAccessKey: decoded.substring(colonIdx + 1),
+      region: "us-east-1",
+      isCustomKey: true,
+    };
+  }
+
+  // Single token — use as Bearer
   return {
-    accessKeyId: parts[0],
-    secretAccessKey: parts.slice(1, parts.length > 2 ? parts.length - 1 : 2).join(":"),
-    region: parts.length > 2 ? parts[parts.length - 1] : "us-east-1",
+    accessKeyId: decoded,
+    secretAccessKey: "",
+    region: "us-east-1",
+    isCustomKey: true,
   };
 }
 
@@ -272,7 +314,6 @@ export async function callClaude(
   const creds = parseBedrockCredentials();
 
   if (!creds) {
-    // No AWS credentials — fall back to Gemini
     console.warn("AWS_BEDROCK_API_KEY not set, falling back to Gemini");
     return callGemini(prompt, systemPrompt);
   }
@@ -289,18 +330,34 @@ export async function callClaude(
   });
 
   try {
-    const signedHeaders = await signBedrockRequest(
-      "POST",
-      url,
-      requestBody,
-      creds.accessKeyId,
-      creds.secretAccessKey,
-      creds.region,
-    );
+    let requestHeaders: Record<string, string>;
+
+    if (creds.isCustomKey) {
+      // Custom Bedrock API key — use as Bearer token
+      // The full key is "KeyId:Secret" — combine back as the bearer token
+      const bearerToken = creds.secretAccessKey
+        ? `${creds.accessKeyId}:${creds.secretAccessKey}`
+        : creds.accessKeyId;
+      requestHeaders = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${bearerToken}`,
+        "x-api-key": bearerToken,
+      };
+    } else {
+      // Standard AWS SigV4 signing
+      requestHeaders = await signBedrockRequest(
+        "POST",
+        url,
+        requestBody,
+        creds.accessKeyId,
+        creds.secretAccessKey,
+        creds.region,
+      );
+    }
 
     const response = await fetch(url, {
       method: "POST",
-      headers: signedHeaders,
+      headers: requestHeaders,
       body: requestBody,
     });
 
@@ -320,7 +377,6 @@ export async function callClaude(
 
     return { text, inputTokens, outputTokens };
   } catch (err) {
-    // Fallback to Gemini if Claude fails
     console.error(`Claude ${model} (Bedrock) failed, falling back to Gemini:`, err);
     return callGemini(prompt, systemPrompt);
   }
