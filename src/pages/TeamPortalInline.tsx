@@ -8,7 +8,7 @@ import {
   Loader2, Plus, CheckCircle, Terminal, Box, Globe, ExternalLink,
   Play, Square, Send, FileCode, Monitor, ChevronRight, Activity,
   MessageSquare, StopCircle, ListPlus, Cpu, Shield, Search, Code2,
-  CheckSquare, AlertCircle, RefreshCw, Upload,
+  CheckSquare, AlertCircle, RefreshCw, Upload, Menu, X, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { FileTreeView, FileTreeFile, FileTreeNode } from "@/components/FileTree";
 import ReactMarkdown from "react-markdown";
@@ -508,6 +508,7 @@ export default function TeamPortalInline({ token }: { token: string }) {
   // Actions
   const createSession = useAction(api.agentTeam.createSession);
   const runAgentRound = useAction(api.agentTeam.runAgentRound);
+  const startBackgroundSession = useAction(api.agentTeam.startBackgroundSession);
   const listSessionsAction = useAction(api.agentTeam.listSessions);
   const continueSessionAction = useAction(api.agentTeam.continueSession);
   const createSandboxAction = useAction(api.sandbox.createSandbox);
@@ -580,7 +581,9 @@ export default function TeamPortalInline({ token }: { token: string }) {
       setUserMessages([]);
       setMessageQueue([]);
       await loadSessions();
-      toast.success("Session created! Starting agents...");
+      // Start background execution — continues even when tab is closed
+      await startBackgroundSession({ sessionId, token });
+      toast.success("Session started! Running in background — you can close this tab.");
       playSound("send");
       autoRunRef.current = true;
       setAutoRun(true);
@@ -692,9 +695,11 @@ export default function TeamPortalInline({ token }: { token: string }) {
       try {
         await continueSessionAction({ sessionId: activeSessionId, newTask: text, token });
         await loadSessions();
+        // Start background execution for the new task
+        await startBackgroundSession({ sessionId: activeSessionId, token });
         autoRunRef.current = true;
         setAutoRun(true);
-        handleRunNextAgent();
+        toast.success("Running in background — you can close this tab.");
       } catch { toast.error("Failed to send message"); }
     }
   };
@@ -858,10 +863,39 @@ export default function TeamPortalInline({ token }: { token: string }) {
   const execPhaseLabel = execPhase === "planning" ? "PLANNING" : execPhase === "final_review" ? "FINAL REVIEW" : `TASK ${taskIndex + 1}/${plannerTasks.length || "?"}`;
   const execPhaseColor = execPhase === "planning" ? "text-violet-400" : execPhase === "final_review" ? "text-amber-400" : "text-emerald-400";
 
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
   return (
-    <div className="flex flex-1 overflow-hidden h-full">
+    <div className="flex flex-1 overflow-hidden h-full relative">
+      {/* Mobile sidebar overlay */}
+      <AnimatePresence>
+        {mobileSidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-background/60 backdrop-blur-sm z-30 md:hidden"
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* ── Left sidebar ──────────────────────────────────────────────────── */}
-      <div className="w-52 shrink-0 border-r border-border bg-card flex flex-col overflow-hidden">
+      <div className={`
+        ${mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"}
+        md:translate-x-0
+        fixed md:relative z-40 md:z-auto
+        w-64 md:w-52 shrink-0 border-r border-border bg-card flex flex-col overflow-hidden
+        transition-transform duration-200 ease-in-out
+        h-full
+      `}>
+        {/* Mobile close button */}
+        <div className="md:hidden flex items-center justify-between px-3 py-2 border-b border-border">
+          <span className="text-[10px] font-bold text-muted-foreground">NAVIGATION</span>
+          <button onClick={() => setMobileSidebarOpen(false)} className="text-muted-foreground hover:text-foreground p-1">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
         {/* Pipeline */}
         <div className="shrink-0 p-3 border-b border-border">
           <p className="text-[10px] text-muted-foreground font-bold mb-2">PIPELINE</p>
