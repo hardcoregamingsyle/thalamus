@@ -71,3 +71,10 @@ export const saveAssistantMessage = internalMutation({
     }
   },
 });
+
+export const updateConversationTitle = internalMutation({
+  args: { conversationId: v.id("conversations"), title: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.conversationId, { title: args.title });
+  },
+});

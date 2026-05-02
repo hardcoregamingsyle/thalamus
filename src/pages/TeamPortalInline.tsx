@@ -521,6 +521,16 @@ export default function TeamPortalInline({ token }: { token: string }) {
   const runDeployCommandsAction = useAction(api.sandbox.runDeployCommands);
 
   useEffect(() => { if (token) { loadSessions(); loadSandboxes(); } }, [token]);
+
+  // Update document title based on active session
+  useEffect(() => {
+    if (sessionInfo?.title) {
+      document.title = `${sessionInfo.title} | Thalamus AI`;
+    } else {
+      document.title = "Thalamus AI";
+    }
+    return () => { document.title = "Thalamus AI"; };
+  }, [sessionInfo?.title]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [allMessages, sessionInfo?.currentAgentOutput]);
   useEffect(() => { sandboxOutputEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [sandboxOutput]);
 
