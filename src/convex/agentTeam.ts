@@ -182,6 +182,115 @@ export const createSession = action({
   },
 });
 
+// ─── Research Team runner ─────────────────────────────────────────────────────
+// Runs ResearchPlanner → DataTaker → ResearchOrganiser as a sub-pipeline
+// Returns the final Research Report as the "Researcher" output
+async function runResearchTeam(
+  ctx: { runQuery: Function; runMutation: Function },
+  sessionId: Id<"teamSessions">,
+  topic: string,
+): Promise<{ rawContent: string; inputTokens: number; outputTokens: number }> {
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+
+  // ── Step 1: ResearchPlanner — break topic into subtopics ──────────────────
+  await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+    sessionId,
+    currentAgentOutput: `[Research Team: ResearchPlanner is breaking down the topic...]`,
+  });
+
+  const plannerResult = await callGemini(
+    `Research topic: ${topic}\n\nBreak this into specific subtopics and search queries.`,
+    AGENT_SYSTEM_PROMPTS["ResearchPlanner"],
+  );
+  totalInputTokens += plannerResult.inputTokens;
+  totalOutputTokens += plannerResult.outputTokens;
+
+  // Parse subtopics JSON
+  interface ResearchSubtopic { title: string; query: string; why: string; }
+  interface ResearchPlan { topic: string; subtopics: ResearchSubtopic[]; }
+  let researchPlan: ResearchPlan = { topic, subtopics: [] };
+  try {
+    const jsonMatch = plannerResult.text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) researchPlan = JSON.parse(jsonMatch[0]) as ResearchPlan;
+  } catch { /* use empty plan */ }
+
+  const subtopics = researchPlan.subtopics.length > 0
+    ? researchPlan.subtopics
+    : [{ title: topic, query: topic, why: "Main topic" }];
+
+  await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+    sessionId,
+    currentAgentOutput: `[Research Team: ResearchPlanner identified ${subtopics.length} subtopics. DataTaker is now searching...]\n\nSubtopics:\n${subtopics.map((s, i) => `${i + 1}. ${s.title}`).join("\n")}`,
+  });
+
+  // ── Step 2: DataTaker — search all subtopics and scrape URLs ──────────────
+  const rawDataParts: string[] = [];
+  const allUrls: string[] = [];
+
+  // Run searches for each subtopic (up to 8)
+  const searchSubtopics = subtopics.slice(0, 8);
+  for (let i = 0; i < searchSubtopics.length; i++) {
+    const sub = searchSubtopics[i];
+    await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+      sessionId,
+      currentAgentOutput: `[Research Team: DataTaker searching (${i + 1}/${searchSubtopics.length}): "${sub.query}"]`,
+    });
+    const searchResult = await performSearch(sub.query);
+    rawDataParts.push(`### Search: "${sub.query}" (${sub.title})\n${searchResult}`);
+
+    // Extract URLs from search result
+    const urlMatches = searchResult.match(/https?:\/\/[^\s\)\"\']+/g) ?? [];
+    allUrls.push(...urlMatches.slice(0, 3));
+  }
+
+  // Scrape up to 5 unique URLs
+  const uniqueUrls = [...new Set(allUrls)].slice(0, 5);
+  for (let i = 0; i < uniqueUrls.length; i++) {
+    const url = uniqueUrls[i];
+    await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+      sessionId,
+      currentAgentOutput: `[Research Team: DataTaker scraping URL (${i + 1}/${uniqueUrls.length}): ${url.slice(0, 60)}...]`,
+    });
+    const scraped = await performScrape(url);
+    rawDataParts.push(`### Scraped: ${url}\n${scraped}`);
+    totalInputTokens += 0; // scraping doesn't use tokens
+  }
+
+  const rawData = rawDataParts.join("\n\n---\n\n");
+
+  await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+    sessionId,
+    currentAgentOutput: `[Research Team: DataTaker collected ${rawDataParts.length} data sources. ResearchOrganiser is synthesizing...]`,
+  });
+
+  // ── Step 3: ResearchOrganiser — synthesize into final report ──────────────
+  const organiserPrompt = `Research topic: ${topic}
+
+Subtopics researched:
+${subtopics.map((s, i) => `${i + 1}. ${s.title} — ${s.why}`).join("\n")}
+
+RAW DATA COLLECTED:
+${rawData.slice(0, 12000)}${rawData.length > 12000 ? "\n...[truncated for length]" : ""}
+
+Now synthesize this into a comprehensive Research Report.`;
+
+  const organiserResult = await callGemini(organiserPrompt, AGENT_SYSTEM_PROMPTS["ResearchOrganiser"]);
+  totalInputTokens += organiserResult.inputTokens;
+  totalOutputTokens += organiserResult.outputTokens;
+
+  await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+    sessionId,
+    currentAgentOutput: organiserResult.text,
+  });
+
+  return {
+    rawContent: organiserResult.text,
+    inputTokens: totalInputTokens,
+    outputTokens: totalOutputTokens,
+  };
+}
+
 // ─── Core agent runner ────────────────────────────────────────────────────────
 async function runSingleAgentCall(
   ctx: { runQuery: Function; runMutation: Function },
@@ -430,10 +539,16 @@ export const runAgentRound = action({
       round: session.round, loopCount, phase: currentPhase, totalMessages,
     });
 
-    // Run the agent
-    const { rawContent, inputTokens, outputTokens } = await runSingleAgentCall(
-      ctx, args.sessionId, userId, currentPhase, prompt, systemPrompt, sandboxDaytonaId, sandboxDbId
-    );
+    // Run the agent — use Research Team for Researcher slot
+    let agentResult: { rawContent: string; inputTokens: number; outputTokens: number };
+    if (currentPhase === "Researcher") {
+      agentResult = await runResearchTeam(ctx, args.sessionId, session.task + (taskContext ? `\n\nCurrent task context: ${taskContext}` : ""));
+    } else {
+      agentResult = await runSingleAgentCall(
+        ctx, args.sessionId, userId, currentPhase, prompt, systemPrompt, sandboxDaytonaId, sandboxDbId
+      );
+    }
+    const { rawContent, inputTokens, outputTokens } = agentResult;
 
     const parsed = parseAgentOutput(rawContent);
 
