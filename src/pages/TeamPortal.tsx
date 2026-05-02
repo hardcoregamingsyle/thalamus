@@ -13,6 +13,7 @@ import {
   Monitor, Sun, Moon, ChevronRight, ChevronDown, Zap, Activity, Clock, Layers,
   MessageSquare, StopCircle, ListPlus, Sparkles, Cpu, Shield, Search,
   Code2, CheckSquare, AlertCircle, Menu, X, Coins, Folder, FolderOpen, Upload, Download,
+  Lightbulb, Paperclip,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -339,6 +340,13 @@ export default function TeamPortal() {
   const autoRunRef = useRef(false);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Suggestion modal state
+  const [showSuggestion, setShowSuggestion] = useState(false);
+  const [suggestionTitle, setSuggestionTitle] = useState("");
+  const [suggestionDesc, setSuggestionDesc] = useState("");
+  const [suggestionFiles, setSuggestionFiles] = useState<Array<{ name: string; content: string; size: number }>>([]);
+  const [isSuggestionLoading, setIsSuggestionLoading] = useState(false);
+
   // Sandbox state
   const [sandboxes, setSandboxes] = useState<SandboxRow[]>([]);
   const [activeSandboxId, setActiveSandboxId] = useState<Id<"sandboxes"> | null>(null);
@@ -408,6 +416,55 @@ export default function TeamPortal() {
   const renameFileMutation = useMutation(api.agentTeamHelpers.renameFilePublic);
   const createFileMutation = useMutation(api.agentTeamHelpers.createFilePublic);
   const duplicateFileMutation = useMutation(api.agentTeamHelpers.duplicateFilePublic);
+
+  const handleSuggestionFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    const newFiles: Array<{ name: string; content: string; size: number }> = [];
+    for (const file of files) {
+      try {
+        const content = await file.text();
+        newFiles.push({ name: file.name, content, size: file.size });
+      } catch { /* ignore */ }
+    }
+    setSuggestionFiles(prev => [...prev, ...newFiles]);
+    e.target.value = "";
+  };
+
+  const handleSuggestionRemoveFile = (idx: number) => {
+    setSuggestionFiles(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleSuggestionSubmit = async () => {
+    if (!suggestionTitle.trim()) { toast.error("Please enter a title"); return; }
+    setIsSuggestionLoading(true);
+    try {
+      let content = `**Suggestion: ${suggestionTitle.trim()}**\n\n${suggestionDesc.trim()}`;
+      if (suggestionFiles.length > 0) {
+        content += `\n\n**Attached Files (${suggestionFiles.length}):**\n`;
+        for (const f of suggestionFiles) {
+          content += `\n--- ${f.name} ---\n\`\`\`\n${f.content.slice(0, 5000)}${f.content.length > 5000 ? "\n...(truncated)" : ""}\n\`\`\`\n`;
+        }
+      }
+      if (activeSessionId && token) {
+        await continueSessionAction({ sessionId: activeSessionId, newTask: content, token });
+        toast.success("Suggestion submitted to active session!");
+      } else {
+        const sessionId = await createSession({ task: content, token: token ?? "" });
+        setActiveSessionId(sessionId);
+        await startBackgroundSession({ sessionId, token: token ?? "" });
+        toast.success("Suggestion submitted! Starting agents...");
+        await loadSessions();
+      }
+      setShowSuggestion(false);
+      setSuggestionTitle("");
+      setSuggestionDesc("");
+      setSuggestionFiles([]);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to submit suggestion");
+    } finally {
+      setIsSuggestionLoading(false);
+    }
+  };
 
   const handleFileDelete = async (node: import("@/components/FileTree").FileTreeNode) => {
     if (!activeSessionId || !token) return;
@@ -505,6 +562,7 @@ export default function TeamPortal() {
   const runAgentRound = useAction(api.agentTeam.runAgentRound);
   const listSessionsAction = useAction(api.agentTeam.listSessions);
   const continueSessionAction = useAction(api.agentTeam.continueSession);
+  const startBackgroundSession = useAction(api.agentTeam.startBackgroundSession);
   const createSandboxAction = useAction(api.sandbox.createSandbox);
   const executeCommandAction = useAction(api.sandbox.executeCommand);
   const stopSandboxAction = useAction(api.sandbox.stopSandbox);
@@ -926,6 +984,15 @@ export default function TeamPortal() {
                 {messageQueue.length}
               </motion.div>
             )}
+            <motion.button
+              onClick={() => setShowSuggestion(true)}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-bold hover:bg-amber-400/20 transition-all"
+            >
+              <Lightbulb className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Suggestion</span>
+            </motion.button>
             <button
               onClick={() => setIsDark(d => !d)}
               className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
@@ -938,6 +1005,121 @@ export default function TeamPortal() {
           </div>
         </div>
       </header>
+
+      {/* ── Suggestion Modal ──────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showSuggestion && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={e => { if (e.target === e.currentTarget) setShowSuggestion(false); }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-400/15 border border-amber-400/30 flex items-center justify-center">
+                    <Lightbulb className="h-4 w-4 text-amber-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-foreground">Submit Suggestion</p>
+                    <p className="text-[10px] text-muted-foreground">Share an idea or feedback with the team</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowSuggestion(false)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+                {/* Title */}
+                <div>
+                  <label className="text-[10px] font-bold text-muted-foreground tracking-widest mb-1.5 block">TITLE *</label>
+                  <input
+                    value={suggestionTitle}
+                    onChange={e => setSuggestionTitle(e.target.value)}
+                    placeholder="Brief title for your suggestion..."
+                    className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-amber-400/60 transition-colors"
+                  />
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="text-[10px] font-bold text-muted-foreground tracking-widest mb-1.5 block">DESCRIPTION</label>
+                  <textarea
+                    value={suggestionDesc}
+                    onChange={e => setSuggestionDesc(e.target.value)}
+                    placeholder="Describe your suggestion in detail..."
+                    rows={4}
+                    className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-amber-400/60 transition-colors resize-none leading-relaxed"
+                  />
+                </div>
+
+                {/* Files */}
+                <div>
+                  <label className="text-[10px] font-bold text-muted-foreground tracking-widest mb-1.5 block">ATTACH FILES</label>
+                  <label className="flex items-center gap-2 px-3 py-2.5 bg-muted/30 border border-dashed border-border rounded-xl cursor-pointer hover:bg-muted/50 hover:border-amber-400/40 transition-all group">
+                    <Paperclip className="h-4 w-4 text-muted-foreground group-hover:text-amber-400 transition-colors" />
+                    <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">Click to attach files (any type)</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="*/*"
+                      className="hidden"
+                      onChange={handleSuggestionFileUpload}
+                    />
+                  </label>
+                  {suggestionFiles.length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      {suggestionFiles.map((f, i) => (
+                        <div key={i} className="flex items-center gap-2 px-3 py-2 bg-muted/20 border border-border rounded-lg">
+                          <FileCode className="h-3.5 w-3.5 text-primary shrink-0" />
+                          <span className="text-xs text-foreground flex-1 truncate">{f.name}</span>
+                          <span className="text-[10px] text-muted-foreground shrink-0">{(f.size / 1024).toFixed(1)}KB</span>
+                          <button
+                            onClick={() => handleSuggestionRemoveFile(i)}
+                            className="p-0.5 rounded text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border bg-muted/20">
+                <button
+                  onClick={() => setShowSuggestion(false)}
+                  className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground border border-border rounded-xl hover:bg-muted/60 transition-all"
+                >
+                  Cancel
+                </button>
+                <motion.button
+                  onClick={handleSuggestionSubmit}
+                  disabled={isSuggestionLoading || !suggestionTitle.trim()}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="flex items-center gap-2 px-4 py-2 bg-amber-400/15 border border-amber-400/40 text-amber-400 text-sm font-bold rounded-xl hover:bg-amber-400/25 disabled:opacity-50 transition-all"
+                >
+                  {isSuggestionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Lightbulb className="h-3.5 w-3.5" />}
+                  Submit Suggestion
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="flex flex-1 overflow-hidden relative">
         {/* ── Mobile overlay backdrop ────────────────────────────────────────── */}
