@@ -1,5 +1,6 @@
 import { useAuth } from "@/hooks/use-auth";
 import { useEffect, useRef, useState } from "react";
+import CreditModal from "@/components/CreditModal";
 import { useNavigate } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
@@ -48,6 +49,7 @@ export default function Portal() {
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [creditModalOpen, setCreditModalOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const ensureDailyBalance = useMutation(api.customAuthHelpers.ensureDailyBalance);
@@ -160,11 +162,13 @@ export default function Portal() {
             <span className="hidden sm:block text-[10px] text-muted-foreground border border-border px-1.5 py-0.5 rounded">PORTAL</span>
           </div>
           <div className="flex items-center gap-2">
-            {/* AgentBucks balance — display only, no pricing modal */}
-            <div className="flex items-center gap-1.5 text-xs border border-amber-400/30 bg-amber-400/10 text-amber-400 px-2.5 py-1 rounded-lg font-bold">
+            <button
+              onClick={() => setCreditModalOpen(true)}
+              className="flex items-center gap-1.5 text-xs border border-amber-400/30 bg-amber-400/10 text-amber-400 px-2.5 py-1 rounded-lg font-bold hover:bg-amber-400/20 transition-all"
+            >
               <Zap className="h-3 w-3" />
               <span>{totalAB.toLocaleString()} AB</span>
-            </div>
+            </button>
             <button
               onClick={signOut}
               className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10"
@@ -416,6 +420,7 @@ export default function Portal() {
           </div>
         )}
       </div>
+      <CreditModal open={creditModalOpen} onClose={() => setCreditModalOpen(false)} totalAB={totalAB} dailyAB={dailyAB} purchasedAB={purchasedAB} />
     </div>
   );
 }
