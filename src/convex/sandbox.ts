@@ -786,7 +786,59 @@ export const syncSandboxFiles = action({
     const listRes = await fetch(`${DAYTONA_API}/toolbox/${sandboxRecord.sandboxId}/toolbox/process/execute`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ command: `find /home/daytona -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' -not -path '*/.next/*' -not -path '*/__pycache__/*' -not -name '*.pyc' -not -name '*.log' 2>/dev/null | head -200` }),
+      body: JSON.stringify({ command: `find /home/daytona -type f \
+-not -path '*/node_modules/*' \
+-not -path '*/.git/*' \
+-not -path '*/dist/*' \
+-not -path '*/.next/*' \
+-not -path '*/__pycache__/*' \
+-not -path '*/.daytona/*' \
+-not -path '*/.fun/*' \
+-not -path '*/.cache/*' \
+-not -path '*/.npm/*' \
+-not -path '*/.yarn/cache/*' \
+-not -path '*/.pnpm-store/*' \
+-not -path '*/.bun/install/cache/*' \
+-not -path '*/.cargo/registry/*' \
+-not -path '*/.cargo/git/*' \
+-not -path '*/.rustup/*' \
+-not -path '*/.gradle/caches/*' \
+-not -path '*/.m2/repository/*' \
+-not -path '*/.pip/*' \
+-not -path '*/.venv/*' \
+-not -path '*/venv/*' \
+-not -path '*/.tox/*' \
+-not -path '*/.pytest_cache/*' \
+-not -path '*/.mypy_cache/*' \
+-not -path '*/.ruff_cache/*' \
+-not -path '*/build/*' \
+-not -path '*/target/debug/*' \
+-not -path '*/target/release/*' \
+-not -path '*/.turbo/*' \
+-not -path '*/.parcel-cache/*' \
+-not -path '*/.svelte-kit/*' \
+-not -path '*/.nuxt/*' \
+-not -path '*/.output/*' \
+-not -path '*/coverage/*' \
+-not -path '*/.nyc_output/*' \
+-not -path '*/tmp/*' \
+-not -path '*/temp/*' \
+-not -path '*/.tmp/*' \
+-not -path '*/.temp/*' \
+-not -name '*.pyc' \
+-not -name '*.pyo' \
+-not -name '*.pyd' \
+-not -name '*.class' \
+-not -name '*.o' \
+-not -name '*.a' \
+-not -name '*.so' \
+-not -name '*.dylib' \
+-not -name '*.dll' \
+-not -name '*.exe' \
+-not -name '*.log' \
+-not -name '.DS_Store' \
+-not -name 'Thumbs.db' \
+2>/dev/null | head -300` }),
     });
 
     if (!listRes.ok) return { synced: 0, errors: ["Failed to list files"] };
