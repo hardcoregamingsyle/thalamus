@@ -64,7 +64,7 @@ export const sendOtp = action({
 
 // Verify OTP and create session
 export const verifyOtp = action({
-  args: { email: v.string(), code: v.string() },
+  args: { email: v.string(), code: v.string(), referralCode: v.optional(v.string()) },
   handler: async (ctx, args): Promise<{ token: string; userId: string }> => {
     const email = args.email.toLowerCase().trim();
     const code = args.code.trim();
@@ -72,6 +72,7 @@ export const verifyOtp = action({
     const result = await ctx.runMutation(internal.customAuthHelpers.verifyAndCreateSession, {
       email,
       code,
+      referralCode: args.referralCode,
     });
 
     return result;
