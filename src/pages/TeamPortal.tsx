@@ -207,7 +207,7 @@ const AGENT_COLORS: Record<string, string> = {
   Optimiser: "text-amber-400",
   Organizer: "text-orange-400",
   Tester: "text-green-400",
-  Hacker: "text-red-400",
+  "Red Team": "text-red-400",
   Critic: "text-purple-400",
   User: "text-primary",
 };
@@ -220,22 +220,22 @@ const AGENT_BG: Record<string, string> = {
   Optimiser: "bg-amber-400/10 border-amber-400/30",
   Organizer: "bg-orange-400/10 border-orange-400/30",
   Tester: "bg-green-400/10 border-green-400/30",
-  Hacker: "bg-red-400/10 border-red-400/30",
+  "Red Team": "bg-red-400/10 border-red-400/30",
   Critic: "bg-purple-400/10 border-purple-400/30",
   User: "bg-primary/10 border-primary/30",
 };
 
 const AGENT_ICONS: Record<string, string> = {
   Researcher: "🔍", Analyser: "A", Planner: "P", Coder: "C",
-  Optimiser: "O", Organizer: "📝", Tester: "T", Hacker: "H", Critic: "R", User: "U",
+  Optimiser: "O", Organizer: "📝", Tester: "T", "Red Team": "🔴", Critic: "R", User: "U",
 };
 
 const AGENT_EMOJI: Record<string, string> = {
   Researcher: "🔍", Analyser: "🧠", Planner: "📋", Coder: "💻",
-  Optimiser: "⚡", Organizer: "📝", Tester: "🧪", Hacker: "🔐", Critic: "🎯", User: "👤",
+  Optimiser: "⚡", Organizer: "📝", Tester: "🧪", "Red Team": "🔴", Critic: "🎯", User: "👤",
 };
 
-const PIPELINE = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
+const PIPELINE = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Organizer", "Tester", "Red Team", "Critic"];
 const MAX_MESSAGES = 600;
 
 // ── Sound effects ──────────────────────────────────────────────────────────────

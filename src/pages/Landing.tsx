@@ -17,7 +17,7 @@ const AGENTS = [
   { name: "Optimiser", abbr: "O", color: "text-amber-400", bg: "bg-amber-400/10 border-amber-400/30", desc: "Performance, security & bundle optimization" },
   { name: "Organizer", abbr: "📝", color: "text-orange-400", bg: "bg-orange-400/10 border-orange-400/30", desc: "Human-readable docs & README generation" },
   { name: "Tester", abbr: "T", color: "text-green-400", bg: "bg-green-400/10 border-green-400/30", desc: "Automated test suite execution & reporting" },
-  { name: "Hacker", abbr: "H", color: "text-red-400", bg: "bg-red-400/10 border-red-400/30", desc: "Security audit & vulnerability reporting" },
+  { name: "Red Team", abbr: "🔴", color: "text-red-400", bg: "bg-red-400/10 border-red-400/30", desc: "4-agent security audit: vulnerability spotting, data integrity testing, logic flaw analysis & framework review" },
   { name: "Critic", abbr: "Q", color: "text-purple-400", bg: "bg-purple-400/10 border-purple-400/30", desc: "Final quality gate & completeness review" },
 ];
 
@@ -60,7 +60,7 @@ const FEATURES = [
   {
     icon: Lock,
     title: "Security-First Pipeline",
-    desc: "Dedicated Hacker agent audits every codebase. Vulnerabilities reported, Coder fixes — never skipped.",
+    desc: "Dedicated Red Team (4 security sub-agents) audits every codebase. Vulnerabilities reported, Coder fixes — never skipped.",
     color: "text-red-400",
     border: "border-red-400/20 hover:border-red-400/50",
   },
@@ -206,7 +206,7 @@ export default function Landing() {
             </h1>
 
             <p className="text-muted-foreground text-sm leading-relaxed mb-3 max-w-lg">
-              Thalamus AI orchestrates <span className="text-foreground font-semibold">9 specialized AI agents</span> — Researcher, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, and Critic — to build complete, production-ready software from a single prompt.
+              Thalamus AI orchestrates <span className="text-foreground font-semibold">9 specialized AI agents</span> — Researcher, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Red Team, and Critic — to build complete, production-ready software from a single prompt.
             </p>
 
             <p className="text-muted-foreground text-xs leading-relaxed mb-8 max-w-lg">

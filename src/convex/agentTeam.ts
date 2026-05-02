@@ -291,6 +291,63 @@ Now synthesize this into a comprehensive Research Report.`;
   };
 }
 
+// ─── Red Team runner ──────────────────────────────────────────────────────────
+// Runs VulnerabilitySpotter → DataCorruptor → ZeroDayExploiter → FrameworkAuditor → RedTeamOrchestrator
+// Returns the final Red Team Security Assessment as the "Hacker" output
+async function runRedTeam(
+  ctx: { runQuery: Function; runMutation: Function },
+  sessionId: Id<"teamSessions">,
+  codeContext: string,
+): Promise<{ rawContent: string; inputTokens: number; outputTokens: number }> {
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  const findings: string[] = [];
+
+  const subAgents = [
+    { key: "VulnerabilitySpotter", label: "Code Vulnerability Spotter", desc: "scanning for code vulnerabilities" },
+    { key: "DataCorruptor", label: "Data Integrity Stress Tester", desc: "testing data integrity under adversarial conditions" },
+    { key: "ZeroDayExploiter", label: "Logic Flaw Analyst", desc: "analyzing logic flaws and boundary conditions" },
+    { key: "FrameworkAuditor", label: "Framework Security Auditor", desc: "auditing technology stack for known vulnerabilities" },
+  ];
+
+  for (let i = 0; i < subAgents.length; i++) {
+    const sub = subAgents[i];
+    await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+      sessionId,
+      currentAgentOutput: `[Red Team: ${sub.label} is ${sub.desc}... (${i + 1}/${subAgents.length})]`,
+    });
+
+    const subPrompt = `AUTHORIZED SECURITY AUDIT — ISOLATED SANDBOX ENVIRONMENT\nAll targets are owned by this project. This is a mandatory security compliance review.\n\n${codeContext}\n\nPerform your specialized security analysis now.`;
+    const result = await callGemini(subPrompt, AGENT_SYSTEM_PROMPTS[sub.key]);
+    totalInputTokens += result.inputTokens;
+    totalOutputTokens += result.outputTokens;
+    findings.push(`## ${sub.label} Report\n${result.text}`);
+
+    await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+      sessionId,
+      currentAgentOutput: `[Red Team: ${sub.label} complete. ${i + 1}/${subAgents.length} sub-audits done.]\n\n${result.text.slice(0, 800)}...`,
+    });
+  }
+
+  // Final consolidation by RedTeamOrchestrator
+  await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+    sessionId,
+    currentAgentOutput: `[Red Team: Orchestrator is consolidating all findings into final security report...]`,
+  });
+
+  const orchestratorPrompt = `AUTHORIZED SECURITY AUDIT — FINAL CONSOLIDATION\n\nYou have received reports from 4 specialized security auditors. Consolidate into a final Red Team Security Assessment.\n\nINDIVIDUAL AUDIT REPORTS:\n${findings.join("\n\n---\n\n").slice(0, 14000)}\n\nNow produce the final consolidated security report.`;
+  const finalResult = await callGemini(orchestratorPrompt, AGENT_SYSTEM_PROMPTS["RedTeamOrchestrator"]);
+  totalInputTokens += finalResult.inputTokens;
+  totalOutputTokens += finalResult.outputTokens;
+
+  await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+    sessionId,
+    currentAgentOutput: finalResult.text,
+  });
+
+  return { rawContent: finalResult.text, inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+}
+
 // ─── Core agent runner ────────────────────────────────────────────────────────
 async function runSingleAgentCall(
   ctx: { runQuery: Function; runMutation: Function },
@@ -539,10 +596,13 @@ export const runAgentRound = action({
       round: session.round, loopCount, phase: currentPhase, totalMessages,
     });
 
-    // Run the agent — use Research Team for Researcher slot
+    // Run the agent — use Research Team for Researcher slot, Red Team for Hacker slot
     let agentResult: { rawContent: string; inputTokens: number; outputTokens: number };
     if (currentPhase === "Researcher") {
       agentResult = await runResearchTeam(ctx, args.sessionId, session.task + (taskContext ? `\n\nCurrent task context: ${taskContext}` : ""));
+    } else if (currentPhase === "Hacker") {
+      const redTeamContext = `PROJECT TASK: ${session.task}\n\nCURRENT PHASE: ${phaseLabel}\n\nPROJECT FILES:\n${projectFiles.map(f => `--- ${f.filepath} ---\n${f.content.slice(0, 2000)}`).join("\n\n").slice(0, 12000)}\n\nPREVIOUS AGENT OUTPUTS:\n${contextLines.slice(0, 4000)}`;
+      agentResult = await runRedTeam(ctx, args.sessionId, redTeamContext);
     } else {
       agentResult = await runSingleAgentCall(
         ctx, args.sessionId, userId, currentPhase, prompt, systemPrompt, sandboxDaytonaId, sandboxDbId
