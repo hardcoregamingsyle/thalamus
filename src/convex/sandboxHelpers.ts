@@ -1,4 +1,4 @@
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 
@@ -73,6 +73,159 @@ export const markSandboxStopped = internalMutation({
   },
 });
 
+/**
+ * Add a credit batch with 90-day expiry.
+ * Used for purchases, spin wheel wins, referral bonuses, promo codes.
+ */
+export const addCreditBatch = internalMutation({
+  args: {
+    userId: v.id("users"),
+    amount: v.number(),
+    source: v.string(), // "purchase" | "spin" | "referral" | "promo"
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const expiresAt = now + 90 * 24 * 60 * 60 * 1000; // 90 days
+    await ctx.db.insert("creditBatches", {
+      userId: args.userId,
+      amount: args.amount,
+      remaining: args.amount,
+      expiresAt,
+      source: args.source,
+      createdAt: now,
+    });
+    // Update the denormalized purchasedAgentBucks total on the user
+    const user = await ctx.db.get(args.userId);
+    if (user) {
+      const current = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
+      await ctx.db.patch(args.userId, { purchasedAgentBucks: current + args.amount });
+    }
+  },
+});
+
+/**
+ * Deduct AgentBucks from credit batches (closest expiry first), then daily credits.
+ * Expired batches are skipped and cleaned up.
+ */
+export const deductFromBatches = internalMutation({
+  args: {
+    userId: v.id("users"),
+    amount: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    let remaining = args.amount;
+
+    // Get all non-expired batches for this user, ordered by expiry (closest first)
+    const batches = await ctx.db
+      .query("creditBatches")
+      .withIndex("by_user_and_expiry", (q) => q.eq("userId", args.userId))
+      .order("asc") // ascending = closest expiry first
+      .take(200);
+
+    // Filter out expired batches and clean them up
+    const expiredBatches = batches.filter(b => b.expiresAt <= now);
+    for (const b of expiredBatches) await ctx.db.delete(b._id);
+
+    const activeBatches = batches.filter(b => b.expiresAt > now && b.remaining > 0);
+
+    // Deduct from batches (closest expiry first)
+    let totalDeductedFromBatches = 0;
+    for (const batch of activeBatches) {
+      if (remaining <= 0) break;
+      const deduct = Math.min(batch.remaining, remaining);
+      await ctx.db.patch(batch._id, { remaining: batch.remaining - deduct });
+      remaining -= deduct;
+      totalDeductedFromBatches += deduct;
+    }
+
+    // If still remaining, deduct from daily credits
+    const user = await ctx.db.get(args.userId);
+    if (!user) return;
+
+    const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? 0;
+    const newDaily = Math.max(0, daily - remaining);
+
+    // Recalculate total purchased from remaining batches
+    const updatedBatches = await ctx.db
+      .query("creditBatches")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .take(200);
+    const totalPurchased = updatedBatches
+      .filter(b => b.expiresAt > now)
+      .reduce((sum, b) => sum + b.remaining, 0);
+
+    await ctx.db.patch(args.userId, {
+      dailyAgentBucks: newDaily,
+      purchasedAgentBucks: totalPurchased,
+      totalUsageCents: ((user as { totalUsageCents?: number }).totalUsageCents ?? 0) + Math.ceil(args.amount / 15000),
+    });
+  },
+});
+
+/**
+ * Get total purchased credits (sum of non-expired batch remainders).
+ */
+export const getPurchasedCredits = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const batches = await ctx.db
+      .query("creditBatches")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .take(200);
+    return batches
+      .filter(b => b.expiresAt > now && b.remaining > 0)
+      .reduce((sum, b) => sum + b.remaining, 0);
+  },
+});
+
+/**
+ * Get credit batches for display (non-expired, sorted by expiry).
+ */
+export const getCreditBatches = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const batches = await ctx.db
+      .query("creditBatches")
+      .withIndex("by_user_and_expiry", (q) => q.eq("userId", args.userId))
+      .order("asc")
+      .take(50);
+    return batches.filter(b => b.expiresAt > now && b.remaining > 0);
+  },
+});
+
+/**
+ * Public query for frontend to get credit batches.
+ */
+export const watchCreditBatches = mutation({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    const session = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .unique();
+    if (!session || session.expiresAt < Date.now()) return [];
+    const now = Date.now();
+    const batches = await ctx.db
+      .query("creditBatches")
+      .withIndex("by_user_and_expiry", (q) => q.eq("userId", session.userId))
+      .order("asc")
+      .take(50);
+    return batches
+      .filter(b => b.expiresAt > now && b.remaining > 0)
+      .map(b => ({
+        _id: b._id,
+        amount: b.amount,
+        remaining: b.remaining,
+        expiresAt: b.expiresAt,
+        source: b.source,
+        createdAt: b.createdAt,
+      }));
+  },
+});
+
 export const addUserCost = internalMutation({
   args: {
     userId: v.id("users"),
@@ -81,25 +234,53 @@ export const addUserCost = internalMutation({
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     if (!user) return;
-    // Legacy path: convert cents to AB using old rate (1 cent = 15,000 AB)
+    // Use new formula: costCents * 15000 = AB to deduct
     const agentBucksToDeduct = args.costCents * 15000;
-    const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? (user.agentBucksBalance ?? 0);
-    const purchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
-    let remainingDeduct = agentBucksToDeduct;
-    const newPurchased = Math.max(0, purchased - remainingDeduct);
-    remainingDeduct = Math.max(0, remainingDeduct - purchased);
-    const newDaily = Math.max(0, daily - remainingDeduct);
+    const now = Date.now();
+
+    // Deduct from batches (closest expiry first)
+    let remaining = agentBucksToDeduct;
+    const batches = await ctx.db
+      .query("creditBatches")
+      .withIndex("by_user_and_expiry", (q) => q.eq("userId", args.userId))
+      .order("asc")
+      .take(200);
+
+    const expiredBatches = batches.filter(b => b.expiresAt <= now);
+    for (const b of expiredBatches) await ctx.db.delete(b._id);
+
+    const activeBatches = batches.filter(b => b.expiresAt > now && b.remaining > 0);
+    for (const batch of activeBatches) {
+      if (remaining <= 0) break;
+      const deduct = Math.min(batch.remaining, remaining);
+      await ctx.db.patch(batch._id, { remaining: batch.remaining - deduct });
+      remaining -= deduct;
+    }
+
+    // Remaining deducted from daily
+    const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? 0;
+    const newDaily = Math.max(0, daily - remaining);
+
+    // Recalculate total purchased
+    const updatedBatches = await ctx.db
+      .query("creditBatches")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .take(200);
+    const totalPurchased = updatedBatches
+      .filter(b => b.expiresAt > now)
+      .reduce((sum, b) => sum + b.remaining, 0);
+
     await ctx.db.patch(args.userId, {
-      totalUsageCents: (user.totalUsageCents ?? 0) + args.costCents,
+      totalUsageCents: ((user as { totalUsageCents?: number }).totalUsageCents ?? 0) + args.costCents,
       dailyAgentBucks: newDaily,
-      purchasedAgentBucks: newPurchased,
+      purchasedAgentBucks: totalPurchased,
     });
   },
 });
 
 /**
- * Deduct AgentBucks directly using the new formula.
- * Purchased credits are deducted first, then daily credits.
+ * Deduct AgentBucks directly (used by new cost formula).
+ * Purchased credits are deducted first (closest expiry), then daily credits.
  */
 export const deductAgentBucks = internalMutation({
   args: {
@@ -109,16 +290,43 @@ export const deductAgentBucks = internalMutation({
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     if (!user) return;
-    const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? (user.agentBucksBalance ?? 0);
-    const purchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
-    // Purchased credits deducted first, then daily
+    const now = Date.now();
     let remaining = args.agentBucksToDeduct;
-    const newPurchased = Math.max(0, purchased - remaining);
-    remaining = Math.max(0, remaining - purchased);
+
+    // Deduct from batches (closest expiry first)
+    const batches = await ctx.db
+      .query("creditBatches")
+      .withIndex("by_user_and_expiry", (q) => q.eq("userId", args.userId))
+      .order("asc")
+      .take(200);
+
+    const expiredBatches = batches.filter(b => b.expiresAt <= now);
+    for (const b of expiredBatches) await ctx.db.delete(b._id);
+
+    const activeBatches = batches.filter(b => b.expiresAt > now && b.remaining > 0);
+    for (const batch of activeBatches) {
+      if (remaining <= 0) break;
+      const deduct = Math.min(batch.remaining, remaining);
+      await ctx.db.patch(batch._id, { remaining: batch.remaining - deduct });
+      remaining -= deduct;
+    }
+
+    // Remaining from daily
+    const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? 0;
     const newDaily = Math.max(0, daily - remaining);
+
+    // Recalculate total purchased
+    const updatedBatches = await ctx.db
+      .query("creditBatches")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .take(200);
+    const totalPurchased = updatedBatches
+      .filter(b => b.expiresAt > now)
+      .reduce((sum, b) => sum + b.remaining, 0);
+
     await ctx.db.patch(args.userId, {
       dailyAgentBucks: newDaily,
-      purchasedAgentBucks: newPurchased,
+      purchasedAgentBucks: totalPurchased,
     });
   },
 });
@@ -129,13 +337,22 @@ export const addAgentBucks = internalMutation({
     agentBucks: v.number(),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-    if (!user) return;
-    // Purchased AgentBucks never reset
-    const currentPurchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
-    await ctx.db.patch(args.userId, {
-      purchasedAgentBucks: currentPurchased + args.agentBucks,
+    // Add as a credit batch with 90-day expiry
+    const now = Date.now();
+    const expiresAt = now + 90 * 24 * 60 * 60 * 1000;
+    await ctx.db.insert("creditBatches", {
+      userId: args.userId,
+      amount: args.agentBucks,
+      remaining: args.agentBucks,
+      expiresAt,
+      source: "purchase",
+      createdAt: now,
     });
+    const user = await ctx.db.get(args.userId);
+    if (user) {
+      const current = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
+      await ctx.db.patch(args.userId, { purchasedAgentBucks: current + args.agentBucks });
+    }
   },
 });
 

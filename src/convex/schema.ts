@@ -116,6 +116,18 @@ const schema = defineSchema(
       .index("by_session", ["sessionId"])
       .index("by_session_and_path", ["sessionId", "filepath"]),
 
+    // Purchased credit batches — each batch has its own expiry (90 days from purchase)
+    creditBatches: defineTable({
+      userId: v.id("users"),
+      amount: v.number(),           // AB amount in this batch
+      remaining: v.number(),        // AB remaining (decrements as used)
+      expiresAt: v.number(),        // timestamp when this batch expires
+      source: v.string(),           // "purchase" | "spin" | "referral" | "promo"
+      createdAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_user_and_expiry", ["userId", "expiresAt"]),
+
     // Daytona sandboxes
     sandboxes: defineTable({
       userId: v.id("users"),
