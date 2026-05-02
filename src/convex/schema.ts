@@ -91,6 +91,10 @@ const schema = defineSchema(
       finalReviewCoderEnabled: v.optional(v.boolean()), // true if critic failed in final review
       // Deploy commands set by agents
       deployCommandsJson: v.optional(v.string()), // JSON string of string[]
+      // Per-task summaries — JSON string of { taskIndex: number, summary: string }[]
+      taskSummariesJson: v.optional(v.string()),
+      // Current task difficulty
+      currentTaskDifficulty: v.optional(v.string()), // "normal" | "hard" | "extreme"
     })
       .index("by_user", ["userId"]),
 

@@ -317,6 +317,26 @@ export const upsertProjectFile = internalMutation({
   },
 });
 
+export const updateTaskSummaries = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    taskSummariesJson: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, { taskSummariesJson: args.taskSummariesJson });
+  },
+});
+
+export const updateTaskDifficulty = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    difficulty: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, { currentTaskDifficulty: args.difficulty });
+  },
+});
+
 // ── Public file operation mutations (called from frontend) ────────────────────
 export const deleteFilePublic = mutation({
   args: {
