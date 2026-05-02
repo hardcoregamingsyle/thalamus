@@ -180,7 +180,6 @@ export default function CreditModal({ open, onClose, totalAB, dailyAB, purchased
                       </button>
                     ))}
                   </div>
-                  <p className="text-[10px] text-muted-foreground text-center">$1 = ₹100 • 1 AB = $0.000001</p>
                 </div>
 
                 {/* Refer & Earn */}
