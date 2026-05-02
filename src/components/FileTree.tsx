@@ -24,11 +24,13 @@ export interface FileTreeNode {
 export function buildFileTree(files: FileTreeFile[]): FileTreeNode[] {
   const rootMap = new Map<string, FileTreeNode>();
 
-  function getOrCreateFolder(map: Map<string, FileTreeNode>, name: string, fullPath: string): FileTreeNode {
+  type NodeWithMap = FileTreeNode & { _map?: Map<string, FileTreeNode> };
+
+  function getOrCreateFolder(map: Map<string, FileTreeNode>, name: string, fullPath: string): NodeWithMap {
     if (!map.has(name)) {
       map.set(name, { name, path: fullPath, type: "folder", children: [] });
     }
-    return map.get(name)!;
+    return map.get(name) as NodeWithMap;
   }
 
   for (const file of files) {
@@ -47,10 +49,13 @@ export function buildFileTree(files: FileTreeFile[]): FileTreeNode[] {
       } else {
         const folder = getOrCreateFolder(currentMap, part, fullPath);
         if (!folder.children) folder.children = [];
-        const childMap = new Map<string, FileTreeNode>();
-        for (const child of folder.children) childMap.set(child.name, child);
-        (folder as FileTreeNode & { _map: Map<string, FileTreeNode> })._map = childMap;
-        currentMap = childMap;
+        // Reuse existing _map if present, otherwise create from current children
+        if (!folder._map) {
+          const childMap = new Map<string, FileTreeNode>();
+          for (const child of folder.children) childMap.set(child.name, child);
+          folder._map = childMap;
+        }
+        currentMap = folder._map;
       }
     }
   }
@@ -58,7 +63,7 @@ export function buildFileTree(files: FileTreeFile[]): FileTreeNode[] {
   function finalize(map: Map<string, FileTreeNode>): FileTreeNode[] {
     const nodes: FileTreeNode[] = [];
     for (const node of map.values()) {
-      const n = node as FileTreeNode & { _map?: Map<string, FileTreeNode> };
+      const n = node as NodeWithMap;
       if (n._map) {
         n.children = finalize(n._map);
         delete n._map;
