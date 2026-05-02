@@ -111,6 +111,8 @@ const schema = defineSchema(
       content: v.string(),
       round: v.optional(v.number()),
       messageIndex: v.optional(v.number()),
+      modelUsed: v.optional(v.string()),        // e.g. "gemini-3.1-flash-lite-preview", "claude-haiku-4-5"
+      agentBucksDeducted: v.optional(v.number()), // AB cost for this message
     })
       .index("by_session", ["sessionId"]),
 

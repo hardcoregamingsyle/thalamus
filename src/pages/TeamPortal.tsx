@@ -24,6 +24,8 @@ interface AgentMessage {
   round?: number;
   messageIndex?: number;
   isUser?: boolean;
+  modelUsed?: string;
+  agentBucksDeducted?: number;
 }
 
 interface TeamSession {
@@ -376,6 +378,8 @@ export default function TeamPortal() {
 
   const agentMessages: AgentMessage[] = (liveMessages ?? []).map((m) => ({
     _id: m._id as string, agent: m.agent, content: m.content, round: m.round, messageIndex: m.messageIndex,
+    modelUsed: (m as Record<string, unknown>).modelUsed as string | undefined,
+    agentBucksDeducted: (m as Record<string, unknown>).agentBucksDeducted as number | undefined,
   }));
 
   // Merge agent messages with user messages, sorted by messageIndex
@@ -1214,7 +1218,12 @@ export default function TeamPortal() {
                           )}
                           <div className={`flex-1 min-w-0 ${msg.isUser ? "flex flex-col items-end" : ""}`}>
                             {!msg.isUser && (
-                              <p className={`text-xs font-bold mb-1 ${AGENT_COLORS[msg.agent] || "text-foreground"}`}>{msg.agent}</p>
+                              <div className="flex items-baseline gap-2 mb-1">
+                                <p className={`text-xs font-bold ${AGENT_COLORS[msg.agent] || "text-foreground"}`}>{msg.agent}</p>
+                                {msg.modelUsed && (
+                                  <span className="text-[9px] text-muted-foreground/60 font-mono">{msg.modelUsed}</span>
+                                )}
+                              </div>
                             )}
                             <div className={`rounded-2xl px-3 py-2.5 border shadow-sm ${
                               msg.isUser
@@ -1224,6 +1233,11 @@ export default function TeamPortal() {
                                 : `rounded-tl-sm ${AGENT_BG[msg.agent] || "bg-card border-border"} max-w-[90%]`
                             }`}>
                               <MessageContent msg={msg} currentTaskIndex={sessionInfo?.currentTaskIndex} />
+                              {!msg.isUser && msg.agentBucksDeducted !== undefined && msg.agentBucksDeducted > 0 && (
+                                <p className="text-[9px] text-muted-foreground/50 mt-1.5 text-right font-mono">
+                                  -{msg.agentBucksDeducted.toLocaleString()} AB
+                                </p>
+                              )}
                             </div>
                           </div>
                           {msg.isUser && (

@@ -10,6 +10,8 @@ export const saveAgentMessage = internalMutation({
     content: v.string(),
     round: v.optional(v.number()),
     messageIndex: v.optional(v.number()),
+    modelUsed: v.optional(v.string()),
+    agentBucksDeducted: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await ctx.db.insert("agentMessages", {
@@ -19,6 +21,8 @@ export const saveAgentMessage = internalMutation({
       content: args.content,
       round: args.round,
       messageIndex: args.messageIndex,
+      modelUsed: args.modelUsed,
+      agentBucksDeducted: args.agentBucksDeducted,
     });
   },
 });
