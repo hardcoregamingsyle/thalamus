@@ -2,60 +2,37 @@
 // This keeps agentTeam.ts lean for faster module loading
 
 // ── Claude via Amazon Bedrock — Pricing (cents per million tokens) ────────────
-// These constants define the pricing for future Claude integration.
-// Input/output costs are in USD cents per 1,000,000 tokens.
 export const CLAUDE_PRICING = {
-  // Claude Haiku 4.5: $1.80/M input, $7.20/M output
   "claude-haiku-4-5": {
-    inputCentsPerMillion: 180,   // $1.80 = 180 cents
-    outputCentsPerMillion: 720,  // $7.20 = 720 cents
+    inputCentsPerMillion: 180,
+    outputCentsPerMillion: 720,
     label: "Claude Haiku 4.5",
   },
-  // Claude Sonnet 4.6: $5.40/M input, $26.50/M output
   "claude-sonnet-4-6": {
-    inputCentsPerMillion: 540,   // $5.40 = 540 cents
-    outputCentsPerMillion: 2650, // $26.50 = 2650 cents
+    inputCentsPerMillion: 540,
+    outputCentsPerMillion: 2650,
     label: "Claude Sonnet 4.6",
   },
-  // Claude Opus 4.6: $7.44/M input, $42.00/M output
   "claude-opus-4-6": {
-    inputCentsPerMillion: 744,   // $7.44 = 744 cents
-    outputCentsPerMillion: 4200, // $42.00 = 4200 cents
+    inputCentsPerMillion: 744,
+    outputCentsPerMillion: 4200,
     label: "Claude Opus 4.6",
   },
-  // Claude Opus 4.7: $12.00/M input, $60.00/M output
   "claude-opus-4-7": {
-    inputCentsPerMillion: 1200,  // $12.00 = 1200 cents
-    outputCentsPerMillion: 6000, // $60.00 = 6000 cents
+    inputCentsPerMillion: 1200,
+    outputCentsPerMillion: 6000,
     label: "Claude Opus 4.7",
   },
 } as const;
 
 export type ClaudeModel = keyof typeof CLAUDE_PRICING;
 
-/**
- * Calculate cost in cents for a Claude model call.
- * @param model - The Claude model identifier
- * @param inputTokens - Number of input tokens used
- * @param outputTokens - Number of output tokens used
- * @returns Cost in cents (fractional)
- */
 export function calcClaudeCost(model: ClaudeModel, inputTokens: number, outputTokens: number): number {
   const pricing = CLAUDE_PRICING[model];
   return (inputTokens / 1_000_000) * pricing.inputCentsPerMillion
        + (outputTokens / 1_000_000) * pricing.outputCentsPerMillion;
 }
 
-/**
- * Calculate AgentBucks to deduct using the new formula:
- * AB = (tokens / 1,000,000) * costPerMillion * 1,500,000
- *
- * @param inputTokens - Number of input tokens
- * @param outputTokens - Number of output tokens
- * @param inputCostPerMillion - Input cost in USD dollars per 1M tokens
- * @param outputCostPerMillion - Output cost in USD dollars per 1M tokens
- * @returns Total AgentBucks to deduct (integer, rounded up)
- */
 export function calcAgentBucksFromTokens(
   inputTokens: number,
   outputTokens: number,
@@ -67,21 +44,186 @@ export function calcAgentBucksFromTokens(
   return Math.ceil(inputAB + outputAB);
 }
 
-/**
- * Calculate AgentBucks for a Claude model call using the new formula.
- * @param model - The Claude model identifier
- * @param inputTokens - Number of input tokens
- * @param outputTokens - Number of output tokens
- * @returns AgentBucks to deduct (integer, rounded up)
- */
 export function calcClaudeAgentBucks(model: ClaudeModel, inputTokens: number, outputTokens: number): number {
   const pricing = CLAUDE_PRICING[model];
   return calcAgentBucksFromTokens(
     inputTokens,
     outputTokens,
-    pricing.inputCentsPerMillion / 100,  // convert cents to dollars
+    pricing.inputCentsPerMillion / 100,
     pricing.outputCentsPerMillion / 100,
   );
+}
+
+// ── Model routing — which model each agent uses ───────────────────────────────
+// "gemini" = gemini-3.1-flash-lite-preview (free, fast)
+// "haiku"  = claude-haiku-4-5 (cheap Claude)
+// "sonnet" = claude-sonnet-4-6 (mid-tier Claude)
+// "opus46" = claude-opus-4-6 (high-tier Claude)
+// "opus47" = claude-opus-4-7 (top-tier Claude)
+export type ModelTier = "gemini" | "haiku" | "sonnet" | "opus46" | "opus47";
+
+// Default model per agent (Code Mode)
+export const AGENT_MODEL_MAP: Record<string, ModelTier> = {
+  // Planning phase
+  Researcher: "gemini",
+  Analyser: "sonnet",
+  Planner: "haiku",
+  // Task execution
+  Coder: "gemini",       // overridden by difficulty
+  Optimiser: "sonnet",
+  Organizer: "sonnet",
+  Tester: "gemini",
+  Summarizer: "gemini",
+  // Red Team sub-agents
+  VulnerabilitySpotter: "haiku",
+  DataCorruptor: "sonnet",
+  ZeroDayExploiter: "sonnet",
+  FrameworkAuditor: "haiku",
+  RedTeamOrchestrator: "gemini",
+  // Final review
+  Critic: "gemini",
+  // Research mode — all gemini
+  ResearchPlanner: "gemini",
+  DataTaker: "gemini",
+  ResearchOrganiser: "gemini",
+};
+
+// Difficulty → Coder model override
+export const DIFFICULTY_CODER_MODEL: Record<string, ModelTier> = {
+  normal: "gemini",
+  hard: "opus46",
+  extreme: "opus47",
+};
+
+// Difficulty → Red Team sonnet agents override (extreme only)
+export const DIFFICULTY_REDTEAM_SONNET_OVERRIDE: Record<string, ModelTier | null> = {
+  normal: null,
+  hard: null,
+  extreme: "opus46",
+};
+
+export type TaskDifficulty = "normal" | "hard" | "extreme";
+
+// ── VLY-based Claude caller ───────────────────────────────────────────────────
+// Uses VLY integration gateway to call Claude models
+// Token-saving strategies:
+// - Trim system prompts to essentials
+// - Cap context at 4000 chars
+// - Use maxTokens limits per model tier
+// - No streaming (saves overhead)
+
+const VLY_KEY = process.env.VLY_INTEGRATION_KEY || "sk_3582a48894027ae69e5fa24948bd80aae2cc4e788f94c656cdca1c9b5a1e9632";
+const VLY_BASE_URL = process.env.VLY_INTEGRATION_BASE_URL || "https://integrations.vly.ai/";
+
+// Max output tokens per model tier (to save credits)
+const MAX_OUTPUT_TOKENS: Record<ClaudeModel, number> = {
+  "claude-haiku-4-5": 2048,
+  "claude-sonnet-4-6": 3000,
+  "claude-opus-4-6": 4000,
+  "claude-opus-4-7": 4000,
+};
+
+/**
+ * Unified model caller — routes to Claude or Gemini based on tier.
+ * Token-saving: trims context, uses appropriate max tokens.
+ */
+export async function callModel(
+  prompt: string,
+  systemPrompt: string,
+  tier: ModelTier,
+): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: ModelTier }> {
+  const TIER_TO_CLAUDE: Partial<Record<ModelTier, ClaudeModel>> = {
+    haiku: "claude-haiku-4-5",
+    sonnet: "claude-sonnet-4-6",
+    opus46: "claude-opus-4-6",
+    opus47: "claude-opus-4-7",
+  };
+  const claudeModel = TIER_TO_CLAUDE[tier];
+  if (claudeModel) {
+    const result = await callClaude(prompt, systemPrompt, claudeModel);
+    return { ...result, tier };
+  }
+  // gemini tier
+  const result = await callGemini(prompt, systemPrompt);
+  return { ...result, tier };
+}
+
+/**
+ * Calculate AgentBucks for a model tier call.
+ */
+export function calcAgentBucksForTier(
+  tier: ModelTier,
+  inputTokens: number,
+  outputTokens: number,
+): number {
+  const TIER_PRICING: Record<ModelTier, { input: number; output: number }> = {
+    gemini: { input: 0.60, output: 2.40 },
+    haiku: { input: 1.80, output: 7.20 },
+    sonnet: { input: 5.40, output: 26.50 },
+    opus46: { input: 7.44, output: 42.00 },
+    opus47: { input: 12.00, output: 60.00 },
+  };
+  const p = TIER_PRICING[tier];
+  return calcAgentBucksFromTokens(inputTokens, outputTokens, p.input, p.output);
+}
+
+export async function callClaude(
+  prompt: string,
+  systemPrompt: string,
+  model: ClaudeModel,
+): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+  // Trim prompt to save tokens — Claude is expensive
+  const trimmedPrompt = prompt.length > 8000 ? prompt.slice(0, 8000) + "\n...[context trimmed for efficiency]" : prompt;
+  const trimmedSystem = systemPrompt.length > 1500 ? systemPrompt.slice(0, 1500) + "\n...[system trimmed]" : systemPrompt;
+
+  const maxTokens = MAX_OUTPUT_TOKENS[model];
+
+  try {
+    const response = await fetch(`${VLY_BASE_URL}ai/completion`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${VLY_KEY}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: trimmedSystem },
+          { role: "user", content: trimmedPrompt },
+        ],
+        maxTokens,
+        temperature: 0.5, // lower temp = more focused = fewer tokens wasted
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      throw new Error(`VLY Claude API error ${response.status}: ${errText.slice(0, 200)}`);
+    }
+
+    const data = await response.json() as {
+      success?: boolean;
+      data?: {
+        choices?: Array<{ message?: { content?: string } }>;
+        usage?: { promptTokens?: number; completionTokens?: number };
+      };
+      error?: string;
+    };
+
+    if (!data.success || !data.data) {
+      throw new Error(`VLY Claude error: ${data.error ?? "No response"}`);
+    }
+
+    const text = data.data.choices?.[0]?.message?.content ?? "";
+    const inputTokens = data.data.usage?.promptTokens ?? 0;
+    const outputTokens = data.data.usage?.completionTokens ?? 0;
+
+    return { text, inputTokens, outputTokens };
+  } catch (err) {
+    // Fallback to Gemini if Claude fails
+    console.error(`Claude ${model} failed, falling back to Gemini:`, err);
+    return callGemini(prompt, systemPrompt);
+  }
 }
 
 const GEMINI_KEYS = [
@@ -407,6 +549,7 @@ export interface PlannerTask {
   title: string;
   description: string;
   subpart: boolean;
+  difficulty?: "normal" | "hard" | "extreme";
   dependencies?: string[];
 }
 
@@ -442,6 +585,18 @@ export function parsePlannerOutput(content: string): PlannerOutput | null {
     } catch { /* keep trying */ }
   }
   return null;
+}
+
+// ── Difficulty parsing from Planner output ────────────────────────────────────
+export function parseDifficultyFromPlannerOutput(content: string): TaskDifficulty {
+  // Look for difficulty field in JSON
+  const diffMatch = content.match(/"difficulty"\s*:\s*"(normal|hard|extreme)"/i);
+  if (diffMatch) {
+    const d = diffMatch[1].toLowerCase();
+    if (d === "hard") return "hard";
+    if (d === "extreme") return "extreme";
+  }
+  return "normal"; // default to normal (cheapest)
 }
 
 export const AGENT_SYSTEM_PROMPTS: Record<string, string> = {
@@ -586,6 +741,14 @@ TASK TYPES:
 - Testing tasks: test files for each module (subpart: false)
 - Documentation tasks: README, API docs (subpart: false)
 
+DIFFICULTY SELECTION — BE EXTREMELY CONSERVATIVE:
+Each task has a "difficulty" field. This controls which AI model the Coder uses:
+- "normal" → standard model (cheapest, use for 90%+ of tasks)
+- "hard" → expensive model (use ONLY for genuinely complex algorithmic tasks: cryptography, complex state machines, real-time systems, advanced ML)
+- "extreme" → most expensive model (use ONLY as absolute last resort for tasks that are provably impossible without it — e.g., novel algorithm design, complex distributed systems)
+
+WARNING: Selecting "hard" or "extreme" costs significantly more credits. Default to "normal" unless the task is genuinely impossible at normal difficulty. Most tasks should be "normal".
+
 MANDATORY: You MUST output ONLY valid JSON. No markdown, no explanation, no text before or after.
 
 {
@@ -596,6 +759,7 @@ MANDATORY: You MUST output ONLY valid JSON. No markdown, no explanation, no text
       "title": "Initialize project structure and package.json",
       "description": "Create package.json with all dependencies, tsconfig.json, .env.example, .gitignore, and base directory structure",
       "subpart": false,
+      "difficulty": "normal",
       "dependencies": []
     }
   ]
@@ -891,6 +1055,33 @@ Output your security verdict:
 - If unfixable critical issues remain: <<Fail>>
 
 Start with "## Red Team Security Assessment" header.`,
+
+  Summarizer: `You are the Summarizer agent. Your job is to create a CONCISE summary of what was accomplished in the current task.
+
+You will receive the full conversation history for this task. Produce a brief, structured summary that will be used as context for future tasks.
+
+OUTPUT FORMAT (keep it SHORT — max 300 words):
+
+## Task Summary: [Task Title]
+
+### What Was Done
+- Bullet points of key actions taken
+- Files created/modified (list filenames only)
+- Key decisions made
+
+### Current State
+- What is working
+- What was implemented
+
+### Key Technical Details
+- Important implementation choices
+- Dependencies added
+- Configuration changes
+
+### Issues Encountered
+- Any problems found and how they were resolved (or if unresolved)
+
+Be CONCISE. Future agents will read this summary, not the full history. Focus on facts, not explanations.`,
 
   Critic: `You are the Critic agent. Your job is to do a final quality review of the entire project.
 

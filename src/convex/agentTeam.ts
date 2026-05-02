@@ -3,7 +3,7 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { callGemini, performSearch, performScrape, parseAgentOutput, parsePlannerOutput, AGENT_SYSTEM_PROMPTS, PlannerTask, CLAUDE_PRICING, calcClaudeCost, calcAgentBucksFromTokens } from "./agentCore";
+import { callGemini, callModel, calcAgentBucksForTier, performSearch, performScrape, parseAgentOutput, parsePlannerOutput, parseDifficultyFromPlannerOutput, AGENT_SYSTEM_PROMPTS, PlannerTask, CLAUDE_PRICING, calcClaudeCost, calcAgentBucksFromTokens, AGENT_MODEL_MAP, DIFFICULTY_CODER_MODEL, DIFFICULTY_REDTEAM_SONNET_OVERRIDE, TaskDifficulty, ModelTier } from "./agentCore";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_MESSAGES = 600;
@@ -19,11 +19,11 @@ const RAG_BASE_URL = "https://leadshello-graph-rag-and-chroma-db.hf.space";
 
 const PLANNING_PIPELINE = ["Researcher", "Analyser", "Planner"];
 
-// Per-task pipeline — Organizer runs after Optimiser
-const TASK_PIPELINE_FULL = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
-const TASK_PIPELINE_SUBPART = ["Researcher", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
+// Per-task pipeline — Summarizer runs after Critic approves
+const TASK_PIPELINE_FULL = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic", "Summarizer"];
+const TASK_PIPELINE_SUBPART = ["Researcher", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic", "Summarizer"];
 
-// Final review pipeline
+// Final review pipeline (no Summarizer — final review is the end)
 const FINAL_REVIEW_PIPELINE_SKIP_CODER = ["Researcher", "Analyser", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
 const FINAL_REVIEW_PIPELINE_WITH_CODER = ["Researcher", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
 
@@ -43,6 +43,8 @@ type SessionRow = {
   currentTaskIndex?: number;
   executionPhase?: string;
   finalReviewCoderEnabled?: boolean;
+  taskSummariesJson?: string;
+  currentTaskDifficulty?: string;
 };
 type MsgRow = { _id: Id<"agentMessages">; agent: string; content: string; round?: number; messageIndex?: number };
 type FileRow = { _id: Id<"projectFiles">; filepath: string; content: string; lastModifiedBy: string };
