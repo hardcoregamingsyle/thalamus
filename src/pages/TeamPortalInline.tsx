@@ -1033,23 +1033,21 @@ export default function TeamPortalInline({ token }: { token: string }) {
                         <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border ${AGENT_BG[msg.agent] || "bg-muted/20 border-border"}`}>
                           {AGENT_ICONS[msg.agent] || msg.agent[0]}
                         </div>
-                        <div className={`flex-1 max-w-2xl flex flex-col gap-1 ${msg.isUser ? "items-end" : "items-start"}`}>
-                          <div className={`flex items-baseline gap-2 ${msg.isUser ? "flex-row-reverse" : ""}`}>
-                            <span className={`text-[10px] font-bold ${AGENT_COLORS[msg.agent] || "text-muted-foreground"}`}>{msg.agent}</span>
-                            {!msg.isUser && msg.modelUsed && (
-                              <span className="text-[9px] text-muted-foreground/60 font-mono">{msg.modelUsed}</span>
-                            )}
-                          </div>
+                        <div className={`flex-1 max-w-2xl flex flex-col gap-0.5 ${msg.isUser ? "items-end" : "items-start"}`}>
+                          <span className={`text-[10px] font-bold ${AGENT_COLORS[msg.agent] || "text-muted-foreground"}`}>{msg.agent}</span>
+                          {!msg.isUser && msg.modelUsed && (
+                            <span className="text-[9px] text-muted-foreground/50 font-mono leading-none mb-1">{msg.modelUsed}</span>
+                          )}
                           <div className={`rounded-xl px-4 py-3 text-xs leading-relaxed ${
                             msg.isUser ? "bg-primary/15 border border-primary/30 text-foreground" : "bg-card border border-border text-foreground"
                           }`}>
                             <MessageContent msg={msg} currentTaskIndex={sessionInfo?.currentTaskIndex} />
-                            {!msg.isUser && msg.agentBucksDeducted !== undefined && msg.agentBucksDeducted > 0 && (
-                              <p className="text-[9px] text-muted-foreground/50 mt-1.5 text-right font-mono">
-                                -{msg.agentBucksDeducted.toLocaleString()} AB
-                              </p>
-                            )}
                           </div>
+                          {!msg.isUser && msg.agentBucksDeducted !== undefined && msg.agentBucksDeducted > 0 && (
+                            <span className="text-[9px] text-muted-foreground/40 font-mono mt-0.5">
+                              -{msg.agentBucksDeducted.toLocaleString()} AB
+                            </span>
+                          )}
                         </div>
                       </motion.div>
                     ))}
