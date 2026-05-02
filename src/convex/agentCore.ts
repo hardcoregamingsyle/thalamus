@@ -1,6 +1,51 @@
 // Pure utility module - no Convex imports, just logic
 // This keeps agentTeam.ts lean for faster module loading
 
+// ── Claude via Amazon Bedrock — Pricing (cents per million tokens) ────────────
+// These constants define the pricing for future Claude integration.
+// Input/output costs are in USD cents per 1,000,000 tokens.
+export const CLAUDE_PRICING = {
+  // Claude Haiku 4.5: $1.80/M input, $7.20/M output
+  "claude-haiku-4-5": {
+    inputCentsPerMillion: 180,   // $1.80 = 180 cents
+    outputCentsPerMillion: 720,  // $7.20 = 720 cents
+    label: "Claude Haiku 4.5",
+  },
+  // Claude Sonnet 4.6: $5.40/M input, $26.50/M output
+  "claude-sonnet-4-6": {
+    inputCentsPerMillion: 540,   // $5.40 = 540 cents
+    outputCentsPerMillion: 2650, // $26.50 = 2650 cents
+    label: "Claude Sonnet 4.6",
+  },
+  // Claude Opus 4.6: $7.44/M input, $42.00/M output
+  "claude-opus-4-6": {
+    inputCentsPerMillion: 744,   // $7.44 = 744 cents
+    outputCentsPerMillion: 4200, // $42.00 = 4200 cents
+    label: "Claude Opus 4.6",
+  },
+  // Claude Opus 4.7: $12.00/M input, $60.00/M output
+  "claude-opus-4-7": {
+    inputCentsPerMillion: 1200,  // $12.00 = 1200 cents
+    outputCentsPerMillion: 6000, // $60.00 = 6000 cents
+    label: "Claude Opus 4.7",
+  },
+} as const;
+
+export type ClaudeModel = keyof typeof CLAUDE_PRICING;
+
+/**
+ * Calculate cost in cents for a Claude model call.
+ * @param model - The Claude model identifier
+ * @param inputTokens - Number of input tokens used
+ * @param outputTokens - Number of output tokens used
+ * @returns Cost in cents (fractional)
+ */
+export function calcClaudeCost(model: ClaudeModel, inputTokens: number, outputTokens: number): number {
+  const pricing = CLAUDE_PRICING[model];
+  return (inputTokens / 1_000_000) * pricing.inputCentsPerMillion
+       + (outputTokens / 1_000_000) * pricing.outputCentsPerMillion;
+}
+
 const GEMINI_KEYS = [
   "AIzaSyB6LdCRxGz27Xpj-K8-EiOVBQRvl0SPzyQ",
   "AIzaSyBZHdEWGlYTpr26fVGGWBOHxn4dRKkd-9Y",
