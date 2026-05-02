@@ -81,19 +81,42 @@ export const addUserCost = internalMutation({
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     if (!user) return;
-    // Deduct from AgentBucks: purchased first, then daily (1 cent = 15,000 AB; $1 = 1,500,000 AB)
+    // Legacy path: convert cents to AB using old rate (1 cent = 15,000 AB)
     const agentBucksToDeduct = args.costCents * 15000;
     const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? (user.agentBucksBalance ?? 0);
     const purchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
-
-    // Purchased credits deducted first (business logic), then daily
     let remainingDeduct = agentBucksToDeduct;
     const newPurchased = Math.max(0, purchased - remainingDeduct);
     remainingDeduct = Math.max(0, remainingDeduct - purchased);
     const newDaily = Math.max(0, daily - remainingDeduct);
-
     await ctx.db.patch(args.userId, {
       totalUsageCents: (user.totalUsageCents ?? 0) + args.costCents,
+      dailyAgentBucks: newDaily,
+      purchasedAgentBucks: newPurchased,
+    });
+  },
+});
+
+/**
+ * Deduct AgentBucks directly using the new formula.
+ * Purchased credits are deducted first, then daily credits.
+ */
+export const deductAgentBucks = internalMutation({
+  args: {
+    userId: v.id("users"),
+    agentBucksToDeduct: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user) return;
+    const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? (user.agentBucksBalance ?? 0);
+    const purchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
+    // Purchased credits deducted first, then daily
+    let remaining = args.agentBucksToDeduct;
+    const newPurchased = Math.max(0, purchased - remaining);
+    remaining = Math.max(0, remaining - purchased);
+    const newDaily = Math.max(0, daily - remaining);
+    await ctx.db.patch(args.userId, {
       dailyAgentBucks: newDaily,
       purchasedAgentBucks: newPurchased,
     });

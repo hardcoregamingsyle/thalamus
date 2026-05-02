@@ -52,17 +52,17 @@ export const saveAssistantMessage = internalMutation({
     const user = await ctx.db.get(args.userId);
     if (user) {
       const current = (user as { totalUsageCents?: number }).totalUsageCents || 0;
-      // Deduct from AgentBucks: purchased first, then daily (1 cent = 15,000 AB; $1 = 1,500,000 AB)
+      // New formula: AB = (tokens / 1M) * costPerMillion * 1,500,000
+      // costCents is in cents; $1 = 100 cents, so costPerMillion in dollars = costCents / 100
+      // For legacy callers that pass costCents directly, derive AB using: AB = costCents * 15000
       const agentBucksToDeduct = args.costCents * 15000;
       const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? 0;
       const purchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
-
-      // Purchased credits deducted first (business logic), then daily
+      // Purchased credits deducted first, then daily
       let remainingDeduct = agentBucksToDeduct;
       const newPurchased = Math.max(0, purchased - remainingDeduct);
       remainingDeduct = Math.max(0, remainingDeduct - purchased);
       const newDaily = Math.max(0, daily - remainingDeduct);
-
       await ctx.db.patch(args.userId, {
         totalUsageCents: current + args.costCents,
         dailyAgentBucks: newDaily,
