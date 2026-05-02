@@ -84,10 +84,24 @@ export default function Portal() {
   const createConversation = useMutation(api.conversations.create);
   const deleteConversation = useMutation(api.conversations.remove);
   const sendMessage = useAction(api.ai.sendMessage);
+  const generateTitle = useAction(api.ai.generateConversationTitle);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) navigate("/auth");
   }, [isLoading, isAuthenticated, navigate]);
+
+  // Update document title based on active conversation
+  useEffect(() => {
+    if (activeConvId && conversations) {
+      const conv = conversations.find((c: Conversation) => c._id === activeConvId);
+      if (conv) {
+        document.title = `${conv.title} | Thalamus AI`;
+        return;
+      }
+    }
+    document.title = "Thalamus AI";
+    return () => { document.title = "Thalamus AI"; };
+  }, [activeConvId, conversations]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -110,6 +124,7 @@ export default function Portal() {
   const handleSend = async () => {
     if (!input.trim() || isThinking || !token) return;
     let convId = activeConvId;
+    const isFirstMessage = !convId;
     if (!convId) {
       try {
         convId = await createConversation({ title: input.slice(0, 40), mode: activeMode, token });
@@ -124,6 +139,10 @@ export default function Portal() {
     setIsThinking(true);
     try {
       await sendMessage({ conversationId: convId, content: msg, mode: activeMode, token });
+      // Generate AI title on first message
+      if (isFirstMessage && convId) {
+        generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
+      }
     } catch {
       toast.error("Agent failed to respond. Try again.");
     } finally {

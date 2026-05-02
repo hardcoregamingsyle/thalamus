@@ -393,6 +393,16 @@ export default function TeamPortal() {
     filepath: f.filepath, content: f.content, lastModifiedBy: f.lastModifiedBy,
   }));
 
+  // Update document title based on active session
+  useEffect(() => {
+    if (sessionInfo?.title) {
+      document.title = `${sessionInfo.title} | Thalamus AI`;
+    } else {
+      document.title = "Thalamus AI";
+    }
+    return () => { document.title = "Thalamus AI"; };
+  }, [sessionInfo?.title]);
+
   // Actions
   const deleteFileMutation = useMutation(api.agentTeamHelpers.deleteFilePublic);
   const renameFileMutation = useMutation(api.agentTeamHelpers.renameFilePublic);

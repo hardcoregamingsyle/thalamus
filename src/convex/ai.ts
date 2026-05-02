@@ -245,6 +245,48 @@ Always explain your code with clear HTML-formatted text before and after code bl
   },
 });
 
+export const generateConversationTitle = action({
+  args: { firstMessage: v.string(), conversationId: v.id("conversations"), token: v.string() },
+  handler: async (ctx, args): Promise<string> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    // Use Gemini to generate a short title
+    const prompt = `Generate a very short, concise title (3-6 words max) for a conversation that starts with this message. Output ONLY the title, no quotes, no punctuation at the end:\n\n"${args.firstMessage.slice(0, 200)}"`;
+    
+    let title = args.firstMessage.slice(0, 40);
+    try {
+      const key = GEMINI_KEYS[Math.floor(Math.random() * GEMINI_KEYS.length)];
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${key}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 20 },
+          }),
+        }
+      );
+      if (response.ok) {
+        const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+        const generated = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (generated && generated.length > 0 && generated.length < 80) {
+          title = generated;
+        }
+      }
+    } catch { /* fallback to truncated message */ }
+
+    // Update the conversation title
+    await ctx.runMutation(internal.aiHelpers.updateConversationTitle, {
+      conversationId: args.conversationId,
+      title,
+    });
+
+    return title;
+  },
+});
+
 // ── VLY Gateway Test Action ────────────────────────────────────────────────────
 export const testVlyHaiku = action({
   args: { model: v.optional(v.string()) },
