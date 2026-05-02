@@ -17,6 +17,7 @@ const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const SyncPage = lazy(() => import("./pages/Sync.tsx"));
 const TeamPortal = lazy(() => import("./pages/TeamPortal.tsx"));
 const ReferPage = lazy(() => import("./pages/Refer.tsx"));
+const AdminPage = lazy(() => import("./pages/Admin.tsx"));
 
 // Simple loading fallback for route transitions
 function RouteLoading() {
@@ -70,6 +71,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/team" element={<TeamPortal />} />
               <Route path="/sync" element={<SyncPage />} />
               <Route path="/refer" element={<ReferPage />} />
+              <Route path="/admin" element={<AdminPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
