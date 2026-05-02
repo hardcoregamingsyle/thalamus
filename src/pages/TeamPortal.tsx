@@ -3,7 +3,8 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useQuery, useMutation } from "convex/react";
+import { FileTreeView, FileTreeFile } from "@/components/FileTree";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
@@ -315,108 +316,6 @@ function GlowPulse({ color = "primary" }: { color?: string }) {
   );
 }
 
-// ── FileTree component (shared with TeamPortalInline) ─────────────────────────
-interface FileTreeNode {
-  name: string;
-  path: string;
-  isFile: boolean;
-  content?: string;
-  lastModifiedBy?: string;
-  children?: FileTreeNode[];
-  _childMap?: Map<string, FileTreeNode>;
-}
-
-function buildFileTree(files: Array<{ filepath: string; content: string; lastModifiedBy: string }>): FileTreeNode[] {
-  // Use a Map at each level so children are keyed by name (not array index)
-  type NodeMap = Map<string, FileTreeNode>;
-
-  function insertIntoMap(nodeMap: NodeMap, parts: string[], file: { filepath: string; content: string; lastModifiedBy: string }, depth: number) {
-    const part = parts[depth];
-    const isLast = depth === parts.length - 1;
-    const fullPath = parts.slice(0, depth + 1).join("/");
-
-    if (!nodeMap.has(part)) {
-      nodeMap.set(part, isLast
-        ? { name: part, path: fullPath, isFile: true, content: file.content, lastModifiedBy: file.lastModifiedBy }
-        : { name: part, path: fullPath, isFile: false, children: [] }
-      );
-    }
-
-    if (!isLast) {
-      const node = nodeMap.get(part)!;
-      if (!node._childMap) node._childMap = new Map();
-      insertIntoMap(node._childMap, parts, file, depth + 1);
-    }
-  }
-
-  const rootMap: NodeMap = new Map();
-  for (const file of files) {
-    const parts = file.filepath.replace(/^\//, "").split("/").filter(Boolean);
-    if (parts.length > 0) insertIntoMap(rootMap, parts, file, 0);
-  }
-
-  function finalizeNode(node: FileTreeNode): FileTreeNode {
-    if (node._childMap) {
-      node.children = sortNodes([...node._childMap.values()].map(finalizeNode));
-      delete node._childMap;
-    }
-    return node;
-  }
-
-  function sortNodes(nodes: FileTreeNode[]): FileTreeNode[] {
-    return nodes.sort((a, b) => {
-      if (a.isFile !== b.isFile) return a.isFile ? 1 : -1;
-      return a.name.localeCompare(b.name);
-    });
-  }
-
-  return sortNodes([...rootMap.values()].map(finalizeNode));
-}
-
-function FileTreeNodeComponent({
-  node, depth, selectedPath, onSelect,
-}: {
-  node: FileTreeNode;
-  depth: number;
-  selectedPath: string | null;
-  onSelect: (node: FileTreeNode) => void;
-}) {
-  const [expanded, setExpanded] = useState(depth < 2);
-  if (!node.isFile) {
-    return (
-      <div>
-        <button
-          onClick={() => setExpanded(e => !e)}
-          className="w-full text-left flex items-center gap-1.5 px-2 py-1 rounded text-[11px] text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-all"
-          style={{ paddingLeft: `${8 + depth * 12}px` }}
-        >
-          {expanded ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
-          {expanded ? <FolderOpen className="h-3 w-3 shrink-0 text-amber-400" /> : <Folder className="h-3 w-3 shrink-0 text-amber-400" />}
-          <span className="truncate font-medium">{node.name}</span>
-        </button>
-        {expanded && node.children && (
-          <div>
-            {node.children.map(child => (
-              <FileTreeNodeComponent key={child.path} node={child} depth={depth + 1} selectedPath={selectedPath} onSelect={onSelect} />
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-  const isSelected = selectedPath === node.path;
-  return (
-    <button
-      onClick={() => onSelect(node)}
-      className={`w-full text-left flex items-center gap-1.5 px-2 py-1 rounded text-[11px] transition-all ${isSelected ? "bg-primary/15 text-primary border border-primary/20" : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"}`}
-      style={{ paddingLeft: `${8 + depth * 12}px` }}
-    >
-      <FileCode className="h-3 w-3 shrink-0 opacity-60" />
-      <span className="truncate">{node.name}</span>
-    </button>
-  );
-}
-
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function TeamPortal() {
   const { isLoading, isAuthenticated, user, signOut, token } = useAuth();
@@ -491,6 +390,103 @@ export default function TeamPortal() {
   }));
 
   // Actions
+  const deleteFileMutation = useMutation(api.agentTeamHelpers.deleteFilePublic);
+  const renameFileMutation = useMutation(api.agentTeamHelpers.renameFilePublic);
+  const createFileMutation = useMutation(api.agentTeamHelpers.createFilePublic);
+  const duplicateFileMutation = useMutation(api.agentTeamHelpers.duplicateFilePublic);
+
+  const handleFileDelete = async (node: import("@/components/FileTree").FileTreeNode) => {
+    if (!activeSessionId || !token) return;
+    if (!confirm(`Delete "${node.name}"?`)) return;
+    try {
+      await deleteFileMutation({ sessionId: activeSessionId, filepath: node.path, token });
+      if (selectedFile?.filepath === node.path || selectedFile?.filepath.startsWith(node.path + "/")) setSelectedFile(null);
+      toast.success(`Deleted "${node.name}"`);
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Delete failed"); }
+  };
+
+  const handleFileRename = async (node: import("@/components/FileTree").FileTreeNode, newName: string) => {
+    if (!activeSessionId || !token || !newName.trim()) return;
+    const dir = node.path.includes("/") ? node.path.substring(0, node.path.lastIndexOf("/")) : "";
+    const newPath = dir ? `${dir}/${newName.trim()}` : newName.trim();
+    try {
+      await renameFileMutation({ sessionId: activeSessionId, oldPath: node.path, newPath, token });
+      if (selectedFile?.filepath === node.path) setSelectedFile({ ...selectedFile, filepath: newPath });
+      toast.success(`Renamed to "${newName}"`);
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Rename failed"); }
+  };
+
+  const handleFileDuplicate = async (node: import("@/components/FileTree").FileTreeNode) => {
+    if (!activeSessionId || !token) return;
+    const dir = node.path.includes("/") ? node.path.substring(0, node.path.lastIndexOf("/")) : "";
+    const ext = node.name.includes(".") ? node.name.substring(node.name.lastIndexOf(".")) : "";
+    const base = node.name.includes(".") ? node.name.substring(0, node.name.lastIndexOf(".")) : node.name;
+    const newPath = dir ? `${dir}/${base}_copy${ext}` : `${base}_copy${ext}`;
+    try {
+      await duplicateFileMutation({ sessionId: activeSessionId, sourcePath: node.path, destPath: newPath, token });
+      toast.success(`Duplicated as "${base}_copy${ext}"`);
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Duplicate failed"); }
+  };
+
+  const handleFileDownload = (node: import("@/components/FileTree").FileTreeNode) => {
+    if (node.type === "file") {
+      const f = projectFiles.find(pf => pf.filepath === node.path);
+      if (f) {
+        const a = document.createElement("a");
+        a.href = `data:text/plain;charset=utf-8,${encodeURIComponent(f.content)}`;
+        a.download = node.name;
+        a.click();
+      }
+    }
+  };
+
+  const handleCreateFile = async (parentPath: string) => {
+    if (!activeSessionId || !token) return;
+    const name = prompt("File name:");
+    if (!name?.trim()) return;
+    const filepath = parentPath ? `${parentPath}/${name.trim()}` : name.trim();
+    try {
+      await createFileMutation({ sessionId: activeSessionId, filepath, content: "", token });
+      toast.success(`Created "${name}"`);
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Create failed"); }
+  };
+
+  const handleCreateFolder = async (parentPath: string) => {
+    if (!activeSessionId || !token) return;
+    const name = prompt("Folder name:");
+    if (!name?.trim()) return;
+    const filepath = parentPath ? `${parentPath}/${name.trim()}/.gitkeep` : `${name.trim()}/.gitkeep`;
+    try {
+      await createFileMutation({ sessionId: activeSessionId, filepath, content: "", token });
+      toast.success(`Folder "${name}" created`);
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Create failed"); }
+  };
+
+  const handleFileMove = async (sourcePath: string, destFolderPath: string) => {
+    if (!activeSessionId || !token) return;
+    const fileName = sourcePath.split("/").pop() ?? sourcePath;
+    const newPath = destFolderPath ? `${destFolderPath}/${fileName}` : fileName;
+    if (newPath === sourcePath) return;
+    try {
+      await renameFileMutation({ sessionId: activeSessionId, oldPath: sourcePath, newPath, token });
+      if (selectedFile?.filepath === sourcePath) setSelectedFile({ ...selectedFile, filepath: newPath });
+      toast.success(`Moved to ${destFolderPath || "root"}`);
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Move failed"); }
+  };
+
+  const handleUploadFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!activeSessionId || !token) return;
+    const files = Array.from(e.target.files ?? []);
+    for (const file of files) {
+      try {
+        const text = await file.text();
+        await createFileMutation({ sessionId: activeSessionId, filepath: file.name, content: text, token });
+        toast.success(`Uploaded "${file.name}"`);
+      } catch { toast.error(`Failed to upload "${file.name}"`); }
+    }
+    e.target.value = "";
+  };
+
   const createSession = useAction(api.agentTeam.createSession);
   const runAgentRound = useAction(api.agentTeam.runAgentRound);
   const listSessionsAction = useAction(api.agentTeam.listSessions);
@@ -1356,51 +1352,36 @@ export default function TeamPortal() {
               {activeTab === "files" && (
                 <div className="h-full flex flex-col md:flex-row overflow-hidden">
                   {/* File tree sidebar */}
-                  <div className="md:w-56 shrink-0 border-b md:border-b-0 md:border-r border-border overflow-y-auto bg-card/50 max-h-48 md:max-h-none flex flex-col">
-                    {/* Header with upload */}
-                    <div className="shrink-0 px-3 py-2 border-b border-border flex items-center justify-between">
+                  <div className="md:w-56 shrink-0 border-b md:border-b-0 md:border-r border-border bg-card/50 max-h-48 md:max-h-none flex flex-col overflow-hidden">
+                    {/* Header */}
+                    <div className="shrink-0 px-3 py-2 border-b border-border flex items-center justify-between gap-1">
                       <span className="text-[10px] font-bold text-muted-foreground tracking-widest">FILES ({projectFiles.length})</span>
-                      <label className="cursor-pointer flex items-center gap-1 px-2 py-1 bg-primary/10 border border-primary/30 text-primary text-[10px] rounded hover:bg-primary/20 transition-all">
-                        <Upload className="h-3 w-3" />
-                        <span>Upload</span>
-                        <input
-                          type="file"
-                          multiple
-                          className="hidden"
-                          onChange={async (e) => {
-                            const files = Array.from(e.target.files ?? []);
-                            for (const file of files) {
-                              const text = await file.text();
-                              if (activeSessionId && token) {
-                                try {
-                                  await (window as unknown as { __uploadFile?: (path: string, content: string) => Promise<void> }).__uploadFile?.(file.name, text);
-                                } catch { /* ignore */ }
-                              }
-                            }
-                            e.target.value = "";
-                          }}
-                        />
-                      </label>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => handleCreateFile("")} className="p-1 text-muted-foreground hover:text-primary transition-colors" title="New File">
+                          <FileCode className="h-3 w-3" />
+                        </button>
+                        <button onClick={() => handleCreateFolder("")} className="p-1 text-muted-foreground hover:text-amber-400 transition-colors" title="New Folder">
+                          <Folder className="h-3 w-3" />
+                        </button>
+                        <label className="cursor-pointer p-1 text-muted-foreground hover:text-primary transition-colors" title="Upload">
+                          <Upload className="h-3 w-3" />
+                          <input type="file" multiple className="hidden" onChange={handleUploadFiles} />
+                        </label>
+                      </div>
                     </div>
                     {/* Tree */}
-                    <div className="flex-1 overflow-y-auto p-1">
-                      {projectFiles.length === 0 ? (
-                        <p className="text-[10px] text-muted-foreground p-3 text-center">No files yet</p>
-                      ) : (
-                        buildFileTree(projectFiles).map(node => (
-                          <FileTreeNodeComponent
-                            key={node.path}
-                            node={node}
-                            depth={0}
-                            selectedPath={selectedFile?.filepath ?? null}
-                            onSelect={(n) => {
-                              const f = projectFiles.find(pf => pf.filepath === n.path);
-                              if (f) setSelectedFile(f);
-                            }}
-                          />
-                        ))
-                      )}
-                    </div>
+                    <FileTreeView
+                      files={projectFiles.map(f => ({ filepath: f.filepath, content: f.content, lastModifiedBy: f.lastModifiedBy }))}
+                      selectedPath={selectedFile?.filepath ?? null}
+                      onSelect={(f) => setSelectedFile(f)}
+                      onDelete={handleFileDelete}
+                      onDuplicate={handleFileDuplicate}
+                      onRename={handleFileRename}
+                      onDownload={handleFileDownload}
+                      onCreateFile={handleCreateFile}
+                      onCreateFolder={handleCreateFolder}
+                      onMove={handleFileMove}
+                    />
                   </div>
                   {/* File content */}
                   <div className="flex-1 overflow-auto min-h-0 min-w-0">

@@ -1,4 +1,4 @@
-import { internalMutation, internalQuery, query } from "./_generated/server";
+import { internalMutation, internalQuery, query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 
@@ -313,6 +313,121 @@ export const upsertProjectFile = internalMutation({
         content: args.content,
         lastModifiedBy: args.lastModifiedBy,
       });
+    }
+  },
+});
+
+// ── Public file operation mutations (called from frontend) ────────────────────
+export const deleteFilePublic = mutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    filepath: v.string(),
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Delete single file or all files with this path prefix (folder)
+    const allFiles = await ctx.db
+      .query("projectFiles")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .take(500);
+    const toDelete = allFiles.filter(f =>
+      f.filepath === args.filepath || f.filepath.startsWith(args.filepath + "/")
+    );
+    for (const f of toDelete) await ctx.db.delete(f._id);
+  },
+});
+
+export const renameFilePublic = mutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    oldPath: v.string(),
+    newPath: v.string(),
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const allFiles = await ctx.db
+      .query("projectFiles")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .take(500);
+    // Rename single file or all files under a folder
+    const toRename = allFiles.filter(f =>
+      f.filepath === args.oldPath || f.filepath.startsWith(args.oldPath + "/")
+    );
+    for (const f of toRename) {
+      const newFilepath = f.filepath === args.oldPath
+        ? args.newPath
+        : args.newPath + f.filepath.slice(args.oldPath.length);
+      await ctx.db.patch(f._id, { filepath: newFilepath, lastModifiedBy: "user" });
+    }
+  },
+});
+
+export const createFilePublic = mutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    filepath: v.string(),
+    content: v.optional(v.string()),
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Get userId from session
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    const userId = session.userId as Id<"users">;
+    const existing = await ctx.db
+      .query("projectFiles")
+      .withIndex("by_session_and_path", (q) =>
+        q.eq("sessionId", args.sessionId).eq("filepath", args.filepath)
+      )
+      .take(1);
+    if (existing.length > 0) {
+      await ctx.db.patch(existing[0]._id, { content: args.content ?? "", lastModifiedBy: "user" });
+    } else {
+      await ctx.db.insert("projectFiles", {
+        sessionId: args.sessionId,
+        userId,
+        filepath: args.filepath,
+        content: args.content ?? "",
+        lastModifiedBy: "user",
+      });
+    }
+  },
+});
+
+export const duplicateFilePublic = mutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    sourcePath: v.string(),
+    destPath: v.string(),
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    const userId = session.userId as Id<"users">;
+    const allFiles = await ctx.db
+      .query("projectFiles")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .take(500);
+    const toCopy = allFiles.filter(f =>
+      f.filepath === args.sourcePath || f.filepath.startsWith(args.sourcePath + "/")
+    );
+    for (const f of toCopy) {
+      const newFilepath = f.filepath === args.sourcePath
+        ? args.destPath
+        : args.destPath + f.filepath.slice(args.sourcePath.length);
+      const destExists = allFiles.find(x => x.filepath === newFilepath);
+      if (destExists) {
+        await ctx.db.patch(destExists._id, { content: f.content, lastModifiedBy: "user" });
+      } else {
+        await ctx.db.insert("projectFiles", {
+          sessionId: args.sessionId,
+          userId,
+          filepath: newFilepath,
+          content: f.content,
+          lastModifiedBy: "user",
+        });
+      }
     }
   },
 });
