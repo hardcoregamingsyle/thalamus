@@ -7,6 +7,9 @@ import { callGemini, callModel, calcAgentBucksForTier, performSearch, performScr
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_MESSAGES = 600;
+const MAX_TASK_MESSAGES = 100;        // per-task message limit
+const MODAL_UPGRADE_TRIGGER = 60;     // messages in task before upgrade activates on rejection
+const MODAL_UPGRADE_DURATION = 30;    // messages the upgrade lasts
 const DAYTONA_API = "https://app.daytona.io/api";
 const DAYTONA_API_KEY_FALLBACK = "dtn_7f36b63fc707555bd843029875fb29caf44e4607c2b3ab29a28c73c737e450b5";
 const MAX_CMD_LOOPS = 10;
@@ -45,6 +48,11 @@ type SessionRow = {
   finalReviewCoderEnabled?: boolean;
   taskSummariesJson?: string;
   currentTaskDifficulty?: string;
+  // Safety net fields
+  taskMessageCount?: number;          // messages used in current task
+  taskUpgradeActive?: boolean;        // true = Modal Upgrade is active
+  taskUpgradeMessagesLeft?: number;   // messages remaining in upgrade window
+  unfixableTasksJson?: string;        // JSON string of { taskIndex: number, title: string }[]
 };
 type MsgRow = { _id: Id<"agentMessages">; agent: string; content: string; round?: number; messageIndex?: number };
 type FileRow = { _id: Id<"projectFiles">; filepath: string; content: string; lastModifiedBy: string };
@@ -668,7 +676,7 @@ async function runSingleAgentCall(
     // No sandbox — Tester can't actually run tests, so it should fail
     // But we allow it to pass if it explicitly said so in its output
     // Check if the raw content contains any indication of passing
-    const hasExplicitPass = rawContent.includes("<<test.success>>") || rawContent.includes("<<<<<test.success>>>>>") || rawContent.toLowerCase().includes("all tests pass");
+    const hasExplicitPass = rawContent.includes("<<test.success>>") || rawContent.includes("<<<test.success>>>") || rawContent.toLowerCase().includes("all tests pass");
     if (!hasExplicitPass) {
       parsed.testerResult = "fail";
       parsed.testerFailReason = "No sandbox available to run tests — cannot verify";
@@ -705,6 +713,61 @@ export const runAgentRound = action({
     const loopCount = session.loopCount ?? 0;
     const finalReviewCoderEnabled = session.finalReviewCoderEnabled ?? false;
 
+    // Safety net state
+    const taskMessageCount = session.taskMessageCount ?? 0;
+    const taskUpgradeActive = session.taskUpgradeActive ?? false;
+    const taskUpgradeMessagesLeft = session.taskUpgradeMessagesLeft ?? 0;
+    let unfixableTasks: Array<{ taskIndex: number; title: string }> = [];
+    try {
+      if (session.unfixableTasksJson) unfixableTasks = JSON.parse(session.unfixableTasksJson);
+    } catch { /* ignore */ }
+
+    // Per-task message limit check (only in tasks phase)
+    if (executionPhase === "tasks" && taskMessageCount >= MAX_TASK_MESSAGES) {
+      // Force skip this task — it's exceeded the per-task limit
+      const currentTask = (() => {
+        try { return (JSON.parse(session.plannerTasksJson ?? "[]") as PlannerTask[])[currentTaskIndex]; } catch { return null; }
+      })();
+      const taskTitle = currentTask?.title ?? `Task ${currentTaskIndex + 1}`;
+      unfixableTasks.push({ taskIndex: currentTaskIndex, title: taskTitle });
+
+      let plannerTasks: PlannerTask[] = [];
+      try { plannerTasks = JSON.parse(session.plannerTasksJson ?? "[]") as PlannerTask[]; } catch { /* ignore */ }
+
+      const nextTaskIndex = currentTaskIndex + 1;
+      let nextPhase: string;
+      let newExecutionPhase = executionPhase;
+      let newTaskIndex = currentTaskIndex;
+      let done = false;
+
+      if (nextTaskIndex < plannerTasks.length) {
+        newTaskIndex = nextTaskIndex;
+        const nextTaskPipeline = getPipeline("tasks", plannerTasks, nextTaskIndex, false);
+        nextPhase = nextTaskPipeline[0];
+      } else {
+        newExecutionPhase = "final_review";
+        nextPhase = FINAL_REVIEW_PIPELINE_SKIP_CODER[0];
+      }
+
+      // Save a system message about the skip
+      await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
+        sessionId: args.sessionId, userId, agent: "System",
+        content: `⚠️ Task "${taskTitle}" exceeded the ${MAX_TASK_MESSAGES}-message limit and was skipped. It will be reported as an unfixable issue at the end of the session.`,
+        round: loopCount, messageIndex: totalMessages + 1,
+      });
+
+      await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+        sessionId: args.sessionId, status: done ? "completed" : "idle",
+        currentAgent: done ? undefined : nextPhase, loopCount,
+        phase: done ? "completed" : nextPhase, totalMessages: totalMessages + 1,
+        executionPhase: done ? "completed" : newExecutionPhase, currentTaskIndex: newTaskIndex,
+        finalReviewCoderEnabled, taskMessageCount: 0, taskUpgradeActive: false,
+        taskUpgradeMessagesLeft: 0, unfixableTasksJson: JSON.stringify(unfixableTasks),
+      });
+
+      return { agent: "System", content: `Task skipped (limit exceeded)`, done, nextAgent: nextPhase, loopCount, totalMessages: totalMessages + 1, fileOpsCount: 0 };
+    }
+
     // Parse stored tasks
     let plannerTasks: PlannerTask[] = [];
     if (session.plannerTasksJson) {
@@ -733,10 +796,15 @@ export const runAgentRound = action({
       const currentTask = plannerTasks[currentTaskIndex];
       if (currentTask) {
         taskContext = `\n\nCURRENT TASK (${currentTaskIndex + 1}/${plannerTasks.length}): ${currentTask.title}\n${currentTask.description}`;
+        // Parse and set difficulty
+        const difficulty = parseDifficultyFromPlannerOutput(currentTask.description ?? "");
+        if (difficulty !== (session.currentTaskDifficulty ?? "normal")) {
+          await ctx.runMutation(internal.agentTeamHelpers.updateTaskDifficulty, { sessionId: args.sessionId, difficulty });
+        }
       }
     }
 
-    // Fetch sandbox for code-execution agents
+    // Sandbox context
     let sandboxDbId: Id<"sandboxes"> | null = null;
     let sandboxDaytonaId: string | null = null;
     let sandboxContext = "";
@@ -752,41 +820,56 @@ export const runAgentRound = action({
     }
 
     const systemPrompt = AGENT_SYSTEM_PROMPTS[currentPhase] || AGENT_SYSTEM_PROMPTS["Researcher"];
-
-    // Build prompt
-    let phaseLabel = executionPhase === "planning" ? "PLANNING PHASE" : executionPhase === "final_review" ? "FINAL REVIEW" : `TASK ${currentTaskIndex + 1}/${plannerTasks.length}`;
+    const phaseLabel = executionPhase === "planning" ? "PLANNING PHASE" : executionPhase === "final_review" ? "FINAL REVIEW" : `TASK ${currentTaskIndex + 1}/${plannerTasks.length}`;
+    // Add upgrade notice to prompt if active
+    const upgradeNotice = taskUpgradeActive ? `\n\n⚡ MODAL UPGRADE ACTIVE: You are running at maximum capability (Opus tier). This task has been difficult — give your absolute best output.` : "";
     const prompt = prevMessages.length === 0
-      ? `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\n\nYou are the first agent (${currentPhase}). Begin your work.${filesContext}${sandboxContext}`
-      : `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nLOOP: ${loopCount + 1}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
+      ? `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}${upgradeNotice}\n\nYou are the first agent (${currentPhase}). Begin your work.${filesContext}${sandboxContext}`
+      : `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nTASK MESSAGES: ${taskMessageCount + 1}/${MAX_TASK_MESSAGES}\nLOOP: ${loopCount + 1}${upgradeNotice}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
 
-    // Mark session as running
     await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
       sessionId: args.sessionId, status: "running", currentAgent: currentPhase,
       round: session.round, loopCount, phase: currentPhase, totalMessages,
     });
 
-    // Run the agent — use Research Team for Researcher slot, Red Team for Hacker slot
-    let agentResult: { rawContent: string; inputTokens: number; outputTokens: number; tier?: ModelTier };
+    // Determine model tier for this agent
+    // Modal Upgrade: if active, upgrade sonnet→opus47, haiku→opus46
+    let agentTier: ModelTier = (AGENT_MODEL_MAP[currentPhase] as ModelTier) ?? "gemini";
+    const currentDifficulty = (session.currentTaskDifficulty ?? "normal") as TaskDifficulty;
+    if (currentPhase === "Coder") {
+      agentTier = DIFFICULTY_CODER_MODEL[currentDifficulty] ?? "sonnet";
+    } else if (["DataCorruptor", "ZeroDayExploiter"].includes(currentPhase)) {
+      const override = DIFFICULTY_REDTEAM_SONNET_OVERRIDE[currentDifficulty];
+      if (override) agentTier = override;
+    } else if (currentPhase === "FrameworkAuditor") {
+      const override = DIFFICULTY_FRAMEWORK_AUDITOR_MODEL[currentDifficulty];
+      if (override) agentTier = override;
+    }
+    // Apply Modal Upgrade: sonnet→opus47, haiku→opus46
+    if (taskUpgradeActive) {
+      if (agentTier === "sonnet") agentTier = "opus47";
+      else if (agentTier === "haiku") agentTier = "opus46";
+    }
+    // Context-aware Analyser: haiku in planning, gemini in tasks/subtasks
+    if (currentPhase === "Analyser" && executionPhase !== "planning") {
+      agentTier = taskUpgradeActive ? "opus46" : "gemini"; // upgrade haiku→opus46 if active
+    }
+
+    // Run the agent
+    let agentResult: { rawContent: string; inputTokens: number; outputTokens: number; tier: ModelTier };
     if (currentPhase === "Researcher") {
-      agentResult = await runResearchTeam(ctx, args.sessionId, session.task + (taskContext ? `\n\nCurrent task context: ${taskContext}` : ""));
+      const r = await runResearchTeam(ctx, args.sessionId, session.task + (taskContext ? `\n\nCurrent task context: ${taskContext}` : ""));
+      agentResult = { ...r, tier: "gemini" };
     } else if (currentPhase === "Hacker") {
       const redTeamContext = `PROJECT TASK: ${session.task}\n\nCURRENT PHASE: ${phaseLabel}\n\nPROJECT FILES:\n${projectFiles.map(f => `--- ${f.filepath} ---\n${f.content.slice(0, 2000)}`).join("\n\n").slice(0, 12000)}\n\nPREVIOUS AGENT OUTPUTS:\n${contextLines.slice(0, 4000)}`;
-      agentResult = await runRedTeam(ctx, args.sessionId, redTeamContext);
+      const r = await runRedTeam(ctx, args.sessionId, redTeamContext);
+      agentResult = { ...r, tier: "gemini" };
     } else {
-      // Context-aware Analyser routing:
-      // - Planning phase (first time): use haiku for deeper analysis
-      // - Tasks/subtasks phase: use gemini (cheaper, faster)
-      let agentModelTier: ModelTier | undefined = undefined;
-      if (currentPhase === "Analyser" && executionPhase !== "planning") {
-        agentModelTier = "gemini";
-      }
-      agentResult = await runSingleAgentCall(
-        ctx, args.sessionId, userId, currentPhase, prompt, systemPrompt, sandboxDaytonaId, sandboxDbId, agentModelTier
-      );
+      agentResult = await runSingleAgentCall(ctx, args.sessionId, userId, currentPhase, prompt, systemPrompt, sandboxDaytonaId, sandboxDbId, agentTier);
     }
-    const { rawContent, inputTokens, outputTokens } = agentResult;
-    const usedTier: ModelTier = agentResult.tier ?? "gemini";
 
+    const { rawContent, inputTokens, outputTokens } = agentResult;
+    const usedTier = agentResult.tier ?? agentTier;
     const parsed = parseAgentOutput(rawContent);
 
     // If Planner, extract and store the task list
@@ -798,40 +881,31 @@ export const runAgentRound = action({
           plannerTasksJson: JSON.stringify(plannerOutput.tasks),
         });
         plannerTasks = plannerOutput.tasks;
-      } else {
-        // Planner failed to output valid JSON — create a default single task so we don't skip to final_review
-        const defaultTasks: PlannerTask[] = [{
-          id: "task-1",
-          title: session.task.slice(0, 80),
-          description: `Complete the full implementation: ${session.task}`,
-          subpart: false,
-          dependencies: [],
-        }];
+      } else if (plannerTasks.length === 0) {
+        // Fallback: create a single task from the session task
+        const fallbackTask: PlannerTask = { id: "task-1", title: session.task.slice(0, 80), description: session.task, subpart: false };
+        plannerTasks = [fallbackTask];
         await ctx.runMutation(internal.agentTeamHelpers.updatePlannerTasks, {
           sessionId: args.sessionId,
-          plannerTasksJson: JSON.stringify(defaultTasks),
+          plannerTasksJson: JSON.stringify(plannerTasks),
         });
-        plannerTasks = defaultTasks;
       }
     }
 
-    // Execute file operations
+    // Handle file operations from agent output
     let fileOpsCount = 0;
-    const fileOpsMap = new Map<string, typeof parsed.fileOps[0]>();
-    for (const op of parsed.fileOps) { fileOpsMap.set(op.filepath, op); }
-    for (const fileOp of fileOpsMap.values()) {
-      if (fileOp.type === "create" || fileOp.type === "edit") {
-        await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
-          sessionId: args.sessionId, userId, filepath: fileOp.filepath, content: fileOp.content || "", agent: currentPhase,
-        });
-        fileOpsCount++;
-      } else if (fileOp.type === "delete") {
-        await ctx.runMutation(internal.agentTeamHelpers.deleteFile, { sessionId: args.sessionId, filepath: fileOp.filepath });
-        fileOpsCount++;
+    if (parsed.fileOps.length > 0) {
+      for (const fileOp of parsed.fileOps) {
+        if (fileOp.filepath && fileOp.content !== undefined) {
+          await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
+            sessionId: args.sessionId, userId, filepath: fileOp.filepath, content: fileOp.content || "", agent: currentPhase,
+          });
+          fileOpsCount++;
+        }
       }
     }
 
-    // After saving agent message, check for deploy commands
+    // Handle deploy commands from Planner
     if (parsed.deployCommands && parsed.deployCommands.length > 0) {
       await ctx.runMutation(internal.agentTeamHelpers.updateDeployCommands, {
         sessionId: args.sessionId,
@@ -839,9 +913,20 @@ export const runAgentRound = action({
       });
     }
 
-    // Cost accounting — use tier-based pricing
+    // Handle task summaries from Summarizer
+    if (currentPhase === "Summarizer" && parsed.cleanContent) {
+      let summaries: Array<{ taskIndex: number; summary: string }> = [];
+      try { if (session.taskSummariesJson) summaries = JSON.parse(session.taskSummariesJson); } catch { /* ignore */ }
+      summaries.push({ taskIndex: currentTaskIndex, summary: parsed.cleanContent.slice(0, 500) });
+      await ctx.runMutation(internal.agentTeamHelpers.updateTaskSummaries, {
+        sessionId: args.sessionId,
+        taskSummariesJson: JSON.stringify(summaries),
+      });
+    }
+
+    // Cost accounting
     const TIER_MODEL_NAMES: Record<ModelTier, string> = {
-      gemini: "gemini-3.1-flash-lite",
+      gemini: "gemini-3.1-flash-lite-preview",
       haiku: "claude-haiku-4-5",
       sonnet: "claude-sonnet-4-6",
       opus46: "claude-opus-4-6",
@@ -851,6 +936,7 @@ export const runAgentRound = action({
     await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId, agentBucksToDeduct });
 
     const newTotalMessages = totalMessages + 1;
+    const updatedTaskMessageCount = executionPhase === "tasks" ? taskMessageCount + 1 : 0;
     await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
       sessionId: args.sessionId, userId, agent: currentPhase, content: parsed.cleanContent, round: loopCount, messageIndex: newTotalMessages,
       modelUsed: TIER_MODEL_NAMES[usedTier],
@@ -864,48 +950,97 @@ export const runAgentRound = action({
     let newExecutionPhase = executionPhase;
     let newTaskIndex = currentTaskIndex;
     let newFinalReviewCoderEnabled = finalReviewCoderEnabled;
+    let newTaskMessageCount = updatedTaskMessageCount;
+    let newTaskUpgradeActive = taskUpgradeActive;
+    let newTaskUpgradeMessagesLeft = taskUpgradeActive ? taskUpgradeMessagesLeft - 1 : 0;
+    let newUnfixableTasks = [...unfixableTasks];
+
+    // Decrement upgrade window
+    if (taskUpgradeActive && newTaskUpgradeMessagesLeft <= 0) {
+      newTaskUpgradeActive = false;
+      newTaskUpgradeMessagesLeft = 0;
+    }
 
     const currentPipelineIdx = pipeline.indexOf(currentPhase);
+    const isRejection = (currentPhase === "Tester" && parsed.testerResult === "fail") ||
+                        (currentPhase === "Hacker" && parsed.hackerResult === "fail") ||
+                        (currentPhase === "Critic" && parsed.criticResult === "fail");
 
     if (executionPhase === "planning") {
       // Planning phase: advance through PLANNING_PIPELINE
       if (currentPhase === "Planner") {
-        // Planning done — ALWAYS move to tasks phase (fallback task was created above if needed)
         newExecutionPhase = "tasks";
         newTaskIndex = 0;
+        newTaskMessageCount = 0; // reset for first task
         const taskPipeline = getPipeline("tasks", plannerTasks, 0, false);
         nextPhase = taskPipeline[0];
       } else {
         nextPhase = PLANNING_PIPELINE[currentPipelineIdx + 1] || "Planner";
       }
     } else if (executionPhase === "tasks") {
-      // Task phase: advance through current task's pipeline
       const taskPipeline = getPipeline("tasks", plannerTasks, currentTaskIndex, false);
 
-      // Handle fail loops within a task
-      if (currentPhase === "Tester" && parsed.testerResult === "fail") {
-        nextPhase = taskPipeline[0]; // restart task from Researcher
-        newLoopCount = loopCount + 1;
-      } else if (currentPhase === "Hacker" && parsed.hackerResult === "fail") {
-        nextPhase = taskPipeline[0];
-        newLoopCount = loopCount + 1;
-      } else if (currentPhase === "Critic") {
-        if (parsed.criticResult === "fail") {
-          nextPhase = taskPipeline[0];
+      if (isRejection) {
+        // Check if we should activate Modal Upgrade or skip task
+        if (!taskUpgradeActive && newTaskMessageCount >= MODAL_UPGRADE_TRIGGER) {
+          // Activate Modal Upgrade for next 30 messages
+          newTaskUpgradeActive = true;
+          newTaskUpgradeMessagesLeft = MODAL_UPGRADE_DURATION;
+          nextPhase = taskPipeline[0]; // restart task with upgraded models
           newLoopCount = loopCount + 1;
-        } else {
-          // Task complete — move to next task or final review
+          // Save a system message about the upgrade
+          await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
+            sessionId: args.sessionId, userId, agent: "System",
+            content: `⚡ MODAL UPGRADE ACTIVATED: Task "${plannerTasks[currentTaskIndex]?.title ?? `Task ${currentTaskIndex + 1}`}" has been struggling (${newTaskMessageCount} messages). Upgrading all agents to maximum capability (Sonnet→Opus 4.7, Haiku→Opus 4.6) for the next ${MODAL_UPGRADE_DURATION} messages.`,
+            round: loopCount, messageIndex: newTotalMessages + 0.5,
+          });
+        } else if (taskUpgradeActive && newTaskUpgradeMessagesLeft <= 0) {
+          // Upgrade expired and still rejected — skip this task
+          const taskTitle = plannerTasks[currentTaskIndex]?.title ?? `Task ${currentTaskIndex + 1}`;
+          newUnfixableTasks.push({ taskIndex: currentTaskIndex, title: taskTitle });
+          // Save a system message about the skip
+          await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
+            sessionId: args.sessionId, userId, agent: "System",
+            content: `⚠️ Task "${taskTitle}" could not be fixed even with Modal Upgrade. Skipping and marking as unfixable. This will be reported at the end of the session.`,
+            round: loopCount, messageIndex: newTotalMessages + 0.5,
+          });
+          // Move to next task
           const nextTaskIndex = currentTaskIndex + 1;
           if (nextTaskIndex < plannerTasks.length) {
             newTaskIndex = nextTaskIndex;
+            newTaskMessageCount = 0;
+            newTaskUpgradeActive = false;
+            newTaskUpgradeMessagesLeft = 0;
             const nextTaskPipeline = getPipeline("tasks", plannerTasks, nextTaskIndex, false);
             nextPhase = nextTaskPipeline[0];
           } else {
-            // All tasks done — final review
             newExecutionPhase = "final_review";
             newFinalReviewCoderEnabled = false;
+            newTaskMessageCount = 0;
+            newTaskUpgradeActive = false;
             nextPhase = FINAL_REVIEW_PIPELINE_SKIP_CODER[0];
           }
+        } else {
+          // Normal rejection — restart task
+          nextPhase = taskPipeline[0];
+          newLoopCount = loopCount + 1;
+        }
+      } else if (currentPhase === "Critic" && parsed.criticResult !== "fail") {
+        // Task complete — move to next task or final review
+        const nextTaskIndex = currentTaskIndex + 1;
+        if (nextTaskIndex < plannerTasks.length) {
+          newTaskIndex = nextTaskIndex;
+          newTaskMessageCount = 0; // reset for new task
+          newTaskUpgradeActive = false;
+          newTaskUpgradeMessagesLeft = 0;
+          const nextTaskPipeline = getPipeline("tasks", plannerTasks, nextTaskIndex, false);
+          nextPhase = nextTaskPipeline[0];
+        } else {
+          newExecutionPhase = "final_review";
+          newFinalReviewCoderEnabled = false;
+          newTaskMessageCount = 0;
+          newTaskUpgradeActive = false;
+          nextPhase = FINAL_REVIEW_PIPELINE_SKIP_CODER[0];
         }
       } else {
         // Advance within task pipeline
@@ -919,12 +1054,10 @@ export const runAgentRound = action({
       if (currentPhase === "Critic") {
         if (parsed.criticResult === "fail") {
           if (!finalReviewCoderEnabled) {
-            // Enable Coder and restart final review
             newFinalReviewCoderEnabled = true;
             nextPhase = FINAL_REVIEW_PIPELINE_WITH_CODER[0];
             newLoopCount = loopCount + 1;
           } else {
-            // Already tried with Coder — mark done anyway
             nextPhase = "completed";
             done = true;
           }
@@ -940,6 +1073,15 @@ export const runAgentRound = action({
 
     if (newTotalMessages >= MAX_MESSAGES) { done = true; nextPhase = "completed"; }
 
+    // If done and there are unfixable tasks, save a final report message
+    if (done && newUnfixableTasks.length > 0) {
+      await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
+        sessionId: args.sessionId, userId, agent: "System",
+        content: `📋 SESSION COMPLETE — UNFIXABLE ISSUES REPORT:\n\nThe following ${newUnfixableTasks.length} task(s) could not be resolved even after Modal Upgrade:\n\n${newUnfixableTasks.map((t, i) => `${i + 1}. Task ${t.taskIndex + 1}: "${t.title}"`).join("\n")}\n\nThese tasks were skipped to allow the rest of the project to complete. You may want to manually review and fix these issues.`,
+        round: loopCount, messageIndex: newTotalMessages + 0.5,
+      });
+    }
+
     // Clear streaming output
     await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, { sessionId: args.sessionId, currentAgentOutput: "" });
 
@@ -954,6 +1096,10 @@ export const runAgentRound = action({
       executionPhase: done ? "completed" : newExecutionPhase,
       currentTaskIndex: newTaskIndex,
       finalReviewCoderEnabled: newFinalReviewCoderEnabled,
+      taskMessageCount: newTaskMessageCount,
+      taskUpgradeActive: newTaskUpgradeActive,
+      taskUpgradeMessagesLeft: newTaskUpgradeMessagesLeft,
+      unfixableTasksJson: JSON.stringify(newUnfixableTasks),
     });
 
     return {
