@@ -30,7 +30,11 @@ const schema = defineSchema(
       agentBucksBalance: v.optional(v.number()), // legacy field
       dailyAgentBucks: v.optional(v.number()),     // resets daily at midnight IST
       purchasedAgentBucks: v.optional(v.number()), // never resets
-    }).index("email", ["email"]),
+      referralCode: v.optional(v.string()),        // unique 6-char code (all caps)
+      referralSpins: v.optional(v.number()),       // number of spins available
+      referredBy: v.optional(v.string()),          // referral code used at signup
+    }).index("email", ["email"])
+      .index("by_referral_code", ["referralCode"]),
 
     otpCodes: defineTable({
       email: v.string(),

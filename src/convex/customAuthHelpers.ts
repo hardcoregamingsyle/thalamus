@@ -1,6 +1,16 @@
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
+// Generate a random 6-char alphanumeric code (all caps)
+function generateReferralCode(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
+}
+
 // Store OTP code
 export const storeOtp = internalMutation({
   args: { email: v.string(), code: v.string(), expiresAt: v.number() },
@@ -24,8 +34,8 @@ export const storeOtp = internalMutation({
 
 // Verify OTP and create session
 export const verifyAndCreateSession = internalMutation({
-  args: { email: v.string(), code: v.string() },
-  handler: async (ctx, args): Promise<{ token: string; userId: string }> => {
+  args: { email: v.string(), code: v.string(), referralCode: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<{ token: string; userId: string; isNewUser: boolean }> => {
     // Find OTP
     const otps = await ctx.db
       .query("otpCodes")
@@ -48,16 +58,58 @@ export const verifyAndCreateSession = internalMutation({
       .take(1);
 
     let userId: string;
+    let isNewUser = false;
+
     if (existingUsers.length > 0) {
       userId = existingUsers[0]._id;
     } else {
+      isNewUser = true;
+      // Generate unique referral code for new user
+      let newReferralCode = generateReferralCode();
+      // Ensure uniqueness (retry up to 5 times)
+      for (let i = 0; i < 5; i++) {
+        const existing = await ctx.db
+          .query("users")
+          .withIndex("by_referral_code", (q) => q.eq("referralCode", newReferralCode))
+          .take(1);
+        if (existing.length === 0) break;
+        newReferralCode = generateReferralCode();
+      }
+
+      // Check if a valid referral code was provided
+      let referredByCode: string | undefined;
+      let referrerId: string | undefined;
+      if (args.referralCode) {
+        const normalizedCode = args.referralCode.toUpperCase();
+        const referrers = await ctx.db
+          .query("users")
+          .withIndex("by_referral_code", (q) => q.eq("referralCode", normalizedCode))
+          .take(1);
+        if (referrers.length > 0) {
+          referredByCode = normalizedCode;
+          referrerId = referrers[0]._id;
+        }
+      }
+
       userId = await ctx.db.insert("users", {
         email: args.email,
         name: args.email.split("@")[0],
         totalUsageCents: 0,
         dailyAgentBucks: 10_000_000,   // 10M free daily credits on signup
         purchasedAgentBucks: 0,
+        referralCode: newReferralCode,
+        referralSpins: referredByCode ? 1 : 0, // 1 free spin if signed up via referral
+        referredBy: referredByCode,
       });
+
+      // Give referrer 1 spin
+      if (referrerId) {
+        const referrer = await ctx.db.get(referrerId as never);
+        if (referrer) {
+          const currentSpins = (referrer as { referralSpins?: number }).referralSpins ?? 0;
+          await ctx.db.patch(referrerId as never, { referralSpins: currentSpins + 1 });
+        }
+      }
     }
 
     // Generate session token
@@ -93,7 +145,7 @@ export const verifyAndCreateSession = internalMutation({
       expiresAt,
     });
 
-    return { token, userId };
+    return { token, userId, isNewUser };
   },
 });
 
@@ -165,5 +217,106 @@ export const ensureDailyBalance = mutation({
         purchasedAgentBucks: (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0,
       });
     }
+  },
+});
+
+// Get referral info for current user
+export const getReferralInfo = query({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    if (!args.token || args.token.length < 32) return null;
+    const session = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .unique();
+    if (!session || session.expiresAt < Date.now()) return null;
+    const user = await ctx.db.get(session.userId);
+    if (!user) return null;
+    const typedUser = user as { referralCode?: string; referralSpins?: number; referredBy?: string };
+    return {
+      referralCode: typedUser.referralCode ?? null,
+      referralSpins: typedUser.referralSpins ?? 0,
+      referredBy: typedUser.referredBy ?? null,
+    };
+  },
+});
+
+// Use a spin (deduct 1 spin, add winnings to purchasedAgentBucks)
+export const useSpin = mutation({
+  args: { token: v.string() },
+  handler: async (ctx, args): Promise<{ won: number; newSpins: number }> => {
+    if (!args.token || args.token.length < 32) throw new Error("Not authenticated");
+    const session = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .unique();
+    if (!session || session.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const user = await ctx.db.get(session.userId);
+    if (!user) throw new Error("User not found");
+    const typedUser = user as { referralSpins?: number; purchasedAgentBucks?: number };
+    const currentSpins = typedUser.referralSpins ?? 0;
+    if (currentSpins <= 0) throw new Error("No spins available");
+
+    // Determine prize based on weighted random
+    const rand = Math.random() * 100;
+    let won: number;
+    if (rand < 0.5) {
+      won = 500_000_000; // 500M — 0.5%
+    } else if (rand < 2.0) {
+      won = 100_000_000; // 100M — 1.5%
+    } else if (rand < 7.0) {
+      won = 50_000_000;  // 50M — 5%
+    } else if (rand < 30.0) {
+      won = 20_000_000;  // 20M — 23%
+    } else if (rand < 60.0) {
+      won = 10_000_000;  // 10M — 30%
+    } else {
+      won = 5_000_000;   // 5M — 40%
+    }
+
+    const newSpins = currentSpins - 1;
+    const newPurchased = (typedUser.purchasedAgentBucks ?? 0) + won;
+    await ctx.db.patch(session.userId, {
+      referralSpins: newSpins,
+      purchasedAgentBucks: newPurchased,
+    });
+
+    return { won, newSpins };
+  },
+});
+
+// Ensure existing users have a referral code
+export const ensureReferralCode = mutation({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    if (!args.token || args.token.length < 32) return;
+    const session = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .unique();
+    if (!session || session.expiresAt < Date.now()) return;
+    const user = await ctx.db.get(session.userId);
+    if (!user) return;
+    const typedUser = user as { referralCode?: string };
+    if (typedUser.referralCode) return; // already has one
+
+    // Generate unique code
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let code = "";
+    for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    
+    // Check uniqueness
+    const existing = await ctx.db
+      .query("users")
+      .withIndex("by_referral_code", (q) => q.eq("referralCode", code))
+      .take(1);
+    if (existing.length > 0) {
+      // Just try a different one (good enough for migration)
+      let code2 = "";
+      for (let i = 0; i < 6; i++) code2 += chars[Math.floor(Math.random() * chars.length)];
+      code = code2;
+    }
+
+    await ctx.db.patch(session.userId, { referralCode: code });
   },
 });
