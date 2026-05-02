@@ -104,16 +104,21 @@ export const DIFFICULTY_REDTEAM_SONNET_OVERRIDE: Record<string, ModelTier | null
 
 export type TaskDifficulty = "normal" | "hard" | "extreme";
 
-// ── VLY-based Claude caller ───────────────────────────────────────────────────
-// Uses VLY integration gateway to call Claude models
+// ── AWS Bedrock Claude caller ─────────────────────────────────────────────────
+// Uses AWS Bedrock to call Claude models via SigV4-signed REST API
 // Token-saving strategies:
-// - Trim system prompts to essentials
-// - Cap context at 4000 chars
+// - Trim system prompts to essentials (1500 chars max)
+// - Cap context at 8000 chars
 // - Use maxTokens limits per model tier
-// - No streaming (saves overhead)
+// - Lower temperature for focused outputs
 
-const VLY_KEY = process.env.VLY_INTEGRATION_KEY || "sk_3582a48894027ae69e5fa24948bd80aae2cc4e788f94c656cdca1c9b5a1e9632";
-const VLY_BASE_URL = process.env.VLY_INTEGRATION_BASE_URL || "https://integrations.vly.ai/";
+// AWS Bedrock model IDs for Claude models
+const BEDROCK_MODEL_IDS: Record<ClaudeModel, string> = {
+  "claude-haiku-4-5":  "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "claude-sonnet-4-6": "us.anthropic.claude-sonnet-4-5-20251001-v1:0",
+  "claude-opus-4-6":   "us.anthropic.claude-opus-4-5-20251001-v1:0",
+  "claude-opus-4-7":   "us.anthropic.claude-opus-4-5-20251001-v1:0",
+};
 
 // Max output tokens per model tier (to save credits)
 const MAX_OUTPUT_TOKENS: Record<ClaudeModel, number> = {
@@ -123,8 +128,95 @@ const MAX_OUTPUT_TOKENS: Record<ClaudeModel, number> = {
   "claude-opus-4-7": 4000,
 };
 
+// Parse AWS credentials from env var
+// Format: "ACCESSKEYID:SECRETACCESSKEY:REGION" or "ACCESSKEYID:SECRETACCESSKEY" (defaults to us-east-1)
+function parseBedrockCredentials(): { accessKeyId: string; secretAccessKey: string; region: string } | null {
+  const raw = process.env.AWS_BEDROCK_API_KEY;
+  if (!raw) return null;
+  const parts = raw.split(":");
+  if (parts.length < 2) return null;
+  return {
+    accessKeyId: parts[0],
+    secretAccessKey: parts.slice(1, parts.length > 2 ? parts.length - 1 : 2).join(":"),
+    region: parts.length > 2 ? parts[parts.length - 1] : "us-east-1",
+  };
+}
+
+// SigV4 signing implementation using Node.js crypto
+async function signBedrockRequest(
+  method: string,
+  url: string,
+  body: string,
+  accessKeyId: string,
+  secretAccessKey: string,
+  region: string,
+): Promise<Record<string, string>> {
+  // Import crypto from Node.js (available in Convex "use node" actions)
+  const { createHmac, createHash } = await import("crypto");
+
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, ""); // YYYYMMDDTHHMMSSZ
+  const dateStamp = amzDate.substring(0, 8); // YYYYMMDD
+  const service = "bedrock";
+
+  const parsedUrl = new URL(url);
+  const host = parsedUrl.host;
+  const canonicalUri = parsedUrl.pathname;
+  const canonicalQueryString = "";
+
+  // Canonical headers (must be sorted, lowercase)
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "host": host,
+    "x-amz-date": amzDate,
+  };
+  const sortedHeaderKeys = Object.keys(headers).sort();
+  const canonicalHeaders = sortedHeaderKeys.map(k => `${k}:${headers[k]}\n`).join("");
+  const signedHeaders = sortedHeaderKeys.join(";");
+
+  // Hash payload
+  const hashedPayload = createHash("sha256").update(body).digest("hex");
+
+  // Canonical request
+  const canonicalRequest = [
+    method,
+    canonicalUri,
+    canonicalQueryString,
+    canonicalHeaders,
+    signedHeaders,
+    hashedPayload,
+  ].join("\n");
+
+  // String to sign
+  const algorithm = "AWS4-HMAC-SHA256";
+  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+  const stringToSign = [
+    algorithm,
+    amzDate,
+    credentialScope,
+    createHash("sha256").update(canonicalRequest).digest("hex"),
+  ].join("\n");
+
+  // Signing key derivation
+  const kSecret = Buffer.from(`AWS4${secretAccessKey}`, "utf8");
+  const kDate = createHmac("sha256", kSecret).update(dateStamp).digest();
+  const kRegion = createHmac("sha256", kDate).update(region).digest();
+  const kService = createHmac("sha256", kRegion).update(service).digest();
+  const kSigning = createHmac("sha256", kService).update("aws4_request").digest();
+  const signature = createHmac("sha256", kSigning).update(stringToSign).digest("hex");
+
+  // Authorization header
+  const authorization = `${algorithm} Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  return {
+    "Content-Type": "application/json",
+    "X-Amz-Date": amzDate,
+    "Authorization": authorization,
+  };
+}
+
 /**
- * Unified model caller — routes to Claude or Gemini based on tier.
+ * Unified model caller — routes to Claude (AWS Bedrock) or Gemini based on tier.
  * Token-saving: trims context, uses appropriate max tokens.
  */
 export async function callModel(
@@ -177,51 +269,59 @@ export async function callClaude(
   const trimmedSystem = systemPrompt.length > 1500 ? systemPrompt.slice(0, 1500) + "\n...[system trimmed]" : systemPrompt;
 
   const maxTokens = MAX_OUTPUT_TOKENS[model];
+  const creds = parseBedrockCredentials();
+
+  if (!creds) {
+    // No AWS credentials — fall back to Gemini
+    console.warn("AWS_BEDROCK_API_KEY not set, falling back to Gemini");
+    return callGemini(prompt, systemPrompt);
+  }
+
+  const modelId = BEDROCK_MODEL_IDS[model];
+  const url = `https://bedrock-runtime.${creds.region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke`;
+
+  const requestBody = JSON.stringify({
+    anthropic_version: "bedrock-2023-05-31",
+    system: trimmedSystem,
+    messages: [{ role: "user", content: trimmedPrompt }],
+    max_tokens: maxTokens,
+    temperature: 0.5,
+  });
 
   try {
-    const response = await fetch(`${VLY_BASE_URL}ai/completion`, {
+    const signedHeaders = await signBedrockRequest(
+      "POST",
+      url,
+      requestBody,
+      creds.accessKeyId,
+      creds.secretAccessKey,
+      creds.region,
+    );
+
+    const response = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${VLY_KEY}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: trimmedSystem },
-          { role: "user", content: trimmedPrompt },
-        ],
-        maxTokens,
-        temperature: 0.5, // lower temp = more focused = fewer tokens wasted
-      }),
+      headers: signedHeaders,
+      body: requestBody,
     });
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
-      throw new Error(`VLY Claude API error ${response.status}: ${errText.slice(0, 200)}`);
+      throw new Error(`AWS Bedrock error ${response.status}: ${errText.slice(0, 300)}`);
     }
 
     const data = await response.json() as {
-      success?: boolean;
-      data?: {
-        choices?: Array<{ message?: { content?: string } }>;
-        usage?: { promptTokens?: number; completionTokens?: number };
-      };
-      error?: string;
+      content?: Array<{ type: string; text?: string }>;
+      usage?: { input_tokens?: number; output_tokens?: number };
     };
 
-    if (!data.success || !data.data) {
-      throw new Error(`VLY Claude error: ${data.error ?? "No response"}`);
-    }
-
-    const text = data.data.choices?.[0]?.message?.content ?? "";
-    const inputTokens = data.data.usage?.promptTokens ?? 0;
-    const outputTokens = data.data.usage?.completionTokens ?? 0;
+    const text = data.content?.find(c => c.type === "text")?.text ?? "";
+    const inputTokens = data.usage?.input_tokens ?? 0;
+    const outputTokens = data.usage?.output_tokens ?? 0;
 
     return { text, inputTokens, outputTokens };
   } catch (err) {
     // Fallback to Gemini if Claude fails
-    console.error(`Claude ${model} failed, falling back to Gemini:`, err);
+    console.error(`Claude ${model} (Bedrock) failed, falling back to Gemini:`, err);
     return callGemini(prompt, systemPrompt);
   }
 }
