@@ -56,6 +56,25 @@ interface DaytonaExecResponse {
 
 interface DaytonaPreviewUrl {
   url?: string;
+  token?: string;
+}
+
+// Helper: get a signed preview URL (token embedded in URL, no headers needed, 1 hour expiry)
+async function getSignedPreviewUrl(sandboxId: string, port: number): Promise<string | null> {
+  try {
+    const data = await daytonaFetch(
+      `/sandbox/${sandboxId}/ports/${port}/signed-preview-url?expiresInSeconds=3600`
+    ) as DaytonaPreviewUrl;
+    return data.url ?? null;
+  } catch {
+    // Fallback to standard preview URL if signed URL not available
+    try {
+      const data = await daytonaFetch(`/sandbox/${sandboxId}/ports/${port}/preview-url`) as DaytonaPreviewUrl;
+      return data.url ?? null;
+    } catch {
+      return null;
+    }
+  }
 }
 
 // Check sandbox status via Daytona API and wake it if not running.
@@ -349,8 +368,7 @@ export const getPreviewUrl = action({
 
     const port = args.port ?? 3000;
     try {
-      const data = await daytonaFetch(`/sandbox/${sandboxRecord.sandboxId}/ports/${port}/preview-url`) as DaytonaPreviewUrl;
-      const previewUrl = data.url ?? null;
+      const previewUrl = await getSignedPreviewUrl(sandboxRecord.sandboxId, port);
       if (previewUrl) {
         await ctx.runMutation(internal.sandboxHelpers.updatePreviewUrl, {
           sandboxDbId: args.sandboxDbId,
@@ -529,11 +547,10 @@ export const autoDeployAndStart = action({
       if (appStarted) break;
     }
 
-    // Get preview URL for the detected port
+    // Get signed preview URL for the detected port (token embedded in URL, no headers needed)
     let previewUrl: string | null = null;
     try {
-      const data = await daytonaFetch(`/sandbox/${sandboxRecord.sandboxId}/ports/${appPort}/preview-url`) as DaytonaPreviewUrl;
-      previewUrl = data.url ?? null;
+      previewUrl = await getSignedPreviewUrl(sandboxRecord.sandboxId, appPort);
       if (previewUrl) await ctx.runMutation(internal.sandboxHelpers.updatePreviewUrl, { sandboxDbId: args.sandboxDbId, previewUrl });
     } catch { /* preview URL may not be available yet */ }
 
