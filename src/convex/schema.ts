@@ -164,6 +164,47 @@ const schema = defineSchema(
       blacklistedAt: v.number(),
       userCount: v.optional(v.number()),
     }).index("by_domain", ["domain"]),
+
+    // Promo codes
+    promoCodes: defineTable({
+      code: v.string(),
+      purchasedCredits: v.optional(v.number()),  // AB credits to grant
+      spins: v.optional(v.number()),              // spin count to grant
+      expiresAt: v.number(),                      // timestamp
+      usedCount: v.number(),                      // how many times used
+      maxUses: v.optional(v.number()),            // null = unlimited
+      createdAt: v.number(),
+      createdBy: v.optional(v.string()),          // admin note
+    }).index("by_code", ["code"]),
+
+    // Suggestions from users
+    suggestions: defineTable({
+      userId: v.optional(v.id("users")),
+      userEmail: v.optional(v.string()),
+      sessionId: v.optional(v.id("teamSessions")),
+      title: v.string(),
+      description: v.string(),
+      files: v.optional(v.array(v.object({
+        name: v.string(),
+        content: v.string(),
+        size: v.number(),
+      }))),
+      status: v.optional(v.string()),  // "new" | "reviewed" | "implemented" | "rejected"
+      adminNote: v.optional(v.string()),
+      createdAt: v.number(),
+    }).index("by_user", ["userId"]),
+
+    // Anthropic model pricing config (admin-configurable)
+    modelPricing: defineTable({
+      modelId: v.string(),           // e.g. "claude-haiku-4-5"
+      displayName: v.string(),
+      inputCentsPerMillion: v.number(),
+      outputCentsPerMillion: v.number(),
+      abMultiplier: v.number(),      // AB per cent (default 15000)
+      isActive: v.boolean(),
+      updatedAt: v.number(),
+      updatedBy: v.optional(v.string()),
+    }).index("by_model", ["modelId"]),
   },
   {
     schemaValidation: false,
