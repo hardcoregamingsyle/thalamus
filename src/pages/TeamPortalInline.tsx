@@ -826,6 +826,7 @@ export default function TeamPortalInline({ token }: { token: string }) {
   }, [autoRun, isRunning, sessionInfo, activeSessionId, handleRunNextAgent]);
 
   const setManualUpgradeMutation = useMutation(api.agentTeamHelpers.setManualUpgrade);
+  const forceActivateUpgradeMutation = useMutation(api.agentTeamHelpers.forceActivateUpgrade);
   const handleAutoRun = () => { if (!activeSessionId || !token) return; autoRunRef.current = true; setAutoRun(true); handleRunNextAgent(); };
   const handleStopAutoRun = () => { autoRunRef.current = false; setAutoRun(false); toast.info("Stopped after current agent completes"); };
 
@@ -835,8 +836,16 @@ export default function TeamPortalInline({ token }: { token: string }) {
     const newVal = !current;
     try {
       await setManualUpgradeMutation({ sessionId: activeSessionId, enabled: newVal, token });
-      toast.success(newVal ? "⚡ Manual Upgrade armed — will activate on next rejection" : "Manual Upgrade disarmed");
+      toast.success(newVal ? "⚡ Upgrade armed — activates on next rejection" : "Upgrade disarmed");
     } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to toggle upgrade"); }
+  };
+
+  const handleForceUpgrade = async () => {
+    if (!activeSessionId || !token) return;
+    try {
+      await forceActivateUpgradeMutation({ sessionId: activeSessionId, token });
+      toast.success("⚡ Force Upgrade activated — all agents now running at Opus tier");
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to force upgrade"); }
   };
 
   const handleSendMessage = async () => {
@@ -1212,27 +1221,43 @@ export default function TeamPortalInline({ token }: { token: string }) {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-muted-foreground">{sessionInfo?.totalMessages ?? 0}/{MAX_MESSAGES} msgs</span>
-                {/* Manual Upgrade button */}
+                {/* Upgrade buttons */}
                 {activeSessionId && sessionInfo?.status !== "completed" && (
                   (() => {
                     const upgradeActive = (sessionInfo as unknown as Record<string, unknown>)?.taskUpgradeActive as boolean | undefined;
                     const manualEnabled = (sessionInfo as unknown as Record<string, unknown>)?.manualUpgradeEnabled as boolean | undefined;
-                    const isDisabled = !!upgradeActive; // disabled when upgrade is already active
+                    const upgradeLeft = (sessionInfo as unknown as Record<string, unknown>)?.taskUpgradeMessagesLeft as number | undefined;
                     return (
-                      <button
-                        onClick={handleToggleManualUpgrade}
-                        disabled={isDisabled}
-                        title={isDisabled ? "Upgrade already active" : manualEnabled ? "Click to disarm manual upgrade" : "Arm manual upgrade — activates on next rejection"}
-                        className={`flex items-center gap-1 px-2 py-1 text-[10px] rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                          isDisabled
-                            ? "bg-amber-400/20 border-amber-400/40 text-amber-400"
-                            : manualEnabled
-                            ? "bg-amber-400/20 border-amber-400/50 text-amber-400 animate-pulse"
-                            : "bg-muted/50 border-border text-muted-foreground hover:border-amber-400/50 hover:text-amber-400"
-                        }`}
-                      >
-                        ⚡{isDisabled ? "UPGRADING" : manualEnabled ? "ARMED" : "UPGRADE"}
-                      </button>
+                      <div className="flex items-center gap-1">
+                        {/* Arm button: activates on next rejection */}
+                        <button
+                          onClick={handleToggleManualUpgrade}
+                          disabled={!!upgradeActive}
+                          title={upgradeActive ? `Upgrade active (${upgradeLeft ?? 0} msgs left)` : manualEnabled ? "Click to disarm" : "Arm: activates on next rejection"}
+                          className={`flex items-center gap-1 px-2 py-1 text-[10px] rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                            upgradeActive
+                              ? "bg-amber-400/20 border-amber-400/40 text-amber-400"
+                              : manualEnabled
+                              ? "bg-amber-400/20 border-amber-400/50 text-amber-400 animate-pulse"
+                              : "bg-muted/50 border-border text-muted-foreground hover:border-amber-400/50 hover:text-amber-400"
+                          }`}
+                        >
+                          ⚡{upgradeActive ? `ACTIVE(${upgradeLeft ?? 0})` : manualEnabled ? "ARMED" : "ARM"}
+                        </button>
+                        {/* Force button: activates immediately */}
+                        <button
+                          onClick={handleForceUpgrade}
+                          disabled={!!upgradeActive}
+                          title={upgradeActive ? "Upgrade already active" : "Force Upgrade: activate immediately"}
+                          className={`flex items-center gap-1 px-2 py-1 text-[10px] rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                            upgradeActive
+                              ? "bg-orange-400/10 border-orange-400/20 text-orange-400/50"
+                              : "bg-orange-400/10 border-orange-400/30 text-orange-400 hover:bg-orange-400/20"
+                          }`}
+                        >
+                          🚀FORCE
+                        </button>
+                      </div>
                     );
                   })()
                 )}

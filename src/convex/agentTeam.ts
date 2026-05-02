@@ -847,14 +847,15 @@ export const runAgentRound = action({
       const override = DIFFICULTY_FRAMEWORK_AUDITOR_MODEL[currentDifficulty];
       if (override) agentTier = override;
     }
-    // Apply Modal Upgrade: sonnet→opus47, haiku→opus46
+    // Context-aware Analyser: haiku in planning, haiku in tasks/subtasks (gemini replaced by haiku)
+    if (currentPhase === "Analyser" && executionPhase !== "planning") {
+      agentTier = "haiku"; // haiku for task/subtask phase
+    }
+    // Apply Modal Upgrade: sonnet→opus47, haiku→opus46, gemini→haiku
     if (taskUpgradeActive) {
       if (agentTier === "sonnet") agentTier = "opus47";
       else if (agentTier === "haiku") agentTier = "opus46";
-    }
-    // Context-aware Analyser: haiku in planning, gemini in tasks/subtasks
-    if (currentPhase === "Analyser" && executionPhase !== "planning") {
-      agentTier = taskUpgradeActive ? "opus46" : "gemini"; // upgrade haiku→opus46 if active
+      else if (agentTier === "gemini") agentTier = "haiku"; // gemini agents upgrade to haiku
     }
 
     // Run the agent

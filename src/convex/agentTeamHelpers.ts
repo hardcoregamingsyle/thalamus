@@ -483,3 +483,18 @@ export const setManualUpgrade = mutation({
     await ctx.db.patch(args.sessionId, { manualUpgradeEnabled: args.enabled });
   },
 });
+
+// Force upgrade: activates the Modal Upgrade immediately (no rejection needed)
+export const forceActivateUpgrade = mutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      taskUpgradeActive: true,
+      taskUpgradeMessagesLeft: 30,
+      manualUpgradeEnabled: false,
+    });
+  },
+});
