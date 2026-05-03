@@ -1184,7 +1184,15 @@ export default function TeamPortalInline({ token }: { token: string }) {
 
       {/* ── Right content area ─────────────────────────────────────────────── */}
       {!activeSessionId ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          {/* Mobile top bar for empty state */}
+          <div className="md:hidden shrink-0 flex items-center gap-2 px-3 py-2 border-b border-border bg-card/80">
+            <button onClick={() => setMobileSidebarOpen(true)} className="text-muted-foreground hover:text-primary transition-colors p-1 rounded hover:bg-primary/10">
+              <Menu className="h-4 w-4" />
+            </button>
+            <span className="text-xs font-bold text-muted-foreground">AGENT TEAMS</span>
+          </div>
+          <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
           <motion.div animate={{ scale: [1, 1.05, 1] }} transition={{ duration: 3, repeat: Infinity }}
             className="w-20 h-20 rounded-2xl border border-primary/30 bg-primary/10 flex items-center justify-center">
             <Cpu className="h-10 w-10 text-primary" />
@@ -1207,17 +1215,21 @@ export default function TeamPortalInline({ token }: { token: string }) {
               );
             })}
           </div>
+          </div>
         </div>
       ) : (
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
           {/* Session header */}
           <div className="shrink-0 border-b border-border bg-card/80 backdrop-blur-sm z-10">
-            <div className="flex items-center justify-between px-4 py-2">
-              <div className="flex items-center gap-3">
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${execPhaseColor} border-current/30 bg-current/5`}>
+            <div className="flex items-center justify-between px-2 md:px-4 py-2">
+              <div className="flex items-center gap-2 md:gap-3 min-w-0">
+                <button onClick={() => setMobileSidebarOpen(true)} className="md:hidden text-muted-foreground hover:text-primary transition-colors p-1 rounded hover:bg-primary/10 shrink-0">
+                  <Menu className="h-4 w-4" />
+                </button>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${execPhaseColor} border-current/30 bg-current/5 shrink-0`}>
                   <span className={execPhaseColor}>{execPhaseLabel}</span>
                 </span>
-                <span className="text-xs text-muted-foreground truncate max-w-xs">{sessionInfo?.title}</span>
+                <span className="text-xs text-muted-foreground truncate max-w-[120px] md:max-w-xs">{sessionInfo?.title}</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-muted-foreground">{sessionInfo?.totalMessages ?? 0}/{MAX_MESSAGES} msgs</span>
