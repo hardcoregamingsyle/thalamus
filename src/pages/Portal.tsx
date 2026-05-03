@@ -36,11 +36,6 @@ const MODES: { id: Mode; label: string; icon: typeof MessageSquare; desc: string
   { id: "code", label: "CODE", icon: Users, desc: "Multi-agent AI system", color: "text-violet-400" },
 ];
 
-// Detect if content is HTML
-function isHtml(content: string): boolean {
-  return /<[a-z][\s\S]*>/i.test(content);
-}
-
 export default function Portal() {
   const { isLoading, isAuthenticated, user, signOut, token } = useAuth();
   const navigate = useNavigate();
@@ -393,11 +388,7 @@ export default function Portal() {
                           ? "bg-primary text-primary-foreground"
                           : "bg-card border border-border text-foreground"
                       }`}>
-                        {msg.role === "assistant" && isHtml(msg.content) ? (
-                          <div dangerouslySetInnerHTML={{ __html: msg.content }} />
-                        ) : (
-                          <p className="whitespace-pre-wrap">{msg.content}</p>
-                        )}
+                        <p className="whitespace-pre-wrap">{msg.content}</p>
                           {msg.costCents !== undefined && msg.costCents > 0 && (
                           <p className="text-[9px] opacity-50 mt-1 text-right">
                             {Math.ceil(msg.costCents * 15_000).toLocaleString()} AB

@@ -6,8 +6,8 @@ import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
   Shield, Users, Tag, Lightbulb, DollarSign, LogOut, ChevronRight,
-  Plus, Trash2, Check, X, Edit2, Eye, EyeOff, Loader2, RefreshCw,
-  Coins, Calendar, AlertCircle, CheckCircle, Clock, Star,
+  Plus, Trash2, Check, Edit2, Eye, EyeOff, Loader2,
+  Coins, AlertCircle, CheckCircle, Star,
 } from "lucide-react";
 
 // ── Admin auth ────────────────────────────────────────────────────────────────
@@ -26,6 +26,7 @@ type AdminTab = "credits" | "promo-codes" | "users" | "suggestion";
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
+  const [adminToken, setAdminToken] = useState("");
   const [loginUser, setLoginUser] = useState("");
   const [loginPass, setLoginPass] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -34,6 +35,7 @@ export default function AdminPage() {
   const handleLogin = () => {
     if (loginUser === ADMIN_USER && loginPass === ADMIN_PASS) {
       setAuthed(true);
+      setAdminToken(ADMIN_PASS);
       toast.success("Welcome, Admin");
     } else {
       toast.error("Invalid credentials");
@@ -98,7 +100,6 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
       <header className="shrink-0 border-b border-border bg-card/90 backdrop-blur-md">
         <div className="flex items-center justify-between px-6 h-14">
           <div className="flex items-center gap-3">
@@ -109,7 +110,7 @@ export default function AdminPage() {
             <span className="text-xs text-muted-foreground">Aphantic Corporation</span>
           </div>
           <button
-            onClick={() => setAuthed(false)}
+            onClick={() => { setAuthed(false); setAdminToken(""); }}
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive transition-colors"
           >
             <LogOut className="h-3.5 w-3.5" />Sign Out
@@ -118,7 +119,6 @@ export default function AdminPage() {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
         <nav className="w-52 shrink-0 border-r border-border bg-card flex flex-col p-3 gap-1">
           {([
             { id: "users", label: "Users", icon: Users },
@@ -140,7 +140,6 @@ export default function AdminPage() {
           ))}
         </nav>
 
-        {/* Content */}
         <main className="flex-1 overflow-y-auto p-6">
           <AnimatePresence mode="wait">
             <motion.div
@@ -150,10 +149,10 @@ export default function AdminPage() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.15 }}
             >
-              {tab === "users" && <UsersTab />}
-              {tab === "credits" && <CreditsTab />}
-              {tab === "promo-codes" && <PromoCodesTab />}
-              {tab === "suggestion" && <SuggestionsTab />}
+              {tab === "users" && <UsersTab adminToken={adminToken} />}
+              {tab === "credits" && <CreditsTab adminToken={adminToken} />}
+              {tab === "promo-codes" && <PromoCodesTab adminToken={adminToken} />}
+              {tab === "suggestion" && <SuggestionsTab adminToken={adminToken} />}
             </motion.div>
           </AnimatePresence>
         </main>
@@ -163,8 +162,8 @@ export default function AdminPage() {
 }
 
 // ── Users Tab ─────────────────────────────────────────────────────────────────
-function UsersTab() {
-  const users = useQuery(api.admin.listUsers);
+function UsersTab({ adminToken }: { adminToken: string }) {
+  const users = useQuery(api.admin.listUsers, { adminToken });
   const setDailyAllowance = useMutation(api.admin.setDailyAllowance);
   const addCredits = useMutation(api.admin.addPurchasedCredits);
   const [editingUser, setEditingUser] = useState<string | null>(null);
@@ -180,7 +179,7 @@ function UsersTab() {
     const val = parseInt(newDaily);
     if (isNaN(val) || val < 0) { toast.error("Invalid amount"); return; }
     try {
-      await setDailyAllowance({ userId, dailyAgentBucks: val });
+      await setDailyAllowance({ adminToken, userId, dailyAgentBucks: val });
       toast.success("Daily allowance updated");
       setEditingUser(null);
       setNewDaily("");
@@ -191,7 +190,7 @@ function UsersTab() {
     const val = parseInt(addAmount);
     if (isNaN(val) || val <= 0) { toast.error("Invalid amount"); return; }
     try {
-      await addCredits({ userId, amount: val, note: "admin_grant" });
+      await addCredits({ adminToken, userId, amount: val, note: "admin_grant" });
       toast.success(`Added ${val.toLocaleString()} AB`);
       setAddAmount("");
     } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); }
@@ -259,7 +258,6 @@ function UsersTab() {
                 </div>
               </div>
 
-              {/* Edit panel */}
               <AnimatePresence>
                 {editingUser === user._id && (
                   <motion.div
@@ -306,8 +304,8 @@ function UsersTab() {
 }
 
 // ── Credits Tab ───────────────────────────────────────────────────────────────
-function CreditsTab() {
-  const pricing = useQuery(api.admin.listModelPricing);
+function CreditsTab({ adminToken }: { adminToken: string }) {
+  const pricing = useQuery(api.admin.listModelPricing, { adminToken });
   const upsertPricing = useMutation(api.admin.upsertModelPricing);
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState({ displayName: "", inputCentsPerMillion: "", outputCentsPerMillion: "", abMultiplier: "15000", isActive: true });
@@ -328,6 +326,7 @@ function CreditsTab() {
   const handleSave = async (modelId: string) => {
     try {
       await upsertPricing({
+        adminToken,
         modelId,
         displayName: form.displayName,
         inputCentsPerMillion: parseFloat(form.inputCentsPerMillion),
@@ -374,40 +373,46 @@ function CreditsTab() {
                     <input value={form.displayName} onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))} className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/60" />
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">AB Multiplier (per cent)</label>
+                    <label className="text-xs text-muted-foreground mb-1 block">AB Multiplier</label>
                     <input value={form.abMultiplier} onChange={e => setForm(f => ({ ...f, abMultiplier: e.target.value }))} className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/60" />
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Input ¢/1M tokens</label>
+                    <label className="text-xs text-muted-foreground mb-1 block">Input ¢/M tokens</label>
                     <input value={form.inputCentsPerMillion} onChange={e => setForm(f => ({ ...f, inputCentsPerMillion: e.target.value }))} className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/60" />
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Output ¢/1M tokens</label>
+                    <label className="text-xs text-muted-foreground mb-1 block">Output ¢/M tokens</label>
                     <input value={form.outputCentsPerMillion} onChange={e => setForm(f => ({ ...f, outputCentsPerMillion: e.target.value }))} className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/60" />
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-                    <input type="checkbox" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} className="rounded" />
-                    Active
-                  </label>
-                  <button onClick={() => handleSave(model.modelId)} className="px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs rounded-lg hover:bg-primary/20 transition-all font-bold">Save</button>
-                  <button onClick={() => setEditing(null)} className="px-3 py-1.5 bg-muted border border-border text-muted-foreground text-xs rounded-lg hover:bg-muted/80 transition-all">Cancel</button>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-muted-foreground">Active:</label>
+                  <button onClick={() => setForm(f => ({ ...f, isActive: !f.isActive }))} className={`w-8 h-4 rounded-full transition-all ${form.isActive ? "bg-emerald-400" : "bg-muted"}`}>
+                    <div className={`w-3 h-3 rounded-full bg-background mx-0.5 transition-transform ${form.isActive ? "translate-x-4" : "translate-x-0"}`} />
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => handleSave(model.modelId)} className="px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs rounded-lg hover:bg-primary/20 transition-all font-bold">
+                    <CheckCircle className="h-3 w-3 inline mr-1" />Save
+                  </button>
+                  <button onClick={() => setEditing(null)} className="px-3 py-1.5 bg-muted/50 border border-border text-muted-foreground text-xs rounded-lg hover:bg-muted transition-all">
+                    Cancel
+                  </button>
                 </div>
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-3 text-xs">
-                <div className="bg-muted/30 rounded-lg px-3 py-2">
-                  <p className="text-muted-foreground mb-0.5">Input cost</p>
-                  <p className="font-bold text-foreground">{model.inputCentsPerMillion}¢/1M</p>
+                <div className="bg-muted/30 rounded-lg p-2">
+                  <p className="text-muted-foreground mb-0.5">Input ¢/M</p>
+                  <p className="font-bold text-foreground">{model.inputCentsPerMillion}</p>
                 </div>
-                <div className="bg-muted/30 rounded-lg px-3 py-2">
-                  <p className="text-muted-foreground mb-0.5">Output cost</p>
-                  <p className="font-bold text-foreground">{model.outputCentsPerMillion}¢/1M</p>
+                <div className="bg-muted/30 rounded-lg p-2">
+                  <p className="text-muted-foreground mb-0.5">Output ¢/M</p>
+                  <p className="font-bold text-foreground">{model.outputCentsPerMillion}</p>
                 </div>
-                <div className="bg-muted/30 rounded-lg px-3 py-2">
-                  <p className="text-muted-foreground mb-0.5">AB multiplier</p>
-                  <p className="font-bold text-amber-400">{model.abMultiplier.toLocaleString()} AB/¢</p>
+                <div className="bg-muted/30 rounded-lg p-2">
+                  <p className="text-muted-foreground mb-0.5">AB Multiplier</p>
+                  <p className="font-bold text-foreground">{model.abMultiplier.toLocaleString()}</p>
                 </div>
               </div>
             )}
@@ -419,37 +424,39 @@ function CreditsTab() {
 }
 
 // ── Promo Codes Tab ───────────────────────────────────────────────────────────
-function PromoCodesTab() {
-  const codes = useQuery(api.admin.listPromoCodes);
-  const createCode = useMutation(api.admin.createPromoCode);
-  const deleteCode = useMutation(api.admin.deletePromoCode);
+function PromoCodesTab({ adminToken }: { adminToken: string }) {
+  const promoCodes = useQuery(api.admin.listPromoCodes, { adminToken });
+  const createPromoCode = useMutation(api.admin.createPromoCode);
+  const deletePromoCode = useMutation(api.admin.deletePromoCode);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ code: "", purchasedCredits: "", spins: "", expiresAt: "", maxUses: "", createdBy: "" });
-  const [isCreating, setIsCreating] = useState(false);
+  const [form, setForm] = useState({
+    code: "", purchasedCredits: "", spins: "", expiresAt: "", maxUses: "",
+  });
 
   const handleCreate = async () => {
-    if (!form.code.trim()) { toast.error("Code is required"); return; }
-    if (!form.expiresAt) { toast.error("Expiry date is required"); return; }
-    setIsCreating(true);
+    if (!form.code.trim() || !form.expiresAt) { toast.error("Code and expiry are required"); return; }
     try {
-      await createCode({
+      await createPromoCode({
+        adminToken,
         code: form.code.trim().toUpperCase(),
         purchasedCredits: form.purchasedCredits ? parseInt(form.purchasedCredits) : undefined,
         spins: form.spins ? parseInt(form.spins) : undefined,
         expiresAt: new Date(form.expiresAt).getTime(),
         maxUses: form.maxUses ? parseInt(form.maxUses) : undefined,
-        createdBy: form.createdBy || "admin",
+        createdBy: "admin",
       });
       toast.success("Promo code created");
-      setForm({ code: "", purchasedCredits: "", spins: "", expiresAt: "", maxUses: "", createdBy: "" });
       setShowForm(false);
+      setForm({ code: "", purchasedCredits: "", spins: "", expiresAt: "", maxUses: "" });
     } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); }
-    finally { setIsCreating(false); }
   };
 
   const handleDelete = async (id: Id<"promoCodes">) => {
     if (!confirm("Delete this promo code?")) return;
-    try { await deleteCode({ id }); toast.success("Deleted"); } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); }
+    try {
+      await deletePromoCode({ adminToken, id });
+      toast.success("Deleted");
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); }
   };
 
   return (
@@ -457,99 +464,86 @@ function PromoCodesTab() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-bold text-foreground">Promo Codes</h2>
-          <p className="text-sm text-muted-foreground">{codes?.length ?? 0} active codes</p>
+          <p className="text-sm text-muted-foreground">{promoCodes?.length ?? 0} codes</p>
         </div>
-        <button onClick={() => setShowForm(s => !s)} className="flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/30 text-primary text-sm rounded-xl hover:bg-primary/20 transition-all font-bold">
+        <button
+          onClick={() => setShowForm(s => !s)}
+          className="flex items-center gap-1.5 px-3 py-2 bg-primary/10 border border-primary/30 text-primary text-sm rounded-xl hover:bg-primary/20 transition-all font-bold"
+        >
           <Plus className="h-4 w-4" />New Code
         </button>
       </div>
 
-      {/* Create form */}
       <AnimatePresence>
         {showForm && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden mb-6"
           >
-            <div className="bg-card border border-primary/20 rounded-xl p-5">
-              <h3 className="font-bold text-foreground mb-4">New Promo Code</h3>
-              <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+              <h3 className="font-bold text-foreground">Create Promo Code</h3>
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Code *</label>
+                  <label className="text-xs text-muted-foreground mb-1 block">CODE *</label>
                   <input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))} placeholder="SUMMER2025" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60 font-mono" />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Expires At *</label>
-                  <input type="datetime-local" value={form.expiresAt} onChange={e => setForm(f => ({ ...f, expiresAt: e.target.value }))} className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60" />
+                  <label className="text-xs text-muted-foreground mb-1 block">EXPIRES AT *</label>
+                  <input type="date" value={form.expiresAt} onChange={e => setForm(f => ({ ...f, expiresAt: e.target.value }))} className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60" />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Purchased Credits (AB)</label>
-                  <input type="number" value={form.purchasedCredits} onChange={e => setForm(f => ({ ...f, purchasedCredits: e.target.value }))} placeholder="e.g. 50000" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60" />
+                  <label className="text-xs text-muted-foreground mb-1 block">AGENT BUCKS</label>
+                  <input value={form.purchasedCredits} onChange={e => setForm(f => ({ ...f, purchasedCredits: e.target.value }))} placeholder="e.g. 50000000" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60" />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Spins</label>
-                  <input type="number" value={form.spins} onChange={e => setForm(f => ({ ...f, spins: e.target.value }))} placeholder="e.g. 3" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60" />
+                  <label className="text-xs text-muted-foreground mb-1 block">SPINS</label>
+                  <input value={form.spins} onChange={e => setForm(f => ({ ...f, spins: e.target.value }))} placeholder="e.g. 3" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60" />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Max Uses (blank = unlimited)</label>
-                  <input type="number" value={form.maxUses} onChange={e => setForm(f => ({ ...f, maxUses: e.target.value }))} placeholder="unlimited" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60" />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Note</label>
-                  <input value={form.createdBy} onChange={e => setForm(f => ({ ...f, createdBy: e.target.value }))} placeholder="e.g. Summer campaign" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60" />
+                  <label className="text-xs text-muted-foreground mb-1 block">MAX USES (blank = unlimited)</label>
+                  <input value={form.maxUses} onChange={e => setForm(f => ({ ...f, maxUses: e.target.value }))} placeholder="e.g. 100" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60" />
                 </div>
               </div>
               <div className="flex gap-2">
-                <button onClick={handleCreate} disabled={isCreating} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm rounded-xl hover:bg-primary/90 disabled:opacity-50 transition-all font-bold">
-                  {isCreating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}Create
-                </button>
-                <button onClick={() => setShowForm(false)} className="px-4 py-2 bg-muted border border-border text-muted-foreground text-sm rounded-xl hover:bg-muted/80 transition-all">Cancel</button>
+                <button onClick={handleCreate} className="px-4 py-2 bg-primary text-primary-foreground text-sm rounded-xl hover:bg-primary/90 transition-all font-bold">Create</button>
+                <button onClick={() => setShowForm(false)} className="px-4 py-2 bg-muted/50 border border-border text-muted-foreground text-sm rounded-xl hover:bg-muted transition-all">Cancel</button>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Codes list */}
-      {!codes ? (
+      {!promoCodes ? (
         <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : (
         <div className="space-y-3">
-          {codes.map(code => {
-            const isExpired = code.expiresAt < Date.now();
-            const isExhausted = code.maxUses !== undefined && code.usedCount >= code.maxUses;
-            return (
-              <div key={code._id} className={`bg-card border rounded-xl p-4 ${isExpired || isExhausted ? "border-border/50 opacity-60" : "border-border"}`}>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="font-bold text-foreground font-mono text-lg">{code.code}</span>
-                      {isExpired && <span className="text-[10px] bg-destructive/20 text-destructive border border-destructive/30 px-1.5 py-0.5 rounded-full font-bold">EXPIRED</span>}
-                      {isExhausted && <span className="text-[10px] bg-orange-400/20 text-orange-400 border border-orange-400/30 px-1.5 py-0.5 rounded-full font-bold">EXHAUSTED</span>}
-                      {!isExpired && !isExhausted && <span className="text-[10px] bg-emerald-400/20 text-emerald-400 border border-emerald-400/30 px-1.5 py-0.5 rounded-full font-bold">ACTIVE</span>}
-                    </div>
-                    <div className="flex flex-wrap gap-3 text-xs">
-                      {code.purchasedCredits && (
-                        <div className="flex items-center gap-1 text-amber-400"><Coins className="h-3 w-3" />{code.purchasedCredits.toLocaleString()} AB</div>
-                      )}
-                      {code.spins && (
-                        <div className="flex items-center gap-1 text-primary"><Star className="h-3 w-3" />{code.spins} spins</div>
-                      )}
-                      <div className="flex items-center gap-1 text-muted-foreground"><RefreshCw className="h-3 w-3" />{code.usedCount}{code.maxUses ? `/${code.maxUses}` : ""} uses</div>
-                      <div className="flex items-center gap-1 text-muted-foreground"><Calendar className="h-3 w-3" />Expires {new Date(code.expiresAt).toLocaleDateString()}</div>
-                      {code.createdBy && <div className="text-muted-foreground">Note: {code.createdBy}</div>}
-                    </div>
-                  </div>
-                  <button onClick={() => handleDelete(code._id)} className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+          {promoCodes.map(code => (
+            <div key={code._id} className="bg-card border border-border rounded-xl p-4 flex items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="font-bold text-foreground font-mono">{code.code}</span>
+                  {code.maxUses != null && code.usedCount >= code.maxUses && (
+                    <span className="text-[10px] bg-destructive/15 text-destructive border border-destructive/30 px-1.5 py-0.5 rounded-full font-bold">EXHAUSTED</span>
+                  )}
+                  {code.expiresAt < Date.now() && (
+                    <span className="text-[10px] bg-muted text-muted-foreground border border-border px-1.5 py-0.5 rounded-full font-bold">EXPIRED</span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                  {code.purchasedCredits && <span>{code.purchasedCredits.toLocaleString()} AB</span>}
+                  {code.spins && <span>{code.spins} spin(s)</span>}
+                  <span>Used: {code.usedCount}{code.maxUses != null ? `/${code.maxUses}` : ""}</span>
+                  <span>Expires: {new Date(code.expiresAt).toLocaleDateString()}</span>
                 </div>
               </div>
-            );
-          })}
-          {codes.length === 0 && <p className="text-center text-muted-foreground py-12 text-sm">No promo codes yet</p>}
+              <button onClick={() => handleDelete(code._id)} className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all shrink-0">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+          {promoCodes.length === 0 && <p className="text-center text-muted-foreground py-12 text-sm">No promo codes yet</p>}
         </div>
       )}
     </div>
@@ -557,8 +551,8 @@ function PromoCodesTab() {
 }
 
 // ── Suggestions Tab ───────────────────────────────────────────────────────────
-function SuggestionsTab() {
-  const suggestions = useQuery(api.admin.listSuggestions);
+function SuggestionsTab({ adminToken }: { adminToken: string }) {
+  const suggestions = useQuery(api.admin.listSuggestions, { adminToken });
   const updateStatus = useMutation(api.admin.updateSuggestionStatus);
   const deleteSuggestion = useMutation(api.admin.deleteSuggestion);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -574,12 +568,12 @@ function SuggestionsTab() {
   };
 
   const handleStatus = async (id: Id<"suggestions">, status: string) => {
-    try { await updateStatus({ id, status }); toast.success(`Marked as ${status}`); } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); }
+    try { await updateStatus({ adminToken, id, status }); toast.success(`Marked as ${status}`); } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); }
   };
 
   const handleDelete = async (id: Id<"suggestions">) => {
     if (!confirm("Delete this suggestion?")) return;
-    try { await deleteSuggestion({ id }); toast.success("Deleted"); } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); }
+    try { await deleteSuggestion({ adminToken, id }); toast.success("Deleted"); } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); }
   };
 
   return (
