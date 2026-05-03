@@ -326,6 +326,14 @@ export const applyPromoCode = mutation({
     const user = await ctx.db.get(session.userId);
     if (!user) throw new Error("User not found");
 
+    // Check if this user has already used this code
+    const usedCodesRaw = (user as { usedPromoCodes?: string }).usedPromoCodes ?? "[]";
+    let usedCodes: string[] = [];
+    try { usedCodes = JSON.parse(usedCodesRaw); } catch { usedCodes = []; }
+    if (usedCodes.includes(normalizedCode)) {
+      return { success: false, message: "You have already used this promo code" };
+    }
+
     const ab = promoRecord.purchasedCredits ?? 0;
     const spins = promoRecord.spins ?? 0;
 
@@ -355,6 +363,12 @@ export const applyPromoCode = mutation({
         referralSpins: currentSpins + spins,
       });
     }
+
+    // Mark this code as used by this user
+    usedCodes.push(normalizedCode);
+    await ctx.db.patch(session.userId, {
+      usedPromoCodes: JSON.stringify(usedCodes),
+    });
 
     // Increment usage count on the promo code
     await ctx.db.patch(promoRecord._id, {
