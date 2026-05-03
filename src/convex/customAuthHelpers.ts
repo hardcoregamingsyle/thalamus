@@ -367,8 +367,8 @@ export const applyPromoCode = mutation({
     // Mark this code as used by this user
     usedCodes.push(normalizedCode);
     await ctx.db.patch(session.userId, {
-      usedPromoCodes: JSON.stringify(usedCodes),
-    });
+      usedPromoCodesJson: JSON.stringify(usedCodes),
+    } as never);
 
     // Increment usage count on the promo code
     await ctx.db.patch(promoRecord._id, {
