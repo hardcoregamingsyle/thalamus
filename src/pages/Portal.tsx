@@ -48,7 +48,7 @@ export default function Portal() {
   const [activeConvId, setActiveConvId] = useState<Id<"conversations"> | null>(null);
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(typeof window !== "undefined" ? window.innerWidth >= 768 : true);
   const [creditModalOpen, setCreditModalOpen] = useState(false);
   const [spinNotifOpen, setSpinNotifOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -179,9 +179,11 @@ export default function Portal() {
       <header className="shrink-0 border-b border-border bg-card/80 backdrop-blur-sm z-20">
         <div className="flex items-center justify-between px-4 h-12">
           <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(o => !o)} className="text-muted-foreground hover:text-primary transition-colors p-1 rounded hover:bg-primary/10 md:hidden">
-              {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-            </button>
+            {activeMode !== "code" && (
+              <button onClick={() => setSidebarOpen(o => !o)} className="text-muted-foreground hover:text-primary transition-colors p-1 rounded hover:bg-primary/10 md:hidden">
+                {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+              </button>
+            )}
             <div className="flex items-center gap-2">
               <div className="w-6 h-6 rounded bg-primary/20 border border-primary/40 flex items-center justify-center">
                 <Cpu className="h-3 w-3 text-primary" />
