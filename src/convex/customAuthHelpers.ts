@@ -327,7 +327,7 @@ export const applyPromoCode = mutation({
     if (!user) throw new Error("User not found");
 
     // Check if this user has already used this code
-    const usedCodesRaw = (user as { usedPromoCodes?: string }).usedPromoCodes ?? "[]";
+    const usedCodesRaw = (user as { usedPromoCodesJson?: string }).usedPromoCodesJson ?? "[]";
     let usedCodes: string[] = [];
     try { usedCodes = JSON.parse(usedCodesRaw); } catch { usedCodes = []; }
     if (usedCodes.includes(normalizedCode)) {
