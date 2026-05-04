@@ -1,4 +1,4 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 
@@ -205,5 +205,111 @@ export const submitSuggestion = mutation({
       status: "new",
       createdAt: Date.now(),
     });
+  },
+});
+
+// ── Platform Budget ───────────────────────────────────────────────────────────
+
+// Cost per million tokens in dollars (8 decimal precision)
+const PLATFORM_PRICING: Record<string, { input: number; output: number }> = {
+  "claude-haiku-4-5":  { input: 1,  output: 5  },
+  "claude-sonnet-4-6": { input: 3,  output: 15 },
+  "claude-opus-4-6":   { input: 5,  output: 25 },
+  "claude-opus-4-7":   { input: 7,  output: 34 },
+};
+
+const BUDGET_THRESHOLD = 5.0; // disable at $5 remaining
+
+export function calcPlatformCost(modelName: string, inputTokens: number, outputTokens: number): number {
+  const pricing = PLATFORM_PRICING[modelName];
+  if (!pricing) return 0;
+  return parseFloat(
+    ((inputTokens / 1_000_000) * pricing.input + (outputTokens / 1_000_000) * pricing.output).toFixed(8)
+  );
+}
+
+export const getPlatformBudget = query({
+  args: { adminToken: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const budgets = await ctx.db.query("platformBudget").take(1);
+    if (budgets.length === 0) return { totalDollars: 0, spentDollars: 0, isDisabled: false, remaining: 0 };
+    const b = budgets[0];
+    return {
+      _id: b._id,
+      totalDollars: b.totalDollars,
+      spentDollars: b.spentDollars,
+      isDisabled: b.isDisabled,
+      remaining: parseFloat((b.totalDollars - b.spentDollars).toFixed(8)),
+    };
+  },
+});
+
+export const setPlatformBudget = mutation({
+  args: { adminToken: v.string(), totalDollars: v.number() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const budgets = await ctx.db.query("platformBudget").take(1);
+    const remaining = args.totalDollars - (budgets[0]?.spentDollars ?? 0);
+    const isDisabled = remaining < BUDGET_THRESHOLD;
+    if (budgets.length === 0) {
+      await ctx.db.insert("platformBudget", {
+        totalDollars: args.totalDollars,
+        spentDollars: 0,
+        isDisabled,
+        updatedAt: Date.now(),
+      });
+    } else {
+      await ctx.db.patch(budgets[0]._id, {
+        totalDollars: args.totalDollars,
+        isDisabled,
+        updatedAt: Date.now(),
+      });
+    }
+  },
+});
+
+export const resetPlatformSpend = mutation({
+  args: { adminToken: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const budgets = await ctx.db.query("platformBudget").take(1);
+    if (budgets.length === 0) return;
+    const b = budgets[0];
+    const remaining = b.totalDollars - 0;
+    await ctx.db.patch(b._id, {
+      spentDollars: 0,
+      isDisabled: remaining < BUDGET_THRESHOLD,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+// Internal: deduct cost from platform budget after a model call
+export const deductPlatformCost = internalMutation({
+  args: { modelName: v.string(), inputTokens: v.number(), outputTokens: v.number() },
+  handler: async (ctx, args) => {
+    const cost = calcPlatformCost(args.modelName, args.inputTokens, args.outputTokens);
+    if (cost <= 0) return;
+    const budgets = await ctx.db.query("platformBudget").take(1);
+    if (budgets.length === 0) return; // no budget set, allow
+    const b = budgets[0];
+    const newSpent = parseFloat((b.spentDollars + cost).toFixed(8));
+    const remaining = b.totalDollars - newSpent;
+    await ctx.db.patch(b._id, {
+      spentDollars: newSpent,
+      isDisabled: remaining < BUDGET_THRESHOLD,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+// Internal: check if platform budget allows more requests
+export const isPlatformBudgetExhausted = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const budgets = await ctx.db.query("platformBudget").take(1);
+    if (budgets.length === 0) return false; // no budget set = allow
+    return budgets[0].isDisabled;
   },
 });

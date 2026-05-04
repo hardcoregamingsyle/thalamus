@@ -708,6 +708,16 @@ export const runAgentRound = action({
       throw new Error(`Maximum message limit (${MAX_MESSAGES}) reached`);
     }
 
+    // Platform budget check — block new requests if budget exhausted
+    const budgetExhausted = await ctx.runQuery(internal.admin.isPlatformBudgetExhausted, {});
+    if (budgetExhausted) {
+      await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
+        sessionId: args.sessionId, status: "completed", currentAgent: undefined,
+        round: session.round, loopCount: session.loopCount, phase: "completed", totalMessages,
+      });
+      throw new Error("Platform budget exhausted ($5 threshold reached). Contact admin to add more credits.");
+    }
+
     // Determine execution state
     const executionPhase = session.executionPhase ?? "planning";
     const currentTaskIndex = session.currentTaskIndex ?? 0;
@@ -937,6 +947,10 @@ export const runAgentRound = action({
     };
     const agentBucksToDeduct = calcAgentBucksForTier(usedTier, inputTokens, outputTokens);
     await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId, agentBucksToDeduct });
+
+    // Deduct from platform budget
+    const modelNameForBudget = TIER_MODEL_NAMES[usedTier];
+    await ctx.runMutation(internal.admin.deductPlatformCost, { modelName: modelNameForBudget, inputTokens, outputTokens });
 
     const newTotalMessages = totalMessages + 1;
     const updatedTaskMessageCount = executionPhase === "tasks" ? taskMessageCount + 1 : 0;
