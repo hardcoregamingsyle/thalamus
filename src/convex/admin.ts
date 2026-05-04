@@ -250,9 +250,9 @@ export const setPlatformBudget = mutation({
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
     const budgets = await ctx.db.query("platformBudget").take(1);
-    const remaining = args.totalDollars - (budgets[0]?.spentDollars ?? 0);
-    const isDisabled = remaining < BUDGET_THRESHOLD;
     if (budgets.length === 0) {
+      // First time: create with the given amount
+      const isDisabled = args.totalDollars < BUDGET_THRESHOLD;
       await ctx.db.insert("platformBudget", {
         totalDollars: args.totalDollars,
         spentDollars: 0,
@@ -260,9 +260,13 @@ export const setPlatformBudget = mutation({
         updatedAt: Date.now(),
       });
     } else {
-      await ctx.db.patch(budgets[0]._id, {
-        totalDollars: args.totalDollars,
-        isDisabled,
+      // Add to existing total (old + new)
+      const b = budgets[0];
+      const newTotal = parseFloat((b.totalDollars + args.totalDollars).toFixed(8));
+      const remaining = newTotal - b.spentDollars;
+      await ctx.db.patch(b._id, {
+        totalDollars: newTotal,
+        isDisabled: remaining < BUDGET_THRESHOLD,
         updatedAt: Date.now(),
       });
     }
