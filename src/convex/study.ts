@@ -4,67 +4,9 @@ import { action, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { callClaude } from "./agentCore";
 
-// Gemini keys (same pool)
-const GEMINI_KEYS = [
-  "AIzaSyB6LdCRxGz27Xpj-K8-EiOVBQRvl0SPzyQ",
-  "AIzaSyBZHdEWGlYTpr26fVGGWBOHxn4dRKkd-9Y",
-  "AIzaSyCJHWZmUwc2_HAV-KS0Q4C50aOBkvm7OwE",
-  "AIzaSyCOX7-EwKrZDVh6qUeGoqT_G-D3svl6tco",
-  "AIzaSyCyRPBb-rFOZD_6aKgX6cQiKOshjlXt1ho",
-  "AIzaSyBDXq8Oceo1DYXDjlM2t0voCxF8wRKCAK0",
-  "AIzaSyD4cuooT54P1oCkDq3kJxbRJ2Kf1A9aaXU",
-  "AIzaSyAr5AlBQ2RIPiAlYZAJMVboV_0W6WZJh4g",
-  "AIzaSyA6TuU_Xu635NSouv2Y9l9DuUowp5CYkzc",
-  "AIzaSyDTCwP3prKrW3f2HdiZegHHVXfXZGiaHA0",
-];
-
-let keyIdx = 0;
-
-async function callGeminiChat(
-  systemPrompt: string,
-  messages: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }>,
-  maxTokens = 4096
-): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
-  for (let attempt = 0; attempt < GEMINI_KEYS.length; attempt++) {
-    const key = GEMINI_KEYS[keyIdx % GEMINI_KEYS.length];
-    keyIdx++;
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${key}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: systemPrompt }] },
-            contents: messages,
-            generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
-          }),
-        }
-      );
-      if (!response.ok) {
-        if (response.status === 429 || response.status === 403) continue;
-        throw new Error(`Gemini error ${response.status}`);
-      }
-      const data = await response.json() as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-        usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
-      };
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) throw new Error("No response from Gemini");
-      return {
-        text,
-        inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
-        outputTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
-      };
-    } catch (err) {
-      if (attempt === GEMINI_KEYS.length - 1) throw err;
-    }
-  }
-  throw new Error("All Gemini keys exhausted");
-}
-
-// ── Process file/image with Claude Vision ─────────────────────────────────────
+// ── Process file/image with Claude Vision via Bedrock ─────────────────────────
 export const processFileResource = action({
   args: {
     token: v.string(),
@@ -76,39 +18,49 @@ export const processFileResource = action({
     const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
 
-    const { vly } = await import('../lib/vly-integrations');
     const isImage = args.fileType.startsWith("image/");
-
     let summary = "";
 
     if (isImage) {
-      const result = await vly.ai.completion({
-        model: "claude-haiku-4-5",
-        messages: [{
-          role: "user",
-          content: `Please analyze this image and provide a comprehensive summary of all content, text, diagrams, charts, and visual information present. Be thorough and extract all useful information for study purposes.\n\nImage data (base64, ${args.fileType}): ${args.fileDataBase64.slice(0, 80000)}`,
-        }],
-        maxTokens: 2000,
-      });
-      summary = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "Could not process image") : "Image uploaded (could not extract text)";
-    } else {
+      // Try Bedrock first, fallback to VLY
       try {
-        const decoded = Buffer.from(args.fileDataBase64, "base64").toString("utf-8");
-        if (decoded.length > 100) {
-          summary = decoded.slice(0, 50000);
-        } else {
-          throw new Error("Empty or binary file");
-        }
+        const prompt = `Please analyze this image and provide a comprehensive summary of all content, text, diagrams, charts, and visual information present. Be thorough and extract all useful information for study purposes.\n\nImage data (base64, ${args.fileType}): ${args.fileDataBase64.slice(0, 80000)}`;
+        const result = await callClaude(prompt, "You are a study assistant that extracts and summarizes content from images and files.", 2000);
+        summary = result.text;
       } catch {
+        // Fallback to VLY
+        const { vly } = await import('../lib/vly-integrations');
         const result = await vly.ai.completion({
           model: "claude-haiku-4-5",
-          messages: [{
-            role: "user",
-            content: `Please extract and summarize all content from this file for study purposes. File name: ${args.fileName}\n\nFile content (base64): ${args.fileDataBase64.slice(0, 50000)}`,
-          }],
+          messages: [{ role: "user", content: `Please analyze this image and provide a comprehensive summary of all content, text, diagrams, charts, and visual information present. Be thorough and extract all useful information for study purposes.\n\nImage data (base64, ${args.fileType}): ${args.fileDataBase64.slice(0, 80000)}` }],
           maxTokens: 2000,
         });
-        summary = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "Could not process file") : "File uploaded (could not extract content)";
+        summary = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "Could not process image") : "Image uploaded (could not extract text)";
+      }
+    } else {
+      // Try to decode as text first
+      try {
+        const decoded = Buffer.from(args.fileDataBase64, "base64").toString("utf-8");
+        if (decoded.length > 100 && decoded.split("").filter(c => c.charCodeAt(0) > 31 && c.charCodeAt(0) < 127).length / decoded.length > 0.8) {
+          summary = decoded.slice(0, 50000);
+        } else {
+          throw new Error("Binary file");
+        }
+      } catch {
+        // Use Claude to extract content
+        try {
+          const prompt = `Please extract and summarize all content from this file for study purposes. File name: ${args.fileName}\n\nFile content (base64): ${args.fileDataBase64.slice(0, 50000)}`;
+          const result = await callClaude(prompt, "You are a study assistant that extracts and summarizes content from files.", 2000);
+          summary = result.text;
+        } catch {
+          const { vly } = await import('../lib/vly-integrations');
+          const result = await vly.ai.completion({
+            model: "claude-haiku-4-5",
+            messages: [{ role: "user", content: `Please extract and summarize all content from this file for study purposes. File name: ${args.fileName}\n\nFile content (base64): ${args.fileDataBase64.slice(0, 50000)}` }],
+            maxTokens: 2000,
+          });
+          summary = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "Could not process file") : "File uploaded (could not extract content)";
+        }
       }
     }
 
@@ -132,13 +84,26 @@ export const searchAndAddResource = action({
     const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
 
-    const systemPrompt = `You are a research assistant. When given a topic or query, provide a comprehensive, well-structured summary of the key information about that topic. Include definitions, key concepts, important facts, and relevant details. Format as plain text suitable for study notes.`;
+    const systemPrompt = `You are a research assistant. When given a topic or query, provide a comprehensive, well-structured summary of the key information about that topic. Include definitions, key concepts, important facts, and relevant details. Format as plain text suitable for study notes. Be accurate and thorough.`;
 
-    const { text } = await callGeminiChat(
-      systemPrompt,
-      [{ role: "user", parts: [{ text: `Research and summarize for study purposes: ${args.query}` }] }],
-      3000
-    );
+    // Use Claude Haiku via Bedrock as primary, fallback to VLY
+    let text = "";
+    try {
+      const result = await callClaude(
+        `Research and summarize for study purposes: ${args.query}`,
+        systemPrompt,
+        3000
+      );
+      text = result.text;
+    } catch {
+      const { vly } = await import('../lib/vly-integrations');
+      const result = await vly.ai.completion({
+        model: "claude-haiku-4-5",
+        messages: [{ role: "user", content: `Research and summarize for study purposes: ${args.query}` }],
+        maxTokens: 3000,
+      });
+      text = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "Could not research topic") : "Research failed";
+    }
 
     const title = args.query.slice(0, 100);
     const resourceId = await ctx.runMutation(internal.studyHelpers.insertResource, {
@@ -183,9 +148,11 @@ export const sendStudyMessage = action({
       ).join("\n\n---\n\n");
     }
 
-    const systemPrompt = `You are a Study Assistant powered by Thalamus AI. You help students learn and understand topics.
+    const systemPrompt = `You are a Study Assistant powered by Thalamus AI. You help students learn and understand topics accurately.
 
-${resourceContext ? `You have access to the following study resources that the user has uploaded or added:${resourceContext}\n\nWhen answering questions, prioritize information from these resources when relevant.` : "No study resources have been added yet. Answer based on your general knowledge."}
+IMPORTANT: Only provide information you are confident about. If you are unsure, say so clearly. Do not make up or guess information.
+
+${resourceContext ? `You have access to the following study resources that the user has uploaded or added:${resourceContext}\n\nWhen answering questions, prioritize information from these resources when relevant. If the resources contain the answer, use them. If not, use your general knowledge but be clear about it.` : "No study resources have been added yet. Answer based on your general knowledge, but be accurate and honest about what you know."}
 
 RESPONSE FORMAT: Respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.
 
@@ -199,29 +166,53 @@ Use these HTML elements:
 - <pre><code> for code blocks
 - <table> for comparisons
 
-Be educational, clear, and thorough. If the question relates to uploaded resources, reference them specifically.`;
+Be educational, clear, and accurate. If the question relates to uploaded resources, reference them specifically.`;
 
-    const geminiMessages = history.map((m: { role: string; content: string }) => ({
-      role: m.role === "assistant" ? "model" as const : "user" as const,
-      parts: [{ text: m.content }],
-    }));
+    // Build conversation context for Claude
+    const conversationContext = history.slice(-10).map((m: { role: string; content: string }) =>
+      `${m.role === "user" ? "Human" : "Assistant"}: ${m.content.slice(0, 1000)}`
+    ).join("\n\n");
 
-    const { text: responseContent, inputTokens, outputTokens } = await callGeminiChat(
-      systemPrompt,
-      geminiMessages,
-      4096
-    );
+    const fullPrompt = conversationContext
+      ? `${conversationContext}\n\nHuman: ${args.content}`
+      : args.content;
 
-    const tokensUsed = inputTokens + outputTokens;
-    const inputCostCents = (inputTokens / 1_000_000) * 60;
-    const outputCostCents = (outputTokens / 1_000_000) * 240;
+    // Use Claude Haiku via Bedrock as primary, fallback to VLY
+    let responseContent = "";
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    try {
+      const result = await callClaude(fullPrompt, systemPrompt, 4096);
+      responseContent = result.text;
+      inputTokens = result.inputTokens;
+      outputTokens = result.outputTokens;
+    } catch {
+      // Fallback to VLY
+      const { vly } = await import('../lib/vly-integrations');
+      const vlyMessages = history.slice(-10).map((m: { role: string; content: string }) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content.slice(0, 1000),
+      }));
+      vlyMessages.push({ role: "user", content: args.content });
+      const result = await vly.ai.completion({
+        model: "claude-haiku-4-5",
+        messages: [{ role: "user", content: systemPrompt + "\n\n" + fullPrompt }],
+        maxTokens: 4096,
+      });
+      responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "No response") : "Failed to get response";
+    }
+
+    // Haiku 4.5 pricing: $1/$5 per million tokens (in dollars) = 100/500 cents per million
+    const inputCostCents = (inputTokens / 1_000_000) * 100;
+    const outputCostCents = (outputTokens / 1_000_000) * 500;
     const costCents = Math.max(1, Math.ceil(inputCostCents + outputCostCents));
 
     await ctx.runMutation(internal.aiHelpers.saveAssistantMessage, {
       conversationId: args.conversationId,
       userId,
       content: responseContent,
-      tokensUsed,
+      tokensUsed: inputTokens + outputTokens,
       costCents,
     });
 
