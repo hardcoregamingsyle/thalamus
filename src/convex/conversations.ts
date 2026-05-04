@@ -4,7 +4,7 @@ import { internal } from "./_generated/api";
 
 export const list = query({
   args: {
-    mode: v.optional(v.union(v.literal("chat"), v.literal("research"), v.literal("code"))),
+    mode: v.optional(v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("study"))),
     token: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -36,7 +36,7 @@ export const list = query({
 export const create = mutation({
   args: {
     title: v.string(),
-    mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code")),
+    mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("study")),
     token: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
