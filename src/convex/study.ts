@@ -4,7 +4,7 @@ import { action, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { callClaude } from "./agentCore";
+import { callClaude, performSearch } from "./agentCore";
 
 // ── Process file/image with Claude Vision via Bedrock ─────────────────────────
 export const processFileResource = action({
@@ -141,18 +141,33 @@ export const sendStudyMessage = action({
 
     const resources = await ctx.runQuery(internal.studyHelpers.getResourcesForUser, { userId });
 
+    // Always do a live web search for fresh info
+    let liveSearchResults = "";
+    try {
+      liveSearchResults = await performSearch(args.content);
+    } catch {
+      liveSearchResults = "";
+    }
+
     let resourceContext = "";
     if (resources.length > 0) {
       resourceContext = "\n\n## YOUR STUDY RESOURCES:\n" + resources.map((r: { title: string; content: string }, i: number) =>
-        `### Resource ${i + 1}: ${r.title}\n${r.content.slice(0, 3000)}`
+        `### Resource ${i + 1}: ${r.title}\n${r.content.slice(0, 2000)}`
       ).join("\n\n---\n\n");
     }
 
     const systemPrompt = `You are a Study Assistant powered by Thalamus AI. You help students learn and understand topics accurately.
 
-IMPORTANT: Only provide information you are confident about. If you are unsure, say so clearly. Do not make up or guess information.
+IMPORTANT: Always use the live search results provided below as your PRIMARY source of information. They contain the most up-to-date and accurate data. Do NOT rely on your training data when live search results are available.
 
-${resourceContext ? `You have access to the following study resources that the user has uploaded or added:${resourceContext}\n\nWhen answering questions, prioritize information from these resources when relevant. If the resources contain the answer, use them. If not, use your general knowledge but be clear about it.` : "No study resources have been added yet. Answer based on your general knowledge, but be accurate and honest about what you know."}
+${liveSearchResults ? `## LIVE SEARCH RESULTS (use these as primary source):\n${liveSearchResults}` : ""}
+${resourceContext ? `\n${resourceContext}` : ""}
+
+When answering:
+1. Prioritize the live search results above all else
+2. Use uploaded resources as supplementary context
+3. If neither has the answer, use general knowledge but clearly state it
+4. Never make up or guess information
 
 RESPONSE FORMAT: Respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.
 
@@ -166,11 +181,11 @@ Use these HTML elements:
 - <pre><code> for code blocks
 - <table> for comparisons
 
-Be educational, clear, and accurate. If the question relates to uploaded resources, reference them specifically.`;
+Be educational, clear, and accurate.`;
 
     // Build conversation context for Claude
     const conversationContext = history.slice(-10).map((m: { role: string; content: string }) =>
-      `${m.role === "user" ? "Human" : "Assistant"}: ${m.content.slice(0, 1000)}`
+      `${m.role === "user" ? "Human" : "Assistant"}: ${m.content.slice(0, 800)}`
     ).join("\n\n");
 
     const fullPrompt = conversationContext
@@ -190,11 +205,6 @@ Be educational, clear, and accurate. If the question relates to uploaded resourc
     } catch {
       // Fallback to VLY
       const { vly } = await import('../lib/vly-integrations');
-      const vlyMessages = history.slice(-10).map((m: { role: string; content: string }) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content.slice(0, 1000),
-      }));
-      vlyMessages.push({ role: "user", content: args.content });
       const result = await vly.ai.completion({
         model: "claude-haiku-4-5",
         messages: [{ role: "user", content: systemPrompt + "\n\n" + fullPrompt }],
