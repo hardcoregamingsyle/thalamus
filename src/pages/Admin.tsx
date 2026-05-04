@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import {
   Shield, Users, Tag, Lightbulb, DollarSign, LogOut, ChevronRight,
   Plus, Trash2, Check, Edit2, Eye, EyeOff, Loader2,
-  Coins, AlertCircle, CheckCircle, Star,
+  Coins, AlertCircle, CheckCircle, Star, TrendingDown, RefreshCw, Zap,
 } from "lucide-react";
 
 // ── Admin auth ────────────────────────────────────────────────────────────────
@@ -303,121 +303,196 @@ function UsersTab({ adminToken }: { adminToken: string }) {
   );
 }
 
+// ── Platform pricing rates ($ per million tokens) ─────────────────────────────
+const PLATFORM_PRICING = [
+  { modelId: "claude-haiku-4-5",  displayName: "Claude Haiku 4.5",  input: 1,  output: 5  },
+  { modelId: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6", input: 3,  output: 15 },
+  { modelId: "claude-opus-4-6",   displayName: "Claude Opus 4.6",   input: 5,  output: 25 },
+  { modelId: "claude-opus-4-7",   displayName: "Claude Opus 4.7",   input: 7,  output: 34 },
+];
+
 // ── Credits Tab ───────────────────────────────────────────────────────────────
 function CreditsTab({ adminToken }: { adminToken: string }) {
-  const pricing = useQuery(api.admin.listModelPricing, { adminToken });
-  const upsertPricing = useMutation(api.admin.upsertModelPricing);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [form, setForm] = useState({ displayName: "", inputCentsPerMillion: "", outputCentsPerMillion: "", abMultiplier: "15000", isActive: true });
+  const budget = useQuery(api.admin.getPlatformBudget, { adminToken });
+  const setPlatformBudget = useMutation(api.admin.setPlatformBudget);
+  const resetPlatformSpend = useMutation(api.admin.resetPlatformSpend);
+  const [budgetInput, setBudgetInput] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
-  const models = pricing && pricing.length > 0 ? pricing : DEFAULT_MODELS.map(m => ({ ...m, _id: m.modelId as unknown as Id<"modelPricing">, updatedAt: Date.now() }));
-
-  const handleEdit = (model: typeof models[0]) => {
-    setEditing(model.modelId);
-    setForm({
-      displayName: model.displayName,
-      inputCentsPerMillion: String(model.inputCentsPerMillion),
-      outputCentsPerMillion: String(model.outputCentsPerMillion),
-      abMultiplier: String(model.abMultiplier),
-      isActive: model.isActive,
-    });
-  };
-
-  const handleSave = async (modelId: string) => {
+  const handleSetBudget = async () => {
+    const val = parseFloat(budgetInput);
+    if (isNaN(val) || val <= 0) { toast.error("Enter a valid dollar amount"); return; }
+    setIsSaving(true);
     try {
-      await upsertPricing({
-        adminToken,
-        modelId,
-        displayName: form.displayName,
-        inputCentsPerMillion: parseFloat(form.inputCentsPerMillion),
-        outputCentsPerMillion: parseFloat(form.outputCentsPerMillion),
-        abMultiplier: parseFloat(form.abMultiplier),
-        isActive: form.isActive,
-        updatedBy: "admin",
-      });
-      toast.success("Pricing updated");
-      setEditing(null);
+      await setPlatformBudget({ adminToken, totalDollars: val });
+      toast.success(`Budget set to ${val.toFixed(2)}`);
+      setBudgetInput("");
     } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); }
+    finally { setIsSaving(false); }
   };
+
+  const handleResetSpend = async () => {
+    if (!confirm("Reset all spent credits to $0? This does not change the total budget.")) return;
+    setIsResetting(true);
+    try {
+      await resetPlatformSpend({ adminToken });
+      toast.success("Spend counter reset to $0");
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); }
+    finally { setIsResetting(false); }
+  };
+
+  const totalDollars = budget?.totalDollars ?? 0;
+  const spentDollars = budget?.spentDollars ?? 0;
+  const remaining = budget ? parseFloat((totalDollars - spentDollars).toFixed(8)) : 0;
+  const spentPct = totalDollars > 0 ? Math.min(100, (spentDollars / totalDollars) * 100) : 0;
+  const isDisabled = budget?.isDisabled ?? false;
+  const isLow = remaining > 0 && remaining < 5;
 
   return (
-    <div>
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-foreground">Credits — Anthropic Model Pricing</h2>
-        <p className="text-sm text-muted-foreground">Configure cost per million tokens and AgentBucks multiplier for each Claude model</p>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-bold text-foreground">Platform Credit Budget</h2>
+        <p className="text-sm text-muted-foreground">Set your total API cost budget. Agent requests are blocked when remaining balance drops below $5.00.</p>
       </div>
 
-      <div className="space-y-4">
-        {models.map(model => (
-          <div key={model.modelId} className="bg-card border border-border rounded-xl p-5">
-            <div className="flex items-start justify-between gap-4 mb-3">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="font-bold text-foreground">{model.displayName}</h3>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold ${model.isActive ? "bg-emerald-400/15 text-emerald-400 border-emerald-400/30" : "bg-muted text-muted-foreground border-border"}`}>
-                    {model.isActive ? "ACTIVE" : "INACTIVE"}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground font-mono">{model.modelId}</p>
-              </div>
-              <button onClick={() => editing === model.modelId ? setEditing(null) : handleEdit(model)} className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all">
-                <Edit2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-
-            {editing === model.modelId ? (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Display Name</label>
-                    <input value={form.displayName} onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))} className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/60" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">AB Multiplier</label>
-                    <input value={form.abMultiplier} onChange={e => setForm(f => ({ ...f, abMultiplier: e.target.value }))} className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/60" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Input ¢/M tokens</label>
-                    <input value={form.inputCentsPerMillion} onChange={e => setForm(f => ({ ...f, inputCentsPerMillion: e.target.value }))} className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/60" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Output ¢/M tokens</label>
-                    <input value={form.outputCentsPerMillion} onChange={e => setForm(f => ({ ...f, outputCentsPerMillion: e.target.value }))} className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/60" />
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-muted-foreground">Active:</label>
-                  <button onClick={() => setForm(f => ({ ...f, isActive: !f.isActive }))} className={`w-8 h-4 rounded-full transition-all ${form.isActive ? "bg-emerald-400" : "bg-muted"}`}>
-                    <div className={`w-3 h-3 rounded-full bg-background mx-0.5 transition-transform ${form.isActive ? "translate-x-4" : "translate-x-0"}`} />
-                  </button>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => handleSave(model.modelId)} className="px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs rounded-lg hover:bg-primary/20 transition-all font-bold">
-                    <CheckCircle className="h-3 w-3 inline mr-1" />Save
-                  </button>
-                  <button onClick={() => setEditing(null)} className="px-3 py-1.5 bg-muted/50 border border-border text-muted-foreground text-xs rounded-lg hover:bg-muted transition-all">
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-3 gap-3 text-xs">
-                <div className="bg-muted/30 rounded-lg p-2">
-                  <p className="text-muted-foreground mb-0.5">Input ¢/M</p>
-                  <p className="font-bold text-foreground">{model.inputCentsPerMillion}</p>
-                </div>
-                <div className="bg-muted/30 rounded-lg p-2">
-                  <p className="text-muted-foreground mb-0.5">Output ¢/M</p>
-                  <p className="font-bold text-foreground">{model.outputCentsPerMillion}</p>
-                </div>
-                <div className="bg-muted/30 rounded-lg p-2">
-                  <p className="text-muted-foreground mb-0.5">AB Multiplier</p>
-                  <p className="font-bold text-foreground">{model.abMultiplier.toLocaleString()}</p>
-                </div>
-              </div>
-            )}
+      {/* Status banner */}
+      {isDisabled && (
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-3 bg-destructive/10 border border-destructive/30 rounded-xl px-4 py-3">
+          <AlertCircle className="h-5 w-5 text-destructive shrink-0" />
+          <div>
+            <p className="text-sm font-bold text-destructive">Agent Requests Disabled</p>
+            <p className="text-xs text-destructive/80">Remaining balance is below $5.00. Add more budget to re-enable.</p>
           </div>
-        ))}
+        </motion.div>
+      )}
+      {isLow && !isDisabled && (
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-3 bg-amber-400/10 border border-amber-400/30 rounded-xl px-4 py-3">
+          <AlertCircle className="h-5 w-5 text-amber-400 shrink-0" />
+          <div>
+            <p className="text-sm font-bold text-amber-400">Low Balance Warning</p>
+            <p className="text-xs text-amber-400/80">Remaining: ${remaining.toFixed(8)} — requests will be blocked below $5.00</p>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Budget overview cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-card border border-border rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <DollarSign className="h-4 w-4 text-primary" />
+            <p className="text-xs font-bold text-muted-foreground">TOTAL BUDGET</p>
+          </div>
+          <p className="text-2xl font-bold text-foreground">${totalDollars.toFixed(2)}</p>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingDown className="h-4 w-4 text-destructive" />
+            <p className="text-xs font-bold text-muted-foreground">SPENT</p>
+          </div>
+          <p className="text-2xl font-bold text-destructive">${spentDollars.toFixed(8)}</p>
+        </div>
+        <div className={`bg-card border rounded-xl p-5 ${isDisabled ? "border-destructive/40" : isLow ? "border-amber-400/40" : "border-border"}`}>
+          <div className="flex items-center gap-2 mb-2">
+            <Zap className={`h-4 w-4 ${isDisabled ? "text-destructive" : isLow ? "text-amber-400" : "text-emerald-400"}`} />
+            <p className="text-xs font-bold text-muted-foreground">REMAINING</p>
+          </div>
+          <p className={`text-2xl font-bold ${isDisabled ? "text-destructive" : isLow ? "text-amber-400" : "text-emerald-400"}`}>
+            ${remaining.toFixed(8)}
+          </p>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      {totalDollars > 0 && (
+        <div className="bg-card border border-border rounded-xl p-5">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-bold text-muted-foreground">BUDGET USAGE</p>
+            <p className="text-xs text-muted-foreground">{spentPct.toFixed(1)}% used</p>
+          </div>
+          <div className="w-full h-3 bg-muted rounded-full overflow-hidden">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${spentPct}%` }}
+              transition={{ duration: 0.5 }}
+              className={`h-full rounded-full ${spentPct > 90 ? "bg-destructive" : spentPct > 70 ? "bg-amber-400" : "bg-emerald-400"}`}
+            />
+          </div>
+          <div className="flex justify-between mt-1">
+            <p className="text-[10px] text-muted-foreground">$0</p>
+            <p className="text-[10px] text-amber-400">$5 threshold</p>
+            <p className="text-[10px] text-muted-foreground">${totalDollars.toFixed(2)}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Set budget */}
+      <div className="bg-card border border-border rounded-xl p-5">
+        <p className="text-sm font-bold text-foreground mb-1">Set Total Budget</p>
+        <p className="text-xs text-muted-foreground mb-4">Enter the total dollar amount you want to allocate. This replaces the current total (spent amount is preserved).</p>
+        <div className="flex gap-3">
+          <div className="relative flex-1">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+            <input
+              value={budgetInput}
+              onChange={e => setBudgetInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleSetBudget(); }}
+              placeholder="100.00"
+              type="number"
+              min="0"
+              step="0.01"
+              className="w-full bg-background border border-border rounded-xl pl-7 pr-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
+            />
+          </div>
+          <button
+            onClick={handleSetBudget}
+            disabled={isSaving || !budgetInput.trim()}
+            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-all"
+          >
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            Set Budget
+          </button>
+          <button
+            onClick={handleResetSpend}
+            disabled={isResetting}
+            title="Reset spent counter to $0"
+            className="flex items-center gap-2 px-4 py-2.5 bg-muted/50 border border-border text-muted-foreground rounded-xl text-sm hover:bg-muted hover:text-foreground disabled:opacity-50 transition-all"
+          >
+            {isResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Reset Spend
+          </button>
+        </div>
+      </div>
+
+      {/* Model pricing reference */}
+      <div className="bg-card border border-border rounded-xl p-5">
+        <p className="text-sm font-bold text-foreground mb-1">Model Pricing Reference</p>
+        <p className="text-xs text-muted-foreground mb-4">Cost rates used for deduction ($ per million tokens, 8 decimal precision)</p>
+        <div className="space-y-2">
+          {PLATFORM_PRICING.map(m => (
+            <div key={m.modelId} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+              <div>
+                <p className="text-sm font-bold text-foreground">{m.displayName}</p>
+                <p className="text-xs text-muted-foreground font-mono">{m.modelId}</p>
+              </div>
+              <div className="flex gap-4 text-xs">
+                <div className="text-right">
+                  <p className="text-muted-foreground">Input</p>
+                  <p className="font-bold text-foreground">${m.input}/M</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-muted-foreground">Output</p>
+                  <p className="font-bold text-foreground">${m.output}/M</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 bg-amber-400/10 border border-amber-400/20 rounded-lg px-3 py-2">
+          <p className="text-[11px] text-amber-400">⚠ Requests are blocked when remaining balance drops below <strong>$5.00</strong>. In-progress requests complete normally.</p>
+        </div>
       </div>
     </div>
   );

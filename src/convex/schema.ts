@@ -214,6 +214,14 @@ const schema = defineSchema(
       updatedAt: v.number(),
       updatedBy: v.optional(v.string()),
     }).index("by_model", ["modelId"]),
+
+    // Platform-level API cost budget (admin-managed)
+    platformBudget: defineTable({
+      totalDollars: v.number(),       // total budget set by admin (e.g. 100.00)
+      spentDollars: v.number(),       // cumulative spend with 8 decimal precision
+      isDisabled: v.boolean(),        // true when remaining < $5 threshold
+      updatedAt: v.number(),
+    }),
   },
   {
     schemaValidation: false,
