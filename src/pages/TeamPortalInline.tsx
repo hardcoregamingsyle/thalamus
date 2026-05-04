@@ -70,6 +70,13 @@ interface QueuedMessage {
   timestamp: number;
 }
 
+interface TeamPortalInlineProps {
+  token: string;
+  sessionId?: string;
+  initialSessionCustomId?: string | null;
+  onSessionChange?: (customId: string | null) => void;
+}
+
 // ── Agent config ───────────────────────────────────────────────────────────────
 const AGENT_COLORS: Record<string, string> = {
   "R&D Team": "text-cyan-400", Researcher: "text-cyan-400", Analyser: "text-blue-400", Planner: "text-violet-400",
@@ -592,7 +599,7 @@ function FilesTabInline({
 }
 
 // ── TeamPortalInline — embeddable agent team UI ────────────────────────────────
-export default function TeamPortalInline({ token }: { token: string }) {
+export default function TeamPortalInline({ token, initialSessionCustomId, onSessionChange }: { token: string; initialSessionCustomId?: string | null; onSessionChange?: (customId: string | null) => void }) {
   const [sessions, setSessions] = useState<TeamSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<Id<"teamSessions"> | null>(null);
   const [task, setTask] = useState("");
@@ -728,8 +735,10 @@ export default function TeamPortalInline({ token }: { token: string }) {
     if (!task.trim() || !token) return;
     setIsRunning(true);
     try {
-      const sessionId = await createSession({ task: task.trim(), token });
+      const result = await createSession({ task: task.trim(), token });
+      const { sessionId, customId } = result as { sessionId: Id<"teamSessions">; customId: string };
       setActiveSessionId(sessionId);
+      onSessionChange?.(customId);
       setTask("");
       setUserMessages([]);
       setMessageQueue([]);

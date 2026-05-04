@@ -472,7 +472,7 @@ export default function TeamPortal() {
         await continueSessionAction({ sessionId: activeSessionId, newTask: content, token });
         toast.success("Suggestion submitted to active session!");
       } else {
-        const sessionId = await createSession({ task: content, token: token ?? "" });
+        const { sessionId } = await createSession({ task: content, token: token ?? "" });
         setActiveSessionId(sessionId);
         await startBackgroundSession({ sessionId, token: token ?? "" });
         toast.success("Suggestion submitted! Starting agents...");
@@ -640,7 +640,7 @@ export default function TeamPortal() {
     if (!task.trim() || !token) return;
     setIsRunning(true);
     try {
-      const sessionId = await createSession({ task: task.trim(), token });
+      const { sessionId } = await createSession({ task: task.trim(), token });
       setActiveSessionId(sessionId);
       setTask("");
       setUserMessages([]);
