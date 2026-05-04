@@ -25,7 +25,7 @@ export const processFileResource = action({
       // Try Bedrock first, fallback to VLY
       try {
         const prompt = `Please analyze this image and provide a comprehensive summary of all content, text, diagrams, charts, and visual information present. Be thorough and extract all useful information for study purposes.\n\nImage data (base64, ${args.fileType}): ${args.fileDataBase64.slice(0, 80000)}`;
-        const result = await callClaude(prompt, "You are a study assistant that extracts and summarizes content from images and files.", 2000);
+        const result = await callClaude(prompt, "You are a study assistant that extracts and summarizes content from images and files.", "claude-haiku-4-5");
         summary = result.text;
       } catch {
         // Fallback to VLY
@@ -50,7 +50,7 @@ export const processFileResource = action({
         // Use Claude to extract content
         try {
           const prompt = `Please extract and summarize all content from this file for study purposes. File name: ${args.fileName}\n\nFile content (base64): ${args.fileDataBase64.slice(0, 50000)}`;
-          const result = await callClaude(prompt, "You are a study assistant that extracts and summarizes content from files.", 2000);
+          const result = await callClaude(prompt, "You are a study assistant that extracts and summarizes content from files.", "claude-haiku-4-5");
           summary = result.text;
         } catch {
           const { vly } = await import('../lib/vly-integrations');
@@ -92,7 +92,7 @@ export const searchAndAddResource = action({
       const result = await callClaude(
         `Research and summarize for study purposes: ${args.query}`,
         systemPrompt,
-        3000
+        "claude-haiku-4-5"
       );
       text = result.text;
     } catch {
@@ -183,7 +183,7 @@ Be educational, clear, and accurate. If the question relates to uploaded resourc
     let outputTokens = 0;
 
     try {
-      const result = await callClaude(fullPrompt, systemPrompt, 4096);
+      const result = await callClaude(fullPrompt, systemPrompt, "claude-haiku-4-5");
       responseContent = result.text;
       inputTokens = result.inputTokens;
       outputTokens = result.outputTokens;
