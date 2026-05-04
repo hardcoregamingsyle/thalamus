@@ -66,8 +66,10 @@ createRoot(document.getElementById("root")!).render(
           <Suspense fallback={<RouteLoading />}>
             <Routes>
               <Route path="/" element={<Landing />} />
-              <Route path="/auth" element={<AuthPage redirectAfterAuth="/portal" />} />
+              <Route path="/auth" element={<AuthPage redirectAfterAuth="/portal/chat" />} />
               <Route path="/portal" element={<Portal />} />
+              <Route path="/portal/:mode" element={<Portal />} />
+              <Route path="/portal/:mode/:sessionId" element={<Portal />} />
               <Route path="/team" element={<TeamPortal />} />
               <Route path="/sync" element={<SyncPage />} />
               <Route path="/refer" element={<ReferPage />} />

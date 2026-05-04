@@ -61,9 +61,11 @@ const schema = defineSchema(
       title: v.string(),
       mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("study")),
       lastMessageAt: v.optional(v.number()),
+      customId: v.optional(v.string()),
     })
       .index("by_user", ["userId"])
-      .index("by_user_and_mode", ["userId", "mode"]),
+      .index("by_user_and_mode", ["userId", "mode"])
+      .index("by_custom_id", ["customId"]),
 
     messages: defineTable({
       conversationId: v.id("conversations"),
@@ -99,8 +101,10 @@ const schema = defineSchema(
       taskUpgradeMessagesLeft: v.optional(v.number()),
       unfixableTasksJson: v.optional(v.string()),
       manualUpgradeEnabled: v.optional(v.boolean()),
+      customId: v.optional(v.string()),
     })
-      .index("by_user", ["userId"]),
+      .index("by_user", ["userId"])
+      .index("by_custom_id", ["customId"]),
 
     agentMessages: defineTable({
       sessionId: v.id("teamSessions"),

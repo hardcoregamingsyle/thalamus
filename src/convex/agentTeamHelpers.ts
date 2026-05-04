@@ -3,6 +3,13 @@ import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 
+function generateCustomId(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let id = "";
+  for (let i = 0; i < 10; i++) id += chars[Math.floor(Math.random() * chars.length)];
+  return id;
+}
+
 export const saveAgentMessage = internalMutation({
   args: {
     sessionId: v.id("teamSessions"),
@@ -67,8 +74,9 @@ export const createSessionMutation = internalMutation({
     task: v.string(),
     title: v.string(),
   },
-  handler: async (ctx, args): Promise<Id<"teamSessions">> => {
-    return await ctx.db.insert("teamSessions", {
+  handler: async (ctx, args): Promise<{ sessionId: Id<"teamSessions">; customId: string }> => {
+    const customId = generateCustomId();
+    const sessionId = await ctx.db.insert("teamSessions", {
       userId: args.userId,
       title: args.title,
       task: args.task,
@@ -80,7 +88,9 @@ export const createSessionMutation = internalMutation({
       executionPhase: "planning",
       currentTaskIndex: 0,
       finalReviewCoderEnabled: false,
+      customId,
     });
+    return { sessionId, customId };
   },
 });
 
@@ -496,5 +506,25 @@ export const forceActivateUpgrade = mutation({
       taskUpgradeMessagesLeft: 30,
       manualUpgradeEnabled: false,
     });
+  },
+});
+
+export const getSessionByCustomId = query({
+  args: { customId: v.string(), token: v.string() },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .take(1);
+    const session = sessions[0];
+    if (!session || session.expiresAt < Date.now()) return null;
+
+    const teamSessions = await ctx.db
+      .query("teamSessions")
+      .withIndex("by_custom_id", (q) => q.eq("customId", args.customId))
+      .take(1);
+    const ts = teamSessions[0];
+    if (!ts || ts.userId !== session.userId) return null;
+    return ts;
   },
 });

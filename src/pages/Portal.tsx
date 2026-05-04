@@ -1,7 +1,7 @@
 import { useAuth } from "@/hooks/use-auth";
 import { useEffect, useRef, useState } from "react";
 import CreditModal from "@/components/CreditModal";
-import { useNavigate } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
 import { useQuery, useMutation, useAction } from "convex/react";
@@ -21,6 +21,7 @@ interface Conversation {
   title: string;
   mode: Mode;
   lastMessageAt?: number;
+  customId?: string;
 }
 
 interface Message {
@@ -47,10 +48,17 @@ const MODES: { id: Mode; label: string; icon: typeof MessageSquare; desc: string
   { id: "code", label: "CODE", icon: Users, desc: "Multi-agent AI system", color: "text-violet-400" },
 ];
 
+const VALID_MODES: Mode[] = ["chat", "research", "study", "code"];
+
 export default function Portal() {
   const { isLoading, isAuthenticated, user, signOut, token } = useAuth();
   const navigate = useNavigate();
-  const [activeMode, setActiveMode] = useState<Mode>("chat");
+  const params = useParams<{ mode?: string; sessionId?: string }>();
+
+  // Derive active mode from URL param, default to "chat"
+  const activeMode: Mode = (VALID_MODES.includes(params.mode as Mode) ? params.mode : "chat") as Mode;
+  const urlSessionId = params.sessionId ?? null;
+
   const [activeConvId, setActiveConvId] = useState<Id<"conversations"> | null>(null);
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
@@ -85,6 +93,30 @@ export default function Portal() {
   }, [token, user, ensureDailyBalance]);
 
   const conversations = useQuery(api.conversations.list, token ? { token } : "skip") as Conversation[] | undefined;
+  // Look up conversation by customId from URL
+  const convByCustomId = useQuery(
+    api.conversations.getByCustomId,
+    urlSessionId && token && activeMode !== "code" ? { customId: urlSessionId, token } : "skip"
+  ) as Conversation | null | undefined;
+
+  // Sync activeConvId from URL
+  useEffect(() => {
+    if (activeMode === "code") {
+      setActiveConvId(null);
+      return;
+    }
+    if (urlSessionId && convByCustomId !== undefined) {
+      if (convByCustomId) {
+        setActiveConvId(convByCustomId._id);
+      } else if (convByCustomId === null) {
+        // Invalid customId, redirect to mode root
+        navigate(`/portal/${activeMode}`, { replace: true });
+      }
+    } else if (!urlSessionId) {
+      setActiveConvId(null);
+    }
+  }, [urlSessionId, convByCustomId, activeMode, navigate]);
+
   const messages = useQuery(api.conversations.getMessages, activeConvId && token ? { conversationId: activeConvId, token } : "skip") as Message[] | undefined;
   const studyResources = useQuery(api.studyHelpers.listResources, token ? { token } : "skip") as StudyResource[] | undefined;
 
@@ -115,22 +147,38 @@ export default function Portal() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
+  const setActiveMode = (mode: Mode) => {
+    navigate(`/portal/${mode}`);
+    setActiveConvId(null);
+  };
+
   const handleNewConversation = async () => {
     if (!token) return;
     try {
-      const id = await createConversation({ title: `${activeMode.toUpperCase()}_${Date.now().toString(36).toUpperCase()}`, mode: activeMode, token });
-      setActiveConvId(id);
+      const result = await createConversation({ title: `${activeMode.toUpperCase()}_${Date.now().toString(36).toUpperCase()}`, mode: activeMode, token }) as { id: Id<"conversations">; customId: string };
+      navigate(`/portal/${activeMode}/${result.customId}`);
     } catch { toast.error("Failed to create conversation"); }
+  };
+
+  const handleSelectConversation = (conv: Conversation) => {
+    if (conv.customId) {
+      navigate(`/portal/${activeMode}/${conv.customId}`);
+    } else {
+      setActiveConvId(conv._id);
+    }
+    setSidebarOpen(typeof window !== "undefined" ? window.innerWidth >= 768 : true);
   };
 
   const handleSend = async () => {
     if (!input.trim() || isThinking || !token) return;
     let convId = activeConvId;
-    const isFirstMessage = !convId;
+    let isFirstMessage = !convId;
     if (!convId) {
       try {
-        convId = await createConversation({ title: input.slice(0, 40), mode: activeMode, token });
+        const result = await createConversation({ title: input.slice(0, 40), mode: activeMode, token }) as { id: Id<"conversations">; customId: string };
+        convId = result.id;
         setActiveConvId(convId);
+        navigate(`/portal/${activeMode}/${result.customId}`, { replace: true });
       } catch { toast.error("Failed to create conversation"); return; }
     }
     const msg = input.trim();
@@ -262,7 +310,7 @@ export default function Portal() {
               {/* Mode tabs */}
               <div className="shrink-0 p-3 border-b border-border space-y-1">
                 {MODES.filter(m => m.id !== "code").map(mode => (
-                  <button key={mode.id} onClick={() => { setActiveMode(mode.id); setActiveConvId(null); setSidebarOpen(typeof window !== "undefined" ? window.innerWidth >= 768 : true); }}
+                  <button key={mode.id} onClick={() => { setActiveMode(mode.id); setSidebarOpen(typeof window !== "undefined" ? window.innerWidth >= 768 : true); }}
                     className={`w-full flex items-center gap-2 px-3 py-2 rounded text-xs transition-all ${activeMode === mode.id ? "bg-primary/15 border border-primary/30 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
                   >
                     <mode.icon className={`h-3.5 w-3.5 ${activeMode === mode.id ? mode.color : ""}`} />
@@ -270,7 +318,7 @@ export default function Portal() {
                     <span className="text-[10px] opacity-60 ml-auto">{mode.desc.split(" ")[0]}</span>
                   </button>
                 ))}
-                <button onClick={() => { setActiveMode("code"); setActiveConvId(null); setSidebarOpen(false); }}
+                <button onClick={() => { setActiveMode("code"); setSidebarOpen(false); }}
                   className="w-full flex items-center gap-2 px-3 py-2 rounded text-xs transition-all text-muted-foreground hover:text-foreground hover:bg-muted/50"
                 >
                   <Users className="h-3.5 w-3.5" />
@@ -292,11 +340,12 @@ export default function Portal() {
                     <p className="text-[10px] text-muted-foreground px-2 py-4 text-center">No sessions yet</p>
                   ) : (
                     filteredConvs.map((conv: Conversation) => (
-                      <div key={conv._id} onClick={() => setActiveConvId(conv._id)}
+                      <div key={conv._id} onClick={() => handleSelectConversation(conv)}
                         className={`group flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-all ${activeConvId === conv._id ? "bg-primary/15 border border-primary/20 text-primary" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
                       >
                         <span className="text-[10px] flex-1 truncate">{conv.title}</span>
-                        <button onClick={async (e) => { e.stopPropagation(); if (!token) return; try { await deleteConversation({ id: conv._id, token }); if (activeConvId === conv._id) setActiveConvId(null); } catch { toast.error("Failed to delete"); } }}
+                        {conv.customId && <span className="text-[8px] text-muted-foreground/40 font-mono shrink-0">{conv.customId}</span>}
+                        <button onClick={async (e) => { e.stopPropagation(); if (!token) return; try { await deleteConversation({ id: conv._id, token }); if (activeConvId === conv._id) { setActiveConvId(null); navigate(`/portal/${activeMode}`); } } catch { toast.error("Failed to delete"); } }}
                           className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
                           <Trash2 className="h-3 w-3" />
                         </button>
@@ -314,7 +363,7 @@ export default function Portal() {
           <div className="flex-1 flex flex-col overflow-hidden min-w-0">
             <div className="shrink-0 px-4 py-2 border-b border-border bg-card/50 flex items-center gap-3">
               {MODES.map(mode => (
-                <button key={mode.id} onClick={() => { setActiveMode(mode.id); setActiveConvId(null); }}
+                <button key={mode.id} onClick={() => setActiveMode(mode.id)}
                   className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs transition-all ${activeMode === mode.id ? `bg-primary/15 border border-primary/30 ${mode.color} font-bold` : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
                 >
                   <mode.icon className="h-3 w-3" />
@@ -322,7 +371,14 @@ export default function Portal() {
                 </button>
               ))}
             </div>
-            <TeamPortalInline token={token ?? ""} />
+            <TeamPortalInline
+              token={token ?? ""}
+              initialSessionCustomId={urlSessionId}
+              onSessionChange={(customId) => {
+                if (customId) navigate(`/portal/code/${customId}`, { replace: true });
+                else navigate(`/portal/code`, { replace: true });
+              }}
+            />
           </div>
         )}
 
@@ -334,7 +390,7 @@ export default function Portal() {
               {/* Mode indicator bar */}
               <div className="shrink-0 px-4 py-2 border-b border-border bg-card/50 flex items-center gap-2 flex-wrap">
                 {MODES.filter(m => m.id !== "code").map(mode => (
-                  <button key={mode.id} onClick={() => { setActiveMode(mode.id); setActiveConvId(null); }}
+                  <button key={mode.id} onClick={() => setActiveMode(mode.id)}
                     className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs transition-all ${activeMode === mode.id ? `bg-primary/15 border border-primary/30 ${mode.color} font-bold` : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
                   >
                     <mode.icon className="h-3 w-3" />
