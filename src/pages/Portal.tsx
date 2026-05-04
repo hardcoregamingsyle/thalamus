@@ -9,11 +9,12 @@ import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
   MessageSquare, Search, Plus, Trash2, LogOut,
-  Send, Loader2, Menu, X, Users, Cpu, Zap,
+  Send, Loader2, Menu, X, Users, Cpu, Zap, BookOpen,
+  FileText, Globe, Image, Upload, Sparkles,
 } from "lucide-react";
 import TeamPortalInline from "./TeamPortalInline";
 
-type Mode = "chat" | "research" | "code";
+type Mode = "chat" | "research" | "code" | "study";
 
 interface Conversation {
   _id: Id<"conversations">;
@@ -30,9 +31,19 @@ interface Message {
   costCents?: number;
 }
 
+interface StudyResource {
+  _id: Id<"studyResources">;
+  title: string;
+  content: string;
+  sourceType: string;
+  fileName?: string;
+  createdAt: number;
+}
+
 const MODES: { id: Mode; label: string; icon: typeof MessageSquare; desc: string; color: string }[] = [
   { id: "chat", label: "CHAT", icon: MessageSquare, desc: "General conversation", color: "text-primary" },
   { id: "research", label: "RESEARCH", icon: Search, desc: "Deep research & analysis", color: "text-accent" },
+  { id: "study", label: "STUDY", icon: BookOpen, desc: "Study with resources", color: "text-indigo-400" },
   { id: "code", label: "CODE", icon: Users, desc: "Multi-agent AI system", color: "text-violet-400" },
 ];
 
@@ -46,17 +57,22 @@ export default function Portal() {
   const [sidebarOpen, setSidebarOpen] = useState(typeof window !== "undefined" ? window.innerWidth >= 768 : true);
   const [creditModalOpen, setCreditModalOpen] = useState(false);
   const [spinNotifOpen, setSpinNotifOpen] = useState(false);
+  const [studyResourcesOpen, setStudyResourcesOpen] = useState(false);
+  const [studyAddMode, setStudyAddMode] = useState<"text" | "search" | null>(null);
+  const [studyTextTitle, setStudyTextTitle] = useState("");
+  const [studyTextContent, setStudyTextContent] = useState("");
+  const [studySearchQuery, setStudySearchQuery] = useState("");
+  const [isAddingResource, setIsAddingResource] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const ensureDailyBalance = useMutation(api.customAuthHelpers.ensureDailyBalance);
   const hasInitializedRef = useRef(false);
 
-  // Initialize daily balance for existing users (one-time per session)
   useEffect(() => {
     if (token && user !== undefined && user !== null && !hasInitializedRef.current) {
       hasInitializedRef.current = true;
       ensureDailyBalance({ token }).catch(() => {});
-      // Check if user just signed up via referral (has spins but hasn't been notified)
       const notifKey = `spin_notif_shown_${token.slice(0, 8)}`;
       if (!localStorage.getItem(notifKey)) {
         const typedUser = user as { referralSpins?: number; referredBy?: string };
@@ -68,31 +84,28 @@ export default function Portal() {
     }
   }, [token, user, ensureDailyBalance]);
 
-  const conversations = useQuery(
-    api.conversations.list,
-    token ? { token } : "skip"
-  ) as Conversation[] | undefined;
-  const messages = useQuery(
-    api.conversations.getMessages,
-    activeConvId && token ? { conversationId: activeConvId, token } : "skip"
-  ) as Message[] | undefined;
+  const conversations = useQuery(api.conversations.list, token ? { token } : "skip") as Conversation[] | undefined;
+  const messages = useQuery(api.conversations.getMessages, activeConvId && token ? { conversationId: activeConvId, token } : "skip") as Message[] | undefined;
+  const studyResources = useQuery(api.studyHelpers.listResources, token ? { token } : "skip") as StudyResource[] | undefined;
+
   const createConversation = useMutation(api.conversations.create);
   const deleteConversation = useMutation(api.conversations.remove);
   const sendMessage = useAction(api.ai.sendMessage);
+  const sendStudyMessage = useAction(api.study.sendStudyMessage);
   const generateTitle = useAction(api.ai.generateConversationTitle);
+  const addTextResource = useMutation(api.studyHelpers.addTextResource);
+  const deleteResource = useMutation(api.studyHelpers.deleteResource);
+  const searchAndAddResource = useAction(api.study.searchAndAddResource);
+  const processFileResource = useAction(api.study.processFileResource);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) navigate("/auth");
   }, [isLoading, isAuthenticated, navigate]);
 
-  // Update document title based on active conversation
   useEffect(() => {
     if (activeConvId && conversations) {
       const conv = conversations.find((c: Conversation) => c._id === activeConvId);
-      if (conv) {
-        document.title = `${conv.title} | Thalamus AI`;
-        return;
-      }
+      if (conv) { document.title = `${conv.title} | Thalamus AI`; return; }
     }
     document.title = "Thalamus AI";
     return () => { document.title = "Thalamus AI"; };
@@ -105,15 +118,9 @@ export default function Portal() {
   const handleNewConversation = async () => {
     if (!token) return;
     try {
-      const id = await createConversation({
-        title: `${activeMode.toUpperCase()}_${Date.now().toString(36).toUpperCase()}`,
-        mode: activeMode,
-        token,
-      });
+      const id = await createConversation({ title: `${activeMode.toUpperCase()}_${Date.now().toString(36).toUpperCase()}`, mode: activeMode, token });
       setActiveConvId(id);
-    } catch {
-      toast.error("Failed to create conversation");
-    }
+    } catch { toast.error("Failed to create conversation"); }
   };
 
   const handleSend = async () => {
@@ -124,32 +131,67 @@ export default function Portal() {
       try {
         convId = await createConversation({ title: input.slice(0, 40), mode: activeMode, token });
         setActiveConvId(convId);
-      } catch {
-        toast.error("Failed to create conversation");
-        return;
-      }
+      } catch { toast.error("Failed to create conversation"); return; }
     }
     const msg = input.trim();
     setInput("");
     setIsThinking(true);
     try {
-      await sendMessage({ conversationId: convId, content: msg, mode: activeMode, token });
-      // Generate AI title on first message
+      if (activeMode === "study") {
+        await sendStudyMessage({ conversationId: convId, content: msg, token });
+      } else {
+        await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token });
+      }
       if (isFirstMessage && convId) {
         generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
       }
-    } catch {
-      toast.error("Agent failed to respond. Try again.");
-    } finally {
-      setIsThinking(false);
-    }
+    } catch { toast.error("Agent failed to respond. Try again."); }
+    finally { setIsThinking(false); }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  // Total balance = daily + purchased
+  const handleAddTextResource = async () => {
+    if (!token || !studyTextTitle.trim() || !studyTextContent.trim()) return;
+    setIsAddingResource(true);
+    try {
+      await addTextResource({ token, title: studyTextTitle.trim(), content: studyTextContent.trim() });
+      toast.success("Resource added");
+      setStudyTextTitle(""); setStudyTextContent(""); setStudyAddMode(null);
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); }
+    finally { setIsAddingResource(false); }
+  };
+
+  const handleSearchResource = async () => {
+    if (!token || !studySearchQuery.trim()) return;
+    setIsAddingResource(true);
+    try {
+      const result = await searchAndAddResource({ token, query: studySearchQuery.trim() });
+      toast.success(`Added: ${result.title}`);
+      setStudySearchQuery(""); setStudyAddMode(null);
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); }
+    finally { setIsAddingResource(false); }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!token) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsAddingResource(true);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      const base64 = btoa(binary);
+      await processFileResource({ token, fileName: file.name, fileType: file.type, fileDataBase64: base64 });
+      toast.success(`Processed: ${file.name}`);
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to process file"); }
+    finally { setIsAddingResource(false); if (fileInputRef.current) fileInputRef.current.value = ""; }
+  };
+
   const typedUser = user as { dailyAgentBucks?: number; purchasedAgentBucks?: number; agentBucksBalance?: number } | null;
   const dailyAB = typedUser?.dailyAgentBucks ?? typedUser?.agentBucksBalance ?? 0;
   const purchasedAB = typedUser?.purchasedAgentBucks ?? 0;
@@ -188,17 +230,11 @@ export default function Portal() {
             <span className="hidden sm:block text-[10px] text-muted-foreground border border-border px-1.5 py-0.5 rounded">PORTAL</span>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCreditModalOpen(true)}
-              className="flex items-center gap-1.5 text-xs border border-amber-400/30 bg-amber-400/10 text-amber-400 px-2.5 py-1 rounded-lg font-bold hover:bg-amber-400/20 transition-all"
-            >
+            <button onClick={() => setCreditModalOpen(true)} className="flex items-center gap-1.5 text-xs border border-amber-400/30 bg-amber-400/10 text-amber-400 px-2.5 py-1 rounded-lg font-bold hover:bg-amber-400/20 transition-all">
               <Zap className="h-3 w-3" />
               <span>{totalAB.toLocaleString()} AB</span>
             </button>
-            <button
-              onClick={signOut}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10"
-            >
+            <button onClick={signOut} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10">
               <LogOut className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -209,84 +245,59 @@ export default function Portal() {
         {/* Mobile overlay */}
         <AnimatePresence>
           {sidebarOpen && activeMode !== "code" && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="md:hidden fixed inset-0 bg-background/80 backdrop-blur-sm z-30"
-              onClick={() => setSidebarOpen(false)}
-            />
+              onClick={() => setSidebarOpen(false)} />
           )}
         </AnimatePresence>
 
-        {/* Sidebar — only show for chat/research modes */}
+        {/* Sidebar */}
         <AnimatePresence>
           {sidebarOpen && activeMode !== "code" && (
             <motion.aside
-              initial={{ x: -220, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -220, opacity: 0 }}
+              initial={{ x: -220, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -220, opacity: 0 }}
               transition={{ duration: 0.2 }}
               className="fixed md:relative left-0 top-0 bottom-0 z-40 md:z-auto w-[220px] shrink-0 border-r border-border bg-card flex flex-col overflow-hidden"
             >
               {/* Mode tabs */}
               <div className="shrink-0 p-3 border-b border-border space-y-1">
-                {MODES.map(mode => (
-                  <button
-                    key={mode.id}
-                    onClick={() => { setActiveMode(mode.id); setActiveConvId(null); }}
-                    className={`w-full flex items-center gap-2 px-3 py-2 rounded text-xs transition-all ${
-                      activeMode === mode.id
-                        ? "bg-primary/15 border border-primary/30 text-primary"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                    }`}
+                {MODES.filter(m => m.id !== "code").map(mode => (
+                  <button key={mode.id} onClick={() => { setActiveMode(mode.id); setActiveConvId(null); setSidebarOpen(typeof window !== "undefined" ? window.innerWidth >= 768 : true); }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded text-xs transition-all ${activeMode === mode.id ? "bg-primary/15 border border-primary/30 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
                   >
                     <mode.icon className={`h-3.5 w-3.5 ${activeMode === mode.id ? mode.color : ""}`} />
                     <span className="font-bold">{mode.label}</span>
                     <span className="text-[10px] opacity-60 ml-auto">{mode.desc.split(" ")[0]}</span>
                   </button>
                 ))}
+                <button onClick={() => { setActiveMode("code"); setActiveConvId(null); setSidebarOpen(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded text-xs transition-all text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                >
+                  <Users className="h-3.5 w-3.5" />
+                  <span className="font-bold">CODE</span>
+                  <span className="text-[10px] opacity-60 ml-auto">Multi-agent</span>
+                </button>
               </div>
 
               {/* Conversations */}
               <div className="shrink-0 px-3 pt-3 pb-2 flex items-center justify-between">
                 <span className="text-[10px] text-muted-foreground font-bold">SESSIONS</span>
-                <button
-                  onClick={handleNewConversation}
-                  className="w-5 h-5 rounded border border-border text-muted-foreground hover:text-primary hover:border-primary transition-all flex items-center justify-center"
-                >
+                <button onClick={handleNewConversation} className="w-5 h-5 rounded border border-border text-muted-foreground hover:text-primary hover:border-primary transition-all flex items-center justify-center">
                   <Plus className="h-3 w-3" />
                 </button>
               </div>
-
-              {/* Native scrollable conversation list */}
               <div className="flex-1 overflow-y-auto min-h-0">
                 <div className="px-2 pb-2 space-y-0.5">
                   {filteredConvs.length === 0 ? (
                     <p className="text-[10px] text-muted-foreground px-2 py-4 text-center">No sessions yet</p>
                   ) : (
                     filteredConvs.map((conv: Conversation) => (
-                      <div
-                        key={conv._id}
-                        onClick={() => setActiveConvId(conv._id)}
-                        className={`group flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-all ${
-                          activeConvId === conv._id
-                            ? "bg-primary/15 border border-primary/20 text-primary"
-                            : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                        }`}
+                      <div key={conv._id} onClick={() => setActiveConvId(conv._id)}
+                        className={`group flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-all ${activeConvId === conv._id ? "bg-primary/15 border border-primary/20 text-primary" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
                       >
                         <span className="text-[10px] flex-1 truncate">{conv.title}</span>
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            if (!token) return;
-                            try {
-                              await deleteConversation({ id: conv._id, token });
-                              if (activeConvId === conv._id) setActiveConvId(null);
-                            } catch { toast.error("Failed to delete"); }
-                          }}
-                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
-                        >
+                        <button onClick={async (e) => { e.stopPropagation(); if (!token) return; try { await deleteConversation({ id: conv._id, token }); if (activeConvId === conv._id) setActiveConvId(null); } catch { toast.error("Failed to delete"); } }}
+                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
                           <Trash2 className="h-3 w-3" />
                         </button>
                       </div>
@@ -298,20 +309,13 @@ export default function Portal() {
           )}
         </AnimatePresence>
 
-        {/* Agent Teams / CODE mode — full inline TeamPortal */}
+        {/* CODE mode */}
         {activeMode === "code" && (
           <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-            {/* Mode switcher strip */}
             <div className="shrink-0 px-4 py-2 border-b border-border bg-card/50 flex items-center gap-3">
               {MODES.map(mode => (
-                <button
-                  key={mode.id}
-                  onClick={() => { setActiveMode(mode.id); setActiveConvId(null); }}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs transition-all ${
-                    activeMode === mode.id
-                      ? `bg-primary/15 border border-primary/30 ${mode.color} font-bold`
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                  }`}
+                <button key={mode.id} onClick={() => { setActiveMode(mode.id); setActiveConvId(null); }}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs transition-all ${activeMode === mode.id ? `bg-primary/15 border border-primary/30 ${mode.color} font-bold` : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
                 >
                   <mode.icon className="h-3 w-3" />
                   {mode.label}
@@ -322,177 +326,240 @@ export default function Portal() {
           </div>
         )}
 
-        {/* Chat / Research mode */}
+        {/* Chat / Research / Study mode */}
         {activeMode !== "code" && (
-          <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-            {/* Mode indicator bar */}
-            <div className="shrink-0 px-4 py-2 border-b border-border bg-card/50 flex items-center gap-3">
-              {MODES.filter(m => m.id !== "code").map(mode => (
-                <button
-                  key={mode.id}
-                  onClick={() => { setActiveMode(mode.id); setActiveConvId(null); }}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs transition-all ${
-                    activeMode === mode.id
-                      ? `bg-primary/15 border border-primary/30 ${mode.color} font-bold`
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                  }`}
-                >
-                  <mode.icon className="h-3 w-3" />
-                  {mode.label}
+          <div className="flex-1 flex overflow-hidden min-w-0">
+            {/* Main chat area */}
+            <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+              {/* Mode indicator bar */}
+              <div className="shrink-0 px-4 py-2 border-b border-border bg-card/50 flex items-center gap-2 flex-wrap">
+                {MODES.filter(m => m.id !== "code").map(mode => (
+                  <button key={mode.id} onClick={() => { setActiveMode(mode.id); setActiveConvId(null); }}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs transition-all ${activeMode === mode.id ? `bg-primary/15 border border-primary/30 ${mode.color} font-bold` : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
+                  >
+                    <mode.icon className="h-3 w-3" />
+                    {mode.label}
+                  </button>
+                ))}
+                <button onClick={() => setActiveMode("code")} className="flex items-center gap-1.5 px-3 py-1 rounded text-xs text-muted-foreground hover:text-violet-400 hover:bg-muted/50 transition-all ml-auto">
+                  <Users className="h-3 w-3" />CODE
                 </button>
-              ))}
-              <button
-                onClick={() => setActiveMode("code")}
-                className="flex items-center gap-1.5 px-3 py-1 rounded text-xs text-muted-foreground hover:text-violet-400 hover:bg-muted/50 transition-all ml-auto"
-              >
-                <Users className="h-3 w-3" />
-                CODE
-              </button>
-            </div>
+                {activeMode === "study" && (
+                  <button onClick={() => setStudyResourcesOpen(o => !o)}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs transition-all border ${studyResourcesOpen ? "bg-indigo-400/15 border-indigo-400/30 text-indigo-400 font-bold" : "border-border text-muted-foreground hover:text-indigo-400 hover:border-indigo-400/30"}`}
+                  >
+                    <BookOpen className="h-3 w-3" />
+                    Resources {studyResources ? `(${studyResources.length})` : ""}
+                  </button>
+                )}
+              </div>
 
-            {/* Messages — native scrollable */}
-            <div className="flex-1 overflow-y-auto min-h-0">
-              <div className="p-4 space-y-4 max-w-4xl mx-auto">
-                {!activeConvId ? (
-                  <div className="flex flex-col items-center justify-center h-64 gap-4">
-                    <motion.div
-                      animate={{ scale: [1, 1.05, 1] }}
-                      transition={{ duration: 3, repeat: Infinity }}
-                      className="w-16 h-16 rounded-2xl border border-primary/30 bg-primary/10 flex items-center justify-center"
-                    >
-                      <Cpu className="h-8 w-8 text-primary" />
-                    </motion.div>
-                    <div className="text-center">
-                      <p className="text-sm font-bold text-foreground">THALAMUS_AI</p>
-                      <p className="text-xs text-muted-foreground mt-1">Start a new session or select one from the sidebar</p>
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto min-h-0">
+                <div className="p-4 space-y-4 max-w-4xl mx-auto">
+                  {!activeConvId ? (
+                    <div className="flex flex-col items-center justify-center h-64 gap-4">
+                      <motion.div animate={{ scale: [1, 1.05, 1] }} transition={{ duration: 3, repeat: Infinity }}
+                        className={`w-16 h-16 rounded-2xl border flex items-center justify-center ${activeMode === "study" ? "border-indigo-400/30 bg-indigo-400/10" : "border-primary/30 bg-primary/10"}`}
+                      >
+                        {activeMode === "study" ? <BookOpen className="h-8 w-8 text-indigo-400" /> : <Cpu className="h-8 w-8 text-primary" />}
+                      </motion.div>
+                      <div className="text-center">
+                        <p className="text-sm font-bold text-foreground">{activeMode === "study" ? "STUDY MODE" : "THALAMUS_AI"}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {activeMode === "study"
+                            ? `Ask anything — ${studyResources?.length ? `${studyResources.length} resource(s) loaded` : "add resources for grounded answers"}`
+                            : "Start a new session or select one from the sidebar"}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ) : messages === undefined ? (
-                  <div className="flex items-center justify-center h-32">
-                    <Loader2 className="h-4 w-4 text-primary animate-spin" />
-                  </div>
-                ) : messages.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-32 gap-2">
-                    <p className="text-xs text-muted-foreground">Send a message to begin</p>
-                  </div>
-                ) : (
-                  messages.map((msg: Message) => (
-                    <motion.div
-                      key={msg._id}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                    >
-                      <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${
-                        msg.role === "user"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-card border border-border text-foreground"
-                      }`}>
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                  ) : messages === undefined ? (
+                    <div className="flex items-center justify-center h-32"><Loader2 className="h-4 w-4 text-primary animate-spin" /></div>
+                  ) : messages.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-32 gap-2">
+                      <p className="text-xs text-muted-foreground">Send a message to begin</p>
+                    </div>
+                  ) : (
+                    messages.map((msg: Message) => (
+                      <motion.div key={msg._id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                        className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                      >
+                        <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-foreground"}`}>
+                          {msg.role === "assistant" ? (
+                            <div dangerouslySetInnerHTML={{ __html: msg.content }} />
+                          ) : (
+                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                          )}
                           {msg.costCents !== undefined && msg.costCents > 0 && (
-                          <p className="text-[9px] opacity-50 mt-1 text-right">
-                            {Math.ceil(msg.costCents * 15_000).toLocaleString()} AB
-                          </p>
-                        )}
-                      </div>
-                    </motion.div>
-                  ))
-                )}
-                {isThinking && (
-                  <div className="flex justify-start">
-                    <div className="bg-card border border-border rounded-2xl px-4 py-3">
-                      <div className="flex items-center gap-1">
-                        {[0, 1, 2].map(i => (
-                          <motion.div
-                            key={i}
-                            className="w-1.5 h-1.5 rounded-full bg-primary"
-                            animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }}
-                            transition={{ duration: 0.8, delay: i * 0.15, repeat: Infinity }}
-                          />
-                        ))}
+                            <p className="text-[9px] opacity-50 mt-1 text-right">{Math.ceil(msg.costCents * 15_000).toLocaleString()} AB</p>
+                          )}
+                        </div>
+                      </motion.div>
+                    ))
+                  )}
+                  {isThinking && (
+                    <div className="flex justify-start">
+                      <div className="bg-card border border-border rounded-2xl px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          {[0, 1, 2].map(i => (
+                            <motion.div key={i} className="w-1.5 h-1.5 rounded-full bg-primary"
+                              animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }}
+                              transition={{ duration: 0.8, delay: i * 0.15, repeat: Infinity }} />
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+              </div>
+
+              {/* Input */}
+              <div className="shrink-0 p-4 border-t border-border bg-card/50">
+                <div className="max-w-4xl mx-auto flex gap-2">
+                  <textarea
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={activeMode === "study" ? "Ask a study question..." : "Type a message..."}
+                    rows={1}
+                    className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary/60 transition-colors"
+                    style={{ minHeight: "36px", maxHeight: "120px" }}
+                  />
+                  <button onClick={handleSend} disabled={!input.trim() || isThinking}
+                    className="px-3 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 disabled:opacity-50 transition-all shrink-0">
+                    {isThinking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Input */}
-            <div className="shrink-0 border-t border-border bg-card/80 backdrop-blur-sm p-3">
-              <div className="max-w-4xl mx-auto flex gap-2">
-                <textarea
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={`Message ${activeMode === "research" ? "Researcher" : "THALAMUS_AI"}...`}
-                  rows={1}
-                  className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 resize-none transition-colors whitespace-pre-wrap"
-                  style={{ minHeight: "36px", maxHeight: "120px" }}
-                />
-                <button
-                  onClick={handleSend}
-                  disabled={!input.trim() || isThinking}
-                  className="px-3 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center gap-1.5 text-xs font-bold"
+            {/* Study Resources Panel */}
+            <AnimatePresence>
+              {activeMode === "study" && studyResourcesOpen && (
+                <motion.div
+                  initial={{ width: 0, opacity: 0 }}
+                  animate={{ width: 280, opacity: 1 }}
+                  exit={{ width: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="shrink-0 border-l border-border bg-card flex flex-col overflow-hidden"
+                  style={{ width: 280 }}
                 >
-                  {isThinking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                </button>
-              </div>
-            </div>
+                  <div className="shrink-0 px-4 py-3 border-b border-border flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="h-4 w-4 text-indigo-400" />
+                      <span className="text-xs font-bold text-foreground">STUDY RESOURCES</span>
+                    </div>
+                    <button onClick={() => setStudyResourcesOpen(false)} className="text-muted-foreground hover:text-foreground p-1">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Add resource buttons */}
+                  <div className="shrink-0 p-3 border-b border-border space-y-2">
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button onClick={() => setStudyAddMode(studyAddMode === "text" ? null : "text")}
+                        className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg text-[10px] border transition-all ${studyAddMode === "text" ? "bg-indigo-400/15 border-indigo-400/30 text-indigo-400" : "border-border text-muted-foreground hover:border-indigo-400/30 hover:text-indigo-400"}`}
+                      >
+                        <FileText className="h-3.5 w-3.5" />Text
+                      </button>
+                      <button onClick={() => setStudyAddMode(studyAddMode === "search" ? null : "search")}
+                        className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg text-[10px] border transition-all ${studyAddMode === "search" ? "bg-indigo-400/15 border-indigo-400/30 text-indigo-400" : "border-border text-muted-foreground hover:border-indigo-400/30 hover:text-indigo-400"}`}
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />AI Search
+                      </button>
+                      <label className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg text-[10px] border transition-all cursor-pointer ${isAddingResource ? "opacity-50" : "border-border text-muted-foreground hover:border-indigo-400/30 hover:text-indigo-400"}`}>
+                        {isAddingResource ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                        File/Img
+                        <input ref={fileInputRef} type="file" className="hidden" accept="image/*,.pdf,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css" onChange={handleFileUpload} disabled={isAddingResource} />
+                      </label>
+                    </div>
+
+                    {/* Text add form */}
+                    <AnimatePresence>
+                      {studyAddMode === "text" && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden space-y-2">
+                          <input value={studyTextTitle} onChange={e => setStudyTextTitle(e.target.value)} placeholder="Title..." className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-[10px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-400/60 transition-colors" />
+                          <textarea value={studyTextContent} onChange={e => setStudyTextContent(e.target.value)} placeholder="Paste your notes, text, or content here..." rows={4} className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-[10px] text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-indigo-400/60 transition-colors" />
+                          <button onClick={handleAddTextResource} disabled={isAddingResource || !studyTextTitle.trim() || !studyTextContent.trim()}
+                            className="w-full py-1.5 bg-indigo-400/15 border border-indigo-400/30 text-indigo-400 text-[10px] rounded-lg hover:bg-indigo-400/25 disabled:opacity-50 transition-all font-bold">
+                            {isAddingResource ? <Loader2 className="h-3 w-3 animate-spin mx-auto" /> : "Add Resource"}
+                          </button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* AI Search form */}
+                    <AnimatePresence>
+                      {studyAddMode === "search" && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden space-y-2">
+                          <input value={studySearchQuery} onChange={e => setStudySearchQuery(e.target.value)} onKeyDown={e => { if (e.key === "Enter") handleSearchResource(); }} placeholder="Topic to research..." className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-[10px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-400/60 transition-colors" />
+                          <button onClick={handleSearchResource} disabled={isAddingResource || !studySearchQuery.trim()}
+                            className="w-full py-1.5 bg-indigo-400/15 border border-indigo-400/30 text-indigo-400 text-[10px] rounded-lg hover:bg-indigo-400/25 disabled:opacity-50 transition-all font-bold">
+                            {isAddingResource ? <><Loader2 className="h-3 w-3 animate-spin inline mr-1" />Researching...</> : "Research & Add"}
+                          </button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  {/* Resources list */}
+                  <div className="flex-1 overflow-y-auto min-h-0 p-2 space-y-1.5">
+                    {!studyResources ? (
+                      <div className="flex items-center justify-center py-8"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+                    ) : studyResources.length === 0 ? (
+                      <div className="text-center py-8">
+                        <BookOpen className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                        <p className="text-[10px] text-muted-foreground">No resources yet</p>
+                        <p className="text-[9px] text-muted-foreground/60 mt-1">Add text, files, or AI-researched topics</p>
+                      </div>
+                    ) : (
+                      studyResources.map((resource: StudyResource) => (
+                        <div key={resource._id} className="group bg-background border border-border rounded-lg p-2.5 hover:border-indigo-400/30 transition-all">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {resource.sourceType === "image" ? <Image className="h-3 w-3 text-indigo-400 shrink-0" /> :
+                               resource.sourceType === "web" ? <Globe className="h-3 w-3 text-indigo-400 shrink-0" /> :
+                               resource.sourceType === "file" ? <FileText className="h-3 w-3 text-indigo-400 shrink-0" /> :
+                               <FileText className="h-3 w-3 text-indigo-400 shrink-0" />}
+                              <p className="text-[10px] font-bold text-foreground truncate">{resource.title}</p>
+                            </div>
+                            <button onClick={async () => { if (!token) return; try { await deleteResource({ token, resourceId: resource._id }); toast.success("Deleted"); } catch { toast.error("Failed"); } }}
+                              className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all shrink-0">
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                          <p className="text-[9px] text-muted-foreground mt-1 line-clamp-2">{resource.content.slice(0, 100)}</p>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <span className={`text-[8px] px-1.5 py-0.5 rounded-full border font-bold ${resource.sourceType === "image" ? "bg-purple-400/10 text-purple-400 border-purple-400/20" : resource.sourceType === "web" ? "bg-blue-400/10 text-blue-400 border-blue-400/20" : "bg-indigo-400/10 text-indigo-400 border-indigo-400/20"}`}>
+                              {resource.sourceType.toUpperCase()}
+                            </span>
+                            <span className="text-[8px] text-muted-foreground">{new Date(resource.createdAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
       </div>
-      <CreditModal open={creditModalOpen} onClose={() => setCreditModalOpen(false)} totalAB={totalAB} dailyAB={dailyAB} purchasedAB={purchasedAB} token={token ?? undefined} />
 
-      {/* Spin notification popup */}
-      <AnimatePresence>
-        {spinNotifOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSpinNotifOpen(false)}
-              className="absolute inset-0 bg-background/80 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.85, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.85, y: 20 }}
-              className="relative z-10 bg-card border border-amber-400/40 rounded-2xl shadow-2xl p-8 text-center max-w-sm w-full font-mono"
-            >
-              <motion.div
-                animate={{ rotate: [0, -15, 15, -10, 10, 0], scale: [1, 1.2, 1] }}
-                transition={{ duration: 0.8, delay: 0.2 }}
-                className="text-5xl mb-4"
-              >
-                🎰
-              </motion.div>
-              <h2 className="text-lg font-bold text-foreground mb-2">You Got a Free Spin!</h2>
-              <p className="text-sm text-muted-foreground mb-1">
-                You signed up using a referral link.
-              </p>
-              <p className="text-sm text-amber-400 font-bold mb-6">
-                1 free spin has been added to your account!
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => { setSpinNotifOpen(false); navigate("/refer"); }}
-                  className="flex-1 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all"
-                >
-                  Spin Now 🎡
-                </button>
-                <button
-                  onClick={() => setSpinNotifOpen(false)}
-                  className="flex-1 bg-muted text-muted-foreground px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-muted/80 transition-all"
-                >
-                  Later
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* Credit Modal */}
+      {creditModalOpen && <CreditModal open={creditModalOpen} onClose={() => setCreditModalOpen(false)} token={token ?? ""} totalAB={totalAB} dailyAB={dailyAB} purchasedAB={purchasedAB} />}
+      {spinNotifOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setSpinNotifOpen(false)} />
+          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="relative z-10 bg-card border border-border rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">
+            <div className="text-4xl mb-3">🎰</div>
+            <h3 className="text-lg font-bold text-foreground mb-2">You have a free spin!</h3>
+            <p className="text-xs text-muted-foreground mb-4">You signed up via a referral link. Claim your free spin in the Credits section.</p>
+            <button onClick={() => { setSpinNotifOpen(false); setCreditModalOpen(true); }} className="w-full bg-primary text-primary-foreground py-2 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all">Claim Spin</button>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

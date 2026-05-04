@@ -27,17 +27,16 @@ const schema = defineSchema(
       isAnonymous: v.optional(v.boolean()),
       role: v.optional(roleValidator),
       totalUsageCents: v.optional(v.number()),
-      agentBucksBalance: v.optional(v.number()), // legacy field
+      agentBucksBalance: v.optional(v.number()),
       dailyAgentBucks: v.optional(v.number()),
       purchasedAgentBucks: v.optional(v.number()),
       referralCode: v.optional(v.string()),
       referralSpins: v.optional(v.number()),
       referredBy: v.optional(v.string()),
-      // Account status
-      isBanned: v.optional(v.boolean()),          // true if account is banned
-      banReason: v.optional(v.string()),           // reason for ban
-      hasAppeal: v.optional(v.boolean()),          // true if appeal submitted
-      warningCount: v.optional(v.number()),        // number of warnings received
+      isBanned: v.optional(v.boolean()),
+      banReason: v.optional(v.string()),
+      hasAppeal: v.optional(v.boolean()),
+      warningCount: v.optional(v.number()),
     }).index("email", ["email"])
       .index("by_referral_code", ["referralCode"]),
 
@@ -60,7 +59,7 @@ const schema = defineSchema(
     conversations: defineTable({
       userId: v.id("users"),
       title: v.string(),
-      mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code")),
+      mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("study")),
       lastMessageAt: v.optional(v.number()),
     })
       .index("by_user", ["userId"])
@@ -77,7 +76,6 @@ const schema = defineSchema(
       .index("by_conversation", ["conversationId"])
       .index("by_user", ["userId"]),
 
-    // Multi-agent team sessions
     teamSessions: defineTable({
       userId: v.id("users"),
       title: v.string(),
@@ -89,30 +87,21 @@ const schema = defineSchema(
       phase: v.optional(v.string()),
       totalMessages: v.optional(v.number()),
       currentAgentOutput: v.optional(v.string()),
-      // Planner task breakdown
       plannerTasksJson: v.optional(v.string()),
       currentTaskIndex: v.optional(v.number()),
       executionPhase: v.optional(v.string()),
       finalReviewCoderEnabled: v.optional(v.boolean()),
-      // Deploy commands set by agents
       deployCommandsJson: v.optional(v.string()),
-      // Per-task summaries
       taskSummariesJson: v.optional(v.string()),
-      // Current task difficulty
       currentTaskDifficulty: v.optional(v.string()),
-      // Per-task message counter (resets on task change)
       taskMessageCount: v.optional(v.number()),
-      // Modal Upgrade: when active, sonnet→opus47, haiku→opus46
       taskUpgradeActive: v.optional(v.boolean()),
       taskUpgradeMessagesLeft: v.optional(v.number()),
-      // JSON string of { taskIndex: number, title: string, reason: string }[]
       unfixableTasksJson: v.optional(v.string()),
-      // Manual upgrade: user-activated flag to force Modal Upgrade on next rejection
       manualUpgradeEnabled: v.optional(v.boolean()),
     })
       .index("by_user", ["userId"]),
 
-    // Agent messages in team sessions
     agentMessages: defineTable({
       sessionId: v.id("teamSessions"),
       userId: v.id("users"),
@@ -120,12 +109,11 @@ const schema = defineSchema(
       content: v.string(),
       round: v.optional(v.number()),
       messageIndex: v.optional(v.number()),
-      modelUsed: v.optional(v.string()),        // e.g. "gemini-3.1-flash-lite-preview", "claude-haiku-4-5"
-      agentBucksDeducted: v.optional(v.number()), // AB cost for this message
+      modelUsed: v.optional(v.string()),
+      agentBucksDeducted: v.optional(v.number()),
     })
       .index("by_session", ["sessionId"]),
 
-    // Project files created by agents
     projectFiles: defineTable({
       sessionId: v.id("teamSessions"),
       userId: v.id("users"),
@@ -136,19 +124,17 @@ const schema = defineSchema(
       .index("by_session", ["sessionId"])
       .index("by_session_and_path", ["sessionId", "filepath"]),
 
-    // Purchased credit batches — each batch has its own expiry (90 days from purchase)
     creditBatches: defineTable({
       userId: v.id("users"),
-      amount: v.number(),           // AB amount in this batch
-      remaining: v.number(),        // AB remaining (decrements as used)
-      expiresAt: v.number(),        // timestamp when this batch expires
-      source: v.string(),           // "purchase" | "spin" | "referral" | "promo"
+      amount: v.number(),
+      remaining: v.number(),
+      expiresAt: v.number(),
+      source: v.string(),
       createdAt: v.number(),
     })
       .index("by_user", ["userId"])
       .index("by_user_and_expiry", ["userId", "expiresAt"]),
 
-    // Daytona sandboxes
     sandboxes: defineTable({
       userId: v.id("users"),
       sessionId: v.optional(v.id("teamSessions")),
@@ -166,27 +152,24 @@ const schema = defineSchema(
       .index("by_session", ["sessionId"])
       .index("by_sandbox_id", ["sandboxId"]),
 
-    // Domain blacklist — domains blocked from registration
     domainBlacklist: defineTable({
-      domain: v.string(),           // e.g. "tempmail.com"
-      reason: v.string(),           // "temp_mail" | "abuse" | "manual"
+      domain: v.string(),
+      reason: v.string(),
       blacklistedAt: v.number(),
       userCount: v.optional(v.number()),
     }).index("by_domain", ["domain"]),
 
-    // Promo codes
     promoCodes: defineTable({
       code: v.string(),
-      purchasedCredits: v.optional(v.number()),  // AB credits to grant
-      spins: v.optional(v.number()),              // spin count to grant
-      expiresAt: v.number(),                      // timestamp
-      usedCount: v.number(),                      // how many times used
-      maxUses: v.optional(v.number()),            // null = unlimited
+      purchasedCredits: v.optional(v.number()),
+      spins: v.optional(v.number()),
+      expiresAt: v.number(),
+      usedCount: v.number(),
+      maxUses: v.optional(v.number()),
       createdAt: v.number(),
-      createdBy: v.optional(v.string()),          // admin note
+      createdBy: v.optional(v.string()),
     }).index("by_code", ["code"]),
 
-    // Suggestions from users
     suggestions: defineTable({
       userId: v.optional(v.id("users")),
       userEmail: v.optional(v.string()),
@@ -198,30 +181,39 @@ const schema = defineSchema(
         content: v.string(),
         size: v.number(),
       }))),
-      status: v.optional(v.string()),  // "new" | "reviewed" | "implemented" | "rejected"
+      status: v.optional(v.string()),
       adminNote: v.optional(v.string()),
       createdAt: v.number(),
     }).index("by_user", ["userId"]),
 
-    // Anthropic model pricing config (admin-configurable)
     modelPricing: defineTable({
-      modelId: v.string(),           // e.g. "claude-haiku-4-5"
+      modelId: v.string(),
       displayName: v.string(),
       inputCentsPerMillion: v.number(),
       outputCentsPerMillion: v.number(),
-      abMultiplier: v.number(),      // AB per cent (default 15000)
+      abMultiplier: v.number(),
       isActive: v.boolean(),
       updatedAt: v.number(),
       updatedBy: v.optional(v.string()),
     }).index("by_model", ["modelId"]),
 
-    // Platform-level API cost budget (admin-managed)
     platformBudget: defineTable({
-      totalDollars: v.number(),       // total budget set by admin (e.g. 100.00)
-      spentDollars: v.number(),       // cumulative spend with 8 decimal precision
-      isDisabled: v.boolean(),        // true when remaining < $5 threshold
+      totalDollars: v.number(),
+      spentDollars: v.number(),
+      isDisabled: v.boolean(),
       updatedAt: v.number(),
     }),
+
+    studyResources: defineTable({
+      userId: v.id("users"),
+      title: v.string(),
+      content: v.string(),
+      sourceType: v.string(),
+      sourceUrl: v.optional(v.string()),
+      fileName: v.optional(v.string()),
+      fileType: v.optional(v.string()),
+      createdAt: v.number(),
+    }).index("by_user", ["userId"]),
   },
   {
     schemaValidation: false,
