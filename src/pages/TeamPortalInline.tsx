@@ -605,7 +605,6 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const [task, setTask] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [currentAgent, setCurrentAgent] = useState<string | null>(null);
-  const [autoRun, setAutoRun] = useState(false);
   const [activeTab, setActiveTab] = useState<"chat" | "files" | "sandbox" | "preview">("chat");
   const [selectedFile, setSelectedFile] = useState<ProjectFile | null>(null);
   const [messageInput, setMessageInput] = useState("");
@@ -667,7 +666,6 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
 
   // Actions
   const createSession = useAction(api.agentTeam.createSession);
-  const runAgentRound = useAction(api.agentTeam.runAgentRound);
   const startBackgroundSession = useAction(api.agentTeam.startBackgroundSession);
   const listSessionsAction = useAction(api.agentTeam.listSessions);
   const continueSessionAction = useAction(api.agentTeam.continueSession);
@@ -725,8 +723,6 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
 
   const handleSelectSession = (sessionId: Id<"teamSessions">) => {
     setActiveSessionId(sessionId);
-    setAutoRun(false);
-    autoRunRef.current = false;
     setUserMessages([]);
     setMessageQueue([]);
   };
@@ -747,97 +743,44 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
       await startBackgroundSession({ sessionId, token });
       toast.success("Session started! Running in background — you can close this tab.");
       playSound("send");
-      autoRunRef.current = true;
-      setAutoRun(true);
     } catch { toast.error("Failed to create session"); playSound("error"); }
     finally { setIsRunning(false); }
   };
-
-  const agentRetryCountRef = useRef(0);
-  const MAX_AGENT_RETRIES = 5;
-
-  const handleRunNextAgent = useCallback(async (sessionIdOverride?: Id<"teamSessions">) => {
-    const sid = sessionIdOverride || activeSessionId;
-    if (!sid || !token || isRunning) return;
-    setIsRunning(true);
-    try {
-      const result = await runAgentRound({ sessionId: sid, token });
-      agentRetryCountRef.current = 0;
-      setCurrentAgent(result.agent);
-      await loadSessions();
-      if (result.fileOpsCount > 0) {
-        toast.success(`${result.agent}: ${result.fileOpsCount} file(s) modified`);
-        if (activeSandboxId && activeSandbox?.sessionId === sid) {
-          try {
-            const deployResult = await autoDeployAndStartAction({ token, sandboxDbId: activeSandboxId, sessionId: sid });
-            if (deployResult.previewUrl) { setPreviewUrl(deployResult.previewUrl); toast.success(`Deployed → Preview ready`); }
-            else if (deployResult.errors.length > 0) {
-              toast.warning(`Deploy: ${deployResult.errors[0].slice(0, 100)}`, { duration: 6000 });
-            }
-          } catch (deployErr) {
-            const deployMsg = deployErr instanceof Error ? deployErr.message : "Deploy failed";
-            toast.warning(`Auto-deploy: ${deployMsg.slice(0, 100)}`, { duration: 6000 });
-          }
-        }
-      }
-      if (result.done) {
-        toast.success("🎉 Project complete!");
-        playSound("complete");
-        autoRunRef.current = false;
-        setAutoRun(false);
-        if (messageQueue.length > 0) {
-          const next = messageQueue[0];
-          setMessageQueue(prev => prev.slice(1));
-          setTimeout(() => handleQueuedMessage(next.text, sid), 500);
-        }
-      }
-      return result;
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Agent failed";
-      agentRetryCountRef.current += 1;
-      if (agentRetryCountRef.current <= MAX_AGENT_RETRIES && autoRunRef.current) {
-        const retryDelay = Math.min(3000 * agentRetryCountRef.current, 15000);
-        toast.warning(`Retrying (${agentRetryCountRef.current}/${MAX_AGENT_RETRIES})...`);
-        setIsRunning(false); setCurrentAgent(null);
-        setTimeout(() => { if (autoRunRef.current) handleRunNextAgent(sid); }, retryDelay);
-        return;
-      }
-      toast.error(`Agent failed: ${msg.slice(0, 80)}`);
-      playSound("error");
-      agentRetryCountRef.current = 0; autoRunRef.current = false; setAutoRun(false);
-    } finally { setIsRunning(false); setCurrentAgent(null); }
-  }, [activeSessionId, token, isRunning, runAgentRound, loadSessions, activeSandboxId, activeSandbox, autoDeployAndStartAction, messageQueue]);
 
   const handleQueuedMessage = async (text: string, sid: Id<"teamSessions">) => {
     if (!token) return;
     try {
       await continueSessionAction({ sessionId: sid, newTask: text, token });
       await loadSessions();
-      autoRunRef.current = true;
-      setAutoRun(true);
-      handleRunNextAgent(sid);
+      await startBackgroundSession({ sessionId: sid, token });
     } catch { toast.error("Failed to process queued message"); }
   };
 
+  // Watch for session completion to process message queue
   useEffect(() => {
-    if (!autoRun || isRunning || !activeSessionId) return;
-    if (sessionInfo && (sessionInfo.status === "completed" || sessionInfo.totalMessages >= MAX_MESSAGES)) {
-      setAutoRun(false); autoRunRef.current = false;
+    if (!activeSessionId || !sessionInfo) return;
+    if (sessionInfo.status === "completed" || sessionInfo.totalMessages >= MAX_MESSAGES) {
       if (messageQueue.length > 0) {
         const next = messageQueue[0];
         setMessageQueue(prev => prev.slice(1));
         setTimeout(() => handleQueuedMessage(next.text, activeSessionId), 500);
       }
-      return;
     }
-    const timer = setTimeout(() => { if (autoRunRef.current) handleRunNextAgent(); }, 800);
-    return () => clearTimeout(timer);
-  }, [autoRun, isRunning, sessionInfo, activeSessionId, handleRunNextAgent]);
+  }, [sessionInfo?.status, sessionInfo?.totalMessages, activeSessionId]);
 
   const setManualUpgradeMutation = useMutation(api.agentTeamHelpers.setManualUpgrade);
   const forceActivateUpgradeMutation = useMutation(api.agentTeamHelpers.forceActivateUpgrade);
-  const handleAutoRun = () => { if (!activeSessionId || !token) return; autoRunRef.current = true; setAutoRun(true); handleRunNextAgent(); };
-  const handleStopAutoRun = () => { autoRunRef.current = false; setAutoRun(false); toast.info("Stopped after current agent completes"); };
+  const handleAutoRun = async () => {
+    if (!activeSessionId || !token) return;
+    setIsRunning(true);
+    try {
+      await startBackgroundSession({ sessionId: activeSessionId, token });
+      toast.success("Running in background — you can close this tab.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start");
+    } finally { setIsRunning(false); }
+  };
+  const handleStopAutoRun = () => { toast.info("Background session runs until complete. Refresh to check status."); };
 
   const handleToggleManualUpgrade = async () => {
     if (!activeSessionId || !token) return;
@@ -868,7 +811,8 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
       messageIndex: (sessionInfo?.totalMessages ?? 0) + 0.5,
     };
     setUserMessages(prev => [...prev, userMsg]);
-    if (isRunning || autoRun) {
+    const bgRunning = sessionInfo?.status === "running";
+    if (isRunning || bgRunning) {
       const queued: QueuedMessage = { id: `q-${Date.now()}`, text, timestamp: Date.now() };
       setMessageQueue(prev => [...prev, queued]);
       toast.info(`Message queued (${messageQueue.length + 1} in queue)`);
@@ -877,10 +821,7 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
       try {
         await continueSessionAction({ sessionId: activeSessionId, newTask: text, token });
         await loadSessions();
-        // Start background execution for the new task
         await startBackgroundSession({ sessionId: activeSessionId, token });
-        autoRunRef.current = true;
-        setAutoRun(true);
         toast.success("Running in background — you can close this tab.");
       } catch { toast.error("Failed to send message"); }
     }
@@ -1282,14 +1223,14 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
                     );
                   })()
                 )}
-                {autoRun ? (
+                {sessionInfo?.status === "running" ? (
                   <button onClick={handleStopAutoRun} className="flex items-center gap-1 px-2 py-1 bg-destructive/10 border border-destructive/30 text-destructive text-[10px] rounded hover:bg-destructive/20 transition-all">
-                    <Square className="h-3 w-3" />STOP
+                    <Square className="h-3 w-3" />RUNNING
                   </button>
                 ) : (
                   <button onClick={handleAutoRun} disabled={isRunning || sessionInfo?.status === "completed"} className="flex items-center gap-1 px-2 py-1 bg-primary/10 border border-primary/30 text-primary text-[10px] rounded hover:bg-primary/20 disabled:opacity-50 transition-all">
                     {isRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-                    {isRunning ? "RUNNING" : "RUN"}
+                    {isRunning ? "STARTING" : "RUN"}
                   </button>
                 )}
               </div>
@@ -1389,7 +1330,7 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
                       className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary/60 transition-colors whitespace-pre-wrap"
                       style={{ minHeight: "36px", maxHeight: "160px" }}
                     />
-                    {(isRunning || autoRun) ? (
+                    {(isRunning || sessionInfo?.status === "running") ? (
                       <>
                         <button onClick={handleStopAutoRun} className="px-3 py-2 bg-destructive/10 border border-destructive/30 text-destructive text-xs rounded-xl hover:bg-destructive/20 transition-all flex items-center gap-1">
                           <Square className="h-3.5 w-3.5" />
