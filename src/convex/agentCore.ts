@@ -112,6 +112,59 @@ export const DIFFICULTY_REDTEAM_SONNET_OVERRIDE: Record<string, ModelTier | null
 
 export type TaskDifficulty = "normal" | "hard" | "extreme";
 
+// ── Location-based AWS Bedrock region selection ───────────────────────────────
+// Maps IANA timezone to the closest AWS Bedrock region for minimum latency
+export function getBedrockRegionForTimezone(timezone: string): string {
+  const tz = timezone.toLowerCase();
+
+  // Asia Pacific
+  if (tz.includes("asia/kolkata") || tz.includes("asia/calcutta") || tz.includes("asia/dhaka") || tz.includes("asia/karachi") || tz.includes("asia/colombo")) {
+    return "ap-south-1"; // Mumbai — closest for South Asia
+  }
+  if (tz.includes("asia/tokyo") || tz.includes("asia/seoul") || tz.includes("asia/osaka")) {
+    return "ap-northeast-1"; // Tokyo
+  }
+  if (tz.includes("asia/singapore") || tz.includes("asia/kuala_lumpur") || tz.includes("asia/jakarta") || tz.includes("asia/bangkok") || tz.includes("asia/ho_chi_minh") || tz.includes("asia/manila")) {
+    return "ap-southeast-1"; // Singapore
+  }
+  if (tz.includes("australia") || tz.includes("pacific/auckland") || tz.includes("asia/sydney")) {
+    return "ap-southeast-2"; // Sydney
+  }
+  if (tz.includes("asia/shanghai") || tz.includes("asia/hong_kong") || tz.includes("asia/taipei")) {
+    return "ap-east-1"; // Hong Kong (fallback to us-east-1 if not available)
+  }
+
+  // Europe
+  if (tz.includes("europe/london") || tz.includes("europe/dublin") || tz.includes("europe/lisbon") || tz.includes("atlantic/")) {
+    return "eu-west-1"; // Ireland
+  }
+  if (tz.includes("europe/paris") || tz.includes("europe/berlin") || tz.includes("europe/amsterdam") || tz.includes("europe/brussels") || tz.includes("europe/madrid") || tz.includes("europe/rome") || tz.includes("europe/vienna") || tz.includes("europe/zurich") || tz.includes("europe/stockholm") || tz.includes("europe/oslo") || tz.includes("europe/copenhagen") || tz.includes("europe/warsaw") || tz.includes("europe/prague") || tz.includes("europe/budapest")) {
+    return "eu-central-1"; // Frankfurt
+  }
+  if (tz.includes("europe/istanbul") || tz.includes("asia/beirut") || tz.includes("asia/dubai") || tz.includes("asia/riyadh") || tz.includes("asia/kuwait") || tz.includes("asia/bahrain") || tz.includes("asia/qatar") || tz.includes("africa/cairo") || tz.includes("asia/jerusalem") || tz.includes("asia/amman") || tz.includes("asia/baghdad")) {
+    return "me-south-1"; // Bahrain (Middle East)
+  }
+
+  // Americas
+  if (tz.includes("america/new_york") || tz.includes("america/toronto") || tz.includes("america/montreal") || tz.includes("america/boston") || tz.includes("america/chicago") || tz.includes("america/detroit") || tz.includes("america/indiana") || tz.includes("america/kentucky")) {
+    return "us-east-1"; // N. Virginia
+  }
+  if (tz.includes("america/los_angeles") || tz.includes("america/vancouver") || tz.includes("america/seattle") || tz.includes("america/phoenix") || tz.includes("america/denver") || tz.includes("america/boise") || tz.includes("america/las_vegas")) {
+    return "us-west-2"; // Oregon
+  }
+  if (tz.includes("america/sao_paulo") || tz.includes("america/argentina") || tz.includes("america/santiago") || tz.includes("america/lima") || tz.includes("america/bogota") || tz.includes("america/caracas")) {
+    return "sa-east-1"; // São Paulo
+  }
+
+  // Africa
+  if (tz.includes("africa/johannesburg") || tz.includes("africa/nairobi") || tz.includes("africa/lagos") || tz.includes("africa/accra")) {
+    return "af-south-1"; // Cape Town
+  }
+
+  // Default: us-east-1 (most models available here)
+  return "us-east-1";
+}
+
 // ── AWS Bedrock Claude caller ─────────────────────────────────────────────────
 // Uses AWS Bedrock to call Claude models via SigV4-signed REST API
 // Token-saving strategies:
@@ -328,6 +381,7 @@ export async function callClaude(
   prompt: string,
   systemPrompt: string,
   model: ClaudeModel,
+  userRegion?: string,
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   // Trim prompt to save tokens — Claude is expensive
   const trimmedPrompt = prompt.length > 8000 ? prompt.slice(0, 8000) + "\n...[context trimmed for efficiency]" : prompt;
@@ -341,8 +395,10 @@ export async function callClaude(
     return callGemini(prompt, systemPrompt);
   }
 
+  // Use user's closest region if provided, otherwise use credential region
+  const region = userRegion || creds.region;
   const modelId = BEDROCK_MODEL_IDS[model];
-  const url = `https://bedrock-runtime.${creds.region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke`;
+  const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke`;
 
   const requestBody = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
@@ -357,7 +413,6 @@ export async function callClaude(
 
     if (creds.isCustomKey) {
       // Custom Bedrock API key — use as Bearer token
-      // The full key is "KeyId:Secret" — combine back as the bearer token
       const bearerToken = creds.secretAccessKey
         ? `${creds.accessKeyId}:${creds.secretAccessKey}`
         : creds.accessKeyId;
@@ -367,14 +422,14 @@ export async function callClaude(
         "x-api-key": bearerToken,
       };
     } else {
-      // Standard AWS SigV4 signing
+      // Standard AWS SigV4 signing — sign with the selected region
       requestHeaders = await signBedrockRequest(
         "POST",
         url,
         requestBody,
         creds.accessKeyId,
         creds.secretAccessKey,
-        creds.region,
+        region,
       );
     }
 
@@ -386,6 +441,11 @@ export async function callClaude(
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
+      // If the user's closest region fails, fall back to us-east-1
+      if (userRegion && userRegion !== "us-east-1") {
+        console.warn(`Bedrock region ${userRegion} failed, falling back to us-east-1`);
+        return callClaude(prompt, systemPrompt, model, "us-east-1");
+      }
       throw new Error(`AWS Bedrock error ${response.status}: ${errText.slice(0, 300)}`);
     }
 
