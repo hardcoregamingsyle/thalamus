@@ -1460,6 +1460,27 @@ export const backgroundRunOneRound = internalAction({
   },
 });
 
+// Public action to stop a running session (marks as completed to halt background scheduler)
+export const stopSession = action({
+  args: { sessionId: v.id("teamSessions"), token: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<void> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+    const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
+    if (!session) throw new Error("Session not found");
+    if (session.userId !== userId) throw new Error("Not authorized");
+    // Mark as completed — backgroundRunSession checks this and stops scheduling
+    await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+      sessionId: args.sessionId,
+      status: "completed",
+      currentAgent: undefined,
+      phase: "stopped",
+      totalMessages: session.totalMessages ?? 0,
+      loopCount: session.loopCount ?? 0,
+    });
+  },
+});
+
 // Public action to start background execution (called from frontend once)
 export const startBackgroundSession = action({
   args: { sessionId: v.id("teamSessions"), token: v.optional(v.string()) },

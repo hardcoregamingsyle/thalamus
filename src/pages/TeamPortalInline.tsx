@@ -667,6 +667,7 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   // Actions
   const createSession = useAction(api.agentTeam.createSession);
   const startBackgroundSession = useAction(api.agentTeam.startBackgroundSession);
+  const stopSessionAction = useAction(api.agentTeam.stopSession);
   const listSessionsAction = useAction(api.agentTeam.listSessions);
   const continueSessionAction = useAction(api.agentTeam.continueSession);
   const createSandboxAction = useAction(api.sandbox.createSandbox);
@@ -790,7 +791,15 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
       toast.error(err instanceof Error ? err.message : "Failed to start");
     } finally { setIsRunning(false); }
   };
-  const handleStopAutoRun = () => { toast.info("Background session runs until complete. Refresh to check status."); };
+  const handleStopAutoRun = async () => {
+    if (!activeSessionId || !token) return;
+    try {
+      await stopSessionAction({ sessionId: activeSessionId, token });
+      toast.success("Session stopped.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to stop session");
+    }
+  };
 
   const handleToggleManualUpgrade = async () => {
     if (!activeSessionId || !token) return;
