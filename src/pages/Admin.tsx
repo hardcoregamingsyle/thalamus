@@ -8,6 +8,7 @@ import {
   Shield, Users, Tag, Lightbulb, DollarSign, LogOut, ChevronRight,
   Plus, Trash2, Check, Edit2, Eye, EyeOff, Loader2,
   Coins, AlertCircle, CheckCircle, Star, TrendingDown, RefreshCw, Zap,
+  Database, ExternalLink, Copy, Globe,
 } from "lucide-react";
 
 // ── Admin auth ────────────────────────────────────────────────────────────────
@@ -22,7 +23,7 @@ const DEFAULT_MODELS = [
   { modelId: "claude-opus-4-7", displayName: "Claude Opus 4.7", inputCentsPerMillion: 1200, outputCentsPerMillion: 6000, abMultiplier: 15000, isActive: true },
 ];
 
-type AdminTab = "credits" | "promo-codes" | "users" | "suggestion";
+type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex";
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
@@ -125,6 +126,7 @@ export default function AdminPage() {
             { id: "credits", label: "Credits", icon: DollarSign },
             { id: "promo-codes", label: "Promo Codes", icon: Tag },
             { id: "suggestion", label: "Suggestions", icon: Lightbulb },
+            { id: "convex", label: "Convex", icon: Database },
           ] as { id: AdminTab; label: string; icon: React.ElementType }[]).map(item => (
             <button
               key={item.id}
