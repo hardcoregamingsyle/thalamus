@@ -102,6 +102,12 @@ const schema = defineSchema(
       unfixableTasksJson: v.optional(v.string()),
       manualUpgradeEnabled: v.optional(v.boolean()),
       customId: v.optional(v.string()),
+      // GitHub sync fields
+      githubRepo: v.optional(v.string()),
+      githubBranch: v.optional(v.string()),
+      githubToken: v.optional(v.string()),
+      githubLastSyncAt: v.optional(v.number()),
+      githubLastCommitSha: v.optional(v.string()),
     })
       .index("by_user", ["userId"])
       .index("by_custom_id", ["customId"]),
