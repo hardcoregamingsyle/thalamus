@@ -681,6 +681,16 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
 
   useEffect(() => { if (token) { loadSessions(); loadSandboxes(); } }, [token]);
 
+  // Auto-select session from URL when sessions load
+  useEffect(() => {
+    if (!initialSessionCustomId || activeSessionId) return;
+    const match = sessions.find(s => {
+      const raw = s as unknown as Record<string, unknown>;
+      return raw.customId === initialSessionCustomId;
+    });
+    if (match) setActiveSessionId(match._id);
+  }, [initialSessionCustomId, sessions, activeSessionId]);
+
   // Update document title based on active session
   useEffect(() => {
     if (sessionInfo?.title) {
