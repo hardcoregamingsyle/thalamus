@@ -509,6 +509,36 @@ export const forceActivateUpgrade = mutation({
   },
 });
 
+export const saveGithubConfigMutation = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    githubRepo: v.string(),
+    githubBranch: v.string(),
+    githubToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      githubRepo: args.githubRepo,
+      githubBranch: args.githubBranch,
+      githubToken: args.githubToken,
+    });
+  },
+});
+
+export const updateGithubSync = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    lastSyncAt: v.number(),
+    lastCommitSha: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      githubLastSyncAt: args.lastSyncAt,
+      githubLastCommitSha: args.lastCommitSha,
+    });
+  },
+});
+
 export const getSessionByCustomId = query({
   args: { customId: v.string(), token: v.string() },
   handler: async (ctx, args) => {

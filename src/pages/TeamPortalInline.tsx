@@ -266,6 +266,131 @@ function MessageContent({ msg, currentTaskIndex }: { msg: { _id?: string; agent:
   );
 }
 
+// ── GitHub Sync Modal ─────────────────────────────────────────────────────────
+function GithubSyncModal({
+  onClose,
+  onSave,
+  onSync,
+  isSyncing,
+  currentRepo,
+  currentBranch,
+  lastSyncAt,
+}: {
+  onClose: () => void;
+  onSave: (repo: string, branch: string, token: string) => Promise<void>;
+  onSync: () => Promise<void>;
+  isSyncing: boolean;
+  currentRepo?: string;
+  currentBranch?: string;
+  lastSyncAt?: number;
+}) {
+  const [repo, setRepo] = useState(currentRepo ?? "");
+  const [branch, setBranch] = useState(currentBranch ?? "main");
+  const [ghToken, setGhToken] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const isConnected = !!currentRepo;
+
+  const handleSave = async () => {
+    if (!repo.trim() || !branch.trim() || !ghToken.trim()) return;
+    setIsSaving(true);
+    try {
+      await onSave(repo.trim(), branch.trim(), ghToken.trim());
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="relative z-10 bg-card border border-border rounded-2xl p-6 max-w-md w-full shadow-2xl"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Github className="h-5 w-5 text-foreground" />
+            <h3 className="text-sm font-bold text-foreground">GitHub Sync</h3>
+            {isConnected && (
+              <span className="text-[9px] bg-green-400/15 text-green-400 border border-green-400/30 px-1.5 py-0.5 rounded-full font-bold">CONNECTED</span>
+            )}
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {isConnected && (
+          <div className="mb-4 p-3 bg-green-400/5 border border-green-400/20 rounded-xl">
+            <p className="text-[10px] text-green-400 font-bold">{currentRepo} @ {currentBranch}</p>
+            {lastSyncAt && (
+              <p className="text-[9px] text-muted-foreground mt-0.5">Last sync: {new Date(lastSyncAt).toLocaleString()}</p>
+            )}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-[10px] text-muted-foreground font-bold block mb-1">REPOSITORY</label>
+            <input
+              value={repo}
+              onChange={e => setRepo(e.target.value)}
+              placeholder="owner/repo or https://github.com/owner/repo"
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground font-bold block mb-1">BRANCH</label>
+            <input
+              value={branch}
+              onChange={e => setBranch(e.target.value)}
+              placeholder="main"
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground font-bold block mb-1">GITHUB TOKEN (PAT)</label>
+            <input
+              type="password"
+              value={ghToken}
+              onChange={e => setGhToken(e.target.value)}
+              placeholder={isConnected ? "Enter new token to update" : "ghp_xxxxxxxxxxxx"}
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
+            />
+            <p className="text-[9px] text-muted-foreground mt-1">
+              Needs <code className="bg-muted px-1 rounded">repo</code> scope.{" "}
+              <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Create token →</a>
+            </p>
+          </div>
+        </div>
+
+        <div className="flex gap-2 mt-4">
+          <button
+            onClick={handleSave}
+            disabled={isSaving || !repo.trim() || !branch.trim() || !ghToken.trim()}
+            className="flex-1 py-2 bg-primary/15 border border-primary/30 text-primary text-xs rounded-xl hover:bg-primary/25 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-1.5"
+          >
+            {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Github className="h-3 w-3" />}
+            {isConnected ? "Update Config" : "Connect"}
+          </button>
+          {isConnected && (
+            <button
+              onClick={onSync}
+              disabled={isSyncing}
+              className="flex-1 py-2 bg-green-400/15 border border-green-400/30 text-green-400 text-xs rounded-xl hover:bg-green-400/25 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-1.5"
+            >
+              {isSyncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              Sync Now
+            </button>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 // ── Files Tab for TeamPortalInline ────────────────────────────────────────────
 function FilesTabInline({
   projectFiles, selectedFile, setSelectedFile, activeSessionId, token,
@@ -779,6 +904,10 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     }
   }, [sessionInfo?.status, sessionInfo?.totalMessages, activeSessionId]);
 
+  const [showGithubModal, setShowGithubModal] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const saveGithubConfigAction = useAction(api.agentTeam.saveGithubConfig);
+  const syncGithubAction = useAction(api.agentTeam.syncGithub);
   const setManualUpgradeMutation = useMutation(api.agentTeamHelpers.setManualUpgrade);
   const forceActivateUpgradeMutation = useMutation(api.agentTeamHelpers.forceActivateUpgrade);
   const handleAutoRun = async () => {
@@ -818,6 +947,44 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
       toast.success("⚡ Force Upgrade activated — all agents now running at Opus tier");
     } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to force upgrade"); }
   };
+
+  const handleSaveGithubConfig = async (repo: string, branch: string, ghToken: string) => {
+    if (!activeSessionId || !token) return;
+    try {
+      await saveGithubConfigAction({ sessionId: activeSessionId, githubRepo: repo, githubBranch: branch, githubToken: ghToken, token });
+      toast.success("GitHub connected! Auto-sync enabled.");
+      // Immediately sync after connecting
+      setIsSyncing(true);
+      try {
+        const result = await syncGithubAction({ sessionId: activeSessionId, token });
+        toast.success(`Synced: ↑${result.pushed} pushed, ↓${result.pulled} pulled`);
+        if (result.conflicts.length > 0) toast.warning(`${result.conflicts.length} conflict(s) — GitHub version kept`);
+      } catch (err) { toast.error(err instanceof Error ? err.message : "Sync failed"); }
+      finally { setIsSyncing(false); }
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to save config"); }
+  };
+
+  const handleGithubSync = async () => {
+    if (!activeSessionId || !token) return;
+    setIsSyncing(true);
+    try {
+      const result = await syncGithubAction({ sessionId: activeSessionId, token });
+      toast.success(`Synced: ↑${result.pushed} pushed, ↓${result.pulled} pulled`);
+      if (result.conflicts.length > 0) toast.warning(`${result.conflicts.length} conflict(s) — GitHub version kept`);
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Sync failed"); }
+    finally { setIsSyncing(false); }
+  };
+
+  // Auto-sync every 60 seconds if GitHub is configured
+  useEffect(() => {
+    if (!activeSessionId || !token) return;
+    const githubRepo = (liveSession as Record<string, unknown> | null)?.githubRepo as string | undefined;
+    if (!githubRepo) return;
+    const interval = setInterval(() => {
+      syncGithubAction({ sessionId: activeSessionId, token }).catch(() => {});
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [activeSessionId, token, (liveSession as Record<string, unknown> | null)?.githubRepo]);
 
   const handleSendMessage = async () => {
     const text = messageInput.trim();
@@ -1202,46 +1369,26 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-muted-foreground">{sessionInfo?.totalMessages ?? 0}/{MAX_MESSAGES} msgs</span>
-                {/* Upgrade buttons */}
-                {activeSessionId && sessionInfo?.status !== "completed" && (
-                  (() => {
-                    const upgradeActive = (sessionInfo as unknown as Record<string, unknown>)?.taskUpgradeActive as boolean | undefined;
-                    const manualEnabled = (sessionInfo as unknown as Record<string, unknown>)?.manualUpgradeEnabled as boolean | undefined;
-                    const upgradeLeft = (sessionInfo as unknown as Record<string, unknown>)?.taskUpgradeMessagesLeft as number | undefined;
-                    return (
-                      <div className="flex items-center gap-1">
-                        {/* Arm button: activates on next rejection */}
-                        <button
-                          onClick={handleToggleManualUpgrade}
-                          disabled={!!upgradeActive}
-                          title={upgradeActive ? `Upgrade active (${upgradeLeft ?? 0} msgs left)` : manualEnabled ? "Click to disarm" : "Arm: activates on next rejection"}
-                          className={`flex items-center gap-1 px-2 py-1 text-[10px] rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                            upgradeActive
-                              ? "bg-amber-400/20 border-amber-400/40 text-amber-400"
-                              : manualEnabled
-                              ? "bg-amber-400/20 border-amber-400/50 text-amber-400 animate-pulse"
-                              : "bg-muted/50 border-border text-muted-foreground hover:border-amber-400/50 hover:text-amber-400"
-                          }`}
-                        >
-                          ⚡{upgradeActive ? `ACTIVE(${upgradeLeft ?? 0})` : manualEnabled ? "ARMED" : "ARM"}
-                        </button>
-                        {/* Force button: activates immediately */}
-                        <button
-                          onClick={handleForceUpgrade}
-                          disabled={!!upgradeActive}
-                          title={upgradeActive ? "Upgrade already active" : "Force Upgrade: activate immediately"}
-                          className={`flex items-center gap-1 px-2 py-1 text-[10px] rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                            upgradeActive
-                              ? "bg-orange-400/10 border-orange-400/20 text-orange-400/50"
-                              : "bg-orange-400/10 border-orange-400/30 text-orange-400 hover:bg-orange-400/20"
-                          }`}
-                        >
-                          🚀FORCE
-                        </button>
-                      </div>
-                    );
-                  })()
-                )}
+                {/* GitHub Sync button */}
+                {activeSessionId && (() => {
+                  const githubRepo = (liveSession as Record<string, unknown> | null)?.githubRepo as string | undefined;
+                  const lastSyncAt = (liveSession as Record<string, unknown> | null)?.githubLastSyncAt as number | undefined;
+                  const isConnected = !!githubRepo;
+                  return (
+                    <button
+                      onClick={() => setShowGithubModal(true)}
+                      title={isConnected ? `GitHub: ${githubRepo} — click to sync` : "Connect GitHub repository"}
+                      className={`flex items-center gap-1 px-2 py-1 text-[10px] rounded border transition-all ${
+                        isConnected
+                          ? "bg-green-400/10 border-green-400/30 text-green-400 hover:bg-green-400/20"
+                          : "bg-muted/50 border-border text-muted-foreground hover:border-primary/50 hover:text-primary"
+                      }`}
+                    >
+                      {isSyncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Github className="h-3 w-3" />}
+                      {isConnected ? (lastSyncAt ? "SYNCED" : "SYNC") : "GITHUB"}
+                    </button>
+                  );
+                })()}
                 {sessionInfo?.status === "running" ? (
                   <button onClick={handleStopAutoRun} className="flex items-center gap-1 px-2 py-1 bg-destructive/10 border border-destructive/30 text-destructive text-[10px] rounded hover:bg-destructive/20 transition-all">
                     <Square className="h-3 w-3" />RUNNING
@@ -1527,6 +1674,20 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
           </div>
         </div>
       )}
+      {/* GitHub Sync Modal */}
+      <AnimatePresence>
+        {showGithubModal && activeSessionId && (
+          <GithubSyncModal
+            onClose={() => setShowGithubModal(false)}
+            onSave={handleSaveGithubConfig}
+            onSync={handleGithubSync}
+            isSyncing={isSyncing}
+            currentRepo={(liveSession as Record<string, unknown> | null)?.githubRepo as string | undefined}
+            currentBranch={(liveSession as Record<string, unknown> | null)?.githubBranch as string | undefined}
+            lastSyncAt={(liveSession as Record<string, unknown> | null)?.githubLastSyncAt as number | undefined}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
