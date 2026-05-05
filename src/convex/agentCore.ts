@@ -123,9 +123,9 @@ export type TaskDifficulty = "normal" | "hard" | "extreme";
 // AWS Bedrock model IDs for Claude models
 const BEDROCK_MODEL_IDS: Record<ClaudeModel, string> = {
   "claude-haiku-4-5":  "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-  "claude-sonnet-4-6": "us.anthropic.claude-sonnet-4-5-20251001-v1:0",
-  "claude-opus-4-6":   "us.anthropic.claude-opus-4-5-20251001-v1:0",
-  "claude-opus-4-7":   "us.anthropic.claude-opus-4-5-20251001-v1:0",
+  "claude-sonnet-4-6": "us.anthropic.claude-sonnet-4-6",
+  "claude-opus-4-6":   "us.anthropic.claude-opus-4-6",
+  "claude-opus-4-7":   "us.anthropic.claude-opus-4-7",
 };
 
 // Max output tokens per model tier (to save credits)
