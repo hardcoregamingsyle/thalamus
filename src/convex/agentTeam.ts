@@ -1224,10 +1224,51 @@ export const backgroundRunOneRound = internalAction({
     const currentTaskIndex = session.currentTaskIndex ?? 0;
     const loopCount = session.loopCount ?? 0;
     const finalReviewCoderEnabled = session.finalReviewCoderEnabled ?? false;
+    const taskMessageCount = session.taskMessageCount ?? 0;
+    const taskUpgradeActive = session.taskUpgradeActive ?? false;
+    const taskUpgradeMessagesLeft = session.taskUpgradeMessagesLeft ?? 0;
+    const manualUpgradeEnabled = session.manualUpgradeEnabled ?? false;
 
     let plannerTasks: PlannerTask[] = [];
     if (session.plannerTasksJson) {
       try { plannerTasks = JSON.parse(session.plannerTasksJson) as PlannerTask[]; } catch { /* ignore */ }
+    }
+
+    // ── Force-skip task if it exceeded per-task message limit ────────────────
+    if (executionPhase === "tasks" && taskMessageCount >= MAX_TASK_MESSAGES) {
+      const currentTask = plannerTasks[currentTaskIndex] ?? null;
+      const taskTitle = currentTask?.title ?? `Task ${currentTaskIndex + 1}`;
+      let unfixableTasks: Array<{ taskIndex: number; title: string }> = [];
+      try { if (session.unfixableTasksJson) unfixableTasks = JSON.parse(session.unfixableTasksJson); } catch { /* ignore */ }
+      unfixableTasks.push({ taskIndex: currentTaskIndex, title: taskTitle });
+      const nextTaskIndex = currentTaskIndex + 1;
+      let newExecutionPhaseSkip = executionPhase;
+      let newTaskIndexSkip = currentTaskIndex;
+      let newNextPhaseSkip: string;
+      let doneSkip = false;
+      if (nextTaskIndex < plannerTasks.length) {
+        newTaskIndexSkip = nextTaskIndex;
+        const nextPipeline = getPipeline("tasks", plannerTasks, nextTaskIndex, false);
+        newNextPhaseSkip = nextPipeline[0];
+      } else {
+        newExecutionPhaseSkip = "final_review";
+        newNextPhaseSkip = FINAL_REVIEW_PIPELINE_SKIP_CODER[0];
+      }
+      if ((session.totalMessages ?? 0) >= MAX_MESSAGES) { doneSkip = true; newNextPhaseSkip = "completed"; }
+      await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
+        sessionId: args.sessionId, userId, agent: "System",
+        content: `⚠️ Task "${taskTitle}" exceeded the ${MAX_TASK_MESSAGES}-message limit and was skipped. Moving to next task.`,
+        round: loopCount, messageIndex: (session.totalMessages ?? 0) + 0.5,
+      });
+      await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+        sessionId: args.sessionId, status: doneSkip ? "completed" : "idle",
+        currentAgent: doneSkip ? undefined : newNextPhaseSkip, loopCount,
+        phase: doneSkip ? "completed" : newNextPhaseSkip, totalMessages: session.totalMessages ?? 0,
+        executionPhase: doneSkip ? "completed" : newExecutionPhaseSkip, currentTaskIndex: newTaskIndexSkip,
+        finalReviewCoderEnabled, taskMessageCount: 0, taskUpgradeActive: false,
+        taskUpgradeMessagesLeft: 0, unfixableTasksJson: JSON.stringify(unfixableTasks),
+      });
+      return { done: doneSkip };
     }
 
     const pipeline = getPipeline(executionPhase, plannerTasks, currentTaskIndex, finalReviewCoderEnabled);
@@ -1400,15 +1441,83 @@ export const backgroundRunOneRound = internalAction({
       }
     } else if (executionPhase === "tasks") {
       const taskPipeline = getPipeline("tasks", plannerTasks, currentTaskIndex, false);
-      if (currentPhase === "Tester" && parsed.testerResult === "fail") {
-        nextPhase = taskPipeline[0]; newLoopCount = loopCount + 1;
-      } else if (currentPhase === "Hacker" && parsed.hackerResult === "fail") {
-        nextPhase = taskPipeline[0]; newLoopCount = loopCount + 1;
-      } else if (currentPhase === "Critic") {
-        if (parsed.criticResult === "fail") {
-          nextPhase = taskPipeline[0]; newLoopCount = loopCount + 1;
+      const isRejection = (currentPhase === "Tester" && parsed.testerResult === "fail") ||
+                          (currentPhase === "Hacker" && parsed.hackerResult === "fail") ||
+                          (currentPhase === "Critic" && parsed.criticResult === "fail");
+
+      const newTaskMessageCount = taskMessageCount + 1;
+      let newTaskUpgradeActive = taskUpgradeActive;
+      let newTaskUpgradeMessagesLeft = taskUpgradeActive ? taskUpgradeMessagesLeft - 1 : 0;
+      let newUnfixableTasks: Array<{ taskIndex: number; title: string }> = [];
+      try { if (session.unfixableTasksJson) newUnfixableTasks = JSON.parse(session.unfixableTasksJson); } catch { /* ignore */ }
+
+      if (isRejection) {
+        if (!taskUpgradeActive && (manualUpgradeEnabled || newTaskMessageCount >= MODAL_UPGRADE_TRIGGER)) {
+          // Activate Modal Upgrade
+          const upgradeReason = manualUpgradeEnabled ? "manual" : `${newTaskMessageCount} task messages`;
+          await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
+            sessionId: args.sessionId, userId, agent: "System",
+            content: `⚡ MODAL UPGRADE ACTIVATED (${upgradeReason}): Task "${plannerTasks[currentTaskIndex]?.title ?? `Task ${currentTaskIndex + 1}`}" is being upgraded. All agents now running at maximum capability for the next ${MODAL_UPGRADE_DURATION} messages.`,
+            round: loopCount, messageIndex: newTotalMessages + 0.5,
+          });
+          await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+            sessionId: args.sessionId, status: "idle", currentAgent: taskPipeline[0], loopCount: loopCount + 1,
+            phase: taskPipeline[0], totalMessages: newTotalMessages, executionPhase, currentTaskIndex,
+            finalReviewCoderEnabled, taskMessageCount: newTaskMessageCount, taskUpgradeActive: true,
+            taskUpgradeMessagesLeft: MODAL_UPGRADE_DURATION, unfixableTasksJson: JSON.stringify(newUnfixableTasks),
+            manualUpgradeEnabled: false,
+          });
+          return { done: false };
+        } else if (taskUpgradeActive && newTaskUpgradeMessagesLeft <= 0) {
+          // Upgrade expired and still rejected — skip this task
+          const taskTitle = plannerTasks[currentTaskIndex]?.title ?? `Task ${currentTaskIndex + 1}`;
+          newUnfixableTasks.push({ taskIndex: currentTaskIndex, title: taskTitle });
+          await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
+            sessionId: args.sessionId, userId, agent: "System",
+            content: `⚠️ Task "${taskTitle}" could not be fixed even with Modal Upgrade. Skipping and marking as unfixable.`,
+            round: loopCount, messageIndex: newTotalMessages + 0.5,
+          });
+          const nextTaskIndex = currentTaskIndex + 1;
+          if (nextTaskIndex < plannerTasks.length) {
+            newTaskIndex = nextTaskIndex;
+            newTaskUpgradeActive = false;
+            newTaskUpgradeMessagesLeft = 0;
+            const nextTaskPipeline = getPipeline("tasks", plannerTasks, nextTaskIndex, false);
+            nextPhase = nextTaskPipeline[0];
+          } else {
+            newExecutionPhase = "final_review"; newFinalReviewCoderEnabled = false;
+            newTaskUpgradeActive = false;
+            nextPhase = FINAL_REVIEW_PIPELINE_SKIP_CODER[0];
+          }
+          await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+            sessionId: args.sessionId, status: "idle", currentAgent: nextPhase, loopCount: newLoopCount,
+            phase: nextPhase, totalMessages: newTotalMessages, executionPhase: newExecutionPhase, currentTaskIndex: newTaskIndex,
+            finalReviewCoderEnabled: newFinalReviewCoderEnabled, taskMessageCount: 0, taskUpgradeActive: false,
+            taskUpgradeMessagesLeft: 0, unfixableTasksJson: JSON.stringify(newUnfixableTasks),
+          });
+          return { done: false };
         } else {
-          nextPhase = "Summarizer";
+          // Normal rejection — restart task
+          nextPhase = taskPipeline[0];
+          newLoopCount = loopCount + 1;
+          await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+            sessionId: args.sessionId, status: "idle", currentAgent: nextPhase, loopCount: newLoopCount,
+            phase: nextPhase, totalMessages: newTotalMessages, executionPhase, currentTaskIndex,
+            finalReviewCoderEnabled, taskMessageCount: newTaskMessageCount, taskUpgradeActive: newTaskUpgradeActive,
+            taskUpgradeMessagesLeft: newTaskUpgradeMessagesLeft, unfixableTasksJson: JSON.stringify(newUnfixableTasks),
+          });
+          return { done: false };
+        }
+      } else if (currentPhase === "Critic" && parsed.criticResult !== "fail") {
+        // Task complete — move to next task or final review
+        const nextTaskIndex = currentTaskIndex + 1;
+        if (nextTaskIndex < plannerTasks.length) {
+          newTaskIndex = nextTaskIndex;
+          const nextTaskPipeline = getPipeline("tasks", plannerTasks, nextTaskIndex, false);
+          nextPhase = nextTaskPipeline[0];
+        } else {
+          newExecutionPhase = "final_review"; newFinalReviewCoderEnabled = false;
+          nextPhase = FINAL_REVIEW_PIPELINE_SKIP_CODER[0];
         }
       } else if (currentPhase === "Summarizer") {
         // Store summary
@@ -1427,6 +1536,26 @@ export const backgroundRunOneRound = internalAction({
         const nextIdx = taskPipeline.indexOf(currentPhase) + 1;
         nextPhase = taskPipeline[nextIdx] || "Critic";
       }
+
+      // Update taskMessageCount in the final updateSessionFull below
+      await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+        sessionId: args.sessionId, status: "idle", currentAgent: nextPhase, loopCount: newLoopCount,
+        phase: nextPhase, totalMessages: newTotalMessages, executionPhase: newExecutionPhase, currentTaskIndex: newTaskIndex,
+        finalReviewCoderEnabled: newFinalReviewCoderEnabled, taskMessageCount: newTaskMessageCount,
+        taskUpgradeActive: newTaskUpgradeActive, taskUpgradeMessagesLeft: newTaskUpgradeMessagesLeft,
+        unfixableTasksJson: JSON.stringify(newUnfixableTasks),
+      });
+      if (newTotalMessages >= MAX_MESSAGES) {
+        await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+          sessionId: args.sessionId, status: "completed", currentAgent: undefined, loopCount: newLoopCount,
+          phase: "completed", totalMessages: newTotalMessages, executionPhase: "completed", currentTaskIndex: newTaskIndex,
+          finalReviewCoderEnabled: newFinalReviewCoderEnabled, taskMessageCount: newTaskMessageCount,
+          taskUpgradeActive: false, taskUpgradeMessagesLeft: 0, unfixableTasksJson: JSON.stringify(newUnfixableTasks),
+        });
+        return { done: true };
+      }
+      await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, { sessionId: args.sessionId, currentAgentOutput: "" });
+      return { done: false };
     } else {
       const reviewPipeline = finalReviewCoderEnabled ? FINAL_REVIEW_PIPELINE_WITH_CODER : FINAL_REVIEW_PIPELINE_SKIP_CODER;
       if (currentPhase === "Critic") {
@@ -1454,6 +1583,7 @@ export const backgroundRunOneRound = internalAction({
       phase: done ? "completed" : nextPhase, totalMessages: newTotalMessages,
       executionPhase: done ? "completed" : newExecutionPhase, currentTaskIndex: newTaskIndex,
       finalReviewCoderEnabled: newFinalReviewCoderEnabled,
+      taskMessageCount: 0, taskUpgradeActive: false, taskUpgradeMessagesLeft: 0,
     });
 
     return { done };
