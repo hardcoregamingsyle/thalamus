@@ -10,7 +10,8 @@ import { toast } from "sonner";
 import {
   MessageSquare, Search, Plus, Trash2, LogOut,
   Send, Loader2, Menu, X, Users, Cpu, Zap, BookOpen,
-  FileText, Globe, Image, Upload, Sparkles,
+  FileText, Globe, Image, Upload, Sparkles, ChevronRight,
+  Hash,
 } from "lucide-react";
 import TeamPortalInline from "./TeamPortalInline";
 
@@ -41,11 +42,11 @@ interface StudyResource {
   createdAt: number;
 }
 
-const MODES: { id: Mode; label: string; icon: typeof MessageSquare; desc: string; color: string }[] = [
-  { id: "chat", label: "CHAT", icon: MessageSquare, desc: "General conversation", color: "text-primary" },
-  { id: "research", label: "RESEARCH", icon: Search, desc: "Deep research & analysis", color: "text-accent" },
-  { id: "study", label: "STUDY", icon: BookOpen, desc: "Study with resources", color: "text-indigo-400" },
-  { id: "code", label: "CODE", icon: Users, desc: "Multi-agent AI system", color: "text-violet-400" },
+const MODES: { id: Mode; label: string; icon: typeof MessageSquare; desc: string; color: string; accent: string }[] = [
+  { id: "chat", label: "CHAT", icon: MessageSquare, desc: "General", color: "text-primary", accent: "bg-primary/15 border-primary/30" },
+  { id: "research", label: "RESEARCH", icon: Search, desc: "Deep", color: "text-accent", accent: "bg-accent/15 border-accent/30" },
+  { id: "study", label: "STUDY", icon: BookOpen, desc: "Study", color: "text-indigo-400", accent: "bg-indigo-400/15 border-indigo-400/30" },
+  { id: "code", label: "CODE", icon: Users, desc: "Multi-agent", color: "text-violet-400", accent: "bg-violet-400/15 border-violet-400/30" },
 ];
 
 const VALID_MODES: Mode[] = ["chat", "research", "study", "code"];
@@ -55,7 +56,6 @@ export default function Portal() {
   const navigate = useNavigate();
   const params = useParams<{ mode?: string; sessionId?: string }>();
 
-  // Derive active mode from URL param, default to "chat"
   const activeMode: Mode = (VALID_MODES.includes(params.mode as Mode) ? params.mode : "chat") as Mode;
   const urlSessionId = params.sessionId ?? null;
 
@@ -93,30 +93,6 @@ export default function Portal() {
   }, [token, user, ensureDailyBalance]);
 
   const conversations = useQuery(api.conversations.list, token ? { token } : "skip") as Conversation[] | undefined;
-  // Look up conversation by customId from URL
-  const convByCustomId = useQuery(
-    api.conversations.getByCustomId,
-    urlSessionId && token && activeMode !== "code" ? { customId: urlSessionId, token } : "skip"
-  ) as Conversation | null | undefined;
-
-  // Sync activeConvId from URL
-  useEffect(() => {
-    if (activeMode === "code") {
-      setActiveConvId(null);
-      return;
-    }
-    if (urlSessionId && convByCustomId !== undefined) {
-      if (convByCustomId) {
-        setActiveConvId(convByCustomId._id);
-      } else if (convByCustomId === null) {
-        // Invalid customId, redirect to mode root
-        navigate(`/portal/${activeMode}`, { replace: true });
-      }
-    } else if (!urlSessionId) {
-      setActiveConvId(null);
-    }
-  }, [urlSessionId, convByCustomId, activeMode, navigate]);
-
   const messages = useQuery(api.conversations.getMessages, activeConvId && token ? { conversationId: activeConvId, token } : "skip") as Message[] | undefined;
   const studyResources = useQuery(api.studyHelpers.listResources, token ? { token } : "skip") as StudyResource[] | undefined;
 
@@ -129,6 +105,14 @@ export default function Portal() {
   const deleteResource = useMutation(api.studyHelpers.deleteResource);
   const searchAndAddResource = useAction(api.study.searchAndAddResource);
   const processFileResource = useAction(api.study.processFileResource);
+
+  // Resolve conversation from URL session ID
+  useEffect(() => {
+    if (urlSessionId && conversations && activeMode !== "code") {
+      const conv = conversations.find((c: Conversation) => c.customId === urlSessionId);
+      if (conv) setActiveConvId(conv._id);
+    }
+  }, [urlSessionId, conversations, activeMode]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) navigate("/auth");
@@ -148,37 +132,38 @@ export default function Portal() {
   }, [messages, isThinking]);
 
   const setActiveMode = (mode: Mode) => {
-    navigate(`/portal/${mode}`);
     setActiveConvId(null);
+    navigate(`/portal/${mode}`, { replace: false });
   };
 
   const handleNewConversation = async () => {
     if (!token) return;
     try {
-      const result = await createConversation({ title: `${activeMode.toUpperCase()}_${Date.now().toString(36).toUpperCase()}`, mode: activeMode, token }) as { id: Id<"conversations">; customId: string };
-      navigate(`/portal/${activeMode}/${result.customId}`);
+      const result = await createConversation({ title: `${activeMode.toUpperCase()}_${Date.now().toString(36).toUpperCase()}`, mode: activeMode, token }) as { id: Id<"conversations">; customId: string } | Id<"conversations">;
+      const id = typeof result === "object" && "id" in result ? result.id : result as Id<"conversations">;
+      const customId = typeof result === "object" && "customId" in result ? result.customId : null;
+      setActiveConvId(id);
+      if (customId) navigate(`/portal/${activeMode}/${customId}`, { replace: false });
     } catch { toast.error("Failed to create conversation"); }
   };
 
   const handleSelectConversation = (conv: Conversation) => {
-    if (conv.customId) {
-      navigate(`/portal/${activeMode}/${conv.customId}`);
-    } else {
-      setActiveConvId(conv._id);
-    }
-    setSidebarOpen(typeof window !== "undefined" ? window.innerWidth >= 768 : true);
+    setActiveConvId(conv._id);
+    if (conv.customId) navigate(`/portal/${activeMode}/${conv.customId}`, { replace: false });
   };
 
   const handleSend = async () => {
     if (!input.trim() || isThinking || !token) return;
     let convId = activeConvId;
-    let isFirstMessage = !convId;
+    const isFirstMessage = !convId;
     if (!convId) {
       try {
-        const result = await createConversation({ title: input.slice(0, 40), mode: activeMode, token }) as { id: Id<"conversations">; customId: string };
-        convId = result.id;
-        setActiveConvId(convId);
-        navigate(`/portal/${activeMode}/${result.customId}`, { replace: true });
+        const result = await createConversation({ title: input.slice(0, 40), mode: activeMode, token }) as { id: Id<"conversations">; customId: string } | Id<"conversations">;
+        const id = typeof result === "object" && "id" in result ? result.id : result as Id<"conversations">;
+        const customId = typeof result === "object" && "customId" in result ? result.customId : null;
+        convId = id;
+        setActiveConvId(id);
+        if (customId) navigate(`/portal/${activeMode}/${customId}`, { replace: false });
       } catch { toast.error("Failed to create conversation"); return; }
     }
     const msg = input.trim();
@@ -246,6 +231,7 @@ export default function Portal() {
   const totalAB = dailyAB + purchasedAB;
 
   const filteredConvs = conversations?.filter((c: Conversation) => c.mode === activeMode) || [];
+  const currentMode = MODES.find(m => m.id === activeMode)!;
 
   if (isLoading) {
     return (
@@ -260,29 +246,48 @@ export default function Portal() {
 
   return (
     <div className="h-screen flex flex-col bg-background font-mono overflow-hidden">
-      {/* Header */}
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
       <header className="shrink-0 border-b border-border bg-card/80 backdrop-blur-sm z-20">
-        <div className="flex items-center justify-between px-4 h-12">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between px-3 h-11">
+          <div className="flex items-center gap-2">
             {activeMode !== "code" && (
-              <button onClick={() => setSidebarOpen(o => !o)} className="text-muted-foreground hover:text-primary transition-colors p-1 rounded hover:bg-primary/10 md:hidden">
-                {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+              <button onClick={() => setSidebarOpen(o => !o)} className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10 md:hidden">
+                {sidebarOpen ? <X className="h-3.5 w-3.5" /> : <Menu className="h-3.5 w-3.5" />}
               </button>
             )}
             <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded bg-primary/20 border border-primary/40 flex items-center justify-center">
-                <Cpu className="h-3 w-3 text-primary" />
+              <div className="w-5 h-5 rounded bg-primary/20 border border-primary/40 flex items-center justify-center">
+                <Cpu className="h-2.5 w-2.5 text-primary" />
               </div>
-              <span className="text-primary font-bold text-sm tracking-widest amd-glow">THALAMUS_AI</span>
+              <span className="text-primary font-bold text-xs tracking-widest amd-glow hidden sm:block">THALAMUS_AI</span>
             </div>
-            <span className="hidden sm:block text-[10px] text-muted-foreground border border-border px-1.5 py-0.5 rounded">PORTAL</span>
+            {/* Mode pills — desktop */}
+            <div className="hidden md:flex items-center gap-1 ml-2">
+              {MODES.map(mode => (
+                <button key={mode.id} onClick={() => setActiveMode(mode.id)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-bold transition-all ${activeMode === mode.id ? `${mode.accent} border ${mode.color}` : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
+                >
+                  <mode.icon className="h-3 w-3" />
+                  {mode.label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setCreditModalOpen(true)} className="flex items-center gap-1.5 text-xs border border-amber-400/30 bg-amber-400/10 text-amber-400 px-2.5 py-1 rounded-lg font-bold hover:bg-amber-400/20 transition-all">
+            {/* Session ID display */}
+            {urlSessionId && activeMode !== "code" && (
+              <div className="hidden sm:flex items-center gap-1 text-[9px] text-muted-foreground/60 border border-border/50 px-2 py-0.5 rounded font-mono">
+                <Hash className="h-2.5 w-2.5" />
+                {urlSessionId}
+              </div>
+            )}
+            <button onClick={() => setCreditModalOpen(true)} className="flex items-center gap-1.5 text-[11px] border border-amber-400/30 bg-amber-400/10 text-amber-400 px-2 py-1 rounded-lg font-bold hover:bg-amber-400/20 transition-all">
               <Zap className="h-3 w-3" />
-              <span>{totalAB.toLocaleString()} AB</span>
+              <span className="hidden sm:block">{totalAB.toLocaleString()}</span>
+              <span className="sm:hidden">{(totalAB / 1_000_000).toFixed(1)}M</span>
+              <span className="text-[9px] opacity-70">AB</span>
             </button>
-            <button onClick={signOut} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10">
+            <button onClick={signOut} className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10">
               <LogOut className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -299,7 +304,7 @@ export default function Portal() {
           )}
         </AnimatePresence>
 
-        {/* Sidebar */}
+        {/* ── Sidebar ─────────────────────────────────────────────────────── */}
         <AnimatePresence>
           {sidebarOpen && activeMode !== "code" && (
             <motion.aside
@@ -307,46 +312,51 @@ export default function Portal() {
               transition={{ duration: 0.2 }}
               className="fixed md:relative left-0 top-0 bottom-0 z-40 md:z-auto w-[220px] shrink-0 border-r border-border bg-card flex flex-col overflow-hidden"
             >
-              {/* Mode tabs */}
-              <div className="shrink-0 p-3 border-b border-border space-y-1">
-                {MODES.filter(m => m.id !== "code").map(mode => (
+              {/* Mode tabs — mobile only */}
+              <div className="shrink-0 p-2 border-b border-border space-y-0.5 md:hidden">
+                {MODES.map(mode => (
                   <button key={mode.id} onClick={() => { setActiveMode(mode.id); setSidebarOpen(typeof window !== "undefined" ? window.innerWidth >= 768 : true); }}
-                    className={`w-full flex items-center gap-2 px-3 py-2 rounded text-xs transition-all ${activeMode === mode.id ? "bg-primary/15 border border-primary/30 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded text-xs transition-all ${activeMode === mode.id ? `${mode.accent} border ${mode.color}` : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
                   >
                     <mode.icon className={`h-3.5 w-3.5 ${activeMode === mode.id ? mode.color : ""}`} />
                     <span className="font-bold">{mode.label}</span>
-                    <span className="text-[10px] opacity-60 ml-auto">{mode.desc.split(" ")[0]}</span>
+                    <span className="text-[10px] opacity-60 ml-auto">{mode.desc}</span>
                   </button>
                 ))}
-                <button onClick={() => { setActiveMode("code"); setSidebarOpen(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded text-xs transition-all text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                >
-                  <Users className="h-3.5 w-3.5" />
-                  <span className="font-bold">CODE</span>
-                  <span className="text-[10px] opacity-60 ml-auto">Multi-agent</span>
-                </button>
               </div>
 
-              {/* Conversations */}
+              {/* Sessions header */}
               <div className="shrink-0 px-3 pt-3 pb-2 flex items-center justify-between">
-                <span className="text-[10px] text-muted-foreground font-bold">SESSIONS</span>
+                <div className="flex items-center gap-1.5">
+                  <currentMode.icon className={`h-3 w-3 ${currentMode.color}`} />
+                  <span className="text-[10px] text-muted-foreground font-bold">SESSIONS</span>
+                </div>
                 <button onClick={handleNewConversation} className="w-5 h-5 rounded border border-border text-muted-foreground hover:text-primary hover:border-primary transition-all flex items-center justify-center">
                   <Plus className="h-3 w-3" />
                 </button>
               </div>
+
+              {/* Conversations list */}
               <div className="flex-1 overflow-y-auto min-h-0">
                 <div className="px-2 pb-2 space-y-0.5">
                   {filteredConvs.length === 0 ? (
-                    <p className="text-[10px] text-muted-foreground px-2 py-4 text-center">No sessions yet</p>
+                    <div className="text-center py-6">
+                      <p className="text-[10px] text-muted-foreground">No sessions yet</p>
+                      <button onClick={handleNewConversation} className={`mt-2 text-[10px] ${currentMode.color} hover:underline`}>
+                        + New session
+                      </button>
+                    </div>
                   ) : (
                     filteredConvs.map((conv: Conversation) => (
                       <div key={conv._id} onClick={() => handleSelectConversation(conv)}
-                        className={`group flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-all ${activeConvId === conv._id ? "bg-primary/15 border border-primary/20 text-primary" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
+                        className={`group flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-all ${activeConvId === conv._id ? `${currentMode.accent} border ${currentMode.color}` : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
                       >
-                        <span className="text-[10px] flex-1 truncate">{conv.title}</span>
-                        {conv.customId && <span className="text-[8px] text-muted-foreground/40 font-mono shrink-0">{conv.customId}</span>}
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[10px] block truncate">{conv.title}</span>
+                          {conv.customId && <span className="text-[8px] text-muted-foreground/40 font-mono">{conv.customId}</span>}
+                        </div>
                         <button onClick={async (e) => { e.stopPropagation(); if (!token) return; try { await deleteConversation({ id: conv._id, token }); if (activeConvId === conv._id) { setActiveConvId(null); navigate(`/portal/${activeMode}`); } } catch { toast.error("Failed to delete"); } }}
-                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
+                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all shrink-0">
                           <Trash2 className="h-3 w-3" />
                         </button>
                       </div>
@@ -358,19 +368,9 @@ export default function Portal() {
           )}
         </AnimatePresence>
 
-        {/* CODE mode */}
+        {/* ── CODE mode ───────────────────────────────────────────────────── */}
         {activeMode === "code" && (
           <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-            <div className="shrink-0 px-4 py-2 border-b border-border bg-card/50 flex items-center gap-3">
-              {MODES.map(mode => (
-                <button key={mode.id} onClick={() => setActiveMode(mode.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs transition-all ${activeMode === mode.id ? `bg-primary/15 border border-primary/30 ${mode.color} font-bold` : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
-                >
-                  <mode.icon className="h-3 w-3" />
-                  {mode.label}
-                </button>
-              ))}
-            </div>
             <TeamPortalInline
               token={token ?? ""}
               initialSessionCustomId={urlSessionId}
@@ -382,27 +382,20 @@ export default function Portal() {
           </div>
         )}
 
-        {/* Chat / Research / Study mode */}
+        {/* ── Chat / Research / Study mode ────────────────────────────────── */}
         {activeMode !== "code" && (
           <div className="flex-1 flex overflow-hidden min-w-0">
-            {/* Main chat area */}
             <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-              {/* Mode indicator bar */}
-              <div className="shrink-0 px-4 py-2 border-b border-border bg-card/50 flex items-center gap-2 flex-wrap">
-                {MODES.filter(m => m.id !== "code").map(mode => (
-                  <button key={mode.id} onClick={() => setActiveMode(mode.id)}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs transition-all ${activeMode === mode.id ? `bg-primary/15 border border-primary/30 ${mode.color} font-bold` : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
-                  >
-                    <mode.icon className="h-3 w-3" />
-                    {mode.label}
-                  </button>
-                ))}
-                <button onClick={() => setActiveMode("code")} className="flex items-center gap-1.5 px-3 py-1 rounded text-xs text-muted-foreground hover:text-violet-400 hover:bg-muted/50 transition-all ml-auto">
-                  <Users className="h-3 w-3" />CODE
-                </button>
+              {/* Sub-header: mode indicator + study resources toggle */}
+              <div className="shrink-0 px-3 py-1.5 border-b border-border bg-card/30 flex items-center gap-2">
+                <div className={`flex items-center gap-1.5 text-[11px] font-bold ${currentMode.color}`}>
+                  <currentMode.icon className="h-3 w-3" />
+                  {currentMode.label}
+                </div>
+                <span className="text-muted-foreground/40 text-[10px]">/portal/{activeMode}{urlSessionId ? `/${urlSessionId}` : ""}</span>
                 {activeMode === "study" && (
                   <button onClick={() => setStudyResourcesOpen(o => !o)}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs transition-all border ${studyResourcesOpen ? "bg-indigo-400/15 border-indigo-400/30 text-indigo-400 font-bold" : "border-border text-muted-foreground hover:text-indigo-400 hover:border-indigo-400/30"}`}
+                    className={`ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] border transition-all ${studyResourcesOpen ? "bg-indigo-400/15 border-indigo-400/30 text-indigo-400 font-bold" : "border-border text-muted-foreground hover:text-indigo-400 hover:border-indigo-400/30"}`}
                   >
                     <BookOpen className="h-3 w-3" />
                     Resources {studyResources ? `(${studyResources.length})` : ""}
@@ -414,21 +407,24 @@ export default function Portal() {
               <div className="flex-1 overflow-y-auto min-h-0">
                 <div className="p-4 space-y-4 max-w-4xl mx-auto">
                   {!activeConvId ? (
-                    <div className="flex flex-col items-center justify-center h-64 gap-4">
-                      <motion.div animate={{ scale: [1, 1.05, 1] }} transition={{ duration: 3, repeat: Infinity }}
-                        className={`w-16 h-16 rounded-2xl border flex items-center justify-center ${activeMode === "study" ? "border-indigo-400/30 bg-indigo-400/10" : "border-primary/30 bg-primary/10"}`}
-                      >
-                        {activeMode === "study" ? <BookOpen className="h-8 w-8 text-indigo-400" /> : <Cpu className="h-8 w-8 text-primary" />}
-                      </motion.div>
+                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                      className="flex flex-col items-center justify-center h-64 gap-4">
+                      <div className={`w-14 h-14 rounded-2xl border flex items-center justify-center ${currentMode.accent} border`}>
+                        <currentMode.icon className={`h-7 w-7 ${currentMode.color}`} />
+                      </div>
                       <div className="text-center">
-                        <p className="text-sm font-bold text-foreground">{activeMode === "study" ? "STUDY MODE" : "THALAMUS_AI"}</p>
+                        <p className="text-sm font-bold text-foreground">{currentMode.label} MODE</p>
                         <p className="text-xs text-muted-foreground mt-1">
                           {activeMode === "study"
-                            ? `Ask anything — ${studyResources?.length ? `${studyResources.length} resource(s) loaded` : "add resources for grounded answers"}`
+                            ? `${studyResources?.length ? `${studyResources.length} resource(s) loaded · ` : ""}Ask anything — live web search enabled`
                             : "Start a new session or select one from the sidebar"}
                         </p>
+                        <button onClick={handleNewConversation} className={`mt-3 flex items-center gap-1.5 mx-auto text-[11px] ${currentMode.color} border ${currentMode.accent} border px-3 py-1.5 rounded-lg hover:opacity-80 transition-all font-bold`}>
+                          <Plus className="h-3 w-3" />
+                          New Session
+                        </button>
                       </div>
-                    </div>
+                    </motion.div>
                   ) : messages === undefined ? (
                     <div className="flex items-center justify-center h-32"><Loader2 className="h-4 w-4 text-primary animate-spin" /></div>
                   ) : messages.length === 0 ? (
@@ -440,14 +436,14 @@ export default function Portal() {
                       <motion.div key={msg._id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                         className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                       >
-                        <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-foreground"}`}>
+                        <div className={`max-w-[82%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-foreground"}`}>
                           {msg.role === "assistant" ? (
-                            <div dangerouslySetInnerHTML={{ __html: msg.content }} />
+                            <div className="prose-html" dangerouslySetInnerHTML={{ __html: msg.content }} />
                           ) : (
                             <p className="whitespace-pre-wrap">{msg.content}</p>
                           )}
                           {msg.costCents !== undefined && msg.costCents > 0 && (
-                            <p className="text-[9px] opacity-50 mt-1 text-right">{Math.ceil(msg.costCents * 15_000).toLocaleString()} AB</p>
+                            <p className="text-[9px] opacity-40 mt-1.5 text-right">{Math.ceil(msg.costCents * 15_000).toLocaleString()} AB</p>
                           )}
                         </div>
                       </motion.div>
@@ -458,7 +454,7 @@ export default function Portal() {
                       <div className="bg-card border border-border rounded-2xl px-4 py-3">
                         <div className="flex items-center gap-1">
                           {[0, 1, 2].map(i => (
-                            <motion.div key={i} className="w-1.5 h-1.5 rounded-full bg-primary"
+                            <motion.div key={i} className={`w-1.5 h-1.5 rounded-full ${currentMode.color.replace("text-", "bg-")}`}
                               animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }}
                               transition={{ duration: 0.8, delay: i * 0.15, repeat: Infinity }} />
                           ))}
@@ -471,48 +467,49 @@ export default function Portal() {
               </div>
 
               {/* Input */}
-              <div className="shrink-0 p-4 border-t border-border bg-card/50">
+              <div className="shrink-0 p-3 border-t border-border bg-card/30">
                 <div className="max-w-4xl mx-auto flex gap-2">
                   <textarea
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder={activeMode === "study" ? "Ask a study question..." : "Type a message..."}
+                    placeholder={activeMode === "study" ? "Ask a study question — live web search enabled..." : activeMode === "research" ? "Research topic or question..." : "Type a message..."}
                     rows={1}
                     className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary/60 transition-colors"
                     style={{ minHeight: "36px", maxHeight: "120px" }}
                   />
                   <button onClick={handleSend} disabled={!input.trim() || isThinking}
-                    className="px-3 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 disabled:opacity-50 transition-all shrink-0">
+                    className={`px-3 py-2 rounded-xl disabled:opacity-50 transition-all shrink-0 ${activeMode === "study" ? "bg-indigo-500 text-white hover:bg-indigo-500/90" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}>
                     {isThinking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Study Resources Panel */}
+            {/* ── Study Resources Panel ──────────────────────────────────── */}
             <AnimatePresence>
               {activeMode === "study" && studyResourcesOpen && (
                 <motion.div
                   initial={{ width: 0, opacity: 0 }}
-                  animate={{ width: 280, opacity: 1 }}
+                  animate={{ width: 260, opacity: 1 }}
                   exit={{ width: 0, opacity: 0 }}
                   transition={{ duration: 0.2 }}
                   className="shrink-0 border-l border-border bg-card flex flex-col overflow-hidden"
-                  style={{ width: 280 }}
+                  style={{ width: 260 }}
                 >
-                  <div className="shrink-0 px-4 py-3 border-b border-border flex items-center justify-between">
+                  <div className="shrink-0 px-3 py-2.5 border-b border-border flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <BookOpen className="h-4 w-4 text-indigo-400" />
-                      <span className="text-xs font-bold text-foreground">STUDY RESOURCES</span>
+                      <BookOpen className="h-3.5 w-3.5 text-indigo-400" />
+                      <span className="text-[11px] font-bold text-foreground">RESOURCES</span>
+                      {studyResources && <span className="text-[9px] text-indigo-400 border border-indigo-400/30 bg-indigo-400/10 px-1.5 py-0.5 rounded-full">{studyResources.length}</span>}
                     </div>
                     <button onClick={() => setStudyResourcesOpen(false)} className="text-muted-foreground hover:text-foreground p-1">
-                      <X className="h-3.5 w-3.5" />
+                      <X className="h-3 w-3" />
                     </button>
                   </div>
 
                   {/* Add resource buttons */}
-                  <div className="shrink-0 p-3 border-b border-border space-y-2">
+                  <div className="shrink-0 p-2.5 border-b border-border space-y-2">
                     <div className="grid grid-cols-3 gap-1.5">
                       <button onClick={() => setStudyAddMode(studyAddMode === "text" ? null : "text")}
                         className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg text-[10px] border transition-all ${studyAddMode === "text" ? "bg-indigo-400/15 border-indigo-400/30 text-indigo-400" : "border-border text-muted-foreground hover:border-indigo-400/30 hover:text-indigo-400"}`}
@@ -522,21 +519,20 @@ export default function Portal() {
                       <button onClick={() => setStudyAddMode(studyAddMode === "search" ? null : "search")}
                         className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg text-[10px] border transition-all ${studyAddMode === "search" ? "bg-indigo-400/15 border-indigo-400/30 text-indigo-400" : "border-border text-muted-foreground hover:border-indigo-400/30 hover:text-indigo-400"}`}
                       >
-                        <Sparkles className="h-3.5 w-3.5" />AI Search
+                        <Sparkles className="h-3.5 w-3.5" />AI
                       </button>
                       <label className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg text-[10px] border transition-all cursor-pointer ${isAddingResource ? "opacity-50" : "border-border text-muted-foreground hover:border-indigo-400/30 hover:text-indigo-400"}`}>
                         {isAddingResource ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-                        File/Img
+                        File
                         <input ref={fileInputRef} type="file" className="hidden" accept="image/*,.pdf,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css" onChange={handleFileUpload} disabled={isAddingResource} />
                       </label>
                     </div>
 
-                    {/* Text add form */}
                     <AnimatePresence>
                       {studyAddMode === "text" && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden space-y-2">
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden space-y-1.5">
                           <input value={studyTextTitle} onChange={e => setStudyTextTitle(e.target.value)} placeholder="Title..." className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-[10px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-400/60 transition-colors" />
-                          <textarea value={studyTextContent} onChange={e => setStudyTextContent(e.target.value)} placeholder="Paste your notes, text, or content here..." rows={4} className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-[10px] text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-indigo-400/60 transition-colors" />
+                          <textarea value={studyTextContent} onChange={e => setStudyTextContent(e.target.value)} placeholder="Paste notes or content..." rows={3} className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-[10px] text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-indigo-400/60 transition-colors" />
                           <button onClick={handleAddTextResource} disabled={isAddingResource || !studyTextTitle.trim() || !studyTextContent.trim()}
                             className="w-full py-1.5 bg-indigo-400/15 border border-indigo-400/30 text-indigo-400 text-[10px] rounded-lg hover:bg-indigo-400/25 disabled:opacity-50 transition-all font-bold">
                             {isAddingResource ? <Loader2 className="h-3 w-3 animate-spin mx-auto" /> : "Add Resource"}
@@ -545,10 +541,9 @@ export default function Portal() {
                       )}
                     </AnimatePresence>
 
-                    {/* AI Search form */}
                     <AnimatePresence>
                       {studyAddMode === "search" && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden space-y-2">
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden space-y-1.5">
                           <input value={studySearchQuery} onChange={e => setStudySearchQuery(e.target.value)} onKeyDown={e => { if (e.key === "Enter") handleSearchResource(); }} placeholder="Topic to research..." className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-[10px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-400/60 transition-colors" />
                           <button onClick={handleSearchResource} disabled={isAddingResource || !studySearchQuery.trim()}
                             className="w-full py-1.5 bg-indigo-400/15 border border-indigo-400/30 text-indigo-400 text-[10px] rounded-lg hover:bg-indigo-400/25 disabled:opacity-50 transition-all font-bold">
@@ -571,12 +566,11 @@ export default function Portal() {
                       </div>
                     ) : (
                       studyResources.map((resource: StudyResource) => (
-                        <div key={resource._id} className="group bg-background border border-border rounded-lg p-2.5 hover:border-indigo-400/30 transition-all">
-                          <div className="flex items-start justify-between gap-2">
+                        <div key={resource._id} className="group bg-background border border-border rounded-lg p-2 hover:border-indigo-400/30 transition-all">
+                          <div className="flex items-start justify-between gap-1.5">
                             <div className="flex items-center gap-1.5 min-w-0">
                               {resource.sourceType === "image" ? <Image className="h-3 w-3 text-indigo-400 shrink-0" /> :
                                resource.sourceType === "web" ? <Globe className="h-3 w-3 text-indigo-400 shrink-0" /> :
-                               resource.sourceType === "file" ? <FileText className="h-3 w-3 text-indigo-400 shrink-0" /> :
                                <FileText className="h-3 w-3 text-indigo-400 shrink-0" />}
                               <p className="text-[10px] font-bold text-foreground truncate">{resource.title}</p>
                             </div>
@@ -585,12 +579,11 @@ export default function Portal() {
                               <Trash2 className="h-3 w-3" />
                             </button>
                           </div>
-                          <p className="text-[9px] text-muted-foreground mt-1 line-clamp-2">{resource.content.slice(0, 100)}</p>
-                          <div className="flex items-center gap-2 mt-1.5">
+                          <p className="text-[9px] text-muted-foreground mt-1 line-clamp-2">{resource.content.slice(0, 80)}</p>
+                          <div className="flex items-center gap-1.5 mt-1">
                             <span className={`text-[8px] px-1.5 py-0.5 rounded-full border font-bold ${resource.sourceType === "image" ? "bg-purple-400/10 text-purple-400 border-purple-400/20" : resource.sourceType === "web" ? "bg-blue-400/10 text-blue-400 border-blue-400/20" : "bg-indigo-400/10 text-indigo-400 border-indigo-400/20"}`}>
                               {resource.sourceType.toUpperCase()}
                             </span>
-                            <span className="text-[8px] text-muted-foreground">{new Date(resource.createdAt).toLocaleDateString()}</span>
                           </div>
                         </div>
                       ))
