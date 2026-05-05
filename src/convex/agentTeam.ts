@@ -199,22 +199,39 @@ export const vectorizeFile = internalAction({
 });
 
 // ─── Vectorize all files in a session (runs GraphRAG index after) ─────────────
-// Public wrapper for frontend to call
+// Public wrapper for frontend to call — does the work directly and returns actual count
 export const vectorizeSessionPublic = action({
   args: { sessionId: v.id("teamSessions"), token: v.optional(v.string()) },
   handler: async (ctx, args): Promise<{ indexed: number }> => {
     const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
-    await ctx.scheduler.runAfter(0, internal.agentTeam.vectorizeSession, { sessionId: args.sessionId });
-    return { indexed: 0 };
+    const files = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.sessionId })) as FileRow[];
+    let indexed = 0;
+    for (const file of files) {
+      if (!file.content.trim() || file.content.length < 10) continue;
+      const docId = `${args.sessionId}:${file.filepath}`;
+      const text = `FILE: ${file.filepath}\n\n${file.content.slice(0, 8000)}`;
+      try {
+        const res = await fetch(`${RAG_BASE_URL}/add_document`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: docId, text }),
+        });
+        if (res.ok) indexed++;
+      } catch { /* non-fatal */ }
+    }
+    // Run GraphRAG index after all documents are added (non-fatal if fails)
+    try {
+      await fetch(`${RAG_BASE_URL}/run_graphrag_index`, { method: "POST", headers: { "Content-Type": "application/json" } });
+    } catch { /* non-fatal */ }
+    return { indexed };
   },
 });
 
+// Internal version — no auth required (called from scheduler/background)
 export const vectorizeSession = internalAction({
   args: { sessionId: v.id("teamSessions"), token: v.optional(v.string()) },
   handler: async (ctx, args): Promise<{ indexed: number }> => {
-    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
-    if (!userId) throw new Error("Not authenticated");
     const files = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.sessionId })) as FileRow[];
     let indexed = 0;
     for (const file of files) {
