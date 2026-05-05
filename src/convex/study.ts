@@ -215,6 +215,11 @@ export const sendStudyMessage = action({
     conversationId: v.id("conversations"),
     content: v.string(),
     token: v.string(),
+    userContext: v.optional(v.object({
+      datetime: v.string(),
+      timezone: v.string(),
+      location: v.optional(v.string()),
+    })),
   },
   handler: async (ctx, args): Promise<string> => {
     const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
@@ -248,7 +253,11 @@ export const sendStudyMessage = action({
       ).join("\n\n---\n\n");
     }
 
-    const systemPrompt = `You are a Study Assistant powered by Thalamus AI. You help students learn and understand topics accurately.
+    const contextHeader = args.userContext
+      ? `\n\n## CURRENT USER CONTEXT:\n- Date/Time: ${args.userContext.datetime}\n- Timezone: ${args.userContext.timezone}${args.userContext.location ? `\n- Location: ${args.userContext.location}` : ""}\n\nUse this context for time-sensitive questions (e.g., current academic year, upcoming exams, etc.).\n`
+      : "";
+
+    const systemPrompt = `You are a Study Assistant powered by Thalamus AI. You help students learn and understand topics accurately.${contextHeader}
 
 CRITICAL: The LIVE WEB SEARCH RESULTS below are scraped directly from real websites RIGHT NOW. They are the most current and accurate information available. You MUST use them as your primary source. Do NOT use your training data when live results are available — your training data may be outdated.
 

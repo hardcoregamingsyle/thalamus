@@ -169,11 +169,18 @@ export default function Portal() {
     const msg = input.trim();
     setInput("");
     setIsThinking(true);
+    // Build user context with current datetime and timezone
+    const userContext = {
+      datetime: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "short" }),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      location: undefined as string | undefined,
+    };
+
     try {
       if (activeMode === "study") {
-        await sendStudyMessage({ conversationId: convId, content: msg, token });
+        await sendStudyMessage({ conversationId: convId, content: msg, token, userContext });
       } else {
-        await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token });
+        await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext });
       }
       if (isFirstMessage && convId) {
         generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});

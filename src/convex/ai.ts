@@ -131,6 +131,11 @@ export const sendMessage = action({
     content: v.string(),
     mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code")),
     token: v.optional(v.string()),
+    userContext: v.optional(v.object({
+      datetime: v.string(),
+      timezone: v.string(),
+      location: v.optional(v.string()),
+    })),
   },
   handler: async (ctx, args): Promise<string> => {
     const userId: Id<"users"> | null = await ctx.runQuery(
@@ -221,8 +226,13 @@ Always explain your code with clear HTML-formatted text before and after code bl
       })
     );
 
+    // Inject user context (datetime + location) into the system prompt
+    const contextHeader = args.userContext
+      ? `\n\n## CURRENT USER CONTEXT:\n- Date/Time: ${args.userContext.datetime}\n- Timezone: ${args.userContext.timezone}${args.userContext.location ? `\n- Location: ${args.userContext.location}` : ""}\n\nAlways use this context when answering time-sensitive or location-specific questions.\n`
+      : "";
+
     const { text: responseContent, inputTokens, outputTokens } = await callGeminiChat(
-      systemPrompts[args.mode],
+      systemPrompts[args.mode] + contextHeader,
       messages,
       4096
     );
