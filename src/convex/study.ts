@@ -305,9 +305,12 @@ Be educational, clear, and accurate.`;
     }
 
     // Haiku 4.5 pricing: $1/$5 per million tokens (in dollars) = 100/500 cents per million
-    const inputCostCents = (inputTokens / 1_000_000) * 100;
-    const outputCostCents = (outputTokens / 1_000_000) * 500;
-    const costCents = Math.max(1, Math.ceil(inputCostCents + outputCostCents));
+    // If tokens are 0 (VLY fallback), estimate from response length (~4 chars per token)
+    const estimatedInput = inputTokens || Math.ceil(fullPrompt.length / 4);
+    const estimatedOutput = outputTokens || Math.ceil(responseContent.length / 4);
+    const inputCostCents = (estimatedInput / 1_000_000) * 100;
+    const outputCostCents = (estimatedOutput / 1_000_000) * 500;
+    const costCents = Math.max(0.001, inputCostCents + outputCostCents);
 
     await ctx.runMutation(internal.aiHelpers.saveAssistantMessage, {
       conversationId: args.conversationId,
