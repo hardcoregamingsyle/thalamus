@@ -2220,6 +2220,188 @@ export const syncGithub = action({
   },
 });
 
+// ─── Branch Management ────────────────────────────────────────────────────────
+export const createBranch = action({
+  args: {
+    mainSessionId: v.id("teamSessions"),
+    branchPurpose: v.string(), // e.g. "Android APK", "Windows EXE"
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ branchSessionId: Id<"teamSessions">; branchCustomId: string; groupId: string; groupName: string }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const mainSession = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.mainSessionId })) as SessionRow | null;
+    if (!mainSession) throw new Error("Session not found");
+    if (mainSession.userId !== userId) throw new Error("Not authorized");
+
+    // Use Gemini to generate a group name and branch task
+    let groupName = `${mainSession.title.slice(0, 30)} Group`;
+    let branchTask = `${args.branchPurpose}: ${mainSession.task}`;
+    let branchTitle = `${args.branchPurpose} — ${mainSession.title.slice(0, 40)}`;
+
+    try {
+      const techStack = mainSession.techStackJson ? (() => { try { return JSON.parse(mainSession.techStackJson); } catch { return null; } })() : null;
+      const techStackStr = techStack ? `\nTech Stack: ${JSON.stringify(techStack).slice(0, 500)}` : "";
+      const prompt = `You are helping organize a software project into branches.
+
+Main Project: "${mainSession.title}"
+Main Task: "${mainSession.task}"${techStackStr}
+New Branch Purpose: "${args.branchPurpose}"
+
+Generate:
+1. A short group name (max 5 words) that describes the overall project family
+2. A specific task description for the new branch (1-2 sentences)
+3. A short title for the new branch (max 8 words)
+
+Respond in JSON only:
+{"groupName": "...", "branchTask": "...", "branchTitle": "..."}`;
+
+      const result = await callGemini(prompt, "You are a concise project naming assistant. Respond only with valid JSON.");
+      const parsed = JSON.parse(result.text) as { groupName?: string; branchTask?: string; branchTitle?: string };
+      if (parsed.groupName) groupName = parsed.groupName;
+      if (parsed.branchTask) branchTask = parsed.branchTask;
+      if (parsed.branchTitle) branchTitle = parsed.branchTitle;
+    } catch { /* use defaults */ }
+
+    // Check if main session already has a branch group
+    let groupId: Id<"sessionBranchGroups">;
+    const existingGroupId = (mainSession as Record<string, unknown>).branchGroupId as string | undefined;
+
+    if (existingGroupId) {
+      // Already in a group — use existing group
+      groupId = existingGroupId as Id<"sessionBranchGroups">;
+      // Get current branch count
+      const group = await ctx.runQuery(internal.agentTeamHelpers.getBranchGroupQuery, { groupId });
+      const branchNumber = (group?.branchSessionIds?.length ?? 0) + 2; // +2 because main is 1
+
+      // Create the new branch session
+      const branchResult = (await ctx.runMutation(internal.agentTeamHelpers.createSessionMutation, {
+        userId,
+        task: branchTask,
+        title: branchTitle,
+      })) as { sessionId: Id<"teamSessions">; customId: string };
+
+      // Copy files from main session to branch
+      const mainFiles = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.mainSessionId })) as FileRow[];
+      for (const file of mainFiles) {
+        await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
+          sessionId: branchResult.sessionId,
+          userId,
+          filepath: file.filepath,
+          content: file.content,
+          agent: "Branch Copy",
+        });
+      }
+
+      // Copy tech stack and summaries
+      if (mainSession.techStackJson) {
+        await ctx.runMutation(internal.agentTeamHelpers.updateTechStack, { sessionId: branchResult.sessionId, techStackJson: mainSession.techStackJson });
+      }
+
+      await ctx.runMutation(internal.agentTeamHelpers.addBranchToGroupMutation, {
+        groupId,
+        branchSessionId: branchResult.sessionId,
+        branchName: args.branchPurpose,
+        branchPurpose: args.branchPurpose,
+        branchNumber,
+        mainSessionId: args.mainSessionId,
+      });
+
+      return { branchSessionId: branchResult.sessionId, branchCustomId: branchResult.customId, groupId, groupName };
+    } else {
+      // Create new branch group
+      const projectSummary = mainSession.taskSummariesJson ? (() => {
+        try {
+          const summaries = JSON.parse(mainSession.taskSummariesJson) as Array<{ summary: string }>;
+          return summaries.map(s => s.summary).join("\n\n").slice(0, 1000);
+        } catch { return undefined; }
+      })() : undefined;
+
+      groupId = (await ctx.runMutation(internal.agentTeamHelpers.createBranchGroupMutation, {
+        userId,
+        groupName,
+        mainSessionId: args.mainSessionId,
+        projectSummary,
+      })) as Id<"sessionBranchGroups">;
+
+      // Create the new branch session
+      const branchResult = (await ctx.runMutation(internal.agentTeamHelpers.createSessionMutation, {
+        userId,
+        task: branchTask,
+        title: branchTitle,
+      })) as { sessionId: Id<"teamSessions">; customId: string };
+
+      // Copy files from main session to branch
+      const mainFiles = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.mainSessionId })) as FileRow[];
+      for (const file of mainFiles) {
+        await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
+          sessionId: branchResult.sessionId,
+          userId,
+          filepath: file.filepath,
+          content: file.content,
+          agent: "Branch Copy",
+        });
+      }
+
+      // Copy tech stack
+      if (mainSession.techStackJson) {
+        await ctx.runMutation(internal.agentTeamHelpers.updateTechStack, { sessionId: branchResult.sessionId, techStackJson: mainSession.techStackJson });
+      }
+
+      await ctx.runMutation(internal.agentTeamHelpers.addBranchToGroupMutation, {
+        groupId,
+        branchSessionId: branchResult.sessionId,
+        branchName: args.branchPurpose,
+        branchPurpose: args.branchPurpose,
+        branchNumber: 2,
+        mainSessionId: args.mainSessionId,
+      });
+
+      return { branchSessionId: branchResult.sessionId, branchCustomId: branchResult.customId, groupId, groupName };
+    }
+  },
+});
+
+// Propagate main branch file updates to all child branches
+export const propagateBranchUpdate = action({
+  args: {
+    mainSessionId: v.id("teamSessions"),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ updated: number }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const mainSession = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.mainSessionId })) as SessionRow | null;
+    if (!mainSession || mainSession.userId !== userId) throw new Error("Not authorized");
+
+    const branchGroupId = (mainSession as Record<string, unknown>).branchGroupId as string | undefined;
+    if (!branchGroupId) return { updated: 0 };
+
+    const group = await ctx.runQuery(internal.agentTeamHelpers.getBranchGroupQuery, { groupId: branchGroupId as Id<"sessionBranchGroups"> });
+    if (!group) return { updated: 0 };
+
+    const mainFiles = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.mainSessionId })) as FileRow[];
+    let updated = 0;
+
+    for (const branchId of group.branchSessionIds) {
+      for (const file of mainFiles) {
+        await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
+          sessionId: branchId,
+          userId,
+          filepath: file.filepath,
+          content: file.content,
+          agent: "Branch Sync from Main",
+        });
+      }
+      updated++;
+    }
+
+    return { updated };
+  },
+});
+
 // ─── Other actions ────────────────────────────────────────────────────────────
 export const listSessions = action({
   args: { token: v.optional(v.string()) },
