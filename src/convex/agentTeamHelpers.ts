@@ -64,7 +64,7 @@ export const getSessionMessages = internalQuery({
       .query("agentMessages")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
       .order("asc")
-      .take(200);
+      .take(700);
   },
 });
 
@@ -139,7 +139,7 @@ export const watchMessages = query({
       .query("agentMessages")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
       .order("asc")
-      .take(200);
+      .take(700);
   },
 });
 

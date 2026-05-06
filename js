@@ -1,4 +1,3 @@
-const childMap = new Map<string, FileTreeNode>();
-for (const child of folder.children) childMap.set(child.name, child);
-(folder as FileTreeNode & { _map: Map<string, FileTreeNode> })._map = childMap;
-currentMap = childMap;
+const allMessages: AgentMessage[] = [...agentMessages, ...userMessages].sort((a, b) =>
+  (a.messageIndex ?? 0) - (b.messageIndex ?? 0)
+);
