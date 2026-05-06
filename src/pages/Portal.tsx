@@ -230,10 +230,10 @@ export default function Portal() {
   useEffect(() => {
     if (activeConvId && conversations) {
       const conv = conversations.find((c: Conversation) => c._id === activeConvId);
-      if (conv) { document.title = `${conv.title} | Aether AI`; return; }
+      if (conv) { document.title = `${conv.title} | Thalamus AI`; return; }
     }
-    document.title = "Aether AI";
-    return () => { document.title = "Aether AI"; };
+    document.title = "Thalamus AI";
+    return () => { document.title = "Thalamus AI"; };
   }, [activeConvId, conversations]);
 
   useEffect(() => {
@@ -354,7 +354,7 @@ export default function Portal() {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-6 w-6 text-primary animate-spin" />
-          <p className="text-primary font-mono text-xs animate-pulse">INITIALIZING AETHER_AI...</p>
+          <p className="text-primary font-mono text-xs animate-pulse">INITIALIZING THALAMUS_AI...</p>
         </div>
       </div>
     );
@@ -375,7 +375,7 @@ export default function Portal() {
               <div className="w-5 h-5 rounded bg-primary/20 border border-primary/40 flex items-center justify-center">
                 <Cpu className="h-2.5 w-2.5 text-primary" />
               </div>
-              <span className="text-primary font-bold text-xs tracking-widest amd-glow hidden sm:block">AETHER_AI</span>
+              <span className="text-primary font-bold text-xs tracking-widest amd-glow hidden sm:block">THALAMUS_AI</span>
             </div>
             {/* Mode pills — desktop */}
             <div className="hidden md:flex items-center gap-1 ml-2">

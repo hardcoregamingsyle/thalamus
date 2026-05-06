@@ -1198,11 +1198,11 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   // Update document title based on active session
   useEffect(() => {
     if (sessionInfo?.title) {
-      document.title = `${sessionInfo.title} | Aether AI`;
+      document.title = `${sessionInfo.title} | Thalamus AI`;
     } else {
-      document.title = "Aether AI";
+      document.title = "Thalamus AI";
     }
-    return () => { document.title = "Aether AI"; };
+    return () => { document.title = "Thalamus AI"; };
   }, [sessionInfo?.title]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [allMessages, sessionInfo?.currentAgentOutput]);
   useEffect(() => { sandboxOutputEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [sandboxOutput]);
