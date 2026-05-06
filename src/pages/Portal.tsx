@@ -11,7 +11,7 @@ import {
   MessageSquare, Search, Plus, Trash2, LogOut,
   Send, Loader2, Menu, X, Users, Cpu, Zap, BookOpen,
   FileText, Globe, Image, Upload, Sparkles, ChevronRight,
-  Hash, Lightbulb,
+  Hash, Lightbulb, Lock,
 } from "lucide-react";
 import TeamPortalInline from "./TeamPortalInline";
 
@@ -230,10 +230,10 @@ export default function Portal() {
   useEffect(() => {
     if (activeConvId && conversations) {
       const conv = conversations.find((c: Conversation) => c._id === activeConvId);
-      if (conv) { document.title = `${conv.title} | Thalamus AI`; return; }
+      if (conv) { document.title = `${conv.title} | Aether AI`; return; }
     }
-    document.title = "Thalamus AI";
-    return () => { document.title = "Thalamus AI"; };
+    document.title = "Aether AI";
+    return () => { document.title = "Aether AI"; };
   }, [activeConvId, conversations]);
 
   useEffect(() => {
@@ -354,7 +354,7 @@ export default function Portal() {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-6 w-6 text-primary animate-spin" />
-          <p className="text-primary font-mono text-xs animate-pulse">INITIALIZING THALAMUS_AI...</p>
+          <p className="text-primary font-mono text-xs animate-pulse">INITIALIZING AETHER_AI...</p>
         </div>
       </div>
     );
@@ -375,7 +375,7 @@ export default function Portal() {
               <div className="w-5 h-5 rounded bg-primary/20 border border-primary/40 flex items-center justify-center">
                 <Cpu className="h-2.5 w-2.5 text-primary" />
               </div>
-              <span className="text-primary font-bold text-xs tracking-widest amd-glow hidden sm:block">THALAMUS_AI</span>
+              <span className="text-primary font-bold text-xs tracking-widest amd-glow hidden sm:block">AETHER_AI</span>
             </div>
             {/* Mode pills — desktop */}
             <div className="hidden md:flex items-center gap-1 ml-2">
@@ -565,7 +565,17 @@ export default function Portal() {
                       </div>
                     </motion.div>
                   ) : messages === undefined ? (
-                    <div className="flex items-center justify-center h-32"><Loader2 className="h-4 w-4 text-primary animate-spin" /></div>
+                    <div className="p-4 space-y-3 max-w-4xl mx-auto">
+                      {[1, 2, 3].map(i => (
+                        <div key={i} className={`flex ${i % 2 === 0 ? "justify-end" : "justify-start"}`}>
+                          <div className={`rounded-2xl px-4 py-3 space-y-2 ${i % 2 === 0 ? "w-48" : "w-72"}`}>
+                            <div className="h-3 bg-muted/40 rounded animate-pulse" />
+                            <div className="h-3 bg-muted/30 rounded animate-pulse w-4/5" />
+                            {i % 2 !== 0 && <div className="h-3 bg-muted/20 rounded animate-pulse w-3/5" />}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   ) : messages.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-32 gap-2">
                       <p className="text-xs text-muted-foreground">Send a message to begin</p>
@@ -621,6 +631,10 @@ export default function Portal() {
                     className={`px-3 py-2 rounded-xl disabled:opacity-50 transition-all shrink-0 ${activeMode === "study" ? "bg-indigo-500 text-white hover:bg-indigo-500/90" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}>
                     {isThinking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   </button>
+                </div>
+                <div className="max-w-4xl mx-auto mt-1.5 flex items-center justify-center gap-1.5">
+                  <Lock className="h-2.5 w-2.5 text-muted-foreground/40" />
+                  <span className="text-[9px] text-muted-foreground/40">End-to-End Encrypted Node. Your data is private to this session.</span>
                 </div>
               </div>
             </div>

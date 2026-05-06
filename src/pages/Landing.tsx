@@ -107,7 +107,7 @@ function LivePipeline() {
         <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
         <div className="w-2.5 h-2.5 rounded-full bg-accent" />
         <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-        <span className="text-[11px] text-muted-foreground ml-2 font-mono">thalamus — code session</span>
+        <span className="text-[11px] text-muted-foreground ml-2 font-mono">aether — code session</span>
         <div className="ml-auto flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-[10px] text-emerald-400 font-mono">RUNNING</span>
@@ -180,7 +180,7 @@ export default function Landing() {
             <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center">
               <Cpu className="h-3.5 w-3.5 text-primary" />
             </div>
-            <span className="text-primary font-bold text-sm tracking-widest amd-glow">THALAMUS_AI</span>
+            <span className="text-primary font-bold text-sm tracking-widest amd-glow">AETHER_AI</span>
             <span className="hidden sm:block text-[10px] text-muted-foreground border border-border px-2 py-0.5 rounded-full">
               L4.5 Agent · by Aphantic
             </span>
@@ -310,7 +310,7 @@ export default function Landing() {
 
           <div className="grid md:grid-cols-3 gap-4 mb-12">
             {[
-              { step: "01", title: "Describe your project", desc: "Type what you want to build. Thalamus AI handles everything from research to deployment.", icon: Terminal },
+              { step: "01", title: "Describe your project", desc: "Type what you want to build. Aether AI handles everything from research to deployment.", icon: Terminal },
               { step: "02", title: "Agents plan & execute", desc: "The Planner breaks it into 12-20 atomic tasks. Each agent runs its specialized role in sequence.", icon: Layers },
               { step: "03", title: "Production-ready output", desc: "Complete codebase, tests, docs, security audit — deployed to a live cloud sandbox.", icon: Rocket },
             ].map((item, i) => (
@@ -379,7 +379,7 @@ export default function Landing() {
                 Pay per token, <span className="text-amber-400">not per seat.</span>
               </h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-6">
-                AgentBucks (AB) is the internal currency of Thalamus AI. Every model call deducts AB proportional to actual token usage. Daily free allocation + purchasable credits.
+                AgentBucks (AB) is the internal currency of Aether AI. Every model call deducts AB proportional to actual token usage. Daily free allocation + purchasable credits.
               </p>
               <div className="space-y-3">
                 {[
@@ -488,7 +488,7 @@ export default function Landing() {
             <div className="w-6 h-6 rounded bg-primary/20 border border-primary/40 flex items-center justify-center">
               <Cpu className="h-3 w-3 text-primary" />
             </div>
-            <span className="text-primary font-bold text-xs tracking-widest">THALAMUS_AI</span>
+            <span className="text-primary font-bold text-xs tracking-widest">AETHER_AI</span>
             <span className="text-[10px] text-muted-foreground">by Aphantic Corporations</span>
           </div>
           <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
