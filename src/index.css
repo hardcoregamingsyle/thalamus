@@ -317,3 +317,38 @@ body::after {
 .prose-html table { width: 100%; border-collapse: collapse; margin: 0.5em 0; }
 .prose-html a { color: oklch(0.65 0.15 250); }
 .prose-html blockquote { border-left: 3px solid var(--color-border); padding-left: 0.8em; margin: 0.5em 0; }
+.prose-html audio {
+  width: 100%;
+  margin: 0.5em 0;
+  border-radius: 8px;
+  accent-color: oklch(0.65 0.15 250);
+}
+.prose-html video {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 0.5em 0;
+  background: #000;
+}
+.prose-html img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 0.5em 0;
+  display: block;
+}
+.prose-html .file-download {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.6em 1em;
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  margin: 0.5em 0;
+  color: #60a5fa;
+  text-decoration: none;
+  font-size: 0.85em;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.prose-html .file-download:hover { background: #374151; }
