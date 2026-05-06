@@ -20,7 +20,7 @@ const RAG_BASE_URL = "https://leadshello-graph-rag-and-chroma-db.hf.space";
 // "tasks"         → For each task: Researcher → Analyser → [Planner if subpart] → Coder → Optimiser → Organizer → Tester → Hacker → Critic
 // "final_review"  → Researcher → Analyser → Optimiser → Organizer → Tester → Hacker → Critic
 
-const PLANNING_PIPELINE = ["Researcher", "Analyser", "Planner"];
+const PLANNING_PIPELINE = ["Researcher", "Analyser", "Planner", "Architect"];
 
 // Per-task pipeline — Summarizer runs after Critic approves
 const TASK_PIPELINE_FULL = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic", "Summarizer"];
@@ -54,6 +54,7 @@ type SessionRow = {
   taskUpgradeMessagesLeft?: number;   // messages remaining in upgrade window
   unfixableTasksJson?: string;        // JSON string of { taskIndex: number, title: string }[]
   manualUpgradeEnabled?: boolean;     // user-activated: force upgrade on next rejection
+  techStackJson?: string;          // Architect output — shared with all agents
 };
 type MsgRow = { _id: Id<"agentMessages">; agent: string; content: string; round?: number; messageIndex?: number };
 type FileRow = { _id: Id<"projectFiles">; filepath: string; content: string; lastModifiedBy: string };
@@ -992,14 +993,18 @@ export const runAgentRound = action({
     const phaseLabel = executionPhase === "planning" ? "PLANNING PHASE" : executionPhase === "final_review" ? "FINAL REVIEW" : `TASK ${currentTaskIndex + 1}/${plannerTasks.length}`;
     // Add upgrade notice to prompt if active
     const upgradeNotice = taskUpgradeActive ? `\n\n⚡ MODAL UPGRADE ACTIVE: You are running at maximum capability (Opus tier). This task has been difficult — give your absolute best output.` : "";
+    // Tech stack context — shared with all agents after Architect runs
+    const techStackContext = session.techStackJson
+      ? `\n\n## APPROVED TECH STACK (defined by Architect — MUST follow this exactly):\n${session.techStackJson}`
+      : "";
     // For Summarizer: pass ALL previous summaries as context so it can produce a cumulative summary
     const summarizerContext = currentPhase === "Summarizer" && taskSummaries.length > 0
       ? `\n\nPREVIOUS TASK SUMMARIES (incorporate ALL of this into your new cumulative summary):\n${taskSummaries.map(s => `=== Task ${s.taskIndex + 1} Summary ===\n${s.summary}`).join("\n\n")}`
       : "";
 
     const prompt = prevMessages.length === 0
-      ? `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}${upgradeNotice}\n\nYou are the first agent (${currentPhase}). Begin your work.${filesContext}${sandboxContext}`
-      : `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nTASK MESSAGES: ${taskMessageCount + 1}/${MAX_TASK_MESSAGES}\nLOOP: ${loopCount + 1}${upgradeNotice}${summarizerContext}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
+      ? `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}${upgradeNotice}${techStackContext}\n\nYou are the first agent (${currentPhase}). Begin your work.${filesContext}${sandboxContext}`
+      : `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nTASK MESSAGES: ${taskMessageCount + 1}/${MAX_TASK_MESSAGES}\nLOOP: ${loopCount + 1}${upgradeNotice}${techStackContext}${summarizerContext}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
 
     await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
       sessionId: args.sessionId, status: "running", currentAgent: currentPhase,
@@ -1064,6 +1069,21 @@ export const runAgentRound = action({
           sessionId: args.sessionId,
           plannerTasksJson: JSON.stringify(plannerTasks),
         });
+      }
+    }
+
+    // If Architect, extract and store the tech stack
+    if (currentPhase === "Architect" && executionPhase === "planning") {
+      // Try to parse JSON from the Architect output
+      const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          JSON.parse(jsonMatch[0]); // validate it's valid JSON
+          await ctx.runMutation(internal.agentTeamHelpers.updateTechStack, {
+            sessionId: args.sessionId,
+            techStackJson: jsonMatch[0],
+          });
+        } catch { /* ignore invalid JSON */ }
       }
     }
 
@@ -1153,7 +1173,24 @@ export const runAgentRound = action({
 
     if (executionPhase === "planning") {
       // Planning phase: advance through PLANNING_PIPELINE
-      if (currentPhase === "Planner") {
+      if (currentPhase === "Architect") {
+        // Architect is the last step in planning — now move to tasks
+        newExecutionPhase = "tasks";
+        newTaskIndex = 0;
+        newTaskMessageCount = 0;
+        const taskPipeline = getPipeline("tasks", plannerTasks, 0, false);
+        nextPhase = taskPipeline[0];
+        await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+          sessionId: args.sessionId, status: "idle", currentAgent: taskPipeline[0], loopCount: newLoopCount,
+          phase: taskPipeline[0], totalMessages: newTotalMessages, executionPhase: "tasks", currentTaskIndex: 0,
+          finalReviewCoderEnabled: false,
+        });
+        return { agent: currentPhase, content: parsed.cleanContent, done: false, nextAgent: taskPipeline[0], loopCount: newLoopCount, totalMessages: newTotalMessages, fileOpsCount };
+      } else if (currentPhase === "Planner") {
+        // After Planner, move to Architect (next in PLANNING_PIPELINE)
+        nextPhase = "Architect";
+      } else if (false && currentPhase === "Planner_DISABLED") {
+        // Legacy: Planner used to transition directly to tasks — now Architect does it
         newExecutionPhase = "tasks";
         newTaskIndex = 0;
         newTaskMessageCount = 0; // reset for first task
@@ -1485,14 +1522,18 @@ export const backgroundRunOneRound = internalAction({
 
     const systemPrompt = AGENT_SYSTEM_PROMPTS[currentPhase] || AGENT_SYSTEM_PROMPTS["Researcher"];
     const phaseLabel = executionPhase === "planning" ? "PLANNING PHASE" : executionPhase === "final_review" ? "FINAL REVIEW" : `TASK ${currentTaskIndex + 1}/${plannerTasks.length}`;
+    // Tech stack context — shared with all agents after Architect runs
+    const techStackContextBg = session.techStackJson
+      ? `\n\n## APPROVED TECH STACK (defined by Architect — MUST follow this exactly):\n${session.techStackJson}`
+      : "";
     // For Summarizer: pass ALL previous summaries as context so it can produce a cumulative summary
     const summarizerContext = currentPhase === "Summarizer" && taskSummaries.length > 0
       ? `\n\nPREVIOUS TASK SUMMARIES (incorporate ALL of this into your new cumulative summary):\n${taskSummaries.map(s => `=== Task ${s.taskIndex + 1} Summary ===\n${s.summary}`).join("\n\n")}`
       : "";
 
     const prompt = prevMessages.length === 0
-      ? `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\n\nYou are the first agent (${currentPhase}). Begin your work.${filesContext}${sandboxContext}`
-      : `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nLOOP: ${loopCount + 1}${summarizerContext}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
+      ? `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}${techStackContextBg}\n\nYou are the first agent (${currentPhase}). Begin your work.${filesContext}${sandboxContext}`
+      : `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nLOOP: ${loopCount + 1}${techStackContextBg}${summarizerContext}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
 
     await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
       sessionId: args.sessionId, status: "running", currentAgent: currentPhase,
