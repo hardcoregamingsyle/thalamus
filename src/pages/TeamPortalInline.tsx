@@ -9,7 +9,7 @@ import {
   Play, Square, Send, FileCode, Monitor, ChevronRight, Activity,
   MessageSquare, StopCircle, ListPlus, Cpu, Shield, Search, Code2,
   CheckSquare, AlertCircle, RefreshCw, Upload, Menu, X, PanelLeftClose, PanelLeftOpen,
-  Github, Database, ClipboardList,
+  Github, Database, ClipboardList, GitBranch, Network,
 } from "lucide-react";
 import { FileTreeView, FileTreeFile, FileTreeNode } from "@/components/FileTree";
 import ReactMarkdown from "react-markdown";
@@ -373,6 +373,104 @@ function InfoRequestCard({
         {isSubmitting ? "Submitting..." : "Send to Agent"}
       </button>
     </motion.div>
+  );
+}
+
+// ── Branch Modal ──────────────────────────────────────────────────────────────
+function BranchModal({
+  session,
+  onClose,
+  onBranch,
+  isBranching,
+}: {
+  session: TeamSession;
+  onClose: () => void;
+  onBranch: (purpose: string) => Promise<void>;
+  isBranching: boolean;
+}) {
+  const [purpose, setPurpose] = useState("");
+  const BRANCH_PRESETS = [
+    { icon: "📱", label: "Android APK", desc: "Build an Android app from this project" },
+    { icon: "🖥️", label: "Windows EXE", desc: "Package as a Windows executable" },
+    { icon: "🍎", label: "macOS App", desc: "Build a native macOS application" },
+    { icon: "🐳", label: "Docker Container", desc: "Containerize with Docker" },
+    { icon: "☁️", label: "Cloud Deploy", desc: "Deploy to cloud (AWS/GCP/Azure)" },
+    { icon: "🔌", label: "API Service", desc: "Extract as a standalone API" },
+    { icon: "🧩", label: "Plugin/Extension", desc: "Build as a browser extension or plugin" },
+    { icon: "📦", label: "NPM Package", desc: "Publish as an npm package" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="relative z-10 bg-card border border-border rounded-2xl p-6 max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <GitBranch className="h-5 w-5 text-violet-400" />
+            <h3 className="text-sm font-bold text-foreground">Create Branch</h3>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mb-4 p-3 bg-violet-400/5 border border-violet-400/20 rounded-xl">
+          <p className="text-[10px] text-violet-400 font-bold">MAIN BRANCH</p>
+          <p className="text-xs text-foreground truncate">{session.title}</p>
+          <p className="text-[9px] text-muted-foreground mt-0.5">This session becomes Branch-1 (Main). A new branch will be created for your target.</p>
+        </div>
+
+        <div className="mb-4">
+          <p className="text-[10px] font-bold text-muted-foreground mb-2">QUICK PRESETS</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {BRANCH_PRESETS.map(preset => (
+              <button
+                key={preset.label}
+                onClick={() => setPurpose(preset.desc)}
+                className={`text-left px-3 py-2 rounded-xl border text-[10px] transition-all ${
+                  purpose === preset.desc
+                    ? "border-violet-400/50 bg-violet-400/15 text-violet-400"
+                    : "border-border hover:border-violet-400/30 hover:bg-violet-400/5 text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span className="mr-1">{preset.icon}</span>
+                <span className="font-bold">{preset.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <label className="text-[10px] font-bold text-muted-foreground block mb-1">OR DESCRIBE YOUR BRANCH PURPOSE</label>
+          <textarea
+            value={purpose}
+            onChange={e => setPurpose(e.target.value)}
+            placeholder="e.g. Build a React Native mobile version of this app..."
+            rows={3}
+            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-violet-400/60 transition-colors resize-none"
+          />
+        </div>
+
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-2 border border-border text-muted-foreground text-xs rounded-xl hover:bg-muted/50 transition-all">
+            Cancel
+          </button>
+          <button
+            onClick={() => onBranch(purpose)}
+            disabled={isBranching || !purpose.trim()}
+            className="flex-1 py-2 bg-violet-400/15 border border-violet-400/30 text-violet-400 text-xs rounded-xl hover:bg-violet-400/25 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-2"
+          >
+            {isBranching ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitBranch className="h-3 w-3" />}
+            {isBranching ? "Creating..." : "Create Branch"}
+          </button>
+        </div>
+      </motion.div>
+    </div>
   );
 }
 
@@ -991,6 +1089,9 @@ function FilesTabInline({
 // ── TeamPortalInline — embeddable agent team UI ────────────────────────────────
 export default function TeamPortalInline({ token, initialSessionCustomId, onSessionChange }: { token: string; initialSessionCustomId?: string | null; onSessionChange?: (customId: string | null) => void }) {
   const [sessions, setSessions] = useState<TeamSession[]>([]);
+  const [contextMenu, setContextMenu] = useState<{ sessionId: Id<"teamSessions">; x: number; y: number } | null>(null);
+  const [branchModalSession, setBranchModalSession] = useState<TeamSession | null>(null);
+  const [isBranching, setIsBranching] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<Id<"teamSessions"> | null>(null);
   const [task, setTask] = useState("");
   const [isRunning, setIsRunning] = useState(false);
@@ -1069,6 +1170,9 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const resetSessionLimitAction = useAction(api.agentTeam.resetSessionLimit);
   const listSessionsAction = useAction(api.agentTeam.listSessions);
   const continueSessionAction = useAction(api.agentTeam.continueSession);
+  const createBranchAction = useAction(api.agentTeam.createBranch);
+  const propagateBranchAction = useAction(api.agentTeam.propagateBranchUpdate);
+  const branchGroups = useQuery(api.agentTeamHelpers.watchBranchGroups, token ? { userId: undefined as unknown as Id<"users"> } : "skip");
   const createSandboxAction = useAction(api.sandbox.createSandbox);
   const executeCommandAction = useAction(api.sandbox.executeCommand);
   const stopSandboxAction = useAction(api.sandbox.stopSandbox);

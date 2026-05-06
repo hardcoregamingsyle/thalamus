@@ -605,3 +605,95 @@ export const clearInfoRequest = internalMutation({
     await ctx.db.patch(args.sessionId, { infoRequestJson: undefined });
   },
 });
+
+// ── Branch Group mutations ────────────────────────────────────────────────────
+export const createBranchGroupMutation = internalMutation({
+  args: {
+    userId: v.id("users"),
+    groupName: v.string(),
+    mainSessionId: v.id("teamSessions"),
+    projectSummary: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<Id<"sessionBranchGroups">> => {
+    const groupId = await ctx.db.insert("sessionBranchGroups", {
+      userId: args.userId,
+      groupName: args.groupName,
+      mainSessionId: args.mainSessionId,
+      branchSessionIds: [],
+      projectSummary: args.projectSummary,
+      createdAt: Date.now(),
+    });
+    // Mark the main session as branch 1
+    await ctx.db.patch(args.mainSessionId, {
+      branchGroupId: groupId,
+      branchNumber: 1,
+      branchName: "Main Branch",
+      branchPurpose: "The primary project",
+    });
+    return groupId;
+  },
+});
+
+export const addBranchToGroupMutation = internalMutation({
+  args: {
+    groupId: v.id("sessionBranchGroups"),
+    branchSessionId: v.id("teamSessions"),
+    branchName: v.string(),
+    branchPurpose: v.string(),
+    branchNumber: v.number(),
+    mainSessionId: v.id("teamSessions"),
+  },
+  handler: async (ctx, args) => {
+    const group = await ctx.db.get(args.groupId);
+    if (!group) throw new Error("Branch group not found");
+    await ctx.db.patch(args.groupId, {
+      branchSessionIds: [...group.branchSessionIds, args.branchSessionId],
+    });
+    await ctx.db.patch(args.branchSessionId, {
+      branchGroupId: args.groupId,
+      branchNumber: args.branchNumber,
+      branchName: args.branchName,
+      branchPurpose: args.branchPurpose,
+      parentSessionId: args.mainSessionId,
+    });
+  },
+});
+
+export const listBranchGroupsQuery = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("sessionBranchGroups")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .order("desc")
+      .take(50);
+  },
+});
+
+export const getBranchGroupQuery = internalQuery({
+  args: { groupId: v.id("sessionBranchGroups") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.groupId);
+  },
+});
+
+export const watchBranchGroups = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("sessionBranchGroups")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .order("desc")
+      .take(50);
+  },
+});
+
+export const getSessionsByBranchGroup = internalQuery({
+  args: { branchGroupId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("teamSessions")
+      .withIndex("by_branch_group", (q) => q.eq("branchGroupId", args.branchGroupId))
+      .take(20);
+  },
+});

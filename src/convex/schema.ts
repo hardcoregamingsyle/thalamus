@@ -102,8 +102,14 @@ const schema = defineSchema(
       unfixableTasksJson: v.optional(v.string()),
       manualUpgradeEnabled: v.optional(v.boolean()),
       customId: v.optional(v.string()),
-      techStackJson: v.optional(v.string()),   // Architect output — shared with all agents
-      infoRequestJson: v.optional(v.string()), // Pending GET-INFO request from an agent
+      techStackJson: v.optional(v.string()),
+      infoRequestJson: v.optional(v.string()),
+      // Branch fields
+      branchGroupId: v.optional(v.string()),   // ID of the branch group this session belongs to
+      branchNumber: v.optional(v.number()),     // 1 = main, 2+ = branches
+      branchName: v.optional(v.string()),       // e.g. "Main Branch", "Android APK", "Windows EXE"
+      branchPurpose: v.optional(v.string()),    // AI-defined purpose of this branch
+      parentSessionId: v.optional(v.id("teamSessions")), // for branches, points to main branch
       // GitHub sync fields
       githubRepo: v.optional(v.string()),
       githubBranch: v.optional(v.string()),
@@ -112,7 +118,8 @@ const schema = defineSchema(
       githubLastCommitSha: v.optional(v.string()),
     })
       .index("by_user", ["userId"])
-      .index("by_custom_id", ["customId"]),
+      .index("by_custom_id", ["customId"])
+      .index("by_branch_group", ["branchGroupId"]),
 
     agentMessages: defineTable({
       sessionId: v.id("teamSessions"),
@@ -168,6 +175,17 @@ const schema = defineSchema(
       .index("by_user", ["userId"])
       .index("by_session", ["sessionId"])
       .index("by_sandbox_id", ["sandboxId"]),
+
+    sessionBranchGroups: defineTable({
+      userId: v.id("users"),
+      groupName: v.string(),          // AI-decided group name
+      mainSessionId: v.id("teamSessions"),
+      branchSessionIds: v.array(v.id("teamSessions")),
+      projectSummary: v.optional(v.string()), // AI summary of the main project
+      createdAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_main_session", ["mainSessionId"]),
 
     domainBlacklist: defineTable({
       domain: v.string(),
