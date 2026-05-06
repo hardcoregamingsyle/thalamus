@@ -6,7 +6,7 @@ import {
   InputOTPSlot,
 } from "@/components/ui/input-otp";
 import { useAuth } from "@/hooks/use-auth";
-import { ArrowRight, Loader2, Cpu, Mail } from "lucide-react";
+import { ArrowRight, Loader2, Cpu, Mail, Lock } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { motion } from "framer-motion";
@@ -81,7 +81,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center">
             <Cpu className="h-3.5 w-3.5 text-primary" />
           </div>
-          <span className="text-primary font-bold text-sm tracking-widest amd-glow">THALAMUS_AI</span>
+          <span className="text-primary font-bold text-sm tracking-widest amd-glow">AETHER_AI</span>
           <span className="text-[10px] text-muted-foreground">by Aphantic Corporations</span>
         </button>
       </nav>
@@ -222,9 +222,10 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
               )}
             </div>
 
-            <div className="px-6 py-3 border-t border-border text-xs text-center text-muted-foreground">
+            <div className="px-6 py-3 border-t border-border text-xs text-center text-muted-foreground flex items-center justify-center gap-1.5">
+              <Lock className="h-3 w-3 text-primary/60" />
               Secured by{" "}
-              <span className="text-primary">Thalamus AI</span>
+              <span className="text-primary">Aether AI</span>
               {" "}• by Aphantic Corporations
             </div>
           </div>
