@@ -1801,13 +1801,14 @@ export const stopSession = action({
     const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
     if (!session) throw new Error("Session not found");
     if (session.userId !== userId) throw new Error("Not authorized");
+    // Preserve the current phase so resuming continues from where it left off
     await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
       sessionId: args.sessionId,
-      status: "completed",
-      currentAgent: undefined,
+      status: "idle",
+      currentAgent: session.currentAgent,
       round: session.round,
       loopCount: session.loopCount,
-      phase: "completed",
+      phase: session.phase,  // preserve current phase — NOT "completed"
       totalMessages: session.totalMessages,
     });
   },
