@@ -558,3 +558,16 @@ export const getSessionByCustomId = query({
     return ts;
   },
 });
+
+export const resetSessionLimitMutation = internalMutation({
+  args: { sessionId: v.id("teamSessions") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      totalMessages: 0,
+      taskMessageCount: 0,
+      taskUpgradeActive: false,
+      taskUpgradeMessagesLeft: 0,
+      status: "idle",
+    });
+  },
+});

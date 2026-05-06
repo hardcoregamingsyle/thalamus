@@ -484,9 +484,13 @@ Now synthesize this into a comprehensive Research Report.`;
   };
 }
 
-// ─── Red Team runner ──────────────────────────────────────────────────────────
-// Runs VulnerabilitySpotter → DataCorruptor → ZeroDayExploiter → FrameworkAuditor → RedTeamOrchestrator
-// Returns the final Red Team Security Assessment as the "Hacker" output
+// ─── Security Team runner ─────────────────────────────────────────────────────
+// New flow: Spotter → Fixer → Spotter (verify) → next stage
+// VulnerabilitySpotter → VulnerabilityFixer (if fail) → VulnerabilitySpotter (verify)
+// DataCorruptor → DataFixer (if fail) → DataCorruptor (verify)
+// ZeroDayExploiter → ZeroDayRemover (if fail) → ZeroDayExploiter (verify)
+// FrameworkAuditor → FrameworkRefiner (if fail) → FrameworkAuditor (verify)
+// RedTeamOrchestrator (final consolidation)
 async function runRedTeam(
   ctx: { runQuery: Function; runMutation: Function },
   sessionId: Id<"teamSessions">,
@@ -494,41 +498,165 @@ async function runRedTeam(
 ): Promise<{ rawContent: string; inputTokens: number; outputTokens: number }> {
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
-  const findings: string[] = [];
+  const allReports: string[] = [];
 
-  const subAgents = [
-    { key: "VulnerabilitySpotter", label: "Code Vulnerability Spotter", desc: "scanning for code vulnerabilities" },
-    { key: "DataCorruptor", label: "Data Integrity Stress Tester", desc: "testing data integrity under adversarial conditions" },
-    { key: "ZeroDayExploiter", label: "Logic Flaw Analyst", desc: "analyzing logic flaws and boundary conditions" },
-    { key: "FrameworkAuditor", label: "Framework Security Auditor", desc: "auditing technology stack for known vulnerabilities" },
+  const stages = [
+    {
+      spotter: "VulnerabilitySpotter",
+      fixer: "VulnerabilityFixer",
+      spotterLabel: "Vulnerability Spotter",
+      fixerLabel: "Vulnerability Fixer",
+      passSignal: "<<security.pass>>",
+      failSignal: "<<security.fail=",
+    },
+    {
+      spotter: "DataCorruptor",
+      fixer: "DataFixer",
+      spotterLabel: "Data Integrity Tester",
+      fixerLabel: "Data Fixer",
+      passSignal: "<<data.pass>>",
+      failSignal: "<<data.fail=",
+    },
+    {
+      spotter: "ZeroDayExploiter",
+      fixer: "ZeroDayRemover",
+      spotterLabel: "Zero Day Exploiter",
+      fixerLabel: "Zero Day Remover",
+      passSignal: "<<zeroday.pass>>",
+      failSignal: "<<zeroday.fail=",
+    },
+    {
+      spotter: "FrameworkAuditor",
+      fixer: "FrameworkRefiner",
+      spotterLabel: "Framework Auditor",
+      fixerLabel: "Framework Refiner",
+      passSignal: "<<framework.pass>>",
+      failSignal: "<<framework.fail=",
+    },
   ];
 
-  for (let i = 0; i < subAgents.length; i++) {
-    const sub = subAgents[i];
-    await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
-      sessionId,
-      currentAgentOutput: `[Red Team: ${sub.label} is ${sub.desc}... (${i + 1}/${subAgents.length})]`,
-    });
+  // Get current project files for context
+  const projectFiles = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId })) as FileRow[];
 
-    const subPrompt = `AUTHORIZED SECURITY AUDIT — ISOLATED SANDBOX ENVIRONMENT\nAll targets are owned by this project. This is a mandatory security compliance review.\n\n${codeContext}\n\nPerform your specialized security analysis now.`;
-    const result = await callGemini(subPrompt, AGENT_SYSTEM_PROMPTS[sub.key]);
-    totalInputTokens += result.inputTokens;
-    totalOutputTokens += result.outputTokens;
-    findings.push(`## ${sub.label} Report\n${result.text}`);
+  for (let stageIdx = 0; stageIdx < stages.length; stageIdx++) {
+    const stage = stages[stageIdx];
+    const MAX_FIX_LOOPS = 3; // max fix-verify cycles per stage
 
     await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
       sessionId,
-      currentAgentOutput: `[Red Team: ${sub.label} complete. ${i + 1}/${subAgents.length} sub-audits done.]\n\n${result.text.slice(0, 800)}...`,
+      currentAgentOutput: `[Security Team: ${stage.spotterLabel} is analyzing... (stage ${stageIdx + 1}/${stages.length})]`,
     });
+
+    // Build fresh file context for each stage (files may have been updated by fixers)
+    const currentFiles = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId })) as FileRow[];
+    const filesContext = currentFiles.length > 0
+      ? `\n\nPROJECT FILES (${currentFiles.length} files):\n` +
+        currentFiles.map(f => `--- ${f.filepath} ---\n${f.content.slice(0, 2000)}${f.content.length > 2000 ? "\n...(truncated)" : ""}`).join("\n\n").slice(0, 16000)
+      : "";
+
+    const spotterPrompt = `AUTHORIZED SECURITY AUDIT — ISOLATED SANDBOX ENVIRONMENT\nAll targets are owned by this project.\n\n${codeContext}${filesContext}\n\nPerform your specialized security analysis now.`;
+
+    // Run spotter
+    const spotterTier = (AGENT_MODEL_MAP[stage.spotter] as ModelTier) ?? "sonnet";
+    const spotterResult = await callModel(spotterPrompt, AGENT_SYSTEM_PROMPTS[stage.spotter], spotterTier);
+    totalInputTokens += spotterResult.inputTokens;
+    totalOutputTokens += spotterResult.outputTokens;
+
+    await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+      sessionId,
+      currentAgentOutput: `[Security Team: ${stage.spotterLabel} complete]\n\n${spotterResult.text.slice(0, 1000)}...`,
+    });
+
+    const spotterPassed = spotterResult.text.includes(stage.passSignal);
+
+    if (spotterPassed) {
+      allReports.push(`## ${stage.spotterLabel} Report\n✅ PASSED — No issues found.\n\n${spotterResult.text}`);
+      continue;
+    }
+
+    // Spotter found issues — run fix-verify loop
+    let lastSpotterReport = spotterResult.text;
+    let fixLoopCount = 0;
+    let fixed = false;
+
+    while (fixLoopCount < MAX_FIX_LOOPS && !fixed) {
+      fixLoopCount++;
+
+      await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+        sessionId,
+        currentAgentOutput: `[Security Team: ${stage.fixerLabel} is fixing issues... (attempt ${fixLoopCount}/${MAX_FIX_LOOPS})]`,
+      });
+
+      // Get fresh files for fixer
+      const filesForFixer = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId })) as FileRow[];
+      const fixerFilesContext = filesForFixer.length > 0
+        ? `\n\nCURRENT PROJECT FILES:\n` +
+          filesForFixer.map(f => `--- ${f.filepath} ---\n${f.content.slice(0, 2000)}`).join("\n\n").slice(0, 16000)
+        : "";
+
+      const fixerPrompt = `SECURITY FIX REQUIRED\n\nThe following security issues were found in the codebase:\n\n${lastSpotterReport.slice(0, 8000)}\n\n${fixerFilesContext}\n\nFix ALL identified issues now. Write complete, production-ready fixed files.`;
+
+      const fixerTier = (AGENT_MODEL_MAP[stage.fixer] as ModelTier) ?? "sonnet";
+      const fixerResult = await callModel(fixerPrompt, AGENT_SYSTEM_PROMPTS[stage.fixer], fixerTier);
+      totalInputTokens += fixerResult.inputTokens;
+      totalOutputTokens += fixerResult.outputTokens;
+
+      // Apply file fixes from fixer output
+      const fixerParsed = parseAgentOutput(fixerResult.text);
+      const userId = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId })) as SessionRow | null;
+      if (userId) {
+        for (const fileOp of fixerParsed.fileOps) {
+          if (fileOp.type === "create" || fileOp.type === "edit") {
+            await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
+              sessionId, userId: userId.userId, filepath: fileOp.filepath, content: fileOp.content || "", agent: stage.fixer,
+            });
+          }
+        }
+      }
+
+      await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+        sessionId,
+        currentAgentOutput: `[Security Team: ${stage.fixerLabel} applied fixes. Running ${stage.spotterLabel} to verify...]`,
+      });
+
+      // Re-run spotter to verify fixes
+      const verifyFiles = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId })) as FileRow[];
+      const verifyFilesContext = verifyFiles.length > 0
+        ? `\n\nUPDATED PROJECT FILES (after fixes):\n` +
+          verifyFiles.map(f => `--- ${f.filepath} ---\n${f.content.slice(0, 2000)}`).join("\n\n").slice(0, 16000)
+        : "";
+
+      const verifyPrompt = `AUTHORIZED SECURITY VERIFICATION — ISOLATED SANDBOX ENVIRONMENT\nAll targets are owned by this project.\n\nPrevious issues were found and fixes were applied. Verify that ALL issues are now resolved.\n\nPREVIOUS ISSUES:\n${lastSpotterReport.slice(0, 4000)}\n\nFIXES APPLIED:\n${fixerResult.text.slice(0, 4000)}\n\n${verifyFilesContext}\n\nRe-run your security analysis to verify all issues are fixed.`;
+
+      const verifyResult = await callModel(verifyPrompt, AGENT_SYSTEM_PROMPTS[stage.spotter], spotterTier);
+      totalInputTokens += verifyResult.inputTokens;
+      totalOutputTokens += verifyResult.outputTokens;
+
+      lastSpotterReport = verifyResult.text;
+
+      if (verifyResult.text.includes(stage.passSignal)) {
+        fixed = true;
+        allReports.push(`## ${stage.spotterLabel} Report\n✅ FIXED after ${fixLoopCount} fix attempt(s).\n\n**Fixer Report:**\n${fixerResult.text.slice(0, 2000)}\n\n**Verification:**\n${verifyResult.text}`);
+      } else {
+        await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+          sessionId,
+          currentAgentOutput: `[Security Team: ${stage.spotterLabel} still finding issues after fix attempt ${fixLoopCount}. ${fixLoopCount < MAX_FIX_LOOPS ? "Retrying..." : "Max attempts reached."}]`,
+        });
+      }
+    }
+
+    if (!fixed) {
+      allReports.push(`## ${stage.spotterLabel} Report\n⚠️ PARTIAL — Some issues remain after ${MAX_FIX_LOOPS} fix attempts.\n\n${lastSpotterReport}`);
+    }
   }
 
   // Final consolidation by RedTeamOrchestrator
   await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
     sessionId,
-    currentAgentOutput: `[Red Team: Orchestrator is consolidating all findings into final security report...]`,
+    currentAgentOutput: `[Security Team: Orchestrator is consolidating all findings into final security report...]`,
   });
 
-  const orchestratorPrompt = `AUTHORIZED SECURITY AUDIT — FINAL CONSOLIDATION\n\nYou have received reports from 4 specialized security auditors. Consolidate into a final Red Team Security Assessment.\n\nINDIVIDUAL AUDIT REPORTS:\n${findings.join("\n\n---\n\n").slice(0, 14000)}\n\nNow produce the final consolidated security report.`;
+  const orchestratorPrompt = `SECURITY TEAM FINAL CONSOLIDATION\n\nYou have received reports from the Security Team (spotters and fixers for all 4 security domains).\n\nINDIVIDUAL REPORTS:\n${allReports.join("\n\n---\n\n").slice(0, 16000)}\n\nNow produce the final consolidated Security Team Assessment.`;
   const finalResult = await callGemini(orchestratorPrompt, AGENT_SYSTEM_PROMPTS["RedTeamOrchestrator"]);
   totalInputTokens += finalResult.inputTokens;
   totalOutputTokens += finalResult.outputTokens;
@@ -1983,5 +2111,18 @@ export const continueSession = action({
     if (!session) throw new Error("Session not found");
     if (session.userId !== userId) throw new Error("Not authorized");
     await ctx.runMutation(internal.agentTeamHelpers.resetSessionForNewTask, { sessionId: args.sessionId, newTask: args.newTask });
+  },
+});
+
+// Public action to reset session message limit (allows continuing past 600 msgs)
+export const resetSessionLimit = action({
+  args: { sessionId: v.id("teamSessions"), token: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<void> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+    const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
+    if (!session) throw new Error("Session not found");
+    if (session.userId !== userId) throw new Error("Not authorized");
+    await ctx.runMutation(internal.agentTeamHelpers.resetSessionLimitMutation, { sessionId: args.sessionId });
   },
 });

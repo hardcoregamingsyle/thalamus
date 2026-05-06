@@ -81,20 +81,20 @@ interface TeamPortalInlineProps {
 const AGENT_COLORS: Record<string, string> = {
   "R&D Team": "text-cyan-400", Researcher: "text-cyan-400", Analyser: "text-blue-400", Planner: "text-violet-400",
   Coder: "text-emerald-400", Optimiser: "text-amber-400", Organizer: "text-orange-400",
-  Tester: "text-green-400", Hacker: "text-red-400", "Red Team": "text-red-400", Critic: "text-purple-400", User: "text-primary",
+  Tester: "text-green-400", Hacker: "text-red-400", "Security Team": "text-red-400", Critic: "text-purple-400", User: "text-primary",
 };
 
 const AGENT_BG: Record<string, string> = {
   "R&D Team": "bg-cyan-400/10 border-cyan-400/30", Researcher: "bg-cyan-400/10 border-cyan-400/30", Analyser: "bg-blue-400/10 border-blue-400/30",
   Planner: "bg-violet-400/10 border-violet-400/30", Coder: "bg-emerald-400/10 border-emerald-400/30",
   Optimiser: "bg-amber-400/10 border-amber-400/30", Organizer: "bg-orange-400/10 border-orange-400/30",
-  Tester: "bg-green-400/10 border-green-400/30", Hacker: "bg-red-400/10 border-red-400/30", "Red Team": "bg-red-400/10 border-red-400/30",
+  Tester: "bg-green-400/10 border-green-400/30", Hacker: "bg-red-400/10 border-red-400/30", "Security Team": "bg-red-400/10 border-red-400/30",
   Critic: "bg-purple-400/10 border-purple-400/30", User: "bg-primary/10 border-primary/30",
 };
 
 const AGENT_ICONS: Record<string, string> = {
   "R&D Team": "🔬", Researcher: "🔬", Analyser: "A", Planner: "P", Coder: "C",
-  Optimiser: "O", Organizer: "📝", Tester: "T", Hacker: "🔴", "Red Team": "🔴", Critic: "R", User: "U",
+  Optimiser: "O", Organizer: "📝", Tester: "T", Hacker: "🛡️", "Security Team": "🛡️", Critic: "R", User: "U",
 };
 
 const PIPELINE = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
@@ -110,13 +110,17 @@ const PIPELINE_DISPLAY: Record<string, { displayName: string; subAgents: Array<{
     ],
   },
   Hacker: {
-    displayName: "Red Team",
+    displayName: "Security Team",
     subAgents: [
       { name: "VulnerabilitySpotter", abbr: "VS", color: "text-red-300" },
+      { name: "VulnerabilityFixer", abbr: "VF", color: "text-green-300" },
       { name: "DataCorruptor", abbr: "DC", color: "text-red-300" },
+      { name: "DataFixer", abbr: "DF", color: "text-green-300" },
       { name: "ZeroDayExploiter", abbr: "ZD", color: "text-red-300" },
+      { name: "ZeroDayRemover", abbr: "ZDR", color: "text-green-300" },
       { name: "FrameworkAuditor", abbr: "FA", color: "text-red-300" },
-      { name: "RedTeamOrchestrator", abbr: "RTO", color: "text-red-300" },
+      { name: "FrameworkRefiner", abbr: "FR", color: "text-green-300" },
+      { name: "SecurityOrchestrator", abbr: "SO", color: "text-amber-300" },
     ],
   },
 };
@@ -793,6 +797,7 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const createSession = useAction(api.agentTeam.createSession);
   const startBackgroundSession = useAction(api.agentTeam.startBackgroundSession);
   const stopSessionAction = useAction(api.agentTeam.stopSession);
+  const resetSessionLimitAction = useAction(api.agentTeam.resetSessionLimit);
   const listSessionsAction = useAction(api.agentTeam.listSessions);
   const continueSessionAction = useAction(api.agentTeam.continueSession);
   const createSandboxAction = useAction(api.sandbox.createSandbox);
@@ -927,6 +932,16 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
       toast.success("Session stopped.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to stop session");
+    }
+  };
+
+  const handleResetLimit = async () => {
+    if (!activeSessionId || !token) return;
+    try {
+      await resetSessionLimitAction({ sessionId: activeSessionId, token });
+      toast.success("Message limit reset — session can continue.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to reset limit");
     }
   };
 
@@ -1389,12 +1404,22 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
                     </button>
                   );
                 })()}
+                {/* Reset limit button — shown when session is completed or at limit */}
+                {activeSessionId && (sessionInfo?.status === "completed" || (sessionInfo?.totalMessages ?? 0) >= MAX_MESSAGES) && (
+                  <button
+                    onClick={handleResetLimit}
+                    title="Reset message limit — allows session to continue past 600 messages"
+                    className="flex items-center gap-1 px-2 py-1 bg-amber-400/10 border border-amber-400/30 text-amber-400 text-[10px] rounded hover:bg-amber-400/20 transition-all"
+                  >
+                    <RefreshCw className="h-3 w-3" />RESET
+                  </button>
+                )}
                 {sessionInfo?.status === "running" ? (
                   <button onClick={handleStopAutoRun} className="flex items-center gap-1 px-2 py-1 bg-destructive/10 border border-destructive/30 text-destructive text-[10px] rounded hover:bg-destructive/20 transition-all">
                     <Square className="h-3 w-3" />RUNNING
                   </button>
                 ) : (
-                  <button onClick={handleAutoRun} disabled={isRunning || sessionInfo?.status === "completed"} className="flex items-center gap-1 px-2 py-1 bg-primary/10 border border-primary/30 text-primary text-[10px] rounded hover:bg-primary/20 disabled:opacity-50 transition-all">
+                  <button onClick={handleAutoRun} disabled={isRunning} className="flex items-center gap-1 px-2 py-1 bg-primary/10 border border-primary/30 text-primary text-[10px] rounded hover:bg-primary/20 disabled:opacity-50 transition-all">
                     {isRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
                     {isRunning ? "STARTING" : "RUN"}
                   </button>
