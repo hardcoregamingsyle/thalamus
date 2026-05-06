@@ -585,3 +585,23 @@ export const resetSessionLimitMutation = internalMutation({
     });
   },
 });
+
+export const setInfoRequest = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    infoRequestJson: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      infoRequestJson: args.infoRequestJson,
+      status: "idle", // pause execution
+    });
+  },
+});
+
+export const clearInfoRequest = internalMutation({
+  args: { sessionId: v.id("teamSessions") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, { infoRequestJson: undefined });
+  },
+});

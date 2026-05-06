@@ -9,7 +9,7 @@ import {
   Play, Square, Send, FileCode, Monitor, ChevronRight, Activity,
   MessageSquare, StopCircle, ListPlus, Cpu, Shield, Search, Code2,
   CheckSquare, AlertCircle, RefreshCw, Upload, Menu, X, PanelLeftClose, PanelLeftOpen,
-  Github, Database,
+  Github, Database, ClipboardList,
 } from "lucide-react";
 import { FileTreeView, FileTreeFile, FileTreeNode } from "@/components/FileTree";
 import ReactMarkdown from "react-markdown";
@@ -24,6 +24,22 @@ interface AgentMessage {
   isUser?: boolean;
   modelUsed?: string;
   agentBucksDeducted?: number;
+}
+
+interface InfoField {
+  id: string;
+  label: string;
+  type: "text" | "password" | "textarea" | "select";
+  placeholder?: string;
+  required?: boolean;
+  options?: string[];
+}
+
+interface InfoRequest {
+  agentName: string;
+  title: string;
+  description: string;
+  fields: InfoField[];
 }
 
 interface TeamSession {
@@ -42,6 +58,7 @@ interface TeamSession {
   plannerTasksJson?: string;
   finalReviewCoderEnabled?: boolean;
   deployCommandsJson?: string;
+  infoRequestJson?: string;
 }
 
 interface ProjectFile {
@@ -269,6 +286,93 @@ function MessageContent({ msg, currentTaskIndex }: { msg: { _id?: string; agent:
     <div className="prose prose-sm prose-invert max-w-none text-xs leading-relaxed">
       <ReactMarkdown>{msg.content}</ReactMarkdown>
     </div>
+  );
+}
+
+// ── Info Request Card ─────────────────────────────────────────────────────────
+function InfoRequestCard({
+  infoRequest,
+  onSubmit,
+  isSubmitting,
+}: {
+  infoRequest: InfoRequest;
+  onSubmit: (responses: Array<{ fieldId: string; value: string }>) => Promise<void>;
+  isSubmitting: boolean;
+}) {
+  const [values, setValues] = useState<Record<string, string>>({});
+
+  const handleSubmit = async () => {
+    const responses = infoRequest.fields.map(f => ({ fieldId: f.id, value: values[f.id] ?? "" }));
+    const missing = infoRequest.fields.filter(f => f.required && !values[f.id]?.trim());
+    if (missing.length > 0) {
+      toast.error(`Please fill in: ${missing.map(f => f.label).join(", ")}`);
+      return;
+    }
+    await onSubmit(responses);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="border-2 border-amber-400/40 bg-amber-400/5 rounded-2xl p-4 space-y-3"
+    >
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-xl bg-amber-400/20 border border-amber-400/40 flex items-center justify-center">
+          <ClipboardList className="h-4 w-4 text-amber-400" />
+        </div>
+        <div>
+          <p className="text-xs font-bold text-amber-400">{infoRequest.agentName} needs information</p>
+          <p className="text-[10px] text-muted-foreground">{infoRequest.title}</p>
+        </div>
+      </div>
+      {infoRequest.description && (
+        <p className="text-xs text-muted-foreground leading-relaxed">{infoRequest.description}</p>
+      )}
+      <div className="space-y-2">
+        {infoRequest.fields.map(field => (
+          <div key={field.id}>
+            <label className="text-[10px] font-bold text-foreground/80 block mb-1">
+              {field.label}{field.required && <span className="text-destructive ml-1">*</span>}
+            </label>
+            {field.type === "textarea" ? (
+              <textarea
+                value={values[field.id] ?? ""}
+                onChange={e => setValues(prev => ({ ...prev, [field.id]: e.target.value }))}
+                placeholder={field.placeholder}
+                rows={3}
+                className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-amber-400/60 transition-colors resize-none"
+              />
+            ) : field.type === "select" && field.options ? (
+              <select
+                value={values[field.id] ?? ""}
+                onChange={e => setValues(prev => ({ ...prev, [field.id]: e.target.value }))}
+                className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:border-amber-400/60 transition-colors"
+              >
+                <option value="">Select...</option>
+                {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            ) : (
+              <input
+                type={field.type === "password" ? "password" : "text"}
+                value={values[field.id] ?? ""}
+                onChange={e => setValues(prev => ({ ...prev, [field.id]: e.target.value }))}
+                placeholder={field.placeholder}
+                className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-amber-400/60 transition-colors"
+              />
+            )}
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={handleSubmit}
+        disabled={isSubmitting}
+        className="w-full py-2 bg-amber-400/15 border border-amber-400/40 text-amber-400 text-xs rounded-xl hover:bg-amber-400/25 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-2"
+      >
+        {isSubmitting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+        {isSubmitting ? "Submitting..." : "Send to Agent"}
+      </button>
+    </motion.div>
   );
 }
 
@@ -1079,6 +1183,29 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const saveGithubConfigAction = useAction(api.agentTeam.saveGithubConfig);
   const syncGithubAction = useAction(api.agentTeam.syncGithub);
   const setCustomDomainAction = useAction(api.sandbox.setCustomDomain);
+  const submitInfoResponseAction = useAction(api.agentTeam.submitInfoResponse);
+  const [isSubmittingInfo, setIsSubmittingInfo] = useState(false);
+
+  // Parse pending info request from live session
+  const pendingInfoRequest: (InfoRequest & { agentName: string }) | null = (() => {
+    const raw = (liveSession as Record<string, unknown> | null)?.infoRequestJson as string | undefined;
+    if (!raw) return null;
+    try { return JSON.parse(raw) as InfoRequest & { agentName: string }; } catch { return null; }
+  })();
+
+  const handleSubmitInfo = async (responses: Array<{ fieldId: string; value: string }>) => {
+    if (!activeSessionId || !token) return;
+    setIsSubmittingInfo(true);
+    try {
+      await submitInfoResponseAction({ sessionId: activeSessionId, token, responses });
+      toast.success("Information sent to agent — resuming...");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to submit");
+    } finally {
+      setIsSubmittingInfo(false);
+    }
+  };
+
   const setManualUpgradeMutation = useMutation(api.agentTeamHelpers.setManualUpgrade);
   const forceActivateUpgradeMutation = useMutation(api.agentTeamHelpers.forceActivateUpgrade);
   const handleAutoRun = async () => {
@@ -1585,9 +1712,9 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
                     <Square className="h-3 w-3" />RUNNING
                   </button>
                 ) : (
-                  <button onClick={handleAutoRun} disabled={isRunning} className="flex items-center gap-1 px-2 py-1 bg-primary/10 border border-primary/30 text-primary text-[10px] rounded hover:bg-primary/20 disabled:opacity-50 transition-all">
-                    {isRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-                    {isRunning ? "STARTING" : "RUN"}
+                  <button onClick={handleAutoRun} disabled={isRunning || !!pendingInfoRequest} title={pendingInfoRequest ? "Fill in the required information first" : undefined} className="flex items-center gap-1 px-2 py-1 bg-primary/10 border border-primary/30 text-primary text-[10px] rounded hover:bg-primary/20 disabled:opacity-50 transition-all">
+                    {isRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : pendingInfoRequest ? <ClipboardList className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+                    {isRunning ? "STARTING" : pendingInfoRequest ? "WAITING" : "RUN"}
                   </button>
                 )}
               </div>
@@ -1646,6 +1773,17 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
                         </div>
                       </motion.div>
                     ))}
+
+                    {/* Pending info request — blocks execution until filled */}
+                    {pendingInfoRequest && activeSessionId && (
+                      <div className="max-w-3xl mx-auto w-full">
+                        <InfoRequestCard
+                          infoRequest={pendingInfoRequest}
+                          onSubmit={handleSubmitInfo}
+                          isSubmitting={isSubmittingInfo}
+                        />
+                      </div>
+                    )}
 
                     {/* Streaming output */}
                     {streamingOutput && streamingAgent && (
