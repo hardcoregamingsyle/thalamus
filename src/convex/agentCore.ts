@@ -647,6 +647,21 @@ export interface SearchOp { query: string; }
 export interface ScrapeOp { url: string; }
 export interface CmdOp { command: string; }
 
+export interface InfoField {
+  name: string;
+  label: string;
+  type: "text" | "password" | "textarea";
+  required: boolean;
+  placeholder?: string;
+}
+
+export interface InfoRequest {
+  agentName: string;
+  title: string;
+  description: string;
+  fields: InfoField[];
+}
+
 export interface ParsedOutput {
   fileOps: FileOp[];
   searchOps: SearchOp[];
@@ -658,6 +673,7 @@ export interface ParsedOutput {
   hackerResult?: "pass" | "fail";
   criticResult?: "pass" | "fail";
   deployCommands?: string[];
+  infoRequest?: InfoRequest;
 }
 
 export function parseAgentOutput(content: string): ParsedOutput {
@@ -750,7 +766,43 @@ export function parseAgentOutput(content: string): ParsedOutput {
     cleanContent = cleanContent.replace(deployBlockMatch[0], `[DEPLOY COMMANDS SET: ${cmds.length} command(s)]`);
   }
 
-  return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult, deployCommands };
+  // Parse GET-INFO block
+  let infoRequest: InfoRequest | undefined;
+  const infoBlockMatch = content.match(/(?:<<<<<|<<)GET-INFO(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.GET-INFO(?:>>>>>|>>)/);
+  if (infoBlockMatch) {
+    try {
+      const block = infoBlockMatch[1].trim();
+      // Try to parse as JSON first
+      const parsed = JSON.parse(block) as InfoRequest;
+      if (parsed.fields && Array.isArray(parsed.fields)) {
+        infoRequest = parsed;
+      }
+    } catch {
+      // Fallback: parse simple key=value format
+      const titleMatch = infoBlockMatch[1].match(/title="([^"]+)"/);
+      const descMatch = infoBlockMatch[1].match(/description="([^"]+)"/);
+      const fieldMatches = [...infoBlockMatch[1].matchAll(/field\s+name="([^"]+)"\s+label="([^"]+)"(?:\s+type="([^"]+)")?(?:\s+required="([^"]+)")?(?:\s+placeholder="([^"]+)")?/g)];
+      if (fieldMatches.length > 0) {
+        infoRequest = {
+          agentName: "Agent",
+          title: titleMatch?.[1] ?? "Information Required",
+          description: descMatch?.[1] ?? "Please provide the following information to continue.",
+          fields: fieldMatches.map(m => ({
+            name: m[1],
+            label: m[2],
+            type: (m[3] as "text" | "password" | "textarea") ?? "text",
+            required: m[4] !== "false",
+            placeholder: m[5],
+          })),
+        };
+      }
+    }
+    if (infoRequest) {
+      cleanContent = cleanContent.replace(infoBlockMatch[0], `[INFO REQUESTED: ${infoRequest.title}]`);
+    }
+  }
+
+  return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest };
 }
 
 const SANDBOX_CMD_INSTRUCTIONS = `
@@ -1136,6 +1188,22 @@ FILE EDIT FORMAT (edits existing file):
 <<EDITFILE="path/to/file.ts">>
 [COMPLETE updated file content]
 <<END.CREATEFILE>>
+
+GET-INFO TOOL — USE WHEN YOU NEED API KEYS OR SECRETS FROM THE USER:
+When you need API keys, credentials, or configuration that only the user can provide, use this tool:
+<<GET-INFO>>
+{
+  "agentName": "Coder",
+  "title": "API Keys Required",
+  "description": "Please provide the following API keys to continue building the application.",
+  "fields": [
+    { "name": "openai_key", "label": "OpenAI API Key", "type": "password", "required": true, "placeholder": "sk-..." },
+    { "name": "stripe_key", "label": "Stripe Secret Key", "type": "password", "required": false, "placeholder": "sk_live_..." }
+  ]
+}
+<<END.GET-INFO>>
+
+IMPORTANT: When you use GET-INFO, STOP your output there. Do NOT write any code after it. The user will fill in the form and the data will be sent back to you. You will then continue with the actual implementation using those values.
 
 DEPLOY COMMANDS — MANDATORY — SET THESE EVERY TIME:
 <<DEPLOY-COMMANDS>>

@@ -103,6 +103,7 @@ const schema = defineSchema(
       manualUpgradeEnabled: v.optional(v.boolean()),
       customId: v.optional(v.string()),
       techStackJson: v.optional(v.string()),   // Architect output — shared with all agents
+      infoRequestJson: v.optional(v.string()), // Pending GET-INFO request from an agent
       // GitHub sync fields
       githubRepo: v.optional(v.string()),
       githubBranch: v.optional(v.string()),

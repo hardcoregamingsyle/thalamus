@@ -3,7 +3,7 @@ import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { callGemini, callModel, calcAgentBucksForTier, performSearch, performScrape, parseAgentOutput, parsePlannerOutput, parseDifficultyFromPlannerOutput, AGENT_SYSTEM_PROMPTS, PlannerTask, CLAUDE_PRICING, calcClaudeCost, calcAgentBucksFromTokens, AGENT_MODEL_MAP, DIFFICULTY_CODER_MODEL, DIFFICULTY_FRAMEWORK_AUDITOR_MODEL, DIFFICULTY_REDTEAM_SONNET_OVERRIDE, TaskDifficulty, ModelTier } from "./agentCore";
+import { callGemini, callModel, calcAgentBucksForTier, performSearch, performScrape, parseAgentOutput, parsePlannerOutput, parseDifficultyFromPlannerOutput, AGENT_SYSTEM_PROMPTS, PlannerTask, CLAUDE_PRICING, calcClaudeCost, calcAgentBucksFromTokens, AGENT_MODEL_MAP, DIFFICULTY_CODER_MODEL, DIFFICULTY_FRAMEWORK_AUDITOR_MODEL, DIFFICULTY_REDTEAM_SONNET_OVERRIDE, TaskDifficulty, ModelTier, InfoRequest } from "./agentCore";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_MESSAGES = 100_000; // No practical limit — sessions run until complete
@@ -48,13 +48,13 @@ type SessionRow = {
   finalReviewCoderEnabled?: boolean;
   taskSummariesJson?: string;
   currentTaskDifficulty?: string;
-  // Safety net fields
-  taskMessageCount?: number;          // messages used in current task
-  taskUpgradeActive?: boolean;        // true = Modal Upgrade is active
-  taskUpgradeMessagesLeft?: number;   // messages remaining in upgrade window
-  unfixableTasksJson?: string;        // JSON string of { taskIndex: number, title: string }[]
-  manualUpgradeEnabled?: boolean;     // user-activated: force upgrade on next rejection
-  techStackJson?: string;          // Architect output — shared with all agents
+  taskMessageCount?: number;
+  taskUpgradeActive?: boolean;
+  taskUpgradeMessagesLeft?: number;
+  unfixableTasksJson?: string;
+  manualUpgradeEnabled?: boolean;
+  techStackJson?: string;
+  infoRequestJson?: string;          // Pending GET-INFO request from an agent
 };
 type MsgRow = { _id: Id<"agentMessages">; agent: string; content: string; round?: number; messageIndex?: number };
 type FileRow = { _id: Id<"projectFiles">; filepath: string; content: string; lastModifiedBy: string };
@@ -846,6 +846,11 @@ export const runAgentRound = action({
     if (session.userId !== userId) throw new Error("Not authorized");
     if (session.status === "completed") throw new Error("Session already completed");
 
+    // Block execution if there's a pending GET-INFO request
+    if (session.infoRequestJson) {
+      throw new Error("Waiting for user input. Please fill in the required information.");
+    }
+
     const totalMessages = session.totalMessages ?? 0;
     if (totalMessages >= MAX_MESSAGES) {
       await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
@@ -1098,6 +1103,26 @@ export const runAgentRound = action({
           fileOpsCount++;
         }
       }
+    }
+
+    // Handle GET-INFO request — pause execution and wait for user input
+    if (parsed.infoRequest) {
+      await ctx.runMutation(internal.agentTeamHelpers.setInfoRequest, {
+        sessionId: args.sessionId,
+        infoRequestJson: JSON.stringify({ ...parsed.infoRequest, agentName: currentPhase }),
+      });
+      // Save the agent message showing the info request
+      const newTotalMsgsInfo = totalMessages + 1;
+      await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
+        sessionId: args.sessionId, userId, agent: currentPhase, content: parsed.cleanContent,
+        round: loopCount, messageIndex: newTotalMsgsInfo,
+        modelUsed: undefined, agentBucksDeducted: undefined,
+      });
+      await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
+        sessionId: args.sessionId, status: "idle", currentAgent: currentPhase,
+        round: session.round, loopCount, phase: currentPhase, totalMessages: newTotalMsgsInfo,
+      });
+      return { agent: currentPhase, content: parsed.cleanContent, done: false, nextAgent: currentPhase, loopCount, totalMessages: newTotalMsgsInfo, fileOpsCount: 0 };
     }
 
     // Handle deploy commands from Planner
@@ -1597,6 +1622,25 @@ export const backgroundRunOneRound = internalAction({
       await ctx.runMutation(internal.agentTeamHelpers.updateDeployCommands, { sessionId: args.sessionId, deployCommandsJson: JSON.stringify(parsed.deployCommands) });
     }
 
+    // Handle GET-INFO request — pause background execution and wait for user input
+    if (parsed.infoRequest) {
+      await ctx.runMutation(internal.agentTeamHelpers.setInfoRequest, {
+        sessionId: args.sessionId,
+        infoRequestJson: JSON.stringify({ ...parsed.infoRequest, agentName: currentPhase }),
+      });
+      const newTotalMsgsBg = totalMessages + 1;
+      await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
+        sessionId: args.sessionId, userId, agent: currentPhase, content: parsed.cleanContent,
+        round: loopCount, messageIndex: newTotalMsgsBg,
+        modelUsed: undefined, agentBucksDeducted: undefined,
+      });
+      await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
+        sessionId: args.sessionId, status: "idle", currentAgent: currentPhase,
+        round: session.round, loopCount, phase: currentPhase, totalMessages: newTotalMsgsBg,
+      });
+      return { done: false }; // Stop background loop — user must submit info
+    }
+
     // Cost accounting
     const agentBucksToDeduct = calcAgentBucksForTier(tier, inputTokens, outputTokens);
     await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId, agentBucksToDeduct });
@@ -1793,6 +1837,47 @@ export const backgroundRunOneRound = internalAction({
 });
 
 // Public action to stop a running session (marks as completed to halt background scheduler)
+// Submit user's response to a GET-INFO request — resumes the agent with the provided data
+export const submitInfoResponse = action({
+  args: {
+    sessionId: v.id("teamSessions"),
+    token: v.optional(v.string()),
+    responses: v.array(v.object({ fieldId: v.string(), value: v.string() })),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+    const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
+    if (!session) throw new Error("Session not found");
+    if (session.userId !== userId) throw new Error("Not authorized");
+    if (!session.infoRequestJson) throw new Error("No pending info request");
+
+    // Parse the info request to get the agent name
+    let infoReq: InfoRequest & { agentName: string };
+    try { infoReq = JSON.parse(session.infoRequestJson) as InfoRequest & { agentName: string }; }
+    catch { throw new Error("Invalid info request data"); }
+
+    // Format the user's responses as a message to the agent
+    const responseText = `## User Provided Information\n\n${args.responses.map(r => `**${r.fieldId}**: ${r.value}`).join("\n")}`;
+
+    // Save the user's response as a message
+    const totalMessages = session.totalMessages ?? 0;
+    await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
+      sessionId: args.sessionId, userId, agent: "User",
+      content: responseText, round: session.loopCount ?? 0, messageIndex: totalMessages + 0.5,
+    });
+
+    // Clear the info request so execution can resume
+    await ctx.runMutation(internal.agentTeamHelpers.clearInfoRequest, { sessionId: args.sessionId });
+
+    // Update session to idle so it can be resumed
+    await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
+      sessionId: args.sessionId, status: "idle", currentAgent: infoReq.agentName,
+      round: session.round, loopCount: session.loopCount, phase: infoReq.agentName, totalMessages: totalMessages + 1,
+    });
+  },
+});
+
 export const stopSession = action({
   args: { sessionId: v.id("teamSessions"), token: v.optional(v.string()) },
   handler: async (ctx, args): Promise<void> => {
