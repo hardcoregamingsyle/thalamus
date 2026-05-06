@@ -60,11 +60,13 @@ export const updateSessionStatus = internalMutation({
 export const getSessionMessages = internalQuery({
   args: { sessionId: v.id("teamSessions") },
   handler: async (ctx, args) => {
-    return await ctx.db
+    // Load last 100 messages for agent context (agents only use last 20 anyway)
+    const msgs = await ctx.db
       .query("agentMessages")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
-      .order("asc")
-      .take(700);
+      .order("desc")
+      .take(100);
+    return msgs.reverse();
   },
 });
 
@@ -135,11 +137,13 @@ export const watchSession = query({
 export const watchMessages = query({
   args: { sessionId: v.id("teamSessions") },
   handler: async (ctx, args) => {
-    return await ctx.db
+    // Load last 200 messages for display (desc order, then reverse to get chronological)
+    const msgs = await ctx.db
       .query("agentMessages")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
-      .order("asc")
-      .take(700);
+      .order("desc")
+      .take(200);
+    return msgs.reverse();
   },
 });
 
