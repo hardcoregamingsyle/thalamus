@@ -1239,6 +1239,33 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     setActiveSessionId(sessionId);
     setUserMessages([]);
     setMessageQueue([]);
+    setContextMenu(null);
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, session: TeamSession) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ sessionId: session._id, x: e.clientX, y: e.clientY });
+  };
+
+  const handleCreateBranch = async (purpose: string) => {
+    if (!branchModalSession || !token) return;
+    setIsBranching(true);
+    try {
+      const result = await createBranchAction({ mainSessionId: branchModalSession._id, branchPurpose: purpose, token });
+      const { branchSessionId, groupName } = result as { branchSessionId: Id<"teamSessions">; groupName: string; groupId: string };
+      toast.success(`Branch created! Group: "${groupName}"`);
+      setBranchModalSession(null);
+      await loadSessions();
+      // Navigate to the new branch
+      setActiveSessionId(branchSessionId);
+      setUserMessages([]);
+      setMessageQueue([]);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create branch");
+    } finally {
+      setIsBranching(false);
+    }
   };
 
   const handleCreateSession = async () => {
@@ -1684,7 +1711,7 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
         )}
 
         {/* Sessions list */}
-        <div className="flex-1 overflow-y-auto p-2 min-h-0">
+        <div className="flex-1 overflow-y-auto p-2 min-h-0" onClick={() => setContextMenu(null)}>
           <div className="flex items-center justify-between mb-2">
             <p className="text-[10px] text-muted-foreground font-bold">SESSIONS</p>
             <button onClick={loadSessions} className="text-muted-foreground hover:text-primary transition-colors">
@@ -1692,20 +1719,45 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
             </button>
           </div>
           <div className="space-y-0.5">
-            {sessions.map((s) => (
-              <button
-                key={s._id}
-                onClick={() => handleSelectSession(s._id)}
-                className={`w-full text-left px-2 py-1.5 rounded text-[10px] transition-all ${
-                  activeSessionId === s._id ? "bg-primary/15 border border-primary/20 text-primary" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                }`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.status === "completed" ? "bg-green-400" : s.status === "running" ? "bg-primary animate-pulse" : "bg-muted-foreground"}`} />
-                  <span className="truncate">{s.title}</span>
+            {sessions.map((s) => {
+              const raw = s as unknown as Record<string, unknown>;
+              const branchGroupId = raw.branchGroupId as string | undefined;
+              const branchNumber = raw.branchNumber as number | undefined;
+              const branchName = raw.branchName as string | undefined;
+              const isBranched = !!branchGroupId;
+              const isMainBranch = branchNumber === 1;
+              return (
+                <div key={s._id} className="relative">
+                  {isBranched && !isMainBranch && (
+                    <div className="absolute left-2 top-0 bottom-0 w-px bg-violet-400/30" />
+                  )}
+                  <button
+                    onClick={() => handleSelectSession(s._id)}
+                    onContextMenu={(e) => handleContextMenu(e, s)}
+                    className={`w-full text-left px-2 py-1.5 rounded text-[10px] transition-all ${
+                      isBranched && !isMainBranch ? "pl-4" : ""
+                    } ${
+                      activeSessionId === s._id ? "bg-primary/15 border border-primary/20 text-primary" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      {isBranched ? (
+                        <GitBranch className={`h-2.5 w-2.5 shrink-0 ${isMainBranch ? "text-violet-400" : "text-violet-400/60"}`} />
+                      ) : (
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.status === "completed" ? "bg-green-400" : s.status === "running" ? "bg-primary animate-pulse" : "bg-muted-foreground"}`} />
+                      )}
+                      <span className="truncate flex-1">{s.title}</span>
+                      {isBranched && branchName && (
+                        <span className="text-[8px] text-violet-400/60 shrink-0">B{branchNumber}</span>
+                      )}
+                    </div>
+                    {isBranched && branchName && (
+                      <p className="text-[8px] text-violet-400/50 truncate mt-0.5 pl-4">{branchName}</p>
+                    )}
+                  </button>
                 </div>
-              </button>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -2079,6 +2131,65 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
             currentRepo={(liveSession as Record<string, unknown> | null)?.githubRepo as string | undefined}
             currentBranch={(liveSession as Record<string, unknown> | null)?.githubBranch as string | undefined}
             lastSyncAt={(liveSession as Record<string, unknown> | null)?.githubLastSyncAt as number | undefined}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Right-click context menu */}
+      <AnimatePresence>
+        {contextMenu && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setContextMenu(null)} />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.1 }}
+              style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, zIndex: 50 }}
+              className="bg-card border border-border rounded-xl shadow-2xl py-1 min-w-[160px] overflow-hidden"
+            >
+              <button
+                onClick={() => {
+                  const session = sessions.find(s => s._id === contextMenu.sessionId);
+                  if (session) {
+                    const raw = session as unknown as Record<string, unknown>;
+                    if (raw.branchGroupId) {
+                      toast.error("This session is already part of a branch group");
+                    } else {
+                      setBranchModalSession(session);
+                    }
+                  }
+                  setContextMenu(null);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-foreground hover:bg-violet-400/10 hover:text-violet-400 transition-colors"
+              >
+                <GitBranch className="h-3.5 w-3.5" />
+                Create Branch
+              </button>
+              <button
+                onClick={() => {
+                  const session = sessions.find(s => s._id === contextMenu.sessionId);
+                  if (session) handleSelectSession(session._id);
+                  setContextMenu(null);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-foreground hover:bg-muted/50 transition-colors"
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                Open Session
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Branch Modal */}
+      <AnimatePresence>
+        {branchModalSession && (
+          <BranchModal
+            session={branchModalSession}
+            onClose={() => setBranchModalSession(null)}
+            onBranch={handleCreateBranch}
+            isBranching={isBranching}
           />
         )}
       </AnimatePresence>
