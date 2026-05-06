@@ -942,6 +942,12 @@ export const runAgentRound = action({
     const prevMessages = (await ctx.runQuery(internal.agentTeamHelpers.getSessionMessages, { sessionId: args.sessionId })) as MsgRow[];
     const projectFiles = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.sessionId })) as FileRow[];
 
+    // Load task summaries for Summarizer context
+    let taskSummaries: Array<{ taskIndex: number; summary: string }> = [];
+    if (session.taskSummariesJson) {
+      try { taskSummaries = JSON.parse(session.taskSummariesJson) as Array<{ taskIndex: number; summary: string }>; } catch { /* ignore */ }
+    }
+
     const contextLines = prevMessages.slice(-20).map((m) => `[${m.agent}]: ${m.content.slice(0, 1500)}`).join("\n\n---\n\n");
     const filesContext = projectFiles.length > 0
       ? `\n\nCURRENT PROJECT FILES (${projectFiles.length} files):\n` +
@@ -954,6 +960,11 @@ export const runAgentRound = action({
       const currentTask = plannerTasks[currentTaskIndex];
       if (currentTask) {
         taskContext = `\n\nCURRENT TASK (${currentTaskIndex + 1}/${plannerTasks.length}): ${currentTask.title}\n${currentTask.description}`;
+        // Add completed task summaries for context
+        const completedSummaries = taskSummaries.filter(s => s.taskIndex < currentTaskIndex);
+        if (completedSummaries.length > 0) {
+          taskContext += `\n\nCOMPLETED TASKS SUMMARY:\n${completedSummaries.map((s: { taskIndex: number; summary: string }) => `Task ${s.taskIndex + 1}: ${s.summary.slice(0, 300)}`).join("\n")}`;
+        }
         // Parse and set difficulty
         const difficulty = parseDifficultyFromPlannerOutput(currentTask.description ?? "");
         if (difficulty !== (session.currentTaskDifficulty ?? "normal")) {
@@ -981,9 +992,14 @@ export const runAgentRound = action({
     const phaseLabel = executionPhase === "planning" ? "PLANNING PHASE" : executionPhase === "final_review" ? "FINAL REVIEW" : `TASK ${currentTaskIndex + 1}/${plannerTasks.length}`;
     // Add upgrade notice to prompt if active
     const upgradeNotice = taskUpgradeActive ? `\n\n⚡ MODAL UPGRADE ACTIVE: You are running at maximum capability (Opus tier). This task has been difficult — give your absolute best output.` : "";
+    // For Summarizer: pass ALL previous summaries as context so it can produce a cumulative summary
+    const summarizerContext = currentPhase === "Summarizer" && taskSummaries.length > 0
+      ? `\n\nPREVIOUS TASK SUMMARIES (incorporate ALL of this into your new cumulative summary):\n${taskSummaries.map(s => `=== Task ${s.taskIndex + 1} Summary ===\n${s.summary}`).join("\n\n")}`
+      : "";
+
     const prompt = prevMessages.length === 0
       ? `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}${upgradeNotice}\n\nYou are the first agent (${currentPhase}). Begin your work.${filesContext}${sandboxContext}`
-      : `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nTASK MESSAGES: ${taskMessageCount + 1}/${MAX_TASK_MESSAGES}\nLOOP: ${loopCount + 1}${upgradeNotice}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
+      : `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nTASK MESSAGES: ${taskMessageCount + 1}/${MAX_TASK_MESSAGES}\nLOOP: ${loopCount + 1}${upgradeNotice}${summarizerContext}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
 
     await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
       sessionId: args.sessionId, status: "running", currentAgent: currentPhase,
@@ -1072,11 +1088,17 @@ export const runAgentRound = action({
       });
     }
 
-    // Handle task summaries from Summarizer
+    // Handle task summaries from Summarizer — store FULL summary (cumulative, replaces previous)
     if (currentPhase === "Summarizer" && parsed.cleanContent) {
       let summaries: Array<{ taskIndex: number; summary: string }> = [];
       try { if (session.taskSummariesJson) summaries = JSON.parse(session.taskSummariesJson); } catch { /* ignore */ }
-      summaries.push({ taskIndex: currentTaskIndex, summary: parsed.cleanContent.slice(0, 500) });
+      // Replace existing summary for this task index if it exists, otherwise append
+      const existingIdx = summaries.findIndex(s => s.taskIndex === currentTaskIndex);
+      if (existingIdx >= 0) {
+        summaries[existingIdx] = { taskIndex: currentTaskIndex, summary: parsed.cleanContent };
+      } else {
+        summaries.push({ taskIndex: currentTaskIndex, summary: parsed.cleanContent });
+      }
       await ctx.runMutation(internal.agentTeamHelpers.updateTaskSummaries, {
         sessionId: args.sessionId,
         taskSummariesJson: JSON.stringify(summaries),
@@ -1463,9 +1485,14 @@ export const backgroundRunOneRound = internalAction({
 
     const systemPrompt = AGENT_SYSTEM_PROMPTS[currentPhase] || AGENT_SYSTEM_PROMPTS["Researcher"];
     const phaseLabel = executionPhase === "planning" ? "PLANNING PHASE" : executionPhase === "final_review" ? "FINAL REVIEW" : `TASK ${currentTaskIndex + 1}/${plannerTasks.length}`;
+    // For Summarizer: pass ALL previous summaries as context so it can produce a cumulative summary
+    const summarizerContext = currentPhase === "Summarizer" && taskSummaries.length > 0
+      ? `\n\nPREVIOUS TASK SUMMARIES (incorporate ALL of this into your new cumulative summary):\n${taskSummaries.map(s => `=== Task ${s.taskIndex + 1} Summary ===\n${s.summary}`).join("\n\n")}`
+      : "";
+
     const prompt = prevMessages.length === 0
       ? `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\n\nYou are the first agent (${currentPhase}). Begin your work.${filesContext}${sandboxContext}`
-      : `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nLOOP: ${loopCount + 1}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
+      : `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nLOOP: ${loopCount + 1}${summarizerContext}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
 
     await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
       sessionId: args.sessionId, status: "running", currentAgent: currentPhase,
@@ -1648,8 +1675,14 @@ export const backgroundRunOneRound = internalAction({
           nextPhase = FINAL_REVIEW_PIPELINE_SKIP_CODER[0];
         }
       } else if (currentPhase === "Summarizer") {
-        // Store summary
-        const newSummaries = [...taskSummaries, { taskIndex: currentTaskIndex, summary: parsed.cleanContent.slice(0, 500) }];
+        // Store FULL cumulative summary — replace existing for this task index
+        const existingIdx = taskSummaries.findIndex(s => s.taskIndex === currentTaskIndex);
+        let newSummaries = [...taskSummaries];
+        if (existingIdx >= 0) {
+          newSummaries[existingIdx] = { taskIndex: currentTaskIndex, summary: parsed.cleanContent };
+        } else {
+          newSummaries = [...taskSummaries, { taskIndex: currentTaskIndex, summary: parsed.cleanContent }];
+        }
         await ctx.runMutation(internal.agentTeamHelpers.updateTaskSummaries, { sessionId: args.sessionId, taskSummariesJson: JSON.stringify(newSummaries) });
         const nextTaskIndex = currentTaskIndex + 1;
         if (nextTaskIndex < plannerTasks.length) {
