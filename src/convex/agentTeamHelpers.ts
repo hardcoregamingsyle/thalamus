@@ -528,13 +528,11 @@ export const saveGithubConfigMutation = internalMutation({
     sessionId: v.id("teamSessions"),
     githubRepo: v.string(),
     githubBranch: v.string(),
-    githubToken: v.string(),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.sessionId, {
       githubRepo: args.githubRepo,
       githubBranch: args.githubBranch,
-      githubToken: args.githubToken,
     });
   },
 });
