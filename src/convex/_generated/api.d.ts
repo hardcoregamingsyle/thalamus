@@ -22,6 +22,8 @@ import type * as customAuth from "../customAuth.js";
 import type * as customAuthHelpers from "../customAuthHelpers.js";
 import type * as dailyReset from "../dailyReset.js";
 import type * as fileSync from "../fileSync.js";
+import type * as github from "../github.js";
+import type * as githubHelpers from "../githubHelpers.js";
 import type * as http from "../http.js";
 import type * as sandbox from "../sandbox.js";
 import type * as sandboxHelpers from "../sandboxHelpers.js";
@@ -50,6 +52,8 @@ declare const fullApi: ApiFromModules<{
   customAuthHelpers: typeof customAuthHelpers;
   dailyReset: typeof dailyReset;
   fileSync: typeof fileSync;
+  github: typeof github;
+  githubHelpers: typeof githubHelpers;
   http: typeof http;
   sandbox: typeof sandbox;
   sandboxHelpers: typeof sandboxHelpers;

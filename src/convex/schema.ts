@@ -37,6 +37,10 @@ const schema = defineSchema(
       banReason: v.optional(v.string()),
       hasAppeal: v.optional(v.boolean()),
       warningCount: v.optional(v.number()),
+      // GitHub OAuth
+      githubAccessToken: v.optional(v.string()),
+      githubUsername: v.optional(v.string()),
+      githubConnectedAt: v.optional(v.number()),
     }).index("email", ["email"])
       .index("by_referral_code", ["referralCode"]),
 
