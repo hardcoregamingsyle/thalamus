@@ -942,9 +942,17 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     agentBucksDeducted: (m as Record<string, unknown>).agentBucksDeducted as number | undefined,
   }));
 
-  const allMessages: AgentMessage[] = [...agentMessages, ...userMessages].sort((a, b) =>
-    (a.messageIndex ?? 0) - (b.messageIndex ?? 0)
-  );
+  // Stable sort: messages with no messageIndex go to the END (not beginning)
+  // Use a large fallback value so undefined messageIndex sorts last
+  const allMessages: AgentMessage[] = [...agentMessages, ...userMessages].sort((a, b) => {
+    const ai = a.messageIndex ?? 999999;
+    const bi = b.messageIndex ?? 999999;
+    if (ai !== bi) return ai - bi;
+    // Tiebreaker: user messages (isUser) go after agent messages at same index
+    if (a.isUser && !b.isUser) return 1;
+    if (!a.isUser && b.isUser) return -1;
+    return 0;
+  });
 
   const projectFiles: ProjectFile[] = (liveFiles ?? []).map((f) => ({
     filepath: f.filepath, content: f.content, lastModifiedBy: f.lastModifiedBy,
