@@ -678,11 +678,17 @@ export const getBranchGroupQuery = internalQuery({
 });
 
 export const watchBranchGroups = query({
-  args: { userId: v.id("users") },
+  args: { token: v.string() },
   handler: async (ctx, args) => {
+    const sessions = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .take(1);
+    const session = sessions[0];
+    if (!session || session.expiresAt < Date.now()) return [];
     return await ctx.db
       .query("sessionBranchGroups")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .withIndex("by_user", (q) => q.eq("userId", session.userId))
       .order("desc")
       .take(50);
   },

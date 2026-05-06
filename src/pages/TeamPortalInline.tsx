@@ -1277,7 +1277,7 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const continueSessionAction = useAction(api.agentTeam.continueSession);
   const createBranchAction = useAction(api.agentTeam.createBranch);
   const propagateBranchAction = useAction(api.agentTeam.propagateBranchUpdate);
-  const branchGroups = useQuery(api.agentTeamHelpers.watchBranchGroups, token ? { userId: undefined as unknown as Id<"users"> } : "skip");
+  const branchGroups = useQuery(api.agentTeamHelpers.watchBranchGroups, token ? { token } : "skip");
   const createSandboxAction = useAction(api.sandbox.createSandbox);
   const executeCommandAction = useAction(api.sandbox.executeCommand);
   const stopSandboxAction = useAction(api.sandbox.stopSandbox);
