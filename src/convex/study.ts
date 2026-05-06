@@ -6,11 +6,74 @@ import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { callClaude, callGemini } from "./agentCore";
 
-// ── Live web search helper (scrapes real pages) ───────────────────────────────
-async function liveWebSearch(query: string): Promise<string> {
+// ── NCERT & Indian Education authoritative sources ────────────────────────────
+const NCERT_SOURCES = [
+  { name: "NCERT Official", url: "https://ncert.nic.in/", searchPath: "https://ncert.nic.in/textbook.php" },
+  { name: "Indian Express Education", url: "https://indianexpress.com/section/education/", rss: "https://indianexpress.com/section/education/feed/" },
+  { name: "DIKSHA (NCERT Digital)", url: "https://diksha.gov.in/", searchBase: "https://diksha.gov.in/search" },
+  { name: "API Setu Education", url: "https://www.apisetu.gov.in/" },
+  { name: "Sunbird DIKSHA", url: "https://sunbird.org/" },
+];
+
+// ── Fetch NCERT RSS feed for latest education news ────────────────────────────
+async function fetchNCERTNews(): Promise<string> {
   try {
-    // Use DuckDuckGo HTML search to get real URLs
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    const res = await fetch("https://indianexpress.com/section/education/feed/", {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; ThalamusAI/1.0)" },
+    });
+    if (!res.ok) return "";
+    const xml = await res.text();
+    // Parse RSS items
+    const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+    const parsed = items.slice(0, 5).map(item => {
+      const title = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || item.match(/<title>(.*?)<\/title>/))?.[1] ?? "";
+      const desc = (item.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>/) || item.match(/<description>(.*?)<\/description>/))?.[1] ?? "";
+      const link = item.match(/<link>(.*?)<\/link>/)?.[1] ?? "";
+      return `• ${title}\n  ${desc.replace(/<[^>]+>/g, "").slice(0, 200)}\n  Source: ${link}`;
+    });
+    return parsed.length > 0 ? `LATEST EDUCATION NEWS (Indian Express):\n${parsed.join("\n\n")}` : "";
+  } catch {
+    return "";
+  }
+}
+
+// ── Scrape NCERT textbook page for subject content ────────────────────────────
+async function fetchNCERTContent(query: string): Promise<string> {
+  try {
+    // Search NCERT website
+    const searchUrl = `https://ncert.nic.in/textbook.php?${encodeURIComponent(query)}`;
+    const res = await fetch(searchUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; ThalamusAI/1.0)" },
+    });
+    if (!res.ok) return "";
+    const html = await res.text();
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s{3,}/g, "\n")
+      .trim()
+      .slice(0, 2000);
+    return text.length > 100 ? `NCERT Content:\n${text}` : "";
+  } catch {
+    return "";
+  }
+}
+
+// ── Live web search helper (scrapes real pages, prioritizes NCERT sources) ────
+async function liveWebSearch(query: string, isEducationQuery = true): Promise<string> {
+  const results: string[] = [];
+
+  // For education queries, fetch NCERT news first
+  if (isEducationQuery) {
+    const ncertNews = await fetchNCERTNews();
+    if (ncertNews) results.push(ncertNews);
+  }
+
+  try {
+    // Use DuckDuckGo HTML search — add "NCERT" to education queries for better results
+    const searchQuery = isEducationQuery ? `${query} NCERT India` : query;
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`;
     const searchRes = await fetch(searchUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -24,7 +87,7 @@ async function liveWebSearch(query: string): Promise<string> {
     // Extract URLs from DuckDuckGo results
     const urlMatches = searchHtml.match(/uddg=([^&"]+)/g) || [];
     const urls: string[] = [];
-    for (const match of urlMatches.slice(0, 4)) {
+    for (const match of urlMatches.slice(0, 6)) {
       try {
         const decoded = decodeURIComponent(match.replace("uddg=", ""));
         if (decoded.startsWith("http") && !decoded.includes("duckduckgo.com")) {
@@ -33,7 +96,13 @@ async function liveWebSearch(query: string): Promise<string> {
       } catch { /* skip */ }
     }
 
-    if (urls.length === 0) {
+    // Prioritize NCERT/Indian education sources
+    const priorityDomains = ["ncert.nic.in", "diksha.gov.in", "indianexpress.com", "apisetu.gov.in", "sunbird.org", "cbse.gov.in", "education.gov.in", "mhrd.gov.in"];
+    const priorityUrls = urls.filter(u => priorityDomains.some(d => u.includes(d)));
+    const otherUrls = urls.filter(u => !priorityDomains.some(d => u.includes(d)));
+    const orderedUrls = [...priorityUrls, ...otherUrls].slice(0, 3);
+
+    if (orderedUrls.length === 0) {
       // Fallback: extract result snippets from DuckDuckGo HTML directly
       const snippets = searchHtml
         .replace(/<script[\s\S]*?<\/script>/gi, "")
@@ -42,62 +111,52 @@ async function liveWebSearch(query: string): Promise<string> {
         .replace(/\s{3,}/g, "\n")
         .trim()
         .slice(0, 4000);
-      return `Search results for "${query}":\n${snippets}`;
+      results.push(`Search results for "${query}":\n${snippets}`);
+    } else {
+      // Scrape top pages for content
+      for (const url of orderedUrls) {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 8000);
+          const pageRes = await fetch(url, {
+            signal: controller.signal,
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+          });
+          clearTimeout(timeout);
+          if (!pageRes.ok) continue;
+          const html = await pageRes.text();
+          const text = html
+            .replace(/<script[\s\S]*?<\/script>/gi, "")
+            .replace(/<style[\s\S]*?<\/style>/gi, "")
+            .replace(/<nav[\s\S]*?<\/nav>/gi, "")
+            .replace(/<header[\s\S]*?<\/header>/gi, "")
+            .replace(/<footer[\s\S]*?<\/footer>/gi, "")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/&nbsp;/g, " ")
+            .replace(/&amp;/g, "&")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/\s{3,}/g, "\n\n")
+            .trim();
+          if (text.length > 200) {
+            const isNCERT = priorityDomains.some(d => url.includes(d));
+            results.push(`[${isNCERT ? "✓ AUTHORITATIVE SOURCE" : "Source"}: ${url}]\n${text.slice(0, 3000)}`);
+          }
+        } catch { /* skip failed pages */ }
+      }
     }
-
-    // Scrape top 2 pages for content
-    const scrapedContents: string[] = [];
-    for (const url of urls.slice(0, 2)) {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000);
-        const pageRes = await fetch(url, {
-          signal: controller.signal,
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          },
-        });
-        clearTimeout(timeout);
-        if (!pageRes.ok) continue;
-        const html = await pageRes.text();
-        const text = html
-          .replace(/<script[\s\S]*?<\/script>/gi, "")
-          .replace(/<style[\s\S]*?<\/style>/gi, "")
-          .replace(/<nav[\s\S]*?<\/nav>/gi, "")
-          .replace(/<header[\s\S]*?<\/header>/gi, "")
-          .replace(/<footer[\s\S]*?<\/footer>/gi, "")
-          .replace(/<[^>]+>/g, " ")
-          .replace(/&nbsp;/g, " ")
-          .replace(/&amp;/g, "&")
-          .replace(/&lt;/g, "<")
-          .replace(/&gt;/g, ">")
-          .replace(/&quot;/g, '"')
-          .replace(/&#39;/g, "'")
-          .replace(/\s{3,}/g, "\n\n")
-          .trim();
-        if (text.length > 200) {
-          scrapedContents.push(`[Source: ${url}]\n${text.slice(0, 3000)}`);
-        }
-      } catch { /* skip failed pages */ }
-    }
-
-    if (scrapedContents.length > 0) {
-      return `LIVE WEB SEARCH RESULTS for "${query}":\n\n${scrapedContents.join("\n\n---\n\n")}`;
-    }
-
-    // If scraping failed, return DuckDuckGo snippets
-    const snippets = searchHtml
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s{3,}/g, "\n")
-      .trim()
-      .slice(0, 4000);
-    return `Search results for "${query}":\n${snippets}`;
   } catch (err) {
-    return `[Web search unavailable: ${err}]`;
+    results.push(`[Web search unavailable: ${err}]`);
   }
+
+  return results.length > 0
+    ? `LIVE WEB SEARCH RESULTS for "${query}":\n\n${results.join("\n\n---\n\n")}`
+    : `[No live results found for "${query}"]`;
 }
 
 // ── Process file/image with Claude Vision via Bedrock ─────────────────────────
@@ -175,7 +234,7 @@ export const searchAndAddResource = action({
     if (!userId) throw new Error("Not authenticated");
 
     // Do a real live web search first
-    const webResults = await liveWebSearch(args.query);
+    const webResults = await liveWebSearch(args.query, args.query.includes("education") || args.query.includes("ncert"));
 
     const systemPrompt = `You are a research assistant. Summarize the following live web search results into comprehensive, well-structured study notes. Include all key facts, definitions, and important details. Format as plain text suitable for study notes. Be accurate and use only the information from the search results.`;
 
@@ -241,7 +300,7 @@ export const sendStudyMessage = action({
     // Always do a REAL live web search — scrape actual pages
     let liveSearchResults = "";
     try {
-      liveSearchResults = await liveWebSearch(args.content);
+      liveSearchResults = await liveWebSearch(args.content, args.content.includes("education") || args.content.includes("ncert"));
     } catch {
       liveSearchResults = "";
     }
@@ -257,18 +316,28 @@ export const sendStudyMessage = action({
       ? `\n\n## CURRENT USER CONTEXT:\n- Date/Time: ${args.userContext.datetime}\n- Timezone: ${args.userContext.timezone}${args.userContext.location ? `\n- Location: ${args.userContext.location}` : ""}\n\nUse this context for time-sensitive questions (e.g., current academic year, upcoming exams, etc.).\n`
       : "";
 
-    const systemPrompt = `You are a Study Assistant powered by Thalamus AI. You help students learn and understand topics accurately.${contextHeader}
+    const systemPrompt = `You are a Study Assistant powered by Thalamus AI — specialized for Indian students using NCERT curriculum.${contextHeader}
 
-CRITICAL: The LIVE WEB SEARCH RESULTS below are scraped directly from real websites RIGHT NOW. They are the most current and accurate information available. You MUST use them as your primary source. Do NOT use your training data when live results are available — your training data may be outdated.
+## AUTHORITATIVE NCERT & INDIAN EDUCATION SOURCES:
+Your primary knowledge sources for Indian education content are:
+- **NCERT Official** (ncert.nic.in) — Official NCERT textbooks, syllabi, and study materials
+- **DIKSHA Platform** (diksha.gov.in) — National Digital Infrastructure for Teachers and Students by NCERT/MHRD
+- **Indian Express Education** (indianexpress.com/section/education) — Latest education news, exam updates, results
+- **API Setu** (apisetu.gov.in) — Government of India digital services including education APIs
+- **Sunbird** (sunbird.org) — Open-source platform powering DIKSHA
 
-${liveSearchResults ? `## LIVE WEB SEARCH RESULTS (scraped from real websites, use as primary source):\n${liveSearchResults}` : "## NOTE: Live web search unavailable. Using general knowledge — may not be current."}
+CRITICAL: The LIVE WEB SEARCH RESULTS below are scraped directly from real websites RIGHT NOW, including NCERT and Indian education sources. They are the most current and accurate information available. You MUST use them as your primary source.
+
+${liveSearchResults ? `## LIVE WEB SEARCH RESULTS (scraped from NCERT & education sources, use as primary source):\n${liveSearchResults}` : "## NOTE: Live web search unavailable. Using NCERT curriculum knowledge from training data."}
 ${resourceContext ? `\n${resourceContext}` : ""}
 
 When answering:
-1. BASE your answer primarily on the live web search results above
-2. Use uploaded resources as supplementary context
-3. If the live results don't cover something, use general knowledge but clearly state "Based on general knowledge (may not be current):"
-4. Never make up information
+1. BASE your answer primarily on the live web search results above (especially NCERT/DIKSHA sources marked ✓ AUTHORITATIVE SOURCE)
+2. For NCERT curriculum questions: reference specific chapters, textbooks, and class levels
+3. Use uploaded resources as supplementary context
+4. If the live results don't cover something, use NCERT curriculum knowledge but state "Based on NCERT curriculum knowledge:"
+5. Never make up information — if unsure, say so
+6. For exam-related questions (CBSE, JEE, NEET, etc.), provide accurate, current information
 
 RESPONSE FORMAT: Respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.
 
