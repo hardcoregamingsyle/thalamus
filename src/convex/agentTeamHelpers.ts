@@ -372,6 +372,16 @@ export const updateTaskDifficulty = internalMutation({
   },
 });
 
+export const updateTechStack = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    techStackJson: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, { techStackJson: args.techStackJson });
+  },
+});
+
 // ── Public file operation mutations (called from frontend) ────────────────────
 export const deleteFilePublic = mutation({
   args: {

@@ -102,6 +102,7 @@ const schema = defineSchema(
       unfixableTasksJson: v.optional(v.string()),
       manualUpgradeEnabled: v.optional(v.boolean()),
       customId: v.optional(v.string()),
+      techStackJson: v.optional(v.string()),   // Architect output — shared with all agents
       // GitHub sync fields
       githubRepo: v.optional(v.string()),
       githubBranch: v.optional(v.string()),
