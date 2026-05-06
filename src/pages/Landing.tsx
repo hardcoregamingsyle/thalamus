@@ -2,11 +2,16 @@ import { motion } from "framer-motion";
 import { useNavigate } from "react-router";
 import { useAuth } from "@/hooks/use-auth";
 import { useState, useEffect } from "react";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { toast } from "sonner";
+import { useRef } from "react";
 import {
   Cpu, Zap, Brain, Code2, Shield, ChevronRight,
   Users, Rocket, Globe, Terminal, Activity, Search, FileCode,
   CheckCircle, ArrowRight, Layers, GitBranch, Eye, Lock,
   MessageSquare, BookOpen, Sparkles, Database, Server,
+  Lightbulb, X, Upload, FileText, Send, Loader2,
 } from "lucide-react";
 
 // ── Agent pipeline data ────────────────────────────────────────────────────────
@@ -164,12 +169,45 @@ function LivePipeline() {
 }
 
 // ── Main Landing ───────────────────────────────────────────────────────────────
+interface SuggestionFile {
+  name: string;
+  content: string;
+  size: number;
+}
+
 export default function Landing() {
   const navigate = useNavigate();
   const { isAuthenticated, isLoading } = useAuth();
   const [activeModeTab, setActiveModeTab] = useState(0);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [suggTitle, setSuggTitle] = useState("");
+  const [suggDesc, setSuggDesc] = useState("");
+  const [suggFiles, setSuggFiles] = useState<SuggestionFile[]>([]);
+  const [isSuggSubmitting, setIsSuggSubmitting] = useState(false);
+  const suggFileRef = useRef<HTMLInputElement>(null);
+  const submitSuggestionMutation = useMutation(api.admin.submitSuggestion);
 
   const handleLaunch = () => navigate(isAuthenticated ? "/portal/chat" : "/auth");
+
+  const handleSuggFileAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files ?? []);
+    for (const file of selected) {
+      const text = await file.text().catch(() => `[Binary file: ${file.name}]`);
+      setSuggFiles(prev => [...prev, { name: file.name, content: text.slice(0, 50000), size: file.size }]);
+    }
+    if (suggFileRef.current) suggFileRef.current.value = "";
+  };
+
+  const handleSuggSubmit = async () => {
+    if (!suggTitle.trim() || !suggDesc.trim()) { toast.error("Please fill in Title and Description"); return; }
+    setIsSuggSubmitting(true);
+    try {
+      await submitSuggestionMutation({ title: suggTitle.trim(), description: suggDesc.trim(), files: suggFiles.length > 0 ? suggFiles : undefined });
+      toast.success("Suggestion submitted! Thank you.");
+      setSuggestionsOpen(false); setSuggTitle(""); setSuggDesc(""); setSuggFiles([]);
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to submit"); }
+    finally { setIsSuggSubmitting(false); }
+  };
 
   return (
     <div className="min-h-screen bg-background font-mono overflow-x-hidden">
@@ -190,6 +228,13 @@ export default function Landing() {
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               LIVE
             </span>
+            <button
+              onClick={() => setSuggestionsOpen(true)}
+              className="flex items-center gap-1.5 text-[11px] border border-border text-muted-foreground px-2.5 py-1.5 rounded-lg hover:border-amber-400/40 hover:bg-amber-400/10 hover:text-amber-400 transition-all font-bold"
+            >
+              <Lightbulb className="h-3 w-3" />
+              <span className="hidden sm:block">IDEAS</span>
+            </button>
             <button onClick={handleLaunch}
               className="flex items-center gap-1.5 text-xs border border-primary text-primary px-4 py-1.5 rounded-lg hover:bg-primary hover:text-primary-foreground transition-all font-bold">
               {isLoading ? "..." : isAuthenticated ? "OPEN PORTAL" : "GET STARTED"}

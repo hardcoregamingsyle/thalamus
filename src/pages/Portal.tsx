@@ -42,6 +42,18 @@ interface StudyResource {
   createdAt: number;
 }
 
+interface AttachedFile {
+  name: string;
+  content: string;
+  size: number;
+}
+
+interface SuggestionFile {
+  name: string;
+  content: string;
+  size: number;
+}
+
 const MODES: { id: Mode; label: string; icon: typeof MessageSquare; desc: string; color: string; accent: string }[] = [
   { id: "chat", label: "CHAT", icon: MessageSquare, desc: "General", color: "text-primary", accent: "bg-primary/15 border-primary/30" },
   { id: "research", label: "RESEARCH", icon: Search, desc: "Deep", color: "text-accent", accent: "bg-accent/15 border-accent/30" },
@@ -159,6 +171,142 @@ function SuggestionsPanel({
   );
 }
 
+// ── Suggestion Form Modal ─────────────────────────────────────────────────────
+interface SuggestionFile {
+  name: string;
+  content: string;
+  size: number;
+}
+
+function SuggestionFormModal({
+  onClose,
+  onSubmit,
+  isSubmitting,
+}: {
+  onClose: () => void;
+  onSubmit: (title: string, description: string, files: SuggestionFile[]) => Promise<void>;
+  isSubmitting: boolean;
+}) {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [files, setFiles] = useState<SuggestionFile[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFileAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files ?? []);
+    for (const file of selected) {
+      const text = await file.text().catch(() => `[Binary file: ${file.name}]`);
+      setFiles(prev => [...prev, { name: file.name, content: text.slice(0, 50000), size: file.size }]);
+    }
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const handleSubmit = async () => {
+    if (!title.trim() || !description.trim()) {
+      toast.error("Please fill in Title and Description");
+      return;
+    }
+    await onSubmit(title.trim(), description.trim(), files);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        transition={{ duration: 0.2 }}
+        className="relative z-10 bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-amber-400/20 border border-amber-400/30 flex items-center justify-center">
+              <Lightbulb className="h-3.5 w-3.5 text-amber-400" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-foreground">SUBMIT SUGGESTION</p>
+              <p className="text-[9px] text-muted-foreground">Help us improve Thalamus AI</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors p-1">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Title */}
+          <div>
+            <label className="text-[10px] font-bold text-muted-foreground block mb-1.5">TITLE <span className="text-destructive">*</span></label>
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="Brief title for your suggestion..."
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-amber-400/60 transition-colors"
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="text-[10px] font-bold text-muted-foreground block mb-1.5">DESCRIPTION <span className="text-destructive">*</span></label>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="Describe your suggestion, bug report, or feature request in detail..."
+              rows={5}
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-amber-400/60 transition-colors resize-none"
+            />
+          </div>
+
+          {/* File attachments */}
+          <div>
+            <label className="text-[10px] font-bold text-muted-foreground block mb-1.5">ATTACHMENTS (optional)</label>
+            <input ref={fileRef} type="file" multiple onChange={handleFileAdd} className="hidden" accept=".txt,.md,.json,.csv,.log,.ts,.tsx,.js,.jsx,.py,.html,.css,.xml,.yaml,.yml" />
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="w-full py-2 border border-dashed border-border rounded-lg text-[10px] text-muted-foreground hover:border-amber-400/40 hover:text-amber-400 transition-all flex items-center justify-center gap-2"
+            >
+              <Upload className="h-3 w-3" />
+              Click to attach files (text, code, logs)
+            </button>
+            {files.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {files.map((f, i) => (
+                  <div key={i} className="flex items-center justify-between px-2 py-1.5 bg-background border border-border rounded-lg">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+                      <span className="text-[10px] text-foreground truncate">{f.name}</span>
+                      <span className="text-[9px] text-muted-foreground shrink-0">({(f.size / 1024).toFixed(1)}KB)</span>
+                    </div>
+                    <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 ml-2">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Submit */}
+          <button
+            onClick={handleSubmit}
+            disabled={isSubmitting || !title.trim() || !description.trim()}
+            className="w-full py-2.5 bg-amber-400/15 border border-amber-400/30 text-amber-400 text-xs rounded-xl hover:bg-amber-400/25 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-2"
+          >
+            {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+            {isSubmitting ? "Submitting..." : "Submit Suggestion"}
+          </button>
+
+          <p className="text-[9px] text-muted-foreground/60 text-center">
+            Your feedback goes directly to the Thalamus AI team. We read every submission.
+          </p>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function Portal() {
   const { isLoading, isAuthenticated, user, signOut, token } = useAuth();
   const navigate = useNavigate();
@@ -180,6 +328,7 @@ export default function Portal() {
   const [studySearchQuery, setStudySearchQuery] = useState("");
   const [isAddingResource, setIsAddingResource] = useState(false);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -214,6 +363,8 @@ export default function Portal() {
   const deleteResource = useMutation(api.studyHelpers.deleteResource);
   const searchAndAddResource = useAction(api.study.searchAndAddResource);
   const processFileResource = useAction(api.study.processFileResource);
+  const submitSuggestionMutation = useMutation(api.admin.submitSuggestion);
+  const [isSuggestionSubmitting, setIsSuggestionSubmitting] = useState(false);
 
   // Resolve conversation from URL session ID
   useEffect(() => {
@@ -239,6 +390,25 @@ export default function Portal() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
+
+  const handleSubmitSuggestion = async (title: string, description: string, files: SuggestionFile[]) => {
+    setIsSuggestionSubmitting(true);
+    try {
+      const typedUserForSuggestion = user as { email?: string } | null;
+      await submitSuggestionMutation({
+        userEmail: typedUserForSuggestion?.email,
+        title,
+        description,
+        files: files.length > 0 ? files : undefined,
+      });
+      toast.success("Suggestion submitted! Thank you for your feedback.");
+      setSuggestionsOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to submit suggestion");
+    } finally {
+      setIsSuggestionSubmitting(false);
+    }
+  };
 
   const setActiveMode = (mode: Mode) => {
     setActiveConvId(null);
@@ -422,13 +592,10 @@ export default function Portal() {
       {/* Suggestions Panel — rendered outside header, always on top */}
       <AnimatePresence>
         {suggestionsOpen && (
-          <SuggestionsPanel
-            mode={activeMode}
+          <SuggestionFormModal
             onClose={() => setSuggestionsOpen(false)}
-            onSelect={(prompt) => {
-              setInput(prompt);
-              setSuggestionsOpen(false);
-            }}
+            onSubmit={handleSubmitSuggestion}
+            isSubmitting={isSuggestionSubmitting}
           />
         )}
       </AnimatePresence>
