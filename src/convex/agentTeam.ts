@@ -1920,7 +1920,6 @@ export const saveGithubConfig = action({
     sessionId: v.id("teamSessions"),
     githubRepo: v.string(),
     githubBranch: v.string(),
-    githubToken: v.string(),
     token: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<void> => {
@@ -1932,7 +1931,6 @@ export const saveGithubConfig = action({
       sessionId: args.sessionId,
       githubRepo: args.githubRepo,
       githubBranch: args.githubBranch,
-      githubToken: args.githubToken,
     });
   },
 });
@@ -1950,10 +1948,14 @@ export const syncGithub = action({
 
     const githubRepo = (session as Record<string, unknown>).githubRepo as string | undefined;
     const githubBranch = (session as Record<string, unknown>).githubBranch as string | undefined;
-    const githubToken = (session as Record<string, unknown>).githubToken as string | undefined;
     const lastCommitSha = (session as Record<string, unknown>).githubLastCommitSha as string | undefined;
 
-    if (!githubRepo || !githubBranch || !githubToken) throw new Error("GitHub not configured");
+    if (!githubRepo || !githubBranch) throw new Error("GitHub not configured. Please connect a repository first.");
+
+    // Get the user's stored OAuth token
+    const user = await ctx.runQuery(internal.githubHelpers.getUserById, { userId });
+    const githubToken = (user as Record<string, unknown> | null)?.githubAccessToken as string | undefined;
+    if (!githubToken) throw new Error("GitHub account not connected. Please connect your GitHub account first.");
 
     // Parse owner/repo
     let ownerRepo = githubRepo.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/$/, "");

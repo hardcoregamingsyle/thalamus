@@ -584,32 +584,49 @@ function GithubSyncModal({
   onClose,
   onSave,
   onSync,
+  onConnect,
+  onDisconnect,
   isSyncing,
   currentRepo,
   currentBranch,
   lastSyncAt,
+  githubUsername,
+  isGithubConnected,
 }: {
   onClose: () => void;
-  onSave: (repo: string, branch: string, token: string) => Promise<void>;
+  onSave: (repo: string, branch: string) => Promise<void>;
   onSync: () => Promise<void>;
+  onConnect: () => Promise<void>;
+  onDisconnect: () => Promise<void>;
   isSyncing: boolean;
   currentRepo?: string;
   currentBranch?: string;
   lastSyncAt?: number;
+  githubUsername?: string | null;
+  isGithubConnected: boolean;
 }) {
   const [repo, setRepo] = useState(currentRepo ?? "");
   const [branch, setBranch] = useState(currentBranch ?? "main");
-  const [ghToken, setGhToken] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const isConnected = !!currentRepo;
+  const [isConnecting, setIsConnecting] = useState(false);
+  const isRepoConfigured = !!currentRepo;
 
   const handleSave = async () => {
-    if (!repo.trim() || !branch.trim() || !ghToken.trim()) return;
+    if (!repo.trim() || !branch.trim()) return;
     setIsSaving(true);
     try {
-      await onSave(repo.trim(), branch.trim(), ghToken.trim());
+      await onSave(repo.trim(), branch.trim());
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleConnect = async () => {
+    setIsConnecting(true);
+    try {
+      await onConnect();
+    } finally {
+      setIsConnecting(false);
     }
   };
 
@@ -626,8 +643,8 @@ function GithubSyncModal({
           <div className="flex items-center gap-2">
             <Github className="h-5 w-5 text-foreground" />
             <h3 className="text-sm font-bold text-foreground">GitHub Sync</h3>
-            {isConnected && (
-              <span className="text-[9px] bg-green-400/15 text-green-400 border border-green-400/30 px-1.5 py-0.5 rounded-full font-bold">CONNECTED</span>
+            {isGithubConnected && (
+              <span className="text-[9px] bg-green-400/15 text-green-400 border border-green-400/30 px-1.5 py-0.5 rounded-full font-bold">ACCOUNT LINKED</span>
             )}
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
@@ -635,16 +652,48 @@ function GithubSyncModal({
           </button>
         </div>
 
-        {isConnected && (
-          <div className="mb-4 p-3 bg-green-400/5 border border-green-400/20 rounded-xl">
-            <p className="text-[10px] text-green-400 font-bold">{currentRepo} @ {currentBranch}</p>
-            {lastSyncAt && (
-              <p className="text-[9px] text-muted-foreground mt-0.5">Last sync: {new Date(lastSyncAt).toLocaleString()}</p>
+        {/* Step 1: Connect GitHub Account */}
+        <div className={`mb-4 p-3 rounded-xl border ${isGithubConnected ? "bg-green-400/5 border-green-400/20" : "bg-muted/20 border-border"}`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold text-foreground">Step 1: Connect GitHub Account</p>
+              {isGithubConnected && githubUsername ? (
+                <p className="text-[9px] text-green-400 mt-0.5">@{githubUsername}</p>
+              ) : (
+                <p className="text-[9px] text-muted-foreground mt-0.5">Authorize Thalamus to access your repos</p>
+              )}
+            </div>
+            {isGithubConnected ? (
+              <button
+                onClick={onDisconnect}
+                className="text-[9px] text-destructive hover:text-destructive/80 transition-colors font-bold"
+              >
+                Disconnect
+              </button>
+            ) : (
+              <button
+                onClick={handleConnect}
+                disabled={isConnecting}
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-foreground text-background text-[10px] rounded-lg hover:bg-foreground/90 disabled:opacity-50 transition-all font-bold"
+              >
+                {isConnecting ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Github className="h-2.5 w-2.5" />}
+                Connect GitHub
+              </button>
             )}
           </div>
-        )}
+        </div>
 
-        <div className="space-y-3">
+        {/* Step 2: Configure Repository */}
+        <div className={`space-y-3 ${!isGithubConnected ? "opacity-50 pointer-events-none" : ""}`}>
+          <p className="text-[10px] font-bold text-muted-foreground">Step 2: Configure Repository</p>
+          {isRepoConfigured && (
+            <div className="p-2.5 bg-primary/5 border border-primary/20 rounded-xl">
+              <p className="text-[10px] text-primary font-bold">{currentRepo} @ {currentBranch}</p>
+              {lastSyncAt && (
+                <p className="text-[9px] text-muted-foreground mt-0.5">Last sync: {new Date(lastSyncAt).toLocaleString()}</p>
+              )}
+            </div>
+          )}
           <div>
             <label className="text-[10px] text-muted-foreground font-bold block mb-1">REPOSITORY</label>
             <input
@@ -663,32 +712,18 @@ function GithubSyncModal({
               className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
             />
           </div>
-          <div>
-            <label className="text-[10px] text-muted-foreground font-bold block mb-1">GITHUB TOKEN (PAT)</label>
-            <input
-              type="password"
-              value={ghToken}
-              onChange={e => setGhToken(e.target.value)}
-              placeholder={isConnected ? "Enter new token to update" : "ghp_xxxxxxxxxxxx"}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
-            />
-            <p className="text-[9px] text-muted-foreground mt-1">
-              Needs <code className="bg-muted px-1 rounded">repo</code> scope.{" "}
-              <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Create token →</a>
-            </p>
-          </div>
         </div>
 
         <div className="flex gap-2 mt-4">
           <button
             onClick={handleSave}
-            disabled={isSaving || !repo.trim() || !branch.trim() || !ghToken.trim()}
+            disabled={isSaving || !repo.trim() || !branch.trim() || !isGithubConnected}
             className="flex-1 py-2 bg-primary/15 border border-primary/30 text-primary text-xs rounded-xl hover:bg-primary/25 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-1.5"
           >
             {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Github className="h-3 w-3" />}
-            {isConnected ? "Update Config" : "Connect"}
+            {isRepoConfigured ? "Update Repo" : "Save Repo"}
           </button>
-          {isConnected && (
+          {isRepoConfigured && isGithubConnected && (
             <button
               onClick={onSync}
               disabled={isSyncing}
@@ -1420,6 +1455,9 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const [isSuggestionSubmitting, setIsSuggestionSubmitting] = useState(false);
   const saveGithubConfigAction = useAction(api.agentTeam.saveGithubConfig);
   const syncGithubAction = useAction(api.agentTeam.syncGithub);
+  const getGithubAuthUrlAction = useAction(api.github.getAuthorizationUrl);
+  const disconnectGithubMutation = useMutation(api.githubHelpers.disconnectGithub);
+  const githubStatus = useQuery(api.githubHelpers.getGithubStatus, token ? { token } : "skip");
   const setCustomDomainAction = useAction(api.sandbox.setCustomDomain);
   const submitInfoResponseAction = useAction(api.agentTeam.submitInfoResponse);
   const submitSuggestionMutation = useMutation(api.admin.submitSuggestion);
@@ -1495,11 +1533,11 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to force upgrade"); }
   };
 
-  const handleSaveGithubConfig = async (repo: string, branch: string, ghToken: string) => {
+  const handleSaveGithubConfig = async (repo: string, branch: string) => {
     if (!activeSessionId || !token) return;
     try {
-      await saveGithubConfigAction({ sessionId: activeSessionId, githubRepo: repo, githubBranch: branch, githubToken: ghToken, token });
-      toast.success("GitHub connected! Auto-sync enabled.");
+      await saveGithubConfigAction({ sessionId: activeSessionId, githubRepo: repo, githubBranch: branch, token });
+      toast.success("Repository configured! Starting sync...");
       // Immediately sync after connecting
       setIsSyncing(true);
       try {
@@ -1509,6 +1547,27 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
       } catch (err) { toast.error(err instanceof Error ? err.message : "Sync failed"); }
       finally { setIsSyncing(false); }
     } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to save config"); }
+  };
+
+  const handleGithubConnect = async () => {
+    if (!token) return;
+    try {
+      const redirectUri = `${window.location.origin.replace("thalamus.aphantic.skinticals.com", "glad-ermine-937.convex.site")}/github/callback`;
+      const authUrl = await getGithubAuthUrlAction({ token, redirectUri });
+      window.location.href = authUrl;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to initiate GitHub OAuth");
+    }
+  };
+
+  const handleGithubDisconnect = async () => {
+    if (!token) return;
+    try {
+      await disconnectGithubMutation({ token });
+      toast.success("GitHub account disconnected");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to disconnect");
+    }
   };
 
   const handleGithubSync = async () => {
@@ -2245,10 +2304,14 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
             onClose={() => setShowGithubModal(false)}
             onSave={handleSaveGithubConfig}
             onSync={handleGithubSync}
+            onConnect={handleGithubConnect}
+            onDisconnect={handleGithubDisconnect}
             isSyncing={isSyncing}
             currentRepo={(liveSession as Record<string, unknown> | null)?.githubRepo as string | undefined}
             currentBranch={(liveSession as Record<string, unknown> | null)?.githubBranch as string | undefined}
             lastSyncAt={(liveSession as Record<string, unknown> | null)?.githubLastSyncAt as number | undefined}
+            githubUsername={githubStatus?.username}
+            isGithubConnected={githubStatus?.connected ?? false}
           />
         )}
       </AnimatePresence>
