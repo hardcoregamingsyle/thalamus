@@ -6,7 +6,7 @@ import { Id } from "./_generated/dataModel";
 import { callGemini, callModel, calcAgentBucksForTier, performSearch, performScrape, parseAgentOutput, parsePlannerOutput, parseDifficultyFromPlannerOutput, AGENT_SYSTEM_PROMPTS, PlannerTask, CLAUDE_PRICING, calcClaudeCost, calcAgentBucksFromTokens, AGENT_MODEL_MAP, DIFFICULTY_CODER_MODEL, DIFFICULTY_FRAMEWORK_AUDITOR_MODEL, DIFFICULTY_REDTEAM_SONNET_OVERRIDE, TaskDifficulty, ModelTier } from "./agentCore";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const MAX_MESSAGES = 600;
+const MAX_MESSAGES = 100_000; // No practical limit — sessions run until complete
 const MAX_TASK_MESSAGES = 100;        // per-task message limit
 const MODAL_UPGRADE_TRIGGER = 40;     // messages in task before upgrade activates on rejection (cumulative across restarts)
 const MODAL_UPGRADE_DURATION = 30;    // messages the upgrade lasts

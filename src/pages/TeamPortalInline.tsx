@@ -126,7 +126,7 @@ const PIPELINE_DISPLAY: Record<string, { displayName: string; subAgents: Array<{
     ],
   },
 };
-const MAX_MESSAGES = 600;
+const MAX_MESSAGES = 100_000; // No practical limit
 
 function playSound(type: "send" | "receive" | "complete" | "error" | "queue") {
   try {
@@ -1549,7 +1549,7 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
                 <span className="text-xs text-muted-foreground truncate max-w-[120px] md:max-w-xs">{sessionInfo?.title}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-muted-foreground">{sessionInfo?.totalMessages ?? 0}/{MAX_MESSAGES} msgs</span>
+                <span className="text-[10px] text-muted-foreground">{sessionInfo?.totalMessages ?? 0} msgs</span>
                 {/* GitHub Sync button */}
                 {activeSessionId && (() => {
                   const githubRepo = (liveSession as Record<string, unknown> | null)?.githubRepo as string | undefined;
@@ -1571,7 +1571,7 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
                   );
                 })()}
                 {/* Reset limit button — shown when session is completed or at limit */}
-                {activeSessionId && (sessionInfo?.status === "completed" || (sessionInfo?.totalMessages ?? 0) >= MAX_MESSAGES) && (
+                {activeSessionId && sessionInfo?.status === "completed" && (
                   <button
                     onClick={handleResetLimit}
                     title="Reset message limit — allows session to continue past 600 messages"
