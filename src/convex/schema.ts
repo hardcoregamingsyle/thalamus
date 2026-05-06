@@ -157,6 +157,11 @@ const schema = defineSchema(
       lastCommand: v.optional(v.string()),
       lastOutput: v.optional(v.string()),
       previewUrl: v.optional(v.string()),
+      customDomain: v.optional(v.string()),
+      deployedUrl: v.optional(v.string()),
+      isPublished: v.optional(v.boolean()),
+      publishedAt: v.optional(v.number()),
+      hostingCostAB: v.optional(v.number()),
     })
       .index("by_user", ["userId"])
       .index("by_session", ["sessionId"])

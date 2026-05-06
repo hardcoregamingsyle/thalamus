@@ -680,6 +680,8 @@ interface SandboxRow {
   lastOutput?: string;
   sessionId?: string;
   previewUrl?: string;
+  customDomain?: string;
+  deployedUrl?: string;
 }
 
 // List user sandboxes
@@ -925,5 +927,69 @@ export const runDeployCommands = action({
     }
 
     return { results };
+  },
+});
+
+// ─── Custom Domain / Deployment ───────────────────────────────────────────────
+export const setCustomDomain = action({
+  args: {
+    token: v.string(),
+    sandboxDbId: v.id("sandboxes"),
+    customDomain: v.optional(v.string()), // null/undefined to remove
+  },
+  handler: async (ctx, args): Promise<{ ok: boolean; message: string }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const sandboxRecord = (await ctx.runQuery(internal.sandboxHelpers.getSandbox, { sandboxDbId: args.sandboxDbId })) as SandboxRecord | null;
+    if (!sandboxRecord) throw new Error("Sandbox not found");
+    if (sandboxRecord.userId !== userId) throw new Error("Not authorized");
+
+    const domain = args.customDomain?.trim() || undefined;
+
+    // Validate domain format if provided
+    if (domain) {
+      const domainRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
+      if (!domainRegex.test(domain)) {
+        return { ok: false, message: "Invalid domain format. Use: yourdomain.com or sub.yourdomain.com" };
+      }
+    }
+
+    // Deduct AB for domain setup (1000 AB per domain connection)
+    if (domain) {
+      await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId, agentBucksToDeduct: 1000 });
+    }
+
+    await ctx.runMutation(internal.sandboxHelpers.updateCustomDomain, {
+      sandboxDbId: args.sandboxDbId,
+      customDomain: domain,
+    });
+
+    if (domain) {
+      return {
+        ok: true,
+        message: `Custom domain "${domain}" saved. Point your DNS CNAME record to: ${args.sandboxDbId}.thalamus.aphantic.skinticals.com\n\nDNS propagation may take up to 48 hours.`,
+      };
+    }
+    return { ok: true, message: "Custom domain removed." };
+  },
+});
+
+// Get deployment info for a sandbox
+export const getDeploymentInfo = action({
+  args: { token: v.string(), sandboxDbId: v.id("sandboxes") },
+  handler: async (ctx, args): Promise<{ previewUrl: string | null; customDomain: string | null; deployedUrl: string | null; status: string }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const sandbox = (await ctx.runQuery(internal.sandboxHelpers.getSandboxPublic, { sandboxDbId: args.sandboxDbId })) as SandboxRow | null;
+    if (!sandbox) throw new Error("Sandbox not found");
+
+    return {
+      previewUrl: sandbox.previewUrl ?? null,
+      customDomain: sandbox.customDomain ?? null,
+      deployedUrl: sandbox.deployedUrl ?? null,
+      status: sandbox.status,
+    };
   },
 });

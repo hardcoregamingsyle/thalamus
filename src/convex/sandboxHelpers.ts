@@ -386,3 +386,20 @@ export const updateSandboxStatus = internalMutation({
     await ctx.db.patch(args.sandboxDbId, { status: args.status });
   },
 });
+
+export const updateCustomDomain = internalMutation({
+  args: {
+    sandboxDbId: v.id("sandboxes"),
+    customDomain: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sandboxDbId, { customDomain: args.customDomain });
+  },
+});
+
+export const getSandboxPublic = internalQuery({
+  args: { sandboxDbId: v.id("sandboxes") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.sandboxDbId);
+  },
+});

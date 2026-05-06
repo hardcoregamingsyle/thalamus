@@ -62,6 +62,8 @@ interface SandboxRow {
   lastOutput?: string;
   sessionId?: string;
   previewUrl?: string;
+  customDomain?: string;
+  deployedUrl?: string;
 }
 
 interface QueuedMessage {
@@ -391,6 +393,161 @@ function GithubSyncModal({
           )}
         </div>
       </motion.div>
+    </div>
+  );
+}
+
+// ── Preview Tab ───────────────────────────────────────────────────────────────
+function PreviewTab({
+  previewUrl, activeSandboxId, activeSandbox, activeSessionId, projectFiles,
+  isSandboxLoading, token, onGetPreviewUrl, onAutoDeployAndStart, setCustomDomainAction, onSandboxUpdate,
+}: {
+  previewUrl: string | null;
+  activeSandboxId: Id<"sandboxes"> | null;
+  activeSandbox: SandboxRow | null;
+  activeSessionId: Id<"teamSessions"> | null;
+  projectFiles: ProjectFile[];
+  isSandboxLoading: boolean;
+  token: string;
+  onGetPreviewUrl: () => void;
+  onAutoDeployAndStart: () => void;
+  setCustomDomainAction: (args: { token: string; sandboxDbId: Id<"sandboxes">; customDomain?: string }) => Promise<{ ok: boolean; message: string }>;
+  onSandboxUpdate: (updated: SandboxRow) => void;
+}) {
+  const [customDomainInput, setCustomDomainInput] = useState("");
+  const [isSettingDomain, setIsSettingDomain] = useState(false);
+  const [showDomainInput, setShowDomainInput] = useState(false);
+  const currentCustomDomain = (activeSandbox as Record<string, unknown> | null)?.customDomain as string | undefined;
+
+  const handleSetCustomDomain = async () => {
+    if (!activeSandboxId || !customDomainInput.trim()) return;
+    setIsSettingDomain(true);
+    try {
+      const result = await setCustomDomainAction({ token, sandboxDbId: activeSandboxId, customDomain: customDomainInput.trim() });
+      toast.success(result.message || `Custom domain set: ${customDomainInput.trim()}`);
+      if (activeSandbox) onSandboxUpdate({ ...activeSandbox, customDomain: customDomainInput.trim() } as SandboxRow);
+      setCustomDomainInput("");
+      setShowDomainInput(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to set custom domain");
+    } finally {
+      setIsSettingDomain(false);
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="shrink-0 px-4 py-2 border-b border-border bg-card/50 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Globe className="h-3.5 w-3.5 text-green-400" />
+          <span className="text-xs font-bold text-green-400">WEB PREVIEW</span>
+          {previewUrl && <span className="text-xs text-muted-foreground truncate max-w-xs">{previewUrl}</span>}
+        </div>
+        <div className="flex items-center gap-2">
+          {previewUrl && (
+            <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-primary hover:underline">
+              <ExternalLink className="h-3 w-3" />Open
+            </a>
+          )}
+          {activeSandboxId && (
+            <button onClick={onGetPreviewUrl} disabled={isSandboxLoading} className="text-xs text-muted-foreground hover:text-foreground border border-border px-2 py-1 rounded-lg transition-colors">
+              {isSandboxLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "Refresh"}
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        {previewUrl ? (
+          <div className="space-y-4">
+            {/* Live Preview URL */}
+            <div className="bg-green-400/5 border border-green-400/20 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                <p className="text-xs font-bold text-green-400">LIVE PREVIEW</p>
+              </div>
+              <p className="text-[10px] text-muted-foreground mb-2">Your app is running on Daytona cloud sandbox:</p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-primary font-mono break-all flex-1">{previewUrl}</p>
+                <a href={previewUrl} target="_blank" rel="noopener noreferrer"
+                  className="shrink-0 flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground text-xs rounded-lg hover:bg-primary/90 transition-all font-bold">
+                  <ExternalLink className="h-3 w-3" />Open
+                </a>
+              </div>
+            </div>
+
+            {/* Custom Domain */}
+            <div className="bg-card border border-border rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-xs font-bold text-foreground">Custom Domain</p>
+                  <p className="text-[10px] text-muted-foreground">Connect your own domain to this deployment</p>
+                </div>
+                {!showDomainInput && (
+                  <button onClick={() => setShowDomainInput(true)}
+                    className="flex items-center gap-1 px-2 py-1 bg-primary/10 border border-primary/30 text-primary text-[10px] rounded-lg hover:bg-primary/20 transition-all font-bold">
+                    <Plus className="h-3 w-3" />{currentCustomDomain ? "Change" : "Add Domain"}
+                  </button>
+                )}
+              </div>
+              {currentCustomDomain && !showDomainInput && (
+                <div className="flex items-center gap-2 p-2 bg-muted/30 rounded-lg">
+                  <Globe className="h-3 w-3 text-primary shrink-0" />
+                  <p className="text-xs text-primary font-mono">{currentCustomDomain}</p>
+                  <span className="text-[9px] bg-amber-400/15 text-amber-400 border border-amber-400/30 px-1.5 py-0.5 rounded-full font-bold ml-auto">PENDING DNS</span>
+                </div>
+              )}
+              {showDomainInput && (
+                <div className="space-y-2">
+                  <input
+                    value={customDomainInput}
+                    onChange={e => setCustomDomainInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") handleSetCustomDomain(); if (e.key === "Escape") setShowDomainInput(false); }}
+                    placeholder="yourdomain.com"
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
+                  />
+                  <p className="text-[9px] text-muted-foreground">Point your domain's CNAME to: <code className="bg-muted px-1 rounded">proxy.aphantic.io</code></p>
+                  <div className="flex gap-2">
+                    <button onClick={handleSetCustomDomain} disabled={isSettingDomain || !customDomainInput.trim()}
+                      className="flex-1 py-1.5 bg-primary/15 border border-primary/30 text-primary text-xs rounded-lg hover:bg-primary/25 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-1">
+                      {isSettingDomain ? <Loader2 className="h-3 w-3 animate-spin" /> : <Globe className="h-3 w-3" />}
+                      Set Domain
+                    </button>
+                    <button onClick={() => setShowDomainInput(false)} className="px-3 py-1.5 border border-border text-muted-foreground text-xs rounded-lg hover:bg-muted/50 transition-all">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Deployment Info */}
+            <div className="bg-card border border-border rounded-xl p-4">
+              <p className="text-xs font-bold text-foreground mb-2">Deployment Info</p>
+              <div className="space-y-1.5 text-[10px] text-muted-foreground">
+                <div className="flex justify-between"><span>Environment</span><span className="text-foreground font-mono">Daytona Cloud Sandbox</span></div>
+                <div className="flex justify-between"><span>Port</span><span className="text-foreground font-mono">3000</span></div>
+                <div className="flex justify-between"><span>Status</span><span className={activeSandbox?.status === "running" ? "text-green-400 font-bold" : "text-muted-foreground"}>{activeSandbox?.status ?? "unknown"}</span></div>
+                <div className="flex justify-between"><span>Billing</span><span className="text-amber-400 font-mono">{activeSandbox?.costCents ? `${(activeSandbox.costCents / 100).toFixed(4)} USD` : "Free tier"}</span></div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full gap-4">
+            <Monitor className="h-16 w-16 text-muted-foreground/20" />
+            <div className="text-center">
+              <p className="text-sm font-bold text-foreground mb-1">No Preview Available</p>
+              <p className="text-xs text-muted-foreground mb-4">Deploy your project and start the app to see a live preview</p>
+              {activeSandboxId && activeSessionId && (
+                <button onClick={onAutoDeployAndStart} disabled={isSandboxLoading || projectFiles.length === 0}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/30 text-primary text-sm rounded-xl hover:bg-primary/20 disabled:opacity-50 transition-all font-bold mx-auto">
+                  {isSandboxLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4" />}
+                  DEPLOY & START APP
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -913,6 +1070,7 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const [isSyncing, setIsSyncing] = useState(false);
   const saveGithubConfigAction = useAction(api.agentTeam.saveGithubConfig);
   const syncGithubAction = useAction(api.agentTeam.syncGithub);
+  const setCustomDomainAction = useAction(api.sandbox.setCustomDomain);
   const setManualUpgradeMutation = useMutation(api.agentTeamHelpers.setManualUpgrade);
   const forceActivateUpgradeMutation = useMutation(api.agentTeamHelpers.forceActivateUpgrade);
   const handleAutoRun = async () => {
@@ -1643,58 +1801,19 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
 
             {/* PREVIEW TAB */}
             {activeTab === "preview" && (
-              <div className="h-full flex flex-col overflow-hidden">
-                <div className="shrink-0 px-4 py-2 border-b border-border bg-card/50 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Globe className="h-3.5 w-3.5 text-green-400" />
-                    <span className="text-xs font-bold text-green-400">WEB PREVIEW</span>
-                    {previewUrl && <span className="text-xs text-muted-foreground truncate max-w-xs">{previewUrl}</span>}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {previewUrl && (
-                      <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-primary hover:underline">
-                        <ExternalLink className="h-3 w-3" />Open
-                      </a>
-                    )}
-                    {activeSandboxId && (
-                      <button onClick={handleGetPreviewUrl} disabled={isSandboxLoading} className="text-xs text-muted-foreground hover:text-foreground border border-border px-2 py-1 rounded-lg transition-colors">
-                        {isSandboxLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "Refresh"}
-                      </button>
-                    )}
-                  </div>
-                </div>
-                {previewUrl ? (
-                  <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
-                    <Globe className="h-16 w-16 text-green-400/40" />
-                    <div className="text-center max-w-md">
-                      <p className="text-sm font-bold text-foreground mb-2">Preview Ready</p>
-                      <div className="bg-card border border-border rounded-xl p-3 mb-4 text-left">
-                        <p className="text-xs text-muted-foreground mb-1">Preview URL:</p>
-                        <p className="text-xs text-primary font-mono break-all">{previewUrl}</p>
-                      </div>
-                      <a href={previewUrl} target="_blank" rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all">
-                        <ExternalLink className="h-4 w-4" />Open Preview in New Tab
-                      </a>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
-                    <Monitor className="h-16 w-16 text-muted-foreground/20" />
-                    <div className="text-center">
-                      <p className="text-sm font-bold text-foreground mb-1">No Preview Available</p>
-                      <p className="text-xs text-muted-foreground mb-4">Deploy your project and start the app to see a live preview</p>
-                      {activeSandboxId && activeSessionId && (
-                        <button onClick={handleAutoDeployAndStart} disabled={isSandboxLoading || projectFiles.length === 0}
-                          className="flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/30 text-primary text-sm rounded-xl hover:bg-primary/20 disabled:opacity-50 transition-all font-bold mx-auto">
-                          {isSandboxLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4" />}
-                          DEPLOY & START APP
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <PreviewTab
+                previewUrl={previewUrl}
+                activeSandboxId={activeSandboxId}
+                activeSandbox={activeSandbox}
+                activeSessionId={activeSessionId}
+                projectFiles={projectFiles}
+                isSandboxLoading={isSandboxLoading}
+                token={token}
+                onGetPreviewUrl={handleGetPreviewUrl}
+                onAutoDeployAndStart={handleAutoDeployAndStart}
+                setCustomDomainAction={setCustomDomainAction}
+                onSandboxUpdate={(updated: SandboxRow) => setActiveSandbox(updated)}
+              />
             )}
           </div>
         </div>
