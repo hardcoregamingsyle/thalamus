@@ -15,148 +15,90 @@ const NCERT_SOURCES = [
   { name: "Sunbird DIKSHA", url: "https://sunbird.org/" },
 ];
 
-// ── Fetch NCERT RSS feed for latest education news ────────────────────────────
-async function fetchNCERTNews(): Promise<string> {
-  try {
-    const res = await fetch("https://indianexpress.com/section/education/feed/", {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; ThalamusAI/1.0)" },
-    });
-    if (!res.ok) return "";
-    const xml = await res.text();
-    // Parse RSS items
-    const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
-    const parsed = items.slice(0, 5).map(item => {
-      const title = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || item.match(/<title>(.*?)<\/title>/))?.[1] ?? "";
-      const desc = (item.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>/) || item.match(/<description>(.*?)<\/description>/))?.[1] ?? "";
-      const link = item.match(/<link>(.*?)<\/link>/)?.[1] ?? "";
-      return `• ${title}\n  ${desc.replace(/<[^>]+>/g, "").slice(0, 200)}\n  Source: ${link}`;
-    });
-    return parsed.length > 0 ? `LATEST EDUCATION NEWS (Indian Express):\n${parsed.join("\n\n")}` : "";
-  } catch {
-    return "";
-  }
-}
-
-// ── Scrape NCERT textbook page for subject content ────────────────────────────
-async function fetchNCERTContent(query: string): Promise<string> {
-  try {
-    // Search NCERT website
-    const searchUrl = `https://ncert.nic.in/textbook.php?${encodeURIComponent(query)}`;
-    const res = await fetch(searchUrl, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; ThalamusAI/1.0)" },
-    });
-    if (!res.ok) return "";
-    const html = await res.text();
-    const text = html
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s{3,}/g, "\n")
-      .trim()
-      .slice(0, 2000);
-    return text.length > 100 ? `NCERT Content:\n${text}` : "";
-  } catch {
-    return "";
-  }
-}
-
-// ── Live web search helper (scrapes real pages, prioritizes NCERT sources) ────
+// ── Fast live web search — parallel fetches, short timeouts ──────────────────
 async function liveWebSearch(query: string, isEducationQuery = true): Promise<string> {
-  const results: string[] = [];
-
-  // For education queries, fetch NCERT news first
-  if (isEducationQuery) {
-    const ncertNews = await fetchNCERTNews();
-    if (ncertNews) results.push(ncertNews);
-  }
+  const searchQuery = isEducationQuery ? `${query} NCERT India` : query;
+  const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`;
 
   try {
-    // Use DuckDuckGo HTML search — add "NCERT" to education queries for better results
-    const searchQuery = isEducationQuery ? `${query} NCERT India` : query;
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     const searchRes = await fetch(searchUrl, {
+      signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
       },
     });
-    if (!searchRes.ok) throw new Error(`Search failed: ${searchRes.status}`);
+    clearTimeout(timeout);
+    if (!searchRes.ok) return "";
     const searchHtml = await searchRes.text();
 
-    // Extract URLs from DuckDuckGo results
-    const urlMatches = searchHtml.match(/uddg=([^&"]+)/g) || [];
-    const urls: string[] = [];
-    for (const match of urlMatches.slice(0, 6)) {
-      try {
-        const decoded = decodeURIComponent(match.replace("uddg=", ""));
-        if (decoded.startsWith("http") && !decoded.includes("duckduckgo.com")) {
-          urls.push(decoded);
-        }
-      } catch { /* skip */ }
+    // Extract result snippets directly from DuckDuckGo HTML (fast — no page scraping)
+    const snippetMatches = searchHtml.match(/<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g) || [];
+    const titleMatches = searchHtml.match(/<a class="result__a"[^>]*>([\s\S]*?)<\/a>/g) || [];
+
+    const snippets: string[] = [];
+    for (let i = 0; i < Math.min(5, snippetMatches.length); i++) {
+      const title = (titleMatches[i] ?? "").replace(/<[^>]+>/g, "").trim();
+      const snippet = (snippetMatches[i] ?? "").replace(/<[^>]+>/g, "").trim();
+      if (snippet.length > 30) {
+        snippets.push(`${title ? `**${title}**\n` : ""}${snippet}`);
+      }
     }
 
-    // Prioritize NCERT/Indian education sources
-    const priorityDomains = ["ncert.nic.in", "diksha.gov.in", "indianexpress.com", "apisetu.gov.in", "sunbird.org", "cbse.gov.in", "education.gov.in", "mhrd.gov.in"];
-    const priorityUrls = urls.filter(u => priorityDomains.some(d => u.includes(d)));
-    const otherUrls = urls.filter(u => !priorityDomains.some(d => u.includes(d)));
-    const orderedUrls = [...priorityUrls, ...otherUrls].slice(0, 3);
-
-    if (orderedUrls.length === 0) {
-      // Fallback: extract result snippets from DuckDuckGo HTML directly
-      const snippets = searchHtml
+    // If no snippets extracted, use raw text from search page
+    if (snippets.length === 0) {
+      const rawText = searchHtml
         .replace(/<script[\s\S]*?<\/script>/gi, "")
         .replace(/<style[\s\S]*?<\/style>/gi, "")
         .replace(/<[^>]+>/g, " ")
         .replace(/\s{3,}/g, "\n")
         .trim()
-        .slice(0, 4000);
-      results.push(`Search results for "${query}":\n${snippets}`);
-    } else {
-      // Scrape top pages for content
-      for (const url of orderedUrls) {
-        try {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 8000);
-          const pageRes = await fetch(url, {
-            signal: controller.signal,
-            headers: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            },
-          });
-          clearTimeout(timeout);
-          if (!pageRes.ok) continue;
+        .slice(0, 3000);
+      if (rawText.length > 100) snippets.push(rawText);
+    }
+
+    if (snippets.length === 0) return "";
+
+    // Optionally scrape ONE top page in parallel (with very short timeout)
+    const urlMatches = searchHtml.match(/uddg=([^&"]+)/g) || [];
+    const topUrl = urlMatches.length > 0 && urlMatches[0] ? (() => {
+      try { return decodeURIComponent(urlMatches[0].replace("uddg=", "")); } catch { return ""; }
+    })() : "";
+
+    let pageContent = "";
+    if (topUrl && topUrl.startsWith("http") && !topUrl.includes("duckduckgo.com")) {
+      try {
+        const pageCtrl = new AbortController();
+        const pageTimeout = setTimeout(() => pageCtrl.abort(), 3000);
+        const pageRes = await fetch(topUrl, {
+          signal: pageCtrl.signal,
+          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+        });
+        clearTimeout(pageTimeout);
+        if (pageRes.ok) {
           const html = await pageRes.text();
-          const text = html
+          pageContent = html
             .replace(/<script[\s\S]*?<\/script>/gi, "")
             .replace(/<style[\s\S]*?<\/style>/gi, "")
             .replace(/<nav[\s\S]*?<\/nav>/gi, "")
             .replace(/<header[\s\S]*?<\/header>/gi, "")
             .replace(/<footer[\s\S]*?<\/footer>/gi, "")
             .replace(/<[^>]+>/g, " ")
-            .replace(/&nbsp;/g, " ")
-            .replace(/&amp;/g, "&")
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/&quot;/g, '"')
-            .replace(/&#39;/g, "'")
-            .replace(/\s{3,}/g, "\n\n")
-            .trim();
-          if (text.length > 200) {
-            const isNCERT = priorityDomains.some(d => url.includes(d));
-            results.push(`[${isNCERT ? "✓ AUTHORITATIVE SOURCE" : "Source"}: ${url}]\n${text.slice(0, 3000)}`);
-          }
-        } catch { /* skip failed pages */ }
-      }
+            .replace(/\s{3,}/g, "\n")
+            .trim()
+            .slice(0, 2000);
+        }
+      } catch { /* skip */ }
     }
-  } catch (err) {
-    results.push(`[Web search unavailable: ${err}]`);
-  }
 
-  return results.length > 0
-    ? `LIVE WEB SEARCH RESULTS for "${query}":\n\n${results.join("\n\n---\n\n")}`
-    : `[No live results found for "${query}"]`;
+    const parts = [`Search snippets for "${query}":\n${snippets.join("\n\n")}`];
+    if (pageContent.length > 100) parts.push(`Top result content [${topUrl}]:\n${pageContent}`);
+    return parts.join("\n\n---\n\n");
+  } catch {
+    return "";
+  }
 }
 
 // ── Process file/image with Claude Vision via Bedrock ─────────────────────────
