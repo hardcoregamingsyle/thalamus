@@ -2,10 +2,30 @@ import { httpRouter } from "convex/server";
 import { auth } from "./auth";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
 
 const http = httpRouter();
 
 auth.addHttpRoutes(http);
+
+// Decode state: hex(userId) + "." + randomHex — works without Buffer in HTTP actions
+function decodeStateHttp(state: string): string | null {
+  try {
+    const dotIdx = state.indexOf(".");
+    if (dotIdx === -1) return null;
+    const userIdHex = state.slice(0, dotIdx);
+    if (userIdHex.length === 0 || userIdHex.length % 2 !== 0) return null;
+    const bytes: number[] = [];
+    for (let i = 0; i < userIdHex.length; i += 2) {
+      const byte = parseInt(userIdHex.slice(i, i + 2), 16);
+      if (isNaN(byte)) return null;
+      bytes.push(byte);
+    }
+    return new TextDecoder().decode(new Uint8Array(bytes));
+  } catch {
+    return null;
+  }
+}
 
 // GitHub OAuth callback — handles the redirect from GitHub after user authorizes
 http.route({
@@ -31,9 +51,9 @@ http.route({
       const clientSecret = process.env.GITHUB_CLIENT_SECRET;
       if (!clientId || !clientSecret) throw new Error("GitHub OAuth not configured");
 
-      // Look up userId from the state store (no Buffer needed)
-      const userId = await ctx.runMutation(internal.githubHelpers.consumeOAuthState, { state });
-      if (!userId) throw new Error("Invalid or expired state. Please try connecting again.");
+      // Decode userId directly from state — no database lookup needed
+      const userId = decodeStateHttp(state);
+      if (!userId) throw new Error("Invalid state. Please try connecting again.");
 
       // Exchange code for token
       const res = await fetch("https://github.com/login/oauth/access_token", {
@@ -52,7 +72,7 @@ http.route({
 
       // Store token in user record
       await ctx.runMutation(internal.githubHelpers.saveGithubToken, {
-        userId,
+        userId: userId as Id<"users">,
         accessToken: data.access_token,
         username: ghUser.login,
       });

@@ -4,6 +4,33 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
+// Simple XOR-based encoding that works without Buffer in HTTP actions
+// State format: hex(userId) + "." + randomHex
+function encodeState(userId: string): string {
+  const userIdHex = Array.from(new TextEncoder().encode(userId))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+  const randomHex = Array.from(crypto.getRandomValues(new Uint8Array(8)))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `${userIdHex}.${randomHex}`;
+}
+
+export function decodeState(state: string): string | null {
+  try {
+    const dotIdx = state.indexOf(".");
+    if (dotIdx === -1) return null;
+    const userIdHex = state.slice(0, dotIdx);
+    const bytes = [];
+    for (let i = 0; i < userIdHex.length; i += 2) {
+      bytes.push(parseInt(userIdHex.slice(i, i + 2), 16));
+    }
+    return new TextDecoder().decode(new Uint8Array(bytes));
+  } catch {
+    return null;
+  }
+}
+
 // ── GitHub OAuth ──────────────────────────────────────────────────────────────
 
 export const getAuthorizationUrl = action({
@@ -18,61 +45,11 @@ export const getAuthorizationUrl = action({
     const clientId = process.env.GITHUB_CLIENT_ID;
     if (!clientId) throw new Error("GITHUB_CLIENT_ID not configured");
 
-    // Generate a random state token and store it in the database
-    const state = Array.from(crypto.getRandomValues(new Uint8Array(24)))
-      .map(b => b.toString(16).padStart(2, "0"))
-      .join("");
-
-    await ctx.runMutation(internal.githubHelpers.storeOAuthState, { state, userId });
+    // Encode userId directly in the state — no database needed
+    const state = encodeState(userId);
 
     const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(args.redirectUri)}&scope=repo+user&state=${state}`;
     return url;
-  },
-});
-
-export const exchangeCodeForToken = action({
-  args: {
-    code: v.string(),
-    state: v.string(),
-  },
-  handler: async (ctx, args): Promise<{ username: string }> => {
-    const clientId = process.env.GITHUB_CLIENT_ID;
-    const clientSecret = process.env.GITHUB_CLIENT_SECRET;
-    if (!clientId || !clientSecret) throw new Error("GitHub OAuth not configured");
-
-    // Decode state to get userId
-    let userId: Id<"users"> | null = null;
-    try {
-      const decoded = JSON.parse(Buffer.from(args.state, "base64url").toString());
-      userId = decoded.userId as Id<"users">;
-    } catch {
-      throw new Error("Invalid state parameter");
-    }
-    if (!userId) throw new Error("Invalid state");
-
-    // Exchange code for token
-    const res = await fetch("https://github.com/login/oauth/access_token", {
-      method: "POST",
-      headers: { "Accept": "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code: args.code }),
-    });
-    const data = await res.json() as { access_token?: string; error?: string };
-    if (!data.access_token) throw new Error(data.error || "Failed to get access token");
-
-    // Get GitHub username
-    const userRes = await fetch("https://api.github.com/user", {
-      headers: { "Authorization": `Bearer ${data.access_token}`, "Accept": "application/vnd.github.v3+json" },
-    });
-    const ghUser = await userRes.json() as { login: string };
-
-    // Store token in user record
-    await ctx.runMutation(internal.githubHelpers.saveGithubToken, {
-      userId,
-      accessToken: data.access_token,
-      username: ghUser.login,
-    });
-
-    return { username: ghUser.login };
   },
 });
 
