@@ -108,6 +108,7 @@ const schema = defineSchema(
       customId: v.optional(v.string()),
       techStackJson: v.optional(v.string()),
       infoRequestJson: v.optional(v.string()),
+      runningAt: v.optional(v.number()),        // timestamp when status was set to "running"
       // Branch fields
       branchGroupId: v.optional(v.string()),   // ID of the branch group this session belongs to
       branchNumber: v.optional(v.number()),     // 1 = main, 2+ = branches
