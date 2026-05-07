@@ -52,10 +52,9 @@ export const saveAssistantMessage = internalMutation({
     const user = await ctx.db.get(args.userId);
     if (user) {
       const current = (user as { totalUsageCents?: number }).totalUsageCents || 0;
-      // New formula: AB = (tokens / 1M) * costPerMillion * 1,500,000
-      // costCents is in cents; $1 = 100 cents, so costPerMillion in dollars = costCents / 100
-      // For legacy callers that pass costCents directly, derive AB using: AB = costCents * 15000
-      const agentBucksToDeduct = args.costCents * 15000;
+      // AB formula: 1 cent = 100 AB (so $1 = 10,000 AB)
+      // Gemini Flash Lite: ~$0.001 per message = 0.1 cents = 10 AB per message
+      const agentBucksToDeduct = Math.ceil(args.costCents * 100);
       const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? 0;
       const purchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
       // Purchased credits deducted first, then daily
