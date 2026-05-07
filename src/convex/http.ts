@@ -31,15 +31,9 @@ http.route({
       const clientSecret = process.env.GITHUB_CLIENT_SECRET;
       if (!clientId || !clientSecret) throw new Error("GitHub OAuth not configured");
 
-      // Decode state to get userId
-      let userId: string | null = null;
-      try {
-        const decoded = JSON.parse(Buffer.from(state, "base64url").toString());
-        userId = decoded.userId as string;
-      } catch {
-        throw new Error("Invalid state");
-      }
-      if (!userId) throw new Error("Invalid state");
+      // Look up userId from the state store (no Buffer needed)
+      const userId = await ctx.runMutation(internal.githubHelpers.consumeOAuthState, { state });
+      if (!userId) throw new Error("Invalid or expired state. Please try connecting again.");
 
       // Exchange code for token
       const res = await fetch("https://github.com/login/oauth/access_token", {
@@ -58,7 +52,7 @@ http.route({
 
       // Store token in user record
       await ctx.runMutation(internal.githubHelpers.saveGithubToken, {
-        userId: userId as import("./_generated/dataModel").Id<"users">,
+        userId,
         accessToken: data.access_token,
         username: ghUser.login,
       });

@@ -18,7 +18,13 @@ export const getAuthorizationUrl = action({
     const clientId = process.env.GITHUB_CLIENT_ID;
     if (!clientId) throw new Error("GITHUB_CLIENT_ID not configured");
 
-    const state = Buffer.from(JSON.stringify({ userId, token: args.token })).toString("base64url");
+    // Generate a random state token and store it in the database
+    const state = Array.from(crypto.getRandomValues(new Uint8Array(24)))
+      .map(b => b.toString(16).padStart(2, "0"))
+      .join("");
+
+    await ctx.runMutation(internal.githubHelpers.storeOAuthState, { state, userId });
+
     const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(args.redirectUri)}&scope=repo+user&state=${state}`;
     return url;
   },
