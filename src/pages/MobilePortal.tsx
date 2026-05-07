@@ -316,11 +316,11 @@ function MobileChatView({
               </div>
               {/* Skeleton lines */}
               <div className="space-y-2 pt-0.5">
-                <motion.div className="h-2.5 bg-foreground/12 rounded-full w-full"
+                <motion.div className="h-3 bg-secondary rounded-full w-full"
                   animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0 }} />
-                <motion.div className="h-2.5 bg-foreground/10 rounded-full w-4/5"
+                <motion.div className="h-2.5 bg-muted-foreground/22 rounded-full w-4/5"
                   animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.2 }} />
-                <motion.div className="h-2.5 bg-foreground/8 rounded-full w-3/5"
+                <motion.div className="h-2.5 bg-muted-foreground/15 rounded-full w-3/5"
                   animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.4 }} />
               </div>
             </div>

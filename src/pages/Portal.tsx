@@ -11,11 +11,12 @@ import {
   MessageSquare, Search, Plus, Trash2, LogOut,
   Send, Loader2, Menu, X, Users, Cpu, Zap, BookOpen,
   FileText, Globe, Image, Upload, Sparkles, ChevronRight,
-  Hash, Lightbulb, Lock, ArrowRight, Sparkle,
+  Hash, Lightbulb, Lock, ArrowRight, Sparkle, Sun, Moon,
 } from "lucide-react";
 import TeamPortalInline from "./TeamPortalInline";
 import MobilePortal from "./MobilePortal";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useTheme } from "@/hooks/use-theme";
 
 type Mode = "chat" | "research" | "code" | "study";
 
@@ -344,9 +345,9 @@ function GuestPortal() {
                     <span className="text-[11px] text-muted-foreground font-medium">Thinking...</span>
                   </div>
                   <div className="space-y-2">
-                    <div className="h-2.5 bg-foreground/10 rounded-full animate-pulse w-full" />
-                    <div className="h-2.5 bg-foreground/8 rounded-full animate-pulse w-5/6" style={{ animationDelay: "0.15s" }} />
-                    <div className="h-2.5 bg-foreground/6 rounded-full animate-pulse w-4/6" style={{ animationDelay: "0.3s" }} />
+                    <div className="h-3 bg-secondary rounded-full animate-pulse w-full" />
+                    <div className="h-3 bg-secondary/80 rounded-full animate-pulse w-5/6" style={{ animationDelay: "0.15s" }} />
+                    <div className="h-3 bg-secondary/60 rounded-full animate-pulse w-4/6" style={{ animationDelay: "0.3s" }} />
                   </div>
                 </div>
               </div>
@@ -668,6 +669,7 @@ function SuggestionFormModal({
 
 function PortalDesktop() {
   const { isLoading, isAuthenticated, user, signOut, token } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const params = useParams<{ mode?: string; sessionId?: string }>();
 
@@ -941,6 +943,9 @@ function PortalDesktop() {
               <span className="sm:hidden">{(totalAB / 1_000_000).toFixed(1)}M</span>
               <span className="text-[9px] opacity-70">AB</span>
             </button>
+            <button onClick={toggleTheme} className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10" title="Toggle theme">
+              {theme === "dark" ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+            </button>
             <button onClick={signOut} className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10">
               <LogOut className="h-3.5 w-3.5" />
             </button>
@@ -1095,9 +1100,9 @@ function PortalDesktop() {
                       {[1, 2, 3].map(i => (
                         <div key={i} className={`flex ${i % 2 === 0 ? "justify-end" : "justify-start"}`}>
                           <div className={`rounded-2xl px-4 py-3 space-y-2 ${i % 2 === 0 ? "w-48" : "w-72"}`}>
-                            <div className="h-3 bg-foreground/10 rounded animate-pulse" />
-                            <div className="h-3 bg-muted/30 rounded animate-pulse w-4/5" />
-                            {i % 2 !== 0 && <div className="h-3 bg-muted/20 rounded animate-pulse w-3/5" />}
+                            <div className="h-3 bg-secondary rounded animate-pulse" />
+                            <div className="h-3 bg-secondary/80 rounded animate-pulse w-4/5" />
+                            {i % 2 !== 0 && <div className="h-3 bg-secondary/60 rounded animate-pulse w-3/5" />}
                           </div>
                         </div>
                       ))}
@@ -1146,9 +1151,9 @@ function PortalDesktop() {
                         </div>
                         {/* Skeleton lines */}
                         <div className="space-y-2">
-                          <div className="h-2.5 bg-foreground/10 rounded-full animate-pulse w-full" />
-                          <div className="h-2.5 bg-foreground/8 rounded-full animate-pulse w-5/6" style={{ animationDelay: "0.15s" }} />
-                          <div className="h-2.5 bg-foreground/6 rounded-full animate-pulse w-4/6" style={{ animationDelay: "0.3s" }} />
+                          <div className="h-3 bg-secondary rounded-full animate-pulse w-full" />
+                          <div className="h-3 bg-secondary/80 rounded-full animate-pulse w-5/6" style={{ animationDelay: "0.15s" }} />
+                          <div className="h-3 bg-secondary/60 rounded-full animate-pulse w-4/6" style={{ animationDelay: "0.3s" }} />
                         </div>
                       </div>
                     </motion.div>

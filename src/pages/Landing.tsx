@@ -11,8 +11,9 @@ import {
   Users, Rocket, Globe, Terminal, Activity, Search, FileCode,
   CheckCircle, ArrowRight, Layers, GitBranch, Eye, Lock,
   MessageSquare, BookOpen, Sparkles, Database, Server,
-  Lightbulb, X, Upload, FileText, Send, Loader2,
+  Lightbulb, X, Upload, FileText, Send, Loader2, Sun, Moon,
 } from "lucide-react";
+import { useTheme } from "@/hooks/use-theme";
 
 // ── Agent pipeline data ────────────────────────────────────────────────────────
 const AGENTS = [
@@ -214,6 +215,7 @@ export default function Landing() {
   const [isSuggestionSubmitting, setIsSuggestionSubmitting] = useState(false);
   const submitSuggestionMutation = useMutation(api.admin.submitSuggestion);
 
+  const { theme, toggleTheme } = useTheme();
   const handleLaunch = () => navigate("/portal/chat");
 
   return (
@@ -237,6 +239,9 @@ export default function Landing() {
             >
               <Lightbulb className="h-3 w-3" />
               Feedback
+            </button>
+            <button onClick={toggleTheme} className="p-2 rounded-lg border border-border/60 text-muted-foreground hover:text-foreground hover:border-border transition-all" title="Toggle theme">
+              {theme === "dark" ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
             </button>
             <span className="hidden md:flex items-center gap-1.5 text-[10px] text-muted-foreground">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
