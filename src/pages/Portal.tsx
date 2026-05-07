@@ -332,19 +332,21 @@ function GuestPortal() {
                 <div className={`w-7 h-7 rounded-xl ${currentMode.accent} border flex items-center justify-center shrink-0 mr-2 mt-1`}>
                   <currentMode.icon className={`h-3.5 w-3.5 ${currentMode.color}`} />
                 </div>
-                <div className="bg-card border border-border rounded-2xl rounded-bl-sm px-4 py-3 space-y-2">
-                  <div className="flex items-center gap-1.5">
-                    {[0, 1, 2].map(i => (
-                      <motion.div key={i} className={`w-1.5 h-1.5 rounded-full ${currentMode.color.replace("text-", "bg-")}`}
-                        animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }}
-                        transition={{ duration: 0.8, delay: i * 0.15, repeat: Infinity }} />
-                    ))}
-                    <span className="text-[10px] text-muted-foreground ml-1">Thinking...</span>
+                <div className="bg-card border border-border/60 rounded-2xl rounded-bl-sm px-4 py-3.5 w-64 shadow-sm">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-1">
+                      {[0, 1, 2].map(i => (
+                        <motion.div key={i} className="w-2 h-2 rounded-full bg-primary/70"
+                          animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
+                          transition={{ duration: 0.7, delay: i * 0.15, repeat: Infinity }} />
+                      ))}
+                    </div>
+                    <span className="text-[11px] text-muted-foreground font-medium">Thinking...</span>
                   </div>
-                  <div className="space-y-1.5">
-                    {[1, 0.8, 0.6].map((w, i) => (
-                      <div key={i} className="h-2.5 bg-muted/40 rounded animate-pulse" style={{ width: `${w * 100}%` }} />
-                    ))}
+                  <div className="space-y-2">
+                    <div className="h-2.5 bg-foreground/10 rounded-full animate-pulse w-full" />
+                    <div className="h-2.5 bg-foreground/8 rounded-full animate-pulse w-5/6" style={{ animationDelay: "0.15s" }} />
+                    <div className="h-2.5 bg-foreground/6 rounded-full animate-pulse w-4/6" style={{ animationDelay: "0.3s" }} />
                   </div>
                 </div>
               </div>
@@ -1093,7 +1095,7 @@ function PortalDesktop() {
                       {[1, 2, 3].map(i => (
                         <div key={i} className={`flex ${i % 2 === 0 ? "justify-end" : "justify-start"}`}>
                           <div className={`rounded-2xl px-4 py-3 space-y-2 ${i % 2 === 0 ? "w-48" : "w-72"}`}>
-                            <div className="h-3 bg-muted/40 rounded animate-pulse" />
+                            <div className="h-3 bg-foreground/10 rounded animate-pulse" />
                             <div className="h-3 bg-muted/30 rounded animate-pulse w-4/5" />
                             {i % 2 !== 0 && <div className="h-3 bg-muted/20 rounded animate-pulse w-3/5" />}
                           </div>
@@ -1128,26 +1130,25 @@ function PortalDesktop() {
                       animate={{ opacity: 1, y: 0 }}
                       className="flex justify-start"
                     >
-                      <div className="bg-card border border-border rounded-2xl px-4 py-3 max-w-[75%] w-64 space-y-2">
-                        {/* Typing dots */}
-                        <div className="flex items-center gap-1.5 mb-2">
-                          {[0, 1, 2].map(i => (
-                            <motion.div key={i} className={`w-2 h-2 rounded-full ${currentMode.color.replace("text-", "bg-")}`}
-                              animate={{ y: [0, -5, 0], opacity: [0.4, 1, 0.4] }}
-                              transition={{ duration: 0.7, delay: i * 0.15, repeat: Infinity }} />
-                          ))}
-                          <span className={`text-[10px] ml-1 ${currentMode.color} font-mono`}>
-                            {activeMode === "study" ? "searching & thinking..." : activeMode === "research" ? "researching..." : "thinking..."}
+                      <div className="bg-card border border-border/60 rounded-2xl px-4 py-3.5 max-w-[75%] w-72 shadow-sm">
+                        {/* Typing dots + label */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="flex items-center gap-1">
+                            {[0, 1, 2].map(i => (
+                              <motion.div key={i} className="w-2 h-2 rounded-full bg-primary/70"
+                                animate={{ y: [0, -5, 0], opacity: [0.5, 1, 0.5] }}
+                                transition={{ duration: 0.7, delay: i * 0.15, repeat: Infinity }} />
+                            ))}
+                          </div>
+                          <span className="text-[11px] text-muted-foreground font-medium">
+                            {activeMode === "study" ? "Searching & thinking..." : activeMode === "research" ? "Researching..." : "Thinking..."}
                           </span>
                         </div>
                         {/* Skeleton lines */}
-                        <div className="space-y-1.5">
-                          <motion.div className="h-2.5 bg-muted/50 rounded-full w-full"
-                            animate={{ opacity: [0.4, 0.8, 0.4] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0 }} />
-                          <motion.div className="h-2.5 bg-muted/40 rounded-full w-5/6"
-                            animate={{ opacity: [0.4, 0.8, 0.4] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.2 }} />
-                          <motion.div className="h-2.5 bg-muted/30 rounded-full w-4/6"
-                            animate={{ opacity: [0.4, 0.8, 0.4] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.4 }} />
+                        <div className="space-y-2">
+                          <div className="h-2.5 bg-foreground/10 rounded-full animate-pulse w-full" />
+                          <div className="h-2.5 bg-foreground/8 rounded-full animate-pulse w-5/6" style={{ animationDelay: "0.15s" }} />
+                          <div className="h-2.5 bg-foreground/6 rounded-full animate-pulse w-4/6" style={{ animationDelay: "0.3s" }} />
                         </div>
                       </div>
                     </motion.div>
