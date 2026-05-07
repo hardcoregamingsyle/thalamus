@@ -1381,12 +1381,11 @@ export const runAgentRound = action({
 });
 
 // ─── Background self-scheduling runner ───────────────────────────────────────
-// This internal action runs one agent round and schedules the next one.
-// Because it uses ctx.scheduler, it continues even when the browser tab is closed.
+// Thin wrapper: handles stale-state recovery, then kicks off backgroundRunOneRound.
+// backgroundRunOneRound is now self-scheduling — each agent gets its own fresh action.
 export const backgroundRunSession = internalAction({
   args: { sessionId: v.id("teamSessions") },
   handler: async (ctx, args): Promise<void> => {
-    // Get session state
     const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
     if (!session) return;
     if (session.status === "completed") return;
@@ -1396,52 +1395,32 @@ export const backgroundRunSession = internalAction({
       const runningAt = (session as Record<string, unknown>).runningAt as number | undefined;
       const STALE_THRESHOLD_MS = 12 * 60 * 1000; // 12 minutes
       if (runningAt && Date.now() - runningAt < STALE_THRESHOLD_MS) {
-        // Genuinely running — skip to avoid double-running
-        return;
+        return; // Genuinely running — skip to avoid double-running
       }
       // Stale "running" state — recover by resetting to idle and continuing
       console.log(`backgroundRunSession: recovering stale running state for session ${args.sessionId}`);
       await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
-        sessionId: args.sessionId,
-        status: "idle",
-        currentAgent: session.currentAgent,
-        round: session.round,
-        loopCount: session.loopCount,
-        phase: session.phase,
-        totalMessages: session.totalMessages,
+        sessionId: args.sessionId, status: "idle",
+        currentAgent: session.currentAgent, round: session.round,
+        loopCount: session.loopCount, phase: session.phase, totalMessages: session.totalMessages,
       });
     }
 
-    try {
-      const result = await ctx.runAction(internal.agentTeam.backgroundRunOneRound, { sessionId: args.sessionId });
-      
-      // If not done, schedule the next round immediately
-      if (!result.done) {
-        await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunSession, { sessionId: args.sessionId });
-      }
-    } catch (err) {
-      console.error("backgroundRunSession error:", err);
-      // On error, mark session as idle so user can retry
-      await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
-        sessionId: args.sessionId,
-        status: "idle",
-        currentAgent: undefined,
-        round: session.round,
-        loopCount: session.loopCount,
-        phase: session.phase,
-        totalMessages: session.totalMessages,
-      });
-    }
+    // Schedule backgroundRunOneRound as a new independent action
+    // Each agent gets its own fresh 10-minute timeout budget
+    await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunOneRound, { sessionId: args.sessionId });
   },
 });
 
-// Internal action that runs one round (same logic as runAgentRound but internal)
+// ─── One-agent-per-action runner ─────────────────────────────────────────────
+// Each invocation runs exactly ONE agent, then schedules the next as a new action.
+// This gives every agent its own fresh 10-minute Convex action timeout.
 export const backgroundRunOneRound = internalAction({
   args: { sessionId: v.id("teamSessions") },
-  handler: async (ctx, args): Promise<{ done: boolean }> => {
+  handler: async (ctx, args): Promise<void> => {
     const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
-    if (!session) return { done: true };
-    if (session.status === "completed") return { done: true };
+    if (!session) return;
+    if (session.status === "completed") return;
 
     const userId = session.userId;
     const totalMessages = session.totalMessages ?? 0;
@@ -1450,7 +1429,7 @@ export const backgroundRunOneRound = internalAction({
         sessionId: args.sessionId, status: "completed", currentAgent: undefined,
         round: session.round, loopCount: session.loopCount, phase: "completed", totalMessages,
       });
-      return { done: true };
+      return;
     }
 
     const executionPhase = session.executionPhase ?? "planning";
@@ -1501,7 +1480,8 @@ export const backgroundRunOneRound = internalAction({
         finalReviewCoderEnabled, taskMessageCount: 0, taskUpgradeActive: false,
         taskUpgradeMessagesLeft: 0, unfixableTasksJson: JSON.stringify(unfixableTasks),
       });
-      return { done: doneSkip };
+      if (!doneSkip) await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunOneRound, { sessionId: args.sessionId });
+      return;
     }
 
     const pipeline = getPipeline(executionPhase, plannerTasks, currentTaskIndex, finalReviewCoderEnabled);
@@ -1659,7 +1639,7 @@ export const backgroundRunOneRound = internalAction({
         sessionId: args.sessionId, status: "idle", currentAgent: currentPhase,
         round: session.round, loopCount, phase: currentPhase, totalMessages: newTotalMsgsBg,
       });
-      return { done: false }; // Stop background loop — user must submit info
+      return; // Stop background loop — user must submit info
     }
 
     // Cost accounting
@@ -1696,7 +1676,8 @@ export const backgroundRunOneRound = internalAction({
           finalReviewCoderEnabled: false,
         });
         await ctx.runMutation(internal.agentTeamHelpers.updateTaskDifficulty, { sessionId: args.sessionId, difficulty });
-        return { done: false };
+        await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunOneRound, { sessionId: args.sessionId });
+        return;
       } else {
         nextPhase = PLANNING_PIPELINE[currentPipelineIdx + 1] || "Planner";
       }
@@ -1728,7 +1709,8 @@ export const backgroundRunOneRound = internalAction({
             taskUpgradeMessagesLeft: MODAL_UPGRADE_DURATION, unfixableTasksJson: JSON.stringify(newUnfixableTasks),
             manualUpgradeEnabled: false,
           });
-          return { done: false };
+          await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunOneRound, { sessionId: args.sessionId });
+          return;
         } else if (taskUpgradeActive && newTaskUpgradeMessagesLeft <= 0) {
           // Upgrade expired and still rejected — skip this task
           const taskTitle = plannerTasks[currentTaskIndex]?.title ?? `Task ${currentTaskIndex + 1}`;
@@ -1756,7 +1738,8 @@ export const backgroundRunOneRound = internalAction({
             finalReviewCoderEnabled: newFinalReviewCoderEnabled, taskMessageCount: 0, taskUpgradeActive: false,
             taskUpgradeMessagesLeft: 0, unfixableTasksJson: JSON.stringify(newUnfixableTasks),
           });
-          return { done: false };
+          await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunOneRound, { sessionId: args.sessionId });
+          return;
         } else {
           // Normal rejection — restart task
           nextPhase = taskPipeline[0];
@@ -1767,7 +1750,8 @@ export const backgroundRunOneRound = internalAction({
             finalReviewCoderEnabled, taskMessageCount: newTaskMessageCount, taskUpgradeActive: newTaskUpgradeActive,
             taskUpgradeMessagesLeft: newTaskUpgradeMessagesLeft, unfixableTasksJson: JSON.stringify(newUnfixableTasks),
           });
-          return { done: false };
+          await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunOneRound, { sessionId: args.sessionId });
+          return;
         }
       } else if (currentPhase === "Critic" && parsed.criticResult !== "fail") {
         // Task complete — move to next task or final review
@@ -1819,10 +1803,11 @@ export const backgroundRunOneRound = internalAction({
           finalReviewCoderEnabled: newFinalReviewCoderEnabled, taskMessageCount: newTaskMessageCount,
           taskUpgradeActive: false, taskUpgradeMessagesLeft: 0, unfixableTasksJson: JSON.stringify(newUnfixableTasks),
         });
-        return { done: true };
+        return;
       }
       await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, { sessionId: args.sessionId, currentAgentOutput: "" });
-      return { done: false };
+      await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunOneRound, { sessionId: args.sessionId });
+      return;
     } else {
       const reviewPipeline = finalReviewCoderEnabled ? FINAL_REVIEW_PIPELINE_WITH_CODER : FINAL_REVIEW_PIPELINE_SKIP_CODER;
       if (currentPhase === "Critic") {
@@ -1853,7 +1838,7 @@ export const backgroundRunOneRound = internalAction({
       taskMessageCount: 0, taskUpgradeActive: false, taskUpgradeMessagesLeft: 0,
     });
 
-    return { done };
+    if (!done) await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunOneRound, { sessionId: args.sessionId });
   },
 });
 
@@ -1930,8 +1915,8 @@ export const startBackgroundSession = action({
     if (!session) throw new Error("Session not found");
     if (session.userId !== userId) throw new Error("Not authorized");
     if (session.status === "completed") throw new Error("Session already completed");
-    // Schedule the background runner — it will self-schedule until done
-    await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunSession, { sessionId: args.sessionId });
+    // Schedule backgroundRunOneRound directly — each agent gets its own fresh timeout budget
+    await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunOneRound, { sessionId: args.sessionId });
   },
 });
 
