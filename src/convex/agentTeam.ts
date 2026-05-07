@@ -7,7 +7,7 @@ import { callGemini, callModel, calcAgentBucksForTier, performSearch, performScr
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_MESSAGES = 100_000; // No practical limit — sessions run until complete
-const MAX_TASK_MESSAGES = 100;        // per-task message limit
+const MAX_TASK_MESSAGES = 200;        // per-task message limit (increased from 100)
 const MODAL_UPGRADE_TRIGGER = 40;     // messages in task before upgrade activates on rejection (cumulative across restarts)
 const MODAL_UPGRADE_DURATION = 30;    // messages the upgrade lasts
 const DAYTONA_API = "https://app.daytona.io/api";
@@ -1384,14 +1384,29 @@ export const backgroundRunSession = internalAction({
     const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
     if (!session) return;
     if (session.status === "completed") return;
+
+    // If status is "running", check if it's stale (action timed out > 12 minutes ago)
     if (session.status === "running") {
-      // Already running from another invocation — skip to avoid double-running
-      return;
+      const runningAt = (session as Record<string, unknown>).runningAt as number | undefined;
+      const STALE_THRESHOLD_MS = 12 * 60 * 1000; // 12 minutes
+      if (runningAt && Date.now() - runningAt < STALE_THRESHOLD_MS) {
+        // Genuinely running — skip to avoid double-running
+        return;
+      }
+      // Stale "running" state — recover by resetting to idle and continuing
+      console.log(`backgroundRunSession: recovering stale running state for session ${args.sessionId}`);
+      await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
+        sessionId: args.sessionId,
+        status: "idle",
+        currentAgent: session.currentAgent,
+        round: session.round,
+        loopCount: session.loopCount,
+        phase: session.phase,
+        totalMessages: session.totalMessages,
+      });
     }
 
     try {
-      // Run one agent round using the existing runAgentRound logic
-      // We call it via the internal path by re-using the handler logic
       const result = await ctx.runAction(internal.agentTeam.backgroundRunOneRound, { sessionId: args.sessionId });
       
       // If not done, schedule the next round immediately

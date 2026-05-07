@@ -53,6 +53,8 @@ export const updateSessionStatus = internalMutation({
       loopCount: args.loopCount,
       phase: args.phase,
       totalMessages: args.totalMessages,
+      // Track when we started running to detect stale states
+      runningAt: args.status === "running" ? Date.now() : undefined,
     });
   },
 });
@@ -281,6 +283,8 @@ export const updateSessionFull = internalMutation({
       taskUpgradeMessagesLeft: args.taskUpgradeMessagesLeft,
       unfixableTasksJson: args.unfixableTasksJson,
       manualUpgradeEnabled: args.manualUpgradeEnabled,
+      // Track when we started running to detect stale states
+      runningAt: args.status === "running" ? Date.now() : undefined,
     });
   },
 });
