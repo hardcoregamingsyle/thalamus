@@ -335,9 +335,10 @@ Be a weapon, not a teacher.`;
     // If tokens are 0 (VLY fallback), estimate from response length (~4 chars per token)
     const estimatedInput = inputTokens || Math.ceil(fullPrompt.length / 4);
     const estimatedOutput = outputTokens || Math.ceil(responseContent.length / 4);
-    const inputCostCents = (estimatedInput / 1_000_000) * 100;
-    const outputCostCents = (estimatedOutput / 1_000_000) * 500;
-    const costCents = Math.max(0.001, inputCostCents + outputCostCents);
+    // Claude Haiku 4.5 pricing: $1.80/1M input, $7.20/1M output (in cents: 180/720 per million)
+    const inputCostCents = (estimatedInput / 1_000_000) * 180;
+    const outputCostCents = (estimatedOutput / 1_000_000) * 720;
+    const costCents = inputCostCents + outputCostCents;
 
     await ctx.runMutation(internal.aiHelpers.saveAssistantMessage, {
       conversationId: args.conversationId,
