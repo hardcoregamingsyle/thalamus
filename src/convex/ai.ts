@@ -253,12 +253,17 @@ Always explain your code with clear HTML-formatted text before and after code bl
     const outputCostCents = (outputTokens / 1_000_000) * 240;
     const costCents: number = inputCostCents + outputCostCents;
 
+    // Gemini 3.1 Flash Lite: $0.60/1M input, $2.40/1M output
     await ctx.runMutation(internal.aiHelpers.saveAssistantMessage, {
       conversationId: args.conversationId,
       userId,
       content: responseContent,
       tokensUsed,
       costCents,
+      inputTokens,
+      outputTokens,
+      inputCostPerMillion: 0.60,
+      outputCostPerMillion: 2.40,
     });
 
     return responseContent;
