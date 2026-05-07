@@ -337,9 +337,7 @@ Be a weapon, not a teacher.`;
     const estimatedOutput = outputTokens || Math.ceil(responseContent.length / 4);
     // Claude Haiku 4.5 pricing: $1.80/1M input, $7.20/1M output (in cents: 180/720 per million)
     // AB formula: z = 1.5 * x * y where x=tokens, y=costPerMillion
-    const inputAB = 1.5 * estimatedInput * 1.80;   // $1.80/M input
-    const outputAB = 1.5 * estimatedOutput * 7.20;  // $7.20/M output
-    const totalAB = Math.ceil(inputAB + outputAB);
+    // Claude Haiku 4.5 pricing: $1.80/1M input, $7.20/1M output
     const costCents = (estimatedInput / 1_000_000) * 180 + (estimatedOutput / 1_000_000) * 720;
 
     await ctx.runMutation(internal.aiHelpers.saveAssistantMessage, {
@@ -348,7 +346,10 @@ Be a weapon, not a teacher.`;
       content: responseContent,
       tokensUsed: inputTokens + outputTokens,
       costCents,
-      agentBucksToDeduct: totalAB,
+      inputTokens: estimatedInput,
+      outputTokens: estimatedOutput,
+      inputCostPerMillion: 1.80,
+      outputCostPerMillion: 7.20,
     });
 
     return responseContent;
