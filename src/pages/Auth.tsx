@@ -81,7 +81,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center">
             <Cpu className="h-3.5 w-3.5 text-primary" />
           </div>
-          <span className="text-primary font-bold text-sm tracking-widest amd-glow">THALAMUS_AI</span>
+          <span className="text-primary font-bold text-sm tracking-widest">THALAMUS_AI</span>
           <span className="text-[10px] text-muted-foreground">by Aphantic Corporations</span>
         </button>
       </nav>
@@ -107,7 +107,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   {step === "signIn" ? "AUTHENTICATION REQUIRED" : "OTP VERIFICATION"}
                 </span>
               </div>
-              <h1 className="text-xl font-bold text-primary amd-glow">
+              <h1 className="text-xl font-bold text-primary">
                 {step === "signIn" ? "Access Portal" : "Verify Code"}
               </h1>
               <p className="text-xs text-muted-foreground mt-1">

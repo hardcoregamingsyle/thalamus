@@ -72,31 +72,9 @@ const MODELS = [
   { name: "Claude Haiku 4.5", tier: "FAST", color: "text-cyan-400", border: "border-cyan-400/30", bg: "bg-cyan-400/5", desc: "Chat & Study mode. $1.80/$7.20 per M tokens.", badge: "Bedrock" },
   { name: "Claude Sonnet 4.6", tier: "SMART", color: "text-violet-400", border: "border-violet-400/30", bg: "bg-violet-400/5", desc: "Coder & complex tasks. $5.40/$26.50 per M tokens.", badge: "Bedrock" },
   { name: "Claude Opus 4.6", tier: "POWER", color: "text-amber-400", border: "border-amber-400/30", bg: "bg-amber-400/5", desc: "Hard tasks & security audit. $7.44/$42.00 per M tokens.", badge: "Bedrock" },
-  { name: "Claude Opus 4.7", tier: "APEX", color: "text-red-400", border: "border-red-400/30", bg: "bg-red-400/5", desc: "Extreme difficulty tasks. $12.00/$60.00 per M tokens.", badge: "Bedrock" },
+  { name: "Claude Opus 4.7", tier: "APEX", color: "text-primary", border: "border-primary/30", bg: "bg-primary/5", desc: "Extreme difficulty tasks. $12.00/$60.00 per M tokens.", badge: "Bedrock" },
   { name: "Gemini 3.1 Flash-Lite", tier: "FREE", color: "text-emerald-400", border: "border-emerald-400/30", bg: "bg-emerald-400/5", desc: "Research, planning & fallback. Free tier.", badge: "Google" },
 ];
-
-// ── Particle background ────────────────────────────────────────────────────────
-function ParticleField() {
-  return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {Array.from({ length: 20 }).map((_, i) => (
-        <motion.div
-          key={i}
-          className="absolute rounded-full bg-primary/20"
-          style={{
-            width: i % 3 === 0 ? 2 : 1,
-            height: i % 3 === 0 ? 2 : 1,
-            left: `${(i * 5.1) % 100}%`,
-            top: `${(i * 7.3) % 100}%`,
-          }}
-          animate={{ y: [0, -30, 0], opacity: [0, 0.6, 0], scale: [0, 1.5, 0] }}
-          transition={{ duration: 5 + (i % 4), delay: i * 0.3, repeat: Infinity, repeatDelay: i * 0.1 }}
-        />
-      ))}
-    </div>
-  );
-}
 
 // ── Animated pipeline ─────────────────────────────────────────────────────────
 function LivePipeline() {
@@ -109,10 +87,10 @@ function LivePipeline() {
   return (
     <div className="border border-border bg-card rounded-2xl overflow-hidden shadow-2xl">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-card/80">
-        <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
-        <div className="w-2.5 h-2.5 rounded-full bg-accent" />
-        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-        <span className="text-[11px] text-muted-foreground ml-2 font-mono">aether — code session</span>
+        <div className="w-2 h-2 rounded-full bg-destructive/70" />
+        <div className="w-2 h-2 rounded-full bg-accent/70" />
+        <div className="w-2 h-2 rounded-full bg-emerald-500/70" />
+        <span className="text-[11px] text-muted-foreground ml-2 font-mono">thalamus — code session</span>
         <div className="ml-auto flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-[10px] text-emerald-400 font-mono">RUNNING</span>
@@ -146,98 +124,127 @@ function LivePipeline() {
                   {isActive ? "RUNNING..." : isDone ? "✓ DONE" : "QUEUED"}
                 </span>
               </motion.div>
-              {isActive && agent.subAgents.length > 0 && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="ml-8 mt-1 space-y-0.5">
-                  {agent.subAgents.map((sub) => (
-                    <div key={sub.name} className={`flex items-center gap-2 px-2 py-1 rounded border border-dashed ${agent.bg} opacity-80`}>
-                      <span className={`text-[9px] font-bold font-mono ${agent.color}`}>{sub.abbr}</span>
-                      <span className={`text-[9px] font-mono ${agent.color}/80`}>{sub.name}</span>
-                    </div>
-                  ))}
-                </motion.div>
-              )}
             </div>
           );
         })}
-      </div>
-      <div className="px-4 py-2.5 border-t border-border bg-card/50 flex items-center justify-between">
-        <span className="text-[10px] text-muted-foreground font-mono">Task 4/14 • TASKS PHASE</span>
-        <span className="text-[10px] text-primary font-mono">claude-sonnet-4-6 • Bedrock</span>
       </div>
     </div>
   );
 }
 
-// ── Main Landing ───────────────────────────────────────────────────────────────
-interface SuggestionFile {
-  name: string;
-  content: string;
-  size: number;
+// ── Suggestion Form Modal ─────────────────────────────────────────────────────
+interface SuggestionFile { name: string; content: string; size: number; }
+function SuggestionModal({ onClose, onSubmit, isSubmitting }: { onClose: () => void; onSubmit: (t: string, d: string, f: SuggestionFile[]) => Promise<void>; isSubmitting: boolean }) {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [files, setFiles] = useState<SuggestionFile[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const handleFileAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files ?? []);
+    for (const file of selected) {
+      const text = await file.text().catch(() => `[Binary: ${file.name}]`);
+      setFiles(prev => [...prev, { name: file.name, content: text.slice(0, 50000), size: file.size }]);
+    }
+    if (fileRef.current) fileRef.current.value = "";
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
+      <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
+        className="relative z-10 bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-accent/20 border border-accent/30 flex items-center justify-center">
+              <Lightbulb className="h-3.5 w-3.5 text-accent" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-foreground">SUBMIT FEEDBACK</p>
+              <p className="text-[9px] text-muted-foreground">Help us build better</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors p-1"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="text-[10px] font-bold text-muted-foreground block mb-1.5">TITLE <span className="text-destructive">*</span></label>
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Brief title..." className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors" />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-muted-foreground block mb-1.5">DESCRIPTION <span className="text-destructive">*</span></label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Describe your suggestion or bug report..." rows={4} className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors resize-none" />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-muted-foreground block mb-1.5">ATTACHMENTS (optional)</label>
+            <input ref={fileRef} type="file" multiple onChange={handleFileAdd} className="hidden" />
+            <button onClick={() => fileRef.current?.click()} className="w-full py-2 border border-dashed border-border rounded-lg text-[10px] text-muted-foreground hover:border-primary/40 hover:text-primary transition-all flex items-center justify-center gap-2">
+              <Upload className="h-3 w-3" />Attach files
+            </button>
+            {files.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {files.map((f, i) => (
+                  <div key={i} className="flex items-center justify-between px-2 py-1.5 bg-background border border-border rounded-lg">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+                      <span className="text-[10px] text-foreground truncate">{f.name}</span>
+                    </div>
+                    <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 ml-2"><X className="h-3 w-3" /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <button onClick={async () => { if (!title.trim() || !description.trim()) { toast.error("Fill in title and description"); return; } await onSubmit(title.trim(), description.trim(), files); }}
+            disabled={isSubmitting || !title.trim() || !description.trim()}
+            className="w-full py-2.5 bg-primary/15 border border-primary/30 text-primary text-xs rounded-xl hover:bg-primary/25 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-2">
+            {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+            {isSubmitting ? "Submitting..." : "Submit Feedback"}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
 }
 
+// ── Main Landing ───────────────────────────────────────────────────────────────
 export default function Landing() {
   const navigate = useNavigate();
   const { isAuthenticated, isLoading } = useAuth();
   const [activeModeTab, setActiveModeTab] = useState(0);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
-  const [suggTitle, setSuggTitle] = useState("");
-  const [suggDesc, setSuggDesc] = useState("");
-  const [suggFiles, setSuggFiles] = useState<SuggestionFile[]>([]);
-  const [isSuggSubmitting, setIsSuggSubmitting] = useState(false);
-  const suggFileRef = useRef<HTMLInputElement>(null);
+  const [isSuggestionSubmitting, setIsSuggestionSubmitting] = useState(false);
   const submitSuggestionMutation = useMutation(api.admin.submitSuggestion);
 
   const handleLaunch = () => navigate(isAuthenticated ? "/portal/chat" : "/auth");
 
-  const handleSuggFileAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(e.target.files ?? []);
-    for (const file of selected) {
-      const text = await file.text().catch(() => `[Binary file: ${file.name}]`);
-      setSuggFiles(prev => [...prev, { name: file.name, content: text.slice(0, 50000), size: file.size }]);
-    }
-    if (suggFileRef.current) suggFileRef.current.value = "";
-  };
-
-  const handleSuggSubmit = async () => {
-    if (!suggTitle.trim() || !suggDesc.trim()) { toast.error("Please fill in Title and Description"); return; }
-    setIsSuggSubmitting(true);
-    try {
-      await submitSuggestionMutation({ title: suggTitle.trim(), description: suggDesc.trim(), files: suggFiles.length > 0 ? suggFiles : undefined });
-      toast.success("Suggestion submitted! Thank you.");
-      setSuggestionsOpen(false); setSuggTitle(""); setSuggDesc(""); setSuggFiles([]);
-    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to submit"); }
-    finally { setIsSuggSubmitting(false); }
-  };
-
   return (
-    <div className="min-h-screen bg-background font-mono overflow-x-hidden">
+    <div className="min-h-screen bg-background font-sans overflow-x-hidden">
       {/* ── Nav ─────────────────────────────────────────────────────────────── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/90 backdrop-blur-md">
+      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/60 bg-background/95 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center">
               <Cpu className="h-3.5 w-3.5 text-primary" />
             </div>
-            <span className="text-primary font-bold text-sm tracking-widest amd-glow">THALAMUS_AI</span>
-            <span className="hidden sm:block text-[10px] text-muted-foreground border border-border px-2 py-0.5 rounded-full">
+            <span className="text-primary font-bold text-sm tracking-widest">THALAMUS_AI</span>
+            <span className="hidden sm:block text-[10px] text-muted-foreground border border-border/60 px-2 py-0.5 rounded-full">
               L4.5 Agent · by Aphantic
             </span>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSuggestionsOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 text-[11px] border border-border/60 text-muted-foreground px-3 py-1.5 rounded-lg hover:border-accent/40 hover:text-accent transition-all font-medium"
+            >
+              <Lightbulb className="h-3 w-3" />
+              Feedback
+            </button>
             <span className="hidden md:flex items-center gap-1.5 text-[10px] text-muted-foreground">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               LIVE
             </span>
-            <button
-              onClick={() => setSuggestionsOpen(true)}
-              className="flex items-center gap-1.5 text-[11px] border border-border text-muted-foreground px-2.5 py-1.5 rounded-lg hover:border-amber-400/40 hover:bg-amber-400/10 hover:text-amber-400 transition-all font-bold"
-            >
-              <Lightbulb className="h-3 w-3" />
-              <span className="hidden sm:block">IDEAS</span>
-            </button>
             <button onClick={handleLaunch}
-              className="flex items-center gap-1.5 text-xs border border-primary text-primary px-4 py-1.5 rounded-lg hover:bg-primary hover:text-primary-foreground transition-all font-bold">
-              {isLoading ? "..." : isAuthenticated ? "OPEN PORTAL" : "GET STARTED"}
+              className="flex items-center gap-1.5 text-xs bg-primary text-primary-foreground px-4 py-1.5 rounded-lg hover:bg-primary/90 transition-all font-semibold shadow-sm shadow-primary/20">
+              {isLoading ? "..." : isAuthenticated ? "Open Portal" : "Get Started"}
               <ChevronRight className="h-3 w-3" />
             </button>
           </div>
@@ -245,94 +252,80 @@ export default function Landing() {
       </nav>
 
       {/* ── Hero ────────────────────────────────────────────────────────────── */}
-      <section className="relative min-h-screen flex items-center pt-14 overflow-hidden">
-        <ParticleField />
-        <div className="absolute inset-0 opacity-[0.02]" style={{
-          backgroundImage: "linear-gradient(oklch(0.60 0.22 25) 1px, transparent 1px), linear-gradient(90deg, oklch(0.60 0.22 25) 1px, transparent 1px)",
-          backgroundSize: "60px 60px",
-        }} />
-        <div className="absolute top-1/4 right-1/4 w-96 h-96 rounded-full bg-primary/3 blur-3xl pointer-events-none" />
-        <div className="absolute bottom-1/4 left-1/4 w-64 h-64 rounded-full bg-violet-500/3 blur-3xl pointer-events-none" />
+      <section className="pt-32 pb-20 px-6 relative overflow-hidden">
+        {/* Subtle background glow */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[400px] rounded-full bg-primary/5 blur-[120px]" />
+          <div className="absolute top-1/3 left-1/4 w-[300px] h-[300px] rounded-full bg-accent/4 blur-[100px]" />
+        </div>
 
-        <div className="relative max-w-7xl mx-auto px-6 py-24 grid lg:grid-cols-2 gap-16 items-center">
-          <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.7 }}>
-            {/* Brand badge */}
-            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-              className="inline-flex items-center gap-2 border border-primary/30 bg-primary/8 text-primary text-[10px] font-bold px-3 py-1.5 rounded-full mb-6">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              WORLD'S FIRST L4.5 AGENT SYSTEM
+        <div className="max-w-7xl mx-auto relative">
+          <div className="grid lg:grid-cols-2 gap-16 items-center">
+            <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
+              <div className="inline-flex items-center gap-2 border border-primary/25 bg-primary/8 text-primary text-[11px] font-semibold px-3 py-1.5 rounded-full mb-6">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                World's First L4.5 Agent System
+              </div>
+              <h1 className="text-5xl lg:text-6xl font-bold text-foreground leading-[1.1] tracking-tight mb-6">
+                The AI that
+                <br />
+                <span className="text-primary">builds software</span>
+                <br />
+                end-to-end.
+              </h1>
+              <p className="text-base text-muted-foreground leading-relaxed mb-8 max-w-lg">
+                9 specialized agents — from research to deployment. One prompt. Production-ready code, security audited, fully tested.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <motion.button onClick={handleLaunch} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                  className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20">
+                  Launch Portal
+                  <ArrowRight className="h-4 w-4" />
+                </motion.button>
+                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                  onClick={() => document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth" })}
+                  className="flex items-center gap-2 px-6 py-3 border border-border text-foreground text-sm font-medium rounded-xl hover:border-primary/40 hover:bg-primary/5 transition-all">
+                  See how it works
+                </motion.button>
+              </div>
+
+              {/* Stats */}
+              <div className="flex flex-wrap gap-6 mt-10 pt-8 border-t border-border/50">
+                {[
+                  { value: "9", label: "Specialized Agents" },
+                  { value: "4", label: "Claude Models" },
+                  { value: "L4.5", label: "Agent Level" },
+                ].map((stat) => (
+                  <div key={stat.label}>
+                    <p className="text-2xl font-bold text-foreground">{stat.value}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{stat.label}</p>
+                  </div>
+                ))}
+              </div>
             </motion.div>
 
-            <h1 className="text-5xl md:text-6xl font-bold leading-[1.1] mb-5">
-              <span className="text-foreground">Thalamus</span>
-              <br />
-              <span className="text-primary amd-glow">AI Portal</span>
-              <br />
-              <span className="text-muted-foreground text-3xl md:text-4xl">by Aphantic</span>
-            </h1>
-
-            <p className="text-muted-foreground text-sm leading-relaxed mb-3 max-w-lg">
-              Four modes. One platform. <span className="text-foreground font-semibold">Chat, Research, Study, and Code</span> — each powered by the right model for the job. Claude Haiku, Sonnet, Opus 4.6/4.7 via AWS Bedrock.
-            </p>
-
-            <p className="text-muted-foreground text-xs leading-relaxed mb-8 max-w-lg">
-              Code mode orchestrates <span className="text-primary font-bold">9 specialized agents</span> — R&D Team, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Red Team, and Critic — to build complete, production-ready software from a single prompt.
-            </p>
-
-            <div className="flex flex-col sm:flex-row gap-3 mb-10">
-              <motion.button onClick={handleLaunch} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                className="flex items-center justify-center gap-2 px-7 py-3.5 bg-primary text-primary-foreground text-sm font-bold rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20">
-                <Terminal className="h-4 w-4" />
-                LAUNCH PORTAL
-                <ChevronRight className="h-4 w-4" />
-              </motion.button>
-              <motion.button onClick={() => document.getElementById('modes')?.scrollIntoView({ behavior: 'smooth' })}
-                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                className="flex items-center justify-center gap-2 px-7 py-3.5 border border-border text-muted-foreground text-sm font-bold rounded-xl hover:border-primary/40 hover:text-foreground transition-all">
-                EXPLORE MODES
-                <ArrowRight className="h-4 w-4" />
-              </motion.button>
-            </div>
-
-            {/* Key metrics */}
-            <div className="flex items-center gap-6 text-xs flex-wrap">
-              {[
-                { val: "4", label: "AI Modes", color: "text-primary" },
-                { val: "9", label: "Code Agents", color: "text-violet-400" },
-                { val: "5", label: "Claude Models", color: "text-cyan-400" },
-                { val: "AB", label: "Economy", color: "text-amber-400" },
-              ].map((m, i) => (
-                <div key={i} className={i > 0 ? "border-l border-border pl-6" : ""}>
-                  <div className={`font-bold text-base ${m.color}`}>{m.val}</div>
-                  <div className="text-muted-foreground text-[10px]">{m.label}</div>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-
-          {/* Right: Live pipeline */}
-          <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.7, delay: 0.2 }}>
-            <LivePipeline />
-          </motion.div>
+            <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.6, delay: 0.15 }}>
+              <LivePipeline />
+            </motion.div>
+          </div>
         </div>
       </section>
 
       {/* ── Modes ───────────────────────────────────────────────────────────── */}
-      <section id="modes" className="border-t border-border py-20">
-        <div className="max-w-7xl mx-auto px-6">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-10">
-            <p className="text-xs text-muted-foreground mb-2 font-bold tracking-widest">FOUR MODES</p>
-            <h2 className="text-3xl font-bold text-foreground">
-              The right tool for <span className="text-primary">every task.</span>
-            </h2>
+      <section className="py-20 px-6 border-t border-border/50">
+        <div className="max-w-7xl mx-auto">
+          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-12">
+            <p className="text-[11px] font-semibold text-primary tracking-widest mb-3">FOUR MODES</p>
+            <h2 className="text-3xl font-bold text-foreground">One portal. Every capability.</h2>
           </motion.div>
 
           {/* Mode tabs */}
-          <div className="flex gap-2 mb-6 flex-wrap">
+          <div className="flex flex-wrap gap-2 justify-center mb-8">
             {MODES_INFO.map((mode, i) => (
               <button key={mode.id} onClick={() => setActiveModeTab(i)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold border transition-all ${activeModeTab === i ? `${mode.bg} ${mode.color} border-current/30` : "border-border text-muted-foreground hover:text-foreground hover:border-border/80"}`}
-              >
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                  activeModeTab === i ? `${mode.bg} ${mode.color} border-current/30` : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
+                }`}>
                 <mode.icon className="h-3.5 w-3.5" />
                 {mode.label}
               </button>
@@ -344,193 +337,166 @@ export default function Landing() {
       </section>
 
       {/* ── How it works ────────────────────────────────────────────────────── */}
-      <section className="border-t border-border py-20">
-        <div className="max-w-7xl mx-auto px-6">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-12">
-            <p className="text-xs text-muted-foreground mb-2 font-bold tracking-widest">CODE MODE</p>
-            <h2 className="text-3xl font-bold text-foreground">
-              One prompt. <span className="text-primary">Nine agents.</span> Complete software.
-            </h2>
+      <section id="how-it-works" className="py-20 px-6 border-t border-border/50">
+        <div className="max-w-7xl mx-auto">
+          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-12">
+            <p className="text-[11px] font-semibold text-primary tracking-widest mb-3">HOW IT WORKS</p>
+            <h2 className="text-3xl font-bold text-foreground">From prompt to production</h2>
           </motion.div>
 
-          <div className="grid md:grid-cols-3 gap-4 mb-12">
+          <div className="grid md:grid-cols-3 gap-6 mb-12">
             {[
               { step: "01", title: "Describe your project", desc: "Type what you want to build. Thalamus AI handles everything from research to deployment.", icon: Terminal },
               { step: "02", title: "Agents plan & execute", desc: "The Planner breaks it into 12-20 atomic tasks. Each agent runs its specialized role in sequence.", icon: Layers },
               { step: "03", title: "Production-ready output", desc: "Complete codebase, tests, docs, security audit — deployed to a live cloud sandbox.", icon: Rocket },
             ].map((item, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
-                className="border border-border bg-card rounded-xl p-6 relative overflow-hidden group hover:border-primary/40 transition-all">
-                <div className="absolute top-4 right-4 text-5xl font-bold text-muted-foreground/5 group-hover:text-primary/5 transition-colors">{item.step}</div>
-                <item.icon className="h-5 w-5 text-primary mb-4" />
+                className="border border-border/60 bg-card rounded-2xl p-6 hover:border-primary/30 transition-all group">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-[11px] font-bold text-primary/60 font-mono">{item.step}</span>
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center group-hover:bg-primary/15 transition-all">
+                    <item.icon className="h-4 w-4 text-primary" />
+                  </div>
+                </div>
                 <h3 className="text-sm font-bold text-foreground mb-2">{item.title}</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
               </motion.div>
             ))}
           </div>
 
-          {/* Agent grid */}
-          <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
-            {AGENTS.map((agent, i) => (
-              <motion.div key={agent.name} initial={{ opacity: 0, scale: 0.8 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ delay: i * 0.05 }}
-                className={`border ${agent.bg} rounded-xl p-3 text-center group hover:scale-105 transition-all cursor-default`}>
-                <div className={`text-lg font-bold ${agent.color} mb-1`}>{agent.abbr}</div>
-                <div className={`text-[9px] font-bold ${agent.color}`}>{agent.name}</div>
-                {agent.subAgents.length > 0 && (
-                  <div className={`text-[8px] ${agent.color}/60 mt-0.5`}>{agent.subAgents.length} sub</div>
-                )}
-              </motion.div>
-            ))}
-          </div>
+          {/* Agent pipeline detail */}
+          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
+            className="border border-border/60 bg-card rounded-2xl p-6">
+            <p className="text-[11px] font-semibold text-muted-foreground tracking-widest mb-4">AGENT PIPELINE</p>
+            <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-2">
+              {AGENTS.map((agent, i) => (
+                <motion.div key={agent.name} initial={{ opacity: 0, scale: 0.9 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ delay: i * 0.05 }}
+                  className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border ${agent.bg} text-center`}>
+                  <div className={`w-7 h-7 rounded-lg ${agent.bg} border flex items-center justify-center text-sm`}>
+                    {agent.abbr}
+                  </div>
+                  <span className={`text-[9px] font-bold ${agent.color} leading-tight`}>{agent.name}</span>
+                  {agent.subAgents.length > 0 && (
+                    <span className="text-[8px] text-muted-foreground/60">{agent.subAgents.length} sub</span>
+                  )}
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
         </div>
       </section>
 
       {/* ── Models ──────────────────────────────────────────────────────────── */}
-      <section className="border-t border-border py-20">
-        <div className="max-w-7xl mx-auto px-6">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-10">
-            <p className="text-xs text-muted-foreground mb-2 font-bold tracking-widest">AI MODELS</p>
-            <h2 className="text-3xl font-bold text-foreground">
-              Right model, <span className="text-primary">right task.</span>
-            </h2>
-            <p className="text-sm text-muted-foreground mt-2 max-w-xl">
+      <section className="py-20 px-6 border-t border-border/50">
+        <div className="max-w-7xl mx-auto">
+          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-12">
+            <p className="text-[11px] font-semibold text-primary tracking-widest mb-3">MODELS</p>
+            <h2 className="text-3xl font-bold text-foreground">Powered by the best</h2>
+            <p className="text-sm text-muted-foreground mt-3 max-w-lg mx-auto">
               Thalamus automatically routes each agent to the optimal model based on task difficulty. You pay only for what you use via AgentBucks.
             </p>
           </motion.div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {MODELS.map((model, i) => (
-              <motion.div key={model.name} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.08 }}
-                className={`border ${model.border} ${model.bg} rounded-xl p-4 hover:scale-[1.02] transition-all`}>
+              <motion.div key={model.name} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.08 }}
+                className={`border ${model.border} ${model.bg} rounded-2xl p-5 hover:border-opacity-60 transition-all`}>
                 <div className="flex items-center justify-between mb-3">
-                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${model.border} ${model.color}`}>{model.tier}</span>
-                  <span className="text-[8px] text-muted-foreground border border-border px-1.5 py-0.5 rounded">{model.badge}</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${model.border} ${model.color} bg-transparent`}>{model.tier}</span>
+                  <span className="text-[9px] text-muted-foreground border border-border/50 px-1.5 py-0.5 rounded">{model.badge}</span>
                 </div>
-                <p className={`text-xs font-bold ${model.color} mb-1`}>{model.name}</p>
-                <p className="text-[10px] text-muted-foreground leading-relaxed">{model.desc}</p>
+                <p className={`text-sm font-bold ${model.color} mb-1`}>{model.name}</p>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">{model.desc}</p>
               </motion.div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── AgentBucks Economy ──────────────────────────────────────────────── */}
-      <section className="border-t border-border py-20">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <motion.div initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}>
-              <p className="text-xs text-muted-foreground mb-2 font-bold tracking-widest">AGENTBUCKS ECONOMY</p>
+      {/* ── AgentBucks ──────────────────────────────────────────────────────── */}
+      <section className="py-20 px-6 border-t border-border/50">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
+              <p className="text-[11px] font-semibold text-primary tracking-widest mb-3">AGENTBUCKS</p>
               <h2 className="text-3xl font-bold text-foreground mb-4">
-                Pay per token, <span className="text-amber-400">not per seat.</span>
+                Pay only for what you use
               </h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-6">
                 AgentBucks (AB) is the internal currency of Thalamus AI. Every model call deducts AB proportional to actual token usage. Daily free allocation + purchasable credits.
               </p>
               <div className="space-y-3">
                 {[
-                  { label: "Daily free allocation", val: "Refreshes every 24h", color: "text-emerald-400" },
-                  { label: "Gemini calls", val: "~900 AB / M input tokens", color: "text-emerald-400" },
-                  { label: "Haiku 4.5 calls", val: "~2,700 AB / M input tokens", color: "text-cyan-400" },
-                  { label: "Sonnet 4.6 calls", val: "~8,100 AB / M input tokens", color: "text-violet-400" },
-                  { label: "Opus 4.7 calls", val: "~18,000 AB / M input tokens", color: "text-red-400" },
+                  { icon: Zap, label: "Daily free allocation", desc: "Every user gets free AB daily — no credit card needed" },
+                  { icon: Activity, label: "Usage-proportional billing", desc: "Pay exactly for tokens used, not flat subscriptions" },
+                  { icon: Shield, label: "Referral rewards", desc: "Earn bonus AB by referring friends to the platform" },
                 ].map((item, i) => (
-                  <div key={i} className="flex items-center justify-between border border-border rounded-lg px-3 py-2">
-                    <span className="text-[11px] text-muted-foreground">{item.label}</span>
-                    <span className={`text-[11px] font-bold ${item.color}`}>{item.val}</span>
+                  <div key={i} className="flex items-start gap-3 p-3 rounded-xl border border-border/50 bg-card/50">
+                    <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+                      <item.icon className="h-3.5 w-3.5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-foreground">{item.label}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{item.desc}</p>
+                    </div>
                   </div>
                 ))}
               </div>
             </motion.div>
-            <motion.div initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}>
-              <div className="border border-border bg-card rounded-2xl p-6">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 rounded-xl bg-amber-400/10 border border-amber-400/30 flex items-center justify-center">
-                    <Zap className="h-5 w-5 text-amber-400" />
+
+            <motion.div initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
+              className="border border-border/60 bg-card rounded-2xl p-6">
+              <p className="text-[11px] font-semibold text-muted-foreground tracking-widest mb-4">PRICING TIERS</p>
+              <div className="space-y-3">
+                {[
+                  { tier: "Haiku 4.5", ab: "~15,000 AB/msg", color: "text-cyan-400", bg: "bg-cyan-400/10" },
+                  { tier: "Sonnet 4.6", ab: "~45,000 AB/msg", color: "text-violet-400", bg: "bg-violet-400/10" },
+                  { tier: "Opus 4.6", ab: "~75,000 AB/msg", color: "text-amber-400", bg: "bg-amber-400/10" },
+                  { tier: "Opus 4.7", ab: "~120,000 AB/msg", color: "text-primary", bg: "bg-primary/10" },
+                ].map((item) => (
+                  <div key={item.tier} className={`flex items-center justify-between p-3 rounded-xl ${item.bg} border border-current/10`}>
+                    <span className={`text-xs font-bold ${item.color}`}>{item.tier}</span>
+                    <span className="text-[11px] text-muted-foreground font-mono">{item.ab}</span>
                   </div>
-                  <div>
-                    <p className="text-sm font-bold text-foreground">AgentBucks Balance</p>
-                    <p className="text-[10px] text-muted-foreground">Your AI compute currency</p>
-                  </div>
-                </div>
-                <div className="text-4xl font-bold text-amber-400 mb-1">306,973,492</div>
-                <p className="text-[10px] text-muted-foreground mb-6">Example balance</p>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-muted-foreground">Daily allocation</span>
-                    <span className="text-emerald-400 font-bold">+50,000 AB/day</span>
-                  </div>
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-muted-foreground">Purchased credits</span>
-                    <span className="text-amber-400 font-bold">Persistent</span>
-                  </div>
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-muted-foreground">Referral bonus</span>
-                    <span className="text-primary font-bold">Free spins</span>
-                  </div>
-                </div>
+                ))}
+              </div>
+              <div className="mt-4 pt-4 border-t border-border/50">
+                <p className="text-[10px] text-muted-foreground">Daily free allocation: <span className="text-foreground font-semibold">500,000 AB</span></p>
+                <p className="text-[10px] text-muted-foreground mt-1">Purchased credits never expire.</p>
               </div>
             </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Tech Stack ──────────────────────────────────────────────────────── */}
-      <section className="border-t border-border py-20">
-        <div className="max-w-7xl mx-auto px-6">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-10">
-            <p className="text-xs text-muted-foreground mb-2 font-bold tracking-widest">INFRASTRUCTURE</p>
-            <h2 className="text-3xl font-bold text-foreground">
-              Built on <span className="text-primary">production-grade</span> infrastructure.
-            </h2>
-          </motion.div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {[
-              { icon: Brain, title: "AWS Bedrock", sub: "Claude 4.5/4.6/4.7", desc: "SigV4-signed REST API. Haiku, Sonnet, Opus models. Automatic fallback to Gemini.", color: "text-primary", border: "border-primary/20 hover:border-primary/50" },
-              { icon: Activity, title: "Convex Real-Time", sub: "Reactive database", desc: "Every agent output streams live. No polling — pure reactive subscriptions.", color: "text-cyan-400", border: "border-cyan-400/20 hover:border-cyan-400/50" },
-              { icon: Globe, title: "Daytona Sandbox", sub: "Live code execution", desc: "Every project deploys to a real cloud sandbox. Commands run, tests execute, previews go live.", color: "text-emerald-400", border: "border-emerald-400/20 hover:border-emerald-400/50" },
-              { icon: Database, title: "GraphRAG + ChromaDB", sub: "Per-session grounding", desc: "Knowledge base grounding for every session. Agents retrieve relevant context before acting.", color: "text-violet-400", border: "border-violet-400/20 hover:border-violet-400/50" },
-            ].map((item, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
-                className={`border ${item.border} bg-card rounded-xl p-5 transition-all`}>
-                <item.icon className={`h-5 w-5 ${item.color} mb-3`} />
-                <p className={`text-sm font-bold ${item.color} mb-0.5`}>{item.title}</p>
-                <p className="text-[10px] text-muted-foreground mb-2">{item.sub}</p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">{item.desc}</p>
-              </motion.div>
-            ))}
           </div>
         </div>
       </section>
 
       {/* ── CTA ─────────────────────────────────────────────────────────────── */}
-      <section className="border-t border-border py-24">
-        <div className="max-w-3xl mx-auto px-6 text-center">
+      <section className="py-24 px-6 border-t border-border/50">
+        <div className="max-w-3xl mx-auto text-center">
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
-            <div className="inline-flex items-center gap-2 border border-primary/30 bg-primary/8 text-primary text-[10px] font-bold px-3 py-1.5 rounded-full mb-6">
+            <div className="inline-flex items-center gap-2 border border-primary/25 bg-primary/8 text-primary text-[11px] font-semibold px-3 py-1.5 rounded-full mb-6">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
               THALAMUS AI — L4.5 AGENT SYSTEM
             </div>
             <h2 className="text-4xl font-bold text-foreground mb-4">
-              Ready to build with <span className="text-primary amd-glow">9 agents?</span>
+              Ready to build with <span className="text-primary">9 agents?</span>
             </h2>
             <p className="text-sm text-muted-foreground mb-8 max-w-lg mx-auto">
               Chat, research, study, or deploy full software — all from one portal. Free daily allocation. No credit card required.
             </p>
             <motion.button onClick={handleLaunch} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-              className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground text-sm font-bold rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20">
-              <Terminal className="h-4 w-4" />
-              LAUNCH THALAMUS PORTAL
-              <ChevronRight className="h-4 w-4" />
+              className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20">
+              Launch Thalamus Portal
+              <ArrowRight className="h-4 w-4" />
             </motion.button>
           </motion.div>
         </div>
       </section>
 
       {/* ── Footer ──────────────────────────────────────────────────────────── */}
-      <footer className="border-t border-border py-8">
+      <footer className="border-t border-border/50 py-8">
         <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-6 h-6 rounded bg-primary/20 border border-primary/40 flex items-center justify-center">
+            <div className="w-6 h-6 rounded bg-primary/15 border border-primary/30 flex items-center justify-center">
               <Cpu className="h-3 w-3 text-primary" />
             </div>
             <span className="text-primary font-bold text-xs tracking-widest">THALAMUS_AI</span>
@@ -547,6 +513,26 @@ export default function Landing() {
           </div>
         </div>
       </footer>
+
+      {/* Suggestion Modal */}
+      {suggestionsOpen && (
+        <SuggestionModal
+          onClose={() => setSuggestionsOpen(false)}
+          onSubmit={async (title, description, files) => {
+            setIsSuggestionSubmitting(true);
+            try {
+              await submitSuggestionMutation({ title, description, files: files.length > 0 ? files : undefined });
+              toast.success("Feedback submitted! Thank you.");
+              setSuggestionsOpen(false);
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Failed to submit");
+            } finally {
+              setIsSuggestionSubmitting(false);
+            }
+          }}
+          isSubmitting={isSuggestionSubmitting}
+        />
+      )}
     </div>
   );
 }
