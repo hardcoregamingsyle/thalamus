@@ -418,33 +418,39 @@ async function runResearchTeam(
   const rawDataParts: string[] = [];
   const allUrls: string[] = [];
 
-  // Run searches for each subtopic (up to 8)
-  const searchSubtopics = subtopics.slice(0, 8);
+  // Run searches for all subtopics IN PARALLEL (up to 5) — much faster than sequential
+  const searchSubtopics = subtopics.slice(0, 5);
+  await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
+    sessionId,
+    currentAgentOutput: `[Research Team: DataTaker searching ${searchSubtopics.length} topics in parallel...]`,
+  });
+
+  const searchResults = await Promise.allSettled(
+    searchSubtopics.map(sub => performSearch(sub.query))
+  );
+
   for (let i = 0; i < searchSubtopics.length; i++) {
     const sub = searchSubtopics[i];
-    await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
-      sessionId,
-      currentAgentOutput: `[Research Team: DataTaker searching (${i + 1}/${searchSubtopics.length}): "${sub.query}"]`,
-    });
-    const searchResult = await performSearch(sub.query);
+    const result = searchResults[i];
+    const searchResult = result.status === "fulfilled" ? result.value : `[Search failed: ${result.reason}]`;
     rawDataParts.push(`### Search: "${sub.query}" (${sub.title})\n${searchResult}`);
-
-    // Extract URLs from search result
     const urlMatches = searchResult.match(/https?:\/\/[^\s\)\"\']+/g) ?? [];
-    allUrls.push(...urlMatches.slice(0, 3));
+    allUrls.push(...urlMatches.slice(0, 2));
   }
 
-  // Scrape up to 5 unique URLs
-  const uniqueUrls = [...new Set(allUrls)].slice(0, 5);
-  for (let i = 0; i < uniqueUrls.length; i++) {
-    const url = uniqueUrls[i];
+  // Scrape up to 2 unique URLs IN PARALLEL (reduced from 5 to avoid timeouts)
+  const uniqueUrls = [...new Set(allUrls)].slice(0, 2);
+  if (uniqueUrls.length > 0) {
     await ctx.runMutation(internal.agentTeamHelpers.updateStreamingOutput, {
       sessionId,
-      currentAgentOutput: `[Research Team: DataTaker scraping URL (${i + 1}/${uniqueUrls.length}): ${url.slice(0, 60)}...]`,
+      currentAgentOutput: `[Research Team: DataTaker scraping ${uniqueUrls.length} URL(s) in parallel...]`,
     });
-    const scraped = await performScrape(url);
-    rawDataParts.push(`### Scraped: ${url}\n${scraped}`);
-    totalInputTokens += 0; // scraping doesn't use tokens
+    const scrapeResults = await Promise.allSettled(uniqueUrls.map(url => performScrape(url)));
+    for (let i = 0; i < uniqueUrls.length; i++) {
+      const result = scrapeResults[i];
+      const scraped = result.status === "fulfilled" ? result.value : `[Scrape failed]`;
+      rawDataParts.push(`### Scraped: ${uniqueUrls[i]}\n${scraped}`);
+    }
   }
 
   const rawData = rawDataParts.join("\n\n---\n\n");
