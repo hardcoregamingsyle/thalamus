@@ -768,17 +768,34 @@ function PortalDesktop() {
                     ))
                   )}
                   {isThinking && (
-                    <div className="flex justify-start">
-                      <div className="bg-card border border-border rounded-2xl px-4 py-3">
-                        <div className="flex items-center gap-1">
+                    <motion.div
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex justify-start"
+                    >
+                      <div className="bg-card border border-border rounded-2xl px-4 py-3 max-w-[75%] w-64 space-y-2">
+                        {/* Typing dots */}
+                        <div className="flex items-center gap-1.5 mb-2">
                           {[0, 1, 2].map(i => (
-                            <motion.div key={i} className={`w-1.5 h-1.5 rounded-full ${currentMode.color.replace("text-", "bg-")}`}
-                              animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }}
-                              transition={{ duration: 0.8, delay: i * 0.15, repeat: Infinity }} />
+                            <motion.div key={i} className={`w-2 h-2 rounded-full ${currentMode.color.replace("text-", "bg-")}`}
+                              animate={{ y: [0, -5, 0], opacity: [0.4, 1, 0.4] }}
+                              transition={{ duration: 0.7, delay: i * 0.15, repeat: Infinity }} />
                           ))}
+                          <span className={`text-[10px] ml-1 ${currentMode.color} font-mono`}>
+                            {activeMode === "study" ? "searching & thinking..." : activeMode === "research" ? "researching..." : "thinking..."}
+                          </span>
+                        </div>
+                        {/* Skeleton lines */}
+                        <div className="space-y-1.5">
+                          <motion.div className="h-2.5 bg-muted/50 rounded-full w-full"
+                            animate={{ opacity: [0.4, 0.8, 0.4] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0 }} />
+                          <motion.div className="h-2.5 bg-muted/40 rounded-full w-5/6"
+                            animate={{ opacity: [0.4, 0.8, 0.4] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.2 }} />
+                          <motion.div className="h-2.5 bg-muted/30 rounded-full w-4/6"
+                            animate={{ opacity: [0.4, 0.8, 0.4] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.4 }} />
                         </div>
                       </div>
-                    </div>
+                    </motion.div>
                   )}
                   <div ref={messagesEndRef} />
                 </div>
