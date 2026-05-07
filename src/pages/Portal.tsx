@@ -14,6 +14,8 @@ import {
   Hash, Lightbulb, Lock,
 } from "lucide-react";
 import TeamPortalInline from "./TeamPortalInline";
+import MobilePortal from "./MobilePortal";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 type Mode = "chat" | "research" | "code" | "study";
 
@@ -307,7 +309,7 @@ function SuggestionFormModal({
   );
 }
 
-export default function Portal() {
+function PortalDesktop() {
   const { isLoading, isAuthenticated, user, signOut, token } = useAuth();
   const navigate = useNavigate();
   const params = useParams<{ mode?: string; sessionId?: string }>();
@@ -931,4 +933,10 @@ export default function Portal() {
       )}
     </div>
   );
+}
+
+export default function Portal() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobilePortal />;
+  return <PortalDesktop />;
 }
