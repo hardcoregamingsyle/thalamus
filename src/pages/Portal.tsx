@@ -1116,7 +1116,7 @@ function PortalDesktop() {
                             <p className="whitespace-pre-wrap">{msg.content}</p>
                           )}
                           {msg.costCents !== undefined && msg.costCents > 0 && (
-                            <p className="text-[9px] opacity-40 mt-1.5 text-right">{Math.ceil(msg.costCents * 100).toLocaleString()} AB</p>
+                            <p className="text-[9px] opacity-40 mt-1.5 text-right">{Math.ceil(msg.costCents * 15000).toLocaleString()} AB</p>
                           )}
                         </div>
                       </motion.div>
