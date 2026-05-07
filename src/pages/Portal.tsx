@@ -545,7 +545,7 @@ export default function Portal() {
               <div className="w-5 h-5 rounded bg-primary/20 border border-primary/40 flex items-center justify-center">
                 <Cpu className="h-2.5 w-2.5 text-primary" />
               </div>
-              <span className="text-primary font-bold text-xs tracking-widest amd-glow hidden sm:block">THALAMUS_AI</span>
+              <span className="text-primary font-bold text-xs tracking-widest hidden sm:block">THALAMUS_AI</span>
             </div>
             {/* Mode pills — desktop */}
             <div className="hidden md:flex items-center gap-1 ml-2">
