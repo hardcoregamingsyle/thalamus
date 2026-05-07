@@ -1,5 +1,5 @@
 import { useAuth } from "@/hooks/use-auth";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import CreditModal from "@/components/CreditModal";
 import { useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
@@ -11,7 +11,7 @@ import {
   MessageSquare, Search, Plus, Trash2, LogOut,
   Send, Loader2, Menu, X, Users, Cpu, Zap, BookOpen,
   FileText, Globe, Image, Upload, Sparkles, ChevronRight,
-  Hash, Lightbulb, Lock,
+  Hash, Lightbulb, Lock, ArrowRight, Sparkle,
 } from "lucide-react";
 import TeamPortalInline from "./TeamPortalInline";
 import MobilePortal from "./MobilePortal";
@@ -54,6 +54,360 @@ interface SuggestionFile {
   name: string;
   content: string;
   size: number;
+}
+
+// ── Guest limit constants ─────────────────────────────────────────────────────
+const GUEST_LIMIT = 3;
+const GUEST_STORAGE_KEY = "thalamus_guest_session";
+
+interface GuestMessage {
+  role: "user" | "assistant";
+  content: string;
+  id: string;
+}
+
+interface GuestSession {
+  messages: GuestMessage[];
+  promptsUsed: number;
+  mode: string;
+}
+
+function loadGuestSession(mode: string): GuestSession {
+  try {
+    const raw = sessionStorage.getItem(GUEST_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as GuestSession;
+      if (parsed.mode === mode) return parsed;
+    }
+  } catch { /* ignore */ }
+  return { messages: [], promptsUsed: 0, mode };
+}
+
+function saveGuestSession(session: GuestSession) {
+  try {
+    sessionStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(session));
+  } catch { /* ignore */ }
+}
+
+// ── Sign Up Prompt Modal ──────────────────────────────────────────────────────
+function SignUpPromptModal({
+  reason,
+  onClose,
+  onSignUp,
+  pendingMessage,
+}: {
+  reason: "limit" | "mode";
+  onClose: () => void;
+  onSignUp: () => void;
+  pendingMessage?: string;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        transition={{ duration: 0.2 }}
+        className="relative z-10 bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center"
+      >
+        <div className="w-14 h-14 rounded-2xl bg-primary/15 border border-primary/30 flex items-center justify-center mx-auto mb-4">
+          {reason === "limit" ? <Sparkles className="h-7 w-7 text-primary" /> : <Lock className="h-7 w-7 text-primary" />}
+        </div>
+        {reason === "limit" ? (
+          <>
+            <h3 className="text-lg font-bold text-foreground mb-2">You've used your 3 free prompts</h3>
+            <p className="text-sm text-muted-foreground mb-1">Create a free account to get unlimited access.</p>
+            <p className="text-xs text-muted-foreground/70 mb-5">Your conversation will be saved and transferred to your account.</p>
+          </>
+        ) : (
+          <>
+            <h3 className="text-lg font-bold text-foreground mb-2">Sign in to use {reason === "mode" ? "this mode" : "this feature"}</h3>
+            <p className="text-sm text-muted-foreground mb-5">Code and Research modes require a free account. Sign up in seconds.</p>
+          </>
+        )}
+        {pendingMessage && (
+          <div className="mb-4 px-3 py-2 bg-muted/30 border border-border rounded-xl text-xs text-muted-foreground text-left line-clamp-2">
+            <span className="text-foreground/60 font-bold">Your message: </span>{pendingMessage}
+          </div>
+        )}
+        <button
+          onClick={onSignUp}
+          className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-bold text-sm hover:bg-primary/90 transition-all flex items-center justify-center gap-2 mb-3"
+        >
+          <Sparkles className="h-4 w-4" />
+          Create Free Account
+        </button>
+        <button onClick={onClose} className="w-full py-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
+          Maybe later
+        </button>
+      </motion.div>
+    </div>
+  );
+}
+
+// ── Guest Portal (unauthenticated users) ──────────────────────────────────────
+function GuestPortal() {
+  const navigate = useNavigate();
+  const params = useParams<{ mode?: string; sessionId?: string }>();
+  const activeMode = (VALID_MODES.includes(params.mode as Mode) ? params.mode : "chat") as Mode;
+
+  const [session, setSession] = useState<GuestSession>(() => loadGuestSession(activeMode));
+  const [input, setInput] = useState("");
+  const [isThinking, setIsThinking] = useState(false);
+  const [showSignUp, setShowSignUp] = useState<{ reason: "limit" | "mode"; pendingMessage?: string } | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const guestSendMessage = useAction(api.ai.guestSendMessage);
+
+  const currentMode = MODES.find(m => m.id === activeMode)!;
+  const isGuestMode = activeMode === "chat" || activeMode === "study";
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [session.messages, isThinking]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + "px";
+    }
+  }, [input]);
+
+  const handleSend = async () => {
+    if (!input.trim() || isThinking) return;
+    const msg = input.trim();
+
+    // Check if mode requires auth
+    if (!isGuestMode) {
+      setShowSignUp({ reason: "mode", pendingMessage: msg });
+      return;
+    }
+
+    // Check prompt limit
+    if (session.promptsUsed >= GUEST_LIMIT) {
+      setShowSignUp({ reason: "limit", pendingMessage: msg });
+      return;
+    }
+
+    setInput("");
+    const userMsg: GuestMessage = { role: "user", content: msg, id: Date.now().toString() };
+    const newSession = {
+      ...session,
+      messages: [...session.messages, userMsg],
+      promptsUsed: session.promptsUsed + 1,
+    };
+    setSession(newSession);
+    saveGuestSession(newSession);
+
+    setIsThinking(true);
+    try {
+      const history = session.messages.map(m => ({ role: m.role, content: m.content }));
+      const userContext = {
+        datetime: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
+      const response = await guestSendMessage({ content: msg, mode: activeMode as "chat" | "study", history, userContext });
+      const assistantMsg: GuestMessage = { role: "assistant", content: response, id: (Date.now() + 1).toString() };
+      const finalSession = { ...newSession, messages: [...newSession.messages, assistantMsg] };
+      setSession(finalSession);
+      saveGuestSession(finalSession);
+
+      // Show sign up prompt after last free message
+      if (newSession.promptsUsed >= GUEST_LIMIT) {
+        setTimeout(() => setShowSignUp({ reason: "limit" }), 1500);
+      }
+    } catch {
+      toast.error("Failed to get response. Try again.");
+    } finally {
+      setIsThinking(false);
+    }
+  };
+
+  const handleSignUp = () => {
+    // Store pending message in sessionStorage for transfer after auth
+    if (showSignUp?.pendingMessage) {
+      sessionStorage.setItem("thalamus_pending_message", showSignUp.pendingMessage);
+    }
+    navigate("/auth");
+  };
+
+  const promptsLeft = Math.max(0, GUEST_LIMIT - session.promptsUsed);
+
+  return (
+    <div className="h-screen flex flex-col bg-background overflow-hidden">
+      {/* Header */}
+      <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-border bg-card/80 backdrop-blur-sm">
+        <div className="flex items-center gap-3">
+          <div className="w-7 h-7 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center">
+            <Cpu className="h-3.5 w-3.5 text-primary" />
+          </div>
+          <span className="text-primary font-bold text-xs tracking-widest">THALAMUS_AI</span>
+        </div>
+        {/* Mode tabs */}
+        <div className="flex items-center gap-1">
+          {MODES.map(m => (
+            <button key={m.id} onClick={() => {
+              if (m.id === "code" || m.id === "research") {
+                setShowSignUp({ reason: "mode" });
+                return;
+              }
+              navigate(`/portal/${m.id}`);
+              setSession(loadGuestSession(m.id));
+            }}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${activeMode === m.id ? `${m.accent} ${m.color} border` : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground border border-border/50 px-2 py-1 rounded-lg">
+            <Zap className="h-3 w-3 text-amber-400" />
+            <span className={promptsLeft === 0 ? "text-destructive" : promptsLeft === 1 ? "text-amber-400" : ""}>{promptsLeft} free left</span>
+          </div>
+          <button onClick={() => navigate("/auth")} className="px-3 py-1.5 bg-primary text-primary-foreground text-[10px] font-bold rounded-lg hover:bg-primary/90 transition-all">
+            Sign In
+          </button>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4 max-w-4xl mx-auto w-full">
+        {session.messages.length === 0 ? (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center h-full gap-6 pb-20">
+            <div className={`w-16 h-16 rounded-2xl ${currentMode.accent} border flex items-center justify-center`}>
+              <currentMode.icon className={`h-8 w-8 ${currentMode.color}`} />
+            </div>
+            <div className="text-center">
+              <h2 className={`text-xl font-bold ${currentMode.color} mb-2`}>{currentMode.label} Mode</h2>
+              <p className="text-sm text-muted-foreground mb-1">
+                {activeMode === "chat" && "Ask anything — fast, accurate, context-aware"}
+                {activeMode === "study" && "Study with AI-powered explanations"}
+                {activeMode === "research" && "Deep research with live web search"}
+                {activeMode === "code" && "9-agent system for full software development"}
+              </p>
+              <p className="text-xs text-muted-foreground/60">{GUEST_LIMIT} free prompts · No sign-up required</p>
+            </div>
+            {/* Quick suggestions */}
+            <div className="grid grid-cols-2 gap-2 w-full max-w-md">
+              {(SUGGESTIONS_BY_MODE[activeMode] || SUGGESTIONS_BY_MODE.chat).slice(0, 4).map((s, i) => (
+                <button key={i} onClick={() => setInput(s.prompt)}
+                  className="text-left px-3 py-2.5 bg-card border border-border rounded-xl hover:border-primary/30 hover:bg-primary/5 transition-all group">
+                  <p className="text-[10px] font-bold text-foreground group-hover:text-primary transition-colors">{s.icon} {s.title}</p>
+                  <p className="text-[9px] text-muted-foreground mt-0.5 line-clamp-1">{s.prompt}</p>
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        ) : (
+          <div className="space-y-4 pb-4">
+            {session.messages.map((msg) => (
+              <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                {msg.role === "assistant" && (
+                  <div className={`w-7 h-7 rounded-xl ${currentMode.accent} border flex items-center justify-center shrink-0 mr-2 mt-1`}>
+                    <currentMode.icon className={`h-3.5 w-3.5 ${currentMode.color}`} />
+                  </div>
+                )}
+                <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                  msg.role === "user"
+                    ? "bg-primary text-primary-foreground rounded-br-sm"
+                    : "bg-card border border-border text-foreground rounded-bl-sm"
+                }`}>
+                  {msg.role === "assistant" ? (
+                    <div className="prose-html text-sm" dangerouslySetInnerHTML={{ __html: msg.content }} />
+                  ) : (
+                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                  )}
+                </div>
+              </motion.div>
+            ))}
+            {isThinking && (
+              <div className="flex justify-start">
+                <div className={`w-7 h-7 rounded-xl ${currentMode.accent} border flex items-center justify-center shrink-0 mr-2 mt-1`}>
+                  <currentMode.icon className={`h-3.5 w-3.5 ${currentMode.color}`} />
+                </div>
+                <div className="bg-card border border-border rounded-2xl rounded-bl-sm px-4 py-3 space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    {[0, 1, 2].map(i => (
+                      <motion.div key={i} className={`w-1.5 h-1.5 rounded-full ${currentMode.color.replace("text-", "bg-")}`}
+                        animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }}
+                        transition={{ duration: 0.8, delay: i * 0.15, repeat: Infinity }} />
+                    ))}
+                    <span className="text-[10px] text-muted-foreground ml-1">Thinking...</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {[1, 0.8, 0.6].map((w, i) => (
+                      <div key={i} className="h-2.5 bg-muted/40 rounded animate-pulse" style={{ width: `${w * 100}%` }} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+        )}
+      </div>
+
+      {/* Input */}
+      <div className="shrink-0 p-3 border-t border-border bg-card/30 max-w-4xl mx-auto w-full">
+        {promptsLeft === 0 && !isThinking ? (
+          <div className="flex items-center justify-between px-4 py-3 bg-primary/10 border border-primary/30 rounded-xl">
+            <div>
+              <p className="text-xs font-bold text-foreground">Free prompts used up</p>
+              <p className="text-[10px] text-muted-foreground">Sign up free to continue — your chat is saved</p>
+            </div>
+            <button onClick={() => navigate("/auth")} className="px-4 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-lg hover:bg-primary/90 transition-all flex items-center gap-1.5">
+              Sign Up Free <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+              placeholder={
+                activeMode === "study" ? "Ask a study question..." :
+                activeMode === "research" ? "Sign in to use Research mode..." :
+                activeMode === "code" ? "Sign in to use Code mode..." :
+                "Message Thalamus AI..."
+              }
+              disabled={!isGuestMode}
+              rows={1}
+              className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ minHeight: "36px", maxHeight: "120px" }}
+            />
+            <button onClick={handleSend} disabled={!input.trim() || isThinking || !isGuestMode}
+              className="px-3 py-2 bg-primary text-primary-foreground rounded-xl disabled:opacity-50 transition-all shrink-0 hover:bg-primary/90">
+              {isThinking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </button>
+          </div>
+        )}
+        <div className="flex items-center justify-center gap-1 mt-1.5">
+          <Lock className="h-2.5 w-2.5 text-muted-foreground/40" />
+          <span className="text-[9px] text-muted-foreground/40">Guest session · {promptsLeft} of {GUEST_LIMIT} free prompts remaining</span>
+        </div>
+      </div>
+
+      {/* Sign Up Modal */}
+      <AnimatePresence>
+        {showSignUp && (
+          <SignUpPromptModal
+            reason={showSignUp.reason}
+            pendingMessage={showSignUp.pendingMessage}
+            onClose={() => setShowSignUp(null)}
+            onSignUp={handleSignUp}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }
 
 const MODES: { id: Mode; label: string; icon: typeof MessageSquare; desc: string; color: string; accent: string }[] = [
@@ -954,6 +1308,9 @@ function PortalDesktop() {
 
 export default function Portal() {
   const isMobile = useIsMobile();
+  const { isLoading, isAuthenticated } = useAuth();
+
   if (isMobile) return <MobilePortal />;
+  if (!isLoading && !isAuthenticated) return <GuestPortal />;
   return <PortalDesktop />;
 }

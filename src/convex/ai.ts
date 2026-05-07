@@ -328,3 +328,54 @@ export const testVlyHaiku = action({
     }
   },
 });
+
+// ── Guest send message (no auth required, no DB storage) ─────────────────────
+export const guestSendMessage = action({
+  args: {
+    content: v.string(),
+    mode: v.union(v.literal("chat"), v.literal("study")),
+    history: v.array(v.object({ role: v.union(v.literal("user"), v.literal("assistant")), content: v.string() })),
+    userContext: v.optional(v.object({
+      datetime: v.string(),
+      timezone: v.string(),
+    })),
+  },
+  handler: async (_ctx, args): Promise<string> => {
+    const systemPrompts: Record<string, string> = {
+      chat: `You are Thalamus AI, an advanced AI assistant. Be helpful, accurate, and concise.
+
+CRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.
+Use: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <code>, <pre><code>, <blockquote>
+Headings: style="font-size:1.2em;font-weight:bold;margin:0.5em 0;color:#e5e7eb"
+Paragraphs: style="margin:0.5em 0;line-height:1.6;color:#d1d5db"
+Lists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db"
+Code blocks: style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em"
+Inline code: style="background:#1f2937;color:#34d399;padding:0.1em 0.4em;border-radius:4px;font-family:monospace;font-size:0.85em"`,
+      study: `You are Thalamus AI Study Mode — a precision study assistant. Give dense, accurate, exam-ready information.
+
+CRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.
+Use: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <blockquote>
+Headings: style="font-size:1.1em;font-weight:bold;margin:0.5em 0 0.3em;color:#e5e7eb;border-left:3px solid #6366f1;padding-left:0.6em"
+Sub-headings: style="font-size:0.95em;font-weight:bold;margin:0.5em 0 0.2em;color:#c4b5fd"
+Lists: style="margin:0.2em 0 0.2em 1em;color:#d1d5db;font-size:0.9em"
+Key facts: style="border-left:3px solid #f59e0b;padding:0.4em 0.8em;color:#fcd34d;margin:0.5em 0;background:#1c1a0e;border-radius:0 6px 6px 0;font-size:0.85em"`,
+    };
+
+    const contextHeader = args.userContext
+      ? `\n\nCurrent date/time: ${args.userContext.datetime} (${args.userContext.timezone})\n`
+      : "";
+
+    const messages = [
+      ...args.history,
+      { role: "user" as const, content: args.content },
+    ];
+
+    const { text } = await callGeminiChat(
+      systemPrompts[args.mode] + contextHeader,
+      messages,
+      2048
+    );
+
+    return text;
+  },
+});

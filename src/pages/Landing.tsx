@@ -214,7 +214,7 @@ export default function Landing() {
   const [isSuggestionSubmitting, setIsSuggestionSubmitting] = useState(false);
   const submitSuggestionMutation = useMutation(api.admin.submitSuggestion);
 
-  const handleLaunch = () => navigate(isAuthenticated ? "/portal/chat" : "/auth");
+  const handleLaunch = () => navigate("/portal/chat");
 
   return (
     <div className="min-h-screen bg-background font-sans overflow-x-hidden">
@@ -244,7 +244,7 @@ export default function Landing() {
             </span>
             <button onClick={handleLaunch}
               className="flex items-center gap-1.5 text-xs bg-primary text-primary-foreground px-4 py-1.5 rounded-lg hover:bg-primary/90 transition-all font-semibold shadow-sm shadow-primary/20">
-              {isLoading ? "..." : isAuthenticated ? "Open Portal" : "Get Started"}
+              {isLoading ? "..." : isAuthenticated ? "Open Portal" : "Try Free — No Sign Up"}
               <ChevronRight className="h-3 w-3" />
             </button>
           </div>
