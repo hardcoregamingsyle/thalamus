@@ -60,3 +60,33 @@ export const getGithubStatus = query({
     };
   },
 });
+
+// ── OAuth state store ─────────────────────────────────────────────────────────
+export const storeOAuthState = internalMutation({
+  args: {
+    state: v.string(),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("githubOAuthStates", {
+      state: args.state,
+      userId: args.userId,
+      expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
+    });
+  },
+});
+
+export const consumeOAuthState = internalMutation({
+  args: { state: v.string() },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("githubOAuthStates")
+      .withIndex("by_state", (q) => q.eq("state", args.state))
+      .take(1);
+    const row = rows[0];
+    if (!row) return null;
+    await ctx.db.delete(row._id);
+    if (row.expiresAt < Date.now()) return null;
+    return row.userId;
+  },
+});

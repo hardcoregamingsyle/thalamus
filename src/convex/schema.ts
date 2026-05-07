@@ -254,6 +254,13 @@ const schema = defineSchema(
       fileType: v.optional(v.string()),
       createdAt: v.number(),
     }).index("by_user", ["userId"]),
+
+    // Temporary store for GitHub OAuth state tokens
+    githubOAuthStates: defineTable({
+      state: v.string(),
+      userId: v.id("users"),
+      expiresAt: v.number(),
+    }).index("by_state", ["state"]),
   },
   {
     schemaValidation: false,
