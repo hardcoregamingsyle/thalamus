@@ -292,20 +292,39 @@ function MobileChatView({
           ))
         )}
         {isThinking && (
-          <div className="flex justify-start items-end gap-2">
-            <div className={`w-8 h-8 rounded-full ${modeInfo.bg} flex items-center justify-center text-base shrink-0`}>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex justify-start items-end gap-2"
+          >
+            <div className={`w-9 h-9 rounded-full ${modeInfo.bg} flex items-center justify-center text-lg shrink-0 shadow-sm`}>
               {modeInfo.emoji}
             </div>
-            <div className="bg-card border border-border/60 rounded-[20px] rounded-bl-[6px] px-5 py-4 shadow-sm">
-              <div className="flex items-center gap-1.5">
-                {[0, 1, 2].map(i => (
-                  <motion.div key={i} className="w-2.5 h-2.5 rounded-full bg-muted-foreground/40"
-                    animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }}
-                    transition={{ duration: 0.9, delay: i * 0.18, repeat: Infinity }} />
-                ))}
+            <div className="bg-card border border-border/60 rounded-[20px] rounded-bl-[6px] px-4 py-3.5 shadow-sm max-w-[72%] w-56 space-y-2">
+              {/* Typing dots + label */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  {[0, 1, 2].map(i => (
+                    <motion.div key={i} className={`w-2.5 h-2.5 rounded-full ${modeInfo.color.replace("text-", "bg-")}`}
+                      animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }}
+                      transition={{ duration: 0.8, delay: i * 0.16, repeat: Infinity }} />
+                  ))}
+                </div>
+                <span className={`text-[10px] ${modeInfo.color} font-medium`}>
+                  {mode === "study" ? "searching..." : mode === "research" ? "researching..." : "thinking..."}
+                </span>
+              </div>
+              {/* Skeleton lines */}
+              <div className="space-y-2 pt-0.5">
+                <motion.div className="h-3 bg-muted/50 rounded-full w-full"
+                  animate={{ opacity: [0.3, 0.7, 0.3] }} transition={{ duration: 1.3, repeat: Infinity, delay: 0 }} />
+                <motion.div className="h-3 bg-muted/40 rounded-full w-4/5"
+                  animate={{ opacity: [0.3, 0.7, 0.3] }} transition={{ duration: 1.3, repeat: Infinity, delay: 0.25 }} />
+                <motion.div className="h-3 bg-muted/30 rounded-full w-3/5"
+                  animate={{ opacity: [0.3, 0.7, 0.3] }} transition={{ duration: 1.3, repeat: Infinity, delay: 0.5 }} />
               </div>
             </div>
-          </div>
+          </motion.div>
         )}
         <div ref={messagesEndRef} />
       </div>
