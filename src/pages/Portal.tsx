@@ -114,18 +114,13 @@ function SignUpPromptModal({
         <div className="w-14 h-14 rounded-2xl bg-primary/15 border border-primary/30 flex items-center justify-center mx-auto mb-4">
           {reason === "limit" ? <Sparkles className="h-7 w-7 text-primary" /> : <Lock className="h-7 w-7 text-primary" />}
         </div>
-        {reason === "limit" ? (
-          <>
-            <h3 className="text-lg font-bold text-foreground mb-2">You've used your 3 free prompts</h3>
-            <p className="text-sm text-muted-foreground mb-1">Create a free account to get unlimited access.</p>
-            <p className="text-xs text-muted-foreground/70 mb-5">Your conversation will be saved and transferred to your account.</p>
-          </>
-        ) : (
-          <>
-            <h3 className="text-lg font-bold text-foreground mb-2">Sign in to use {reason === "mode" ? "this mode" : "this feature"}</h3>
-            <p className="text-sm text-muted-foreground mb-5">Code and Research modes require a free account. Sign up in seconds.</p>
-          </>
-        )}
+        <h3 className="text-xl font-bold text-foreground mb-2">
+          {reason === "mode" ? "Sign in to continue" : "Sign in to continue"}
+        </h3>
+        <p className="text-sm text-muted-foreground mb-1">
+          {reason === "mode" ? "Code and Research modes require an account." : "You've used your free prompts. Sign up to keep going — it's free."}
+        </p>
+        <p className="text-xs text-muted-foreground/60 mb-5">Your conversation is saved and will transfer to your account.</p>
         {pendingMessage && (
           <div className="mb-4 px-3 py-2 bg-muted/30 border border-border rounded-xl text-xs text-muted-foreground text-left line-clamp-2">
             <span className="text-foreground/60 font-bold">Your message: </span>{pendingMessage}
@@ -133,10 +128,16 @@ function SignUpPromptModal({
         )}
         <button
           onClick={onSignUp}
-          className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-bold text-sm hover:bg-primary/90 transition-all flex items-center justify-center gap-2 mb-3"
+          className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-bold text-sm hover:bg-primary/90 transition-all flex items-center justify-center gap-2 mb-2"
         >
           <Sparkles className="h-4 w-4" />
-          Create Free Account
+          Sign Up Free — Takes 10 seconds
+        </button>
+        <button
+          onClick={onSignUp}
+          className="w-full py-2.5 bg-card border border-border text-foreground rounded-xl font-bold text-sm hover:bg-muted/50 transition-all flex items-center justify-center gap-2 mb-3"
+        >
+          Sign In
         </button>
         <button onClick={onClose} className="w-full py-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
           Maybe later
@@ -319,7 +320,7 @@ function GuestPortal() {
                     : "bg-card border border-border text-foreground rounded-bl-sm"
                 }`}>
                   {msg.role === "assistant" ? (
-                    <div className="prose-html text-sm" dangerouslySetInnerHTML={{ __html: msg.content }} />
+                    <div className="prose-html text-sm" dangerouslySetInnerHTML={{ __html: msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>") }} />
                   ) : (
                     <p className="whitespace-pre-wrap">{msg.content}</p>
                   )}
@@ -1110,12 +1111,12 @@ function PortalDesktop() {
                       >
                         <div className={`max-w-[82%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-foreground"}`}>
                           {msg.role === "assistant" ? (
-                            <div className="prose-html" dangerouslySetInnerHTML={{ __html: msg.content }} />
+                            <div className="prose-html" dangerouslySetInnerHTML={{ __html: msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>") }} />
                           ) : (
                             <p className="whitespace-pre-wrap">{msg.content}</p>
                           )}
                           {msg.costCents !== undefined && msg.costCents > 0 && (
-                            <p className="text-[9px] opacity-40 mt-1.5 text-right">{Math.ceil(msg.costCents * 15_000).toLocaleString()} AB</p>
+                            <p className="text-[9px] opacity-40 mt-1.5 text-right">{Math.ceil(msg.costCents * 100).toLocaleString()} AB</p>
                           )}
                         </div>
                       </motion.div>

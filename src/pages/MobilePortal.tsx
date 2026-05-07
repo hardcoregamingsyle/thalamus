@@ -280,7 +280,7 @@ function MobileChatView({
                   : "bg-card border border-border/60 text-foreground rounded-[20px] rounded-bl-[6px]"
               }`}>
                 {msg.role === "assistant" ? (
-                  <div className="prose-html text-[14px]" dangerouslySetInnerHTML={{ __html: msg.content }} />
+                  <div className="prose-html text-[14px]" dangerouslySetInnerHTML={{ __html: msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>") }} />
                 ) : (
                   <p className="whitespace-pre-wrap">{msg.content}</p>
                 )}
