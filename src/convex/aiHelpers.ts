@@ -37,6 +37,11 @@ export const saveAssistantMessage = internalMutation({
     content: v.string(),
     tokensUsed: v.number(),
     costCents: v.number(),
+    // Optional: per-token breakdown for precise AB calculation
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    inputCostPerMillion: v.optional(v.number()),   // USD per million input tokens
+    outputCostPerMillion: v.optional(v.number()),  // USD per million output tokens
   },
   handler: async (ctx, args) => {
     await ctx.db.insert("messages", {
@@ -52,9 +57,25 @@ export const saveAssistantMessage = internalMutation({
     const user = await ctx.db.get(args.userId);
     if (user) {
       const current = (user as { totalUsageCents?: number }).totalUsageCents || 0;
-      // AB formula: AB = (costPerMillionTokens / 1,000,000) * tokens * 1,500,000
-      // Simplified: AB = costDollars * 1,500,000 = costCents * 15,000
-      const agentBucksToDeduct = Math.ceil(args.costCents * 15_000);
+
+      // Formula: z = 1.5 * x * y
+      // where x = tokens, y = costPerMillionTokens (USD), z = AB to deduct
+      // Applied separately for input and output tokens
+      let agentBucksToDeduct: number;
+      if (
+        args.inputTokens !== undefined &&
+        args.outputTokens !== undefined &&
+        args.inputCostPerMillion !== undefined &&
+        args.outputCostPerMillion !== undefined
+      ) {
+        const inputAB = 1.5 * args.inputTokens * args.inputCostPerMillion;
+        const outputAB = 1.5 * args.outputTokens * args.outputCostPerMillion;
+        agentBucksToDeduct = Math.ceil(inputAB + outputAB);
+      } else {
+        // Fallback: derive from costCents (costCents * 15,000 = costDollars * 1,500,000)
+        agentBucksToDeduct = Math.ceil(args.costCents * 15_000);
+      }
+
       const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? 0;
       const purchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
       // Purchased credits deducted first, then daily
