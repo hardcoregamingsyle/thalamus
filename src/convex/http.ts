@@ -390,7 +390,11 @@ http.route({
     const state = url.searchParams.get("state");
     const error = url.searchParams.get("error");
 
-    const origin = "https://thalamus.aphantic.skinticals.com";
+    // Use CONVEX_SITE_URL env var if set, otherwise derive from request URL
+    const convexSiteUrl = process.env.CONVEX_SITE_URL ?? "";
+    // The frontend origin is the app URL — stored in state as a suffix after the userId
+    // Fall back to the known production domain
+    const origin = process.env.FRONTEND_URL ?? "https://thalamus.aphantic.skinticals.com";
 
     if (error || !code || !state) {
       return new Response(null, {

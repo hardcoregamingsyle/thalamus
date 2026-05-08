@@ -1552,7 +1552,9 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const handleGithubConnect = async () => {
     if (!token) return;
     try {
-      const redirectUri = `${window.location.origin.replace("thalamus.aphantic.skinticals.com", "glad-ermine-937.convex.site")}/github/callback`;
+      const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
+      const convexSiteUrl = convexUrl.replace(".convex.cloud", ".convex.site");
+      const redirectUri = `${convexSiteUrl}/github/callback`;
       const authUrl = await getGithubAuthUrlAction({ token, redirectUri });
       window.location.href = authUrl;
     } catch (err) {
