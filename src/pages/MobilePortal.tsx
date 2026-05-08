@@ -300,27 +300,27 @@ function MobileChatView({
             <div className={`w-9 h-9 rounded-full ${modeInfo.bg} flex items-center justify-center text-lg shrink-0 shadow-sm`}>
               {modeInfo.emoji}
             </div>
-            <div className="rounded-[20px] rounded-bl-[6px] px-4 py-3.5 shadow-lg max-w-[72%] w-56 space-y-2 bg-muted border border-border">
+            <div className="rounded-[20px] rounded-bl-[6px] px-4 py-3.5 shadow-lg max-w-[72%] w-56 space-y-2" style={{ background: "oklch(0.50 0.015 240)", border: "1px solid oklch(0.58 0.015 240)" }}>
               {/* Typing dots + label */}
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1">
                   {[0, 1, 2].map(i => (
-                    <motion.div key={i} className={`w-2.5 h-2.5 rounded-full ${modeInfo.color.replace("text-", "bg-")}`}
+                    <motion.div key={i} className="w-2.5 h-2.5 rounded-full" style={{ background: "oklch(0.85 0.015 240)" }}
                       animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }}
                       transition={{ duration: 0.8, delay: i * 0.16, repeat: Infinity }} />
                   ))}
                 </div>
-                <span className={`text-[10px] ${modeInfo.color} font-medium`}>
+                <span className="text-[10px] font-medium" style={{ color: "oklch(0.92 0.010 240)" }}>
                   {mode === "study" ? "searching..." : mode === "research" ? "researching..." : "thinking..."}
                 </span>
               </div>
               {/* Skeleton lines */}
               <div className="space-y-2 pt-0.5">
-                <motion.div className="h-3 rounded-full w-full bg-muted-foreground/40"
+                <motion.div className="h-3 rounded-full w-full" style={{ background: "oklch(0.85 0.010 240)" }}
                   animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0 }} />
-                <motion.div className="h-3 rounded-full w-4/5 bg-muted-foreground/30"
+                <motion.div className="h-3 rounded-full w-4/5" style={{ background: "oklch(0.78 0.010 240)" }}
                   animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.2 }} />
-                <motion.div className="h-3 rounded-full w-3/5 bg-muted-foreground/20"
+                <motion.div className="h-3 rounded-full w-3/5" style={{ background: "oklch(0.70 0.010 240)" }}
                   animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.4 }} />
               </div>
             </div>
