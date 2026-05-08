@@ -44,53 +44,45 @@
 }
 
 /* ── THALAMUS AI — PREMIUM DARK THEME ─────────────────────────────────────── */
-/* Inspired by: Anthropic, Vercel, Linear — clean, premium, breakthrough */
 :root {
   --radius: 0.625rem;
   --terminal-font: 'Inter', 'JetBrains Mono', system-ui, sans-serif;
 
-  /* Near-black with a very subtle cool tint — not pure black, not red */
+  /* Deep space background with subtle blue tint */
   --background: oklch(0.07 0.010 240);
   --foreground: oklch(0.94 0.008 240);
 
-  /* Card — slightly elevated surface */
   --card: oklch(0.11 0.010 240);
   --card-foreground: oklch(0.94 0.008 240);
   --popover: oklch(0.11 0.010 240);
   --popover-foreground: oklch(0.94 0.008 240);
 
-  /* Primary — Electric Blue (like Anthropic/Linear) */
+  /* Primary — Electric Blue */
   --primary: oklch(0.62 0.20 250);
   --primary-foreground: oklch(0.99 0 0);
 
-  /* Secondary */
   --secondary: oklch(0.16 0.012 240);
   --secondary-foreground: oklch(0.80 0.010 240);
 
-  /* Muted */
   --muted: oklch(0.15 0.010 240);
   --muted-foreground: oklch(0.52 0.018 240);
 
-  /* Accent — Warm amber/gold for highlights */
+  /* Accent — Warm amber/gold */
   --accent: oklch(0.72 0.16 65);
   --accent-foreground: oklch(0.08 0.008 240);
 
-  /* Destructive */
   --destructive: oklch(0.58 0.22 15);
 
-  /* Borders — subtle, not harsh */
   --border: oklch(0.20 0.012 240);
   --input: oklch(0.14 0.010 240);
   --ring: oklch(0.62 0.20 250);
 
-  /* Charts */
   --chart-1: oklch(0.62 0.20 250);
   --chart-2: oklch(0.72 0.16 65);
   --chart-3: oklch(0.65 0.18 160);
   --chart-4: oklch(0.68 0.16 300);
   --chart-5: oklch(0.60 0.18 120);
 
-  /* Sidebar */
   --sidebar: oklch(0.09 0.008 240);
   --sidebar-foreground: oklch(0.80 0.010 240);
   --sidebar-primary: oklch(0.62 0.20 250);
@@ -105,7 +97,7 @@
 
 /* ── LIGHT THEME ──────────────────────────────────────────────────────────── */
 .light {
-  --background: oklch(0.98 0.003 240);
+  --background: oklch(0.97 0.005 240);
   --foreground: oklch(0.12 0.020 240);
   --card: oklch(1.0 0 0);
   --card-foreground: oklch(0.12 0.020 240);
@@ -147,11 +139,24 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     font-size: 13px;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    background-color: var(--color-background);
+    background-image:
+      radial-gradient(ellipse 100% 60% at 50% 0%, oklch(0.62 0.20 250 / 0.12) 0%, transparent 55%),
+      radial-gradient(ellipse 60% 40% at 100% 50%, oklch(0.72 0.16 65 / 0.06) 0%, transparent 55%),
+      radial-gradient(ellipse 50% 35% at 0% 80%, oklch(0.65 0.18 280 / 0.06) 0%, transparent 55%);
+    background-attachment: fixed;
+  }
+  .light body, body.light {
+    background-color: var(--color-background);
+    background-image:
+      radial-gradient(ellipse 100% 60% at 50% 0%, oklch(0.52 0.22 250 / 0.07) 0%, transparent 55%),
+      radial-gradient(ellipse 60% 40% at 100% 50%, oklch(0.65 0.16 65 / 0.04) 0%, transparent 55%);
+    background-attachment: fixed;
   }
   button:not([disabled]),
   [role="button"]:not([disabled]) {
@@ -159,7 +164,7 @@
   }
 }
 
-/* No scanline overlay — clean premium look */
+/* No scanline overlay */
 body::after {
   content: '';
   position: fixed;
@@ -190,42 +195,18 @@ body::after {
   color: var(--color-primary);
 }
 
-/* Primary glow — blue */
-.amd-glow {
-  text-shadow: 0 0 20px oklch(0.62 0.20 250 / 0.5);
-}
+.amd-glow { text-shadow: 0 0 20px oklch(0.62 0.20 250 / 0.5); }
+.amd-glow-orange { text-shadow: 0 0 12px oklch(0.72 0.16 65 / 0.5); }
+.terminal-glow { text-shadow: 0 0 12px oklch(0.62 0.20 250 / 0.4); }
+.light .terminal-glow { text-shadow: 0 0 10px oklch(0.52 0.22 250 / 0.3); }
+.terminal-glow-amber { text-shadow: 0 0 8px oklch(0.72 0.16 65 / 0.5); }
 
-/* Accent glow */
-.amd-glow-orange {
-  text-shadow: 0 0 12px oklch(0.72 0.16 65 / 0.5);
-}
-
-/* Legacy terminal glow */
-.terminal-glow {
-  text-shadow: 0 0 12px oklch(0.62 0.20 250 / 0.4);
-}
-
-.light .terminal-glow {
-  text-shadow: 0 0 10px oklch(0.52 0.22 250 / 0.3);
-}
-
-.terminal-glow-amber {
-  text-shadow: 0 0 8px oklch(0.72 0.16 65 / 0.5);
-}
-
-/* ── VFX Animations ─────────────────────────────────────────────────────────── */
-
-/* Blue neon pulse */
 @keyframes neon-pulse {
   0%, 100% { box-shadow: 0 0 5px oklch(0.62 0.20 250 / 0.2), 0 0 10px oklch(0.62 0.20 250 / 0.08); }
   50% { box-shadow: 0 0 12px oklch(0.62 0.20 250 / 0.5), 0 0 24px oklch(0.62 0.20 250 / 0.2), 0 0 48px oklch(0.62 0.20 250 / 0.08); }
 }
+.neon-pulse { animation: neon-pulse 2.5s ease-in-out infinite; }
 
-.neon-pulse {
-  animation: neon-pulse 2.5s ease-in-out infinite;
-}
-
-/* Glitch effect */
 @keyframes glitch {
   0%, 100% { transform: translate(0); }
   20% { transform: translate(-2px, 1px); }
@@ -233,73 +214,37 @@ body::after {
   60% { transform: translate(-1px, 2px); }
   80% { transform: translate(1px, -2px); }
 }
+.glitch:hover { animation: glitch 0.3s ease-in-out; }
 
-.glitch:hover {
-  animation: glitch 0.3s ease-in-out;
-}
-
-/* Shimmer effect */
 @keyframes shimmer {
   0% { background-position: -200% center; }
   100% { background-position: 200% center; }
 }
-
 .shimmer {
   background: linear-gradient(90deg, transparent 0%, oklch(0.62 0.20 250 / 0.08) 50%, transparent 100%);
   background-size: 200% auto;
   animation: shimmer 3s linear infinite;
 }
 
-/* Floating animation */
 @keyframes float {
   0%, 100% { transform: translateY(0px); }
   50% { transform: translateY(-4px); }
 }
+.float { animation: float 3s ease-in-out infinite; }
 
-.float {
-  animation: float 3s ease-in-out infinite;
-}
+.agent-active { animation: neon-pulse 1.5s ease-in-out infinite; }
+.amd-border { border-image: linear-gradient(135deg, oklch(0.62 0.20 250), oklch(0.72 0.16 65)) 1; }
 
-/* Agent active glow */
-.agent-active {
-  animation: neon-pulse 1.5s ease-in-out infinite;
-}
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: oklch(0.62 0.20 250 / 0.3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: oklch(0.62 0.20 250 / 0.6); }
+.light ::-webkit-scrollbar-thumb { background: oklch(0.52 0.22 250 / 0.3); }
 
-/* Gradient border */
-.amd-border {
-  border-image: linear-gradient(135deg, oklch(0.62 0.20 250), oklch(0.72 0.16 65)) 1;
-}
+::selection { background: oklch(0.62 0.20 250 / 0.25); color: oklch(0.96 0.008 240); }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: oklch(0.62 0.20 250 / 0.3);
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.62 0.20 250 / 0.6);
-}
-
-.light ::-webkit-scrollbar-thumb {
-  background: oklch(0.52 0.22 250 / 0.3);
-}
-
-/* Selection */
-::selection {
-  background: oklch(0.62 0.20 250 / 0.25);
-  color: oklch(0.96 0.008 240);
-}
-
-/* Import fonts */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
 
-/* HTML prose rendering for AI responses */
 .prose-html {
   font-size: 0.8rem;
   line-height: 1.6;
@@ -319,38 +264,16 @@ body::after {
 .prose-html table { width: 100%; border-collapse: collapse; margin: 0.5em 0; }
 .prose-html a { color: oklch(0.65 0.18 250); }
 .prose-html blockquote { border-left: 3px solid var(--color-border); padding-left: 0.8em; margin: 0.5em 0; }
-.prose-html audio {
-  width: 100%;
-  margin: 0.5em 0;
-  border-radius: 8px;
-  accent-color: oklch(0.62 0.20 250);
-}
-.prose-html video {
-  width: 100%;
-  max-width: 100%;
-  border-radius: 8px;
-  margin: 0.5em 0;
-  background: #000;
-}
-.prose-html img {
-  max-width: 100%;
-  border-radius: 8px;
-  margin: 0.5em 0;
-  display: block;
-}
+.prose-html audio { width: 100%; margin: 0.5em 0; border-radius: 8px; accent-color: oklch(0.62 0.20 250); }
+.prose-html video { width: 100%; max-width: 100%; border-radius: 8px; margin: 0.5em 0; background: #000; }
+.prose-html img { max-width: 100%; border-radius: 8px; margin: 0.5em 0; display: block; }
 .prose-html .file-download {
-  display: flex;
-  align-items: center;
-  gap: 0.5em;
+  display: flex; align-items: center; gap: 0.5em;
   padding: 0.6em 1em;
   background: oklch(0.14 0.010 240);
   border: 1px solid oklch(0.22 0.012 240);
-  border-radius: 8px;
-  margin: 0.5em 0;
+  border-radius: 8px; margin: 0.5em 0;
   color: oklch(0.65 0.18 250);
-  text-decoration: none;
-  font-size: 0.85em;
-  cursor: pointer;
-  transition: background 0.2s;
+  text-decoration: none; font-size: 0.85em; cursor: pointer; transition: background 0.2s;
 }
 .prose-html .file-download:hover { background: oklch(0.18 0.012 240); }
