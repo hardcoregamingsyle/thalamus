@@ -413,6 +413,7 @@ export const addAdminStudyMaterial = mutation({
     adminToken: v.string(),
     title: v.string(),
     content: v.string(),
+    mode: v.optional(v.string()),
     fileName: v.optional(v.string()),
     fileType: v.optional(v.string()),
     uploadedBy: v.optional(v.string()),
@@ -422,6 +423,7 @@ export const addAdminStudyMaterial = mutation({
     await ctx.db.insert("adminStudyMaterials", {
       title: args.title,
       content: args.content,
+      mode: args.mode,
       fileName: args.fileName,
       fileType: args.fileType,
       uploadedBy: args.uploadedBy,

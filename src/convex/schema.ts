@@ -259,6 +259,7 @@ const schema = defineSchema(
     adminStudyMaterials: defineTable({
       title: v.string(),
       content: v.string(),
+      mode: v.optional(v.string()),
       fileName: v.optional(v.string()),
       fileType: v.optional(v.string()),
       uploadedBy: v.optional(v.string()),

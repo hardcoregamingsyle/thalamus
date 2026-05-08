@@ -238,7 +238,7 @@ export const sendStudyMessage = action({
     }) as Array<{ role: string; content: string }>;
 
     const resources = await ctx.runQuery(internal.studyHelpers.getResourcesForUser, { userId });
-    const adminMaterials = await ctx.runQuery(internal.admin.getAdminStudyMaterials, {}) as Array<{ title: string; content: string; mode: string }>;
+    const adminMaterials = (await ctx.runQuery(internal.admin.getAdminStudyMaterials, {})) as unknown as Array<{ title: string; content: string; mode?: string }>;
 
     // Always do a REAL live web search — scrape actual pages
     let liveSearchResults = "";

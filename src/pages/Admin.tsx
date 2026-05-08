@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -742,11 +742,11 @@ function StudyMaterialsTab({ adminToken }: { adminToken: string }) {
                       <FileText className="h-4 w-4 text-primary shrink-0" />
                       <p className="font-bold text-sm text-foreground truncate">{m.title}</p>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold shrink-0 ${
-                        m.mode === "all" ? "bg-primary/10 text-primary border-primary/20" :
-                        m.mode === "study" ? "bg-indigo-400/10 text-indigo-400 border-indigo-400/20" :
-                        m.mode === "chat" ? "bg-emerald-400/10 text-emerald-400 border-emerald-400/20" :
+                        (m.mode ?? "all") === "all" ? "bg-primary/10 text-primary border-primary/20" :
+                        (m.mode ?? "all") === "study" ? "bg-indigo-400/10 text-indigo-400 border-indigo-400/20" :
+                        (m.mode ?? "all") === "chat" ? "bg-emerald-400/10 text-emerald-400 border-emerald-400/20" :
                         "bg-blue-400/10 text-blue-400 border-blue-400/20"
-                      }`}>{m.mode.toUpperCase()}</span>
+                      }`}>{(m.mode ?? "all").toUpperCase()}</span>
                     </div>
                     <p className="text-[10px] text-muted-foreground line-clamp-2">{m.content.slice(0, 150)}</p>
                     <p className="text-[9px] text-muted-foreground/60 mt-1">{m.content.length.toLocaleString()} chars · Added {new Date(m.createdAt).toLocaleDateString()}</p>
