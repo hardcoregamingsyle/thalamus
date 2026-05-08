@@ -793,6 +793,8 @@ function PortalDesktop() {
   const [auditorContext, setAuditorContext] = useState("");
   const [auditorResult, setAuditorResult] = useState<string | null>(null);
   const [isAuditing, setIsAuditing] = useState(false);
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const attachFileInputRef = useRef<HTMLInputElement>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -889,10 +891,31 @@ function PortalDesktop() {
     if (conv.customId) navigate(`/portal/${activeMode}/${conv.customId}`, { replace: false });
   };
 
+  const handleAttachFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    const MAX_SIZE = 500 * 1024; // 500KB per file
+    const newFiles: AttachedFile[] = [];
+    for (const file of files) {
+      if (file.size > MAX_SIZE) { toast.error(`${file.name} is too large (max 500KB)`); continue; }
+      try {
+        const content = await file.text();
+        newFiles.push({ name: file.name, content: content.slice(0, 20000), size: file.size });
+      } catch { toast.error(`Failed to read ${file.name}`); }
+    }
+    setAttachedFiles(prev => [...prev, ...newFiles]);
+    if (e.target) e.target.value = "";
+    toast.success(`${newFiles.length} file(s) attached`);
+  };
+
   const handleSend = async () => {
-    if (!input.trim() || isThinking || !token) return;
-    const msg = input.trim();
+    if ((!input.trim() && attachedFiles.length === 0) || isThinking || !token) return;
+    const fileContext = attachedFiles.length > 0
+      ? "\n\n[ATTACHED FILES]\n" + attachedFiles.map(f => `--- ${f.name} ---\n${f.content}`).join("\n\n")
+      : "";
+    const msg = (input.trim() || "(See attached files)") + fileContext;
     setInput("");
+    setAttachedFiles([]);
 
     // For code/research modes, use existing Convex actions (multi-agent)
     if (activeMode === "code" || activeMode === "research") {
@@ -1343,7 +1366,28 @@ function PortalDesktop() {
 
               {/* Input */}
               <div className="shrink-0 p-3 border-t border-border bg-card/30">
+                {/* Attached files chips */}
+                {attachedFiles.length > 0 && (
+                  <div className="max-w-4xl mx-auto mb-2 flex flex-wrap gap-1.5">
+                    {attachedFiles.map((f, i) => (
+                      <div key={i} className="flex items-center gap-1 bg-primary/10 border border-primary/20 rounded-lg px-2 py-1 text-[10px] text-primary">
+                        <FileText className="h-3 w-3 shrink-0" />
+                        <span className="max-w-[120px] truncate">{f.name}</span>
+                        <button onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 hover:text-destructive transition-colors">
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="max-w-4xl mx-auto flex gap-2">
+                  {/* File upload button */}
+                  <label className="shrink-0 flex items-center justify-center w-9 h-9 rounded-xl border border-border text-muted-foreground hover:text-primary hover:border-primary/40 transition-all cursor-pointer bg-background">
+                    <Upload className="h-3.5 w-3.5" />
+                    <input ref={attachFileInputRef} type="file" multiple className="hidden"
+                      accept=".txt,.md,.csv,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.pdf,.doc,.docx"
+                      onChange={handleAttachFiles} />
+                  </label>
                   <textarea
                     value={input}
                     onChange={e => setInput(e.target.value)}
@@ -1353,7 +1397,7 @@ function PortalDesktop() {
                     className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary/60 transition-colors"
                     style={{ minHeight: "36px", maxHeight: "120px" }}
                   />
-                  <button onClick={handleSend} disabled={!input.trim() || isThinking}
+                  <button onClick={handleSend} disabled={(!input.trim() && attachedFiles.length === 0) || isThinking}
                     className={`px-3 py-2 rounded-xl disabled:opacity-50 transition-all shrink-0 ${activeMode === "study" ? "bg-indigo-500 text-white hover:bg-indigo-500/90" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}>
                     {isThinking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   </button>
