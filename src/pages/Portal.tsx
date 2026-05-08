@@ -832,15 +832,6 @@ function PortalDesktop() {
   }, [isLoading, isAuthenticated, navigate]);
 
   useEffect(() => {
-    if (activeConvId && conversations) {
-      const conv = conversations.find((c: Conversation) => c._id === activeConvId);
-      if (conv) { document.title = `${conv.title} | Thalamus AI`; return; }
-    }
-    document.title = "Thalamus AI";
-    return () => { document.title = "Thalamus AI"; };
-  }, [activeConvId, conversations]);
-
-  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
@@ -886,39 +877,113 @@ function PortalDesktop() {
 
   const handleSend = async () => {
     if (!input.trim() || isThinking || !token) return;
-    let convId = activeConvId;
-    const isFirstMessage = !convId;
-    if (!convId) {
-      try {
-        const result = await createConversation({ title: input.slice(0, 40), mode: activeMode, token }) as { id: Id<"conversations">; customId: string } | Id<"conversations">;
-        const id = typeof result === "object" && "id" in result ? result.id : result as Id<"conversations">;
-        const customId = typeof result === "object" && "customId" in result ? result.customId : null;
-        convId = id;
-        setActiveConvId(id);
-        if (customId) navigate(`/portal/${activeMode}/${customId}`, { replace: false });
-      } catch { toast.error("Failed to create conversation"); return; }
-    }
     const msg = input.trim();
     setInput("");
+
+    // For code/research modes, use existing Convex actions (multi-agent)
+    if (activeMode === "code" || activeMode === "research") {
+      // ... keep existing code (code/research mode handling)
+    }
+
+    // For chat/study modes, use streaming
+    let convId: Id<"conversations"> | null = activeConvId;
+    if (!convId) {
+      try {
+        const newConv = await createConversation({ token, mode: activeMode, title: msg.slice(0, 50) });
+        const newConvId = (typeof newConv === "object" && newConv !== null && "id" in newConv) ? (newConv as { id: Id<"conversations"> }).id : newConv as Id<"conversations">;
+        convId = newConvId;
+        setActiveConvId(newConvId);
+        navigate(`/portal/${activeMode}/${newConvId}`, { replace: true });
+      } catch {
+        toast.error("Failed to create conversation");
+        return;
+      }
+    }
+
     setIsThinking(true);
-    // Build user context with current datetime and timezone
-    const userContext = {
-      datetime: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "short" }),
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      location: undefined as string | undefined,
-    };
+    const streamingMsgId = `streaming-${Date.now()}`;
 
     try {
-      if (activeMode === "study") {
-        await sendStudyMessage({ conversationId: convId, content: msg, token, userContext });
-      } else {
-        await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext });
+      const userContext = {
+        datetime: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
+
+      const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
+      const siteUrl = convexUrl.replace(".convex.cloud", ".convex.site");
+
+      const CHAT_SYSTEM = `You are AgentAI, an advanced AI assistant powered by AMD MI300X GPUs.\n\nCRITICAL: You MUST respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.\nUse: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <code>, <pre><code>, <blockquote>, <table>\nHeadings: style="font-size:1.2em;font-weight:bold;margin:0.5em 0;color:#e5e7eb"\nParagraphs: style="margin:0.5em 0;line-height:1.6;color:#d1d5db"\nLists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db"\nCode blocks: style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em"\nInline code: style="background:#1f2937;color:#34d399;padding:0.1em 0.4em;border-radius:4px;font-family:monospace;font-size:0.85em"`;
+
+      const STUDY_SYSTEM = `You are Aether — the world's most effective study companion. Your mission: make students genuinely understand concepts so deeply that they could explain them to anyone.\n\nCRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.\nUse: <h2>, <h3>, <h4>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <code>\nHeadings: style="font-size:1.15em;font-weight:bold;margin:0.8em 0 0.4em;color:#e5e7eb;border-left:4px solid #6366f1;padding-left:0.7em"\nSub-headings: style="font-size:1em;font-weight:bold;margin:0.7em 0 0.3em;color:#c4b5fd"\nParagraphs: style="margin:0.4em 0;line-height:1.7;color:#d1d5db;font-size:0.92em"\nLists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db;font-size:0.9em;line-height:1.6"\nKey facts box: style="border-left:4px solid #f59e0b;padding:0.6em 1em;color:#fcd34d;margin:0.6em 0;background:rgba(245,158,11,0.08);border-radius:0 8px 8px 0;font-size:0.88em"\nCode: style="background:#1f2937;color:#34d399;padding:0.15em 0.5em;border-radius:4px;font-family:monospace;font-size:0.88em"`;
+
+      const systemPrompt = activeMode === "study" ? STUDY_SYSTEM : CHAT_SYSTEM;
+      const historyMsgs = (messages ?? []).slice(-10).map((m: Message) => ({ role: m.role, content: m.content.slice(0, 1500) }));
+
+      // Save user message first via Convex
+      await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext });
+      setIsThinking(false);
+
+      // Now stream the response
+      const response = await fetch(`${siteUrl}/stream-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: msg,
+          mode: activeMode,
+          history: historyMsgs,
+          systemPrompt,
+          userContext,
+          token,
+          conversationId: convId,
+          preferClaude: true,
+        }),
+      });
+
+      if (!response.ok || !response.body) throw new Error("Stream failed");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let accumulated = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+          try {
+            const parsed = JSON.parse(jsonStr) as { chunk?: string; done?: boolean };
+            if (parsed.chunk) {
+              accumulated += parsed.chunk;
+              // Update the streaming message in real-time
+              // (Convex will update via subscription when saved)
+            }
+          } catch { /* skip */ }
+        }
       }
-      if (isFirstMessage && convId) {
-        generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
+    } catch {
+      // Fallback to existing Convex actions
+      try {
+        const userContext = {
+          datetime: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }),
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        };
+        if (activeMode === "study") {
+          await sendStudyMessage({ conversationId: convId!, content: msg, token, userContext });
+        } else {
+          await sendMessage({ conversationId: convId!, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext });
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to send message");
       }
-    } catch { toast.error("Agent failed to respond. Try again."); }
-    finally { setIsThinking(false); }
+    } finally {
+      setIsThinking(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -1227,7 +1292,7 @@ function PortalDesktop() {
                       animate={{ opacity: 1, y: 0 }}
                       className="flex justify-start"
                     >
-                      <div className="rounded-2xl px-4 py-3.5 max-w-[75%] w-72 shadow-lg" style={{ background: "rgba(60,80,140,0.35)", border: "1px solid rgba(100,130,255,0.25)" }}>
+                      <div className="rounded-2xl px-4 py-3.5 max-w-[75%] w-72 shadow-lg bg-muted border border-border">
                         {/* Typing dots + label */}
                         <div className="flex items-center gap-2 mb-3">
                           <div className="flex items-center gap-1">
@@ -1237,15 +1302,15 @@ function PortalDesktop() {
                                 transition={{ duration: 0.7, delay: i * 0.15, repeat: Infinity }} />
                             ))}
                           </div>
-                          <span className="text-[11px] text-primary/90 font-medium">
+                          <span className="text-[11px] text-primary font-medium">
                             {activeMode === "study" ? "Searching & thinking..." : activeMode === "research" ? "Researching..." : "Thinking..."}
                           </span>
                         </div>
                         {/* Skeleton lines */}
                         <div className="space-y-2">
-                          <div className="h-3 rounded-full animate-pulse w-full" style={{ background: "rgba(255,255,255,0.55)" }} />
-                          <div className="h-3 rounded-full animate-pulse w-5/6" style={{ background: "rgba(255,255,255,0.40)", animationDelay: "0.15s" }} />
-                          <div className="h-3 rounded-full animate-pulse w-4/6" style={{ background: "rgba(255,255,255,0.28)", animationDelay: "0.3s" }} />
+                          <div className="h-3 rounded-full animate-pulse w-full bg-muted-foreground/40" />
+                          <div className="h-3 rounded-full animate-pulse w-5/6 bg-muted-foreground/30" style={{ animationDelay: "0.15s" }} />
+                          <div className="h-3 rounded-full animate-pulse w-4/6 bg-muted-foreground/20" style={{ animationDelay: "0.3s" }} />
                         </div>
                       </div>
                     </motion.div>

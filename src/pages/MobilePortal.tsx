@@ -300,7 +300,7 @@ function MobileChatView({
             <div className={`w-9 h-9 rounded-full ${modeInfo.bg} flex items-center justify-center text-lg shrink-0 shadow-sm`}>
               {modeInfo.emoji}
             </div>
-            <div className="rounded-[20px] rounded-bl-[6px] px-4 py-3.5 shadow-lg max-w-[72%] w-56 space-y-2" style={{ background: "rgba(60,80,140,0.35)", border: "1px solid rgba(100,130,255,0.25)" }}>
+            <div className="rounded-[20px] rounded-bl-[6px] px-4 py-3.5 shadow-lg max-w-[72%] w-56 space-y-2 bg-muted border border-border">
               {/* Typing dots + label */}
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1">
@@ -316,12 +316,12 @@ function MobileChatView({
               </div>
               {/* Skeleton lines */}
               <div className="space-y-2 pt-0.5">
-                <motion.div className="h-3 rounded-full w-full" style={{ background: "rgba(255,255,255,0.55)" }}
-                  animate={{ opacity: [0.6, 1, 0.6] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0 }} />
-                <motion.div className="h-3 rounded-full w-4/5" style={{ background: "rgba(255,255,255,0.40)" }}
-                  animate={{ opacity: [0.6, 1, 0.6] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.2 }} />
-                <motion.div className="h-3 rounded-full w-3/5" style={{ background: "rgba(255,255,255,0.28)" }}
-                  animate={{ opacity: [0.6, 1, 0.6] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.4 }} />
+                <motion.div className="h-3 rounded-full w-full bg-muted-foreground/40"
+                  animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0 }} />
+                <motion.div className="h-3 rounded-full w-4/5 bg-muted-foreground/30"
+                  animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.2 }} />
+                <motion.div className="h-3 rounded-full w-3/5 bg-muted-foreground/20"
+                  animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.4 }} />
               </div>
             </div>
           </motion.div>
