@@ -397,3 +397,51 @@ export const getTodayDau = query({
     return records.length;
   },
 });
+
+// ── Admin Study Materials ─────────────────────────────────────────────────────
+
+export const listAdminStudyMaterials = query({
+  args: { adminToken: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    return await ctx.db.query("adminStudyMaterials").order("desc").take(100);
+  },
+});
+
+export const addAdminStudyMaterial = mutation({
+  args: {
+    adminToken: v.string(),
+    title: v.string(),
+    content: v.string(),
+    fileName: v.optional(v.string()),
+    fileType: v.optional(v.string()),
+    uploadedBy: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    await ctx.db.insert("adminStudyMaterials", {
+      title: args.title,
+      content: args.content,
+      fileName: args.fileName,
+      fileType: args.fileType,
+      uploadedBy: args.uploadedBy,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const deleteAdminStudyMaterial = mutation({
+  args: { adminToken: v.string(), id: v.id("adminStudyMaterials") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    await ctx.db.delete(args.id);
+  },
+});
+
+// Internal query for study mode to fetch admin materials
+export const getAdminStudyMaterials = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("adminStudyMaterials").order("desc").take(20);
+  },
+});

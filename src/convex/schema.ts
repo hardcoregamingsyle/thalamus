@@ -255,6 +255,16 @@ const schema = defineSchema(
       createdAt: v.number(),
     }).index("by_user", ["userId"]),
 
+    // Admin-uploaded study materials — injected as primary knowledge source in study mode
+    adminStudyMaterials: defineTable({
+      title: v.string(),
+      content: v.string(),
+      fileName: v.optional(v.string()),
+      fileType: v.optional(v.string()),
+      uploadedBy: v.optional(v.string()),
+      createdAt: v.number(),
+    }),
+
     // Temporary store for GitHub OAuth state tokens
     githubOAuthStates: defineTable({
       state: v.string(),

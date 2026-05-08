@@ -238,6 +238,7 @@ export const sendStudyMessage = action({
     }) as Array<{ role: string; content: string }>;
 
     const resources = await ctx.runQuery(internal.studyHelpers.getResourcesForUser, { userId });
+    const adminMaterials = await ctx.runQuery(internal.admin.getAdminStudyMaterials, {}) as Array<{ title: string; content: string; mode: string }>;
 
     // Always do a REAL live web search — scrape actual pages
     let liveSearchResults = "";
@@ -254,11 +255,20 @@ export const sendStudyMessage = action({
       ).join("\n\n---\n\n");
     }
 
+    // Admin-uploaded study materials (primary knowledge source)
+    const studyAdminMaterials = adminMaterials.filter(m => m.mode === "study" || m.mode === "all");
+    let adminMaterialContext = "";
+    if (studyAdminMaterials.length > 0) {
+      adminMaterialContext = "\n\n## PRIMARY REFERENCE MATERIALS (use as primary knowledge source — prioritize over web search):\n" +
+        studyAdminMaterials.map((m, i) => `### Reference ${i + 1}: ${m.title}\n${m.content.slice(0, 3000)}`).join("\n\n---\n\n");
+    }
+
     const contextHeader = args.userContext
       ? `\n\n## CURRENT USER CONTEXT:\n- Date/Time: ${args.userContext.datetime}\n- Timezone: ${args.userContext.timezone}${args.userContext.location ? `\n- Location: ${args.userContext.location}` : ""}\n\nUse this context for time-sensitive questions (e.g., current academic year, upcoming exams, etc.).\n`
       : "";
 
     const systemPrompt = `You are Aether — the world's most effective study companion. Your mission: make students genuinely understand concepts so deeply that they could explain them to anyone.${contextHeader}
+${adminMaterialContext}
 
 ## AUTHORITATIVE SOURCES:
 - **NCERT Official** (ncert.nic.in) — Official NCERT textbooks, syllabi, and study materials
