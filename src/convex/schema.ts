@@ -261,6 +261,17 @@ const schema = defineSchema(
       userId: v.id("users"),
       expiresAt: v.number(),
     }).index("by_state", ["state"]),
+
+    // DAU tracking: one record per user per UTC day
+    dailyActiveUsers: defineTable({
+      userId: v.id("users"),
+      dateKey: v.string(),       // "YYYY-MM-DD" UTC
+      firstSeenAt: v.number(),   // timestamp of first activity that day
+      lastSeenAt: v.number(),    // timestamp of most recent activity that day
+      sessionCount: v.number(),  // number of activity pings that day
+    })
+      .index("by_user_and_date", ["userId", "dateKey"])
+      .index("by_date", ["dateKey"]),
   },
   {
     schemaValidation: false,
