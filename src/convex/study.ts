@@ -369,3 +369,68 @@ Write answers that are 400-800 words minimum. Be thorough. Be the teacher every 
     return responseContent;
   },
 });
+
+export const auditAnswer = action({
+  args: {
+    token: v.string(),
+    userAnswer: v.string(),
+    questionContext: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<string> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const systemPrompt = `You are a strict, precise academic examiner specializing in science and physics. Your job is to audit a student's written answer and provide a detailed step-by-step mark breakdown.
+
+CRITICAL RULES:
+- Do NOT mention any specific exam board, curriculum, or country. Do not use words like "CBSE", "board exam", "NCERT", or any regional branding.
+- Evaluate purely on scientific accuracy, logical steps, and completeness.
+- Be strict but fair. Award partial marks where partial credit is deserved.
+- Use a standard marking scheme: each step is worth 0.5 or 1 mark.
+
+OUTPUT FORMAT (strict HTML only, no markdown):
+1. A table or list of steps with marks awarded/deducted per step
+2. A total marks line
+3. A short "Verdict" section explaining what the student did right and where they lost marks
+
+HTML STYLE GUIDE:
+- Step rows: <div style="display:flex;justify-content:space-between;align-items:center;padding:0.4em 0.6em;border-bottom:1px solid rgba(99,102,241,0.15);font-size:0.88em">
+- Step label: <span style="color:#d1d5db;flex:1">
+- Mark badge (correct): <span style="background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);padding:0.1em 0.5em;border-radius:6px;font-weight:bold;font-size:0.85em;white-space:nowrap">
+- Mark badge (wrong/missing): <span style="background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.25);padding:0.1em 0.5em;border-radius:6px;font-weight:bold;font-size:0.85em;white-space:nowrap">
+- Mark badge (partial): <span style="background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);padding:0.1em 0.5em;border-radius:6px;font-weight:bold;font-size:0.85em;white-space:nowrap">
+- Total line: <div style="padding:0.5em 0.6em;font-weight:bold;color:#e5e7eb;border-top:2px solid rgba(99,102,241,0.3);margin-top:0.3em">
+- Verdict heading: <h3 style="font-size:1em;font-weight:bold;color:#c4b5fd;margin:0.8em 0 0.3em;border-left:3px solid #6366f1;padding-left:0.6em">
+- Verdict text: <p style="color:#d1d5db;font-size:0.88em;line-height:1.6;margin:0.2em 0">`;
+
+    const userPrompt = `${args.questionContext ? `QUESTION/TOPIC CONTEXT:\n${args.questionContext}\n\n` : ""}STUDENT'S ANSWER TO AUDIT:\n${args.userAnswer}
+
+Please audit this answer step by step. Identify each logical step the student should have taken, check if they did it correctly, and assign marks. End with a verdict.`;
+
+    let responseContent = "";
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    try {
+      const result = await callClaude(
+        userPrompt,
+        systemPrompt,
+        "claude-haiku-4-5",
+      );
+      responseContent = result.text;
+      inputTokens = result.inputTokens;
+      outputTokens = result.outputTokens;
+    } catch {
+      // Fallback to VLY
+      const { vly } = await import("../lib/vly-integrations");
+      const result = await vly.ai.completion({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: systemPrompt + "\n\n" + userPrompt }],
+        maxTokens: 2048,
+      });
+      responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "No response") : "Failed to get response";
+    }
+
+    return responseContent;
+  },
+});
