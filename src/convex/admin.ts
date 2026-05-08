@@ -1,6 +1,7 @@
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 // ── Admin auth helper ─────────────────────────────────────────────────────────
 const ADMIN_TOKEN = "Aphantic*123";
@@ -315,5 +316,84 @@ export const isPlatformBudgetExhausted = internalQuery({
     const budgets = await ctx.db.query("platformBudget").take(1);
     if (budgets.length === 0) return false; // no budget set = allow
     return budgets[0].isDisabled;
+  },
+});
+
+// ── DAU Tracking ──────────────────────────────────────────────────────────────
+
+/** Called from the frontend on app load / page focus. Upserts a DAU record for today. */
+export const trackDailyActivity = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return; // anonymous / not signed in — skip
+
+    const now = Date.now();
+    const dateKey = new Date(now).toISOString().slice(0, 10); // "YYYY-MM-DD" UTC
+
+    const existing = await ctx.db
+      .query("dailyActiveUsers")
+      .withIndex("by_user_and_date", q => q.eq("userId", userId).eq("dateKey", dateKey))
+      .unique();
+
+    if (existing) {
+      // Throttle: only update if last ping was > 5 minutes ago to avoid excessive writes
+      if (now - existing.lastSeenAt < 5 * 60 * 1000) return;
+      await ctx.db.patch(existing._id, {
+        lastSeenAt: now,
+        sessionCount: existing.sessionCount + 1,
+      });
+    } else {
+      await ctx.db.insert("dailyActiveUsers", {
+        userId,
+        dateKey,
+        firstSeenAt: now,
+        lastSeenAt: now,
+        sessionCount: 1,
+      });
+    }
+  },
+});
+
+/** Admin: get DAU counts for the last N days */
+export const getDauStats = query({
+  args: { adminToken: v.string(), days: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const numDays = args.days ?? 30;
+    const now = Date.now();
+
+    // Build date keys for the last N days
+    const dateKeys: string[] = [];
+    for (let i = 0; i < numDays; i++) {
+      const d = new Date(now - i * 24 * 60 * 60 * 1000);
+      dateKeys.push(d.toISOString().slice(0, 10));
+    }
+
+    // Fetch records for each day
+    const results: { date: string; dau: number }[] = [];
+    for (const dateKey of dateKeys) {
+      const records = await ctx.db
+        .query("dailyActiveUsers")
+        .withIndex("by_date", q => q.eq("dateKey", dateKey))
+        .take(10000);
+      results.push({ date: dateKey, dau: records.length });
+    }
+
+    return results.reverse(); // oldest first
+  },
+});
+
+/** Admin: get today's DAU count (real-time) */
+export const getTodayDau = query({
+  args: { adminToken: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const dateKey = new Date().toISOString().slice(0, 10);
+    const records = await ctx.db
+      .query("dailyActiveUsers")
+      .withIndex("by_date", q => q.eq("dateKey", dateKey))
+      .take(10000);
+    return records.length;
   },
 });
