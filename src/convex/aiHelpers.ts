@@ -98,3 +98,70 @@ export const updateConversationTitle = internalMutation({
     await ctx.db.patch(args.conversationId, { title: args.title });
   },
 });
+
+export const saveStreamedMessage = internalMutation({
+  args: {
+    conversationId: v.id("conversations"),
+    token: v.string(),
+    content: v.string(),
+    response: v.string(),
+    inputCostPerMillion: v.number(),
+    outputCostPerMillion: v.number(),
+  },
+  handler: async (ctx, args) => {
+    // Look up user by token using customSessions table
+    const sessions = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .take(1);
+    const session = sessions[0];
+    if (!session || session.expiresAt < Date.now()) return;
+    const userId = session.userId;
+
+    // Save user message
+    await ctx.db.insert("messages", {
+      conversationId: args.conversationId,
+      userId,
+      role: "user",
+      content: args.content,
+    });
+
+    // Estimate tokens (~4 chars per token)
+    const inputTokens = Math.ceil(args.content.length / 4);
+    const outputTokens = Math.ceil(args.response.length / 4);
+    const costCents = (inputTokens / 1_000_000) * args.inputCostPerMillion * 100
+                    + (outputTokens / 1_000_000) * args.outputCostPerMillion * 100;
+
+    // Save assistant message
+    await ctx.db.insert("messages", {
+      conversationId: args.conversationId,
+      userId,
+      role: "assistant",
+      content: args.response,
+      tokensUsed: inputTokens + outputTokens,
+      costCents,
+    });
+
+    await ctx.db.patch(args.conversationId, { lastMessageAt: Date.now() });
+
+    // Deduct AB
+    const user = await ctx.db.get(userId);
+    if (user) {
+      const current = (user as { totalUsageCents?: number }).totalUsageCents || 0;
+      const inputAB = 1.5 * inputTokens * args.inputCostPerMillion;
+      const outputAB = 1.5 * outputTokens * args.outputCostPerMillion;
+      const agentBucksToDeduct = Math.ceil(inputAB + outputAB);
+      const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? 0;
+      const purchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
+      let remainingDeduct = agentBucksToDeduct;
+      const newPurchased = Math.max(0, purchased - remainingDeduct);
+      remainingDeduct = Math.max(0, remainingDeduct - purchased);
+      const newDaily = Math.max(0, daily - remainingDeduct);
+      await ctx.db.patch(userId, {
+        totalUsageCents: current + costCents,
+        dailyAgentBucks: newDaily,
+        purchasedAgentBucks: newPurchased,
+      });
+    }
+  },
+});

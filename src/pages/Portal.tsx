@@ -196,6 +196,7 @@ function GuestPortal() {
 
     setInput("");
     const userMsg: GuestMessage = { role: "user", content: msg, id: Date.now().toString() };
+    const streamingId = (Date.now() + 1).toString();
     const newSession = {
       ...session,
       messages: [...session.messages, userMsg],
@@ -205,24 +206,103 @@ function GuestPortal() {
     saveGuestSession(newSession);
 
     setIsThinking(true);
+
+    // Add a streaming placeholder message
+    const streamingMsg: GuestMessage = { role: "assistant", content: "", id: streamingId };
+    setSession(s => ({ ...s, messages: [...s.messages, streamingMsg] }));
+
     try {
       const history = session.messages.map(m => ({ role: m.role, content: m.content }));
       const userContext = {
         datetime: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       };
-      const response = await guestSendMessage({ content: msg, mode: activeMode as "chat" | "study", history, userContext });
-      const assistantMsg: GuestMessage = { role: "assistant", content: response, id: (Date.now() + 1).toString() };
-      const finalSession = { ...newSession, messages: [...newSession.messages, assistantMsg] };
-      setSession(finalSession);
-      saveGuestSession(finalSession);
+
+      const systemPrompts: Record<string, string> = {
+        chat: `You are Thalamus AI, an advanced AI assistant. Be helpful, accurate, and concise.\n\nCRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.\nUse: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <code>, <pre><code>, <blockquote>\nHeadings: style="font-size:1.2em;font-weight:bold;margin:0.5em 0;color:#e5e7eb"\nParagraphs: style="margin:0.5em 0;line-height:1.6;color:#d1d5db"\nLists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db"\nCode blocks: style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em"\nInline code: style="background:#1f2937;color:#34d399;padding:0.1em 0.4em;border-radius:4px;font-family:monospace;font-size:0.85em"`,
+        study: `You are Thalamus AI Study Mode — a precision study assistant. Give dense, accurate, exam-ready information.\n\nCRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.\nUse: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <blockquote>\nHeadings: style="font-size:1.1em;font-weight:bold;margin:0.5em 0 0.3em;color:#e5e7eb;border-left:3px solid #6366f1;padding-left:0.6em"\nLists: style="margin:0.2em 0 0.2em 1em;color:#d1d5db;font-size:0.9em"`,
+      };
+
+      const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
+      const siteUrl = convexUrl.replace(".convex.cloud", ".convex.site");
+
+      const response = await fetch(`${siteUrl}/stream-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: msg,
+          mode: activeMode,
+          history,
+          systemPrompt: systemPrompts[activeMode] ?? systemPrompts.chat,
+          userContext,
+        }),
+      });
+
+      if (!response.ok || !response.body) throw new Error("Stream failed");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let accumulated = "";
+      setIsThinking(false);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+          try {
+            const parsed = JSON.parse(jsonStr) as { chunk?: string; done?: boolean; fullText?: string };
+            if (parsed.chunk) {
+              accumulated += parsed.chunk;
+              setSession(s => ({
+                ...s,
+                messages: s.messages.map(m => m.id === streamingId ? { ...m, content: accumulated } : m),
+              }));
+            }
+            if (parsed.done) {
+              const finalText = parsed.fullText ?? accumulated;
+              const finalSession: GuestSession = {
+                ...newSession,
+                messages: [...newSession.messages, { role: "assistant", content: finalText, id: streamingId }],
+              };
+              setSession(finalSession);
+              saveGuestSession(finalSession);
+            }
+          } catch { /* skip */ }
+        }
+      }
 
       // Show sign up prompt after last free message
       if (newSession.promptsUsed >= GUEST_LIMIT) {
         setTimeout(() => setShowSignUp({ reason: "limit" }), 1500);
       }
     } catch {
-      toast.error("Failed to get response. Try again.");
+      // Fallback to non-streaming
+      setIsThinking(true);
+      try {
+        const history = session.messages.map(m => ({ role: m.role, content: m.content }));
+        const userContext = {
+          datetime: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }),
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        };
+        const response = await guestSendMessage({ content: msg, mode: activeMode as "chat" | "study", history, userContext });
+        const finalSession: GuestSession = {
+          ...newSession,
+          messages: [...newSession.messages, { role: "assistant", content: response, id: streamingId }],
+        };
+        setSession(finalSession);
+        saveGuestSession(finalSession);
+      } catch {
+        toast.error("Failed to get response. Try again.");
+        setSession(s => ({ ...s, messages: s.messages.filter(m => m.id !== streamingId) }));
+      }
     } finally {
       setIsThinking(false);
     }
@@ -306,48 +386,60 @@ function GuestPortal() {
           </motion.div>
         ) : (
           <div className="space-y-4 pb-4">
-            {session.messages.map((msg) => (
-              <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-              >
-                {msg.role === "assistant" && (
-                  <div className={`w-7 h-7 rounded-xl ${currentMode.accent} border flex items-center justify-center shrink-0 mr-2 mt-1`}>
-                    <currentMode.icon className={`h-3.5 w-3.5 ${currentMode.color}`} />
-                  </div>
-                )}
-                <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground rounded-br-sm"
-                    : "bg-card border border-border text-foreground rounded-bl-sm"
-                }`}>
-                  {msg.role === "assistant" ? (
-                    <div className="prose-html text-sm" dangerouslySetInnerHTML={{ __html: msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>") }} />
-                  ) : (
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
+            {session.messages.map((msg) => {
+              const isStreaming = msg.role === "assistant" && msg.content === "" && !isThinking;
+              const isStreamingContent = msg.role === "assistant" && msg.content !== "" && isThinking === false;
+              return (
+                <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  {msg.role === "assistant" && (
+                    <div className={`w-7 h-7 rounded-xl ${currentMode.accent} border flex items-center justify-center shrink-0 mr-2 mt-1`}>
+                      <currentMode.icon className={`h-3.5 w-3.5 ${currentMode.color}`} />
+                    </div>
                   )}
-                </div>
-              </motion.div>
-            ))}
+                  {msg.role === "assistant" && isStreaming ? (
+                    // Empty streaming placeholder — show dots
+                    <div className="rounded-2xl rounded-bl-sm px-4 py-3.5 w-48 bg-card border border-border shadow-sm">
+                      <div className="flex items-center gap-1">
+                        {[0, 1, 2].map(i => (
+                          <motion.div key={i} className="w-2 h-2 rounded-full bg-primary"
+                            animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
+                            transition={{ duration: 0.7, delay: i * 0.15, repeat: Infinity }} />
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                      msg.role === "user"
+                        ? "bg-primary text-primary-foreground rounded-br-sm"
+                        : "bg-card border border-border text-foreground rounded-bl-sm"
+                    }`}>
+                      {msg.role === "assistant" ? (
+                        <div className="prose-html text-sm">
+                          <span dangerouslySetInnerHTML={{ __html: msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>") }} />
+                          {isStreamingContent && <span className="inline-block w-0.5 h-4 bg-primary ml-0.5 animate-pulse align-middle" />}
+                        </div>
+                      ) : (
+                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                      )}
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })}
             {isThinking && (
               <div className="flex justify-start">
                 <div className={`w-7 h-7 rounded-xl ${currentMode.accent} border flex items-center justify-center shrink-0 mr-2 mt-1`}>
                   <currentMode.icon className={`h-3.5 w-3.5 ${currentMode.color}`} />
                 </div>
-                <div className="rounded-2xl rounded-bl-sm px-4 py-3.5 w-64 shadow-lg" style={{ background: "rgba(60,80,140,0.35)", border: "1px solid rgba(100,130,255,0.25)" }}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="flex items-center gap-1">
-                      {[0, 1, 2].map(i => (
-                        <motion.div key={i} className="w-2 h-2 rounded-full bg-primary"
-                          animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
-                          transition={{ duration: 0.7, delay: i * 0.15, repeat: Infinity }} />
-                      ))}
-                    </div>
-                    <span className="text-[11px] text-primary/90 font-medium">Thinking...</span>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="h-3 rounded-full animate-pulse w-full" style={{ background: "rgba(255,255,255,0.55)" }} />
-                    <div className="h-3 rounded-full animate-pulse w-5/6" style={{ background: "rgba(255,255,255,0.40)", animationDelay: "0.15s" }} />
-                    <div className="h-3 rounded-full animate-pulse w-4/6" style={{ background: "rgba(255,255,255,0.28)", animationDelay: "0.3s" }} />
+                <div className="rounded-2xl rounded-bl-sm px-4 py-3.5 w-48 bg-card border border-border shadow-sm">
+                  <div className="flex items-center gap-1">
+                    {[0, 1, 2].map(i => (
+                      <motion.div key={i} className="w-2 h-2 rounded-full bg-primary"
+                        animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
+                        transition={{ duration: 0.7, delay: i * 0.15, repeat: Infinity }} />
+                    ))}
                   </div>
                 </div>
               </div>
