@@ -407,6 +407,14 @@ http.route({
       const userId = decodeStateHttp(state);
       if (!userId) throw new Error("Invalid state. Please try connecting again.");
 
+      // Validate the decoded userId is actually a user (not a sandbox or other table ID)
+      // Convex IDs are base32-encoded and all IDs for a given table share the same format
+      // We verify by attempting to look up the user
+      const userCheck = await ctx.runQuery(internal.githubHelpers.getUserById, {
+        userId: userId as Id<"users">,
+      }).catch(() => null);
+      if (!userCheck) throw new Error("Invalid user state. Please try connecting again.");
+
       const res = await fetch("https://github.com/login/oauth/access_token", {
         method: "POST",
         headers: { "Accept": "application/json", "Content-Type": "application/json" },
