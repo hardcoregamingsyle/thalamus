@@ -1892,14 +1892,13 @@ export const stopSession = action({
     const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
     if (!session) throw new Error("Session not found");
     if (session.userId !== userId) throw new Error("Not authorized");
-    // Preserve the current phase so resuming continues from where it left off
-    await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
+    // Force-reset to idle and clear runningAt so future RUN calls are never blocked
+    await ctx.runMutation(internal.agentTeamHelpers.forceIdleSession, {
       sessionId: args.sessionId,
-      status: "idle",
       currentAgent: session.currentAgent,
       round: session.round,
       loopCount: session.loopCount,
-      phase: session.phase,  // preserve current phase — NOT "completed"
+      phase: session.phase,
       totalMessages: session.totalMessages,
     });
   },
@@ -1915,6 +1914,19 @@ export const startBackgroundSession = action({
     if (!session) throw new Error("Session not found");
     if (session.userId !== userId) throw new Error("Not authorized");
     if (session.status === "completed") throw new Error("Session already completed");
+    // Force-reset to "idle" before scheduling — this unblocks any stuck "running" state
+    // (e.g. when a Convex action timed out and left the session stuck)
+    if (session.status === "running") {
+      await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
+        sessionId: args.sessionId,
+        status: "idle",
+        currentAgent: session.currentAgent,
+        round: session.round,
+        loopCount: session.loopCount,
+        phase: session.phase,
+        totalMessages: session.totalMessages,
+      });
+    }
     // Schedule backgroundRunOneRound directly — each agent gets its own fresh timeout budget
     await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunOneRound, { sessionId: args.sessionId });
   },

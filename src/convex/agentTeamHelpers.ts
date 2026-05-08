@@ -705,3 +705,25 @@ export const getSessionsByBranchGroup = internalQuery({
       .take(20);
   },
 });
+
+export const forceIdleSession = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    currentAgent: v.optional(v.string()),
+    round: v.optional(v.number()),
+    loopCount: v.optional(v.number()),
+    phase: v.optional(v.string()),
+    totalMessages: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      status: "idle",
+      currentAgent: args.currentAgent,
+      round: args.round,
+      loopCount: args.loopCount,
+      phase: args.phase,
+      totalMessages: args.totalMessages,
+      runningAt: undefined, // Clear runningAt so stale-state check never blocks future runs
+    });
+  },
+});
