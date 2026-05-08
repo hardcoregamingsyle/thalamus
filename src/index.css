@@ -50,7 +50,7 @@
   --terminal-font: 'Inter', 'JetBrains Mono', system-ui, sans-serif;
 
   /* Near-black with a very subtle cool tint — not pure black, not red */
-  --background: oklch(0.08 0.008 240);
+  --background: oklch(0.07 0.010 240);
   --foreground: oklch(0.94 0.008 240);
 
   /* Card — slightly elevated surface */

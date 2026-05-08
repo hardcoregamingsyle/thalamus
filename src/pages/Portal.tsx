@@ -333,21 +333,21 @@ function GuestPortal() {
                 <div className={`w-7 h-7 rounded-xl ${currentMode.accent} border flex items-center justify-center shrink-0 mr-2 mt-1`}>
                   <currentMode.icon className={`h-3.5 w-3.5 ${currentMode.color}`} />
                 </div>
-                <div className="bg-card border border-border/60 rounded-2xl rounded-bl-sm px-4 py-3.5 w-64 shadow-sm">
+                <div className="rounded-2xl rounded-bl-sm px-4 py-3.5 w-64 shadow-lg" style={{ background: "rgba(60,80,140,0.35)", border: "1px solid rgba(100,130,255,0.25)" }}>
                   <div className="flex items-center gap-2 mb-3">
                     <div className="flex items-center gap-1">
                       {[0, 1, 2].map(i => (
-                        <motion.div key={i} className="w-2 h-2 rounded-full bg-primary/70"
+                        <motion.div key={i} className="w-2 h-2 rounded-full bg-primary"
                           animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
                           transition={{ duration: 0.7, delay: i * 0.15, repeat: Infinity }} />
                       ))}
                     </div>
-                    <span className="text-[11px] text-muted-foreground font-medium">Thinking...</span>
+                    <span className="text-[11px] text-primary/90 font-medium">Thinking...</span>
                   </div>
                   <div className="space-y-2">
-                    <div className="h-3 bg-secondary rounded-full animate-pulse w-full" />
-                    <div className="h-3 bg-secondary/80 rounded-full animate-pulse w-5/6" style={{ animationDelay: "0.15s" }} />
-                    <div className="h-3 bg-secondary/60 rounded-full animate-pulse w-4/6" style={{ animationDelay: "0.3s" }} />
+                    <div className="h-3 rounded-full animate-pulse w-full" style={{ background: "rgba(255,255,255,0.55)" }} />
+                    <div className="h-3 rounded-full animate-pulse w-5/6" style={{ background: "rgba(255,255,255,0.40)", animationDelay: "0.15s" }} />
+                    <div className="h-3 rounded-full animate-pulse w-4/6" style={{ background: "rgba(255,255,255,0.28)", animationDelay: "0.3s" }} />
                   </div>
                 </div>
               </div>
@@ -1100,9 +1100,9 @@ function PortalDesktop() {
                       {[1, 2, 3].map(i => (
                         <div key={i} className={`flex ${i % 2 === 0 ? "justify-end" : "justify-start"}`}>
                           <div className={`rounded-2xl px-4 py-3 space-y-2 ${i % 2 === 0 ? "w-48" : "w-72"}`}>
-                            <div className="h-3 bg-secondary rounded animate-pulse" />
-                            <div className="h-3 bg-secondary/80 rounded animate-pulse w-4/5" />
-                            {i % 2 !== 0 && <div className="h-3 bg-secondary/60 rounded animate-pulse w-3/5" />}
+                            <div className="h-3 rounded animate-pulse" style={{ background: "rgba(255,255,255,0.15)" }} />
+                            <div className="h-3 rounded animate-pulse w-4/5" style={{ background: "rgba(255,255,255,0.10)" }} />
+                            {i % 2 !== 0 && <div className="h-3 rounded animate-pulse w-3/5" style={{ background: "rgba(255,255,255,0.07)" }} />}
                           </div>
                         </div>
                       ))}
@@ -1135,25 +1135,25 @@ function PortalDesktop() {
                       animate={{ opacity: 1, y: 0 }}
                       className="flex justify-start"
                     >
-                      <div className="bg-card border border-border/60 rounded-2xl px-4 py-3.5 max-w-[75%] w-72 shadow-sm">
+                      <div className="rounded-2xl px-4 py-3.5 max-w-[75%] w-72 shadow-lg" style={{ background: "rgba(60,80,140,0.35)", border: "1px solid rgba(100,130,255,0.25)" }}>
                         {/* Typing dots + label */}
                         <div className="flex items-center gap-2 mb-3">
                           <div className="flex items-center gap-1">
                             {[0, 1, 2].map(i => (
-                              <motion.div key={i} className="w-2 h-2 rounded-full bg-primary/70"
+                              <motion.div key={i} className="w-2 h-2 rounded-full bg-primary"
                                 animate={{ y: [0, -5, 0], opacity: [0.5, 1, 0.5] }}
                                 transition={{ duration: 0.7, delay: i * 0.15, repeat: Infinity }} />
                             ))}
                           </div>
-                          <span className="text-[11px] text-muted-foreground font-medium">
+                          <span className="text-[11px] text-primary/90 font-medium">
                             {activeMode === "study" ? "Searching & thinking..." : activeMode === "research" ? "Researching..." : "Thinking..."}
                           </span>
                         </div>
                         {/* Skeleton lines */}
                         <div className="space-y-2">
-                          <div className="h-3 bg-secondary rounded-full animate-pulse w-full" />
-                          <div className="h-3 bg-secondary/80 rounded-full animate-pulse w-5/6" style={{ animationDelay: "0.15s" }} />
-                          <div className="h-3 bg-secondary/60 rounded-full animate-pulse w-4/6" style={{ animationDelay: "0.3s" }} />
+                          <div className="h-3 rounded-full animate-pulse w-full" style={{ background: "rgba(255,255,255,0.55)" }} />
+                          <div className="h-3 rounded-full animate-pulse w-5/6" style={{ background: "rgba(255,255,255,0.40)", animationDelay: "0.15s" }} />
+                          <div className="h-3 rounded-full animate-pulse w-4/6" style={{ background: "rgba(255,255,255,0.28)", animationDelay: "0.3s" }} />
                         </div>
                       </div>
                     </motion.div>
