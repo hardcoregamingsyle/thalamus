@@ -25,9 +25,15 @@ const DEFAULT_MODELS = [
 
 type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex";
 
+const ADMIN_SESSION_KEY = "thalamus_admin_session";
+
 export default function AdminPage() {
-  const [authed, setAuthed] = useState(false);
-  const [adminToken, setAdminToken] = useState("");
+  const [authed, setAuthed] = useState(() => {
+    try { return localStorage.getItem(ADMIN_SESSION_KEY) === ADMIN_PASS; } catch { return false; }
+  });
+  const [adminToken, setAdminToken] = useState(() => {
+    try { return localStorage.getItem(ADMIN_SESSION_KEY) === ADMIN_PASS ? ADMIN_PASS : ""; } catch { return ""; }
+  });
   const [loginUser, setLoginUser] = useState("");
   const [loginPass, setLoginPass] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -35,6 +41,7 @@ export default function AdminPage() {
 
   const handleLogin = () => {
     if (loginUser === ADMIN_USER && loginPass === ADMIN_PASS) {
+      try { localStorage.setItem(ADMIN_SESSION_KEY, ADMIN_PASS); } catch {}
       setAuthed(true);
       setAdminToken(ADMIN_PASS);
       toast.success("Welcome, Admin");
@@ -111,7 +118,7 @@ export default function AdminPage() {
             <span className="text-xs text-muted-foreground">Aphantic Corporation</span>
           </div>
           <button
-            onClick={() => { setAuthed(false); setAdminToken(""); }}
+            onClick={() => { try { localStorage.removeItem(ADMIN_SESSION_KEY); } catch {} setAuthed(false); setAdminToken(""); }}
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive transition-colors"
           >
             <LogOut className="h-3.5 w-3.5" />Sign Out
