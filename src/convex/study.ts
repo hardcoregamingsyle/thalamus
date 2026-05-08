@@ -101,7 +101,111 @@ async function liveWebSearch(query: string, isEducationQuery = true): Promise<st
   }
 }
 
-// ── Process file/image with Claude Vision via Bedrock ─────────────────────────
+// ── PDF/Document extraction using Claude's native document support ─────────────
+function parsePdfBedrockCreds(): { accessKeyId: string; secretAccessKey: string; region: string; isCustomKey: boolean } | null {
+  const raw = process.env.AWS_BEDROCK_API_KEY;
+  if (!raw) return null;
+  const isBase64 = /^[A-Za-z0-9+/]+=*$/.test(raw) && raw.length > 40;
+  let decoded = raw;
+  if (isBase64) { try { decoded = Buffer.from(raw, "base64").toString("utf8").replace(/^\0+/, ""); } catch { decoded = raw; } }
+  const isStandardAWS = /^(AKIA|ASIA|AROA|AIDA)[A-Z0-9]{16}/.test(decoded);
+  if (isStandardAWS) {
+    const parts = decoded.split(":");
+    if (parts.length < 2) return null;
+    return { accessKeyId: parts[0], secretAccessKey: parts.slice(1, parts.length > 2 ? parts.length - 1 : 2).join(":"), region: parts.length > 2 ? parts[parts.length - 1] : "us-east-1", isCustomKey: false };
+  }
+  const colonIdx = decoded.indexOf(":");
+  if (colonIdx > 0) return { accessKeyId: decoded.substring(0, colonIdx), secretAccessKey: decoded.substring(colonIdx + 1), region: "us-east-1", isCustomKey: true };
+  return { accessKeyId: decoded, secretAccessKey: "", region: "us-east-1", isCustomKey: true };
+}
+
+async function signPdfBedrockRequest(method: string, url: string, body: string, accessKeyId: string, secretAccessKey: string, region: string): Promise<Record<string, string>> {
+  const crypto = globalThis.crypto;
+  const enc = new TextEncoder();
+  const sha256 = async (data: string | Uint8Array): Promise<string> => {
+    const encoded = typeof data === "string" ? enc.encode(data) : data;
+    const buf = encoded.buffer.slice(encoded.byteOffset, encoded.byteLength) as ArrayBuffer;
+    const hash = await crypto.subtle.digest("SHA-256", buf);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+  };
+  const hmac = async (key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> => {
+    const rawKey = key instanceof Uint8Array ? key.buffer as ArrayBuffer : key;
+    const k = await crypto.subtle.importKey("raw", rawKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    return crypto.subtle.sign("HMAC", k, enc.encode(data).buffer as ArrayBuffer);
+  };
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  const dateStamp = amzDate.substring(0, 8);
+  const parsedUrl = new URL(url);
+  const host = parsedUrl.host;
+  const headers: Record<string, string> = { "content-type": "application/json", "host": host, "x-amz-date": amzDate };
+  const sortedKeys = Object.keys(headers).sort();
+  const canonicalHeaders = sortedKeys.map(k => `${k}:${headers[k]}\n`).join("");
+  const signedHeaders = sortedKeys.join(";");
+  const hashedPayload = await sha256(body);
+  const canonicalRequest = ["POST", parsedUrl.pathname, "", canonicalHeaders, signedHeaders, hashedPayload].join("\n");
+  const credentialScope = `${dateStamp}/${region}/bedrock/aws4_request`;
+  const stringToSign = ["AWS4-HMAC-SHA256", amzDate, credentialScope, await sha256(canonicalRequest)].join("\n");
+  const kSecret = enc.encode(`AWS4${secretAccessKey}`);
+  const kDate = await hmac(kSecret, dateStamp);
+  const kRegion = await hmac(kDate, region);
+  const kService = await hmac(kRegion, "bedrock");
+  const kSigning = await hmac(kService, "aws4_request");
+  const sigBuf = await hmac(kSigning, stringToSign);
+  const signature = Array.from(new Uint8Array(sigBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
+  return { "Content-Type": "application/json", "X-Amz-Date": amzDate, "Authorization": `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}` };
+}
+
+async function extractPdfWithClaude(base64Data: string, fileName: string): Promise<string> {
+  const creds = parsePdfBedrockCreds();
+  if (!creds) throw new Error("No Bedrock credentials");
+
+  const modelId = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+  const region = creds.region || "us-east-1";
+  const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke`;
+
+  const requestBody = JSON.stringify({
+    anthropic_version: "bedrock-2023-05-31",
+    system: "You are a study assistant. Extract ALL text content from this document comprehensively. Preserve headings, paragraphs, lists, tables, formulas, and all other content. Output the full extracted text without summarizing or omitting anything.",
+    messages: [{
+      role: "user",
+      content: [
+        {
+          type: "document",
+          source: {
+            type: "base64",
+            media_type: "application/pdf",
+            data: base64Data,
+          },
+        },
+        {
+          type: "text",
+          text: `Extract ALL text content from this PDF document "${fileName}". Include every heading, paragraph, list item, table, formula, and piece of text. Do not summarize — output the complete text verbatim.`,
+        },
+      ],
+    }],
+    max_tokens: 8192,
+    temperature: 0,
+  });
+
+  let reqHeaders: Record<string, string>;
+  if (creds.isCustomKey) {
+    const bearerToken = creds.secretAccessKey ? `${creds.accessKeyId}:${creds.secretAccessKey}` : creds.accessKeyId;
+    reqHeaders = { "Content-Type": "application/json", "Authorization": `Bearer ${bearerToken}`, "x-api-key": bearerToken };
+  } else {
+    reqHeaders = await signPdfBedrockRequest("POST", url, requestBody, creds.accessKeyId, creds.secretAccessKey, region);
+  }
+
+  const response = await fetch(url, { method: "POST", headers: reqHeaders, body: requestBody });
+  if (!response.ok) {
+    const err = await response.text().catch(() => "");
+    throw new Error(`Bedrock PDF extraction error ${response.status}: ${err.slice(0, 200)}`);
+  }
+
+  const data = await response.json() as { content?: Array<{ type: string; text?: string }> };
+  return data.content?.[0]?.text ?? "";
+}
+
 export const processFileResource = action({
   args: {
     token: v.string(),
@@ -114,43 +218,70 @@ export const processFileResource = action({
     if (!userId) throw new Error("Not authenticated");
 
     const isImage = args.fileType.startsWith("image/");
+    const isPdf = args.fileType === "application/pdf" || args.fileName.toLowerCase().endsWith(".pdf");
     let summary = "";
 
-    if (isImage) {
+    if (isPdf) {
+      // Use Claude's native PDF document understanding
       try {
-        const prompt = `Please analyze this image and provide a comprehensive summary of all content, text, diagrams, charts, and visual information present. Be thorough and extract all useful information for study purposes.\n\nImage data (base64, ${args.fileType}): ${args.fileDataBase64.slice(0, 80000)}`;
-        const result = await callClaude(prompt, "You are a study assistant that extracts and summarizes content from images and files.", "claude-haiku-4-5");
+        summary = await extractPdfWithClaude(args.fileDataBase64, args.fileName);
+        if (!summary || summary.length < 50) throw new Error("Empty extraction");
+      } catch {
+        // Fallback: try VLY with document content
+        try {
+          const { vly } = await import('../lib/vly-integrations');
+          const result = await vly.ai.completion({
+            model: "gpt-4o",
+            messages: [{
+              role: "user",
+              content: `Extract ALL text content from this PDF document "${args.fileName}". The PDF is provided as base64. Include every heading, paragraph, list, table, and formula. Output the complete text.\n\nPDF base64 (first 100k chars): ${args.fileDataBase64.slice(0, 100000)}`,
+            }],
+            maxTokens: 4000,
+          });
+          summary = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "") : "";
+        } catch {
+          summary = `[PDF uploaded: ${args.fileName}. PDF text extraction requires Bedrock credentials. Please add the file content as text manually.]`;
+        }
+      }
+    } else if (isImage) {
+      try {
+        const result = await callClaude(
+          `Please analyze this image and provide a comprehensive summary of all content, text, diagrams, charts, and visual information present. Be thorough and extract all useful information for study purposes.\n\nImage data (base64, ${args.fileType}): ${args.fileDataBase64.slice(0, 80000)}`,
+          "You are a study assistant that extracts and summarizes content from images and files.",
+          "claude-haiku-4-5",
+        );
         summary = result.text;
       } catch {
         const { vly } = await import('../lib/vly-integrations');
         const result = await vly.ai.completion({
-          model: "claude-haiku-4-5",
+          model: "gpt-4o-mini",
           messages: [{ role: "user", content: `Please analyze this image and provide a comprehensive summary of all content, text, diagrams, charts, and visual information present. Be thorough and extract all useful information for study purposes.\n\nImage data (base64, ${args.fileType}): ${args.fileDataBase64.slice(0, 80000)}` }],
           maxTokens: 2000,
         });
         summary = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "Could not process image") : "Image uploaded (could not extract text)";
       }
     } else {
+      // Text-based files — decode directly
       try {
         const decoded = Buffer.from(args.fileDataBase64, "base64").toString("utf-8");
-        if (decoded.length > 100 && decoded.split("").filter(c => c.charCodeAt(0) > 31 && c.charCodeAt(0) < 127).length / decoded.length > 0.8) {
-          summary = decoded.slice(0, 50000);
+        // Check if it's readable text (>80% printable ASCII/UTF-8)
+        const printableRatio = decoded.split("").filter(c => c.charCodeAt(0) > 31 || c === "\n" || c === "\r" || c === "\t").length / decoded.length;
+        if (decoded.length > 50 && printableRatio > 0.75) {
+          summary = decoded; // Store full text, no truncation
         } else {
           throw new Error("Binary file");
         }
       } catch {
+        // Binary non-PDF file — ask Claude to extract
         try {
-          const prompt = `Please extract and summarize all content from this file for study purposes. File name: ${args.fileName}\n\nFile content (base64): ${args.fileDataBase64.slice(0, 50000)}`;
-          const result = await callClaude(prompt, "You are a study assistant that extracts and summarizes content from files.", "claude-haiku-4-5");
+          const result = await callClaude(
+            `Please extract and summarize all content from this file for study purposes. File name: ${args.fileName}\n\nFile content (base64): ${args.fileDataBase64.slice(0, 50000)}`,
+            "You are a study assistant that extracts and summarizes content from files.",
+            "claude-haiku-4-5",
+          );
           summary = result.text;
         } catch {
-          const { vly } = await import('../lib/vly-integrations');
-          const result = await vly.ai.completion({
-            model: "claude-haiku-4-5",
-            messages: [{ role: "user", content: `Please extract and summarize all content from this file for study purposes. File name: ${args.fileName}\n\nFile content (base64): ${args.fileDataBase64.slice(0, 50000)}` }],
-            maxTokens: 2000,
-          });
-          summary = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "Could not process file") : "File uploaded (could not extract content)";
+          summary = `[File uploaded: ${args.fileName}. Could not extract text content automatically.]`;
         }
       }
     }
@@ -159,7 +290,7 @@ export const processFileResource = action({
       userId,
       title: args.fileName,
       content: summary,
-      sourceType: isImage ? "image" : "file",
+      sourceType: isImage ? "image" : isPdf ? "pdf" : "file",
       fileName: args.fileName,
       fileType: args.fileType,
     });
