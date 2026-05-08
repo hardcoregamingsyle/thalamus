@@ -218,10 +218,39 @@ export default function Landing() {
   const { theme, toggleTheme } = useTheme();
   const handleLaunch = () => navigate("/portal/chat");
 
+  const FOUR_MODES = [
+    {
+      id: "chat", emoji: "💬", label: "CHAT", color: "text-primary", border: "border-primary/30", bg: "bg-primary/8",
+      headline: "Talk to the smartest AI alive",
+      desc: "Ask anything. Get answers that actually make sense. Claude Haiku 4.5 via AWS Bedrock — fast, accurate, context-aware.",
+      examples: ["Explain quantum computing", "Write a cover letter", "Debug my code", "Plan my week"],
+    },
+    {
+      id: "research", emoji: "🔬", label: "RESEARCH", color: "text-amber-400", border: "border-amber-400/30", bg: "bg-amber-400/8",
+      headline: "Research anything with live web data",
+      desc: "Not just training data. Live web scraping, multi-source synthesis, structured reports. Like having a PhD researcher on demand.",
+      examples: ["Latest AI breakthroughs 2026", "Market analysis: EV industry", "CRISPR gene editing advances", "Geopolitical risk assessment"],
+    },
+    {
+      id: "study", emoji: "📚", label: "STUDY", color: "text-indigo-400", border: "border-indigo-400/30", bg: "bg-indigo-400/8",
+      headline: "Study smarter, not harder",
+      desc: "Upload your notes, textbooks, or any resource. Get notebook-ready explanations that teach you the concept while you read.",
+      examples: ["NCERT Class 10 Science", "Calculus derivatives explained", "World War I causes", "Python OOP concepts"],
+    },
+    {
+      id: "code", emoji: "⚡", label: "CODE", color: "text-violet-400", border: "border-violet-400/30", bg: "bg-violet-400/8",
+      headline: "Build entire software products",
+      desc: "9 specialized agents — Researcher, Analyser, Planner, Coder, Optimiser, Tester, Red Team, Critic. One prompt. Production-ready.",
+      examples: ["Full-stack SaaS app", "REST API with auth", "Mobile-first dashboard", "E-commerce platform"],
+    },
+  ];
+
   return (
-    <div className="min-h-screen bg-background font-sans overflow-x-hidden">
+    <div className="min-h-screen font-sans overflow-x-hidden" style={{
+      background: "radial-gradient(ellipse 120% 80% at 50% -20%, oklch(0.62 0.20 250 / 0.18) 0%, transparent 60%), radial-gradient(ellipse 60% 50% at 90% 50%, oklch(0.72 0.16 65 / 0.08) 0%, transparent 60%), radial-gradient(ellipse 50% 40% at 10% 90%, oklch(0.65 0.18 280 / 0.07) 0%, transparent 60%), var(--color-background)"
+    }}>
       {/* ── Nav ─────────────────────────────────────────────────────────────── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/60 bg-background/95 backdrop-blur-xl">
+      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/60 backdrop-blur-xl" style={{ background: "oklch(0.08 0.008 240 / 0.92)" }}>
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center">
@@ -233,22 +262,16 @@ export default function Landing() {
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setSuggestionsOpen(true)}
-              className="hidden sm:flex items-center gap-1.5 text-[11px] border border-border/60 text-muted-foreground px-3 py-1.5 rounded-lg hover:border-accent/40 hover:text-accent transition-all font-medium"
-            >
-              <Lightbulb className="h-3 w-3" />
-              Feedback
+            <button onClick={() => setSuggestionsOpen(true)} className="hidden sm:flex items-center gap-1.5 text-[11px] border border-border/60 text-muted-foreground px-3 py-1.5 rounded-lg hover:border-accent/40 hover:text-accent transition-all font-medium">
+              <Lightbulb className="h-3 w-3" />Feedback
             </button>
             <button onClick={toggleTheme} className="p-2 rounded-lg border border-border/60 text-muted-foreground hover:text-foreground hover:border-border transition-all" title="Toggle theme">
               {theme === "dark" ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
             </button>
             <span className="hidden md:flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              LIVE
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />LIVE
             </span>
-            <button onClick={handleLaunch}
-              className="flex items-center gap-1.5 text-xs bg-primary text-primary-foreground px-4 py-1.5 rounded-lg hover:bg-primary/90 transition-all font-semibold shadow-sm shadow-primary/20">
+            <button onClick={handleLaunch} className="flex items-center gap-1.5 text-xs bg-primary text-primary-foreground px-4 py-1.5 rounded-lg hover:bg-primary/90 transition-all font-semibold shadow-sm shadow-primary/20">
               {isLoading ? "..." : isAuthenticated ? "Open Portal" : "Try Free — No Sign Up"}
               <ChevronRight className="h-3 w-3" />
             </button>
@@ -257,240 +280,175 @@ export default function Landing() {
       </nav>
 
       {/* ── Hero ────────────────────────────────────────────────────────────── */}
-      <section className="pt-32 pb-20 px-6 relative overflow-hidden">
-        {/* Subtle background glow */}
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[400px] rounded-full bg-primary/5 blur-[120px]" />
-          <div className="absolute top-1/3 left-1/4 w-[300px] h-[300px] rounded-full bg-accent/4 blur-[100px]" />
-        </div>
-
-        <div className="max-w-7xl mx-auto relative">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
-              <div className="inline-flex items-center gap-2 border border-primary/25 bg-primary/8 text-primary text-[11px] font-semibold px-3 py-1.5 rounded-full mb-6">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                World's First L4.5 Agent System
-              </div>
-              <h1 className="text-5xl lg:text-6xl font-bold text-foreground leading-[1.1] tracking-tight mb-6">
-                The AI that
-                <br />
-                <span className="text-primary">builds software</span>
-                <br />
-                end-to-end.
-              </h1>
-              <p className="text-base text-muted-foreground leading-relaxed mb-8 max-w-lg">
-                9 specialized agents — from research to deployment. One prompt. Production-ready code, security audited, fully tested.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <motion.button onClick={handleLaunch} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                  className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20">
-                  Launch Portal
-                  <ArrowRight className="h-4 w-4" />
-                </motion.button>
-                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                  onClick={() => document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth" })}
-                  className="flex items-center gap-2 px-6 py-3 border border-border text-foreground text-sm font-medium rounded-xl hover:border-primary/40 hover:bg-primary/5 transition-all">
-                  See how it works
-                </motion.button>
-              </div>
-
-              {/* Stats */}
-              <div className="flex flex-wrap gap-6 mt-10 pt-8 border-t border-border/50">
-                {[
-                  { value: "9", label: "Specialized Agents" },
-                  { value: "4", label: "Claude Models" },
-                  { value: "L4.5", label: "Agent Level" },
-                ].map((stat) => (
-                  <div key={stat.label}>
-                    <p className="text-2xl font-bold text-foreground">{stat.value}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">{stat.label}</p>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-
-            <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.6, delay: 0.15 }}>
-              <LivePipeline />
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Modes ───────────────────────────────────────────────────────────── */}
-      <section className="py-20 px-6 border-t border-border/50">
-        <div className="max-w-7xl mx-auto">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-12">
-            <p className="text-[11px] font-semibold text-primary tracking-widest mb-3">FOUR MODES</p>
-            <h2 className="text-3xl font-bold text-foreground">One portal. Every capability.</h2>
-          </motion.div>
-
-          {/* Mode tabs */}
-          <div className="flex flex-wrap gap-2 justify-center mb-8">
-            {MODES_INFO.map((mode, i) => (
-              <button key={mode.id} onClick={() => setActiveModeTab(i)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border transition-all ${
-                  activeModeTab === i ? `${mode.bg} ${mode.color} border-current/30` : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
-                }`}>
-                <mode.icon className="h-3.5 w-3.5" />
-                {mode.label}
-              </button>
-            ))}
-          </div>
-
-          <AnimatedModeCard mode={MODES_INFO[activeModeTab]} />
-        </div>
-      </section>
-
-      {/* ── How it works ────────────────────────────────────────────────────── */}
-      <section id="how-it-works" className="py-20 px-6 border-t border-border/50">
-        <div className="max-w-7xl mx-auto">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-12">
-            <p className="text-[11px] font-semibold text-primary tracking-widest mb-3">HOW IT WORKS</p>
-            <h2 className="text-3xl font-bold text-foreground">From prompt to production</h2>
-          </motion.div>
-
-          <div className="grid md:grid-cols-3 gap-6 mb-12">
-            {[
-              { step: "01", title: "Describe your project", desc: "Type what you want to build. Thalamus AI handles everything from research to deployment.", icon: Terminal },
-              { step: "02", title: "Agents plan & execute", desc: "The Planner breaks it into 12-20 atomic tasks. Each agent runs its specialized role in sequence.", icon: Layers },
-              { step: "03", title: "Production-ready output", desc: "Complete codebase, tests, docs, security audit — deployed to a live cloud sandbox.", icon: Rocket },
-            ].map((item, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
-                className="border border-border/60 bg-card rounded-2xl p-6 hover:border-primary/30 transition-all group">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="text-[11px] font-bold text-primary/60 font-mono">{item.step}</span>
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center group-hover:bg-primary/15 transition-all">
-                    <item.icon className="h-4 w-4 text-primary" />
-                  </div>
-                </div>
-                <h3 className="text-sm font-bold text-foreground mb-2">{item.title}</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
-              </motion.div>
-            ))}
-          </div>
-
-          {/* Agent pipeline detail */}
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-            className="border border-border/60 bg-card rounded-2xl p-6">
-            <p className="text-[11px] font-semibold text-muted-foreground tracking-widest mb-4">AGENT PIPELINE</p>
-            <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-2">
-              {AGENTS.map((agent, i) => (
-                <motion.div key={agent.name} initial={{ opacity: 0, scale: 0.9 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ delay: i * 0.05 }}
-                  className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border ${agent.bg} text-center`}>
-                  <div className={`w-7 h-7 rounded-lg ${agent.bg} border flex items-center justify-center text-sm`}>
-                    {agent.abbr}
-                  </div>
-                  <span className={`text-[9px] font-bold ${agent.color} leading-tight`}>{agent.name}</span>
-                  {agent.subAgents.length > 0 && (
-                    <span className="text-[8px] text-muted-foreground/60">{agent.subAgents.length} sub</span>
-                  )}
-                </motion.div>
-              ))}
+      <section className="pt-32 pb-16 px-6 relative overflow-hidden">
+        <div className="max-w-5xl mx-auto text-center relative">
+          {/* Badge */}
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="flex justify-center mb-8">
+            <div className="inline-flex items-center gap-2 border border-primary/25 bg-primary/8 text-primary text-[11px] font-semibold px-4 py-2 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+              World's First L4.5 Agent System · by Aphantic Corporations
             </div>
           </motion.div>
+
+          {/* Main headline */}
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
+            <h1 className="text-5xl lg:text-7xl font-bold text-foreground leading-[1.05] tracking-tight mb-6">
+              One AI.
+              <br />
+              <span className="text-primary">Every task.</span>
+              <br />
+              <span className="text-muted-foreground text-4xl lg:text-5xl font-semibold">No limits.</span>
+            </h1>
+            <p className="text-lg text-muted-foreground leading-relaxed mb-3 max-w-2xl mx-auto">
+              Chat with the world's most advanced AI. Research anything with live web data. Study smarter with AI-grounded explanations. Build entire software products with 9 specialized agents.
+            </p>
+            <p className="text-sm text-muted-foreground/70 mb-8 max-w-xl mx-auto">
+              All in one place. Free daily allocation. No credit card. No sign-up required to try.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3 mb-12">
+              <motion.button onClick={handleLaunch} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                className="flex items-center gap-2 px-8 py-3.5 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/25">
+                Start for Free — No Sign Up
+                <ArrowRight className="h-4 w-4" />
+              </motion.button>
+              <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                onClick={() => document.getElementById("modes")?.scrollIntoView({ behavior: "smooth" })}
+                className="flex items-center gap-2 px-6 py-3.5 border border-border text-foreground text-sm font-medium rounded-xl hover:border-primary/40 hover:bg-primary/5 transition-all">
+                See all 4 modes
+                <ChevronRight className="h-4 w-4" />
+              </motion.button>
+            </div>
+          </motion.div>
+
+          {/* Stats row */}
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.2 }}
+            className="flex flex-wrap items-center justify-center gap-8 text-center">
+            {[
+              { value: "4", label: "Specialized Modes" },
+              { value: "9", label: "AI Agents (Code)" },
+              { value: "5", label: "Claude Models" },
+              { value: "Free", label: "Daily Allocation" },
+            ].map((s, i) => (
+              <div key={i} className="flex flex-col items-center">
+                <span className="text-2xl font-bold text-primary">{s.value}</span>
+                <span className="text-[11px] text-muted-foreground mt-0.5">{s.label}</span>
+              </div>
+            ))}
+          </motion.div>
         </div>
       </section>
 
-      {/* ── Models ──────────────────────────────────────────────────────────── */}
-      <section className="py-20 px-6 border-t border-border/50">
+      {/* ── 4 Modes Grid ─────────────────────────────────────────────────────── */}
+      <section id="modes" className="py-16 px-6">
         <div className="max-w-7xl mx-auto">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-12">
-            <p className="text-[11px] font-semibold text-primary tracking-widest mb-3">MODELS</p>
-            <h2 className="text-3xl font-bold text-foreground">Powered by the best</h2>
-            <p className="text-sm text-muted-foreground mt-3 max-w-lg mx-auto">
-              Thalamus automatically routes each agent to the optimal model based on task difficulty. You pay only for what you use via AgentBucks.
-            </p>
+          <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}
+            className="text-center mb-12">
+            <h2 className="text-3xl lg:text-4xl font-bold text-foreground mb-3">Four modes. One platform.</h2>
+            <p className="text-muted-foreground max-w-xl mx-auto">Whether you're a student, researcher, developer, or just curious — Thalamus AI has a mode built for you.</p>
           </motion.div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {MODELS.map((model, i) => (
-              <motion.div key={model.name} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.08 }}
-                className={`border ${model.border} ${model.bg} rounded-2xl p-5 hover:border-opacity-60 transition-all`}>
-                <div className="flex items-center justify-between mb-3">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${model.border} ${model.color} bg-transparent`}>{model.tier}</span>
-                  <span className="text-[9px] text-muted-foreground border border-border/50 px-1.5 py-0.5 rounded">{model.badge}</span>
+          <div className="grid md:grid-cols-2 gap-6">
+            {FOUR_MODES.map((mode, i) => (
+              <motion.div key={mode.id}
+                initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4, delay: i * 0.1 }}
+                className={`border ${mode.border} rounded-2xl p-6 cursor-pointer hover:scale-[1.01] transition-all group`}
+                style={{ background: `oklch(0.11 0.010 240 / 0.8)` }}
+                onClick={() => navigate(`/portal/${mode.id}`)}
+              >
+                <div className="flex items-start gap-4 mb-4">
+                  <div className={`w-12 h-12 rounded-xl ${mode.bg} border ${mode.border} flex items-center justify-center text-2xl shrink-0`}>
+                    {mode.emoji}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-[10px] font-bold ${mode.color} tracking-widest`}>{mode.label}</span>
+                      <span className="text-[9px] text-muted-foreground/50 border border-border/40 px-1.5 py-0.5 rounded">FREE</span>
+                    </div>
+                    <h3 className="text-base font-bold text-foreground leading-tight">{mode.headline}</h3>
+                  </div>
                 </div>
-                <p className={`text-sm font-bold ${model.color} mb-1`}>{model.name}</p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">{model.desc}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed mb-4">{mode.desc}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {mode.examples.map((ex, j) => (
+                    <span key={j} className={`text-[10px] px-2 py-1 rounded-lg border ${mode.border} ${mode.color} bg-transparent`}>{ex}</span>
+                  ))}
+                </div>
+                <div className={`mt-4 flex items-center gap-1.5 text-[11px] ${mode.color} font-semibold group-hover:gap-2.5 transition-all`}>
+                  Try {mode.label} mode <ArrowRight className="h-3 w-3" />
+                </div>
               </motion.div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── AgentBucks ──────────────────────────────────────────────────────── */}
-      <section className="py-20 px-6 border-t border-border/50">
+      {/* ── Code Mode Deep Dive ───────────────────────────────────────────────── */}
+      <section id="how-it-works" className="py-16 px-6">
         <div className="max-w-7xl mx-auto">
-          <div className="grid md:grid-cols-2 gap-12 items-center">
-            <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
-              <p className="text-[11px] font-semibold text-primary tracking-widest mb-3">AGENTBUCKS</p>
-              <h2 className="text-3xl font-bold text-foreground mb-4">
-                Pay only for what you use
-              </h2>
-              <p className="text-sm text-muted-foreground leading-relaxed mb-6">
-                AgentBucks (AB) is the internal currency of Thalamus AI. Every model call deducts AB proportional to actual token usage. Daily free allocation + purchasable credits.
-              </p>
-              <div className="space-y-3">
-                {[
-                  { icon: Zap, label: "Daily free allocation", desc: "Every user gets free AB daily — no credit card needed" },
-                  { icon: Activity, label: "Usage-proportional billing", desc: "Pay exactly for tokens used, not flat subscriptions" },
-                  { icon: Shield, label: "Referral rewards", desc: "Earn bonus AB by referring friends to the platform" },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-start gap-3 p-3 rounded-xl border border-border/50 bg-card/50">
-                    <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
-                      <item.icon className="h-3.5 w-3.5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-foreground">{item.label}</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">{item.desc}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+          <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}
+            className="text-center mb-12">
+            <h2 className="text-3xl lg:text-4xl font-bold text-foreground mb-3">Code Mode: 9 agents, one prompt</h2>
+            <p className="text-muted-foreground max-w-xl mx-auto">The most advanced AI coding system ever built. From research to deployment — fully automated.</p>
+          </motion.div>
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <motion.div initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
+              <LivePipeline />
             </motion.div>
+            <motion.div initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="space-y-4">
+              {AGENTS.slice(0, 5).map((agent, i) => (
+                <div key={agent.name} className={`flex items-start gap-3 p-3 rounded-xl border ${agent.bg}`}>
+                  <div className={`w-8 h-8 rounded-lg ${agent.bg} border flex items-center justify-center text-sm shrink-0`}>{agent.abbr}</div>
+                  <div>
+                    <p className={`text-xs font-bold ${agent.color}`}>{agent.name}</p>
+                    <p className="text-[11px] text-muted-foreground">{agent.desc}</p>
+                  </div>
+                </div>
+              ))}
+              <button onClick={() => navigate("/portal/code")} className="w-full py-3 bg-violet-500/15 border border-violet-500/30 text-violet-400 text-sm font-bold rounded-xl hover:bg-violet-500/25 transition-all flex items-center justify-center gap-2">
+                Launch Code Mode <ArrowRight className="h-4 w-4" />
+              </button>
+            </motion.div>
+          </div>
+        </div>
+      </section>
 
-            <motion.div initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
-              className="border border-border/60 bg-card rounded-2xl p-6">
-              <p className="text-[11px] font-semibold text-muted-foreground tracking-widest mb-4">PRICING TIERS</p>
-              <div className="space-y-3">
-                {[
-                  { tier: "Haiku 4.5", ab: "~15,000 AB/msg", color: "text-cyan-400", bg: "bg-cyan-400/10" },
-                  { tier: "Sonnet 4.6", ab: "~45,000 AB/msg", color: "text-violet-400", bg: "bg-violet-400/10" },
-                  { tier: "Opus 4.6", ab: "~75,000 AB/msg", color: "text-amber-400", bg: "bg-amber-400/10" },
-                  { tier: "Opus 4.7", ab: "~120,000 AB/msg", color: "text-primary", bg: "bg-primary/10" },
-                ].map((item) => (
-                  <div key={item.tier} className={`flex items-center justify-between p-3 rounded-xl ${item.bg} border border-current/10`}>
-                    <span className={`text-xs font-bold ${item.color}`}>{item.tier}</span>
-                    <span className="text-[11px] text-muted-foreground font-mono">{item.ab}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 pt-4 border-t border-border/50">
-                <p className="text-[10px] text-muted-foreground">Daily free allocation: <span className="text-foreground font-semibold">500,000 AB</span></p>
-                <p className="text-[10px] text-muted-foreground mt-1">Purchased credits never expire.</p>
-              </div>
-            </motion.div>
+      {/* ── Models ───────────────────────────────────────────────────────────── */}
+      <section className="py-16 px-6">
+        <div className="max-w-7xl mx-auto">
+          <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}
+            className="text-center mb-10">
+            <h2 className="text-3xl font-bold text-foreground mb-3">Powered by the world's best models</h2>
+            <p className="text-muted-foreground">Claude 4.x via AWS Bedrock. Gemini 3.1 Flash-Lite. Always the right model for the task.</p>
+          </motion.div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+            {MODELS.map((model, i) => (
+              <motion.div key={model.name} initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.3, delay: i * 0.08 }}
+                className={`border ${model.border} ${model.bg} rounded-xl p-4`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-[9px] font-bold ${model.color} tracking-widest`}>{model.tier}</span>
+                  <span className="text-[9px] text-muted-foreground/60 border border-border/40 px-1.5 py-0.5 rounded">{model.badge}</span>
+                </div>
+                <p className={`text-xs font-bold ${model.color} mb-1`}>{model.name}</p>
+                <p className="text-[10px] text-muted-foreground leading-relaxed">{model.desc}</p>
+              </motion.div>
+            ))}
           </div>
         </div>
       </section>
 
       {/* ── CTA ─────────────────────────────────────────────────────────────── */}
-      <section className="py-24 px-6 border-t border-border/50">
+      <section className="py-20 px-6">
         <div className="max-w-3xl mx-auto text-center">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
-            <div className="inline-flex items-center gap-2 border border-primary/25 bg-primary/8 text-primary text-[11px] font-semibold px-3 py-1.5 rounded-full mb-6">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              THALAMUS AI — L4.5 AGENT SYSTEM
-            </div>
-            <h2 className="text-4xl font-bold text-foreground mb-4">
-              Ready to build with <span className="text-primary">9 agents?</span>
+          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
+            <h2 className="text-4xl lg:text-5xl font-bold text-foreground mb-4">
+              The only AI you'll ever need.
             </h2>
-            <p className="text-sm text-muted-foreground mb-8 max-w-lg mx-auto">
-              Chat, research, study, or deploy full software — all from one portal. Free daily allocation. No credit card required.
+            <p className="text-muted-foreground mb-8 max-w-lg mx-auto">
+              Chat, research, study, build — all from one portal. Free daily allocation. No credit card required.
             </p>
             <motion.button onClick={handleLaunch} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
               className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20">
-              Launch Thalamus Portal
+              Launch Thalamus Portal — Free
               <ArrowRight className="h-4 w-4" />
             </motion.button>
           </motion.div>
@@ -508,13 +466,7 @@ export default function Landing() {
             <span className="text-[10px] text-muted-foreground">by Aphantic Corporations</span>
           </div>
           <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
-            <span>L4.5 Agent System</span>
-            <span>·</span>
-            <span>AWS Bedrock</span>
-            <span>·</span>
-            <span>Convex</span>
-            <span>·</span>
-            <span>Daytona</span>
+            <span>L4.5 Agent System</span><span>·</span><span>AWS Bedrock</span><span>·</span><span>Convex</span><span>·</span><span>Daytona</span>
           </div>
         </div>
       </footer>
