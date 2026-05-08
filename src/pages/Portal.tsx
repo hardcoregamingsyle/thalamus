@@ -433,21 +433,21 @@ function GuestPortal() {
                 <div className={`w-7 h-7 rounded-xl ${currentMode.accent} border flex items-center justify-center shrink-0 mr-2 mt-1`}>
                   <currentMode.icon className={`h-3.5 w-3.5 ${currentMode.color}`} />
                 </div>
-                <div className="rounded-2xl rounded-bl-sm px-4 py-3.5 w-64 shadow-sm" style={{ background: "oklch(0.50 0.015 240)", border: "1px solid oklch(0.58 0.015 240)" }}>
+                <div className="rounded-2xl rounded-bl-sm px-4 py-3.5 w-64 shadow-sm" style={{ background: "#5a5e7a", border: "1px solid #6a6e8a" }}>
                   <div className="flex items-center gap-2 mb-3">
                     <div className="flex items-center gap-1">
                       {[0, 1, 2].map(i => (
-                        <motion.div key={i} className="w-2 h-2 rounded-full" style={{ background: "oklch(0.85 0.015 240)" }}
+                        <motion.div key={i} className="w-2 h-2 rounded-full" style={{ background: "rgba(255,255,255,0.75)" }}
                           animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
                           transition={{ duration: 0.7, delay: i * 0.15, repeat: Infinity }} />
                       ))}
                     </div>
-                    <span className="text-[11px] font-medium" style={{ color: "oklch(0.92 0.010 240)" }}>Thinking...</span>
+                    <span className="text-[11px] font-medium" style={{ color: "#d0d4ec" }}>Thinking...</span>
                   </div>
                   <div className="space-y-2">
-                    <div className="h-3 rounded-full animate-pulse w-full" style={{ background: "oklch(0.85 0.010 240)" }} />
-                    <div className="h-3 rounded-full animate-pulse w-5/6" style={{ background: "oklch(0.78 0.010 240)", animationDelay: "0.15s" }} />
-                    <div className="h-3 rounded-full animate-pulse w-4/6" style={{ background: "oklch(0.70 0.010 240)", animationDelay: "0.3s" }} />
+                    <motion.div className="h-3 rounded-full w-full" style={{ background: "rgba(255,255,255,0.80)" }} animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0 }} />
+                    <motion.div className="h-3 rounded-full w-5/6" style={{ background: "rgba(255,255,255,0.65)" }} animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.2 }} />
+                    <motion.div className="h-3 rounded-full w-4/6" style={{ background: "rgba(255,255,255,0.50)" }} animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.4 }} />
                   </div>
                 </div>
               </div>
@@ -1300,25 +1300,25 @@ function PortalDesktop() {
                       animate={{ opacity: 1, y: 0 }}
                       className="flex justify-start"
                     >
-                      <div className="rounded-2xl px-4 py-3.5 max-w-[75%] w-72 shadow-lg" style={{ background: "oklch(0.50 0.015 240)", border: "1px solid oklch(0.58 0.015 240)" }}>
+                      <div className="rounded-2xl px-4 py-3.5 max-w-[75%] w-72 shadow-lg" style={{ background: "#5a5e7a", border: "1px solid #6a6e8a" }}>
                         {/* Typing dots + label */}
                         <div className="flex items-center gap-2 mb-3">
                           <div className="flex items-center gap-1">
                             {[0, 1, 2].map(i => (
-                              <motion.div key={i} className="w-2 h-2 rounded-full" style={{ background: "oklch(0.85 0.015 240)" }}
+                              <motion.div key={i} className="w-2 h-2 rounded-full" style={{ background: "rgba(255,255,255,0.75)" }}
                                 animate={{ y: [0, -5, 0], opacity: [0.5, 1, 0.5] }}
                                 transition={{ duration: 0.7, delay: i * 0.15, repeat: Infinity }} />
                             ))}
                           </div>
-                          <span className="text-[11px] font-medium" style={{ color: "oklch(0.92 0.010 240)" }}>
+                          <span className="text-[11px] font-medium" style={{ color: "#d0d4ec" }}>
                             {activeMode === "study" ? "Searching & thinking..." : activeMode === "research" ? "Researching..." : "Thinking..."}
                           </span>
                         </div>
                         {/* Skeleton lines */}
                         <div className="space-y-2">
-                          <div className="h-3 rounded-full animate-pulse w-full" style={{ background: "oklch(0.85 0.010 240)" }} />
-                          <div className="h-3 rounded-full animate-pulse w-5/6" style={{ background: "oklch(0.78 0.010 240)", animationDelay: "0.15s" }} />
-                          <div className="h-3 rounded-full animate-pulse w-4/6" style={{ background: "oklch(0.70 0.010 240)", animationDelay: "0.3s" }} />
+                          <motion.div className="h-3 rounded-full w-full" style={{ background: "rgba(255,255,255,0.80)" }} animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0 }} />
+                          <motion.div className="h-3 rounded-full w-5/6" style={{ background: "rgba(255,255,255,0.65)" }} animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.2 }} />
+                          <motion.div className="h-3 rounded-full w-4/6" style={{ background: "rgba(255,255,255,0.50)" }} animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.4 }} />
                         </div>
                       </div>
                     </motion.div>
