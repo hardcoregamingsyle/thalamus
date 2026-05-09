@@ -1715,7 +1715,7 @@ export const backgroundRunOneRound = internalAction({
                           (currentPhase === "Hacker" && parsed.hackerResult === "fail") ||
                           (currentPhase === "Critic" && parsed.criticResult === "fail");
 
-      const newTaskMessageCount = taskMessageCount + 1;
+      let newTaskMessageCount = taskMessageCount + 1;
       let newTaskUpgradeActive = taskUpgradeActive;
       let newTaskUpgradeMessagesLeft = taskUpgradeActive ? taskUpgradeMessagesLeft - 1 : 0;
       let newUnfixableTasks: Array<{ taskIndex: number; title: string }> = [];
@@ -1782,16 +1782,8 @@ export const backgroundRunOneRound = internalAction({
           return;
         }
       } else if (currentPhase === "Critic" && parsed.criticResult !== "fail") {
-        // Task complete — move to next task or final review
-        const nextTaskIndex = currentTaskIndex + 1;
-        if (nextTaskIndex < plannerTasks.length) {
-          newTaskIndex = nextTaskIndex;
-          const nextTaskPipeline = getPipeline("tasks", plannerTasks, nextTaskIndex, false);
-          nextPhase = nextTaskPipeline[0];
-        } else {
-          newExecutionPhase = "final_review"; newFinalReviewCoderEnabled = false;
-          nextPhase = FINAL_REVIEW_PIPELINE_SKIP_CODER[0];
-        }
+        // Critic passed — run Summarizer next (Summarizer will advance the task index)
+        nextPhase = "Summarizer";
       } else if (currentPhase === "Summarizer") {
         // Store FULL cumulative summary — replace existing for this task index
         const existingIdx = taskSummaries.findIndex(s => s.taskIndex === currentTaskIndex);
@@ -1805,12 +1797,17 @@ export const backgroundRunOneRound = internalAction({
         const nextTaskIndex = currentTaskIndex + 1;
         if (nextTaskIndex < plannerTasks.length) {
           newTaskIndex = nextTaskIndex;
+          newTaskUpgradeActive = false;
+          newTaskUpgradeMessagesLeft = 0;
           const nextTaskPipeline = getPipeline("tasks", plannerTasks, nextTaskIndex, false);
           nextPhase = nextTaskPipeline[0];
         } else {
           newExecutionPhase = "final_review"; newFinalReviewCoderEnabled = false;
+          newTaskUpgradeActive = false;
           nextPhase = FINAL_REVIEW_PIPELINE_SKIP_CODER[0];
         }
+        // Reset task message count for the new task
+        newTaskMessageCount = 0;
       } else {
         const nextIdx = taskPipeline.indexOf(currentPhase) + 1;
         nextPhase = taskPipeline[nextIdx] || "Critic";
