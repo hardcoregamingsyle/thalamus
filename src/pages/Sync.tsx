@@ -235,13 +235,23 @@ export default function SyncPage() {
 
               <div>
                 <label className="text-xs text-muted-foreground block mb-1">$ repository_name</label>
-                <p className="text-xs text-muted-foreground/60 mb-2">Name for the GitHub repository (created if it doesn't exist).</p>
+                <p className="text-xs text-muted-foreground/60 mb-2">
+                  Just the repo name — e.g. <span className="text-primary">roblox-alt</span> (not a full URL).
+                  If you paste a GitHub URL, the name will be extracted automatically.
+                </p>
                 <div className="flex items-center border border-border bg-background focus-within:border-primary transition-colors">
                   <span className="text-primary text-xs px-2 terminal-glow"><Github className="h-3 w-3" /></span>
-                  <Input type="text" value={repoName} onChange={(e) => setRepoName(e.target.value)} placeholder="my-agentai-project"
+                  <Input type="text" value={repoName} onChange={(e) => {
+                    let val = e.target.value;
+                    // Auto-extract repo name if a GitHub URL is pasted
+                    const urlMatch = val.match(/github\.com\/[^/]+\/([^/\s?#]+)/);
+                    if (urlMatch) val = urlMatch[1];
+                    setRepoName(val);
+                  }} placeholder="roblox-alt"
                     className="border-0 bg-transparent text-xs font-mono focus-visible:ring-0 focus-visible:ring-offset-0 text-foreground placeholder:text-muted-foreground"
                     disabled={status === "loading"} required />
                 </div>
+                {repoName && <p className="text-xs text-muted-foreground/50 mt-1">→ Will create/use: <span className="text-primary">{repoName.trim().replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "")}</span></p>}
               </div>
 
               <Button type="submit" disabled={status === "loading" || !token.trim() || !repoName.trim()}
