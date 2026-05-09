@@ -2472,7 +2472,9 @@ export const continueSession = action({
     const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
     if (!session) throw new Error("Session not found");
     if (session.userId !== userId) throw new Error("Not authorized");
-    await ctx.runMutation(internal.agentTeamHelpers.resetSessionForNewTask, { sessionId: args.sessionId, newTask: args.newTask });
+    // Use appendTaskContext instead of resetSessionForNewTask to preserve task progress
+    // resetSessionForNewTask wipes currentTaskIndex/executionPhase/plannerTasksJson — causing task regression
+    await ctx.runMutation(internal.agentTeamHelpers.appendTaskContext, { sessionId: args.sessionId, additionalContext: args.newTask });
   },
 });
 

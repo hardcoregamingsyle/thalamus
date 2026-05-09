@@ -312,6 +312,25 @@ export const resetSessionForNewTask = internalMutation({
   },
 });
 
+// Append additional instructions to an in-progress session WITHOUT resetting task progress.
+// Use this when the user sends a follow-up message to a running session.
+export const appendTaskContext = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    additionalContext: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    // Append the new instruction to the existing task text
+    const updatedTask = session.task + "\n\n[USER FOLLOW-UP]: " + args.additionalContext;
+    await ctx.db.patch(args.sessionId, {
+      task: updatedTask,
+      status: "idle",
+    });
+  },
+});
+
 export const updateDeployCommands = internalMutation({
   args: {
     sessionId: v.id("teamSessions"),
