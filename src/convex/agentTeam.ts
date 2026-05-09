@@ -1422,6 +1422,21 @@ export const backgroundRunOneRound = internalAction({
     if (!session) return;
     if (session.status === "completed") return;
 
+    // Concurrency guard: if already running and NOT stale, skip to avoid double-running
+    if (session.status === "running") {
+      const runningAt = (session as Record<string, unknown>).runningAt as number | undefined;
+      const STALE_THRESHOLD_MS = 12 * 60 * 1000; // 12 minutes
+      if (runningAt && Date.now() - runningAt < STALE_THRESHOLD_MS) {
+        return; // Genuinely running — skip to avoid double-running and task regression
+      }
+      // Stale "running" state — recover by resetting to idle and continuing
+      await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
+        sessionId: args.sessionId, status: "idle",
+        currentAgent: session.currentAgent, round: session.round,
+        loopCount: session.loopCount, phase: session.phase, totalMessages: session.totalMessages,
+      });
+    }
+
     const userId = session.userId;
     const totalMessages = session.totalMessages ?? 0;
     if (totalMessages >= MAX_MESSAGES) {
@@ -1914,9 +1929,16 @@ export const startBackgroundSession = action({
     if (!session) throw new Error("Session not found");
     if (session.userId !== userId) throw new Error("Not authorized");
     if (session.status === "completed") throw new Error("Session already completed");
-    // Force-reset to "idle" before scheduling — this unblocks any stuck "running" state
-    // (e.g. when a Convex action timed out and left the session stuck)
+
+    // If already running and NOT stale, skip scheduling — the existing chain will continue
+    // This prevents double-scheduling which causes task regression
     if (session.status === "running") {
+      const runningAt = (session as Record<string, unknown>).runningAt as number | undefined;
+      const STALE_THRESHOLD_MS = 12 * 60 * 1000; // 12 minutes
+      if (runningAt && Date.now() - runningAt < STALE_THRESHOLD_MS) {
+        return; // Already running — don't interrupt or double-schedule
+      }
+      // Stale "running" state — recover by resetting to idle
       await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
         sessionId: args.sessionId,
         status: "idle",
@@ -1927,7 +1949,8 @@ export const startBackgroundSession = action({
         totalMessages: session.totalMessages,
       });
     }
-    // Schedule backgroundRunOneRound directly — each agent gets its own fresh timeout budget
+
+    // Schedule backgroundRunOneRound — each agent gets its own fresh timeout budget
     await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunOneRound, { sessionId: args.sessionId });
   },
 });
