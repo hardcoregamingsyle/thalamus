@@ -1422,12 +1422,14 @@ export const backgroundRunOneRound = internalAction({
     if (!session) return;
     if (session.status === "completed") return;
 
-    // Concurrency guard: if already running and NOT stale, skip to avoid double-running
+    // If status is "running", skip — the existing chain is active.
+    // Only recover if stale (action timed out > 12 minutes ago).
+    // startBackgroundSession handles stale recovery for external triggers.
     if (session.status === "running") {
       const runningAt = (session as Record<string, unknown>).runningAt as number | undefined;
       const STALE_THRESHOLD_MS = 12 * 60 * 1000; // 12 minutes
-      if (runningAt && Date.now() - runningAt < STALE_THRESHOLD_MS) {
-        return; // Genuinely running — skip to avoid double-running and task regression
+      if (!runningAt || Date.now() - runningAt < STALE_THRESHOLD_MS) {
+        return; // Genuinely running — skip to avoid double-running
       }
       // Stale "running" state — recover by resetting to idle and continuing
       await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
