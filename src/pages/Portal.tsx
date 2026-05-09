@@ -788,6 +788,7 @@ function PortalDesktop() {
   const [studyTextContent, setStudyTextContent] = useState("");
   const [studySearchQuery, setStudySearchQuery] = useState("");
   const [isAddingResource, setIsAddingResource] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [auditorOpen, setAuditorOpen] = useState(false);
   const [auditorAnswer, setAuditorAnswer] = useState("");
   const [auditorContext, setAuditorContext] = useState("");
@@ -1054,6 +1055,11 @@ function PortalDesktop() {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsAddingResource(true);
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const isImage = file.type.startsWith("image/");
+    if (isPdf) setUploadStatus("Claude Vision is reading your PDF — extracting text & images...");
+    else if (isImage) setUploadStatus("Claude Vision is analyzing your image...");
+    else setUploadStatus(`Processing ${file.name}...`);
     try {
       const arrayBuffer = await file.arrayBuffer();
       const bytes = new Uint8Array(arrayBuffer);
@@ -1061,9 +1067,11 @@ function PortalDesktop() {
       for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
       const base64 = btoa(binary);
       await processFileResource({ token, fileName: file.name, fileType: file.type, fileDataBase64: base64 });
-      toast.success(`Processed: ${file.name}`);
+      if (isPdf) toast.success(`PDF processed by Claude Vision: ${file.name}`);
+      else if (isImage) toast.success(`Image analyzed by Claude Vision: ${file.name}`);
+      else toast.success(`Processed: ${file.name}`);
     } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to process file"); }
-    finally { setIsAddingResource(false); if (fileInputRef.current) fileInputRef.current.value = ""; }
+    finally { setIsAddingResource(false); setUploadStatus(null); if (fileInputRef.current) fileInputRef.current.value = ""; }
   };
 
   const typedUser = user as { dailyAgentBucks?: number; purchasedAgentBucks?: number; agentBucksBalance?: number } | null;
@@ -1548,12 +1556,22 @@ function PortalDesktop() {
                       >
                         <Sparkles className="h-3.5 w-3.5" />AI
                       </button>
-                      <label className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg text-[10px] border transition-all cursor-pointer ${isAddingResource ? "opacity-50" : "border-border text-muted-foreground hover:border-indigo-400/30 hover:text-indigo-400"}`}>
+                      <label className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg text-[10px] border transition-all cursor-pointer ${isAddingResource ? "opacity-50 pointer-events-none" : "border-border text-muted-foreground hover:border-indigo-400/30 hover:text-indigo-400"}`}>
                         {isAddingResource ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-                        File
+                        PDF/File
                         <input ref={fileInputRef} type="file" className="hidden" accept="image/*,.pdf,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css" onChange={handleFileUpload} disabled={isAddingResource} />
                       </label>
                     </div>
+
+                    <AnimatePresence>
+                      {uploadStatus && (
+                        <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                          className="flex items-center gap-2 px-2.5 py-2 bg-indigo-400/10 border border-indigo-400/30 rounded-lg">
+                          <Loader2 className="h-3 w-3 animate-spin text-indigo-400 shrink-0" />
+                          <span className="text-[10px] text-indigo-300 leading-tight">{uploadStatus}</span>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
 
                     <AnimatePresence>
                       {studyAddMode === "text" && (
