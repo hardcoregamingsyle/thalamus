@@ -2642,25 +2642,32 @@ export const minorEditMessage = action({
       ? `\n\nPROJECT FILES:\n` + projectFiles.slice(0, 20).map(f => `--- ${f.filepath} ---\n${f.content.slice(0, 2000)}${f.content.length > 2000 ? "\n...(truncated)" : ""}`).join("\n\n")
       : "";
 
-    const systemPrompt = `You are a Senior Engineer making a MINOR, TARGETED edit to an existing codebase. 
+    const systemPrompt = `You are a Senior Engineer assistant. You can either answer questions OR make minor targeted code edits.
 
-RULES:
-- Make ONLY the specific change requested — do not refactor, restructure, or add unrelated features
-- Edit ONLY the files that need to change
-- Keep all other files exactly as they are
-- If the request is actually a large feature that needs the full multi-agent system, say so and output <<CHANGE_MODE=Code>>
-- If the user just wants to ask a question, output <<CHANGE_MODE=Chat>>
+CRITICAL DECISION — read the user's message carefully:
 
-FILE EDIT FORMAT:
-<<EDITFILE="path/to/file.ts">>
-[COMPLETE updated file content]
-<<END.CREATEFILE>>
+1. If the user is ASKING A QUESTION (e.g. "how do I deploy this?", "what does this do?", "explain X", "what features does this have?", "how does X work?"):
+   - Answer the question directly and helpfully using the project files as context
+   - DO NOT edit any files
+   - DO NOT output any <<EDITFILE>> blocks
+   - Just write a clear, helpful answer in plain text/markdown
 
-Be surgical. Be precise. Make only what was asked.`;
+2. If the user is requesting a CODE CHANGE (e.g. "fix the bug in X", "add a button", "change the color to blue"):
+   - Make ONLY the specific change requested
+   - Edit ONLY the files that need to change
+   - Use this format for file edits:
+     <<EDITFILE="path/to/file.ts">>
+     [COMPLETE updated file content]
+     <<END.CREATEFILE>>
 
-    const prompt = `MINOR EDIT REQUEST: ${args.content}${fileManifest}${filesContext}
+3. If the request needs the full multi-agent system (large feature, new app, complex architecture):
+   - Say so briefly and output <<CHANGE_MODE=Code>>
 
-Make the requested change now.`;
+NEVER edit README.md or any file just because someone asked a question. Questions get answers, not file edits.`;
+
+    const prompt = `USER REQUEST: ${args.content}${fileManifest}${filesContext}
+
+Respond appropriately — answer the question OR make the code change.`;
 
     let response = "";
     try {
@@ -2678,14 +2685,16 @@ Make the requested change now.`;
 
     const parsed = parseAgentOutput(response);
 
-    // Apply file operations
-    for (const fileOp of parsed.fileOps) {
-      if (fileOp.type === "create" || fileOp.type === "edit") {
-        await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
-          sessionId: args.sessionId, userId, filepath: fileOp.filepath, content: fileOp.content || "", agent: "MinorEdit",
-        });
-      } else if (fileOp.type === "delete") {
-        await ctx.runMutation(internal.agentTeamHelpers.deleteFile, { sessionId: args.sessionId, filepath: fileOp.filepath });
+    // Only apply file operations if there are actual file edits (not just a question answer)
+    if (parsed.fileOps.length > 0) {
+      for (const fileOp of parsed.fileOps) {
+        if (fileOp.type === "create" || fileOp.type === "edit") {
+          await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
+            sessionId: args.sessionId, userId, filepath: fileOp.filepath, content: fileOp.content || "", agent: "MinorEdit",
+          });
+        } else if (fileOp.type === "delete") {
+          await ctx.runMutation(internal.agentTeamHelpers.deleteFile, { sessionId: args.sessionId, filepath: fileOp.filepath });
+        }
       }
     }
 
