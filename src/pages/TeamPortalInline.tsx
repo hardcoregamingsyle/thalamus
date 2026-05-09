@@ -208,8 +208,10 @@ function parsePlannerContent(content: string): PlannerData | null {
   return null;
 }
 
-function PlannerOutputCard({ data, currentTaskIndex }: { data: PlannerData; currentTaskIndex?: number }) {
-  const completedCount = currentTaskIndex ?? 0;
+function PlannerOutputCard({ data, currentTaskIndex, executionPhase }: { data: PlannerData; currentTaskIndex?: number; executionPhase?: string }) {
+  // When in final_review or completed phase, all tasks are done
+  const allDone = executionPhase === "final_review" || executionPhase === "completed";
+  const completedCount = allDone ? data.tasks.length : (currentTaskIndex ?? 0);
   return (
     <div className="w-full space-y-3">
       {data.summary && (
@@ -275,11 +277,11 @@ function PlannerOutputCard({ data, currentTaskIndex }: { data: PlannerData; curr
   );
 }
 
-function MessageContent({ msg, currentTaskIndex }: { msg: { _id?: string; agent: string; content: string }; currentTaskIndex?: number }) {
+function MessageContent({ msg, currentTaskIndex, executionPhase }: { msg: { _id?: string; agent: string; content: string }; currentTaskIndex?: number; executionPhase?: string }) {
   if (msg.agent === "Planner") {
     const plannerData = parsePlannerContent(msg.content);
     if (plannerData && plannerData.tasks.length > 0) {
-      return <PlannerOutputCard data={plannerData} currentTaskIndex={currentTaskIndex} />;
+      return <PlannerOutputCard data={plannerData} currentTaskIndex={currentTaskIndex} executionPhase={executionPhase} />;
     }
   }
   return (
@@ -1864,16 +1866,20 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
           <div className="shrink-0 p-3 border-b border-border">
             <p className="text-[10px] text-muted-foreground font-bold mb-2">TASKS</p>
             <div className="space-y-1">
-              {plannerTasks.slice(0, 8).map((t, i) => (
-                <div key={t.id} className="flex items-start gap-1.5">
-                  <div className={`w-3.5 h-3.5 rounded-full shrink-0 mt-0.5 flex items-center justify-center ${i < taskIndex ? "bg-green-400" : i === taskIndex ? "bg-primary animate-pulse" : "bg-muted border border-border"}`}>
-                    {i < taskIndex && <CheckCircle className="h-2 w-2 text-background" />}
+              {plannerTasks.slice(0, 8).map((t, i) => {
+                const allTasksDone = execPhase === "final_review" || execPhase === "completed";
+                const effectiveIndex = allTasksDone ? plannerTasks.length : taskIndex;
+                return (
+                  <div key={t.id} className="flex items-start gap-1.5">
+                    <div className={`w-3.5 h-3.5 rounded-full shrink-0 mt-0.5 flex items-center justify-center ${i < effectiveIndex ? "bg-green-400" : i === effectiveIndex && !allTasksDone ? "bg-primary animate-pulse" : "bg-muted border border-border"}`}>
+                      {i < effectiveIndex && <CheckCircle className="h-2 w-2 text-background" />}
+                    </div>
+                    <span className={`text-[9px] leading-tight ${i === effectiveIndex && !allTasksDone ? "text-primary font-bold" : i < effectiveIndex ? "text-muted-foreground line-through" : "text-muted-foreground"}`}>
+                      {t.title.slice(0, 30)}
+                    </span>
                   </div>
-                  <span className={`text-[9px] leading-tight ${i === taskIndex ? "text-primary font-bold" : i < taskIndex ? "text-muted-foreground line-through" : "text-muted-foreground"}`}>
-                    {t.title.slice(0, 30)}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
               {plannerTasks.length > 8 && <p className="text-[9px] text-muted-foreground">+{plannerTasks.length - 8} more</p>}
             </div>
           </div>
@@ -2097,7 +2103,7 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
                           <div className={`rounded-xl px-4 py-3 text-xs leading-relaxed ${
                             msg.isUser ? "bg-primary/15 border border-primary/30 text-foreground" : "bg-card border border-border text-foreground"
                           }`}>
-                            <MessageContent msg={msg} currentTaskIndex={sessionInfo?.currentTaskIndex} />
+                            <MessageContent msg={msg} currentTaskIndex={sessionInfo?.currentTaskIndex} executionPhase={sessionInfo?.executionPhase} />
                           </div>
                           {!msg.isUser && msg.agentBucksDeducted !== undefined && msg.agentBucksDeducted > 0 && (
                             <span className="text-[9px] text-muted-foreground/40 font-mono mt-0.5">
