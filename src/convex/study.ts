@@ -382,7 +382,7 @@ export const sendStudyMessage = action({
     let resourceContext = "";
     if (resources.length > 0) {
       resourceContext = "\n\n## YOUR STUDY RESOURCES:\n" + resources.map((r: { title: string; content: string }, i: number) =>
-        `### Resource ${i + 1}: ${r.title}\n${r.content.slice(0, 2000)}`
+        `### Resource ${i + 1}: ${r.title}\n${r.content.slice(0, 30000)}`
       ).join("\n\n---\n\n");
     }
 
@@ -391,7 +391,7 @@ export const sendStudyMessage = action({
     let adminMaterialContext = "";
     if (studyAdminMaterials.length > 0) {
       adminMaterialContext = "\n\n## PRIMARY REFERENCE MATERIALS (use as primary knowledge source — prioritize over web search):\n" +
-        studyAdminMaterials.map((m, i) => `### Reference ${i + 1}: ${m.title}\n${m.content.slice(0, 3000)}`).join("\n\n---\n\n");
+        studyAdminMaterials.map((m, i) => `### Reference ${i + 1}: ${m.title}\n${m.content.slice(0, 15000)}`).join("\n\n---\n\n");
     }
 
     const contextHeader = args.userContext

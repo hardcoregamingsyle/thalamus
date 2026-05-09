@@ -17,7 +17,7 @@ export const insertResource = internalMutation({
     return await ctx.db.insert("studyResources", {
       userId: args.userId,
       title: args.title.slice(0, 200),
-      content: args.content.slice(0, 50000),
+      content: args.content.slice(0, 500000), // 500k chars — supports full books
       sourceType: args.sourceType,
       sourceUrl: args.sourceUrl,
       fileName: args.fileName,
@@ -67,7 +67,7 @@ export const addTextResource = mutation({
     return await ctx.db.insert("studyResources", {
       userId: session.userId,
       title: args.title.slice(0, 200),
-      content: args.content.slice(0, 50000),
+      content: args.content.slice(0, 500000), // 500k chars — supports full books
       sourceType: "text",
       createdAt: Date.now(),
     });
