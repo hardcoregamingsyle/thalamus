@@ -3,7 +3,7 @@ import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { callGemini, callModel, calcAgentBucksForTier, performSearch, performScrape, parseAgentOutput, parsePlannerOutput, parseDifficultyFromPlannerOutput, AGENT_SYSTEM_PROMPTS, PlannerTask, CLAUDE_PRICING, calcClaudeCost, calcAgentBucksFromTokens, AGENT_MODEL_MAP, DIFFICULTY_CODER_MODEL, DIFFICULTY_FRAMEWORK_AUDITOR_MODEL, DIFFICULTY_REDTEAM_SONNET_OVERRIDE, TaskDifficulty, ModelTier, InfoRequest } from "./agentCore";
+import { callGemini, callClaude, callModel, calcAgentBucksForTier, performSearch, performScrape, parseAgentOutput, parsePlannerOutput, parseDifficultyFromPlannerOutput, AGENT_SYSTEM_PROMPTS, PlannerTask, CLAUDE_PRICING, calcClaudeCost, calcAgentBucksFromTokens, AGENT_MODEL_MAP, DIFFICULTY_CODER_MODEL, DIFFICULTY_FRAMEWORK_AUDITOR_MODEL, DIFFICULTY_REDTEAM_SONNET_OVERRIDE, TaskDifficulty, ModelTier, InfoRequest } from "./agentCore";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_MESSAGES = 100_000; // No practical limit — sessions run until complete
@@ -2521,5 +2521,179 @@ export const resetSessionLimit = action({
     if (!session) throw new Error("Session not found");
     if (session.userId !== userId) throw new Error("Not authorized");
     await ctx.runMutation(internal.agentTeamHelpers.resetSessionLimitMutation, { sessionId: args.sessionId });
+  },
+});
+
+// ─── Chat Mode: single-turn claude-haiku-4.5 for platform help ───────────────
+export const chatModeMessage = action({
+  args: {
+    sessionId: v.id("teamSessions"),
+    content: v.string(),
+    token: v.optional(v.string()),
+    history: v.optional(v.array(v.object({ role: v.string(), content: v.string() }))),
+  },
+  handler: async (ctx, args): Promise<{ response: string; changeMode?: string }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const systemPrompt = `You are Thalamus AI's Code Mode assistant. You help users understand the platform, answer questions about how to use Code Mode, explain what the agents do, help with deployment, and provide guidance on the multi-agent system.
+
+You can answer questions like:
+- How does Code Mode work?
+- What do the different agents do?
+- How do I deploy my project?
+- What is a sandbox?
+- How do I use the file tree?
+- What is the difference between Code, Chat, and Minor Edit modes?
+
+If the user's request is actually a coding task that needs the full multi-agent system, respond with <<CHANGE_MODE=Code>> at the end.
+If the user wants a small targeted edit to existing code, respond with <<CHANGE_MODE=Minor>> at the end.
+
+Be concise, helpful, and friendly. Use markdown formatting.`;
+
+    const historyMsgs = (args.history ?? []).slice(-10).map(m => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }));
+
+    const { vly } = await import('../lib/vly-integrations');
+    const result = await vly.ai.completion({
+      model: "claude-haiku-4-5",
+      messages: [
+        { role: "user", content: systemPrompt + "\n\nUser: " + args.content },
+        ...historyMsgs.slice(-6),
+        { role: "user", content: args.content },
+      ],
+      maxTokens: 2048,
+    });
+
+    const response = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "I couldn't process that request.") : "Request failed.";
+
+    // Check for mode switch
+    const changeModeMatch = response.match(/<<CHANGE_MODE=(Code|Chat|Minor)>>/i);
+    const changeMode = changeModeMatch ? changeModeMatch[1] : undefined;
+    const cleanResponse = response.replace(/<<CHANGE_MODE=(Code|Chat|Minor)>>/gi, "").trim();
+
+    // Save to session messages
+    await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
+      sessionId: args.sessionId,
+      userId,
+      agent: "Assistant",
+      content: cleanResponse,
+      round: 0,
+      messageIndex: Date.now(),
+    });
+
+    return { response: cleanResponse, changeMode };
+  },
+});
+
+// ─── Minor Edit Mode: single Coder agent for small targeted edits ─────────────
+export const minorEditMessage = action({
+  args: {
+    sessionId: v.id("teamSessions"),
+    content: v.string(),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ response: string; changeMode?: string }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const projectFiles = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.sessionId })) as FileRow[];
+    const fileManifest = projectFiles.length > 0
+      ? `\n\nEXISTING FILES (${projectFiles.length} total):\n${projectFiles.map(f => `  ${f.filepath}`).join("\n")}`
+      : "";
+    const filesContext = projectFiles.length > 0
+      ? `\n\nPROJECT FILES:\n` + projectFiles.slice(0, 20).map(f => `--- ${f.filepath} ---\n${f.content.slice(0, 2000)}${f.content.length > 2000 ? "\n...(truncated)" : ""}`).join("\n\n")
+      : "";
+
+    const systemPrompt = `You are a Senior Engineer making a MINOR, TARGETED edit to an existing codebase. 
+
+RULES:
+- Make ONLY the specific change requested — do not refactor, restructure, or add unrelated features
+- Edit ONLY the files that need to change
+- Keep all other files exactly as they are
+- If the request is actually a large feature that needs the full multi-agent system, say so and output <<CHANGE_MODE=Code>>
+- If the user just wants to ask a question, output <<CHANGE_MODE=Chat>>
+
+FILE EDIT FORMAT:
+<<EDITFILE="path/to/file.ts">>
+[COMPLETE updated file content]
+<<END.CREATEFILE>>
+
+Be surgical. Be precise. Make only what was asked.`;
+
+    const prompt = `MINOR EDIT REQUEST: ${args.content}${fileManifest}${filesContext}
+
+Make the requested change now.`;
+
+    let response = "";
+    try {
+      const result = await callClaude(prompt, systemPrompt, "claude-haiku-4-5");
+      response = result.text;
+    } catch {
+      const { vly } = await import('../lib/vly-integrations');
+      const r = await vly.ai.completion({
+        model: "claude-haiku-4-5",
+        messages: [{ role: "user", content: systemPrompt + "\n\n" + prompt }],
+        maxTokens: 4096,
+      });
+      response = (r.success && r.data) ? (r.data.choices[0]?.message?.content ?? "Failed") : "Failed";
+    }
+
+    const parsed = parseAgentOutput(response);
+
+    // Apply file operations
+    for (const fileOp of parsed.fileOps) {
+      if (fileOp.type === "create" || fileOp.type === "edit") {
+        await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
+          sessionId: args.sessionId, userId, filepath: fileOp.filepath, content: fileOp.content || "", agent: "MinorEdit",
+        });
+      } else if (fileOp.type === "delete") {
+        await ctx.runMutation(internal.agentTeamHelpers.deleteFile, { sessionId: args.sessionId, filepath: fileOp.filepath });
+      }
+    }
+
+    // Save to session messages
+    await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
+      sessionId: args.sessionId,
+      userId,
+      agent: "MinorEdit",
+      content: parsed.cleanContent,
+      round: 0,
+      messageIndex: Date.now(),
+    });
+
+    return { response: parsed.cleanContent, changeMode: parsed.changeMode };
+  },
+});
+
+// ─── Hidden Checker Agent: validates if task needs full Code mode ─────────────
+export const checkerAgent = internalAction({
+  args: {
+    sessionId: v.id("teamSessions"),
+    task: v.string(),
+  },
+  handler: async (_ctx, args): Promise<{ needsCodeMode: boolean; reason: string }> => {
+    // Runs on gemini-3.1-flash-lite — fast, cheap, hidden from UI
+    const systemPrompt = `You are a task classifier. Determine if a user's request needs the full multi-agent code generation system (Code mode) or if it's a simple question/chat.
+
+Respond with JSON only:
+{"needsCodeMode": true/false, "reason": "brief reason"}
+
+Code mode is needed for: building apps, writing code, creating files, implementing features, debugging complex issues.
+Chat mode is fine for: questions about the platform, how-to questions, explanations, simple advice.`;
+
+    try {
+      const result = await callGemini(
+        `${systemPrompt}\n\nUser task: "${args.task}"`,
+        "You are a task classifier.",
+        512,
+      );
+      const json = JSON.parse(result.text.match(/\{[\s\S]*\}/)?.[0] ?? "{}") as { needsCodeMode?: boolean; reason?: string };
+      return { needsCodeMode: json.needsCodeMode ?? true, reason: json.reason ?? "Unknown" };
+    } catch {
+      return { needsCodeMode: true, reason: "Could not classify — defaulting to Code mode" };
+    }
   },
 });

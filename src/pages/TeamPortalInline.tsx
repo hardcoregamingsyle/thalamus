@@ -10,6 +10,7 @@ import {
   MessageSquare, StopCircle, ListPlus, Cpu, Shield, Search, Code2,
   CheckSquare, AlertCircle, RefreshCw, Upload, Menu, X, PanelLeftClose, PanelLeftOpen,
   Github, Database, ClipboardList, GitBranch, Network, Lightbulb, FileText,
+  ChevronDown, Zap, Edit3, Bot,
 } from "lucide-react";
 import { FileTreeView, FileTreeFile, FileTreeNode } from "@/components/FileTree";
 import ReactMarkdown from "react-markdown";
@@ -144,6 +145,14 @@ const PIPELINE_DISPLAY: Record<string, { displayName: string; subAgents: Array<{
   },
 };
 const MAX_MESSAGES = 100_000; // No practical limit
+
+// ── Sub-mode types ─────────────────────────────────────────────────────────────
+type SubMode = "code" | "chat" | "minor";
+const SUB_MODES: Array<{ id: SubMode; label: string; icon: typeof Code2; color: string; accent: string; desc: string }> = [
+  { id: "code", label: "Code", icon: Code2, color: "text-emerald-400", accent: "bg-emerald-400/10 border-emerald-400/30", desc: "Full 9-agent system for building software" },
+  { id: "chat", label: "Chat", icon: Bot, color: "text-blue-400", accent: "bg-blue-400/10 border-blue-400/30", desc: "Ask questions about the platform or get help" },
+  { id: "minor", label: "Minor Edit", icon: Edit3, color: "text-amber-400", accent: "bg-amber-400/10 border-amber-400/30", desc: "Small targeted edits without full agent pipeline" },
+];
 
 function playSound(type: "send" | "receive" | "complete" | "error" | "queue") {
   try {
@@ -1341,6 +1350,8 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const testFileWriteAction = useAction(api.sandbox.testFileWrite);
   const syncSandboxFilesAction = useAction(api.sandbox.syncSandboxFiles);
   const runDeployCommandsAction = useAction(api.sandbox.runDeployCommands);
+  const chatModeMessageAction = useAction(api.agentTeam.chatModeMessage);
+  const minorEditMessageAction = useAction(api.agentTeam.minorEditMessage);
 
   useEffect(() => { if (token) { loadSessions(); loadSandboxes(); } }, [token]);
 
@@ -1481,6 +1492,10 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const submitInfoResponseAction = useAction(api.agentTeam.submitInfoResponse);
   const submitSuggestionMutation = useMutation(api.admin.submitSuggestion);
   const [isSubmittingInfo, setIsSubmittingInfo] = useState(false);
+  const [subMode, setSubMode] = useState<SubMode>("code");
+  const [showSubModeDropdown, setShowSubModeDropdown] = useState(false);
+  const [chatHistory, setChatHistory] = useState<Array<{ role: string; content: string }>>([]);
+  const subModeDropdownRef = useRef<HTMLDivElement>(null);
 
   // Parse pending info request from live session
   const pendingInfoRequest: (InfoRequest & { agentName: string }) | null = (() => {
@@ -1618,12 +1633,71 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     if (!text) return;
     setMessageInput("");
     playSound("send");
-    if (!activeSessionId) { setTask(text); return; }
+
+    // Add user message to display
     const userMsg: AgentMessage = {
       _id: `user-${Date.now()}`, agent: "User", content: text, isUser: true,
       messageIndex: (sessionInfo?.totalMessages ?? 0) + 0.5,
     };
     setUserMessages(prev => [...prev, userMsg]);
+
+    if (!activeSessionId) { setTask(text); return; }
+
+    if (subMode === "chat") {
+      // Chat mode: use claude-haiku for platform help
+      setIsRunning(true);
+      try {
+        const result = await chatModeMessageAction({
+          sessionId: activeSessionId,
+          content: text,
+          token,
+          history: chatHistory,
+        });
+        setChatHistory(prev => [...prev, { role: "user", content: text }, { role: "assistant", content: result.response }]);
+        // Handle mode switch request
+        if (result.changeMode) {
+          const newMode = result.changeMode.toLowerCase() as SubMode;
+          if (newMode === "code" || newMode === "chat" || newMode === "minor") {
+            setSubMode(newMode);
+            toast.info(`Switching to ${result.changeMode} mode as suggested by AI`);
+          }
+        }
+        await loadSessions();
+      } catch { toast.error("Failed to get response"); }
+      finally { setIsRunning(false); }
+      return;
+    }
+
+    if (subMode === "minor") {
+      // Minor edit mode: single Coder agent
+      setIsRunning(true);
+      try {
+        const result = await minorEditMessageAction({
+          sessionId: activeSessionId,
+          content: text,
+          token,
+        });
+        // Handle mode switch request
+        if (result.changeMode) {
+          const newMode = result.changeMode.toLowerCase() as SubMode;
+          if (newMode === "code" || newMode === "chat" || newMode === "minor") {
+            setSubMode(newMode);
+            toast.info(`Switching to ${result.changeMode} mode as suggested by AI`);
+            // If switching to code mode, re-run the original request
+            if (newMode === "code") {
+              await continueSessionAction({ sessionId: activeSessionId, newTask: text, token });
+              await loadSessions();
+              await startBackgroundSession({ sessionId: activeSessionId, token });
+            }
+          }
+        }
+        await loadSessions();
+      } catch { toast.error("Failed to apply edit"); }
+      finally { setIsRunning(false); }
+      return;
+    }
+
+    // Code mode: existing multi-agent system
     const bgRunning = sessionInfo?.status === "running";
     if (isRunning || bgRunning) {
       const queued: QueuedMessage = { id: `q-${Date.now()}`, text, timestamp: Date.now() };
@@ -1662,6 +1736,17 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
       else handleSendMessage();
     }
   };
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (subModeDropdownRef.current && !subModeDropdownRef.current.contains(e.target as Node)) {
+        setShowSubModeDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
   // Sandbox handlers
   const handleCreateSandbox = async () => {
@@ -2172,6 +2257,45 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
                 {/* Message input — always visible */}
                 <div className="shrink-0 p-3 border-t border-border bg-card">
                   <div className="flex gap-2 max-w-3xl mx-auto">
+                    <div ref={subModeDropdownRef} className="relative">
+                      <button
+                        onClick={() => setShowSubModeDropdown(o => !o)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[10px] font-bold transition-all ${SUB_MODES.find(m => m.id === subMode)?.accent ?? ""} ${SUB_MODES.find(m => m.id === subMode)?.color ?? ""}`}
+                      >
+                        {(() => { const m = SUB_MODES.find(x => x.id === subMode)!; const Icon = m.icon; return <Icon className="h-3 w-3" />; })()}
+                        {SUB_MODES.find(m => m.id === subMode)?.label}
+                        <ChevronDown className={`h-3 w-3 transition-transform ${showSubModeDropdown ? "rotate-180" : ""}`} />
+                      </button>
+                      <AnimatePresence>
+                        {showSubModeDropdown && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -4, scale: 0.97 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -4, scale: 0.97 }}
+                            transition={{ duration: 0.12 }}
+                            className="absolute bottom-full mb-1 left-0 z-50 bg-card border border-border rounded-xl shadow-2xl overflow-hidden min-w-[180px] py-1"
+                          >
+                            {SUB_MODES.map(m => {
+                              const Icon = m.icon;
+                              return (
+                                <button
+                                  key={m.id}
+                                  onClick={() => { setSubMode(m.id); setShowSubModeDropdown(false); }}
+                                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] transition-colors text-left hover:bg-muted/60 ${subMode === m.id ? m.color + " font-bold" : "text-foreground"}`}
+                                >
+                                  <Icon className={`h-3.5 w-3.5 shrink-0 ${m.color}`} />
+                                  <div>
+                                    <p className="font-bold leading-tight">{m.label}</p>
+                                    <p className="text-[9px] text-muted-foreground leading-tight">{m.desc}</p>
+                                  </div>
+                                  {subMode === m.id && <CheckCircle className="h-3 w-3 ml-auto shrink-0" />}
+                                </button>
+                              );
+                            })}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
                     <textarea
                       ref={undefined}
                       value={messageInput}
