@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronRight, ChevronDown, Folder, FolderOpen, FileCode,
-  MoreHorizontal, Trash2, Copy, Pencil, Download, FolderPlus, FilePlus,
+  MoreHorizontal, Trash2, Copy, Pencil, Download, FolderPlus, FilePlus, ClipboardList,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -49,7 +49,6 @@ export function buildFileTree(files: FileTreeFile[]): FileTreeNode[] {
       } else {
         const folder = getOrCreateFolder(currentMap, part, fullPath);
         if (!folder.children) folder.children = [];
-        // Reuse existing _map if present, otherwise create from current children
         if (!folder._map) {
           const childMap = new Map<string, FileTreeNode>();
           for (const child of folder.children) childMap.set(child.name, child);
@@ -79,6 +78,16 @@ export function buildFileTree(files: FileTreeFile[]): FileTreeNode[] {
   return finalize(rootMap);
 }
 
+// ── Helper: collect all file paths under a node ───────────────────────────────
+function collectPaths(node: FileTreeNode): string[] {
+  if (node.type === "file") return [node.path];
+  const paths: string[] = [];
+  for (const child of node.children ?? []) {
+    paths.push(...collectPaths(child));
+  }
+  return paths;
+}
+
 // ── Context Menu ──────────────────────────────────────────────────────────────
 interface ContextMenuProps {
   x: number;
@@ -91,9 +100,10 @@ interface ContextMenuProps {
   onDownload: (node: FileTreeNode) => void;
   onCreateFile: (parentPath: string) => void;
   onCreateFolder: (parentPath: string) => void;
+  onCopyPaths: (node: FileTreeNode) => void;
 }
 
-function ContextMenu({ x, y, node, onClose, onDelete, onDuplicate, onRename, onDownload, onCreateFile, onCreateFolder }: ContextMenuProps) {
+function ContextMenu({ x, y, node, onClose, onDelete, onDuplicate, onRename, onDownload, onCreateFile, onCreateFolder, onCopyPaths }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const isFolder = node.type === "folder";
   const label = isFolder ? "Folder" : "File";
@@ -108,7 +118,6 @@ function ContextMenu({ x, y, node, onClose, onDelete, onDuplicate, onRename, onD
     return () => { document.removeEventListener("mousedown", handleClick); document.removeEventListener("keydown", handleKey); };
   }, [onClose]);
 
-  // Adjust position to stay in viewport
   const style: React.CSSProperties = {
     position: "fixed",
     left: Math.min(x, window.innerWidth - 200),
@@ -120,6 +129,11 @@ function ContextMenu({ x, y, node, onClose, onDelete, onDuplicate, onRename, onD
     { icon: Pencil, label: `Rename ${label}`, action: () => { onRename(node); onClose(); } },
     { icon: Copy, label: `Duplicate ${label}`, action: () => { onDuplicate(node); onClose(); } },
     { icon: Download, label: `Download ${label}`, action: () => { onDownload(node); onClose(); } },
+    ...(isFolder ? [
+      { icon: ClipboardList, label: "Copy All Paths", action: () => { onCopyPaths(node); onClose(); } },
+    ] : [
+      { icon: ClipboardList, label: "Copy Path", action: () => { onCopyPaths(node); onClose(); } },
+    ]),
     { icon: Trash2, label: `Delete ${label}`, action: () => { onDelete(node); onClose(); }, danger: true },
     ...(isFolder ? [
       { divider: true },
@@ -184,13 +198,14 @@ interface FileTreeNodeItemProps {
   onCreateFile: (parentPath: string) => void;
   onCreateFolder: (parentPath: string) => void;
   onMove: (sourcePath: string, destFolderPath: string) => void;
+  onCopyPaths: (node: FileTreeNode) => void;
   renamingPath: string | null;
   setRenamingPath: (p: string | null) => void;
 }
 
 export function FileTreeNodeItem({
   node, depth, selectedPath, onSelect, onDelete, onDuplicate, onRename, onDownload,
-  onCreateFile, onCreateFolder, onMove, renamingPath, setRenamingPath,
+  onCreateFile, onCreateFolder, onMove, onCopyPaths, renamingPath, setRenamingPath,
 }: FileTreeNodeItemProps) {
   const [expanded, setExpanded] = useState(depth < 2);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -235,6 +250,7 @@ export function FileTreeNodeItem({
     onDownload: () => onDownload(node),
     onCreateFile: (p: string) => onCreateFile(p),
     onCreateFolder: (p: string) => onCreateFolder(p),
+    onCopyPaths: (n: FileTreeNode) => onCopyPaths(n),
   };
 
   const indentPx = 8 + depth * 12;
@@ -348,6 +364,7 @@ export function FileTreeNodeItem({
                   onCreateFile={onCreateFile}
                   onCreateFolder={onCreateFolder}
                   onMove={onMove}
+                  onCopyPaths={onCopyPaths}
                   renamingPath={renamingPath}
                   setRenamingPath={setRenamingPath}
                 />
@@ -387,7 +404,25 @@ export function FileTreeView({
   onCreateFile, onCreateFolder, onMove,
 }: FileTreeViewProps) {
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState(false);
   const tree = buildFileTree(files);
+
+  const handleCopyPaths = useCallback((node: FileTreeNode) => {
+    const paths = collectPaths(node);
+    const text = paths.join("\n");
+    navigator.clipboard.writeText(text).then(() => {
+      setCopyFeedback(true);
+      setTimeout(() => setCopyFeedback(false), 1500);
+    }).catch(() => {});
+  }, []);
+
+  const handleCopyAllPaths = useCallback(() => {
+    const allPaths = files.map(f => f.filepath).sort().join("\n");
+    navigator.clipboard.writeText(allPaths).then(() => {
+      setCopyFeedback(true);
+      setTimeout(() => setCopyFeedback(false), 1500);
+    }).catch(() => {});
+  }, [files]);
 
   const handleRootDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -396,35 +431,54 @@ export function FileTreeView({
   };
 
   return (
-    <div
-      className="flex-1 overflow-y-auto min-h-0"
-      onDragOver={e => e.preventDefault()}
-      onDrop={handleRootDrop}
-    >
-      {tree.length === 0 ? (
-        <p className="text-[10px] text-muted-foreground p-3 text-center">No files yet</p>
-      ) : (
-        <div className="p-1 space-y-0.5">
-          {tree.map(node => (
-            <FileTreeNodeItem
-              key={node.path}
-              node={node}
-              depth={0}
-              selectedPath={selectedPath}
-              onSelect={onSelect}
-              onDelete={onDelete}
-              onDuplicate={onDuplicate}
-              onRename={onRename}
-              onDownload={onDownload}
-              onCreateFile={onCreateFile}
-              onCreateFolder={onCreateFolder}
-              onMove={onMove}
-              renamingPath={renamingPath}
-              setRenamingPath={setRenamingPath}
-            />
-          ))}
+    <div className="flex flex-col flex-1 overflow-hidden min-h-0">
+      {/* Copy full directory button */}
+      {files.length > 0 && (
+        <div className="shrink-0 px-2 py-1.5 border-b border-border/50">
+          <button
+            onClick={handleCopyAllPaths}
+            className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-[10px] transition-all font-medium ${
+              copyFeedback
+                ? "bg-green-500/15 border border-green-500/30 text-green-400"
+                : "bg-muted/30 border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+            }`}
+          >
+            <ClipboardList className="h-3 w-3 shrink-0" />
+            {copyFeedback ? "✓ Copied!" : `Copy full directory (${files.length} paths)`}
+          </button>
         </div>
       )}
+      <div
+        className="flex-1 overflow-y-auto min-h-0"
+        onDragOver={e => e.preventDefault()}
+        onDrop={handleRootDrop}
+      >
+        {tree.length === 0 ? (
+          <p className="text-[10px] text-muted-foreground p-3 text-center">No files yet</p>
+        ) : (
+          <div className="p-1 space-y-0.5">
+            {tree.map(node => (
+              <FileTreeNodeItem
+                key={node.path}
+                node={node}
+                depth={0}
+                selectedPath={selectedPath}
+                onSelect={onSelect}
+                onDelete={onDelete}
+                onDuplicate={onDuplicate}
+                onRename={onRename}
+                onDownload={onDownload}
+                onCreateFile={onCreateFile}
+                onCreateFolder={onCreateFolder}
+                onMove={onMove}
+                onCopyPaths={handleCopyPaths}
+                renamingPath={renamingPath}
+                setRenamingPath={setRenamingPath}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
