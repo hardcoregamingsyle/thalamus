@@ -1,5 +1,5 @@
 import { useAuth } from "@/hooks/use-auth";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import CreditModal from "@/components/CreditModal";
 import OnboardingModal from "@/components/OnboardingModal";
 import { useNavigate, useParams } from "react-router";
@@ -12,7 +12,7 @@ import {
   MessageSquare, Search, Plus, Trash2, LogOut,
   Send, Loader2, Menu, X, Users, Cpu, Zap, BookOpen,
   FileText, Globe, Image, Upload, Sparkles, ChevronRight,
-  Hash, Lightbulb, Lock, ArrowRight, Sparkle, Sun, Moon,
+  Hash, Lightbulb, Lock, ArrowRight, Sun, Moon,
 } from "lucide-react";
 import TeamPortalInline from "./TeamPortalInline";
 import MobilePortal from "./MobilePortal";
@@ -388,8 +388,8 @@ function GuestPortal() {
         ) : (
           <div className="space-y-4 pb-4">
             {session.messages.map((msg) => {
-              const isStreaming = msg.role === "assistant" && msg.content === "" && !isThinking;
-              const isStreamingContent = msg.role === "assistant" && msg.content !== "" && isThinking === false;
+              const isStreaming = msg.role === "assistant" && msg.content === "" && isThinking;
+              const isStreamingContent = msg.role === "assistant" && msg.content !== "" && isThinking;
               return (
                 <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                   className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
@@ -633,12 +633,6 @@ function SuggestionsPanel({
 }
 
 // ── Suggestion Form Modal ─────────────────────────────────────────────────────
-interface SuggestionFile {
-  name: string;
-  content: string;
-  size: number;
-}
-
 function SuggestionFormModal({
   onClose,
   onSubmit,
@@ -937,9 +931,40 @@ function PortalDesktop() {
     setInput("");
     setAttachedFiles([]);
 
-    // For code/research modes, use existing Convex actions (multi-agent)
+    const userContext = {
+      datetime: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    };
+
+    // For code/research modes, use existing Convex actions (no streaming)
     if (activeMode === "code" || activeMode === "research") {
-      // ... keep existing code (code/research mode handling)
+      let convId: Id<"conversations"> | null = activeConvId;
+      if (!convId) {
+        try {
+          const newConv = await createConversation({ token, mode: activeMode, title: msg.slice(0, 50) });
+          const newConvResult = newConv as { id: Id<"conversations">; customId: string } | Id<"conversations">;
+          const id = typeof newConvResult === "object" && "id" in newConvResult ? newConvResult.id : newConvResult as Id<"conversations">;
+          const customId = typeof newConvResult === "object" && "customId" in newConvResult ? newConvResult.customId : null;
+          convId = id;
+          setActiveConvId(id);
+          if (customId) navigate(`/portal/${activeMode}/${customId}`, { replace: true });
+        } catch {
+          toast.error("Failed to create conversation");
+          return;
+        }
+      }
+      setIsThinking(true);
+      try {
+        await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext });
+        if (!activeConvId) {
+          generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to send message");
+      } finally {
+        setIsThinking(false);
+      }
+      return;
     }
 
     // For chat/study modes, use streaming
@@ -947,10 +972,12 @@ function PortalDesktop() {
     if (!convId) {
       try {
         const newConv = await createConversation({ token, mode: activeMode, title: msg.slice(0, 50) });
-        const newConvId = (typeof newConv === "object" && newConv !== null && "id" in newConv) ? (newConv as { id: Id<"conversations"> }).id : newConv as Id<"conversations">;
-        convId = newConvId;
-        setActiveConvId(newConvId);
-        navigate(`/portal/${activeMode}/${newConvId}`, { replace: true });
+        const newConvResult = newConv as { id: Id<"conversations">; customId: string } | Id<"conversations">;
+        const id = typeof newConvResult === "object" && "id" in newConvResult ? newConvResult.id : newConvResult as Id<"conversations">;
+        const customId = typeof newConvResult === "object" && "customId" in newConvResult ? newConvResult.customId : null;
+        convId = id;
+        setActiveConvId(id);
+        if (customId) navigate(`/portal/${activeMode}/${customId}`, { replace: true });
       } catch {
         toast.error("Failed to create conversation");
         return;
@@ -958,14 +985,8 @@ function PortalDesktop() {
     }
 
     setIsThinking(true);
-    const streamingMsgId = `streaming-${Date.now()}`;
 
     try {
-      const userContext = {
-        datetime: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }),
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      };
-
       const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
       const siteUrl = convexUrl.replace(".convex.cloud", ".convex.site");
 
@@ -976,68 +997,61 @@ function PortalDesktop() {
       const systemPrompt = activeMode === "study" ? STUDY_SYSTEM : CHAT_SYSTEM;
       const historyMsgs = (messages ?? []).slice(-10).map((m: Message) => ({ role: m.role, content: m.content.slice(0, 1500) }));
 
-      // Save user message first via Convex
-      await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext });
-      setIsThinking(false);
+      if (activeMode === "study") {
+        // Study mode: use dedicated study action (includes web search + resources)
+        await sendStudyMessage({ conversationId: convId, content: msg, token, userContext });
+        if (!activeConvId) {
+          generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
+        }
+      } else {
+        // Chat mode: try streaming first, fallback to Convex action
+        try {
+          const response = await fetch(`${siteUrl}/stream-chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              content: msg,
+              mode: activeMode,
+              history: historyMsgs,
+              systemPrompt,
+              userContext,
+              token,
+              conversationId: convId,
+              preferClaude: true,
+            }),
+          });
 
-      // Now stream the response
-      const response = await fetch(`${siteUrl}/stream-chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: msg,
-          mode: activeMode,
-          history: historyMsgs,
-          systemPrompt,
-          userContext,
-          token,
-          conversationId: convId,
-          preferClaude: true,
-        }),
-      });
+          if (!response.ok || !response.body) throw new Error("Stream failed");
 
-      if (!response.ok || !response.body) throw new Error("Stream failed");
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let accumulated = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const jsonStr = line.slice(6).trim();
-          if (!jsonStr) continue;
-          try {
-            const parsed = JSON.parse(jsonStr) as { chunk?: string; done?: boolean };
-            if (parsed.chunk) {
-              accumulated += parsed.chunk;
-              // Update the streaming message in real-time
-              // (Convex will update via subscription when saved)
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              const jsonStr = line.slice(6).trim();
+              if (!jsonStr) continue;
+              try {
+                JSON.parse(jsonStr);
+              } catch { /* skip */ }
             }
-          } catch { /* skip */ }
+          }
+        } catch {
+          // Fallback to Convex action
+          await sendMessage({ conversationId: convId, content: msg, mode: "chat", token, userContext });
+        }
+        if (!activeConvId) {
+          generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
         }
       }
-    } catch {
-      // Fallback to existing Convex actions
-      try {
-        const userContext = {
-          datetime: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }),
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        };
-        if (activeMode === "study") {
-          await sendStudyMessage({ conversationId: convId!, content: msg, token, userContext });
-        } else {
-          await sendMessage({ conversationId: convId!, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext });
-        }
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to send message");
-      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to send message");
     } finally {
       setIsThinking(false);
     }
