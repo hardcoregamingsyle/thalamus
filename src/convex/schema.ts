@@ -41,6 +41,8 @@ const schema = defineSchema(
       githubAccessToken: v.optional(v.string()),
       githubUsername: v.optional(v.string()),
       githubConnectedAt: v.optional(v.number()),
+      // Onboarding
+      hasOnboarded: v.optional(v.boolean()),
     }).index("email", ["email"])
       .index("by_referral_code", ["referralCode"]),
 

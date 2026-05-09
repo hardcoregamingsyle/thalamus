@@ -1,6 +1,7 @@
 import { useAuth } from "@/hooks/use-auth";
 import { useEffect, useRef, useState, useCallback } from "react";
 import CreditModal from "@/components/CreditModal";
+import OnboardingModal from "@/components/OnboardingModal";
 import { useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
@@ -798,10 +799,12 @@ function PortalDesktop() {
   const attachFileInputRef = useRef<HTMLInputElement>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const ensureDailyBalance = useMutation(api.customAuthHelpers.ensureDailyBalance);
+  const completeOnboarding = useMutation(api.users.completeOnboarding);
   const hasInitializedRef = useRef(false);
 
   useEffect(() => {
@@ -816,8 +819,24 @@ function PortalDesktop() {
           setTimeout(() => setSpinNotifOpen(true), 1500);
         }
       }
+      // Show onboarding if user hasn't completed it
+      const typedUser = user as { hasOnboarded?: boolean };
+      if (!typedUser.hasOnboarded) {
+        setTimeout(() => setShowOnboarding(true), 600);
+      }
     }
   }, [token, user, ensureDailyBalance]);
+
+  const handleOnboardingComplete = async () => {
+    setShowOnboarding(false);
+    if (token) {
+      try {
+        await completeOnboarding({ token });
+      } catch {
+        // non-critical, ignore
+      }
+    }
+  };
 
   const conversations = useQuery(api.conversations.list, token ? { token } : "skip") as Conversation[] | undefined;
   const messages = useQuery(api.conversations.getMessages, activeConvId && token ? { conversationId: activeConvId, token } : "skip") as Message[] | undefined;
@@ -1640,6 +1659,16 @@ function PortalDesktop() {
           </div>
         )}
       </div>
+
+      {/* Onboarding Modal */}
+      <AnimatePresence>
+        {showOnboarding && (
+          <OnboardingModal
+            onComplete={handleOnboardingComplete}
+            userName={(user as { name?: string } | null)?.name}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Credit Modal */}
       {creditModalOpen && <CreditModal open={creditModalOpen} onClose={() => setCreditModalOpen(false)} token={token ?? ""} totalAB={totalAB} dailyAB={dailyAB} purchasedAB={purchasedAB} />}
