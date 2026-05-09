@@ -961,6 +961,10 @@ export const runAgentRound = action({
     }
 
     const contextLines = prevMessages.slice(-20).map((m) => `[${m.agent}]: ${m.content.slice(0, 1500)}`).join("\n\n---\n\n");
+    // File manifest: just paths (no content) so agents always know the full directory structure
+    const fileManifest = projectFiles.length > 0
+      ? `\n\n## EXISTING FILE MANIFEST (${projectFiles.length} files — CHECK THIS BEFORE CREATING ANY FILE):\n${projectFiles.map(f => `  ${f.filepath}`).join("\n")}\n⚠️ DO NOT create a file that already exists in this manifest. Use <<EDITFILE>> to modify existing files.`
+      : "";
     const filesContext = projectFiles.length > 0
       ? `\n\nCURRENT PROJECT FILES (${projectFiles.length} files):\n` +
         projectFiles.map((f) => `--- ${f.filepath} ---\n${f.content.slice(0, 1500)}${f.content.length > 1500 ? "\n...(truncated)" : ""}`).join("\n\n")
@@ -1014,8 +1018,8 @@ export const runAgentRound = action({
       : "";
 
     const prompt = prevMessages.length === 0
-      ? `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}${upgradeNotice}${techStackContext}\n\nYou are the first agent (${currentPhase}). Begin your work.${filesContext}${sandboxContext}`
-      : `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nTASK MESSAGES: ${taskMessageCount + 1}/${MAX_TASK_MESSAGES}\nLOOP: ${loopCount + 1}${upgradeNotice}${techStackContext}${summarizerContext}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
+      ? `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}${upgradeNotice}${techStackContext}${fileManifest}\n\nYou are the first agent (${currentPhase}). Begin your work.${filesContext}${sandboxContext}`
+      : `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nTASK MESSAGES: ${taskMessageCount + 1}/${MAX_TASK_MESSAGES}\nLOOP: ${loopCount + 1}${upgradeNotice}${techStackContext}${summarizerContext}${fileManifest}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
 
     await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
       sessionId: args.sessionId, status: "running", currentAgent: currentPhase,
@@ -1530,6 +1534,10 @@ export const backgroundRunOneRound = internalAction({
     }
 
     const contextLines = contextMessages.slice(-20).map((m) => `[${m.agent}]: ${m.content.slice(0, 1500)}`).join("\n\n---\n\n");
+    // File manifest: just paths so agents always know the full directory structure
+    const fileManifestBg = projectFiles.length > 0
+      ? `\n\n## EXISTING FILE MANIFEST (${projectFiles.length} files — CHECK THIS BEFORE CREATING ANY FILE):\n${projectFiles.map(f => `  ${f.filepath}`).join("\n")}\n⚠️ DO NOT create a file that already exists in this manifest. Use <<EDITFILE>> to modify existing files.`
+      : "";
     const filesContext = projectFiles.length > 0
       ? `\n\nCURRENT PROJECT FILES (${projectFiles.length} files):\n` +
         projectFiles.map((f) => `--- ${f.filepath} ---\n${f.content.slice(0, 1500)}${f.content.length > 1500 ? "\n...(truncated)" : ""}`).join("\n\n")
@@ -1578,8 +1586,8 @@ export const backgroundRunOneRound = internalAction({
       : "";
 
     const prompt = prevMessages.length === 0
-      ? `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}${techStackContextBg}\n\nYou are the first agent (${currentPhase}). Begin your work.${filesContext}${sandboxContext}`
-      : `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nLOOP: ${loopCount + 1}${techStackContextBg}${summarizerContext}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
+      ? `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}${techStackContextBg}${fileManifestBg}\n\nYou are the first agent (${currentPhase}). Begin your work.${filesContext}${sandboxContext}`
+      : `TASK: ${session.task}\n\nPHASE: ${phaseLabel}${taskContext}\nMESSAGE COUNT: ${totalMessages + 1}/${MAX_MESSAGES}\nLOOP: ${loopCount + 1}${techStackContextBg}${summarizerContext}${fileManifestBg}\n\nPREVIOUS DISCUSSION:\n${contextLines}${filesContext}${sandboxContext}\n\nNow provide your ${currentPhase} output, building on all previous work.`;
 
     await ctx.runMutation(internal.agentTeamHelpers.updateSessionStatus, {
       sessionId: args.sessionId, status: "running", currentAgent: currentPhase,
