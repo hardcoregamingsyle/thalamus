@@ -674,6 +674,7 @@ export interface ParsedOutput {
   criticResult?: "pass" | "fail";
   deployCommands?: string[];
   infoRequest?: InfoRequest;
+  changeMode?: "Code" | "Chat" | "Minor"; // AI-requested mode switch
 }
 
 export function parseAgentOutput(content: string): ParsedOutput {
@@ -802,7 +803,15 @@ export function parseAgentOutput(content: string): ParsedOutput {
     }
   }
 
-  return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest };
+  // Parse CHANGE_MODE directive
+  let changeMode: "Code" | "Chat" | "Minor" | undefined;
+  const changeModeMatch = content.match(/<<CHANGE_MODE=(Code|Chat|Minor)>>/i);
+  if (changeModeMatch) {
+    changeMode = changeModeMatch[1] as "Code" | "Chat" | "Minor";
+    cleanContent = cleanContent.replace(changeModeMatch[0], `[MODE SWITCH REQUESTED: ${changeMode}]`);
+  }
+
+  return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, changeMode };
 }
 
 const SANDBOX_CMD_INSTRUCTIONS = `
