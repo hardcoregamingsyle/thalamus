@@ -1292,7 +1292,10 @@ export const runAgentRound = action({
           // so the upgrade trigger fires after enough messages
         }
       } else if (currentPhase === "Critic" && parsed.criticResult !== "fail") {
-        // Task complete — move to next task or final review
+        // Critic passed — run Summarizer next (Summarizer will advance the task index)
+        nextPhase = "Summarizer";
+      } else if (currentPhase === "Summarizer") {
+        // Summarizer complete — now advance to next task or final review
         const nextTaskIndex = currentTaskIndex + 1;
         if (nextTaskIndex < plannerTasks.length) {
           newTaskIndex = nextTaskIndex;
