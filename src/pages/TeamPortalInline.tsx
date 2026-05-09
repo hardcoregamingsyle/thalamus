@@ -706,13 +706,23 @@ function GithubSyncModal({
             </div>
           )}
           <div>
-            <label className="text-[10px] text-muted-foreground font-bold block mb-1">REPOSITORY</label>
+            <label className="text-[10px] text-muted-foreground font-bold block mb-1">REPOSITORY NAME</label>
+            <p className="text-[9px] text-muted-foreground mb-1">Just the repo name — it will be created automatically if it doesn't exist.</p>
             <input
               value={repo}
-              onChange={e => setRepo(e.target.value)}
-              placeholder="owner/repo or https://github.com/owner/repo"
+              onChange={e => {
+                let val = e.target.value;
+                // Auto-extract repo name if a full GitHub URL is pasted
+                const urlMatch = val.match(/github\.com\/[^/]+\/([^/\s?#]+)/);
+                if (urlMatch) val = urlMatch[1].replace(/\.git$/, "");
+                setRepo(val);
+              }}
+              placeholder="my-project"
               className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
             />
+            {repo && githubUsername && (
+              <p className="text-[9px] text-muted-foreground/60 mt-1">→ Will sync to: <span className="text-primary">{githubUsername}/{repo.trim().replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "")}</span></p>
+            )}
           </div>
           <div>
             <label className="text-[10px] text-muted-foreground font-bold block mb-1">BRANCH</label>

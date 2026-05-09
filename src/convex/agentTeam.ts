@@ -2008,12 +2008,11 @@ export const syncGithub = action({
     const githubToken = (user as Record<string, unknown> | null)?.githubAccessToken as string | undefined;
     if (!githubToken) throw new Error("GitHub account not connected. Please connect your GitHub account first.");
 
-    // Parse owner/repo
+    // Parse owner/repo — if only a repo name is given, use the authenticated user's username
     let ownerRepo = githubRepo.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/$/, "");
     const parts = ownerRepo.split("/");
-    if (parts.length < 2) throw new Error("Invalid GitHub repo format");
-    const owner = parts[0];
-    const repo = parts[1];
+    let owner: string;
+    let repo: string;
     const branch = githubBranch;
 
     const headers = {
@@ -2022,6 +2021,35 @@ export const syncGithub = action({
       "User-Agent": "Thalamus-AI/1.0",
       "Content-Type": "application/json",
     };
+
+    if (parts.length < 2 || !parts[1]) {
+      // Only repo name given — fetch the authenticated user's login
+      const userRes = await fetch("https://api.github.com/user", { headers });
+      if (!userRes.ok) throw new Error("Failed to fetch GitHub user info");
+      const userData = await userRes.json() as { login: string };
+      owner = userData.login;
+      repo = parts[0];
+    } else {
+      owner = parts[0];
+      repo = parts[1];
+    }
+
+    // Auto-create the repo if it doesn't exist
+    const repoCheckRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+    if (repoCheckRes.status === 404) {
+      // Repo doesn't exist — create it
+      const createRes = await fetch("https://api.github.com/user/repos", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ name: repo, description: "Thalamus AI project", private: false, auto_init: true }),
+      });
+      if (!createRes.ok) {
+        const errData = await createRes.json().catch(() => ({})) as { message?: string };
+        throw new Error(`Failed to create repository: ${errData.message ?? createRes.status}`);
+      }
+      // Wait a moment for GitHub to initialize the repo
+      await new Promise(r => setTimeout(r, 2000));
+    }
 
     // ── Step 1: Get current GitHub tree ──────────────────────────────────────
     const SKIP_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".mp4", ".mp3", ".zip", ".tar", ".gz", ".pdf", ".bin", ".exe", ".dll", ".so", ".dylib"];
