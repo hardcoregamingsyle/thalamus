@@ -25,6 +25,8 @@ import type * as fileSync from "../fileSync.js";
 import type * as github from "../github.js";
 import type * as githubHelpers from "../githubHelpers.js";
 import type * as http from "../http.js";
+import type * as rag from "../rag.js";
+import type * as ragHelpers from "../ragHelpers.js";
 import type * as sandbox from "../sandbox.js";
 import type * as sandboxHelpers from "../sandboxHelpers.js";
 import type * as study from "../study.js";
@@ -55,6 +57,8 @@ declare const fullApi: ApiFromModules<{
   github: typeof github;
   githubHelpers: typeof githubHelpers;
   http: typeof http;
+  rag: typeof rag;
+  ragHelpers: typeof ragHelpers;
   sandbox: typeof sandbox;
   sandboxHelpers: typeof sandboxHelpers;
   study: typeof study;

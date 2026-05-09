@@ -232,12 +232,10 @@ export const processFileResource = action({
     let summary = "";
 
     if (isPdf) {
-      // Use Claude's native PDF document understanding
       try {
         summary = await extractPdfWithClaude(args.fileDataBase64, args.fileName);
         if (!summary || summary.length < 50) throw new Error("Empty extraction");
       } catch {
-        // Fallback: try VLY with document content
         try {
           const { vly } = await import('../lib/vly-integrations');
           const result = await vly.ai.completion({
@@ -271,18 +269,15 @@ export const processFileResource = action({
         summary = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "Could not process image") : "Image uploaded (could not extract text)";
       }
     } else {
-      // Text-based files — decode directly
       try {
         const decoded = Buffer.from(args.fileDataBase64, "base64").toString("utf-8");
-        // Check if it's readable text (>80% printable ASCII/UTF-8)
         const printableRatio = decoded.split("").filter(c => c.charCodeAt(0) > 31 || c === "\n" || c === "\r" || c === "\t").length / decoded.length;
         if (decoded.length > 50 && printableRatio > 0.75) {
-          summary = decoded; // Store full text, no truncation
+          summary = decoded;
         } else {
           throw new Error("Binary file");
         }
       } catch {
-        // Binary non-PDF file — ask Claude to extract
         try {
           const result = await callClaude(
             `Please extract and summarize all content from this file for study purposes. File name: ${args.fileName}\n\nFile content (base64): ${args.fileDataBase64.slice(0, 50000)}`,
@@ -305,6 +300,14 @@ export const processFileResource = action({
       fileType: args.fileType,
     });
 
+    // ── Auto-RAG: Vectorize in background ────────────────────────────────────
+    if (summary.length > 100) {
+      ctx.scheduler.runAfter(0, internal.rag.vectorizeResourceInternal, {
+        userId,
+        resourceId: resourceId as Id<"studyResources">,
+      });
+    }
+
     return { resourceId: resourceId as string, summary: summary.slice(0, 200) };
   },
 });
@@ -316,7 +319,6 @@ export const searchAndAddResource = action({
     const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
 
-    // Do a real live web search first
     const webResults = await liveWebSearch(args.query, args.query.includes("education") || args.query.includes("ncert"));
 
     const systemPrompt = `You are a research assistant. Summarize the following live web search results into comprehensive, well-structured study notes. Include all key facts, definitions, and important details. Format as plain text suitable for study notes. Be accurate and use only the information from the search results.`;
@@ -347,11 +349,19 @@ export const searchAndAddResource = action({
       sourceType: "web",
     });
 
+    // ── Auto-RAG: Vectorize in background ────────────────────────────────────
+    if (text.length > 100) {
+      ctx.scheduler.runAfter(0, internal.rag.vectorizeResourceInternal, {
+        userId,
+        resourceId: resourceId as Id<"studyResources">,
+      });
+    }
+
     return { resourceId: resourceId as string, title, summary: text.slice(0, 200) };
   },
 });
 
-// ── Send study message ────────────────────────────────────────────────────────
+// ── Send study message (with RAG + GraphRAG context) ─────────────────────────
 export const sendStudyMessage = action({
   args: {
     conversationId: v.id("conversations"),
@@ -381,93 +391,61 @@ export const sendStudyMessage = action({
     const resources = await ctx.runQuery(internal.studyHelpers.getResourcesForUser, { userId });
     const adminMaterials = (await ctx.runQuery(internal.admin.getAdminStudyMaterials, {})) as unknown as Array<{ title: string; content: string; mode?: string }>;
 
+    // ── RAG + GraphRAG semantic context ───────────────────────────────────────
+    let ragContext = "";
+    let graphContext = "";
+    try {
+      const studyCtx = await ctx.runAction(internal.rag.getStudyContextInternal, {
+        userId,
+        query: args.content,
+      });
+      ragContext = studyCtx.ragContext;
+      graphContext = studyCtx.graphContext;
+    } catch {
+      // RAG unavailable — continue without it
+    }
+
     // Always do a REAL live web search — scrape actual pages
     let liveSearchResults = "";
     try {
-      liveSearchResults = await liveWebSearch(args.content, args.content.includes("education") || args.content.includes("ncert"));
-    } catch {
-      liveSearchResults = "";
-    }
+      liveSearchResults = await liveWebSearch(args.content, true);
+    } catch { /* skip */ }
 
-    let resourceContext = "";
-    if (resources.length > 0) {
-      resourceContext = "\n\n## YOUR STUDY RESOURCES:\n" + resources.map((r: { title: string; content: string }, i: number) =>
-        `### Resource ${i + 1}: ${r.title}\n${r.content.slice(0, 30000)}`
-      ).join("\n\n---\n\n");
-    }
-
-    // Admin-uploaded study materials (primary knowledge source)
-    const studyAdminMaterials = adminMaterials.filter(m => m.mode === "study" || m.mode === "all");
-    let adminMaterialContext = "";
-    if (studyAdminMaterials.length > 0) {
-      adminMaterialContext = "\n\n## PRIMARY REFERENCE MATERIALS (use as primary knowledge source — prioritize over web search):\n" +
-        studyAdminMaterials.map((m, i) => `### Reference ${i + 1}: ${m.title}\n${m.content.slice(0, 15000)}`).join("\n\n---\n\n");
-    }
-
-    const contextHeader = args.userContext
-      ? `\n\n## CURRENT USER CONTEXT:\n- Date/Time: ${args.userContext.datetime}\n- Timezone: ${args.userContext.timezone}${args.userContext.location ? `\n- Location: ${args.userContext.location}` : ""}\n\nUse this context for time-sensitive questions (e.g., current academic year, upcoming exams, etc.).\n`
+    // Build resource context (traditional)
+    const resourceContext = resources.length > 0
+      ? resources.slice(0, 5).map((r: { title: string; content: string }) =>
+          `[RESOURCE: ${r.title}]\n${r.content.slice(0, 2000)}`
+        ).join("\n\n---\n\n")
       : "";
 
-    const systemPrompt = `You are Aether — the world's most effective study companion. Your mission: make students genuinely understand concepts so deeply that they could explain them to anyone.${contextHeader}
-${adminMaterialContext}
+    const adminContext = adminMaterials.length > 0
+      ? adminMaterials.slice(0, 3).map((m: { title: string; content: string }) =>
+          `[KNOWLEDGE: ${m.title}]\n${m.content.slice(0, 3000)}`
+        ).join("\n\n---\n\n")
+      : "";
 
-## AUTHORITATIVE SOURCES:
-- **NCERT Official** (ncert.nic.in) — Official NCERT textbooks, syllabi, and study materials
-- **DIKSHA Platform** (diksha.gov.in) — National Digital Infrastructure for Teachers and Students
-- **Indian Express Education** (indianexpress.com/section/education) — Latest education news
+    const systemPrompt = `You are Aether — the world's most effective study companion, powered by advanced RAG (Retrieval-Augmented Generation) and GraphRAG knowledge graph technology. Your mission: make students genuinely understand concepts so deeply that they could explain them to anyone.
 
-${liveSearchResults ? `## LIVE WEB SEARCH RESULTS (use as primary source):\n${liveSearchResults}` : "## NOTE: Using curriculum knowledge from training data."}
-${resourceContext ? `\n${resourceContext}` : ""}
+${ragContext ? `\n${ragContext}\n` : ""}
+${graphContext ? `\n${graphContext}\n` : ""}
+${adminContext ? `\n## Primary Knowledge Base\n${adminContext}\n` : ""}
+${resourceContext ? `\n## Student's Study Resources\n${resourceContext}\n` : ""}
+${liveSearchResults ? `\n## Live Web Search Results\n${liveSearchResults}\n` : ""}
 
-## YOUR CORE PHILOSOPHY:
-You write answers that students can copy into their notebooks word-for-word. While they write, they understand. The act of writing your answer IS the learning. Every sentence must be:
-- **Clear enough** to understand while writing it
-- **Complete enough** to stand alone as a study note
-- **Structured** so the hierarchy of ideas is obvious
-
-## STRICT RULES:
-1. **NEVER ask follow-up questions.** No "What do you think?" or "Can you reflect on...?"
-2. **NEVER pad with filler.** No "Great question!", no "I hope this helps!"
-3. **ALWAYS give comprehensive answers.** A student should not need to look elsewhere.
-4. **WRITE FOR THE NOTEBOOK.** Every paragraph should be notebook-worthy.
-
-## MANDATORY RESPONSE STRUCTURE:
-Every response MUST be comprehensive and detailed. Use this hierarchy:
-
-**1. CONCEPT OVERVIEW** — 2-4 sentences explaining what this is and why it matters. Write it so a student understands the big picture first.
-
-**2. DETAILED BREAKDOWN** — For each major aspect:
-   - A clear heading
-   - 3-5 sentences of explanation (enough to understand while writing)
-   - Specific examples, real-world applications, or analogies
-   - Any formulas, dates, or numbers that matter
-
-**3. HOW IT WORKS / MECHANISM** — Explain the process, cause-effect, or logic step by step
-
-**4. KEY FACTS & EXAM POINTS** — The specific facts, definitions, formulas, dates that appear in exams
-
-**5. COMMON MISTAKES / MISCONCEPTIONS** — What students often get wrong (helps retention)
-
-**6. QUICK SUMMARY** — 3-5 bullet points that capture the entire answer (for last-minute revision)
-
-RESPONSE FORMAT: Respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.
-
-Use these HTML elements:
-- <h2> for CONCEPT OVERVIEW heading (style="font-size:1.15em;font-weight:bold;margin:0.8em 0 0.4em;color:#e5e7eb;border-left:4px solid #6366f1;padding-left:0.7em;line-height:1.3")
-- <h3> for section headings (style="font-size:1em;font-weight:bold;margin:0.7em 0 0.3em;color:#c4b5fd")
-- <h4> for sub-section headings (style="font-size:0.9em;font-weight:bold;margin:0.5em 0 0.2em;color:#a78bfa")
-- <p> for explanatory paragraphs (style="margin:0.4em 0;line-height:1.7;color:#d1d5db;font-size:0.92em")
-- <ul>, <li> for bullet points (style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db;font-size:0.9em;line-height:1.6")
-- <ol>, <li> for numbered steps (style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db;font-size:0.9em;line-height:1.6")
-- <strong> for key terms (style="color:#f9fafb;font-weight:600")
-- <em> for emphasis (style="color:#c4b5fd;font-style:italic")
-- <blockquote> for KEY FACTS / EXAM POINTS box (style="border-left:4px solid #f59e0b;padding:0.6em 1em;color:#fcd34d;margin:0.6em 0;background:rgba(245,158,11,0.08);border-radius:0 8px 8px 0;font-size:0.88em;line-height:1.6")
+CRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.
+Use: <h2>, <h3>, <h4>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <code>
+Headings: style="font-size:1.15em;font-weight:bold;margin:0.8em 0 0.4em;color:#e5e7eb;border-left:4px solid #6366f1;padding-left:0.7em"
+Sub-headings: style="font-size:1em;font-weight:bold;margin:0.7em 0 0.3em;color:#c4b5fd"
+Paragraphs: style="margin:0.4em 0;line-height:1.7;color:#d1d5db;font-size:0.92em"
+Lists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db;font-size:0.9em;line-height:1.6"
+Key facts box: style="border-left:4px solid #f59e0b;padding:0.6em 1em;color:#fcd34d;margin:0.6em 0;background:rgba(245,158,11,0.08);border-radius:0 8px 8px 0;font-size:0.88em"
+Code: style="background:#1f2937;color:#34d399;padding:0.15em 0.5em;border-radius:4px;font-family:monospace;font-size:0.88em"
+- <p> for paragraphs (style="margin:0.4em 0;line-height:1.7;color:#d1d5db;font-size:0.92em;line-height:1.6")
 - <div> for QUICK SUMMARY box (style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.3);border-radius:8px;padding:0.8em 1em;margin:0.8em 0")
 - <code> for formulas/equations (style="background:#1f2937;color:#34d399;padding:0.15em 0.5em;border-radius:4px;font-family:monospace;font-size:0.88em")
 
 Write answers that are 400-800 words minimum. Be thorough. Be the teacher every student wishes they had.`;
 
-    // Build conversation context for Claude
     const conversationContext = history.slice(-10).map((m: { role: string; content: string }) =>
       `${m.role === "user" ? "Human" : "Assistant"}: ${m.content.slice(0, 800)}`
     ).join("\n\n");
@@ -476,7 +454,6 @@ Write answers that are 400-800 words minimum. Be thorough. Be the teacher every 
       ? `${conversationContext}\n\nHuman: ${args.content}`
       : args.content;
 
-    // Use Claude Haiku via Bedrock as primary, fallback to VLY
     let responseContent = "";
     let inputTokens = 0;
     let outputTokens = 0;
@@ -496,13 +473,8 @@ Write answers that are 400-800 words minimum. Be thorough. Be the teacher every 
       responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "No response") : "Failed to get response";
     }
 
-    // Haiku 4.5 pricing: $1/$5 per million tokens (in dollars) = 100/500 cents per million
-    // If tokens are 0 (VLY fallback), estimate from response length (~4 chars per token)
     const estimatedInput = inputTokens || Math.ceil(fullPrompt.length / 4);
     const estimatedOutput = outputTokens || Math.ceil(responseContent.length / 4);
-    // Claude Haiku 4.5 pricing: $1.80/1M input, $7.20/1M output (in cents: 180/720 per million)
-    // AB formula: z = 1.5 * x * y where x=tokens, y=costPerMillion
-    // Claude Haiku 4.5 pricing: $1.80/1M input, $7.20/1M output
     const costCents = (estimatedInput / 1_000_000) * 180 + (estimatedOutput / 1_000_000) * 720;
 
     await ctx.runMutation(internal.aiHelpers.saveAssistantMessage, {
