@@ -2584,18 +2584,25 @@ Be concise, helpful, and friendly. Use markdown formatting.`;
       content: m.content,
     }));
 
-    const { vly } = await import('../lib/vly-integrations');
-    const result = await vly.ai.completion({
-      model: "claude-haiku-4-5",
-      messages: [
-        { role: "user", content: systemPrompt + "\n\nUser: " + args.content },
-        ...historyMsgs.slice(-6),
-        { role: "user", content: args.content },
-      ],
-      maxTokens: 2048,
-    });
+    // Build conversation context from history
+    const historyContext = historyMsgs.length > 0
+      ? "\n\nConversation history:\n" + historyMsgs.map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`).join("\n")
+      : "";
 
-    const response = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "I couldn't process that request.") : "Request failed.";
+    const prompt = `${historyContext}\n\nUser: ${args.content}`;
+
+    let response: string;
+    try {
+      const result = await callClaude(prompt, systemPrompt, "claude-haiku-4-5");
+      response = result.text;
+    } catch {
+      try {
+        const result = await callGemini(prompt, systemPrompt, 2048);
+        response = result.text;
+      } catch {
+        response = "I'm having trouble connecting right now. Please try again in a moment.";
+      }
+    }
 
     // Check for mode switch
     const changeModeMatch = response.match(/<<CHANGE_MODE=(Code|Chat|Minor)>>/i);
