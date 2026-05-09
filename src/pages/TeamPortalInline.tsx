@@ -1289,17 +1289,34 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     agentBucksDeducted: (m as Record<string, unknown>).agentBucksDeducted as number | undefined,
   }));
 
-  // Stable sort: messages with no messageIndex go to the END (not beginning)
-  // Use a large fallback value so undefined messageIndex sorts last
-  const allMessages: AgentMessage[] = [...agentMessages, ...userMessages].sort((a, b) => {
-    const ai = a.messageIndex ?? 999999;
-    const bi = b.messageIndex ?? 999999;
-    if (ai !== bi) return ai - bi;
-    // Tiebreaker: user messages (isUser) go after agent messages at same index
-    if (a.isUser && !b.isUser) return 1;
-    if (!a.isUser && b.isUser) return -1;
-    return 0;
-  });
+  // Merge agent messages (already in correct DB/creation-time order) with local user messages.
+  // User messages are inserted at the position matching their messageIndex.
+  // Agent messages preserve their original DB order; user messages are inserted relative to them.
+  const allMessages: AgentMessage[] = (() => {
+    if (userMessages.length === 0) return agentMessages;
+    // Build combined list: agent messages keep their DB order, user messages inserted by messageIndex
+    const combined: AgentMessage[] = [];
+    let userIdx = 0;
+    const sortedUserMsgs = [...userMessages].sort((a, b) => (a.messageIndex ?? 999999) - (b.messageIndex ?? 999999));
+    for (const agentMsg of agentMessages) {
+      // Insert any user messages that should come before this agent message
+      while (userIdx < sortedUserMsgs.length) {
+        const um = sortedUserMsgs[userIdx];
+        if ((um.messageIndex ?? 999999) <= (agentMsg.messageIndex ?? 999999)) {
+          combined.push(um);
+          userIdx++;
+        } else {
+          break;
+        }
+      }
+      combined.push(agentMsg);
+    }
+    // Append any remaining user messages at the end
+    while (userIdx < sortedUserMsgs.length) {
+      combined.push(sortedUserMsgs[userIdx++]);
+    }
+    return combined;
+  })();
 
   const projectFiles: ProjectFile[] = (liveFiles ?? []).map((f) => ({
     filepath: f.filepath, content: f.content, lastModifiedBy: f.lastModifiedBy,
