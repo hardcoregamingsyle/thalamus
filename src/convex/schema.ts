@@ -255,6 +255,10 @@ const schema = defineSchema(
       fileName: v.optional(v.string()),
       fileType: v.optional(v.string()),
       createdAt: v.number(),
+      // RAG status
+      ragIndexed: v.optional(v.boolean()),
+      ragIndexedAt: v.optional(v.number()),
+      graphIndexed: v.optional(v.boolean()),
     }).index("by_user", ["userId"]),
 
     // Admin-uploaded study materials — injected as primary knowledge source in study mode
@@ -268,6 +272,69 @@ const schema = defineSchema(
       createdAt: v.number(),
     }),
 
+    // ── RAG: Vector chunks for semantic search ────────────────────────────────
+    ragChunks: defineTable({
+      userId: v.id("users"),
+      resourceId: v.id("studyResources"),
+      chunkIndex: v.number(),
+      text: v.string(),
+      embedding: v.array(v.float64()),
+      createdAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_resource", ["resourceId"])
+      .vectorIndex("by_embedding", {
+        vectorField: "embedding",
+        dimensions: 1536,
+        filterFields: ["userId"],
+      }),
+
+    // ── GraphRAG: Knowledge graph nodes ──────────────────────────────────────
+    graphNodes: defineTable({
+      userId: v.id("users"),
+      resourceId: v.id("studyResources"),
+      label: v.string(),          // entity name
+      type: v.string(),           // concept | person | place | event | formula | definition
+      description: v.string(),
+      embedding: v.array(v.float64()),
+      createdAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_resource", ["resourceId"])
+      .vectorIndex("by_embedding", {
+        vectorField: "embedding",
+        dimensions: 1536,
+        filterFields: ["userId"],
+      }),
+
+    // ── GraphRAG: Knowledge graph edges ──────────────────────────────────────
+    graphEdges: defineTable({
+      userId: v.id("users"),
+      resourceId: v.id("studyResources"),
+      sourceNodeId: v.id("graphNodes"),
+      targetNodeId: v.id("graphNodes"),
+      relation: v.string(),       // e.g. "causes", "is_part_of", "defines", "leads_to"
+      weight: v.optional(v.number()),
+      createdAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_resource", ["resourceId"])
+      .index("by_source", ["sourceNodeId"])
+      .index("by_target", ["targetNodeId"]),
+
+    // ── GraphRAG: Health check log ────────────────────────────────────────────
+    graphHealthChecks: defineTable({
+      userId: v.id("users"),
+      checkedAt: v.number(),
+      totalNodes: v.number(),
+      totalEdges: v.number(),
+      orphanNodes: v.number(),
+      disconnectedComponents: v.number(),
+      status: v.union(v.literal("healthy"), v.literal("degraded"), v.literal("broken")),
+      issues: v.array(v.string()),
+      recommendations: v.array(v.string()),
+    }).index("by_user", ["userId"]),
+
     // Temporary store for GitHub OAuth state tokens
     githubOAuthStates: defineTable({
       state: v.string(),
@@ -278,10 +345,10 @@ const schema = defineSchema(
     // DAU tracking: one record per user per UTC day
     dailyActiveUsers: defineTable({
       userId: v.id("users"),
-      dateKey: v.string(),       // "YYYY-MM-DD" UTC
-      firstSeenAt: v.number(),   // timestamp of first activity that day
-      lastSeenAt: v.number(),    // timestamp of most recent activity that day
-      sessionCount: v.number(),  // number of activity pings that day
+      dateKey: v.string(),
+      firstSeenAt: v.number(),
+      lastSeenAt: v.number(),
+      sessionCount: v.number(),
     })
       .index("by_user_and_date", ["userId", "dateKey"])
       .index("by_date", ["dateKey"]),

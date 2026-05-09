@@ -1,5 +1,6 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 
 // ── Internal helpers (called from study.ts actions) ───────────────────────────
 
@@ -64,12 +65,18 @@ export const addTextResource = mutation({
     if (!args.token || args.token.length < 32) throw new Error("Not authenticated");
     const session = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).unique();
     if (!session || session.expiresAt < Date.now()) throw new Error("Not authenticated");
-    return await ctx.db.insert("studyResources", {
+    const resourceId = await ctx.db.insert("studyResources", {
       userId: session.userId,
       title: args.title.slice(0, 200),
-      content: args.content.slice(0, 500000), // 500k chars — supports full books
+      content: args.content.slice(0, 500000),
       sourceType: "text",
       createdAt: Date.now(),
     });
+    // Trigger auto-RAG vectorization in background
+    await ctx.scheduler.runAfter(0, internal.rag.vectorizeResourceInternal, {
+      userId: session.userId,
+      resourceId,
+    });
+    return resourceId;
   },
 });
