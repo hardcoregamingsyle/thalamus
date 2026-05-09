@@ -789,6 +789,7 @@ function PortalDesktop() {
   const [auditorContext, setAuditorContext] = useState("");
   const [auditorResult, setAuditorResult] = useState<string | null>(null);
   const [isAuditing, setIsAuditing] = useState(false);
+  const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const attachFileInputRef = useRef<HTMLInputElement>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
@@ -863,7 +864,7 @@ function PortalDesktop() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isThinking]);
+  }, [messages, isThinking, streamingContent]);
 
   const handleSubmitSuggestion = async (title: string, description: string, files: SuggestionFile[]) => {
     setIsSuggestionSubmitting(true);
@@ -1005,6 +1006,8 @@ function PortalDesktop() {
         }
       } else {
         // Chat mode: try streaming first, fallback to Convex action
+        setIsThinking(false);
+        setStreamingContent("");
         try {
           const response = await fetch(`${siteUrl}/stream-chat`, {
             method: "POST",
@@ -1026,6 +1029,7 @@ function PortalDesktop() {
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
           let buffer = "";
+          let accumulated = "";
 
           while (true) {
             const { done, value } = await reader.read();
@@ -1038,12 +1042,23 @@ function PortalDesktop() {
               const jsonStr = line.slice(6).trim();
               if (!jsonStr) continue;
               try {
-                JSON.parse(jsonStr);
+                const parsed = JSON.parse(jsonStr) as { chunk?: string; done?: boolean; fullText?: string };
+                if (parsed.chunk) {
+                  accumulated += parsed.chunk;
+                  setStreamingContent(accumulated);
+                }
+                if (parsed.done && parsed.fullText) {
+                  accumulated = parsed.fullText;
+                  setStreamingContent(accumulated);
+                }
               } catch { /* skip */ }
             }
           }
+          setStreamingContent(null);
         } catch {
+          setStreamingContent(null);
           // Fallback to Convex action
+          setIsThinking(true);
           await sendMessage({ conversationId: convId, content: msg, mode: "chat", token, userContext });
         }
         if (!activeConvId) {
@@ -1054,6 +1069,7 @@ function PortalDesktop() {
       toast.error(err instanceof Error ? err.message : "Failed to send message");
     } finally {
       setIsThinking(false);
+      setStreamingContent(null);
     }
   };
 
@@ -1372,7 +1388,24 @@ function PortalDesktop() {
                       </motion.div>
                     ))
                   )}
-                  {isThinking && (
+                  {streamingContent !== null && (
+                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex justify-start">
+                      <div className="max-w-[82%] rounded-2xl px-4 py-3 text-xs leading-relaxed bg-card border border-border text-foreground">
+                        {streamingContent === "" ? (
+                          <div className="flex items-center gap-1">
+                            {[0, 1, 2].map(i => (
+                              <motion.div key={i} className="w-2 h-2 rounded-full bg-primary"
+                                animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
+                                transition={{ duration: 0.7, delay: i * 0.15, repeat: Infinity }} />
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="prose-html" dangerouslySetInnerHTML={{ __html: streamingContent.startsWith("<") ? streamingContent : streamingContent.replace(/\n/g, "<br/>") }} />
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                  {isThinking && streamingContent === null && (
                     <motion.div
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
