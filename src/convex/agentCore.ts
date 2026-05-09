@@ -376,6 +376,30 @@ export function calcAgentBucksForTier(
   return calcAgentBucksFromTokens(inputTokens, outputTokens, p.input, p.output);
 }
 
+// Parse AWS event stream binary frames from a Uint8Array buffer.
+// Each frame: [total_len(4)] [headers_len(4)] [prelude_crc(4)] [headers(headers_len)] [payload(total_len-headers_len-16)] [msg_crc(4)]
+function parseBedrockEventStreamFrames(buffer: Uint8Array): string[] {
+  const results: string[] = [];
+  let offset = 0;
+  const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+
+  while (offset + 12 <= buffer.byteLength) {
+    const totalLen = view.getUint32(offset, false);
+    if (totalLen < 16 || offset + totalLen > buffer.byteLength) break;
+    const headersLen = view.getUint32(offset + 4, false);
+    const payloadStart = offset + 12 + headersLen;
+    const payloadLen = totalLen - headersLen - 16; // 12 prelude + 4 msg crc
+    if (payloadLen > 0 && payloadStart + payloadLen <= buffer.byteLength) {
+      const payload = buffer.slice(payloadStart, payloadStart + payloadLen);
+      try {
+        results.push(new TextDecoder().decode(payload));
+      } catch { /* skip malformed */ }
+    }
+    offset += totalLen;
+  }
+  return results;
+}
+
 export async function callClaude(
   prompt: string,
   systemPrompt: string,
@@ -396,7 +420,10 @@ export async function callClaude(
 
   const region = userRegion || creds.region;
   const modelId = BEDROCK_MODEL_IDS[model];
-  const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke`;
+
+  // Use streaming endpoint for lower latency and to avoid timeouts on long responses
+  const streamUrl = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke-with-response-stream`;
+  const fallbackUrl = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke`;
 
   const requestBody = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
@@ -406,32 +433,95 @@ export async function callClaude(
     temperature: 0.7,
   });
 
-  try {
-    let requestHeaders: Record<string, string>;
-
+  const buildHeaders = async (url: string): Promise<Record<string, string>> => {
     if (creds.isCustomKey) {
       const bearerToken = creds.secretAccessKey
         ? `${creds.accessKeyId}:${creds.secretAccessKey}`
         : creds.accessKeyId;
-      requestHeaders = {
+      return {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${bearerToken}`,
         "x-api-key": bearerToken,
       };
-    } else {
-      requestHeaders = await signBedrockRequest(
-        "POST",
-        url,
-        requestBody,
-        creds.accessKeyId,
-        creds.secretAccessKey,
-        region,
-      );
+    }
+    return signBedrockRequest("POST", url, requestBody, creds.accessKeyId, creds.secretAccessKey, region);
+  };
+
+  try {
+    // ── Streaming path ────────────────────────────────────────────────────────
+    const streamHeaders = await buildHeaders(streamUrl);
+    const streamRes = await fetch(streamUrl, {
+      method: "POST",
+      headers: streamHeaders,
+      body: requestBody,
+    });
+
+    if (streamRes.ok && streamRes.body) {
+      // Read the full binary event stream
+      const reader = streamRes.body.getReader();
+      const chunks: Uint8Array[] = [];
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) chunks.push(value);
+      }
+
+      // Concatenate all chunks into one buffer
+      const totalLen = chunks.reduce((s, c) => s + c.byteLength, 0);
+      const fullBuffer = new Uint8Array(totalLen);
+      let pos = 0;
+      for (const chunk of chunks) { fullBuffer.set(chunk, pos); pos += chunk.byteLength; }
+
+      // Parse event stream frames and extract text deltas
+      let text = "";
+      let inputTokens = 0;
+      let outputTokens = 0;
+
+      const frames = parseBedrockEventStreamFrames(fullBuffer);
+      for (const frame of frames) {
+        try {
+          // Each frame payload is a JSON envelope: { "bytes": "<base64>" }
+          // The inner bytes decode to the actual Claude event JSON
+          const envelope = JSON.parse(frame) as { bytes?: string; [k: string]: unknown };
+          let eventJson = frame;
+          if (envelope.bytes) {
+            // Decode base64 inner payload
+            const binaryStr = atob(envelope.bytes);
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+            eventJson = new TextDecoder().decode(bytes);
+          }
+
+          const event = JSON.parse(eventJson) as {
+            type?: string;
+            delta?: { type?: string; text?: string };
+            usage?: { input_tokens?: number; output_tokens?: number };
+            "amazon-bedrock-invocationMetrics"?: { inputTokenCount?: number; outputTokenCount?: number };
+          };
+
+          if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
+            text += event.delta.text ?? "";
+          } else if (event.type === "message_delta" && event.usage) {
+            outputTokens = event.usage.output_tokens ?? outputTokens;
+          } else if (event.type === "message_start" && event.usage) {
+            inputTokens = event.usage.input_tokens ?? inputTokens;
+          } else if (event["amazon-bedrock-invocationMetrics"]) {
+            const m = event["amazon-bedrock-invocationMetrics"];
+            inputTokens = m.inputTokenCount ?? inputTokens;
+            outputTokens = m.outputTokenCount ?? outputTokens;
+          }
+        } catch { /* skip malformed frames */ }
+      }
+
+      if (text) return { text, inputTokens, outputTokens };
+      // If streaming gave empty text, fall through to non-streaming
     }
 
-    const response = await fetch(url, {
+    // ── Non-streaming fallback ────────────────────────────────────────────────
+    const fallbackHeaders = await buildHeaders(fallbackUrl);
+    const response = await fetch(fallbackUrl, {
       method: "POST",
-      headers: requestHeaders,
+      headers: fallbackHeaders,
       body: requestBody,
     });
 
