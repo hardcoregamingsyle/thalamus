@@ -76,7 +76,7 @@ export default function SyncPage() {
       const createRes = await fetch("https://api.github.com/user/repos", {
         method: "POST",
         headers: ghHeaders,
-        body: JSON.stringify({ name: cleanRepo, description: "Thalamus AI project synced", private: false, auto_init: false }),
+        body: JSON.stringify({ name: cleanRepo, description: "Thalamus AI project synced", private: false, auto_init: true }),
       });
 
       let repo;
@@ -98,41 +98,23 @@ export default function SyncPage() {
       const filesToSync = await fetchAllFiles();
       addLog(`✓ Found ${filesToSync.length} files to sync`, "success");
 
-      // Check if repo has commits
-      const branchRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/main`, { headers: ghHeaders });
-      const isEmptyRepo = !branchRes.ok;
-
-      if (isEmptyRepo) {
-        addLog(`$ initializing empty repository...`, "cmd");
-        addLog(`Uploading ${filesToSync.length} files via Contents API...`, "info");
-
-        let uploaded = 0;
-        for (const file of filesToSync) {
-          try {
-            const base64Content = btoa(unescape(encodeURIComponent(file.content)));
-            const putRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/contents/${file.path}`, {
-              method: "PUT",
-              headers: ghHeaders,
-              body: JSON.stringify({ message: `Add ${file.path}`, content: base64Content }),
-            });
-            if (putRes.ok) {
-              uploaded++;
-              if (uploaded % 10 === 0 || uploaded === filesToSync.length) {
-                addLog(`✓ Uploaded ${uploaded}/${filesToSync.length} files...`, "success");
-              }
-            } else {
-              const err = await putRes.json().catch(() => ({}));
-              addLog(`⚠ Skipped ${file.path}: ${(err as { message?: string }).message || putRes.status}`, "info");
-            }
-          } catch {
-            addLog(`⚠ Skipped ${file.path}`, "info");
-          }
+      // Find the default branch (main or master)
+      addLog(`$ checking repository state...`, "cmd");
+      let branchRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/main`, { headers: ghHeaders });
+      if (!branchRes.ok) {
+        // Try master branch
+        branchRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/master`, { headers: ghHeaders });
+      }
+      if (!branchRes.ok) {
+        // Wait a moment and retry (GitHub sometimes takes a second to initialize)
+        await new Promise(r => setTimeout(r, 2000));
+        branchRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/main`, { headers: ghHeaders });
+        if (!branchRes.ok) {
+          branchRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/master`, { headers: ghHeaders });
         }
-
-        addLog(`✓ Uploaded ${uploaded}/${filesToSync.length} files`, "success");
-        addLog(`✓ Repository URL: ${repo.html_url}`, "success");
-        setStatus("success");
-        return;
+      }
+      if (!branchRes.ok) {
+        throw new Error("Could not find repository branch. Please try again.");
       }
 
       // For repos with existing commits: use Git Data API (batch commit)
