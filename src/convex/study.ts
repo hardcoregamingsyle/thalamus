@@ -160,13 +160,23 @@ async function extractPdfWithClaude(base64Data: string, fileName: string): Promi
   const creds = parsePdfBedrockCreds();
   if (!creds) throw new Error("No Bedrock credentials");
 
-  const modelId = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+  // Use Claude Sonnet for better vision/image understanding in PDFs
+  const modelId = "us.anthropic.claude-sonnet-4-5-20251101-v1:0";
   const region = creds.region || "us-east-1";
   const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke`;
 
   const requestBody = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
-    system: "You are a study assistant. Extract ALL text content from this document comprehensively. Preserve headings, paragraphs, lists, tables, formulas, and all other content. Output the full extracted text without summarizing or omitting anything.",
+    system: `You are a comprehensive document extraction assistant. Your job is to extract ALL content from this PDF document with maximum fidelity.
+
+CRITICAL INSTRUCTIONS:
+1. Extract ALL text verbatim — every heading, paragraph, sentence, list item, footnote, caption
+2. For images, diagrams, charts, and figures: describe them in detail. Write "[IMAGE: detailed description of what the image shows, including any text, labels, data, or visual content]"
+3. For tables: reproduce them as text with clear structure
+4. For mathematical formulas: write them out in plain text notation
+5. Preserve the document structure (headings, sections, subsections)
+6. Do NOT summarize, skip, or abbreviate anything
+7. Output the complete extracted content`,
     messages: [{
       role: "user",
       content: [
@@ -180,11 +190,11 @@ async function extractPdfWithClaude(base64Data: string, fileName: string): Promi
         },
         {
           type: "text",
-          text: `Extract ALL text content from this PDF document "${fileName}". Include every heading, paragraph, list item, table, formula, and piece of text. Do not summarize — output the complete text verbatim.`,
+          text: `Extract the COMPLETE content of this PDF document "${fileName}". Include all text, describe all images/diagrams/charts in detail, reproduce all tables, and write out all formulas. Do not skip or summarize anything.`,
         },
       ],
     }],
-    max_tokens: 8192,
+    max_tokens: 16000,
     temperature: 0,
   });
 
