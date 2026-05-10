@@ -288,6 +288,14 @@ function PlannerOutputCard({ data, currentTaskIndex, executionPhase }: { data: P
 
 function MessageContent({ msg, currentTaskIndex, executionPhase }: { msg: { _id?: string; agent: string; content: string }; currentTaskIndex?: number; executionPhase?: string }) {
   if (msg.agent === "Planner") {
+    // Don't show task card when session is completed — tasks are done, no need to show them
+    if (executionPhase === "completed") {
+      return (
+        <div className="prose prose-sm prose-invert max-w-none text-xs leading-relaxed">
+          <ReactMarkdown>{msg.content}</ReactMarkdown>
+        </div>
+      );
+    }
     const plannerData = parsePlannerContent(msg.content);
     if (plannerData && plannerData.tasks.length > 0) {
       return <PlannerOutputCard data={plannerData} currentTaskIndex={currentTaskIndex} executionPhase={executionPhase} />;
