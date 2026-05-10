@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
 import { useAction, useQuery, useMutation } from "convex/react";
@@ -1357,7 +1357,7 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     activeSessionId && selectedFile ? { sessionId: activeSessionId, filepath: selectedFile.filepath } : "skip"
   );
 
-  const sessionInfo = liveSession ? {
+  const sessionInfo = useMemo(() => liveSession ? {
     _id: liveSession._id,
     title: liveSession.title,
     status: liveSession.status,
@@ -1372,54 +1372,39 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     currentTaskIndex: (liveSession as Record<string, unknown>).currentTaskIndex as number | undefined,
     plannerTasksJson: (liveSession as Record<string, unknown>).plannerTasksJson as string | undefined,
     finalReviewCoderEnabled: (liveSession as Record<string, unknown>).finalReviewCoderEnabled as boolean | undefined,
-  } as TeamSession : null;
+  } as TeamSession : null, [liveSession]);
 
-  const agentMessages: AgentMessage[] = (liveMessages ?? []).map((m) => ({
+  const agentMessages: AgentMessage[] = useMemo(() => (liveMessages ?? []).map((m) => ({
     _id: m._id as string, agent: m.agent, content: m.content, round: m.round, messageIndex: m.messageIndex,
     modelUsed: (m as Record<string, unknown>).modelUsed as string | undefined,
     agentBucksDeducted: (m as Record<string, unknown>).agentBucksDeducted as number | undefined,
-  }));
+  })), [liveMessages]);
 
-  // Merge agent messages (already in correct DB/creation-time order) with local user messages.
-  // User messages are inserted AFTER all agent messages that existed when the user sent the message.
-  // We use the user message's messageIndex as a "snapshot" of how many agent messages existed at send time.
-  const allMessages: AgentMessage[] = (() => {
+  // Merge agent messages with local user messages — memoized to avoid recompute on every render
+  const allMessages: AgentMessage[] = useMemo(() => {
     if (userMessages.length === 0) return agentMessages;
-    // Sort user messages by when they were sent (messageIndex = totalMessages at send time)
     const sortedUserMsgs = [...userMessages].sort((a, b) => (a.messageIndex ?? 999999) - (b.messageIndex ?? 999999));
     const combined: AgentMessage[] = [...agentMessages];
-    // For each user message, find the insertion point:
-    // Insert after the last agent message that was present when the user sent it.
-    // messageIndex = totalMessages + 0.5 at send time, so we insert after index (messageIndex - 0.5) agent messages.
-    // Since agent messages may grow, we insert at the position = min(floor(messageIndex), agentMessages.length)
-    // We process user messages in reverse to maintain correct relative order when inserting
     for (let i = sortedUserMsgs.length - 1; i >= 0; i--) {
       const um = sortedUserMsgs[i];
-      // Insert position: after the agent messages that existed when this user message was sent
       const insertAfter = Math.min(Math.floor(um.messageIndex ?? 0), agentMessages.length);
-      // Find the actual insertion index in combined (accounting for previously inserted user messages)
-      // We insert at insertAfter position relative to agent messages only
-      // Simple approach: find the insertAfter-th agent message in combined and insert after it
       let agentCount = 0;
-      let insertIdx = combined.length; // default: end
+      let insertIdx = combined.length;
       for (let j = 0; j < combined.length; j++) {
         if (!combined[j].isUser) {
           agentCount++;
-          if (agentCount === insertAfter) {
-            insertIdx = j + 1;
-            break;
-          }
+          if (agentCount === insertAfter) { insertIdx = j + 1; break; }
         }
       }
       combined.splice(insertIdx, 0, um);
     }
     return combined;
-  })();
+  }, [agentMessages, userMessages]);
 
-  // File tree uses metadata only (no content) for performance
-  const projectFiles: ProjectFile[] = (liveFilesMetadata ?? []).map((f) => ({
+  // File tree uses metadata only (no content) for performance — memoized
+  const projectFiles: ProjectFile[] = useMemo(() => (liveFilesMetadata ?? []).map((f) => ({
     filepath: f.filepath, content: "", lastModifiedBy: f.lastModifiedBy,
-  }));
+  })), [liveFilesMetadata]);
 
   // When selected file content loads from DB, update selectedFile state
   useEffect(() => {
@@ -1475,7 +1460,7 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     }
     return () => { document.title = "Thalamus AI"; };
   }, [sessionInfo?.title]);
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [allMessages, sessionInfo?.currentAgentOutput]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [allMessages.length, sessionInfo?.currentAgentOutput]);
   useEffect(() => { sandboxOutputEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [sandboxOutput]);
 
   const prevMsgCount = useRef(0);
@@ -2333,10 +2318,8 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                 <div className="flex-1 overflow-y-auto min-h-0 p-4">
                   <div className="space-y-4 max-w-3xl mx-auto">
                     {allMessages.map((msg) => (
-                      <motion.div
+                      <div
                         key={msg._id}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
                         className={`flex gap-3 ${msg.isUser ? "flex-row-reverse" : ""}`}
                       >
                         <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border ${AGENT_BG[msg.agent] || "bg-muted/20 border-border"}`}>
@@ -2358,7 +2341,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                             </span>
                           )}
                         </div>
-                      </motion.div>
+                      </div>
                     ))}
 
                     {/* Pending info request — blocks execution until filled */}

@@ -139,12 +139,12 @@ export const watchSession = query({
 export const watchMessages = query({
   args: { sessionId: v.id("teamSessions") },
   handler: async (ctx, args) => {
-    // Load last 100 messages for display (desc order, then reverse to get chronological)
+    // Load last 60 messages for display — enough context without causing lag
     const msgs = await ctx.db
       .query("agentMessages")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
       .order("desc")
-      .take(100);
+      .take(60);
     return msgs.reverse();
   },
 });
