@@ -10,7 +10,7 @@ import {
   MessageSquare, StopCircle, ListPlus, Cpu, Shield, Search, Code2,
   CheckSquare, AlertCircle, RefreshCw, Upload, Menu, X, PanelLeftClose, PanelLeftOpen,
   Github, Database, ClipboardList, GitBranch, Network, Lightbulb, FileText,
-  ChevronDown, Zap, Edit3, Bot,
+  ChevronDown, Zap, Edit3, Bot, Wrench,
 } from "lucide-react";
 import { FileTreeView, FileTreeFile, FileTreeNode } from "@/components/FileTree";
 import ReactMarkdown from "react-markdown";
@@ -1559,6 +1559,38 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     }
   };
 
+  const handleFix = async () => {
+    if (!activeSessionId || !token || isRunning) return;
+    const fixPrompt = `COMPREHENSIVE PROJECT AUDIT & FIX — run a full audit of this entire project and fix ALL issues found.
+
+AUDIT SCOPE (tech-stack-agnostic — applies to ANY project):
+1. MISSING FILES: Find any file that is referenced but doesn't exist (imports, config references, docker build contexts, webpack entry points, nginx upstreams, Makefile targets, etc.)
+2. INCOMPLETE IMPLEMENTATIONS: Find any placeholder functions, TODO comments, stub returns, or empty implementations
+3. BROKEN DEPENDENCIES: Find any package/module imported but not declared in the dependency manifest (package.json, requirements.txt, go.mod, Cargo.toml, etc.)
+4. CONFIGURATION INCONSISTENCIES: Find any config files that reference other files/paths that don't exist
+5. README CONSOLIDATION: Ensure there is exactly ONE README.md at the project root with comprehensive documentation. Merge any subdirectory .md files into it.
+6. SECURITY GAPS: Find any hardcoded secrets, missing input validation, or unprotected endpoints
+7. ERROR HANDLING GAPS: Find any async operations without try/catch, unhandled promise rejections
+8. PORT/HOST ISSUES: Ensure the app binds to 0.0.0.0:3000 for Daytona preview
+9. DEPLOY COMMANDS: Ensure deploy commands are set correctly for the detected tech stack
+10. OUTDATED PATTERNS: Fix any anti-patterns, deprecated APIs, or outdated approaches
+
+For EACH issue found: explain what it is, why it's a problem, and fix it immediately.
+Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass.`;
+
+    setIsRunning(true);
+    try {
+      await continueSessionAction({ sessionId: activeSessionId, newTask: fixPrompt, token });
+      await loadSessions();
+      await startBackgroundSession({ sessionId: activeSessionId, token });
+      toast.success("Fix audit started — agents are scanning and repairing the project...");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start fix");
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
   const handleToggleManualUpgrade = async () => {
     if (!activeSessionId || !token) return;
     const current = (sessionInfo as unknown as Record<string, unknown>)?.manualUpgradeEnabled as boolean | undefined;
@@ -2149,6 +2181,17 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
                     </button>
                   );
                 })()}
+                {/* Fix button — comprehensive project audit & repair */}
+                {activeSessionId && (
+                  <button
+                    onClick={handleFix}
+                    disabled={isRunning || sessionInfo?.status === "running"}
+                    title="Run a comprehensive audit to find and fix missing files, broken imports, inconsistencies, and outdated patterns"
+                    className="flex items-center gap-1 px-2 py-1 bg-orange-400/10 border border-orange-400/30 text-orange-400 text-[10px] rounded hover:bg-orange-400/20 disabled:opacity-50 transition-all"
+                  >
+                    <Wrench className="h-3 w-3" />FIX
+                  </button>
+                )}
                 {/* Reset limit button — shown when session is completed or at limit */}
                 {activeSessionId && sessionInfo?.status === "completed" && (
                   <button
