@@ -1341,7 +1341,13 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   // Reactive queries
   const liveSession = useQuery(api.agentTeamHelpers.watchSession, activeSessionId ? { sessionId: activeSessionId } : "skip");
   const liveMessages = useQuery(api.agentTeamHelpers.watchMessages, activeSessionId ? { sessionId: activeSessionId } : "skip");
-  const liveFiles = useQuery(api.agentTeamHelpers.watchFiles, activeSessionId ? { sessionId: activeSessionId } : "skip");
+  // Use metadata-only subscription for file tree (no content) to avoid slow queries
+  const liveFilesMetadata = useQuery(api.agentTeamHelpers.watchFilesMetadata, activeSessionId ? { sessionId: activeSessionId } : "skip");
+  // Load selected file content on-demand
+  const liveSelectedFileContent = useQuery(
+    api.agentTeamHelpers.getFileContentPublic,
+    activeSessionId && selectedFile ? { sessionId: activeSessionId, filepath: selectedFile.filepath } : "skip"
+  );
 
   const sessionInfo = liveSession ? {
     _id: liveSession._id,
@@ -1402,9 +1408,21 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     return combined;
   })();
 
-  const projectFiles: ProjectFile[] = (liveFiles ?? []).map((f) => ({
-    filepath: f.filepath, content: f.content, lastModifiedBy: f.lastModifiedBy,
+  // File tree uses metadata only (no content) for performance
+  const projectFiles: ProjectFile[] = (liveFilesMetadata ?? []).map((f) => ({
+    filepath: f.filepath, content: "", lastModifiedBy: f.lastModifiedBy,
   }));
+
+  // When selected file content loads from DB, update selectedFile state
+  useEffect(() => {
+    if (liveSelectedFileContent && selectedFile) {
+      setSelectedFile({
+        filepath: liveSelectedFileContent.filepath,
+        content: liveSelectedFileContent.content,
+        lastModifiedBy: liveSelectedFileContent.lastModifiedBy,
+      });
+    }
+  }, [liveSelectedFileContent?.content, liveSelectedFileContent?.filepath]);
 
   // Actions
   const createSession = useAction(api.agentTeam.createSession);

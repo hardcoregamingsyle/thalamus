@@ -139,12 +139,12 @@ export const watchSession = query({
 export const watchMessages = query({
   args: { sessionId: v.id("teamSessions") },
   handler: async (ctx, args) => {
-    // Load last 200 messages for display (desc order, then reverse to get chronological)
+    // Load last 100 messages for display (desc order, then reverse to get chronological)
     const msgs = await ctx.db
       .query("agentMessages")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
       .order("desc")
-      .take(200);
+      .take(100);
     return msgs.reverse();
   },
 });
@@ -156,6 +156,34 @@ export const watchFiles = query({
       .query("projectFiles")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
       .take(500);
+  },
+});
+
+// Lightweight metadata-only query — no file content, just paths and metadata
+// Use this for the real-time file tree subscription to avoid sending MB of data
+export const watchFilesMetadata = query({
+  args: { sessionId: v.id("teamSessions") },
+  handler: async (ctx, args) => {
+    const files = await ctx.db
+      .query("projectFiles")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .take(500);
+    // Return only metadata — no content
+    return files.map(f => ({ _id: f._id, filepath: f.filepath, lastModifiedBy: f.lastModifiedBy }));
+  },
+});
+
+// Load a single file's content on-demand (called when user clicks a file)
+export const getFileContentPublic = query({
+  args: { sessionId: v.id("teamSessions"), filepath: v.string() },
+  handler: async (ctx, args) => {
+    const files = await ctx.db
+      .query("projectFiles")
+      .withIndex("by_session_and_path", (q) =>
+        q.eq("sessionId", args.sessionId).eq("filepath", args.filepath)
+      )
+      .take(1);
+    return files[0] ?? null;
   },
 });
 
