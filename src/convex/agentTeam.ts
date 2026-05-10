@@ -2108,10 +2108,13 @@ export const syncGithub = action({
               !n.path.includes(".git/") &&
               !n.path.includes("dist/") &&
               !n.path.includes("build/")
-            ).slice(0, 50); // Limit to 50 files per pull (serial requests are slower but more reliable)
+            ); // No arbitrary limit - sync all files
+
+            console.log(`[syncGithub] Fetching ${fileNodes.length} files from GitHub...`);
 
             // Fetch file contents SERIALLY to avoid secondary rate limits
             // GitHub recommends serial requests over parallel batches
+            let fetchedCount = 0;
             for (const node of fileNodes) {
               try {
                 const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${latestCommitSha}/${node.path}`;
@@ -2120,16 +2123,23 @@ export const syncGithub = action({
                 if (res.ok) {
                   const content = await res.text();
                   githubFiles[node.path] = { sha: node.sha, content };
+                  fetchedCount++;
+                  // Log progress every 20 files
+                  if (fetchedCount % 20 === 0) {
+                    console.log(`[syncGithub] Fetched ${fetchedCount}/${fileNodes.length} files...`);
+                  }
                 } else if (res.status === 403) {
                   throw new Error("GitHub API rate limit exceeded");
                 }
-                // Small delay between requests (GitHub recommends this for avoiding secondary rate limits)
-                await new Promise(r => setTimeout(r, 100));
+                // Short delay between read requests (200ms = 300 files/minute, well under rate limit)
+                await new Promise(r => setTimeout(r, 200));
               } catch (err: unknown) {
                 if (err instanceof Error && err.message.includes("rate limit")) throw err;
                 // Otherwise skip file and continue
+                console.warn(`[syncGithub] Failed to fetch ${node.path}, skipping`);
               }
             }
+            console.log(`[syncGithub] Fetched ${fetchedCount} files successfully`);
           }
         }
       } catch { /* GitHub fetch failed — proceed with push-only */ }
@@ -2184,105 +2194,85 @@ export const syncGithub = action({
 
       if (treeItems.length > 0 && latestCommitSha !== "") {
         try {
-          // Create blobs for each file (limit to 20 files per sync to avoid rate limits with serial requests)
-          const limitedTreeItems = treeItems.slice(0, 20);
-          if (treeItems.length > 20) {
-            console.log(`[syncGithub] Limiting sync to 20 files (${treeItems.length} total changes). Run sync again to push remaining files.`);
-          }
-          const blobShas: Array<{ path: string; sha: string }> = [];
-          // Create blobs SERIALLY with 1 second delay for writes (GitHub best practice)
-          for (const item of limitedTreeItems) {
-            try {
-              // Convert content to base64 safely
-              const base64Content = Buffer.from(item.content, "utf-8").toString("base64");
-              const blobRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs`, {
+          console.log(`[syncGithub] Pushing ${treeItems.length} changed files to GitHub...`);
+
+          // Use GitHub Tree API with inline content - creates all blobs in ONE API call!
+          // This is MUCH more efficient than creating blobs individually
+          const tree = treeItems.map(item => ({
+            path: item.path,
+            mode: "100644",
+            type: "blob" as const,
+            content: item.content, // GitHub will create the blob from content
+          }));
+
+          console.log(`[syncGithub] Creating tree with ${tree.length} files...`);
+          // Create tree with inline content
+          const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              base_tree: latestCommitSha,
+              tree,
+            }),
+          });
+          checkRateLimit(treeRes);
+
+          if (treeRes.ok) {
+            const treeData = await treeRes.json() as { sha?: string };
+            if (treeData.sha) {
+              console.log(`[syncGithub] Tree created, creating commit...`);
+              // Wait 1 second before creating commit (GitHub recommendation for write operations)
+              await new Promise(r => setTimeout(r, 1000));
+
+              // Create commit
+              const commitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
                 method: "POST",
                 headers,
-                body: JSON.stringify({ content: base64Content, encoding: "base64" }),
+                body: JSON.stringify({
+                  message: `Thalamus AI sync — ${new Date().toISOString()}`,
+                  tree: treeData.sha!,
+                  parents: [latestCommitSha],
+                }),
               });
-              checkRateLimit(blobRes);
-              if (blobRes.ok) {
-                const blobData = await blobRes.json() as { sha?: string };
-                if (blobData.sha) blobShas.push({ path: item.path, sha: blobData.sha! });
-              } else if (blobRes.status === 403) {
+              checkRateLimit(commitRes);
+
+              if (commitRes.ok) {
+                const commitData = await commitRes.json() as { sha?: string };
+                if (commitData.sha) {
+                  console.log(`[syncGithub] Commit created, updating branch ref...`);
+                  // Wait 1 second before updating ref (GitHub recommendation for write operations)
+                  await new Promise(r => setTimeout(r, 1000));
+
+                  // Update branch ref
+                  const refUpdateRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
+                    method: "PATCH",
+                    headers,
+                    body: JSON.stringify({ sha: commitData.sha!, force: true }),
+                  });
+                  checkRateLimit(refUpdateRes);
+                  if (refUpdateRes.ok) {
+                    pushed = treeItems.length; // Count all files pushed
+                    latestCommitSha = commitData.sha!;
+                    console.log(`[syncGithub] Successfully pushed ${pushed} files`);
+                  } else if (refUpdateRes.status === 403) {
+                    throw new Error("GitHub API rate limit exceeded");
+                  } else {
+                    const errText = await refUpdateRes.text().catch(() => "");
+                    throw new Error(`Failed to update branch ref: ${refUpdateRes.status} ${errText.slice(0, 200)}`);
+                  }
+                }
+              } else if (commitRes.status === 403) {
                 throw new Error("GitHub API rate limit exceeded");
               } else {
-                console.warn(`[syncGithub] Failed to create blob for ${item.path}: ${blobRes.status}`);
+                const errText = await commitRes.text().catch(() => "");
+                throw new Error(`Failed to create commit: ${commitRes.status} ${errText.slice(0, 200)}`);
               }
-              // Wait 1 second between write operations (GitHub recommendation)
-              await new Promise(r => setTimeout(r, 1000));
-            } catch (err: unknown) {
-              if (err instanceof Error && err.message.includes("rate limit")) throw err;
-              // Otherwise skip file and continue
             }
-          }
-
-          if (blobShas.length > 0) {
-            // Create tree
-            const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
-              method: "POST",
-              headers,
-              body: JSON.stringify({
-                base_tree: latestCommitSha,
-                tree: blobShas.map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
-              }),
-            });
-            checkRateLimit(treeRes);
-
-            if (treeRes.ok) {
-              const treeData = await treeRes.json() as { sha?: string };
-              if (treeData.sha) {
-                // Wait 1 second before creating commit (GitHub recommendation for write operations)
-                await new Promise(r => setTimeout(r, 1000));
-
-                // Create commit
-                const commitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
-                  method: "POST",
-                  headers,
-                  body: JSON.stringify({
-                    message: `Thalamus AI sync — ${new Date().toISOString()}`,
-                    tree: treeData.sha!,
-                    parents: [latestCommitSha],
-                  }),
-                });
-                checkRateLimit(commitRes);
-
-                if (commitRes.ok) {
-                  const commitData = await commitRes.json() as { sha?: string };
-                  if (commitData.sha) {
-                    // Wait 1 second before updating ref (GitHub recommendation for write operations)
-                    await new Promise(r => setTimeout(r, 1000));
-
-                    // Update branch ref
-                    const refUpdateRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
-                      method: "PATCH",
-                      headers,
-                      body: JSON.stringify({ sha: commitData.sha!, force: true }),
-                    });
-                    checkRateLimit(refUpdateRes);
-                    if (refUpdateRes.ok) {
-                      pushed = blobShas.length; // Only count after successful push
-                      latestCommitSha = commitData.sha!;
-                    } else if (refUpdateRes.status === 403) {
-                      throw new Error("GitHub API rate limit exceeded");
-                    } else {
-                      const errText = await refUpdateRes.text().catch(() => "");
-                      throw new Error(`Failed to update branch ref: ${refUpdateRes.status} ${errText.slice(0, 200)}`);
-                    }
-                  }
-                } else if (commitRes.status === 403) {
-                  throw new Error("GitHub API rate limit exceeded");
-                } else {
-                  const errText = await commitRes.text().catch(() => "");
-                  throw new Error(`Failed to create commit: ${commitRes.status} ${errText.slice(0, 200)}`);
-                }
-              }
-            } else if (treeRes.status === 403) {
-              throw new Error("GitHub API rate limit exceeded");
-            } else {
-              const errText = await treeRes.text().catch(() => "");
-              throw new Error(`Failed to create git tree: ${treeRes.status} ${errText.slice(0, 200)}`);
-            }
+          } else if (treeRes.status === 403) {
+            throw new Error("GitHub API rate limit exceeded");
+          } else {
+            const errText = await treeRes.text().catch(() => "");
+            throw new Error(`Failed to create git tree: ${treeRes.status} ${errText.slice(0, 200)}`);
           }
         } catch (pushErr: unknown) {
           // Push failed — throw so the frontend shows the real error
@@ -2304,29 +2294,18 @@ export const syncGithub = action({
             }
           }
 
-          // Create blobs
-          const blobShas: Array<{ path: string; sha: string }> = [];
-          for (const item of treeItems.slice(0, 200)) {
-            try {
-              // Convert content to base64 safely
-              const base64Content = Buffer.from(item.content, "utf-8").toString("base64");
-              const blobRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs`, {
-                method: "POST",
-                headers,
-                body: JSON.stringify({ content: base64Content, encoding: "base64" }),
-              });
-              if (blobRes.ok) {
-                const blobData = await blobRes.json() as { sha?: string };
-                if (blobData.sha) blobShas.push({ path: item.path, sha: blobData.sha! });
-              }
-            } catch { /* skip */ }
-          }
+          console.log(`[syncGithub] Initializing branch with ${treeItems.length} files...`);
 
-          if (blobShas.length > 0) {
-            const treePayload: { base_tree?: string; tree: Array<{ path: string; mode: string; type: string; sha: string }> } = {
-              tree: blobShas.map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
-            };
-            if (baseSha) treePayload.base_tree = baseSha;
+          // Use inline content for initial branch creation (more efficient)
+          const tree = treeItems.map(item => ({
+            path: item.path,
+            mode: "100644",
+            type: "blob" as const,
+            content: item.content,
+          }));
+
+          const treePayload: { base_tree?: string; tree: typeof tree } = { tree };
+          if (baseSha) treePayload.base_tree = baseSha;
 
             const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
               method: "POST",
@@ -2366,8 +2345,9 @@ export const syncGithub = action({
                           body: JSON.stringify({ sha: commitData.sha!, force: true }),
                         });
                       }
-                      pushed = blobShas.length;
+                      pushed = treeItems.length;
                       latestCommitSha = commitData.sha!;
+                      console.log(`[syncGithub] Successfully initialized branch with ${pushed} files`);
                     }
                   }
                 } else {
@@ -2379,7 +2359,6 @@ export const syncGithub = action({
               const errText = await treeRes.text().catch(() => "");
               throw new Error(`Failed to create git tree: ${treeRes.status} ${errText.slice(0, 200)}`);
             }
-          }
         } catch (initErr: unknown) {
           throw new Error(`Initial push failed: ${initErr instanceof Error ? initErr.message : String(initErr)}`);
         }
