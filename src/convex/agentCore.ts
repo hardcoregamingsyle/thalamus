@@ -1532,15 +1532,20 @@ TESTING REQUIREMENTS — cover ALL of these:
 6. Security tests (injection, auth bypass attempts)
 
 INFRASTRUCTURE CONSISTENCY CHECKS — MANDATORY (run these BEFORE writing tests):
-<<RUN-CMD="ls -la Dockerfile docker-compose.yml 2>&1">>
-<<RUN-CMD="ls -la *.md */*.md 2>&1 | head -20">>
-<<RUN-CMD="cat package.json 2>&1 | head -30">>
+<<RUN-CMD="ls -la 2>&1 | head -40">>
+<<RUN-CMD="find . -name '*.md' -not -path '*/node_modules/*' -not -path '*/.git/*' 2>&1 | head -20">>
+<<RUN-CMD="cat package.json 2>&1 | head -30 || cat requirements.txt 2>&1 | head -20 || cat go.mod 2>&1 | head -20 || cat Cargo.toml 2>&1 | head -20">>
 
-INFRASTRUCTURE RULES — FAIL if any of these are violated:
+INFRASTRUCTURE RULES — FAIL if any of these are violated (TECH-STACK-AGNOSTIC):
 - If docker-compose.yml exists but Dockerfile does NOT → <<test.failed="docker-compose.yml exists but Dockerfile is missing — the container cannot be built">>
-- If multiple README.md files exist in subdirectories → flag them for consolidation into root README.md
+- If Makefile references a script that doesn't exist → <<test.failed="Makefile references missing script">>
+- If nginx.conf exists but the upstream app config is missing → <<test.failed="nginx.conf references missing upstream configuration">>
+- If webpack.config.js exists but the entry point file doesn't exist → <<test.failed="webpack entry point file is missing">>
+- If tsconfig.json has path aliases that point to non-existent directories → <<test.failed="tsconfig path alias points to missing directory">>
+- If any import/require/include references a file that doesn't exist → <<test.failed="broken import: [file] does not exist">>
 - If package.json references scripts that don't exist → <<test.failed="package.json script references missing file">>
-- If imports reference files that don't exist → <<test.failed="broken import: file does not exist">>
+- If multiple README.md files exist in subdirectories → flag them for consolidation into root README.md
+- If .env.example exists but .env doesn't → create .env from .env.example with sensible defaults
 
 Use the file creation format for test files:
 <<CREATEFILE="tests/unit.test.ts">>
@@ -1910,15 +1915,25 @@ REVIEW CHECKLIST — check ALL of these for the CURRENT TASK:
 2. **Correctness**: Does the code actually work? Trace through the logic mentally.
 3. **Error Handling**: Is EVERY async operation wrapped in try/catch? Every external call handled?
 4. **Edge Cases**: Are null/undefined/empty inputs handled? What happens when things fail?
-5. **Dependencies**: Are ALL imports correct? All packages in package.json?
+5. **Dependencies**: Are ALL imports correct? All packages in package.json (or requirements.txt, go.mod, Cargo.toml, etc.)?
 6. **Port/Host**: Does the app bind to 0.0.0.0:3000 for Daytona preview?
 7. **Database**: Is the database properly initialized and seeded?
 8. **Security**: No hardcoded secrets? Input validation present?
 9. **Integration**: Does this task's code integrate correctly with previous tasks' code?
 10. **Deploy Commands**: Are deploy commands set correctly?
-11. **Docker Consistency**: If docker-compose.yml exists, does Dockerfile ALSO exist? If not → FAIL immediately.
+11. **File Pairing Consistency** (TECH-STACK-AGNOSTIC — check ALL that apply):
+    - If docker-compose.yml exists → Dockerfile MUST also exist (CRITICAL FAILURE if missing)
+    - If Makefile references scripts → those scripts must exist
+    - If nginx.conf exists → the app it proxies must be configured correctly
+    - If .github/workflows/*.yml exists → all referenced scripts/commands must exist
+    - If webpack.config.js exists → entry points must exist
+    - If tsconfig.json exists → all paths/aliases must resolve to real files
+    - If requirements.txt exists → all imports in Python files must be in requirements.txt
+    - If go.mod exists → all imports must be resolvable
+    - If Cargo.toml exists → all dependencies must be declared
+    - If any config file references another file → that file MUST exist
 12. **README Consolidation**: Is there exactly ONE README.md at the project root? If README.md files exist in subdirectories → flag for consolidation.
-13. **File Pairing**: Do all referenced files actually exist? (e.g., imports, docker build contexts, config references)
+13. **Import Resolution**: Do ALL imports/requires/includes reference files that actually exist?
 14. **Infrastructure Completeness**: Are ALL infrastructure files complete and consistent with each other?
 
 VERDICT RULES — be STRICT:
@@ -1929,10 +1944,9 @@ VERDICT RULES — be STRICT:
   - A core feature is missing or broken
   - Imports reference non-existent files or packages
   - Port is not 3000 or not bound to 0.0.0.0
-  - docker-compose.yml exists but Dockerfile is MISSING (this is a CRITICAL infrastructure failure)
-  - A config file references another file that doesn't exist
+  - Any config file references another file that doesn't exist (docker-compose without Dockerfile, webpack without entry, etc.)
 
-When you output <<Fail>>, ALWAYS specify EXACTLY what needs to be fixed so the Coder can fix it immediately. Be specific: "docker-compose.yml exists but Dockerfile is missing — create Dockerfile for Node.js app exposing port 3000".
+When you output <<Fail>>, ALWAYS specify EXACTLY what needs to be fixed so the Coder can fix it immediately. Be specific about the tech stack: "docker-compose.yml exists but Dockerfile is missing — create Dockerfile for [detected tech stack] exposing port 3000".
 
 Start with "## Final Review" header. Be RUTHLESS — this is the last line of defense.`,
 
