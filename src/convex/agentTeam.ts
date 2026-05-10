@@ -1995,346 +1995,355 @@ export const syncGithub = action({
     token: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ pushed: number; pulled: number; conflicts: string[] }> => {
-    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
-    if (!userId) throw new Error("Not authenticated");
-    const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
-    if (!session || session.userId !== userId) throw new Error("Not authorized");
-
-    const githubRepo = (session as Record<string, unknown>).githubRepo as string | undefined;
-    const githubBranch = (session as Record<string, unknown>).githubBranch as string | undefined;
-    const lastCommitSha = (session as Record<string, unknown>).githubLastCommitSha as string | undefined;
-
-    if (!githubRepo || !githubBranch) throw new Error("GitHub not configured. Please connect a repository first.");
-
-    // Get the user's stored OAuth token
-    const user = await ctx.runQuery(internal.githubHelpers.getUserById, { userId });
-    const githubToken = (user as Record<string, unknown> | null)?.githubAccessToken as string | undefined;
-    if (!githubToken) throw new Error("GitHub account not connected. Please connect your GitHub account first.");
-
-    // Parse owner/repo — if only a repo name is given, use the authenticated user's username
-    let ownerRepo = githubRepo.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/$/, "");
-    const parts = ownerRepo.split("/");
-    let owner: string;
-    let repo: string;
-    const branch = githubBranch;
-
-    const headers = {
-      "Authorization": `Bearer ${githubToken}`,
-      "Accept": "application/vnd.github.v3+json",
-      "User-Agent": "Thalamus-AI/1.0",
-      "Content-Type": "application/json",
-    };
-
-    if (parts.length < 2 || !parts[1]) {
-      // Only repo name given — fetch the authenticated user's login
-      const userRes = await fetch("https://api.github.com/user", { headers });
-      if (!userRes.ok) throw new Error("Failed to fetch GitHub user info");
-      const userData = await userRes.json() as { login: string };
-      owner = userData.login;
-      repo = parts[0];
-    } else {
-      owner = parts[0];
-      repo = parts[1];
-    }
-
-    // Auto-create the repo if it doesn't exist
-    const repoCheckRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
-    if (repoCheckRes.status === 404) {
-      // Repo doesn't exist — create it
-      const createRes = await fetch("https://api.github.com/user/repos", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ name: repo, description: "Thalamus AI project", private: false, auto_init: true }),
-      });
-      if (!createRes.ok) {
-        const errData = await createRes.json().catch(() => ({})) as { message?: string };
-        throw new Error(`Failed to create repository: ${errData.message ?? createRes.status}`);
-      }
-      // Wait a moment for GitHub to initialize the repo
-      await new Promise(r => setTimeout(r, 2000));
-    }
-
-    // ── Step 1: Get current GitHub tree ──────────────────────────────────────
-    const SKIP_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".mp4", ".mp3", ".zip", ".tar", ".gz", ".pdf", ".bin", ".exe", ".dll", ".so", ".dylib"];
-    const MAX_FILE_SIZE = 100_000;
-
-    let githubFiles: Record<string, { sha: string; content: string }> = {};
-    let latestCommitSha = "";
-
     try {
-      // Get latest commit SHA
-      const refRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${branch}`, { headers });
-      if (refRes.ok) {
-        const refData = await refRes.json() as { object?: { sha?: string } };
-        latestCommitSha = refData.object?.sha ?? "";
-      } else if (refRes.status === 404) {
-        // Branch doesn't exist yet — we'll create it by pushing
-        latestCommitSha = "";
+      const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+      if (!userId) throw new Error("Not authenticated");
+      const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
+      if (!session || session.userId !== userId) throw new Error("Not authorized");
+
+      const githubRepo = (session as Record<string, unknown>).githubRepo as string | undefined;
+      const githubBranch = (session as Record<string, unknown>).githubBranch as string | undefined;
+      const lastCommitSha = (session as Record<string, unknown>).githubLastCommitSha as string | undefined;
+
+      if (!githubRepo || !githubBranch) throw new Error("GitHub not configured. Please connect a repository first.");
+
+      // Get the user's stored OAuth token
+      const user = await ctx.runQuery(internal.githubHelpers.getUserById, { userId });
+      const githubToken = (user as Record<string, unknown> | null)?.githubAccessToken as string | undefined;
+      if (!githubToken) throw new Error("GitHub account not connected. Please connect your GitHub account first.");
+
+      // Parse owner/repo — if only a repo name is given, use the authenticated user's username
+      let ownerRepo = githubRepo.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/$/, "");
+      const parts = ownerRepo.split("/");
+      let owner: string;
+      let repo: string;
+      const branch = githubBranch;
+
+      const headers = {
+        "Authorization": `Bearer ${githubToken}`,
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "Thalamus-AI/1.0",
+        "Content-Type": "application/json",
+      };
+
+      if (parts.length < 2 || !parts[1]) {
+        // Only repo name given — fetch the authenticated user's login
+        const userRes = await fetch("https://api.github.com/user", { headers });
+        if (!userRes.ok) throw new Error("Failed to fetch GitHub user info");
+        const userData = await userRes.json() as { login: string };
+        owner = userData.login;
+        repo = parts[0];
+      } else {
+        owner = parts[0];
+        repo = parts[1];
       }
 
-      if (latestCommitSha) {
-        // Get tree
-        const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${latestCommitSha}?recursive=1`, { headers });
-        if (treeRes.ok) {
-          const treeData = await treeRes.json() as { tree: Array<{ path: string; type: string; sha: string; size?: number }> };
-          const fileNodes = treeData.tree.filter(n =>
-            n.type === "blob" &&
-            (n.size ?? 0) < MAX_FILE_SIZE &&
-            !SKIP_EXTENSIONS.some(ext => n.path.toLowerCase().endsWith(ext)) &&
-            !n.path.includes("node_modules/") &&
-            !n.path.includes(".git/") &&
-            !n.path.includes("dist/") &&
-            !n.path.includes("build/")
-          ).slice(0, 300);
+      // Auto-create the repo if it doesn't exist
+      const repoCheckRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+      if (repoCheckRes.status === 404) {
+        // Repo doesn't exist — create it
+        const createRes = await fetch("https://api.github.com/user/repos", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ name: repo, description: "Thalamus AI project", private: false, auto_init: true }),
+        });
+        if (!createRes.ok) {
+          const errData = await createRes.json().catch(() => ({})) as { message?: string };
+          throw new Error(`Failed to create repository: ${errData.message ?? createRes.status}`);
+        }
+        // Wait a moment for GitHub to initialize the repo
+        await new Promise(r => setTimeout(r, 2000));
+      }
 
-          // Fetch file contents in batches
-          for (let i = 0; i < fileNodes.length; i += 10) {
-            const batch = fileNodes.slice(i, i + 10);
-            await Promise.all(batch.map(async (node) => {
+      // ── Step 1: Get current GitHub tree ──────────────────────────────────────
+      const SKIP_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".mp4", ".mp3", ".zip", ".tar", ".gz", ".pdf", ".bin", ".exe", ".dll", ".so", ".dylib"];
+      const MAX_FILE_SIZE = 100_000;
+
+      let githubFiles: Record<string, { sha: string; content: string }> = {};
+      let latestCommitSha = "";
+
+      try {
+        // Get latest commit SHA
+        const refRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${branch}`, { headers });
+        if (refRes.ok) {
+          const refData = await refRes.json() as { object?: { sha?: string } };
+          latestCommitSha = refData.object?.sha ?? "";
+        } else if (refRes.status === 404) {
+          // Branch doesn't exist yet — we'll create it by pushing
+          latestCommitSha = "";
+        }
+
+        if (latestCommitSha) {
+          // Get tree
+          const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${latestCommitSha}?recursive=1`, { headers });
+          if (treeRes.ok) {
+            const treeData = await treeRes.json() as { tree: Array<{ path: string; type: string; sha: string; size?: number }> };
+            const fileNodes = treeData.tree.filter(n =>
+              n.type === "blob" &&
+              (n.size ?? 0) < MAX_FILE_SIZE &&
+              !SKIP_EXTENSIONS.some(ext => n.path.toLowerCase().endsWith(ext)) &&
+              !n.path.includes("node_modules/") &&
+              !n.path.includes(".git/") &&
+              !n.path.includes("dist/") &&
+              !n.path.includes("build/")
+            ).slice(0, 300);
+
+            // Fetch file contents in batches
+            for (let i = 0; i < fileNodes.length; i += 10) {
+              const batch = fileNodes.slice(i, i + 10);
+              await Promise.all(batch.map(async (node) => {
+                try {
+                  const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${latestCommitSha}/${node.path}`;
+                  const res = await fetch(rawUrl, { headers: { "Authorization": `Bearer ${githubToken}`, "User-Agent": "Thalamus-AI/1.0" } });
+                  if (res.ok) {
+                    const content = await res.text();
+                    githubFiles[node.path] = { sha: node.sha, content };
+                  }
+                } catch { /* skip */ }
+              }));
+              if (i + 10 < fileNodes.length) await new Promise(r => setTimeout(r, 100));
+            }
+          }
+        }
+      } catch { /* GitHub fetch failed — proceed with push-only */ }
+
+      // ── Step 2: Get local files ───────────────────────────────────────────────
+      const localFiles = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.sessionId })) as FileRow[];
+      const localMap: Record<string, string> = {};
+      for (const f of localFiles) localMap[f.filepath] = f.content;
+
+      // ── Step 3: Determine changes ─────────────────────────────────────────────
+      const conflicts: string[] = [];
+      let pulled = 0;
+      let pushed = 0;
+
+      // Files in GitHub but not local, or different from local → pull
+      const filesToPull: Array<{ path: string; content: string }> = [];
+      for (const [path, { content }] of Object.entries(githubFiles)) {
+        if (!(path in localMap)) {
+          // New file from GitHub — pull it
+          filesToPull.push({ path, content });
+        } else if (localMap[path] !== content) {
+          // Both changed — GitHub wins (last-write-wins from GitHub)
+          // But if local was modified after last sync, it's a conflict — we'll note it but GitHub wins
+          filesToPull.push({ path, content });
+          conflicts.push(path);
+        }
+      }
+
+      // Pull files from GitHub
+      for (const { path, content } of filesToPull) {
+        await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
+          sessionId: args.sessionId,
+          userId,
+          filepath: path,
+          content,
+          agent: "GitHub Sync",
+        });
+        pulled++;
+      }
+
+      // ── Step 4: Push local files not in GitHub (or different) ────────────────
+      // Build tree for GitHub commit
+      const treeItems: Array<{ path: string; mode: string; type: string; content: string }> = [];
+      for (const [path, content] of Object.entries(localMap)) {
+        const githubContent = githubFiles[path]?.content;
+        if (githubContent === undefined || githubContent !== content) {
+          // New or changed local file — push to GitHub
+          treeItems.push({ path, mode: "100644", type: "blob", content });
+          // NOTE: pushed counter is set AFTER successful commit, not here
+        }
+      }
+
+      if (treeItems.length > 0 && latestCommitSha !== "") {
+        try {
+          // Create blobs for each file
+          const blobShas: Array<{ path: string; sha: string }> = [];
+          for (let i = 0; i < treeItems.length; i += 5) {
+            const batch = treeItems.slice(i, i + 5);
+            await Promise.all(batch.map(async (item) => {
               try {
-                const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${latestCommitSha}/${node.path}`;
-                const res = await fetch(rawUrl, { headers: { "Authorization": `Bearer ${githubToken}`, "User-Agent": "Thalamus-AI/1.0" } });
-                if (res.ok) {
-                  const content = await res.text();
-                  githubFiles[node.path] = { sha: node.sha, content };
+                // Convert content to base64 safely
+                const base64Content = Buffer.from(item.content, "utf-8").toString("base64");
+                const blobRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs`, {
+                  method: "POST",
+                  headers,
+                  body: JSON.stringify({ content: base64Content, encoding: "base64" }),
+                });
+                if (blobRes.ok) {
+                  const blobData = await blobRes.json() as { sha?: string };
+                  if (blobData.sha) blobShas.push({ path: item.path, sha: blobData.sha });
                 }
               } catch { /* skip */ }
             }));
-            if (i + 10 < fileNodes.length) await new Promise(r => setTimeout(r, 100));
+            if (i + 5 < treeItems.length) await new Promise(r => setTimeout(r, 100));
           }
+
+          if (blobShas.length > 0) {
+            // Create tree
+            const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                base_tree: latestCommitSha,
+                tree: blobShas.map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
+              }),
+            });
+
+            if (treeRes.ok) {
+              const treeData = await treeRes.json() as { sha?: string };
+              if (treeData.sha) {
+                // Create commit
+                const commitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
+                  method: "POST",
+                  headers,
+                  body: JSON.stringify({
+                    message: `Thalamus AI sync — ${new Date().toISOString()}`,
+                    tree: treeData.sha,
+                    parents: [latestCommitSha],
+                  }),
+                });
+
+                if (commitRes.ok) {
+                  const commitData = await commitRes.json() as { sha?: string };
+                  if (commitData.sha) {
+                    // Update branch ref
+                    const refUpdateRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
+                      method: "PATCH",
+                      headers,
+                      body: JSON.stringify({ sha: commitData.sha, force: true }),
+                    });
+                    if (refUpdateRes.ok) {
+                      pushed = blobShas.length; // Only count after successful push
+                      latestCommitSha = commitData.sha;
+                    } else {
+                      const errText = await refUpdateRes.text().catch(() => "");
+                      throw new Error(`Failed to update branch ref: ${refUpdateRes.status} ${errText.slice(0, 200)}`);
+                    }
+                  }
+                } else {
+                  const errText = await commitRes.text().catch(() => "");
+                  throw new Error(`Failed to create commit: ${commitRes.status} ${errText.slice(0, 200)}`);
+                }
+              }
+            } else {
+              const errText = await treeRes.text().catch(() => "");
+              throw new Error(`Failed to create git tree: ${treeRes.status} ${errText.slice(0, 200)}`);
+            }
+          }
+        } catch (pushErr) {
+          // Push failed — throw so the frontend shows the real error
+          throw new Error(`Push failed: ${pushErr instanceof Error ? pushErr.message : String(pushErr)}`);
         }
-      }
-    } catch { /* GitHub fetch failed — proceed with push-only */ }
+      } else if (treeItems.length > 0 && latestCommitSha === "") {
+        // Branch doesn't exist — initialize it
+        try {
+          // Get default branch SHA to use as base
+          const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+          let baseSha = "";
+          if (repoRes.ok) {
+            const repoData = await repoRes.json() as { default_branch?: string };
+            const defaultBranch = repoData.default_branch ?? "main";
+            const baseRefRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${defaultBranch}`, { headers });
+            if (baseRefRes.ok) {
+              const baseRefData = await baseRefRes.json() as { object?: { sha?: string } };
+              baseSha = baseRefData.object?.sha ?? "";
+            }
+          }
 
-    // ── Step 2: Get local files ───────────────────────────────────────────────
-    const localFiles = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.sessionId })) as FileRow[];
-    const localMap: Record<string, string> = {};
-    for (const f of localFiles) localMap[f.filepath] = f.content;
-
-    // ── Step 3: Determine changes ─────────────────────────────────────────────
-    const conflicts: string[] = [];
-    let pulled = 0;
-    let pushed = 0;
-
-    // Files in GitHub but not local, or different from local → pull
-    const filesToPull: Array<{ path: string; content: string }> = [];
-    for (const [path, { content }] of Object.entries(githubFiles)) {
-      if (!(path in localMap)) {
-        // New file from GitHub — pull it
-        filesToPull.push({ path, content });
-      } else if (localMap[path] !== content) {
-        // Both changed — GitHub wins (last-write-wins from GitHub)
-        // But if local was modified after last sync, it's a conflict — we'll note it but GitHub wins
-        filesToPull.push({ path, content });
-        conflicts.push(path);
-      }
-    }
-
-    // Pull files from GitHub
-    for (const { path, content } of filesToPull) {
-      await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
-        sessionId: args.sessionId,
-        userId,
-        filepath: path,
-        content,
-        agent: "GitHub Sync",
-      });
-      pulled++;
-    }
-
-    // ── Step 4: Push local files not in GitHub (or different) ────────────────
-    // Build tree for GitHub commit
-    const treeItems: Array<{ path: string; mode: string; type: string; content: string }> = [];
-    for (const [path, content] of Object.entries(localMap)) {
-      const githubContent = githubFiles[path]?.content;
-      if (githubContent === undefined || githubContent !== content) {
-        // New or changed local file — push to GitHub
-        treeItems.push({ path, mode: "100644", type: "blob", content });
-        // NOTE: pushed counter is set AFTER successful commit, not here
-      }
-    }
-
-    if (treeItems.length > 0 && latestCommitSha !== "") {
-      try {
-        // Create blobs for each file
-        const blobShas: Array<{ path: string; sha: string }> = [];
-        for (let i = 0; i < treeItems.length; i += 5) {
-          const batch = treeItems.slice(i, i + 5);
-          await Promise.all(batch.map(async (item) => {
+          // Create blobs
+          const blobShas: Array<{ path: string; sha: string }> = [];
+          for (const item of treeItems.slice(0, 200)) {
             try {
+              // Convert content to base64 safely
+              const base64Content = Buffer.from(item.content, "utf-8").toString("base64");
               const blobRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs`, {
                 method: "POST",
                 headers,
-                body: JSON.stringify({ content: Buffer.from(item.content, "utf-8").toString("base64"), encoding: "base64" }),
+                body: JSON.stringify({ content: base64Content, encoding: "base64" }),
               });
               if (blobRes.ok) {
                 const blobData = await blobRes.json() as { sha?: string };
                 if (blobData.sha) blobShas.push({ path: item.path, sha: blobData.sha });
               }
             } catch { /* skip */ }
-          }));
-          if (i + 5 < treeItems.length) await new Promise(r => setTimeout(r, 100));
-        }
+          }
 
-        if (blobShas.length > 0) {
-          // Create tree
-          const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              base_tree: latestCommitSha,
+          if (blobShas.length > 0) {
+            const treePayload: { base_tree?: string; tree: Array<{ path: string; mode: string; type: string; sha: string }> } = {
               tree: blobShas.map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
-            }),
-          });
+            };
+            if (baseSha) treePayload.base_tree = baseSha;
 
-          if (treeRes.ok) {
-            const treeData = await treeRes.json() as { sha?: string };
-            if (treeData.sha) {
-              // Create commit
-              const commitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
-                method: "POST",
-                headers,
-                body: JSON.stringify({
-                  message: `Thalamus AI sync — ${new Date().toISOString()}`,
-                  tree: treeData.sha,
-                  parents: [latestCommitSha],
-                }),
-              });
-
-              if (commitRes.ok) {
-                const commitData = await commitRes.json() as { sha?: string };
-                if (commitData.sha) {
-                  // Update branch ref
-                  const refUpdateRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
-                    method: "PATCH",
-                    headers,
-                    body: JSON.stringify({ sha: commitData.sha, force: true }),
-                  });
-                  if (refUpdateRes.ok) {
-                    pushed = blobShas.length; // Only count after successful push
-                    latestCommitSha = commitData.sha;
-                  } else {
-                    const errText = await refUpdateRes.text().catch(() => "");
-                    throw new Error(`Failed to update branch ref: ${refUpdateRes.status} ${errText.slice(0, 200)}`);
-                  }
-                }
-              } else {
-                const errText = await commitRes.text().catch(() => "");
-                throw new Error(`Failed to create commit: ${commitRes.status} ${errText.slice(0, 200)}`);
-              }
-            }
-          } else {
-            const errText = await treeRes.text().catch(() => "");
-            throw new Error(`Failed to create git tree: ${treeRes.status} ${errText.slice(0, 200)}`);
-          }
-        }
-      } catch (pushErr) {
-        // Push failed — throw so the frontend shows the real error
-        throw new Error(`Push failed: ${pushErr instanceof Error ? pushErr.message : String(pushErr)}`);
-      }
-    } else if (treeItems.length > 0 && latestCommitSha === "") {
-      // Branch doesn't exist — initialize it
-      try {
-        // Get default branch SHA to use as base
-        const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
-        let baseSha = "";
-        if (repoRes.ok) {
-          const repoData = await repoRes.json() as { default_branch?: string };
-          const defaultBranch = repoData.default_branch ?? "main";
-          const baseRefRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${defaultBranch}`, { headers });
-          if (baseRefRes.ok) {
-            const baseRefData = await baseRefRes.json() as { object?: { sha?: string } };
-            baseSha = baseRefData.object?.sha ?? "";
-          }
-        }
-
-        // Create blobs
-        const blobShas: Array<{ path: string; sha: string }> = [];
-        for (const item of treeItems.slice(0, 200)) {
-          try {
-            const blobRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs`, {
+            const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
               method: "POST",
               headers,
-              body: JSON.stringify({ content: Buffer.from(item.content, "utf-8").toString("base64"), encoding: "base64" }),
+              body: JSON.stringify(treePayload),
             });
-            if (blobRes.ok) {
-              const blobData = await blobRes.json() as { sha?: string };
-              if (blobData.sha) blobShas.push({ path: item.path, sha: blobData.sha });
-            }
-          } catch { /* skip */ }
-        }
 
-        if (blobShas.length > 0) {
-          const treePayload: { base_tree?: string; tree: Array<{ path: string; mode: string; type: string; sha: string }> } = {
-            tree: blobShas.map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
-          };
-          if (baseSha) treePayload.base_tree = baseSha;
+            if (treeRes.ok) {
+              const treeData = await treeRes.json() as { sha?: string };
+              if (treeData.sha) {
+                const commitPayload: { message: string; tree: string; parents: string[] } = {
+                  message: `Thalamus AI initial sync — ${new Date().toISOString()}`,
+                  tree: treeData.sha,
+                  parents: baseSha ? [baseSha] : [],
+                };
+                const commitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
+                  method: "POST",
+                  headers,
+                  body: JSON.stringify(commitPayload),
+                });
 
-          const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(treePayload),
-          });
-
-          if (treeRes.ok) {
-            const treeData = await treeRes.json() as { sha?: string };
-            if (treeData.sha) {
-              const commitPayload: { message: string; tree: string; parents: string[] } = {
-                message: `Thalamus AI initial sync — ${new Date().toISOString()}`,
-                tree: treeData.sha,
-                parents: baseSha ? [baseSha] : [],
-              };
-              const commitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
-                method: "POST",
-                headers,
-                body: JSON.stringify(commitPayload),
-              });
-
-              if (commitRes.ok) {
-                const commitData = await commitRes.json() as { sha?: string };
-                if (commitData.sha) {
-                  // Create new branch or update existing
-                  const createRefRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
-                    method: "POST",
-                    headers,
-                    body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commitData.sha }),
-                  });
-                  if (createRefRes.ok || createRefRes.status === 422) {
-                    // 422 = ref already exists, try to update it
-                    if (createRefRes.status === 422) {
-                      await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
-                        method: "PATCH",
-                        headers,
-                        body: JSON.stringify({ sha: commitData.sha, force: true }),
-                      });
+                if (commitRes.ok) {
+                  const commitData = await commitRes.json() as { sha?: string };
+                  if (commitData.sha) {
+                    // Create new branch or update existing
+                    const createRefRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
+                      method: "POST",
+                      headers,
+                      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commitData.sha }),
+                    });
+                    if (createRefRes.ok || createRefRes.status === 422) {
+                      // 422 = ref already exists, try to update it
+                      if (createRefRes.status === 422) {
+                        await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
+                          method: "PATCH",
+                          headers,
+                          body: JSON.stringify({ sha: commitData.sha, force: true }),
+                        });
+                      }
+                      pushed = blobShas.length;
+                      latestCommitSha = commitData.sha;
                     }
-                    pushed = blobShas.length;
-                    latestCommitSha = commitData.sha;
                   }
+                } else {
+                  const errText = await commitRes.text().catch(() => "");
+                  throw new Error(`Failed to create initial commit: ${commitRes.status} ${errText.slice(0, 200)}`);
                 }
-              } else {
-                const errText = await commitRes.text().catch(() => "");
-                throw new Error(`Failed to create initial commit: ${commitRes.status} ${errText.slice(0, 200)}`);
               }
+            } else {
+              const errText = await treeRes.text().catch(() => "");
+              throw new Error(`Failed to create git tree: ${treeRes.status} ${errText.slice(0, 200)}`);
             }
-          } else {
-            const errText = await treeRes.text().catch(() => "");
-            throw new Error(`Failed to create git tree: ${treeRes.status} ${errText.slice(0, 200)}`);
           }
+        } catch (initErr) {
+          throw new Error(`Initial push failed: ${initErr instanceof Error ? initErr.message : String(initErr)}`);
         }
-      } catch (initErr) {
-        throw new Error(`Initial push failed: ${initErr instanceof Error ? initErr.message : String(initErr)}`);
       }
+
+      // Update last sync time and commit SHA
+      await ctx.runMutation(internal.agentTeamHelpers.updateGithubSync, {
+        sessionId: args.sessionId,
+        lastSyncAt: Date.now(),
+        lastCommitSha: latestCommitSha,
+      });
+
+      return { pushed, pulled, conflicts };
+    } catch (error) {
+      console.error("syncGithub error:", error);
+      throw new Error(`GitHub sync failed: ${error instanceof Error ? error.message : String(error)}`);
     }
-
-    // Update last sync time and commit SHA
-    await ctx.runMutation(internal.agentTeamHelpers.updateGithubSync, {
-      sessionId: args.sessionId,
-      lastSyncAt: Date.now(),
-      lastCommitSha: latestCommitSha,
-    });
-
-    return { pushed, pulled, conflicts };
   },
 });
 
