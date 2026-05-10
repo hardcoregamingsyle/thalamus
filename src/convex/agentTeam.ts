@@ -2284,15 +2284,26 @@ export const syncGithub = action({
               // Wait 1 second before creating commit (GitHub recommendation for write operations)
               await new Promise(r => setTimeout(r, 1000));
 
+              // Verify parent commit still exists before creating commit
+              const parentCheckRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits/${latestCommitSha}`, { headers });
+              const commitPayload: { message: string; tree: string; parents?: string[] } = {
+                message: `Thalamus AI sync — ${new Date().toISOString()}`,
+                tree: treeData.sha!,
+              };
+
+              if (parentCheckRes.ok) {
+                // Parent commit exists - use it
+                commitPayload.parents = [latestCommitSha];
+              } else {
+                // Parent commit doesn't exist (force-pushed/deleted) - create orphan commit
+                console.warn(`[syncGithub] Parent commit ${latestCommitSha.slice(0, 7)} not found, creating orphan commit`);
+              }
+
               // Create commit
               const commitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
                 method: "POST",
                 headers,
-                body: JSON.stringify({
-                  message: `Thalamus AI sync — ${new Date().toISOString()}`,
-                  tree: treeData.sha!,
-                  parents: [latestCommitSha],
-                }),
+                body: JSON.stringify(commitPayload),
               });
               checkRateLimit(commitRes);
 
@@ -2332,7 +2343,9 @@ export const syncGithub = action({
             throw new Error("GitHub API rate limit exceeded");
           } else if (treeRes.status === 404) {
             const errText = await treeRes.text().catch(() => "");
-            throw new Error(`Failed to create git tree (404 - base tree not found). This usually means the repository or branch was deleted. Base tree SHA: ${latestTreeSha}. Error: ${errText.slice(0, 200)}`);
+            // 404 on tree creation usually means invalid parent commit, not base_tree (we don't use base_tree)
+            console.error(`[syncGithub] Tree creation failed with 404. Latest commit: ${latestCommitSha}, Latest tree: ${latestTreeSha}, Blob count: ${blobShas.length}`);
+            throw new Error(`Failed to create git tree (404). This usually means the branch history was modified externally (force push). Try syncing again. Error: ${errText.slice(0, 200)}`);
           } else {
             const errText = await treeRes.text().catch(() => "");
             throw new Error(`Failed to create git tree: ${treeRes.status} ${errText.slice(0, 200)}`);
