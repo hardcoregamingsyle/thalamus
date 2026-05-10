@@ -295,6 +295,7 @@ export const updateSessionFull = internalMutation({
     taskUpgradeMessagesLeft: v.optional(v.number()),
     unfixableTasksJson: v.optional(v.string()),
     manualUpgradeEnabled: v.optional(v.boolean()),
+    clearPlannerTasks: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.sessionId, {
@@ -311,6 +312,8 @@ export const updateSessionFull = internalMutation({
       taskUpgradeMessagesLeft: args.taskUpgradeMessagesLeft,
       unfixableTasksJson: args.unfixableTasksJson,
       manualUpgradeEnabled: args.manualUpgradeEnabled,
+      // Clear planner tasks when session completes so they don't show stale data
+      ...(args.clearPlannerTasks ? { plannerTasksJson: undefined } : {}),
       // Track when we started running to detect stale states
       runningAt: args.status === "running" ? Date.now() : undefined,
     });

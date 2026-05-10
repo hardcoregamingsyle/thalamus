@@ -933,6 +933,7 @@ export const runAgentRound = action({
         executionPhase: done ? "completed" : newExecutionPhase, currentTaskIndex: newTaskIndex,
         finalReviewCoderEnabled, taskMessageCount: 0, taskUpgradeActive: false,
         taskUpgradeMessagesLeft: 0, unfixableTasksJson: JSON.stringify(unfixableTasks),
+        clearPlannerTasks: done ? true : undefined,
       });
 
       return { agent: "System", content: `Task skipped (limit exceeded)`, done, nextAgent: nextPhase, loopCount, totalMessages: totalMessages + 1, fileOpsCount: 0 };
@@ -1373,6 +1374,7 @@ export const runAgentRound = action({
       taskUpgradeActive: newTaskUpgradeActive,
       taskUpgradeMessagesLeft: newTaskUpgradeMessagesLeft,
       unfixableTasksJson: JSON.stringify(newUnfixableTasks),
+      clearPlannerTasks: done ? true : undefined,
     });
 
     return {
@@ -1861,6 +1863,7 @@ export const backgroundRunOneRound = internalAction({
       executionPhase: done ? "completed" : newExecutionPhase, currentTaskIndex: newTaskIndex,
       finalReviewCoderEnabled: newFinalReviewCoderEnabled,
       taskMessageCount: 0, taskUpgradeActive: false, taskUpgradeMessagesLeft: 0,
+      clearPlannerTasks: done ? true : undefined,
     });
 
     if (!done) await ctx.scheduler.runAfter(0, internal.agentTeam.backgroundRunOneRound, { sessionId: args.sessionId });
@@ -2567,9 +2570,13 @@ export const continueSession = action({
     const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
     if (!session) throw new Error("Session not found");
     if (session.userId !== userId) throw new Error("Not authorized");
-    // Use appendTaskContext instead of resetSessionForNewTask to preserve task progress
-    // resetSessionForNewTask wipes currentTaskIndex/executionPhase/plannerTasksJson — causing task regression
-    await ctx.runMutation(internal.agentTeamHelpers.appendTaskContext, { sessionId: args.sessionId, additionalContext: args.newTask });
+    // If session is completed, reset fully so Planner runs fresh with new tasks
+    // If session is still running/idle, append context to preserve in-progress task state
+    if (session.status === "completed" || session.executionPhase === "completed") {
+      await ctx.runMutation(internal.agentTeamHelpers.resetSessionForNewTask, { sessionId: args.sessionId, newTask: args.newTask });
+    } else {
+      await ctx.runMutation(internal.agentTeamHelpers.appendTaskContext, { sessionId: args.sessionId, additionalContext: args.newTask });
+    }
   },
 });
 
