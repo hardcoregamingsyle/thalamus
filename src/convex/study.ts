@@ -167,16 +167,36 @@ async function extractPdfWithClaude(base64Data: string, fileName: string): Promi
 
   const requestBody = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
-    system: `You are a comprehensive document extraction assistant. Your job is to extract ALL content from this PDF document with maximum fidelity.
+    system: `You are a comprehensive document extraction assistant. Your job is to extract ALL content from this PDF document with maximum fidelity and output it as structured JSON.
 
 CRITICAL INSTRUCTIONS:
-1. Extract ALL text verbatim — every heading, paragraph, sentence, list item, footnote, caption
-2. For images, diagrams, charts, and figures: describe them in detail. Write "[IMAGE: detailed description of what the image shows, including any text, labels, data, or visual content]"
-3. For tables: reproduce them as text with clear structure
-4. For mathematical formulas: write them out in plain text notation
-5. Preserve the document structure (headings, sections, subsections)
+1. Output ONLY valid JSON - no markdown, no code blocks, just pure JSON
+2. Extract ALL text verbatim — every heading, paragraph, sentence, list item, footnote, caption
+3. For images, diagrams, charts, and figures: describe them in EXTREME detail
+4. For tables: extract all data with structure
+5. Track when content type changes (text → image → text → table, etc.)
 6. Do NOT summarize, skip, or abbreviate anything
-7. Output the complete extracted content`,
+
+OUTPUT SCHEMA:
+{
+  "title": "Document title or filename",
+  "sections": [
+    {
+      "type": "heading" | "paragraph" | "image" | "table" | "list" | "formula",
+      "content": "The actual content",
+      "level": 1-6 (for headings only),
+      "imageDescription": "Detailed visual analysis" (for images only),
+      "tableData": { rows: [], columns: [] } (for tables only)
+    }
+  ]
+}
+
+For images, provide:
+- What objects/diagrams/charts are shown
+- Any text, labels, captions visible
+- Colors, shapes, spatial relationships
+- Data points or values if it's a chart/graph
+- Context about what the image is teaching`,
     messages: [{
       role: "user",
       content: [
@@ -190,7 +210,7 @@ CRITICAL INSTRUCTIONS:
         },
         {
           type: "text",
-          text: `Extract the COMPLETE content of this PDF document "${fileName}". Include all text, describe all images/diagrams/charts in detail, reproduce all tables, and write out all formulas. Do not skip or summarize anything.`,
+          text: `Extract the COMPLETE content of this PDF document "${fileName}" as structured JSON following the schema provided. Track every content type change (paragraph breaks, image appearances, tables, etc.). For images, provide extremely detailed visual descriptions. Output ONLY the JSON, no other text.`,
         },
       ],
     }],
@@ -213,7 +233,24 @@ CRITICAL INSTRUCTIONS:
   }
 
   const data = await response.json() as { content?: Array<{ type: string; text?: string }> };
-  return data.content?.[0]?.text ?? "";
+  const rawText = data.content?.[0]?.text ?? "";
+
+  // Try to parse as JSON, if it fails, wrap it in a simple structure
+  try {
+    // Remove markdown code blocks if present
+    const cleaned = rawText.replace(/^```json\s*\n?/i, "").replace(/\n?```\s*$/i, "");
+    JSON.parse(cleaned); // Validate it's valid JSON
+    return cleaned;
+  } catch {
+    // If not valid JSON, return the raw text wrapped in a simple JSON structure
+    return JSON.stringify({
+      title: fileName,
+      sections: [{
+        type: "paragraph",
+        content: rawText
+      }]
+    });
+  }
 }
 
 export const processFileResource = action({
@@ -229,9 +266,18 @@ export const processFileResource = action({
 
     const isImage = args.fileType.startsWith("image/");
     const isPdf = args.fileType === "application/pdf" || args.fileName.toLowerCase().endsWith(".pdf");
+    const isPlainText = args.fileType === "text/plain" || args.fileName.toLowerCase().match(/\.(txt|md|json|csv|log)$/);
     let summary = "";
 
-    if (isPdf) {
+    // Handle plain text files - no AI processing needed
+    if (isPlainText) {
+      try {
+        const decoded = Buffer.from(args.fileDataBase64, "base64").toString("utf-8");
+        summary = decoded;
+      } catch {
+        summary = `[Error decoding text file: ${args.fileName}]`;
+      }
+    } else if (isPdf) {
       try {
         summary = await extractPdfWithClaude(args.fileDataBase64, args.fileName);
         if (!summary || summary.length < 50) throw new Error("Empty extraction");
