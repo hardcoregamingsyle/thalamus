@@ -2092,7 +2092,18 @@ export const syncGithub = action({
             if (commitRes.ok) {
               const commitData = await commitRes.json() as { tree?: { sha?: string } };
               latestTreeSha = commitData.tree?.sha ?? "";
-              console.log(`[syncGithub] Found existing branch '${branch}' at commit ${latestCommitSha.slice(0, 7)}, tree ${latestTreeSha.slice(0, 7)}`);
+
+              // Verify the tree actually exists before using it
+              if (latestTreeSha) {
+                const treeCheckRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${latestTreeSha}`, { headers });
+                if (treeCheckRes.ok) {
+                  console.log(`[syncGithub] Found existing branch '${branch}' at commit ${latestCommitSha.slice(0, 7)}, tree ${latestTreeSha.slice(0, 7)}`);
+                } else {
+                  console.warn(`[syncGithub] Tree ${latestTreeSha.slice(0, 7)} not found, creating from scratch`);
+                  latestCommitSha = "";
+                  latestTreeSha = "";
+                }
+              }
             } else {
               console.warn(`[syncGithub] Branch ref points to invalid commit ${latestCommitSha.slice(0, 7)}, treating as new branch`);
               latestCommitSha = "";
@@ -2199,15 +2210,12 @@ export const syncGithub = action({
       }
 
       // ── Step 4: Push local files not in GitHub (or different) ────────────────
-      // Build tree for GitHub commit
+      // Build complete tree with ALL local files (not just changed ones)
+      // This allows us to create tree without base_tree reference
       const treeItems: Array<{ path: string; mode: string; type: string; content: string }> = [];
       for (const [path, content] of Object.entries(localMap)) {
-        const githubContent = githubFiles[path]?.content;
-        if (githubContent === undefined || githubContent !== content) {
-          // New or changed local file — push to GitHub
-          treeItems.push({ path, mode: "100644", type: "blob", content });
-          // NOTE: pushed counter is set AFTER successful commit, not here
-        }
+        // Include ALL files to create complete tree snapshot
+        treeItems.push({ path, mode: "100644", type: "blob", content });
       }
 
       if (treeItems.length > 0 && latestCommitSha) {
@@ -2254,14 +2262,13 @@ export const syncGithub = action({
             throw new Error("Failed to create any blobs");
           }
 
-          console.log(`[syncGithub] Creating tree with ${blobShas.length} blob references (base tree: ${latestTreeSha || 'none'})...`);
+          console.log(`[syncGithub] Creating tree with ${blobShas.length} blob references...`);
           // Create tree with SHA references (much smaller payload)
-          const treePayload: { tree: Array<{ path: string; mode: string; type: string; sha: string }>; base_tree?: string } = {
+          // NOTE: We don't use base_tree because we're pushing ALL local files (complete snapshot)
+          // Using base_tree would only make sense if we were doing incremental updates
+          const treePayload: { tree: Array<{ path: string; mode: string; type: string; sha: string }> } = {
             tree: blobShas.map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
           };
-          if (latestTreeSha) {
-            treePayload.base_tree = latestTreeSha;
-          }
 
           const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
             method: "POST",
