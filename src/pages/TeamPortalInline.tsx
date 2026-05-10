@@ -620,13 +620,15 @@ function GithubSyncModal({
   const [branch, setBranch] = useState(currentBranch ?? "main");
   const [isSaving, setIsSaving] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-  const isRepoConfigured = !!currentRepo;
+  const [savedRepo, setSavedRepo] = useState(currentRepo ?? "");
+  const isRepoConfigured = !!savedRepo;
 
   const handleSave = async () => {
     if (!repo.trim() || !branch.trim()) return;
     setIsSaving(true);
     try {
       await onSave(repo.trim(), branch.trim());
+      setSavedRepo(repo.trim());
     } finally {
       setIsSaving(false);
     }
@@ -1677,6 +1679,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
     try {
       await saveGithubConfigAction({ sessionId: activeSessionId, githubRepo: repo, githubBranch: branch, token });
       toast.success("Repository configured! Starting sync...");
+      setShowGithubModal(false);
       // Immediately sync after connecting
       setIsSyncing(true);
       try {
