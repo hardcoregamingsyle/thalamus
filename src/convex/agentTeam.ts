@@ -2078,6 +2078,7 @@ export const syncGithub = action({
 
       let githubFiles: Record<string, { sha: string; content: string }> = {};
       let latestCommitSha = "";
+      let latestTreeSha = ""; // Tree SHA is needed for base_tree parameter
 
       try {
         // Get latest commit SHA
@@ -2086,13 +2087,16 @@ export const syncGithub = action({
           const refData = await refRes.json() as { object?: { sha?: string } };
           latestCommitSha = refData.object?.sha ?? "";
           if (latestCommitSha) {
-            // Verify the commit exists before using it as base_tree
+            // Get the tree SHA from the commit (needed for base_tree parameter)
             const commitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits/${latestCommitSha}`, { headers });
             if (commitRes.ok) {
-              console.log(`[syncGithub] Found existing branch '${branch}' at commit ${latestCommitSha.slice(0, 7)}`);
+              const commitData = await commitRes.json() as { tree?: { sha?: string } };
+              latestTreeSha = commitData.tree?.sha ?? "";
+              console.log(`[syncGithub] Found existing branch '${branch}' at commit ${latestCommitSha.slice(0, 7)}, tree ${latestTreeSha.slice(0, 7)}`);
             } else {
               console.warn(`[syncGithub] Branch ref points to invalid commit ${latestCommitSha.slice(0, 7)}, treating as new branch`);
               latestCommitSha = "";
+              latestTreeSha = "";
             }
           }
         } else if (refRes.status === 404) {
@@ -2219,12 +2223,12 @@ export const syncGithub = action({
             content: item.content, // GitHub will create the blob from content
           }));
 
-          console.log(`[syncGithub] Creating tree with ${tree.length} files (base: ${latestCommitSha || 'none'})...`);
+          console.log(`[syncGithub] Creating tree with ${tree.length} files (base tree: ${latestTreeSha || 'none'})...`);
           // Create tree with inline content
-          // Only include base_tree if we have a valid commit SHA (updating existing branch)
+          // Use latestTreeSha (not commit SHA!) for base_tree parameter
           const treePayload: { tree: typeof tree; base_tree?: string } = { tree };
-          if (latestCommitSha) {
-            treePayload.base_tree = latestCommitSha;
+          if (latestTreeSha) {
+            treePayload.base_tree = latestTreeSha;
           }
 
           const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
@@ -2289,7 +2293,7 @@ export const syncGithub = action({
             throw new Error("GitHub API rate limit exceeded");
           } else if (treeRes.status === 404) {
             const errText = await treeRes.text().catch(() => "");
-            throw new Error(`Failed to create git tree (404 - base commit not found). This usually means the repository or branch was deleted. Base SHA: ${latestCommitSha}. Error: ${errText.slice(0, 200)}`);
+            throw new Error(`Failed to create git tree (404 - base tree not found). This usually means the repository or branch was deleted. Base tree SHA: ${latestTreeSha}. Error: ${errText.slice(0, 200)}`);
           } else {
             const errText = await treeRes.text().catch(() => "");
             throw new Error(`Failed to create git tree: ${treeRes.status} ${errText.slice(0, 200)}`);
