@@ -1144,9 +1144,20 @@ CRITICAL RULES:
 4. Include ALL infrastructure tasks (database schema, migrations, config files)
 5. Include ALL testing tasks (unit tests, integration tests, e2e tests)
 6. Include documentation tasks (README, API docs, inline comments)
-7. Include DevOps tasks (Dockerfile, CI/CD, deployment scripts)
+7. Include DevOps tasks (Dockerfile, CI/CD, deployment scripts) — IF you include docker-compose.yml, you MUST also include a task for Dockerfile
 8. Aim for 15-25 tasks minimum for any non-trivial project
 9. Order tasks by dependency (setup first, then core, then features, then tests, then docs)
+
+README RULE — CRITICAL:
+- There must be EXACTLY ONE README.md file, located at the ROOT of the project (README.md)
+- Do NOT create README.md files in subdirectories — all documentation goes into the single root README.md
+- The root README.md should be comprehensive: setup, features, architecture, deployment, API docs, environment variables
+- If absolutely necessary for a specific sub-module (e.g., a separate microservice), a .md file may be created in that module's folder, but this is the exception, not the rule
+
+DOCKER CONSISTENCY RULE — CRITICAL:
+- If docker-compose.yml is created, Dockerfile MUST also be created in the same task or a preceding task
+- NEVER create docker-compose.yml without a corresponding Dockerfile
+- If a service in docker-compose.yml uses a custom image (build: .), that Dockerfile MUST exist
 
 TASK TYPES:
 - Setup tasks: project init, config files, dependencies (subpart: false)
@@ -1350,10 +1361,22 @@ WHAT TO CREATE — ALWAYS CREATE ALL OF THESE:
 2. tsconfig.json (if TypeScript)
 3. .env with REAL working values (use SQLite for DB if no external DB available)
 4. .gitignore
-5. README.md with setup instructions
+5. README.md (ROOT ONLY — see README rule below)
 6. ALL source files — complete implementations
 7. Database schema and initialization code
 8. Any config files needed (webpack, vite, tailwind, etc.)
+
+README RULE — CRITICAL:
+- There must be EXACTLY ONE README.md, located at the project ROOT (README.md)
+- Do NOT create README.md files in subdirectories — all documentation belongs in the single root README.md
+- The root README.md must be comprehensive: features, setup, architecture, deployment, API docs, environment variables
+- If a separate .md file is absolutely necessary for a distinct sub-module (e.g., a standalone microservice), it may be created in that module's folder — but this is the exception, not the rule
+
+DOCKER CONSISTENCY RULE — CRITICAL:
+- If you create docker-compose.yml, you MUST ALSO create Dockerfile in the same output
+- NEVER create docker-compose.yml without a corresponding Dockerfile
+- If docker-compose.yml references build: . for any service, that Dockerfile MUST exist and be complete
+- The Dockerfile must match the tech stack (Node.js, Python, Go, etc.) and expose port 3000
 
 ANTI-PATTERNS THAT CAUSE INFINITE FAILURES — NEVER DO THESE:
 - Writing "// TODO: implement this" — IMPLEMENT IT NOW
@@ -1474,11 +1497,21 @@ ORGANISATION TASKS:
 1. Add comprehensive JSDoc/TSDoc comments to all functions and classes
 2. Improve variable and function naming for clarity
 3. Add inline comments explaining complex logic
-4. Create/update README.md with setup instructions
+4. Create/update the ROOT README.md with comprehensive documentation (see README rule below)
 5. Ensure consistent code style and formatting
 6. Add type annotations where missing
 7. Organize imports and exports
-8. Create API documentation
+8. Consolidate any scattered .md files into the root README.md
+
+README RULE — CRITICAL:
+- There must be EXACTLY ONE README.md, located at the project ROOT (README.md)
+- If you find README.md files in subdirectories, CONSOLIDATE their content into the root README.md and DELETE the subdirectory ones
+- The root README.md must be comprehensive: features, setup, architecture, deployment, API docs, environment variables
+- Exception: a .md file may exist in a truly separate sub-module folder if absolutely necessary
+
+DOCKER CONSISTENCY CHECK:
+- If docker-compose.yml exists but Dockerfile does NOT exist, CREATE the Dockerfile immediately
+- The Dockerfile must match the tech stack and expose port 3000
 
 Use the file creation format for any changes:
 <<CREATEFILE="README.md">>
@@ -1497,6 +1530,17 @@ TESTING REQUIREMENTS — cover ALL of these:
 4. Error handling tests (what happens when things fail)
 5. Performance tests where relevant
 6. Security tests (injection, auth bypass attempts)
+
+INFRASTRUCTURE CONSISTENCY CHECKS — MANDATORY (run these BEFORE writing tests):
+<<RUN-CMD="ls -la Dockerfile docker-compose.yml 2>&1">>
+<<RUN-CMD="ls -la *.md */*.md 2>&1 | head -20">>
+<<RUN-CMD="cat package.json 2>&1 | head -30">>
+
+INFRASTRUCTURE RULES — FAIL if any of these are violated:
+- If docker-compose.yml exists but Dockerfile does NOT → <<test.failed="docker-compose.yml exists but Dockerfile is missing — the container cannot be built">>
+- If multiple README.md files exist in subdirectories → flag them for consolidation into root README.md
+- If package.json references scripts that don't exist → <<test.failed="package.json script references missing file">>
+- If imports reference files that don't exist → <<test.failed="broken import: file does not exist">>
 
 Use the file creation format for test files:
 <<CREATEFILE="tests/unit.test.ts">>
@@ -1872,17 +1916,23 @@ REVIEW CHECKLIST — check ALL of these for the CURRENT TASK:
 8. **Security**: No hardcoded secrets? Input validation present?
 9. **Integration**: Does this task's code integrate correctly with previous tasks' code?
 10. **Deploy Commands**: Are deploy commands set correctly?
+11. **Docker Consistency**: If docker-compose.yml exists, does Dockerfile ALSO exist? If not → FAIL immediately.
+12. **README Consolidation**: Is there exactly ONE README.md at the project root? If README.md files exist in subdirectories → flag for consolidation.
+13. **File Pairing**: Do all referenced files actually exist? (e.g., imports, docker build contexts, config references)
+14. **Infrastructure Completeness**: Are ALL infrastructure files complete and consistent with each other?
 
 VERDICT RULES — be STRICT:
-- Output <<pass>> ONLY if ALL 10 checks pass with ZERO critical issues
+- Output <<pass>> ONLY if ALL 14 checks pass with ZERO critical issues
 - Output <<Fail>> if ANY of these are true:
   - Any file has a placeholder, TODO, or stub function
   - The app would crash on startup
   - A core feature is missing or broken
   - Imports reference non-existent files or packages
   - Port is not 3000 or not bound to 0.0.0.0
+  - docker-compose.yml exists but Dockerfile is MISSING (this is a CRITICAL infrastructure failure)
+  - A config file references another file that doesn't exist
 
-When you output <<Fail>>, ALWAYS specify EXACTLY what needs to be fixed so the Coder can fix it immediately.
+When you output <<Fail>>, ALWAYS specify EXACTLY what needs to be fixed so the Coder can fix it immediately. Be specific: "docker-compose.yml exists but Dockerfile is missing — create Dockerfile for Node.js app exposing port 3000".
 
 Start with "## Final Review" header. Be RUTHLESS — this is the last line of defense.`,
 
