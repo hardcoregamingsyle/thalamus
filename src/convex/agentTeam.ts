@@ -2072,9 +2072,14 @@ export const syncGithub = action({
         } else if (refRes.status === 404) {
           // Branch doesn't exist yet — we'll create it by pushing
           latestCommitSha = "";
+        } else if (refRes.status === 403) {
+          throw new Error("GitHub API rate limit exceeded. Please wait a few minutes before syncing again.");
         }
 
-        if (latestCommitSha) {
+        // Skip pull if we've already synced this commit
+        const skipPull = latestCommitSha && latestCommitSha === lastCommitSha;
+
+        if (latestCommitSha && !skipPull) {
           // Get tree
           const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${latestCommitSha}?recursive=1`, { headers });
           if (treeRes.ok) {
@@ -2087,22 +2092,28 @@ export const syncGithub = action({
               !n.path.includes(".git/") &&
               !n.path.includes("dist/") &&
               !n.path.includes("build/")
-            ).slice(0, 300);
+            ).slice(0, 100); // Reduced from 300 to 100 to avoid rate limits
 
-            // Fetch file contents in batches
-            for (let i = 0; i < fileNodes.length; i += 10) {
-              const batch = fileNodes.slice(i, i + 10);
+            // Fetch file contents in smaller batches with longer delays
+            for (let i = 0; i < fileNodes.length; i += 5) {
+              const batch = fileNodes.slice(i, i + 5);
               await Promise.all(batch.map(async (node) => {
                 try {
                   const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${latestCommitSha}/${node.path}`;
-                  const res = await fetch(rawUrl, { headers: { "Authorization": `Bearer ${githubToken}`, "User-Agent": "Thalamus-AI/1.0" } });
+                  const res = await fetch(rawUrl, { headers: { "Authorization": `Bearer ${githubToken!}`, "User-Agent": "Thalamus-AI/1.0" } });
                   if (res.ok) {
                     const content = await res.text();
                     githubFiles[node.path] = { sha: node.sha, content };
+                  } else if (res.status === 403) {
+                    throw new Error("GitHub API rate limit exceeded");
                   }
-                } catch { /* skip */ }
+                } catch (err: unknown) {
+                  if (err instanceof Error && err.message.includes("rate limit")) throw err;
+                  // Otherwise skip file
+                }
               }));
-              if (i + 10 < fileNodes.length) await new Promise(r => setTimeout(r, 100));
+              // Longer delay between batches to avoid rate limits
+              if (i + 5 < fileNodes.length) await new Promise(r => setTimeout(r, 300));
             }
           }
         }
@@ -2158,10 +2169,14 @@ export const syncGithub = action({
 
       if (treeItems.length > 0 && latestCommitSha !== "") {
         try {
-          // Create blobs for each file
+          // Create blobs for each file (limit to 50 files per sync to avoid rate limits)
+          const limitedTreeItems = treeItems.slice(0, 50);
+          if (treeItems.length > 50) {
+            console.log(`[syncGithub] Limiting sync to 50 files (${treeItems.length} total changes). Run sync again to push remaining files.`);
+          }
           const blobShas: Array<{ path: string; sha: string }> = [];
-          for (let i = 0; i < treeItems.length; i += 5) {
-            const batch = treeItems.slice(i, i + 5);
+          for (let i = 0; i < limitedTreeItems.length; i += 3) {
+            const batch = limitedTreeItems.slice(i, i + 3);
             await Promise.all(batch.map(async (item) => {
               try {
                 // Convert content to base64 safely
@@ -2174,10 +2189,16 @@ export const syncGithub = action({
                 if (blobRes.ok) {
                   const blobData = await blobRes.json() as { sha?: string };
                   if (blobData.sha) blobShas.push({ path: item.path, sha: blobData.sha! });
+                } else if (blobRes.status === 403) {
+                  throw new Error("GitHub API rate limit exceeded");
                 }
-              } catch { /* skip */ }
+              } catch (err: unknown) {
+                if (err instanceof Error && err.message.includes("rate limit")) throw err;
+                // Otherwise skip file
+              }
             }));
-            if (i + 5 < treeItems.length) await new Promise(r => setTimeout(r, 100));
+            // Longer delay between batches
+            if (i + 3 < limitedTreeItems.length) await new Promise(r => setTimeout(r, 300));
           }
 
           if (blobShas.length > 0) {
@@ -2343,7 +2364,14 @@ export const syncGithub = action({
       return { pushed, pulled, conflicts };
     } catch (error: unknown) {
       console.error("syncGithub error:", error);
-      throw new Error(`GitHub sync failed: ${error instanceof Error ? error.message : String(error)}`);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+
+      // Provide user-friendly message for rate limits
+      if (errorMsg.includes("rate limit")) {
+        throw new Error("GitHub API rate limit exceeded. Please wait a few minutes before syncing again.");
+      }
+
+      throw new Error(`GitHub sync failed: ${errorMsg}`);
     }
   },
 });

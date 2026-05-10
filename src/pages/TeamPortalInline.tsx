@@ -1736,14 +1736,19 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
     finally { setIsSyncing(false); }
   };
 
-  // Auto-sync every 60 seconds if GitHub is configured
+  // Auto-sync every 5 minutes if GitHub is configured (reduced from 60s to avoid rate limits)
   useEffect(() => {
     if (!activeSessionId || !token) return;
     const githubRepo = (liveSession as Record<string, unknown> | null)?.githubRepo as string | undefined;
     if (!githubRepo) return;
     const interval = setInterval(() => {
-      syncGithubAction({ sessionId: activeSessionId, token }).catch(() => {});
-    }, 60_000);
+      syncGithubAction({ sessionId: activeSessionId, token }).catch((err) => {
+        // Only log rate limit errors, ignore others
+        if (err.message?.includes("rate limit")) {
+          console.warn("GitHub rate limit reached, sync paused");
+        }
+      });
+    }, 5 * 60_000); // 5 minutes
     return () => clearInterval(interval);
   }, [activeSessionId, token, (liveSession as Record<string, unknown> | null)?.githubRepo]);
 
