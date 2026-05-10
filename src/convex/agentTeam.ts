@@ -2214,19 +2214,51 @@ export const syncGithub = action({
         try {
           console.log(`[syncGithub] Pushing ${treeItems.length} changed files to GitHub...`);
 
-          // Use GitHub Tree API with inline content - creates all blobs in ONE API call!
-          // This is MUCH more efficient than creating blobs individually
-          const tree = treeItems.map(item => ({
-            path: item.path,
-            mode: "100644",
-            type: "blob" as const,
-            content: item.content, // GitHub will create the blob from content
-          }));
+          // Create blobs first, then reference by SHA (handles large payloads)
+          // Inline content has ~10MB limit; with 195 files we need blob-first approach
+          const blobShas: Array<{ path: string; sha: string }> = [];
+          let blobCount = 0;
 
-          console.log(`[syncGithub] Creating tree with ${tree.length} files (base tree: ${latestTreeSha || 'none'})...`);
-          // Create tree with inline content
-          // Use latestTreeSha (not commit SHA!) for base_tree parameter
-          const treePayload: { tree: typeof tree; base_tree?: string } = { tree };
+          for (const item of treeItems) {
+            try {
+              const base64Content = Buffer.from(item.content, "utf-8").toString("base64");
+              const blobRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ content: base64Content, encoding: "base64" }),
+              });
+              checkRateLimit(blobRes);
+
+              if (blobRes.ok) {
+                const blobData = await blobRes.json() as { sha?: string };
+                if (blobData.sha) {
+                  blobShas.push({ path: item.path, sha: blobData.sha });
+                  blobCount++;
+                  if (blobCount % 20 === 0) {
+                    console.log(`[syncGithub] Created ${blobCount}/${treeItems.length} blobs...`);
+                  }
+                }
+              } else if (blobRes.status === 403) {
+                throw new Error("GitHub API rate limit exceeded");
+              }
+
+              // 200ms delay between blob creations to avoid rate limits
+              await new Promise(r => setTimeout(r, 200));
+            } catch (err: unknown) {
+              if (err instanceof Error && err.message.includes("rate limit")) throw err;
+              console.warn(`[syncGithub] Failed to create blob for ${item.path}, skipping`);
+            }
+          }
+
+          if (blobShas.length === 0) {
+            throw new Error("Failed to create any blobs");
+          }
+
+          console.log(`[syncGithub] Creating tree with ${blobShas.length} blob references (base tree: ${latestTreeSha || 'none'})...`);
+          // Create tree with SHA references (much smaller payload)
+          const treePayload: { tree: Array<{ path: string; mode: string; type: string; sha: string }>; base_tree?: string } = {
+            tree: blobShas.map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
+          };
           if (latestTreeSha) {
             treePayload.base_tree = latestTreeSha;
           }
@@ -2272,7 +2304,7 @@ export const syncGithub = action({
                   });
                   checkRateLimit(refUpdateRes);
                   if (refUpdateRes.ok) {
-                    pushed = treeItems.length; // Count all files pushed
+                    pushed = blobShas.length; // Count successfully created blobs
                     latestCommitSha = commitData.sha!;
                     console.log(`[syncGithub] Successfully pushed ${pushed} files`);
                   } else if (refUpdateRes.status === 403) {
@@ -2320,15 +2352,27 @@ export const syncGithub = action({
 
           console.log(`[syncGithub] Initializing branch with ${treeItems.length} files...`);
 
-          // Use inline content for initial branch creation (more efficient)
-          const tree = treeItems.map(item => ({
-            path: item.path,
-            mode: "100644",
-            type: "blob" as const,
-            content: item.content,
-          }));
+          // Create blobs first (avoids payload size limit)
+          const blobShas: Array<{ path: string; sha: string }> = [];
+          for (const item of treeItems) {
+            try {
+              const base64Content = Buffer.from(item.content, "utf-8").toString("base64");
+              const blobRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ content: base64Content, encoding: "base64" }),
+              });
+              if (blobRes.ok) {
+                const blobData = await blobRes.json() as { sha?: string };
+                if (blobData.sha) blobShas.push({ path: item.path, sha: blobData.sha });
+              }
+              await new Promise(r => setTimeout(r, 200));
+            } catch { /* skip */ }
+          }
 
-          const treePayload: { base_tree?: string; tree: typeof tree } = { tree };
+          const treePayload: { base_tree?: string; tree: Array<{ path: string; mode: string; type: string; sha: string }> } = {
+            tree: blobShas.map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
+          };
           if (baseSha) treePayload.base_tree = baseSha;
 
             const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
@@ -2369,7 +2413,7 @@ export const syncGithub = action({
                           body: JSON.stringify({ sha: commitData.sha!, force: true }),
                         });
                       }
-                      pushed = treeItems.length;
+                      pushed = blobShas.length;
                       latestCommitSha = commitData.sha!;
                       console.log(`[syncGithub] Successfully initialized branch with ${pushed} files`);
                     }
