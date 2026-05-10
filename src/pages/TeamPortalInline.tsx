@@ -925,6 +925,15 @@ function FilesTabInline({
   activeSessionId: Id<"teamSessions"> | null;
   token: string;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  // Reset edit mode when selected file changes
+  const prevSelectedFileRef = useRef<string | null>(null);
+  if (selectedFile?.filepath !== prevSelectedFileRef.current) {
+    prevSelectedFileRef.current = selectedFile?.filepath ?? null;
+    if (isEditing) { setIsEditing(false); setEditContent(""); }
+  }
   const deleteFileMutation = useMutation(api.agentTeamHelpers.deleteFilePublic);
   const renameFileMutation = useMutation(api.agentTeamHelpers.renameFilePublic);
   const createFileMutation = useMutation(api.agentTeamHelpers.createFilePublic);
@@ -1220,22 +1229,69 @@ function FilesTabInline({
         />
       </div>
       {/* File content */}
-      <div className="flex-1 overflow-y-auto min-w-0">
+      <div className="flex-1 overflow-y-auto min-w-0 flex flex-col">
         {selectedFile ? (
-          <div className="p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <FileCode className="h-4 w-4 text-primary" />
-              <span className="text-xs font-bold text-primary truncate">{selectedFile.filepath}</span>
-              <span className="text-[10px] text-muted-foreground ml-auto shrink-0">by {selectedFile.lastModifiedBy}</span>
+          <div className="p-4 flex flex-col flex-1 min-h-0">
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <FileCode className="h-4 w-4 text-primary shrink-0" />
+              <span className="text-xs font-bold text-primary truncate flex-1 min-w-0">{selectedFile.filepath}</span>
+              <span className="text-[10px] text-muted-foreground shrink-0">by {selectedFile.lastModifiedBy}</span>
               <a
                 href={`data:text/plain;charset=utf-8,${encodeURIComponent(selectedFile.content)}`}
                 download={selectedFile.filepath.split("/").pop() ?? "file"}
                 className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 bg-primary/10 border border-primary/30 text-primary text-[9px] rounded hover:bg-primary/20 transition-all"
               >DL</a>
+              {!isEditing ? (
+                <button
+                  onClick={() => { setEditContent(selectedFile.content); setIsEditing(true); }}
+                  className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 bg-amber-400/10 border border-amber-400/30 text-amber-400 text-[9px] rounded hover:bg-amber-400/20 transition-all font-bold"
+                >
+                  <Edit3 className="h-2.5 w-2.5" />EDIT
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={async () => {
+                      if (!activeSessionId) return;
+                      setIsSaving(true);
+                      try {
+                        await createFileMutation({ sessionId: activeSessionId, filepath: selectedFile.filepath, content: editContent, token });
+                        setSelectedFile({ ...selectedFile, content: editContent, lastModifiedBy: "user" });
+                        setIsEditing(false);
+                        toast.success("File saved");
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : "Failed to save");
+                      } finally { setIsSaving(false); }
+                    }}
+                    disabled={isSaving}
+                    className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 bg-emerald-400/10 border border-emerald-400/30 text-emerald-400 text-[9px] rounded hover:bg-emerald-400/20 disabled:opacity-50 transition-all font-bold"
+                  >
+                    {isSaving ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <CheckCircle className="h-2.5 w-2.5" />}SAVE
+                  </button>
+                  <button
+                    onClick={() => setIsEditing(false)}
+                    className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 bg-muted/50 border border-border text-muted-foreground text-[9px] rounded hover:bg-muted transition-all"
+                  >
+                    <X className="h-2.5 w-2.5" />CANCEL
+                  </button>
+                </>
+              )}
             </div>
-            <pre className="text-[11px] text-foreground bg-background border border-border rounded-xl p-4 overflow-x-auto whitespace-pre-wrap break-words">
-              {selectedFile.content}
-            </pre>
+            {isEditing ? (
+              <textarea
+                value={editContent}
+                onChange={e => setEditContent(e.target.value)}
+                className="flex-1 w-full text-[11px] font-mono text-foreground bg-background border border-amber-400/30 rounded-xl p-4 resize-none focus:outline-none focus:border-amber-400/60 transition-colors min-h-[400px]"
+                spellCheck={false}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+              />
+            ) : (
+              <pre className="text-[11px] text-foreground bg-background border border-border rounded-xl p-4 overflow-x-auto whitespace-pre-wrap break-words">
+                {selectedFile.content}
+              </pre>
+            )}
           </div>
         ) : (
           <div className="h-full flex items-center justify-center">
