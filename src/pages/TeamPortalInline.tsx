@@ -1365,30 +1365,37 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   }));
 
   // Merge agent messages (already in correct DB/creation-time order) with local user messages.
-  // User messages are inserted at the position matching their messageIndex.
-  // Agent messages preserve their original DB order; user messages are inserted relative to them.
+  // User messages are inserted AFTER all agent messages that existed when the user sent the message.
+  // We use the user message's messageIndex as a "snapshot" of how many agent messages existed at send time.
   const allMessages: AgentMessage[] = (() => {
     if (userMessages.length === 0) return agentMessages;
-    // Build combined list: agent messages keep their DB order, user messages inserted by messageIndex
-    const combined: AgentMessage[] = [];
-    let userIdx = 0;
+    // Sort user messages by when they were sent (messageIndex = totalMessages at send time)
     const sortedUserMsgs = [...userMessages].sort((a, b) => (a.messageIndex ?? 999999) - (b.messageIndex ?? 999999));
-    for (const agentMsg of agentMessages) {
-      // Insert any user messages that should come before this agent message
-      while (userIdx < sortedUserMsgs.length) {
-        const um = sortedUserMsgs[userIdx];
-        if ((um.messageIndex ?? 999999) <= (agentMsg.messageIndex ?? 999999)) {
-          combined.push(um);
-          userIdx++;
-        } else {
-          break;
+    const combined: AgentMessage[] = [...agentMessages];
+    // For each user message, find the insertion point:
+    // Insert after the last agent message that was present when the user sent it.
+    // messageIndex = totalMessages + 0.5 at send time, so we insert after index (messageIndex - 0.5) agent messages.
+    // Since agent messages may grow, we insert at the position = min(floor(messageIndex), agentMessages.length)
+    // We process user messages in reverse to maintain correct relative order when inserting
+    for (let i = sortedUserMsgs.length - 1; i >= 0; i--) {
+      const um = sortedUserMsgs[i];
+      // Insert position: after the agent messages that existed when this user message was sent
+      const insertAfter = Math.min(Math.floor(um.messageIndex ?? 0), agentMessages.length);
+      // Find the actual insertion index in combined (accounting for previously inserted user messages)
+      // We insert at insertAfter position relative to agent messages only
+      // Simple approach: find the insertAfter-th agent message in combined and insert after it
+      let agentCount = 0;
+      let insertIdx = combined.length; // default: end
+      for (let j = 0; j < combined.length; j++) {
+        if (!combined[j].isUser) {
+          agentCount++;
+          if (agentCount === insertAfter) {
+            insertIdx = j + 1;
+            break;
+          }
         }
       }
-      combined.push(agentMsg);
-    }
-    // Append any remaining user messages at the end
-    while (userIdx < sortedUserMsgs.length) {
-      combined.push(sortedUserMsgs[userIdx++]);
+      combined.splice(insertIdx, 0, um);
     }
     return combined;
   })();
