@@ -2165,7 +2165,7 @@ export const syncGithub = action({
               const blobRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs`, {
                 method: "POST",
                 headers,
-                body: JSON.stringify({ content: item.content, encoding: "utf-8" }),
+                body: JSON.stringify({ content: Buffer.from(item.content, "utf-8").toString("base64"), encoding: "base64" }),
               });
               if (blobRes.ok) {
                 const blobData = await blobRes.json() as { sha?: string };
@@ -2255,7 +2255,7 @@ export const syncGithub = action({
             const blobRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs`, {
               method: "POST",
               headers,
-              body: JSON.stringify({ content: item.content, encoding: "utf-8" }),
+              body: JSON.stringify({ content: Buffer.from(item.content, "utf-8").toString("base64"), encoding: "base64" }),
             });
             if (blobRes.ok) {
               const blobData = await blobRes.json() as { sha?: string };
