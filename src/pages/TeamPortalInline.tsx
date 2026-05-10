@@ -2418,7 +2418,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                     <textarea
                       ref={undefined}
                       value={messageInput}
-                      onChange={e => { setMessageInput(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px"; }}
+                      onChange={e => setMessageInput(e.target.value)}
                       onKeyDown={handleMessageKeyDown}
                       placeholder={isRunning ? "Agents running... Enter to queue, Ctrl+Enter to force queue" : "Send a message or follow-up..."}
                       rows={1}

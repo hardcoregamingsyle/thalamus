@@ -2147,7 +2147,7 @@ export const syncGithub = action({
       if (githubContent === undefined || githubContent !== content) {
         // New or changed local file — push to GitHub
         treeItems.push({ path, mode: "100644", type: "blob", content });
-        pushed++;
+        // NOTE: pushed counter is set AFTER successful commit, not here
       }
     }
 
@@ -2202,18 +2202,33 @@ export const syncGithub = action({
                 const commitData = await commitRes.json() as { sha?: string };
                 if (commitData.sha) {
                   // Update branch ref
-                  await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
+                  const refUpdateRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
                     method: "PATCH",
                     headers,
-                    body: JSON.stringify({ sha: commitData.sha, force: false }),
+                    body: JSON.stringify({ sha: commitData.sha, force: true }),
                   });
-                  latestCommitSha = commitData.sha;
+                  if (refUpdateRes.ok) {
+                    pushed = blobShas.length; // Only count after successful push
+                    latestCommitSha = commitData.sha;
+                  } else {
+                    const errText = await refUpdateRes.text().catch(() => "");
+                    throw new Error(`Failed to update branch ref: ${refUpdateRes.status} ${errText.slice(0, 200)}`);
+                  }
                 }
+              } else {
+                const errText = await commitRes.text().catch(() => "");
+                throw new Error(`Failed to create commit: ${commitRes.status} ${errText.slice(0, 200)}`);
               }
             }
+          } else {
+            const errText = await treeRes.text().catch(() => "");
+            throw new Error(`Failed to create git tree: ${treeRes.status} ${errText.slice(0, 200)}`);
           }
         }
-      } catch { /* push failed — non-fatal */ }
+      } catch (pushErr) {
+        // Push failed — throw so the frontend shows the real error
+        throw new Error(`Push failed: ${pushErr instanceof Error ? pushErr.message : String(pushErr)}`);
+      }
     } else if (treeItems.length > 0 && latestCommitSha === "") {
       // Branch doesn't exist — initialize it
       try {
@@ -2232,7 +2247,7 @@ export const syncGithub = action({
 
         // Create blobs
         const blobShas: Array<{ path: string; sha: string }> = [];
-        for (const item of treeItems.slice(0, 50)) {
+        for (const item of treeItems.slice(0, 200)) {
           try {
             const blobRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs`, {
               method: "POST",
@@ -2275,19 +2290,38 @@ export const syncGithub = action({
               if (commitRes.ok) {
                 const commitData = await commitRes.json() as { sha?: string };
                 if (commitData.sha) {
-                  // Create new branch
-                  await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
+                  // Create new branch or update existing
+                  const createRefRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
                     method: "POST",
                     headers,
                     body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commitData.sha }),
                   });
-                  latestCommitSha = commitData.sha;
+                  if (createRefRes.ok || createRefRes.status === 422) {
+                    // 422 = ref already exists, try to update it
+                    if (createRefRes.status === 422) {
+                      await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
+                        method: "PATCH",
+                        headers,
+                        body: JSON.stringify({ sha: commitData.sha, force: true }),
+                      });
+                    }
+                    pushed = blobShas.length;
+                    latestCommitSha = commitData.sha;
+                  }
                 }
+              } else {
+                const errText = await commitRes.text().catch(() => "");
+                throw new Error(`Failed to create initial commit: ${commitRes.status} ${errText.slice(0, 200)}`);
               }
             }
+          } else {
+            const errText = await treeRes.text().catch(() => "");
+            throw new Error(`Failed to create git tree: ${treeRes.status} ${errText.slice(0, 200)}`);
           }
         }
-      } catch { /* init failed — non-fatal */ }
+      } catch (initErr) {
+        throw new Error(`Initial push failed: ${initErr instanceof Error ? initErr.message : String(initErr)}`);
+      }
     }
 
     // Update last sync time and commit SHA
