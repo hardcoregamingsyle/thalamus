@@ -110,7 +110,7 @@ async function executeSandboxCommand(sandboxId: string, command: string): Promis
       }
       const data = await res.json() as DaytonaExecResponse;
       return { output: data.result ?? "", exitCode: data.exitCode ?? 0, httpStatus: 200 };
-    } catch (err) {
+    } catch (err: unknown) {
       return { output: `[SANDBOX EXCEPTION: ${err instanceof Error ? err.message : String(err)}]`, exitCode: 1, httpStatus: 0 };
     }
   };
@@ -343,7 +343,7 @@ async function processGithubTree(
           sessionId, userId, filepath: node.path, content, agent: "GitHub Import",
         });
         imported++;
-      } catch (err) {
+      } catch (err: unknown) {
         errors.push(`Error importing ${node.path}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }));
@@ -1999,7 +1999,8 @@ export const syncGithub = action({
       const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
       if (!userId) throw new Error("Not authenticated");
       const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
-      if (!session || session.userId !== userId) throw new Error("Not authorized");
+      if (!session) throw new Error("Session not found");
+      if (session.userId !== userId) throw new Error("Not authorized");
 
       const githubRepo = (session as Record<string, unknown>).githubRepo as string | undefined;
       const githubBranch = (session as Record<string, unknown>).githubBranch as string | undefined;
@@ -2008,19 +2009,19 @@ export const syncGithub = action({
       if (!githubRepo || !githubBranch) throw new Error("GitHub not configured. Please connect a repository first.");
 
       // Get the user's stored OAuth token
-      const user = await ctx.runQuery(internal.githubHelpers.getUserById, { userId });
+      const user = await ctx.runQuery(internal.githubHelpers.getUserById, { userId: userId! });
       const githubToken = (user as Record<string, unknown> | null)?.githubAccessToken as string | undefined;
       if (!githubToken) throw new Error("GitHub account not connected. Please connect your GitHub account first.");
 
       // Parse owner/repo — if only a repo name is given, use the authenticated user's username
-      let ownerRepo = githubRepo.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/$/, "");
+      let ownerRepo = githubRepo!.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/$/, "");
       const parts = ownerRepo.split("/");
       let owner: string;
       let repo: string;
-      const branch = githubBranch;
+      const branch = githubBranch!;
 
       const headers = {
-        "Authorization": `Bearer ${githubToken}`,
+        "Authorization": `Bearer ${githubToken!}`,
         "Accept": "application/vnd.github.v3+json",
         "User-Agent": "Thalamus-AI/1.0",
         "Content-Type": "application/json",
@@ -2135,7 +2136,7 @@ export const syncGithub = action({
       for (const { path, content } of filesToPull) {
         await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
           sessionId: args.sessionId,
-          userId,
+          userId: userId!,
           filepath: path,
           content,
           agent: "GitHub Sync",
@@ -2172,7 +2173,7 @@ export const syncGithub = action({
                 });
                 if (blobRes.ok) {
                   const blobData = await blobRes.json() as { sha?: string };
-                  if (blobData.sha) blobShas.push({ path: item.path, sha: blobData.sha });
+                  if (blobData.sha) blobShas.push({ path: item.path, sha: blobData.sha! });
                 }
               } catch { /* skip */ }
             }));
@@ -2199,7 +2200,7 @@ export const syncGithub = action({
                   headers,
                   body: JSON.stringify({
                     message: `Thalamus AI sync — ${new Date().toISOString()}`,
-                    tree: treeData.sha,
+                    tree: treeData.sha!,
                     parents: [latestCommitSha],
                   }),
                 });
@@ -2211,11 +2212,11 @@ export const syncGithub = action({
                     const refUpdateRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
                       method: "PATCH",
                       headers,
-                      body: JSON.stringify({ sha: commitData.sha, force: true }),
+                      body: JSON.stringify({ sha: commitData.sha!, force: true }),
                     });
                     if (refUpdateRes.ok) {
                       pushed = blobShas.length; // Only count after successful push
-                      latestCommitSha = commitData.sha;
+                      latestCommitSha = commitData.sha!;
                     } else {
                       const errText = await refUpdateRes.text().catch(() => "");
                       throw new Error(`Failed to update branch ref: ${refUpdateRes.status} ${errText.slice(0, 200)}`);
@@ -2231,7 +2232,7 @@ export const syncGithub = action({
               throw new Error(`Failed to create git tree: ${treeRes.status} ${errText.slice(0, 200)}`);
             }
           }
-        } catch (pushErr) {
+        } catch (pushErr: unknown) {
           // Push failed — throw so the frontend shows the real error
           throw new Error(`Push failed: ${pushErr instanceof Error ? pushErr.message : String(pushErr)}`);
         }
@@ -2264,7 +2265,7 @@ export const syncGithub = action({
               });
               if (blobRes.ok) {
                 const blobData = await blobRes.json() as { sha?: string };
-                if (blobData.sha) blobShas.push({ path: item.path, sha: blobData.sha });
+                if (blobData.sha) blobShas.push({ path: item.path, sha: blobData.sha! });
               }
             } catch { /* skip */ }
           }
@@ -2286,7 +2287,7 @@ export const syncGithub = action({
               if (treeData.sha) {
                 const commitPayload: { message: string; tree: string; parents: string[] } = {
                   message: `Thalamus AI initial sync — ${new Date().toISOString()}`,
-                  tree: treeData.sha,
+                  tree: treeData.sha!,
                   parents: baseSha ? [baseSha] : [],
                 };
                 const commitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
@@ -2302,7 +2303,7 @@ export const syncGithub = action({
                     const createRefRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
                       method: "POST",
                       headers,
-                      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commitData.sha }),
+                      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commitData.sha! }),
                     });
                     if (createRefRes.ok || createRefRes.status === 422) {
                       // 422 = ref already exists, try to update it
@@ -2310,11 +2311,11 @@ export const syncGithub = action({
                         await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
                           method: "PATCH",
                           headers,
-                          body: JSON.stringify({ sha: commitData.sha, force: true }),
+                          body: JSON.stringify({ sha: commitData.sha!, force: true }),
                         });
                       }
                       pushed = blobShas.length;
-                      latestCommitSha = commitData.sha;
+                      latestCommitSha = commitData.sha!;
                     }
                   }
                 } else {
@@ -2327,7 +2328,7 @@ export const syncGithub = action({
               throw new Error(`Failed to create git tree: ${treeRes.status} ${errText.slice(0, 200)}`);
             }
           }
-        } catch (initErr) {
+        } catch (initErr: unknown) {
           throw new Error(`Initial push failed: ${initErr instanceof Error ? initErr.message : String(initErr)}`);
         }
       }
@@ -2340,7 +2341,7 @@ export const syncGithub = action({
       });
 
       return { pushed, pulled, conflicts };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("syncGithub error:", error);
       throw new Error(`GitHub sync failed: ${error instanceof Error ? error.message : String(error)}`);
     }
