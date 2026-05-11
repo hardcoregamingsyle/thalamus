@@ -1,14 +1,14 @@
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router";
 import { useAuth } from "@/hooks/use-auth";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { useRef } from "react";
 import {
-  Cpu, Zap, ChevronRight, Search, CheckCircle, ArrowRight,
-  MessageSquare, BookOpen, Users, Lightbulb, X, Upload, FileText, Send, Loader2, Sun, Moon,
+  Cpu, ChevronRight, CheckCircle, ArrowRight,
+  Lightbulb, X, Upload, FileText, Send, Loader2, Sun, Moon,
 } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 
@@ -167,7 +167,7 @@ export default function Landing() {
             className="flex justify-center mb-8">
             <div className="inline-flex items-center gap-2 border border-primary/25 bg-primary/8 text-primary text-[11px] font-semibold px-4 py-2 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              World's First L4.5 Agent System · by Aphantic Corporations
+              GitHub sync recovery upgraded · World's First L4.5 Agent System
             </div>
           </motion.div>
 
