@@ -6,7 +6,7 @@ import {
   InputOTPSlot,
 } from "@/components/ui/input-otp";
 import { useAuth } from "@/hooks/use-auth";
-import { ArrowRight, Loader2, Cpu, Mail, Lock } from "lucide-react";
+import { ArrowRight, Loader2, Mail, Lock } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { motion } from "framer-motion";
@@ -78,8 +78,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       {/* Nav */}
       <nav className="relative z-10 border-b border-border px-6 h-14 flex items-center">
         <button onClick={() => navigate("/")} className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center">
-            <Cpu className="h-3.5 w-3.5 text-primary" />
+          <div className="w-7 h-7 rounded-lg border border-primary/40 overflow-hidden bg-card">
+            <img src="/logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
           </div>
           <span className="text-primary font-bold text-sm tracking-widest">THALAMUS_AI</span>
           <span className="text-[10px] text-muted-foreground">by Aphantic Corporations</span>
