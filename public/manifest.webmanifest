@@ -1,11 +1,11 @@
 {
-  "name": "vly.ai application",
-  "short_name": "vly.ai",
-  "description": "vly.ai application",
+  "name": "Thalamus AI",
+  "short_name": "Thalamus",
+  "description": "Thalamus AI agent system",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#000000",
+  "background_color": "#020b1d",
+  "theme_color": "#020b1d",
   "icons": [
     {
       "src": "/logo.png",
