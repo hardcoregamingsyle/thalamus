@@ -2085,40 +2085,40 @@ export const syncGithub = action({
         const refRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${branch}`, { headers });
         if (refRes.ok) {
           const refData = await refRes.json() as { object?: { sha?: string } };
-          latestCommitSha = refData.object?.sha ?? "";
-          if (latestCommitSha) {
-            // Get the tree SHA from the commit (needed for base_tree parameter)
-            const commitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits/${latestCommitSha}`, { headers });
+          const potentialCommitSha = refData.object?.sha ?? "";
+
+          if (potentialCommitSha) {
+            // CRITICAL: Verify the commit actually exists in the repo before trusting it
+            const commitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits/${potentialCommitSha}`, { headers });
             if (commitRes.ok) {
               const commitData = await commitRes.json() as { tree?: { sha?: string } };
-              latestTreeSha = commitData.tree?.sha ?? "";
+              const potentialTreeSha = commitData.tree?.sha ?? "";
 
               // Verify the tree actually exists before using it
-              if (latestTreeSha) {
-                const treeCheckRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${latestTreeSha}`, { headers });
+              if (potentialTreeSha) {
+                const treeCheckRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${potentialTreeSha}`, { headers });
                 if (treeCheckRes.ok) {
+                  // All validated - commit and tree exist in GitHub
+                  latestCommitSha = potentialCommitSha;
+                  latestTreeSha = potentialTreeSha;
                   console.log(`[syncGithub] Found existing branch '${branch}' at commit ${latestCommitSha.slice(0, 7)}, tree ${latestTreeSha.slice(0, 7)}`);
                 } else {
-                  console.warn(`[syncGithub] Tree ${latestTreeSha.slice(0, 7)} not found, creating from scratch`);
-                  latestCommitSha = "";
-                  latestTreeSha = "";
+                  console.warn(`[syncGithub] Tree ${potentialTreeSha.slice(0, 7)} not found in GitHub, will recreate branch`);
                 }
               }
+            } else if (commitRes.status === 404) {
+              console.warn(`[syncGithub] Branch ref points to deleted commit ${potentialCommitSha.slice(0, 7)}, will recreate branch from scratch`);
             } else {
-              console.warn(`[syncGithub] Branch ref points to invalid commit ${latestCommitSha.slice(0, 7)}, treating as new branch`);
-              latestCommitSha = "";
-              latestTreeSha = "";
+              console.warn(`[syncGithub] Could not verify commit ${potentialCommitSha.slice(0, 7)} (status ${commitRes.status}), treating as new branch`);
             }
           }
         } else if (refRes.status === 404) {
           // Branch doesn't exist yet — we'll create it by pushing
           console.log(`[syncGithub] Branch '${branch}' doesn't exist, will create it`);
-          latestCommitSha = "";
         } else if (refRes.status === 403) {
           throw new Error("GitHub API rate limit exceeded. Please wait a few minutes before syncing again.");
         } else {
           console.warn(`[syncGithub] Unexpected status when fetching branch ref: ${refRes.status}`);
-          latestCommitSha = "";
         }
 
         // Skip pull if we've already synced this commit
@@ -2270,6 +2270,9 @@ export const syncGithub = action({
             tree: blobShas.map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
           };
 
+          // Log first few blob SHAs for debugging
+          console.log(`[syncGithub] Sample blob SHAs: ${blobShas.slice(0, 3).map(b => `${b.path}:${b.sha.slice(0, 7)}`).join(', ')}`);
+
           const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
             method: "POST",
             headers,
@@ -2343,9 +2346,18 @@ export const syncGithub = action({
             throw new Error("GitHub API rate limit exceeded");
           } else if (treeRes.status === 404) {
             const errText = await treeRes.text().catch(() => "");
-            // 404 on tree creation usually means invalid parent commit, not base_tree (we don't use base_tree)
-            console.error(`[syncGithub] Tree creation failed with 404. Latest commit: ${latestCommitSha}, Latest tree: ${latestTreeSha}, Blob count: ${blobShas.length}`);
-            throw new Error(`Failed to create git tree (404). This usually means the branch history was modified externally (force push). Try syncing again. Error: ${errText.slice(0, 200)}`);
+            // 404 on tree creation means blobs or parent tree don't exist - repository was likely force-pushed/recreated
+            console.error(`[syncGithub] Tree creation failed with 404 - repository state is inconsistent`);
+            console.error(`[syncGithub] Resetting branch state: commit ${latestCommitSha.slice(0, 7)} -> empty`);
+
+            // Clear the stored commit SHA so next sync will recreate the branch from scratch
+            await ctx.runMutation(internal.agentTeamHelpers.updateGithubSync, {
+              sessionId: args.sessionId,
+              lastSyncAt: Date.now(),
+              lastCommitSha: "", // Clear the invalid SHA
+            });
+
+            throw new Error(`Branch history was reset externally. Your files are safe locally. Please sync again to recreate the branch. Details: ${errText.slice(0, 150)}`);
           } else {
             const errText = await treeRes.text().catch(() => "");
             throw new Error(`Failed to create git tree: ${treeRes.status} ${errText.slice(0, 200)}`);
@@ -2393,7 +2405,18 @@ export const syncGithub = action({
           const treePayload: { base_tree?: string; tree: Array<{ path: string; mode: string; type: string; sha: string }> } = {
             tree: blobShas.map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
           };
-          if (baseSha) treePayload.base_tree = baseSha;
+          // Don't use base_tree if baseSha might be invalid - create orphan tree instead
+          // This prevents 404 errors when the base commit was deleted
+          if (baseSha) {
+            // Verify baseSha commit exists before using it
+            const baseCheckRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits/${baseSha}`, { headers });
+            if (baseCheckRes.ok) {
+              treePayload.base_tree = baseSha;
+              console.log(`[syncGithub] Using base tree from commit ${baseSha.slice(0, 7)}`);
+            } else {
+              console.warn(`[syncGithub] Base commit ${baseSha.slice(0, 7)} not found, creating orphan branch`);
+            }
+          }
 
             const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
               method: "POST",
