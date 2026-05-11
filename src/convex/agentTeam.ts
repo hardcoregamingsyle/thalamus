@@ -2020,6 +2020,8 @@ export const syncGithub = action({
       let repo: string;
       const branch = githubBranch!;
 
+      console.log(`[syncGithub] Starting sync: repository="${ownerRepo}", branch="${branch}"`);
+
       const headers = {
         "Authorization": `Bearer ${githubToken!}`,
         "Accept": "application/vnd.github.v3+json",
@@ -2037,6 +2039,18 @@ export const syncGithub = action({
         }
       };
 
+      // Validate token has required permissions by checking user endpoint
+      const userCheckRes = await fetch("https://api.github.com/user", { headers });
+      if (!userCheckRes.ok) {
+        if (userCheckRes.status === 401) {
+          throw new Error("GitHub token is invalid or expired. Please reconnect your GitHub account.");
+        } else if (userCheckRes.status === 403) {
+          const scopes = userCheckRes.headers.get("x-oauth-scopes");
+          throw new Error(`GitHub token lacks required permissions. Current scopes: ${scopes || 'none'}. Need: repo (or contents:write for fine-grained tokens)`);
+        }
+      }
+      console.log(`[syncGithub] Token validated. Scopes: ${userCheckRes.headers.get("x-oauth-scopes") || 'fine-grained'}`);
+
       if (parts.length < 2 || !parts[1]) {
         // Only repo name given — fetch the authenticated user's login
         const userRes = await fetch("https://api.github.com/user", { headers });
@@ -2052,6 +2066,8 @@ export const syncGithub = action({
         owner = parts[0];
         repo = parts[1];
       }
+
+      console.log(`[syncGithub] Resolved to: ${owner}/${repo}`);
 
       // Auto-create the repo if it doesn't exist
       const repoCheckRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
@@ -2375,11 +2391,46 @@ export const syncGithub = action({
               }
             }
 
-            // Create tree without base_tree (orphan) or with verified base
-            const orphanTreePayload: { base_tree?: string; tree: Array<{ path: string; mode: string; type: string; sha: string }> } = {
+            // Verify one of the blobs actually exists in the repository
+            const testBlobSha = blobShas[0]?.sha;
+            if (testBlobSha) {
+              const blobCheckRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs/${testBlobSha}`, { headers });
+              if (!blobCheckRes.ok) {
+                console.error(`[syncGithub] CRITICAL: Blob ${testBlobSha.slice(0, 7)} doesn't exist in repo after creation (status: ${blobCheckRes.status})`);
+                throw new Error(`Repository state is corrupted. Blobs were created but are not accessible. This usually means the repository was deleted or you lack proper permissions. Status: ${blobCheckRes.status}`);
+              } else {
+                console.log(`[syncGithub] Verified blob ${testBlobSha.slice(0, 7)} exists in repository`);
+              }
+            }
+
+            // Create tree without base_tree (orphan) - don't use base if we're recovering
+            const orphanTreePayload: { tree: Array<{ path: string; mode: string; type: string; sha: string }> } = {
               tree: blobShas.map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
             };
-            if (baseSha) orphanTreePayload.base_tree = baseSha;
+            // DON'T use base_tree when recovering - this is a fresh start
+
+            console.log(`[syncGithub] Creating orphan tree with ${blobShas.length} blobs (no base_tree)...`);
+
+            // Try with first 10 blobs as a diagnostic test
+            const testTreePayload = {
+              tree: blobShas.slice(0, 10).map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
+            };
+            const testTreeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
+              method: "POST",
+              headers,
+              body: JSON.stringify(testTreePayload),
+            });
+
+            if (testTreeRes.ok) {
+              console.log(`[syncGithub] Test tree with 10 blobs succeeded - retrying with all ${blobShas.length} blobs`);
+              // Wait a moment for GitHub to fully process all blobs
+              await new Promise(r => setTimeout(r, 2000));
+            } else {
+              const testErr = await testTreeRes.text().catch(() => "");
+              console.error(`[syncGithub] Even test tree with 10 blobs failed: ${testTreeRes.status} ${testErr.slice(0, 200)}`);
+              console.error(`[syncGithub] Sample blob SHAs that failed: ${blobShas.slice(0, 3).map(b => b.sha).join(', ')}`);
+              throw new Error(`Tree creation fundamentally broken. Test with 10 blobs failed: ${testTreeRes.status}. This indicates a repository permission or corruption issue. ${testErr.slice(0, 100)}`);
+            }
 
             const orphanTreeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
               method: "POST",
@@ -2389,6 +2440,7 @@ export const syncGithub = action({
 
             if (!orphanTreeRes.ok) {
               const orphanErr = await orphanTreeRes.text().catch(() => "");
+              console.error(`[syncGithub] Orphan tree creation failed. Repo: ${owner}/${repo}, Blobs: ${blobShas.length}`);
               throw new Error(`Failed to create orphan tree: ${orphanTreeRes.status} ${orphanErr.slice(0, 200)}`);
             }
 
