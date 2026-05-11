@@ -2409,45 +2409,58 @@ export const syncGithub = action({
             };
             // DON'T use base_tree when recovering - this is a fresh start
 
-            console.log(`[syncGithub] Creating orphan tree with ${blobShas.length} blobs (no base_tree)...`);
+            console.log(`[syncGithub] Creating orphan tree with ${blobShas.length} blobs using chunked approach...`);
 
-            // Try with first 10 blobs as a diagnostic test
-            const testTreePayload = {
-              tree: blobShas.slice(0, 10).map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
-            };
-            const testTreeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
-              method: "POST",
-              headers,
-              body: JSON.stringify(testTreePayload),
-            });
+            // GitHub has payload size limits - create tree in chunks of 50 files
+            const CHUNK_SIZE = 50;
+            let currentTreeSha = baseSha; // Start with base if available
 
-            if (testTreeRes.ok) {
-              console.log(`[syncGithub] Test tree with 10 blobs succeeded - retrying with all ${blobShas.length} blobs`);
-              // Wait a moment for GitHub to fully process all blobs
-              await new Promise(r => setTimeout(r, 2000));
-            } else {
-              const testErr = await testTreeRes.text().catch(() => "");
-              console.error(`[syncGithub] Even test tree with 10 blobs failed: ${testTreeRes.status} ${testErr.slice(0, 200)}`);
-              console.error(`[syncGithub] Sample blob SHAs that failed: ${blobShas.slice(0, 3).map(b => b.sha).join(', ')}`);
-              throw new Error(`Tree creation fundamentally broken. Test with 10 blobs failed: ${testTreeRes.status}. This indicates a repository permission or corruption issue. ${testErr.slice(0, 100)}`);
+            for (let i = 0; i < blobShas.length; i += CHUNK_SIZE) {
+              const chunk = blobShas.slice(i, i + CHUNK_SIZE);
+              const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
+              const totalChunks = Math.ceil(blobShas.length / CHUNK_SIZE);
+
+              console.log(`[syncGithub] Creating tree chunk ${chunkNum}/${totalChunks} (${chunk.length} files)...`);
+
+              const chunkTreePayload: { base_tree?: string; tree: Array<{ path: string; mode: string; type: string; sha: string }> } = {
+                tree: chunk.map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
+              };
+
+              // Use previous tree as base for incremental building
+              if (currentTreeSha) {
+                chunkTreePayload.base_tree = currentTreeSha;
+              }
+
+              const chunkTreeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(chunkTreePayload),
+              });
+
+              if (!chunkTreeRes.ok) {
+                const chunkErr = await chunkTreeRes.text().catch(() => "");
+                throw new Error(`Failed to create tree chunk ${chunkNum}/${totalChunks}: ${chunkTreeRes.status} ${chunkErr.slice(0, 200)}`);
+              }
+
+              const chunkTreeData = await chunkTreeRes.json() as { sha?: string };
+              if (!chunkTreeData.sha) {
+                throw new Error(`Tree chunk ${chunkNum} creation succeeded but returned no SHA`);
+              }
+
+              currentTreeSha = chunkTreeData.sha;
+              console.log(`[syncGithub] Tree chunk ${chunkNum}/${totalChunks} created: ${currentTreeSha.slice(0, 7)}`);
+
+              // Small delay between chunks to avoid rate limits
+              if (i + CHUNK_SIZE < blobShas.length) {
+                await new Promise(r => setTimeout(r, 500));
+              }
             }
 
-            const orphanTreeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
-              method: "POST",
-              headers,
-              body: JSON.stringify(orphanTreePayload),
-            });
-
-            if (!orphanTreeRes.ok) {
-              const orphanErr = await orphanTreeRes.text().catch(() => "");
-              console.error(`[syncGithub] Orphan tree creation failed. Repo: ${owner}/${repo}, Blobs: ${blobShas.length}`);
-              throw new Error(`Failed to create orphan tree: ${orphanTreeRes.status} ${orphanErr.slice(0, 200)}`);
+            if (!currentTreeSha) {
+              throw new Error("Chunked tree creation completed but no final tree SHA");
             }
 
-            const orphanTreeData = await orphanTreeRes.json() as { sha?: string };
-            if (!orphanTreeData.sha) {
-              throw new Error("Orphan tree creation succeeded but returned no SHA");
-            }
+            const orphanTreeData = { sha: currentTreeSha };
 
             console.log(`[syncGithub] Orphan tree created, creating initial commit...`);
             await new Promise(r => setTimeout(r, 1000));
