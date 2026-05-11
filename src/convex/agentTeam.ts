@@ -2234,6 +2234,77 @@ export const syncGithub = action({
         treeItems.push({ path, mode: "100644", type: "blob", content });
       }
 
+      const encodeContentPath = (path: string) => path.split("/").map(encodeURIComponent).join("/");
+      const pushFilesWithContentsApi = async (reason: string): Promise<{ pushed: number; latestCommitSha: string }> => {
+        console.warn(`[syncGithub] Git Trees API unavailable (${reason}); falling back to Contents API writes`);
+
+        let fallbackPushed = 0;
+        let fallbackCommitSha = latestCommitSha;
+
+        for (const item of treeItems) {
+          const encodedPath = encodeContentPath(item.path);
+          const contentUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${encodedPath}`;
+          let existingSha = "";
+
+          const existingRes = await fetch(`${contentUrl}?ref=${encodeURIComponent(branch)}`, { headers });
+          checkRateLimit(existingRes);
+          if (existingRes.ok) {
+            const existingData = await existingRes.json() as { sha?: string } | Array<unknown>;
+            if (Array.isArray(existingData)) {
+              console.warn(`[syncGithub] Skipped ${item.path}: path is a directory in GitHub`);
+              continue;
+            }
+            existingSha = existingData.sha ?? "";
+          } else if (existingRes.status === 403) {
+            throw new Error("GitHub API rate limit exceeded");
+          } else if (existingRes.status !== 404) {
+            const existingErr = await existingRes.text().catch(() => "");
+            console.warn(`[syncGithub] Could not inspect ${item.path} before fallback write: ${existingRes.status} ${existingErr.slice(0, 120)}`);
+          }
+
+          const writeBody: { message: string; content: string; branch: string; sha?: string } = {
+            message: `Thalamus AI sync fallback — ${item.path}`,
+            content: Buffer.from(item.content, "utf-8").toString("base64"),
+            branch,
+          };
+          if (existingSha) writeBody.sha = existingSha;
+
+          const putRes = await fetch(contentUrl, {
+            method: "PUT",
+            headers,
+            body: JSON.stringify(writeBody),
+          });
+          checkRateLimit(putRes);
+
+          if (putRes.ok) {
+            const putData = await putRes.json() as { commit?: { sha?: string } };
+            fallbackCommitSha = putData.commit?.sha ?? fallbackCommitSha;
+            fallbackPushed++;
+            if (fallbackPushed % 20 === 0) {
+              console.log(`[syncGithub] Contents fallback wrote ${fallbackPushed}/${treeItems.length} files...`);
+            }
+          } else if (putRes.status === 403) {
+            throw new Error("GitHub API rate limit exceeded");
+          } else {
+            const putErr = await putRes.text().catch(() => "");
+            if (putRes.status === 422 && putErr.includes("content is unchanged")) {
+              fallbackPushed++;
+              continue;
+            }
+            throw new Error(`Contents fallback failed for ${item.path}: ${putRes.status} ${putErr.slice(0, 200)}`);
+          }
+
+          await new Promise(r => setTimeout(r, 250));
+        }
+
+        if (fallbackPushed === 0) {
+          throw new Error("Contents fallback completed without writing any files");
+        }
+
+        console.log(`[syncGithub] Contents fallback completed with ${fallbackPushed} file writes`);
+        return { pushed: fallbackPushed, latestCommitSha: fallbackCommitSha };
+      };
+
       if (treeItems.length > 0 && latestCommitSha) {
         try {
           console.log(`[syncGithub] Pushing ${treeItems.length} changed files to GitHub...`);
@@ -2361,7 +2432,6 @@ export const syncGithub = action({
           } else if (treeRes.status === 403) {
             throw new Error("GitHub API rate limit exceeded");
           } else if (treeRes.status === 404) {
-            const errText = await treeRes.text().catch(() => "");
             // 404 on tree creation means the repository state is inconsistent (force push/branch deleted)
             // The blobs exist, but we need to create an orphan branch instead
             console.warn(`[syncGithub] Tree creation failed with 404 - repository was force-pushed or recreated`);
@@ -2403,17 +2473,12 @@ export const syncGithub = action({
               }
             }
 
-            // Create tree without base_tree (orphan) - don't use base if we're recovering
-            const orphanTreePayload: { tree: Array<{ path: string; mode: string; type: string; sha: string }> } = {
-              tree: blobShas.map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
-            };
-            // DON'T use base_tree when recovering - this is a fresh start
-
             console.log(`[syncGithub] Creating orphan tree with ${blobShas.length} blobs using chunked approach...`);
 
             // GitHub has payload size limits - create tree in chunks of 50 files
             const CHUNK_SIZE = 50;
             let currentTreeSha = baseSha; // Start with base if available
+            let usedContentsFallback = false;
 
             for (let i = 0; i < blobShas.length; i += CHUNK_SIZE) {
               const chunk = blobShas.slice(i, i + CHUNK_SIZE);
@@ -2439,6 +2504,13 @@ export const syncGithub = action({
 
               if (!chunkTreeRes.ok) {
                 const chunkErr = await chunkTreeRes.text().catch(() => "");
+                if (chunkTreeRes.status === 404) {
+                  const fallbackResult = await pushFilesWithContentsApi(`tree chunk ${chunkNum}/${totalChunks} returned 404: ${chunkErr.slice(0, 120)}`);
+                  pushed = fallbackResult.pushed;
+                  latestCommitSha = fallbackResult.latestCommitSha;
+                  usedContentsFallback = true;
+                  break;
+                }
                 throw new Error(`Failed to create tree chunk ${chunkNum}/${totalChunks}: ${chunkTreeRes.status} ${chunkErr.slice(0, 200)}`);
               }
 
@@ -2456,64 +2528,66 @@ export const syncGithub = action({
               }
             }
 
-            if (!currentTreeSha) {
-              throw new Error("Chunked tree creation completed but no final tree SHA");
-            }
-
-            const orphanTreeData = { sha: currentTreeSha };
-
-            console.log(`[syncGithub] Orphan tree created, creating initial commit...`);
-            await new Promise(r => setTimeout(r, 1000));
-
-            // Create orphan commit
-            const orphanCommitPayload: { message: string; tree: string; parents?: string[] } = {
-              message: `Thalamus AI sync (recovered) — ${new Date().toISOString()}`,
-              tree: orphanTreeData.sha,
-            };
-            if (baseSha) orphanCommitPayload.parents = [baseSha];
-
-            const orphanCommitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
-              method: "POST",
-              headers,
-              body: JSON.stringify(orphanCommitPayload),
-            });
-
-            if (!orphanCommitRes.ok) {
-              const commitErr = await orphanCommitRes.text().catch(() => "");
-              throw new Error(`Failed to create orphan commit: ${orphanCommitRes.status} ${commitErr.slice(0, 200)}`);
-            }
-
-            const orphanCommitData = await orphanCommitRes.json() as { sha?: string };
-            if (!orphanCommitData.sha) {
-              throw new Error("Orphan commit creation succeeded but returned no SHA");
-            }
-
-            console.log(`[syncGithub] Orphan commit created, updating branch ref...`);
-            await new Promise(r => setTimeout(r, 1000));
-
-            // Update or create branch ref
-            const refUpdateRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
-              method: "PATCH",
-              headers,
-              body: JSON.stringify({ sha: orphanCommitData.sha, force: true }),
-            });
-
-            if (refUpdateRes.ok || refUpdateRes.status === 422) {
-              // Success or ref doesn't exist - try creating it
-              if (refUpdateRes.status === 422 || !refUpdateRes.ok) {
-                await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
-                  method: "POST",
-                  headers,
-                  body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: orphanCommitData.sha }),
-                });
+            if (!usedContentsFallback) {
+              if (!currentTreeSha) {
+                throw new Error("Chunked tree creation completed but no final tree SHA");
               }
 
-              pushed = blobShas.length;
-              latestCommitSha = orphanCommitData.sha;
-              console.log(`[syncGithub] ✓ Successfully recovered and pushed ${pushed} files`);
-            } else {
-              const refErr = await refUpdateRes.text().catch(() => "");
-              throw new Error(`Failed to update branch ref: ${refUpdateRes.status} ${refErr.slice(0, 200)}`);
+              const orphanTreeData = { sha: currentTreeSha };
+
+              console.log(`[syncGithub] Orphan tree created, creating initial commit...`);
+              await new Promise(r => setTimeout(r, 1000));
+
+              // Create orphan commit
+              const orphanCommitPayload: { message: string; tree: string; parents?: string[] } = {
+                message: `Thalamus AI sync (recovered) — ${new Date().toISOString()}`,
+                tree: orphanTreeData.sha,
+              };
+              if (baseSha) orphanCommitPayload.parents = [baseSha];
+
+              const orphanCommitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(orphanCommitPayload),
+              });
+
+              if (!orphanCommitRes.ok) {
+                const commitErr = await orphanCommitRes.text().catch(() => "");
+                throw new Error(`Failed to create orphan commit: ${orphanCommitRes.status} ${commitErr.slice(0, 200)}`);
+              }
+
+              const orphanCommitData = await orphanCommitRes.json() as { sha?: string };
+              if (!orphanCommitData.sha) {
+                throw new Error("Orphan commit creation succeeded but returned no SHA");
+              }
+
+              console.log(`[syncGithub] Orphan commit created, updating branch ref...`);
+              await new Promise(r => setTimeout(r, 1000));
+
+              // Update or create branch ref
+              const refUpdateRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
+                method: "PATCH",
+                headers,
+                body: JSON.stringify({ sha: orphanCommitData.sha, force: true }),
+              });
+
+              if (refUpdateRes.ok || refUpdateRes.status === 422) {
+                // Success or ref doesn't exist - try creating it
+                if (refUpdateRes.status === 422 || !refUpdateRes.ok) {
+                  await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: orphanCommitData.sha }),
+                  });
+                }
+
+                pushed = blobShas.length;
+                latestCommitSha = orphanCommitData.sha;
+                console.log(`[syncGithub] ✓ Successfully recovered and pushed ${pushed} files`);
+              } else {
+                const refErr = await refUpdateRes.text().catch(() => "");
+                throw new Error(`Failed to update branch ref: ${refUpdateRes.status} ${refErr.slice(0, 200)}`);
+              }
             }
           } else {
             const errText = await treeRes.text().catch(() => "");
