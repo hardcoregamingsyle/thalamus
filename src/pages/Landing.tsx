@@ -7,7 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { useRef } from "react";
 import {
-  Cpu, ChevronRight, CheckCircle, ArrowRight,
+  ChevronRight, CheckCircle, ArrowRight,
   Lightbulb, X, Upload, FileText, Send, Loader2, Sun, Moon,
 } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
@@ -133,8 +133,8 @@ export default function Landing() {
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/60 backdrop-blur-xl bg-background/90">
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center">
-              <Cpu className="h-3.5 w-3.5 text-primary" />
+            <div className="w-7 h-7 rounded-lg border border-primary/30 overflow-hidden bg-card">
+              <img src="/logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
             </div>
             <span className="text-primary font-bold text-sm tracking-widest">THALAMUS_AI</span>
             <span className="hidden sm:block text-[10px] text-muted-foreground border border-border/60 px-2 py-0.5 rounded-full">
@@ -290,8 +290,8 @@ export default function Landing() {
       <footer className="border-t border-border/50 py-8">
         <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-6 h-6 rounded bg-primary/15 border border-primary/30 flex items-center justify-center">
-              <Cpu className="h-3 w-3 text-primary" />
+            <div className="w-6 h-6 rounded border border-primary/30 overflow-hidden bg-card">
+              <img src="/logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
             </div>
             <span className="text-primary font-bold text-xs tracking-widest">THALAMUS_AI</span>
             <span className="text-[10px] text-muted-foreground">by Aphantic Corporations</span>

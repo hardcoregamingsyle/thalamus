@@ -10,7 +10,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
   MessageSquare, Search, Plus, Trash2, LogOut,
-  Send, Loader2, Menu, X, Users, Cpu, Zap, BookOpen,
+  Send, Loader2, Menu, X, Users, Zap, BookOpen,
   FileText, Globe, Image, Upload, Sparkles, ChevronRight,
   Hash, Lightbulb, Lock, ArrowRight, Sun, Moon,
 } from "lucide-react";
@@ -324,8 +324,8 @@ function GuestPortal() {
       {/* Header */}
       <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-border bg-card/80 backdrop-blur-sm">
         <div className="flex items-center gap-3">
-          <div className="w-7 h-7 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center">
-            <Cpu className="h-3.5 w-3.5 text-primary" />
+          <div className="w-7 h-7 rounded-lg border border-primary/30 overflow-hidden bg-card">
+            <img src="/logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
           </div>
           <span className="text-primary font-bold text-xs tracking-widest">THALAMUS_AI</span>
         </div>
@@ -1154,8 +1154,8 @@ function PortalDesktop() {
               </button>
             )}
             <div className="flex items-center gap-2">
-              <div className="w-5 h-5 rounded bg-primary/20 border border-primary/40 flex items-center justify-center">
-                <Cpu className="h-2.5 w-2.5 text-primary" />
+              <div className="w-5 h-5 rounded border border-primary/40 overflow-hidden bg-card">
+                <img src="/logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
               </div>
               <span className="text-primary font-bold text-xs tracking-widest hidden sm:block">THALAMUS_AI</span>
             </div>
