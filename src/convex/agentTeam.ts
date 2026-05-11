@@ -2346,18 +2346,110 @@ export const syncGithub = action({
             throw new Error("GitHub API rate limit exceeded");
           } else if (treeRes.status === 404) {
             const errText = await treeRes.text().catch(() => "");
-            // 404 on tree creation means blobs or parent tree don't exist - repository was likely force-pushed/recreated
-            console.error(`[syncGithub] Tree creation failed with 404 - repository state is inconsistent`);
-            console.error(`[syncGithub] Resetting branch state: commit ${latestCommitSha.slice(0, 7)} -> empty`);
+            // 404 on tree creation means the repository state is inconsistent (force push/branch deleted)
+            // The blobs exist, but we need to create an orphan branch instead
+            console.warn(`[syncGithub] Tree creation failed with 404 - repository was force-pushed or recreated`);
+            console.warn(`[syncGithub] Automatically recovering by creating orphan branch...`);
 
-            // Clear the stored commit SHA so next sync will recreate the branch from scratch
-            await ctx.runMutation(internal.agentTeamHelpers.updateGithubSync, {
-              sessionId: args.sessionId,
-              lastSyncAt: Date.now(),
-              lastCommitSha: "", // Clear the invalid SHA
+            // Get default branch to use as base (if it exists)
+            const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+            let baseSha = "";
+            if (repoRes.ok) {
+              const repoData = await repoRes.json() as { default_branch?: string };
+              const defaultBranch = repoData.default_branch ?? "main";
+              if (defaultBranch !== branch) {
+                // Only use base if we're creating a non-default branch
+                const baseRefRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${defaultBranch}`, { headers });
+                if (baseRefRes.ok) {
+                  const baseRefData = await baseRefRes.json() as { object?: { sha?: string } };
+                  const potentialBaseSha = baseRefData.object?.sha ?? "";
+                  // Verify base commit exists
+                  if (potentialBaseSha) {
+                    const baseCheckRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits/${potentialBaseSha}`, { headers });
+                    if (baseCheckRes.ok) {
+                      baseSha = potentialBaseSha;
+                      console.log(`[syncGithub] Using ${defaultBranch} as base: ${baseSha.slice(0, 7)}`);
+                    }
+                  }
+                }
+              }
+            }
+
+            // Create tree without base_tree (orphan) or with verified base
+            const orphanTreePayload: { base_tree?: string; tree: Array<{ path: string; mode: string; type: string; sha: string }> } = {
+              tree: blobShas.map(b => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
+            };
+            if (baseSha) orphanTreePayload.base_tree = baseSha;
+
+            const orphanTreeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
+              method: "POST",
+              headers,
+              body: JSON.stringify(orphanTreePayload),
             });
 
-            throw new Error(`Branch history was reset externally. Your files are safe locally. Please sync again to recreate the branch. Details: ${errText.slice(0, 150)}`);
+            if (!orphanTreeRes.ok) {
+              const orphanErr = await orphanTreeRes.text().catch(() => "");
+              throw new Error(`Failed to create orphan tree: ${orphanTreeRes.status} ${orphanErr.slice(0, 200)}`);
+            }
+
+            const orphanTreeData = await orphanTreeRes.json() as { sha?: string };
+            if (!orphanTreeData.sha) {
+              throw new Error("Orphan tree creation succeeded but returned no SHA");
+            }
+
+            console.log(`[syncGithub] Orphan tree created, creating initial commit...`);
+            await new Promise(r => setTimeout(r, 1000));
+
+            // Create orphan commit
+            const orphanCommitPayload: { message: string; tree: string; parents?: string[] } = {
+              message: `Thalamus AI sync (recovered) — ${new Date().toISOString()}`,
+              tree: orphanTreeData.sha,
+            };
+            if (baseSha) orphanCommitPayload.parents = [baseSha];
+
+            const orphanCommitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
+              method: "POST",
+              headers,
+              body: JSON.stringify(orphanCommitPayload),
+            });
+
+            if (!orphanCommitRes.ok) {
+              const commitErr = await orphanCommitRes.text().catch(() => "");
+              throw new Error(`Failed to create orphan commit: ${orphanCommitRes.status} ${commitErr.slice(0, 200)}`);
+            }
+
+            const orphanCommitData = await orphanCommitRes.json() as { sha?: string };
+            if (!orphanCommitData.sha) {
+              throw new Error("Orphan commit creation succeeded but returned no SHA");
+            }
+
+            console.log(`[syncGithub] Orphan commit created, updating branch ref...`);
+            await new Promise(r => setTimeout(r, 1000));
+
+            // Update or create branch ref
+            const refUpdateRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
+              method: "PATCH",
+              headers,
+              body: JSON.stringify({ sha: orphanCommitData.sha, force: true }),
+            });
+
+            if (refUpdateRes.ok || refUpdateRes.status === 422) {
+              // Success or ref doesn't exist - try creating it
+              if (refUpdateRes.status === 422 || !refUpdateRes.ok) {
+                await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
+                  method: "POST",
+                  headers,
+                  body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: orphanCommitData.sha }),
+                });
+              }
+
+              pushed = blobShas.length;
+              latestCommitSha = orphanCommitData.sha;
+              console.log(`[syncGithub] ✓ Successfully recovered and pushed ${pushed} files`);
+            } else {
+              const refErr = await refUpdateRes.text().catch(() => "");
+              throw new Error(`Failed to update branch ref: ${refUpdateRes.status} ${refErr.slice(0, 200)}`);
+            }
           } else {
             const errText = await treeRes.text().catch(() => "");
             throw new Error(`Failed to create git tree: ${treeRes.status} ${errText.slice(0, 200)}`);
