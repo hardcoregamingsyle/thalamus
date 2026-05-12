@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Terminal, Github, Loader2, CheckCircle, XCircle, ChevronRight, FolderGit2 } from "lucide-react";
+import { Terminal, Github, Loader2, CheckCircle, XCircle, ChevronRight, FolderGit2, Download, ArrowRight, Package, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import JSZip from "jszip";
 
 type SyncStatus = "idle" | "loading" | "success" | "error";
+type Step = 1 | 2;
 
 interface LogLine {
   text: string;
@@ -17,13 +19,12 @@ interface LogLine {
 // Safe base64 encode that handles unicode
 function safeBase64(str: string): string {
   try {
-    return btoa(unescape(encodeURIComponent(str)));
-  } catch {
-    // Fallback: encode as UTF-8 bytes manually
     const bytes = new TextEncoder().encode(str);
     let binary = "";
     for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
     return btoa(binary);
+  } catch {
+    return btoa(unescape(encodeURIComponent(str)));
   }
 }
 
@@ -34,6 +35,9 @@ export default function SyncPage() {
   const [status, setStatus] = useState<SyncStatus>("idle");
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [repoUrl, setRepoUrl] = useState("");
+  const [step, setStep] = useState<Step>(1);
+  const [collectedFiles, setCollectedFiles] = useState<{ path: string; content: string }[]>([]);
+  const [zipBlob, setZipBlob] = useState<Blob | null>(null);
   const getProjectFilesBatch = useAction(api.fileSync.getProjectFilesBatch);
 
   const addLog = (text: string, type: LogLine["type"] = "info") => {
@@ -59,55 +63,97 @@ export default function SyncPage() {
     return allFiles;
   };
 
-  // Detect the default branch of a repo, with retries
-  const detectBranch = async (
-    owner: string,
-    repo: string,
-    ghHeaders: Record<string, string>,
-  ): Promise<{ branch: string; sha: string; treeSha: string }> => {
-    // First get repo info to find default_branch
-    const repoInfoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers: ghHeaders });
-    if (!repoInfoRes.ok) throw new Error("Could not fetch repository info");
-    const repoInfo = await repoInfoRes.json() as { default_branch: string };
-    const defaultBranch = repoInfo.default_branch || "main";
-
-    // Retry up to 5 times with increasing delays (repo init can be slow)
-    for (let attempt = 0; attempt < 5; attempt++) {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
-
-      const refRes = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${defaultBranch}`,
-        { headers: ghHeaders },
-      );
-      if (refRes.ok) {
-        const refData = await refRes.json() as { object: { sha: string } };
-        const commitSha = refData.object?.sha;
-        if (!commitSha) continue;
-
-        const commitRes = await fetch(
-          `https://api.github.com/repos/${owner}/${repo}/git/commits/${commitSha}`,
-          { headers: ghHeaders },
-        );
-        if (commitRes.ok) {
-          const commitData = await commitRes.json() as { tree: { sha: string } };
-          const treeSha = commitData.tree?.sha;
-          if (treeSha) return { branch: defaultBranch, sha: commitSha, treeSha };
-        }
-      }
-    }
-    throw new Error(`Could not find branch '${defaultBranch}'. The repository may not have been initialized yet. Please try again in a moment.`);
-  };
-
-  const handleSync = async (e: React.FormEvent) => {
+  // Step 1: Collect files and build ZIP
+  const handleCollect = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token.trim() || !repoName.trim()) return;
-
     setStatus("loading");
     setLogs([]);
-    setRepoUrl("");
+    setZipBlob(null);
+    setCollectedFiles([]);
+
+    try {
+      addLog(`$ collecting project files...`, "cmd");
+      const files = await fetchAllFiles();
+      addLog(`✓ Collected ${files.length} files`, "success");
+
+      addLog(`$ building ZIP archive...`, "cmd");
+      const zip = new JSZip();
+      for (const file of files) {
+        zip.file(file.path, file.content);
+      }
+      const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
+      const sizeMB = (blob.size / 1024 / 1024).toFixed(2);
+      addLog(`✓ ZIP created: ${sizeMB} MB (${files.length} files)`, "success");
+
+      setCollectedFiles(files);
+      setZipBlob(blob);
+      setStatus("success");
+      setStep(2);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      addLog(`✗ ERROR: ${msg}`, "error");
+      setStatus("error");
+    }
+  };
+
+  // Download ZIP
+  const handleDownloadZip = () => {
+    if (!zipBlob) return;
+    const url = URL.createObjectURL(zipBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "thalamus-project.zip";
+    a.click();
+    URL.revokeObjectURL(url);
+    addLog(`✓ ZIP downloaded: thalamus-project.zip`, "success");
+  };
+
+  // Download push script
+  const handleDownloadScript = () => {
+    const cleanRepo = repoName.trim().replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "") || "my-project";
+    const script = `#!/bin/bash
+# Thalamus AI — GitHub Push Script
+# Run this after extracting thalamus-project.zip
+
+set -e
+
+REPO_NAME="${cleanRepo}"
+GITHUB_TOKEN="${token || "YOUR_GITHUB_TOKEN"}"
+
+echo "→ Unzipping project..."
+unzip -q thalamus-project.zip -d "$REPO_NAME"
+cd "$REPO_NAME"
+
+echo "→ Initializing git..."
+git init
+git add .
+git commit -m "Sync from Thalamus AI — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+echo "→ Creating GitHub repo and pushing..."
+gh auth login --with-token <<< "$GITHUB_TOKEN"
+gh repo create "$REPO_NAME" --public --source=. --remote=origin --push
+
+echo "✓ Done! Check: https://github.com/$(gh api user --jq .login)/$REPO_NAME"
+`;
+    const blob = new Blob([script], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "push-to-github.sh";
+    a.click();
+    URL.revokeObjectURL(url);
+    addLog(`✓ Script downloaded: push-to-github.sh`, "success");
+  };
+
+  // Step 2: Push to GitHub using collected files
+  const handlePush = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token.trim() || !repoName.trim() || collectedFiles.length === 0) return;
+
+    setStatus("loading");
+    setLogs(prev => [...prev, { text: `$ starting GitHub push...`, type: "cmd" }]);
 
     const cleanRepo = repoName.trim().replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "");
-
     const ghHeaders: Record<string, string> = {
       Authorization: `token ${token}`,
       Accept: "application/vnd.github.v3+json",
@@ -115,31 +161,24 @@ export default function SyncPage() {
     };
 
     try {
-      addLog(`$ git init`, "cmd");
-      addLog(`Initializing sync to GitHub...`, "info");
-
+      // Verify token
       addLog(`$ gh auth verify`, "cmd");
       const userRes = await fetch("https://api.github.com/user", { headers: ghHeaders });
-      if (!userRes.ok) throw new Error("Invalid GitHub token. Please check your token and try again.");
+      if (!userRes.ok) throw new Error("Invalid GitHub token. Check your token and try again.");
       const user = await userRes.json() as { login: string };
       addLog(`✓ Authenticated as: ${user.login}`, "success");
 
+      // Create or get repo
       addLog(`$ gh repo create ${cleanRepo}`, "cmd");
       const createRes = await fetch("https://api.github.com/user/repos", {
         method: "POST",
         headers: ghHeaders,
-        body: JSON.stringify({
-          name: cleanRepo,
-          description: "Thalamus AI project synced",
-          private: false,
-          auto_init: true,
-          default_branch: "main",
-        }),
+        body: JSON.stringify({ name: cleanRepo, description: "Thalamus AI project", private: false, auto_init: true }),
       });
 
       let repo: { full_name: string; html_url: string; default_branch: string };
       if (createRes.status === 422) {
-        addLog(`Repository already exists, using existing repo...`, "info");
+        addLog(`Repository exists, using it...`, "info");
         const existingRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}`, { headers: ghHeaders });
         if (!existingRes.ok) throw new Error("Could not access existing repository");
         repo = await existingRes.json() as typeof repo;
@@ -149,35 +188,57 @@ export default function SyncPage() {
       } else {
         repo = await createRes.json() as typeof repo;
         addLog(`✓ Repository created: ${repo.full_name}`, "success");
-        // Give GitHub a moment to initialize the repo
-        addLog(`  Waiting for repository initialization...`, "info");
-        await new Promise(r => setTimeout(r, 3000));
+        addLog(`  Waiting for initialization...`, "info");
+        await new Promise(r => setTimeout(r, 4000));
       }
 
       setRepoUrl(repo.html_url);
 
-      addLog(`$ collecting project files from server...`, "cmd");
-      const filesToSync = await fetchAllFiles();
-      addLog(`✓ Found ${filesToSync.length} files to sync`, "success");
+      // Detect branch with retries
+      addLog(`$ detecting branch...`, "cmd");
+      let branch = "main";
+      let latestCommitSha = "";
+      let baseTreeSha = "";
 
-      addLog(`$ checking repository state...`, "cmd");
-      const { branch, sha: latestCommitSha, treeSha: baseTreeSha } = await detectBranch(user.login, cleanRepo, ghHeaders);
-      addLog(`✓ Using branch: ${branch}`, "success");
+      for (let attempt = 0; attempt < 6; attempt++) {
+        if (attempt > 0) await new Promise(r => setTimeout(r, 2000));
+        try {
+          const repoInfoRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}`, { headers: ghHeaders });
+          if (repoInfoRes.ok) {
+            const info = await repoInfoRes.json() as { default_branch: string };
+            branch = info.default_branch || "main";
+          }
+          const refRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/${branch}`, { headers: ghHeaders });
+          if (!refRes.ok) continue;
+          const refData = await refRes.json() as { object: { sha: string } };
+          latestCommitSha = refData.object?.sha ?? "";
+          if (!latestCommitSha) continue;
+          const commitRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/commits/${latestCommitSha}`, { headers: ghHeaders });
+          if (!commitRes.ok) continue;
+          const commitData = await commitRes.json() as { tree: { sha: string } };
+          baseTreeSha = commitData.tree?.sha ?? "";
+          if (baseTreeSha) break;
+        } catch { /* retry */ }
+      }
 
-      addLog(`$ creating file blobs (${filesToSync.length} files)...`, "cmd");
+      if (!latestCommitSha || !baseTreeSha) {
+        throw new Error("Could not initialize repository branch. Try downloading the ZIP instead.");
+      }
+      addLog(`✓ Branch: ${branch}`, "success");
+
+      // Upload blobs in parallel batches
+      addLog(`$ uploading ${collectedFiles.length} files...`, "cmd");
       const treeItems: Array<{ path: string; mode: string; type: string; sha: string }> = [];
+      const BLOB_BATCH = 8;
 
-      // Process blobs in parallel batches of 10 for speed
-      const BLOB_BATCH = 10;
-      for (let i = 0; i < filesToSync.length; i += BLOB_BATCH) {
-        const batch = filesToSync.slice(i, i + BLOB_BATCH);
+      for (let i = 0; i < collectedFiles.length; i += BLOB_BATCH) {
+        const batch = collectedFiles.slice(i, i + BLOB_BATCH);
         await Promise.all(batch.map(async (file) => {
           try {
-            const base64Content = safeBase64(file.content);
             const blobRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/blobs`, {
               method: "POST",
               headers: ghHeaders,
-              body: JSON.stringify({ content: base64Content, encoding: "base64" }),
+              body: JSON.stringify({ content: safeBase64(file.content), encoding: "base64" }),
             });
             if (blobRes.ok) {
               const blob = await blobRes.json() as { sha: string };
@@ -188,12 +249,13 @@ export default function SyncPage() {
             }
           } catch { /* skip */ }
         }));
-        addLog(`  Uploaded ${Math.min(i + BLOB_BATCH, filesToSync.length)}/${filesToSync.length} blobs...`, "info");
+        addLog(`  ${Math.min(i + BLOB_BATCH, collectedFiles.length)}/${collectedFiles.length} uploaded`, "info");
       }
 
-      addLog(`✓ Created ${treeItems.length} file blobs`, "success");
-      if (treeItems.length === 0) throw new Error("No files could be uploaded");
+      if (treeItems.length === 0) throw new Error("No files could be uploaded. Try downloading the ZIP instead.");
+      addLog(`✓ Uploaded ${treeItems.length} files`, "success");
 
+      // Build tree
       addLog(`$ building git tree...`, "cmd");
       const treeRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/trees`, {
         method: "POST",
@@ -202,11 +264,12 @@ export default function SyncPage() {
       });
       if (!treeRes.ok) {
         const treeErr = await treeRes.json().catch(() => ({})) as { message?: string };
-        throw new Error(`Failed to create git tree: ${treeErr.message || treeRes.status}`);
+        throw new Error(`Tree creation failed: ${treeErr.message || treeRes.status}`);
       }
       const tree = await treeRes.json() as { sha: string };
 
-      addLog(`$ git commit -m "Sync from Thalamus AI"`, "cmd");
+      // Commit
+      addLog(`$ git commit...`, "cmd");
       const commitRes2 = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/commits`, {
         method: "POST",
         headers: ghHeaders,
@@ -218,30 +281,28 @@ export default function SyncPage() {
       });
       if (!commitRes2.ok) {
         const commitErr = await commitRes2.json().catch(() => ({})) as { message?: string };
-        throw new Error(`Failed to create commit: ${commitErr.message || commitRes2.status}`);
+        throw new Error(`Commit failed: ${commitErr.message || commitRes2.status}`);
       }
       const commit = await commitRes2.json() as { sha: string };
 
-      addLog(`$ updating branch ref (${branch})...`, "cmd");
+      // Update ref
+      addLog(`$ updating ${branch} ref...`, "cmd");
       const updateRefRes = await fetch(
         `https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/${branch}`,
-        {
-          method: "PATCH",
-          headers: ghHeaders,
-          body: JSON.stringify({ sha: commit.sha, force: true }),
-        },
+        { method: "PATCH", headers: ghHeaders, body: JSON.stringify({ sha: commit.sha, force: true }) },
       );
       if (!updateRefRes.ok) {
         const refErr = await updateRefRes.json().catch(() => ({})) as { message?: string };
-        throw new Error(`Failed to update branch ref: ${refErr.message || updateRefRes.status}`);
+        throw new Error(`Ref update failed: ${refErr.message || updateRefRes.status}`);
       }
 
-      addLog(`✓ Successfully pushed to ${repo.full_name}`, "success");
-      addLog(`✓ Repository URL: ${repo.html_url}`, "success");
+      addLog(`✓ Pushed to ${repo.full_name}`, "success");
+      addLog(`✓ ${repo.html_url}`, "success");
       setStatus("success");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error occurred";
+      const msg = err instanceof Error ? err.message : "Unknown error";
       addLog(`✗ ERROR: ${msg}`, "error");
+      addLog(`  → Try downloading the ZIP and using the push script instead`, "info");
       setStatus("error");
     }
   };
@@ -264,74 +325,144 @@ export default function SyncPage() {
               <FolderGit2 className="h-6 w-6" />
               GITHUB_SYNC
             </h1>
-            <p className="text-xs text-muted-foreground mt-1">Push the entire project directory to a GitHub repository.</p>
+            <p className="text-xs text-muted-foreground mt-1">Two-step sync: collect files → push to GitHub or download ZIP.</p>
           </div>
 
-          <div className="border border-border bg-card">
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-              <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
-              <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-              <div className="w-2.5 h-2.5 rounded-full bg-primary" />
-              <span className="text-xs text-muted-foreground ml-2">sync — configure</span>
+          {/* Step indicators */}
+          <div className="flex items-center gap-3">
+            <div className={`flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded border transition-colors ${step === 1 ? "border-primary text-primary bg-primary/10" : "border-border text-muted-foreground"}`}>
+              <Package className="h-3 w-3" />STEP 1: COLLECT
             </div>
-
-            <form onSubmit={handleSync} className="p-6 space-y-4">
-              <div>
-                <label className="text-xs text-muted-foreground block mb-1">$ github_token</label>
-                <p className="text-xs text-muted-foreground/60 mb-2">
-                  Personal access token with <span className="text-primary">repo</span> scope.{" "}
-                  <a href="https://github.com/settings/tokens/new?scopes=repo&description=Thalamus+AI+Sync" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Generate one here →</a>
-                </p>
-                <div className="flex items-center border border-border bg-background focus-within:border-primary transition-colors">
-                  <span className="text-primary text-xs px-2 terminal-glow">$</span>
-                  <Input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                    className="border-0 bg-transparent text-xs font-mono focus-visible:ring-0 focus-visible:ring-offset-0 text-foreground placeholder:text-muted-foreground"
-                    disabled={status === "loading"} required />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground block mb-1">$ repository_name</label>
-                <p className="text-xs text-muted-foreground/60 mb-2">
-                  Just the repo name — e.g. <span className="text-primary">my-project</span> (not a full URL).
-                  If you paste a GitHub URL, the name will be extracted automatically.
-                </p>
-                <div className="flex items-center border border-border bg-background focus-within:border-primary transition-colors">
-                  <span className="text-primary text-xs px-2 terminal-glow"><Github className="h-3 w-3" /></span>
-                  <Input type="text" value={repoName} onChange={(e) => {
-                    let val = e.target.value;
-                    const urlMatch = val.match(/github\.com\/[^/]+\/([^/\s?#]+)/);
-                    if (urlMatch) val = urlMatch[1];
-                    setRepoName(val);
-                  }} placeholder="my-project"
-                    className="border-0 bg-transparent text-xs font-mono focus-visible:ring-0 focus-visible:ring-offset-0 text-foreground placeholder:text-muted-foreground"
-                    disabled={status === "loading"} required />
-                </div>
-                {repoName && <p className="text-xs text-muted-foreground/50 mt-1">→ Will create/use: <span className="text-primary">{repoName.trim().replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "")}</span></p>}
-              </div>
-
-              <Button type="submit" disabled={status === "loading" || !token.trim() || !repoName.trim()}
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-mono font-bold rounded-none">
-                {status === "loading" ? (
-                  <><Loader2 className="h-3 w-3 animate-spin mr-2" />SYNCING...</>
-                ) : (
-                  <><Github className="h-3 w-3 mr-2" />SYNC_TO_GITHUB<ChevronRight className="h-3 w-3 ml-2" /></>
-                )}
-              </Button>
-            </form>
+            <ArrowRight className="h-3 w-3 text-muted-foreground" />
+            <div className={`flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded border transition-colors ${step === 2 ? "border-primary text-primary bg-primary/10" : "border-border text-muted-foreground"}`}>
+              <Upload className="h-3 w-3" />STEP 2: PUSH / DOWNLOAD
+            </div>
           </div>
 
+          {/* Step 1: Collect files */}
+          {step === 1 && (
+            <div className="border border-border bg-card">
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+                <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
+                <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+                <div className="w-2.5 h-2.5 rounded-full bg-primary" />
+                <span className="text-xs text-muted-foreground ml-2">step 1 — collect project files</span>
+              </div>
+              <form onSubmit={handleCollect} className="p-6 space-y-4">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  First, we'll collect all project files from the server and package them into a ZIP archive. This step doesn't require a GitHub token.
+                </p>
+                <Button type="submit" disabled={status === "loading"}
+                  className="w-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-mono font-bold rounded-none">
+                  {status === "loading" ? (
+                    <><Loader2 className="h-3 w-3 animate-spin mr-2" />COLLECTING FILES...</>
+                  ) : (
+                    <><Package className="h-3 w-3 mr-2" />COLLECT PROJECT FILES<ChevronRight className="h-3 w-3 ml-2" /></>
+                  )}
+                </Button>
+              </form>
+            </div>
+          )}
+
+          {/* Step 2: Push or Download */}
+          {step === 2 && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+              {/* Option A: Download ZIP */}
+              <div className="border border-border bg-card">
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+                  <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-primary" />
+                  <span className="text-xs text-muted-foreground ml-2">option A — download ZIP</span>
+                </div>
+                <div className="p-6 space-y-3">
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Download the project as a ZIP file. Then extract and push manually, or use the included shell script.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button onClick={handleDownloadZip} disabled={!zipBlob}
+                      className="flex-1 bg-primary/15 border border-primary/30 text-primary hover:bg-primary/25 text-xs font-mono font-bold rounded-none">
+                      <Download className="h-3 w-3 mr-2" />DOWNLOAD ZIP
+                    </Button>
+                    <Button onClick={handleDownloadScript}
+                      variant="outline"
+                      className="flex-1 text-xs font-mono font-bold rounded-none border-border">
+                      <Download className="h-3 w-3 mr-2" />PUSH SCRIPT (.sh)
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground/60">
+                    The .sh script uses GitHub CLI (<span className="text-primary">gh</span>) to create a repo and push. Run: <span className="text-primary">bash push-to-github.sh</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Option B: Direct push */}
+              <div className="border border-border bg-card">
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+                  <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-primary" />
+                  <span className="text-xs text-muted-foreground ml-2">option B — push directly to GitHub</span>
+                </div>
+                <form onSubmit={handlePush} className="p-6 space-y-4">
+                  <div>
+                    <label className="text-xs text-muted-foreground block mb-1">$ github_token</label>
+                    <p className="text-xs text-muted-foreground/60 mb-2">
+                      Personal access token with <span className="text-primary">repo</span> scope.{" "}
+                      <a href="https://github.com/settings/tokens/new?scopes=repo&description=Thalamus+AI+Sync" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Generate one →</a>
+                    </p>
+                    <div className="flex items-center border border-border bg-background focus-within:border-primary transition-colors">
+                      <span className="text-primary text-xs px-2 terminal-glow">$</span>
+                      <Input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                        className="border-0 bg-transparent text-xs font-mono focus-visible:ring-0 focus-visible:ring-offset-0 text-foreground placeholder:text-muted-foreground"
+                        disabled={status === "loading"} required />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground block mb-1">$ repository_name</label>
+                    <div className="flex items-center border border-border bg-background focus-within:border-primary transition-colors">
+                      <span className="text-primary text-xs px-2 terminal-glow"><Github className="h-3 w-3" /></span>
+                      <Input type="text" value={repoName} onChange={(e) => {
+                        let val = e.target.value;
+                        const urlMatch = val.match(/github\.com\/[^/]+\/([^/\s?#]+)/);
+                        if (urlMatch) val = urlMatch[1];
+                        setRepoName(val);
+                      }} placeholder="my-project"
+                        className="border-0 bg-transparent text-xs font-mono focus-visible:ring-0 focus-visible:ring-offset-0 text-foreground placeholder:text-muted-foreground"
+                        disabled={status === "loading"} required />
+                    </div>
+                    {repoName && <p className="text-xs text-muted-foreground/50 mt-1">→ <span className="text-primary">{repoName.trim().replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "")}</span></p>}
+                  </div>
+                  <Button type="submit" disabled={status === "loading" || !token.trim() || !repoName.trim()}
+                    className="w-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-mono font-bold rounded-none">
+                    {status === "loading" ? (
+                      <><Loader2 className="h-3 w-3 animate-spin mr-2" />PUSHING TO GITHUB...</>
+                    ) : (
+                      <><Github className="h-3 w-3 mr-2" />PUSH TO GITHUB<ChevronRight className="h-3 w-3 ml-2" /></>
+                    )}
+                  </Button>
+                </form>
+              </div>
+
+              <button onClick={() => { setStep(1); setStatus("idle"); setLogs([]); }}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                ← Re-collect files
+              </button>
+            </motion.div>
+          )}
+
+          {/* Logs */}
           {logs.length > 0 && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="border border-border bg-card">
               <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
                 <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
                 <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
                 <div className="w-2.5 h-2.5 rounded-full bg-primary" />
-                <span className="text-xs text-muted-foreground ml-2">sync — output</span>
+                <span className="text-xs text-muted-foreground ml-2">output</span>
                 {status === "success" && <CheckCircle className="h-3 w-3 text-primary ml-auto" />}
                 {status === "error" && <XCircle className="h-3 w-3 text-destructive ml-auto" />}
               </div>
-              <div className="p-4 space-y-1 max-h-72 overflow-y-auto">
+              <div className="p-4 space-y-1 max-h-64 overflow-y-auto">
                 {logs.map((log, i) => (
                   <div key={i} className={`text-xs font-mono ${
                     log.type === "success" ? "text-primary terminal-glow" :
