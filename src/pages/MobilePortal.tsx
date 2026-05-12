@@ -510,68 +510,60 @@ function MobileHomeScreen({
   return (
     <div className="flex flex-col h-full bg-background overflow-y-auto" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       {/* Header */}
-      <div className="px-5 pt-6 pb-4 flex items-center justify-between">
+      <div className="px-4 pt-5 pb-4 flex items-center justify-between">
         <div>
-          <p className="text-[13px] text-muted-foreground">Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 17 ? "afternoon" : "evening"},</p>
-          <p className="text-[22px] font-bold text-foreground capitalize">{displayName} 👋</p>
+          <p className="text-sm text-muted-foreground">Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 17 ? "afternoon" : "evening"}</p>
+          <p className="text-2xl font-semibold text-foreground capitalize mt-0.5">{displayName}</p>
         </div>
         <button onClick={() => setCreditModalOpen(true)}
-          className="flex items-center gap-1.5 bg-amber-400/10 border border-amber-400/20 text-amber-400 px-3 py-2 rounded-2xl text-[13px] font-bold">
-          <Zap className="h-4 w-4" />
-          {(totalAB / 1_000_000).toFixed(1)}M AB
+          className="flex items-center gap-1.5 bg-card border border-border px-3 py-2 rounded-xl text-sm text-foreground">
+          <Zap className="h-4 w-4 text-amber-400" />
+          <span className="font-medium">{(totalAB / 1_000_000).toFixed(1)}M</span>
         </button>
       </div>
 
-      {/* Brand badge */}
-      <div className="px-5 mb-5">
-        <div className="flex items-center gap-2 bg-primary/8 border border-primary/20 rounded-2xl px-4 py-3">
-          <div className="w-8 h-8 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center">
-            <Cpu className="h-4 w-4 text-primary" />
-          </div>
-          <div>
-            <p className="text-[13px] font-bold text-primary">THALAMUS AI</p>
-            <p className="text-[11px] text-muted-foreground">L4.5 Agent · by Aphantic</p>
-          </div>
-          <div className="ml-auto flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[10px] text-emerald-400 font-semibold">LIVE</span>
-          </div>
-        </div>
-      </div>
-
       {/* Mode cards */}
-      <div className="px-5 mb-4">
-        <p className="text-[12px] text-muted-foreground font-semibold tracking-widest mb-3">CHOOSE A MODE</p>
-        <div className="grid grid-cols-2 gap-3">
+      <div className="px-4 py-6 flex-1">
+        <p className="text-xs text-muted-foreground mb-4 font-medium">Select a mode</p>
+        <div className="space-y-3">
           {MODES.map((mode, i) => (
             <motion.button
               key={mode.id}
-              initial={{ opacity: 0, y: 12 }}
+              initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.06 }}
-              whileTap={{ scale: 0.96 }}
+              transition={{ delay: i * 0.05, duration: 0.2 }}
+              whileTap={{ scale: 0.98 }}
               onClick={() => onModeSelect(mode.id)}
-              className={`flex flex-col items-start gap-2 p-4 rounded-2xl ${mode.bg} border border-border/60 text-left active:opacity-80 transition-opacity`}
+              className="w-full flex items-center gap-3 p-4 bg-card border border-border rounded-xl text-left active:bg-muted/50 transition-colors"
             >
-              <span className="text-3xl">{mode.emoji}</span>
-              <div>
-                <p className={`text-[14px] font-bold ${mode.color}`}>{mode.label}</p>
-                <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">{mode.desc}</p>
+              <div className={`w-11 h-11 rounded-lg ${mode.bg} flex items-center justify-center text-xl shrink-0`}>
+                {mode.emoji}
               </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-base font-semibold text-foreground">{mode.label}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{mode.desc}</p>
+              </div>
+              <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
             </motion.button>
           ))}
         </div>
       </div>
 
-      {/* Sign out */}
-      <div className="px-5 pb-8 mt-auto">
-        <button onClick={onSignOut}
-          className="w-full flex items-center justify-center gap-2 py-3.5 text-[14px] text-muted-foreground border border-border/50 rounded-2xl active:bg-muted/30 transition-colors">
-          <LogOut className="h-4 w-4" />
-          Sign Out
-        </button>
+      {/* Bottom section */}
+      <div className="px-4 pb-6 pt-4 border-t border-border bg-card/50">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-sm font-medium text-foreground">Thalamus AI</p>
+            <p className="text-xs text-muted-foreground">Claude 4.5 Sonnet</p>
+          </div>
+          <button onClick={onSignOut}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground rounded-lg active:bg-muted/30 transition-colors">
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </button>
+        </div>
         {typedUser?.email && (
-          <p className="text-[11px] text-muted-foreground/40 text-center mt-2">{typedUser.email}</p>
+          <p className="text-xs text-muted-foreground/60">{typedUser.email}</p>
         )}
       </div>
 
