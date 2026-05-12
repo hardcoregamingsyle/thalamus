@@ -14,6 +14,19 @@ interface LogLine {
   type: "info" | "success" | "error" | "cmd";
 }
 
+// Safe base64 encode that handles unicode
+function safeBase64(str: string): string {
+  try {
+    return btoa(unescape(encodeURIComponent(str)));
+  } catch {
+    // Fallback: encode as UTF-8 bytes manually
+    const bytes = new TextEncoder().encode(str);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  }
+}
+
 export default function SyncPage() {
   const navigate = useNavigate();
   const [token, setToken] = useState("");
@@ -46,6 +59,45 @@ export default function SyncPage() {
     return allFiles;
   };
 
+  // Detect the default branch of a repo, with retries
+  const detectBranch = async (
+    owner: string,
+    repo: string,
+    ghHeaders: Record<string, string>,
+  ): Promise<{ branch: string; sha: string; treeSha: string }> => {
+    // First get repo info to find default_branch
+    const repoInfoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers: ghHeaders });
+    if (!repoInfoRes.ok) throw new Error("Could not fetch repository info");
+    const repoInfo = await repoInfoRes.json() as { default_branch: string };
+    const defaultBranch = repoInfo.default_branch || "main";
+
+    // Retry up to 5 times with increasing delays (repo init can be slow)
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
+
+      const refRes = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${defaultBranch}`,
+        { headers: ghHeaders },
+      );
+      if (refRes.ok) {
+        const refData = await refRes.json() as { object: { sha: string } };
+        const commitSha = refData.object?.sha;
+        if (!commitSha) continue;
+
+        const commitRes = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/git/commits/${commitSha}`,
+          { headers: ghHeaders },
+        );
+        if (commitRes.ok) {
+          const commitData = await commitRes.json() as { tree: { sha: string } };
+          const treeSha = commitData.tree?.sha;
+          if (treeSha) return { branch: defaultBranch, sha: commitSha, treeSha };
+        }
+      }
+    }
+    throw new Error(`Could not find branch '${defaultBranch}'. The repository may not have been initialized yet. Please try again in a moment.`);
+  };
+
   const handleSync = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token.trim() || !repoName.trim()) return;
@@ -56,7 +108,7 @@ export default function SyncPage() {
 
     const cleanRepo = repoName.trim().replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "");
 
-    const ghHeaders = {
+    const ghHeaders: Record<string, string> = {
       Authorization: `token ${token}`,
       Accept: "application/vnd.github.v3+json",
       "Content-Type": "application/json",
@@ -69,27 +121,37 @@ export default function SyncPage() {
       addLog(`$ gh auth verify`, "cmd");
       const userRes = await fetch("https://api.github.com/user", { headers: ghHeaders });
       if (!userRes.ok) throw new Error("Invalid GitHub token. Please check your token and try again.");
-      const user = await userRes.json();
+      const user = await userRes.json() as { login: string };
       addLog(`✓ Authenticated as: ${user.login}`, "success");
 
       addLog(`$ gh repo create ${cleanRepo}`, "cmd");
       const createRes = await fetch("https://api.github.com/user/repos", {
         method: "POST",
         headers: ghHeaders,
-        body: JSON.stringify({ name: cleanRepo, description: "Thalamus AI project synced", private: false, auto_init: true }),
+        body: JSON.stringify({
+          name: cleanRepo,
+          description: "Thalamus AI project synced",
+          private: false,
+          auto_init: true,
+          default_branch: "main",
+        }),
       });
 
-      let repo;
+      let repo: { full_name: string; html_url: string; default_branch: string };
       if (createRes.status === 422) {
         addLog(`Repository already exists, using existing repo...`, "info");
         const existingRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}`, { headers: ghHeaders });
-        repo = await existingRes.json();
+        if (!existingRes.ok) throw new Error("Could not access existing repository");
+        repo = await existingRes.json() as typeof repo;
       } else if (!createRes.ok) {
-        const err = await createRes.json();
+        const err = await createRes.json() as { message?: string };
         throw new Error(err.message || "Failed to create repository");
       } else {
-        repo = await createRes.json();
+        repo = await createRes.json() as typeof repo;
         addLog(`✓ Repository created: ${repo.full_name}`, "success");
+        // Give GitHub a moment to initialize the repo
+        addLog(`  Waiting for repository initialization...`, "info");
+        await new Promise(r => setTimeout(r, 3000));
       }
 
       setRepoUrl(repo.html_url);
@@ -98,51 +160,35 @@ export default function SyncPage() {
       const filesToSync = await fetchAllFiles();
       addLog(`✓ Found ${filesToSync.length} files to sync`, "success");
 
-      // Find the default branch (main or master)
       addLog(`$ checking repository state...`, "cmd");
-      let branchRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/main`, { headers: ghHeaders });
-      if (!branchRes.ok) {
-        // Try master branch
-        branchRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/master`, { headers: ghHeaders });
-      }
-      if (!branchRes.ok) {
-        // Wait a moment and retry (GitHub sometimes takes a second to initialize)
-        await new Promise(r => setTimeout(r, 2000));
-        branchRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/main`, { headers: ghHeaders });
-        if (!branchRes.ok) {
-          branchRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/master`, { headers: ghHeaders });
-        }
-      }
-      if (!branchRes.ok) {
-        throw new Error("Could not find repository branch. Please try again.");
-      }
-
-      // For repos with existing commits: use Git Data API (batch commit)
-      const branchData = await branchRes.json();
-      const latestCommitSha: string = branchData.object?.sha;
-      const commitRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/commits/${latestCommitSha}`, { headers: ghHeaders });
-      const commitData = await commitRes.json();
-      const baseTreeSha: string = commitData.tree?.sha;
+      const { branch, sha: latestCommitSha, treeSha: baseTreeSha } = await detectBranch(user.login, cleanRepo, ghHeaders);
+      addLog(`✓ Using branch: ${branch}`, "success");
 
       addLog(`$ creating file blobs (${filesToSync.length} files)...`, "cmd");
       const treeItems: Array<{ path: string; mode: string; type: string; sha: string }> = [];
 
-      for (const file of filesToSync) {
-        try {
-          const base64Content = btoa(unescape(encodeURIComponent(file.content)));
-          const blobRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/blobs`, {
-            method: "POST",
-            headers: ghHeaders,
-            body: JSON.stringify({ content: base64Content, encoding: "base64" }),
-          });
-          if (blobRes.ok) {
-            const blob = await blobRes.json();
-            treeItems.push({ path: file.path, mode: "100644", type: "blob", sha: blob.sha });
-          } else {
-            const errData = await blobRes.json().catch(() => ({}));
-            addLog(`⚠ Skipped ${file.path}: ${(errData as { message?: string }).message || blobRes.status}`, "info");
-          }
-        } catch { /* skip */ }
+      // Process blobs in parallel batches of 10 for speed
+      const BLOB_BATCH = 10;
+      for (let i = 0; i < filesToSync.length; i += BLOB_BATCH) {
+        const batch = filesToSync.slice(i, i + BLOB_BATCH);
+        await Promise.all(batch.map(async (file) => {
+          try {
+            const base64Content = safeBase64(file.content);
+            const blobRes = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/blobs`, {
+              method: "POST",
+              headers: ghHeaders,
+              body: JSON.stringify({ content: base64Content, encoding: "base64" }),
+            });
+            if (blobRes.ok) {
+              const blob = await blobRes.json() as { sha: string };
+              treeItems.push({ path: file.path, mode: "100644", type: "blob", sha: blob.sha });
+            } else {
+              const errData = await blobRes.json().catch(() => ({})) as { message?: string };
+              addLog(`⚠ Skipped ${file.path}: ${errData.message || blobRes.status}`, "info");
+            }
+          } catch { /* skip */ }
+        }));
+        addLog(`  Uploaded ${Math.min(i + BLOB_BATCH, filesToSync.length)}/${filesToSync.length} blobs...`, "info");
       }
 
       addLog(`✓ Created ${treeItems.length} file blobs`, "success");
@@ -155,29 +201,40 @@ export default function SyncPage() {
         body: JSON.stringify({ tree: treeItems, base_tree: baseTreeSha }),
       });
       if (!treeRes.ok) {
-        const treeErr = await treeRes.json().catch(() => ({}));
-        throw new Error(`Failed to create git tree: ${(treeErr as { message?: string }).message || treeRes.status}`);
+        const treeErr = await treeRes.json().catch(() => ({})) as { message?: string };
+        throw new Error(`Failed to create git tree: ${treeErr.message || treeRes.status}`);
       }
-      const tree = await treeRes.json();
+      const tree = await treeRes.json() as { sha: string };
 
       addLog(`$ git commit -m "Sync from Thalamus AI"`, "cmd");
       const commitRes2 = await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/commits`, {
         method: "POST",
         headers: ghHeaders,
-        body: JSON.stringify({ message: `Sync from Thalamus AI — ${new Date().toISOString()}`, tree: tree.sha, parents: [latestCommitSha] }),
+        body: JSON.stringify({
+          message: `Sync from Thalamus AI — ${new Date().toISOString()}`,
+          tree: tree.sha,
+          parents: [latestCommitSha],
+        }),
       });
       if (!commitRes2.ok) {
-        const commitErr = await commitRes2.json().catch(() => ({}));
-        throw new Error(`Failed to create commit: ${(commitErr as { message?: string }).message || commitRes2.status}`);
+        const commitErr = await commitRes2.json().catch(() => ({})) as { message?: string };
+        throw new Error(`Failed to create commit: ${commitErr.message || commitRes2.status}`);
       }
-      const commit = await commitRes2.json();
+      const commit = await commitRes2.json() as { sha: string };
 
-      addLog(`$ updating branch ref...`, "cmd");
-      await fetch(`https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/main`, {
-        method: "PATCH",
-        headers: ghHeaders,
-        body: JSON.stringify({ sha: commit.sha, force: true }),
-      });
+      addLog(`$ updating branch ref (${branch})...`, "cmd");
+      const updateRefRes = await fetch(
+        `https://api.github.com/repos/${user.login}/${cleanRepo}/git/refs/heads/${branch}`,
+        {
+          method: "PATCH",
+          headers: ghHeaders,
+          body: JSON.stringify({ sha: commit.sha, force: true }),
+        },
+      );
+      if (!updateRefRes.ok) {
+        const refErr = await updateRefRes.json().catch(() => ({})) as { message?: string };
+        throw new Error(`Failed to update branch ref: ${refErr.message || updateRefRes.status}`);
+      }
 
       addLog(`✓ Successfully pushed to ${repo.full_name}`, "success");
       addLog(`✓ Repository URL: ${repo.html_url}`, "success");
@@ -194,7 +251,7 @@ export default function SyncPage() {
       <nav className="border-b border-border px-6 h-12 flex items-center justify-between">
         <button onClick={() => navigate("/")} className="flex items-center gap-2">
           <Terminal className="h-4 w-4 text-primary terminal-glow" />
-                  <span className="text-primary font-bold text-sm tracking-widest terminal-glow">THALAMUS_AI</span>
+          <span className="text-primary font-bold text-sm tracking-widest terminal-glow">THALAMUS_AI</span>
         </button>
         <span className="text-xs text-muted-foreground">// GITHUB_SYNC</span>
       </nav>
@@ -236,18 +293,17 @@ export default function SyncPage() {
               <div>
                 <label className="text-xs text-muted-foreground block mb-1">$ repository_name</label>
                 <p className="text-xs text-muted-foreground/60 mb-2">
-                  Just the repo name — e.g. <span className="text-primary">roblox-alt</span> (not a full URL).
+                  Just the repo name — e.g. <span className="text-primary">my-project</span> (not a full URL).
                   If you paste a GitHub URL, the name will be extracted automatically.
                 </p>
                 <div className="flex items-center border border-border bg-background focus-within:border-primary transition-colors">
                   <span className="text-primary text-xs px-2 terminal-glow"><Github className="h-3 w-3" /></span>
                   <Input type="text" value={repoName} onChange={(e) => {
                     let val = e.target.value;
-                    // Auto-extract repo name if a GitHub URL is pasted
                     const urlMatch = val.match(/github\.com\/[^/]+\/([^/\s?#]+)/);
                     if (urlMatch) val = urlMatch[1];
                     setRepoName(val);
-                  }} placeholder="roblox-alt"
+                  }} placeholder="my-project"
                     className="border-0 bg-transparent text-xs font-mono focus-visible:ring-0 focus-visible:ring-offset-0 text-foreground placeholder:text-muted-foreground"
                     disabled={status === "loading"} required />
                 </div>
