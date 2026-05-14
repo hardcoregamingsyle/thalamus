@@ -6,6 +6,13 @@ import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { callClaude, callGemini } from "./agentCore";
 
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 // ── NCERT & Indian Education authoritative sources ────────────────────────────
 const NCERT_SOURCES = [
   { name: "NCERT Official", url: "https://ncert.nic.in/", searchPath: "https://ncert.nic.in/textbook.php" },
@@ -22,7 +29,7 @@ async function liveWebSearch(query: string, isEducationQuery = true): Promise<st
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    const timeout = setTimeout(() => controller.abort(), 2800);
     const searchRes = await fetch(searchUrl, {
       signal: controller.signal,
       headers: {
@@ -71,7 +78,7 @@ async function liveWebSearch(query: string, isEducationQuery = true): Promise<st
     if (topUrl && topUrl.startsWith("http") && !topUrl.includes("duckduckgo.com")) {
       try {
         const pageCtrl = new AbortController();
-        const pageTimeout = setTimeout(() => pageCtrl.abort(), 3000);
+        const pageTimeout = setTimeout(() => pageCtrl.abort(), 1700);
         const pageRes = await fetch(topUrl, {
           signal: pageCtrl.signal,
           headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
@@ -430,32 +437,38 @@ export const sendStudyMessage = action({
       content: args.content,
     });
 
-    const history = await ctx.runQuery(internal.aiHelpers.getConversationMessages, {
-      conversationId: args.conversationId,
-    }) as Array<{ role: string; content: string }>;
+    const [history, resources, adminMaterials] = await Promise.all([
+      ctx.runQuery(internal.aiHelpers.getConversationMessages, {
+        conversationId: args.conversationId,
+      }) as Promise<Array<{ role: string; content: string }>>,
+      ctx.runQuery(internal.studyHelpers.getResourcesForUser, { userId }),
+      ctx.runQuery(internal.admin.getAdminStudyMaterials, {}) as Promise<
+        Array<{ title: string; content: string; mode?: string }>
+      >,
+    ]);
 
-    const resources = await ctx.runQuery(internal.studyHelpers.getResourcesForUser, { userId });
-    const adminMaterials = (await ctx.runQuery(internal.admin.getAdminStudyMaterials, {})) as unknown as Array<{ title: string; content: string; mode?: string }>;
-
-    // ── RAG + GraphRAG semantic context ───────────────────────────────────────
+    // ── RAG + GraphRAG (HF + Convex) and live web search — parallel for latency ─
     let ragContext = "";
     let graphContext = "";
-    try {
-      const studyCtx = await ctx.runAction(internal.rag.getStudyContextInternal, {
-        userId,
-        query: args.content,
-      });
-      ragContext = studyCtx.ragContext;
-      graphContext = studyCtx.graphContext;
-    } catch {
-      // RAG unavailable — continue without it
-    }
-
-    // Always do a REAL live web search — scrape actual pages
     let liveSearchResults = "";
     try {
-      liveSearchResults = await liveWebSearch(args.content, true);
-    } catch { /* skip */ }
+      const [studyCtx, live] = await Promise.all([
+        withTimeout(
+          ctx.runAction(internal.rag.getStudyContextInternal, {
+            userId,
+            query: args.content,
+          }) as Promise<{ ragContext: string; graphContext: string }>,
+          14_000,
+          { ragContext: "", graphContext: "" },
+        ),
+        withTimeout(liveWebSearch(args.content, true), 2_800, ""),
+      ]);
+      ragContext = studyCtx.ragContext;
+      graphContext = studyCtx.graphContext;
+      liveSearchResults = live;
+    } catch {
+      // RAG / search unavailable — continue
+    }
 
     const hasRetrieval =
       ragContext.replace(/\s/g, "").length > 40 || graphContext.replace(/\s/g, "").length > 40;

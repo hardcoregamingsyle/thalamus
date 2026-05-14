@@ -243,7 +243,10 @@ export const vectorizeResource = action({
       const studyDocId = `study:${userId}:${args.resourceId}`;
       const docBody = `${resource.title}\n\n${resource.content.slice(0, 28000)}`;
       await hfAddDocument(studyDocId, docBody);
-      await hfRunGraphRagIndex();
+      await Promise.race([
+        hfRunGraphRagIndex(),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2500)),
+      ]);
     } catch {
       /* HF Space cold or unreachable — non-fatal */
     }
@@ -323,7 +326,10 @@ export const vectorizeResourceInternal = internalAction({
       const studyDocId = `study:${args.userId}:${args.resourceId}`;
       const docBody = `${resource.title}\n\n${resource.content.slice(0, 28000)}`;
       await hfAddDocument(studyDocId, docBody);
-      await hfRunGraphRagIndex();
+      await Promise.race([
+        hfRunGraphRagIndex(),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2500)),
+      ]);
     } catch {
       /* HF Space optional */
     }
@@ -334,10 +340,8 @@ async function buildChunkRagContext(
   ctx: ActionCtx,
   userId: Id<"users">,
   queryEmbedding: number[],
-  queryText: string,
+  hfDocs: string[],
 ): Promise<string> {
-  const hfDocs = await hfQueryVector(queryText, 8);
-
   const chunkResults = await ctx.vectorSearch("ragChunks", "by_embedding", {
     vector: queryEmbedding,
     limit: 8,
@@ -413,9 +417,16 @@ export const getStudyContextInternal = internalAction({
     let graphContext = "";
 
     try {
-      const queryEmbedding = await generateEmbedding(args.query);
-      ragContext = await buildChunkRagContext(ctx, args.userId, queryEmbedding, args.query);
-      graphContext = await buildGraphRagContextSection(ctx, args.userId, queryEmbedding);
+      const [hfDocs, queryEmbedding] = await Promise.all([
+        hfQueryVector(args.query, 6, { timeoutMs: 2800 }),
+        generateEmbedding(args.query),
+      ]);
+      const [ragBlock, graphBlock] = await Promise.all([
+        buildChunkRagContext(ctx, args.userId, queryEmbedding, hfDocs),
+        buildGraphRagContextSection(ctx, args.userId, queryEmbedding),
+      ]);
+      ragContext = ragBlock;
+      graphContext = graphBlock;
     } catch {
       /* RAG unavailable — e.g. missing GEMINI_API_KEY */
     }
@@ -632,9 +643,16 @@ export const getStudyContext = action({
     let graphContext = "";
 
     try {
-      const queryEmbedding = await generateEmbedding(args.query);
-      ragContext = await buildChunkRagContext(ctx, userId, queryEmbedding, args.query);
-      graphContext = await buildGraphRagContextSection(ctx, userId, queryEmbedding);
+      const [hfDocs, queryEmbedding] = await Promise.all([
+        hfQueryVector(args.query, 6, { timeoutMs: 2800 }),
+        generateEmbedding(args.query),
+      ]);
+      const [ragBlock, graphBlock] = await Promise.all([
+        buildChunkRagContext(ctx, userId, queryEmbedding, hfDocs),
+        buildGraphRagContextSection(ctx, userId, queryEmbedding),
+      ]);
+      ragContext = ragBlock;
+      graphContext = graphBlock;
     } catch {
       // RAG/Graph search failed — continue without context
     }

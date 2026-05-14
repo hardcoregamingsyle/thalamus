@@ -38,13 +38,22 @@ export async function hfRunGraphRagIndex(): Promise<boolean> {
 }
 
 /** Chroma-style vector retrieval over documents indexed in the Space. */
-export async function hfQueryVector(query: string, nResults: number): Promise<string[]> {
+export async function hfQueryVector(
+  query: string,
+  nResults: number,
+  opts?: { timeoutMs?: number },
+): Promise<string[]> {
+  const timeoutMs = opts?.timeoutMs ?? 4000;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
     const params = new URLSearchParams({
       query,
       n_results: String(Math.min(Math.max(nResults, 1), 24)),
     });
-    const res = await fetch(`${getHfRagSpaceUrl()}/query_vector?${params.toString()}`);
+    const res = await fetch(`${getHfRagSpaceUrl()}/query_vector?${params.toString()}`, {
+      signal: ac.signal,
+    });
     if (!res.ok) return [];
     const data = (await res.json()) as { documents?: string[][] };
     return (data.documents?.[0] ?? []).filter(
@@ -52,5 +61,7 @@ export async function hfQueryVector(query: string, nResults: number): Promise<st
     );
   } catch {
     return [];
+  } finally {
+    clearTimeout(timer);
   }
 }

@@ -1,8 +1,6 @@
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { getAuthUserId } from "@convex-dev/auth/server";
-
 // ── Admin auth helper ─────────────────────────────────────────────────────────
 const ADMIN_TOKEN = "Aphantic*123";
 
@@ -323,10 +321,17 @@ export const isPlatformBudgetExhausted = internalQuery({
 
 /** Called from the frontend on app load / page focus. Upserts a DAU record for today. */
 export const trackDailyActivity = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) return; // anonymous / not signed in — skip
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    if (!args.token || args.token.length < 32) return;
+
+    const session = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .unique();
+    if (!session || session.expiresAt < Date.now()) return;
+
+    const userId = session.userId;
 
     const now = Date.now();
     const dateKey = new Date(now).toISOString().slice(0, 10); // "YYYY-MM-DD" UTC
