@@ -996,6 +996,7 @@ function PortalDesktop() {
   const auditAnswer = useAction(api.study.auditAnswer);
   const submitSuggestionMutation = useMutation(api.admin.submitSuggestion);
   const [isSuggestionSubmitting, setIsSuggestionSubmitting] = useState(false);
+  const saveUserMessage = useMutation(api.conversations.saveUserMessage);
 
   // Resolve conversation from URL session ID
   useEffect(() => {
@@ -1084,38 +1085,7 @@ function PortalDesktop() {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
 
-    // For code/research modes, use existing Convex actions (no streaming)
-    if (activeMode === "code" || activeMode === "research") {
-      let convId: Id<"conversations"> | null = activeConvId;
-      if (!convId) {
-        try {
-          const newConv = await createConversation({ token, mode: activeMode, title: msg.slice(0, 50) });
-          const newConvResult = newConv as { id: Id<"conversations">; customId: string } | Id<"conversations">;
-          const id = typeof newConvResult === "object" && "id" in newConvResult ? newConvResult.id : newConvResult as Id<"conversations">;
-          const customId = typeof newConvResult === "object" && "customId" in newConvResult ? newConvResult.customId : null;
-          convId = id;
-          setActiveConvId(id);
-          if (customId) navigate(`/portal/${activeMode}/${customId}`, { replace: true });
-        } catch {
-          toast.error("Failed to create conversation");
-          return;
-        }
-      }
-      setIsThinking(true);
-      try {
-        await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext });
-        if (!activeConvId) {
-          generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
-        }
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to send message");
-      } finally {
-        setIsThinking(false);
-      }
-      return;
-    }
-
-    // For chat/study modes, use streaming
+    // Create conversation if needed
     let convId: Id<"conversations"> | null = activeConvId;
     if (!convId) {
       try {
@@ -1132,92 +1102,106 @@ function PortalDesktop() {
       }
     }
 
-    setIsThinking(true);
+    // Save user message to DB immediately (so refresh preserves it)
+    try {
+      await saveUserMessage({ conversationId: convId, content: msg, token });
+    } catch { /* non-critical */ }
+
+    // Code mode: use TeamPortal inline (no streaming needed here)
+    if (activeMode === "code") {
+      setIsThinking(true);
+      try {
+        await sendMessage({ conversationId: convId, content: msg, mode: "code", token, userContext });
+        if (!activeConvId) generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to send message");
+      } finally {
+        setIsThinking(false);
+      }
+      return;
+    }
+
+    // All other modes: use streaming HTTP endpoint
+    const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
+    const siteUrl = convexUrl.replace(".convex.cloud", ".convex.site");
+
+    const SYSTEM_PROMPTS: Record<string, string> = {
+      chat: `You are Thalamus AI, an advanced AI assistant.\n\nCRITICAL: You MUST respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.\nUse: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <code>, <pre><code>, <blockquote>, <table>\nHeadings: style="font-size:1.2em;font-weight:bold;margin:0.5em 0;color:#e5e7eb"\nParagraphs: style="margin:0.5em 0;line-height:1.6;color:#d1d5db"\nLists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db"\nCode blocks: style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em"\nInline code: style="background:#1f2937;color:#34d399;padding:0.1em 0.4em;border-radius:4px;font-family:monospace;font-size:0.85em"`,
+      research: `You are Thalamus AI Research Mode — a deep research assistant. Search the web and synthesize comprehensive, well-cited reports.\n\nCRITICAL: You MUST respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.\nStructure: <h1> title, <h2> sections, <h3> sub-sections, <p> analysis, <ul>/<ol> findings, <table> comparisons, <blockquote> key insights.\nHeadings: style="font-size:1.3em;font-weight:bold;margin:0.8em 0 0.4em;color:#f9fafb"\nParagraphs: style="margin:0.5em 0;line-height:1.7;color:#d1d5db"\nLists: style="margin:0.3em 0 0.3em 1.5em;color:#d1d5db"\nCode: style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em"`,
+      study: `You are Thalamus AI Study Mode — a precision study assistant. Give dense, accurate, exam-ready information.\n\nCRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.\nUse: <h2>, <h3>, <h4>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <code>\nHeadings: style="font-size:1.15em;font-weight:bold;margin:0.8em 0 0.4em;color:#e5e7eb;border-left:4px solid #6366f1;padding-left:0.7em"\nSub-headings: style="font-size:1em;font-weight:bold;margin:0.7em 0 0.3em;color:#c4b5fd"\nParagraphs: style="margin:0.4em 0;line-height:1.7;color:#d1d5db;font-size:0.92em"\nLists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db;font-size:0.9em;line-height:1.6"\nKey facts: style="border-left:4px solid #f59e0b;padding:0.6em 1em;color:#fcd34d;margin:0.6em 0;background:rgba(245,158,11,0.08);border-radius:0 8px 8px 0;font-size:0.88em"`,
+    };
+
+    const historyMsgs = (messages ?? []).slice(-10).map((m: Message) => ({ role: m.role, content: m.content.slice(0, 1500) }));
+    const systemPrompt = SYSTEM_PROMPTS[activeMode] ?? SYSTEM_PROMPTS.chat;
+
+    setIsThinking(false);
+    setStreamingContent("");
 
     try {
-      const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
-      const siteUrl = convexUrl.replace(".convex.cloud", ".convex.site");
+      const response = await fetch(`${siteUrl}/stream-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: msg,
+          mode: activeMode,
+          history: historyMsgs,
+          systemPrompt,
+          userContext,
+          token,
+          conversationId: convId,
+          preferClaude: true,
+          skipUserSave: true, // user message already saved above
+        }),
+      });
 
-      const CHAT_SYSTEM = `You are AgentAI, an advanced AI assistant powered by AMD MI300X GPUs.\n\nCRITICAL: You MUST respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.\nUse: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <code>, <pre><code>, <blockquote>, <table>\nHeadings: style="font-size:1.2em;font-weight:bold;margin:0.5em 0;color:#e5e7eb"\nParagraphs: style="margin:0.5em 0;line-height:1.6;color:#d1d5db"\nLists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db"\nCode blocks: style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em"\nInline code: style="background:#1f2937;color:#34d399;padding:0.1em 0.4em;border-radius:4px;font-family:monospace;font-size:0.85em"`;
+      if (!response.ok || !response.body) throw new Error("Stream failed");
 
-      const STUDY_SYSTEM = `You are Aether — the world's most effective study companion. Your mission: make students genuinely understand concepts so deeply that they could explain them to anyone.\n\nCRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.\nUse: <h2>, <h3>, <h4>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <code>\nHeadings: style="font-size:1.15em;font-weight:bold;margin:0.8em 0 0.4em;color:#e5e7eb;border-left:4px solid #6366f1;padding-left:0.7em"\nSub-headings: style="font-size:1em;font-weight:bold;margin:0.7em 0 0.3em;color:#c4b5fd"\nParagraphs: style="margin:0.4em 0;line-height:1.7;color:#d1d5db;font-size:0.92em"\nLists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db;font-size:0.9em;line-height:1.6"\nKey facts box: style="border-left:4px solid #f59e0b;padding:0.6em 1em;color:#fcd34d;margin:0.6em 0;background:rgba(245,158,11,0.08);border-radius:0 8px 8px 0;font-size:0.88em"\nCode: style="background:#1f2937;color:#34d399;padding:0.15em 0.5em;border-radius:4px;font-family:monospace;font-size:0.88em"`;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let accumulated = "";
 
-      const systemPrompt = activeMode === "study" ? STUDY_SYSTEM : CHAT_SYSTEM;
-      const historyMsgs = (messages ?? []).slice(-10).map((m: Message) => ({ role: m.role, content: m.content.slice(0, 1500) }));
-
-      if (activeMode === "study") {
-        // Study mode: use dedicated study action (includes web search + resources)
-        await sendStudyMessage({ conversationId: convId, content: msg, token, userContext });
-        if (!activeConvId) {
-          generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
-        }
-      } else {
-        // Chat mode: try streaming first, fallback to Convex action
-        setIsThinking(false);
-        setStreamingContent("");
-        try {
-          const response = await fetch(`${siteUrl}/stream-chat`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              content: msg,
-              mode: activeMode,
-              history: historyMsgs,
-              systemPrompt,
-              userContext,
-              token,
-              conversationId: convId,
-              preferClaude: true,
-            }),
-          });
-
-          if (!response.ok || !response.body) throw new Error("Stream failed");
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-          let accumulated = "";
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() ?? "";
-            for (const line of lines) {
-              if (!line.startsWith("data: ")) continue;
-              const jsonStr = line.slice(6).trim();
-              if (!jsonStr) continue;
-              try {
-                const parsed = JSON.parse(jsonStr) as { chunk?: string; done?: boolean; fullText?: string };
-                if (parsed.chunk) {
-                  accumulated += parsed.chunk;
-                  setStreamingContent(accumulated);
-                }
-                if (parsed.done && parsed.fullText) {
-                  accumulated = parsed.fullText;
-                  setStreamingContent(accumulated);
-                }
-              } catch { /* skip */ }
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+          try {
+            const parsed = JSON.parse(jsonStr) as { chunk?: string; done?: boolean; fullText?: string };
+            if (parsed.chunk) {
+              accumulated += parsed.chunk;
+              setStreamingContent(accumulated);
             }
-          }
-          setStreamingContent(null);
-        } catch {
-          setStreamingContent(null);
-          // Fallback to Convex action
-          setIsThinking(true);
-          await sendMessage({ conversationId: convId, content: msg, mode: "chat", token, userContext });
-        }
-        if (!activeConvId) {
-          generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
+            if (parsed.done && parsed.fullText) {
+              accumulated = parsed.fullText;
+              setStreamingContent(accumulated);
+            }
+          } catch { /* skip */ }
         }
       }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to send message");
-    } finally {
-      setIsThinking(false);
       setStreamingContent(null);
+    } catch {
+      setStreamingContent(null);
+      // Fallback to Convex action for chat mode
+      setIsThinking(true);
+      try {
+        await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to send message");
+      }
     }
+
+    if (!activeConvId) {
+      generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
+    }
+
+    setIsThinking(false);
+    setStreamingContent(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

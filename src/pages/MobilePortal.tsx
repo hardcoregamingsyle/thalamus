@@ -125,6 +125,7 @@ function MobileChatView({
   const sendStudyMessage = useAction(api.study.sendStudyMessage);
   const generateTitle = useAction(api.ai.generateConversationTitle);
   const processFileResource = useAction(api.study.processFileResource);
+  const saveUserMessage = useMutation(api.conversations.saveUserMessage);
 
   const filteredConvs = conversations?.filter((c: Conversation) => c.mode === mode) || [];
 
@@ -157,61 +158,77 @@ function MobileChatView({
 
   const handleSend = async () => {
     if (!input.trim() || isThinking || !token) return;
-    let convId = activeConvId;
-    const isFirstMessage = !convId;
-    if (!convId) {
-      try {
-        const result = await createConversation({ title: input.slice(0, 40), mode, token }) as unknown as Id<"conversations">;
-        convId = result;
-        setActiveConvId(result);
-      } catch { toast.error("Failed to create conversation"); return; }
-    }
     const msg = input.trim();
     setInput("");
-    setIsThinking(true);
-    setStreamingContent(null);
 
     const userContext = {
       datetime: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }),
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
 
+    // Create conversation if needed
+    let convId = activeConvId;
+    if (!convId) {
+      try {
+        const result = await createConversation({ token, mode, title: msg.slice(0, 50) });
+        const r = result as { id: Id<"conversations">; customId: string } | Id<"conversations">;
+        const id = typeof r === "object" && "id" in r ? r.id : r as Id<"conversations">;
+        const customId = typeof r === "object" && "customId" in r ? r.customId : null;
+        convId = id;
+        setActiveConvId(id);
+        if (customId) navigate(`/portal/${mode}/${customId}`, { replace: true });
+      } catch {
+        toast.error("Failed to create conversation");
+        return;
+      }
+    }
+
+    // Save user message immediately
     try {
-      // For chat mode, use streaming
-      if (mode === "chat") {
-        const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
-        const siteUrl = convexUrl.replace(".convex.cloud", ".convex.site");
-        const CHAT_SYSTEM = `You are Thalamus AI, an advanced AI assistant. Be helpful, accurate, and concise.\n\nCRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.\nUse: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <code>, <pre><code>, <blockquote>\nHeadings: style="font-size:1.2em;font-weight:bold;margin:0.5em 0;color:#e5e7eb"\nParagraphs: style="margin:0.5em 0;line-height:1.6;color:#d1d5db"\nLists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db"\nCode blocks: style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em"`;
-        const historyMsgs = (messages ?? []).slice(-10).map((m: Message) => ({ role: m.role, content: m.content.slice(0, 1500) }));
+      await saveUserMessage({ conversationId: convId, content: msg, token });
+    } catch { /* non-critical */ }
 
-        // Save user message first
-        await sendMessage({ conversationId: convId, content: msg, mode: "chat", token, userContext });
-        setIsThinking(false);
-        setStreamingContent("");
+    const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
+    const siteUrl = convexUrl.replace(".convex.cloud", ".convex.site");
 
-        await streamChat(siteUrl, {
-          content: msg,
-          mode: "chat",
-          history: historyMsgs,
-          systemPrompt: CHAT_SYSTEM,
-          userContext,
-          token,
-          conversationId: convId,
-          preferClaude: true,
-        }, (text) => setStreamingContent(text));
+    const SYSTEM_PROMPTS: Record<string, string> = {
+      chat: `You are Thalamus AI, an advanced AI assistant.\n\nCRITICAL: You MUST respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.\nUse: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <code>, <pre><code>, <blockquote>\nHeadings: style="font-size:1.2em;font-weight:bold;margin:0.5em 0;color:#e5e7eb"\nParagraphs: style="margin:0.5em 0;line-height:1.6;color:#d1d5db"\nLists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db"\nCode blocks: style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em"`,
+      research: `You are Thalamus AI Research Mode — a deep research assistant. Provide comprehensive, well-structured research reports.\n\nCRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.\nUse: <h1>, <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <blockquote>, <table>\nHeadings: style="font-size:1.3em;font-weight:bold;margin:0.8em 0 0.4em;color:#f9fafb"\nParagraphs: style="margin:0.5em 0;line-height:1.7;color:#d1d5db"`,
+      study: `You are Thalamus AI Study Mode — a precision study assistant. Give dense, accurate, exam-ready information.\n\nCRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.\nUse: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <blockquote>\nHeadings: style="font-size:1.15em;font-weight:bold;margin:0.8em 0 0.4em;color:#e5e7eb;border-left:4px solid #6366f1;padding-left:0.7em"\nParagraphs: style="margin:0.4em 0;line-height:1.7;color:#d1d5db;font-size:0.92em"`,
+    };
 
-        setStreamingContent(null);
-      } else if (mode === "study") {
-        await sendStudyMessage({ conversationId: convId, content: msg, token, userContext });
-      } else {
+    const historyMsgs = (messages ?? []).slice(-10).map((m: Message) => ({ role: m.role, content: m.content.slice(0, 1500) }));
+    const systemPrompt = SYSTEM_PROMPTS[mode] ?? SYSTEM_PROMPTS.chat;
+
+    setStreamingContent("");
+
+    try {
+      const accumulated = await streamChat(siteUrl, {
+        content: msg,
+        mode,
+        history: historyMsgs,
+        systemPrompt,
+        userContext,
+        token,
+        conversationId: convId,
+        preferClaude: true,
+        skipUserSave: true,
+      }, (text) => setStreamingContent(text));
+      setStreamingContent(null);
+      void accumulated; // response saved by server
+    } catch {
+      setStreamingContent(null);
+      setIsThinking(true);
+      try {
         await sendMessage({ conversationId: convId, content: msg, mode: mode as "chat" | "research" | "code", token, userContext });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to send");
       }
+    }
 
-      if (isFirstMessage && convId) {
-        generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
-      }
-    } catch { toast.error("Failed to respond. Try again."); }
-    finally { setIsThinking(false); setStreamingContent(null); }
+    generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
+    setIsThinking(false);
+    setStreamingContent(null);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
