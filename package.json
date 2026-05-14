@@ -6,8 +6,8 @@
   "packageManager": "bun@1.2.10",
   "scripts": {
     "dev": "vite",
-    "build": "bunx tsc -b && vite build",
-    "type-check": "bunx tsc -b --noEmit",
+    "build": "bun install && ./node_modules/.bin/tsc -b && vite build",
+    "type-check": "tsc -b --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "preview": "vite preview",
