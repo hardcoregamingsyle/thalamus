@@ -1,24 +1,47 @@
 "use node";
-import { action, internalAction } from "./_generated/server";
+import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { hfAddDocument, hfRunGraphRagIndex, hfQueryVector } from "./hfRagSpace";
 
-// ── Embedding generation using Gemini text-embedding-004 ─────────────────────
-const GEMINI_KEYS = [
-  "AIzaSyB6LdCRxGz27Xpj-K8-EiOVBQRvl0SPzyQ",
-  "AIzaSyBZHdEWGlYTpr26fVGGWBOHxn4dRKkd-9Y",
-  "AIzaSyCJHWZmUwc2_HAV-KS0Q4C50aOBkvm7OwE",
-  "AIzaSyCOX7-EwKrZDVh6qUeGoqT_G-D3svl6tco",
-  "AIzaSyCyRPBb-rFOZD_6aKgX6cQiKOshjlXt1ho",
-];
-
+// ── Embedding generation using Gemini text-embedding-004 (keys from env) ───────
 let embKeyIdx = 0;
 
+function getGeminiApiKeys(): string[] {
+  const raw = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_AI_API_KEY ?? "";
+  const keys = raw
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return keys;
+}
+
+const MAX_RAG_CONTEXT_CHARS = 6000;
+const MAX_GRAPH_CONTEXT_CHARS = 4000;
+
+function dedupeSnippets(texts: string[], maxEach = 720): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const t of texts) {
+    const norm = t.slice(0, 140).toLowerCase().replace(/\s+/g, " ");
+    if (seen.has(norm)) continue;
+    seen.add(norm);
+    const clipped = t.length > maxEach ? t.slice(0, maxEach) + "\n...[trimmed]" : t;
+    out.push(clipped);
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+
 async function generateEmbedding(text: string): Promise<number[]> {
+  const keys = getGeminiApiKeys();
+  if (keys.length === 0) {
+    throw new Error("Set GEMINI_API_KEY (or GOOGLE_AI_API_KEY) in Convex env for embeddings / RAG.");
+  }
   const truncated = text.slice(0, 8000); // Gemini embedding limit
-  for (let attempt = 0; attempt < GEMINI_KEYS.length; attempt++) {
-    const key = GEMINI_KEYS[embKeyIdx % GEMINI_KEYS.length];
+  for (let attempt = 0; attempt < keys.length; attempt++) {
+    const key = keys[embKeyIdx % keys.length];
     embKeyIdx++;
     try {
       const response = await fetch(
@@ -46,10 +69,10 @@ async function generateEmbedding(text: string): Promise<number[]> {
       }
       return values.slice(0, 1536);
     } catch (err) {
-      if (attempt === GEMINI_KEYS.length - 1) throw err;
+      if (attempt === keys.length - 1) throw err;
     }
   }
-  throw new Error("All embedding keys exhausted");
+  throw new Error("All Gemini embedding keys failed");
 }
 
 // ── Text chunking ─────────────────────────────────────────────────────────────
@@ -93,7 +116,9 @@ Rules:
 - Keep descriptions under 100 chars`;
 
   try {
-    const key = GEMINI_KEYS[Math.floor(Math.random() * GEMINI_KEYS.length)];
+    const keys = getGeminiApiKeys();
+    if (keys.length === 0) return { nodes: [], edges: [] };
+    const key = keys[Math.floor(Math.random() * keys.length)];
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`,
       {
@@ -143,7 +168,6 @@ export const vectorizeResource = action({
     await ctx.runMutation(internal.ragHelpers.deleteChunksForResource, { resourceId: args.resourceId });
     await ctx.runMutation(internal.ragHelpers.deleteGraphForResource, { resourceId: args.resourceId });
 
-    // 1. Chunk the text and generate embeddings
     const chunks = chunkText(resource.content);
     let chunksCreated = 0;
 
@@ -213,6 +237,16 @@ export const vectorizeResource = action({
       resourceId: args.resourceId,
       graphIndexed: nodesCreated > 0,
     });
+
+    // Hugging Face Space: Chroma + GraphRAG index (shared with team portal)
+    try {
+      const studyDocId = `study:${userId}:${args.resourceId}`;
+      const docBody = `${resource.title}\n\n${resource.content.slice(0, 28000)}`;
+      await hfAddDocument(studyDocId, docBody);
+      await hfRunGraphRagIndex();
+    } catch {
+      /* HF Space cold or unreachable — non-fatal */
+    }
 
     return { chunksCreated, nodesCreated, edgesCreated };
   },
@@ -284,8 +318,89 @@ export const vectorizeResourceInternal = internalAction({
       resourceId: args.resourceId,
       graphIndexed: nodeIdMap.size > 0,
     });
+
+    try {
+      const studyDocId = `study:${args.userId}:${args.resourceId}`;
+      const docBody = `${resource.title}\n\n${resource.content.slice(0, 28000)}`;
+      await hfAddDocument(studyDocId, docBody);
+      await hfRunGraphRagIndex();
+    } catch {
+      /* HF Space optional */
+    }
   },
 });
+
+async function buildChunkRagContext(
+  ctx: ActionCtx,
+  userId: Id<"users">,
+  queryEmbedding: number[],
+  queryText: string,
+): Promise<string> {
+  const hfDocs = await hfQueryVector(queryText, 8);
+
+  const chunkResults = await ctx.vectorSearch("ragChunks", "by_embedding", {
+    vector: queryEmbedding,
+    limit: 8,
+    filter: (q) => q.eq("userId", userId),
+  });
+
+  const convexTexts: string[] = [];
+  for (const r of chunkResults) {
+    const chunk = await ctx.runQuery(internal.ragHelpers.getChunkById, { chunkId: r._id as Id<"ragChunks"> });
+    if (chunk?.text) convexTexts.push(chunk.text);
+  }
+
+  const merged = dedupeSnippets([...hfDocs, ...convexTexts], 750);
+  if (merged.length === 0) return "";
+
+  let body = merged.map((t, i) => `[${i + 1}] ${t}`).join("\n\n");
+  if (body.length > MAX_RAG_CONTEXT_CHARS) {
+    body = body.slice(0, MAX_RAG_CONTEXT_CHARS) + "\n...[RAG context capped for token budget]";
+  }
+  const label =
+    "## Relevant knowledge (Hugging Face Chroma / vector RAG + Convex per-user chunks)";
+  return `${label}\n${body}`;
+}
+
+async function buildGraphRagContextSection(
+  ctx: ActionCtx,
+  userId: Id<"users">,
+  queryEmbedding: number[],
+): Promise<string> {
+  const nodeResults = await ctx.vectorSearch("graphNodes", "by_embedding", {
+    vector: queryEmbedding,
+    limit: 5,
+    filter: (q) => q.eq("userId", userId),
+  });
+
+  if (nodeResults.length === 0) return "";
+
+  const graphParts: string[] = [];
+  for (const r of nodeResults) {
+    const node = await ctx.runQuery(internal.ragHelpers.getNodeById, { nodeId: r._id as Id<"graphNodes"> });
+    if (!node) continue;
+    const { outgoing, incoming } = await ctx.runQuery(internal.ragHelpers.getEdgesForNode, { nodeId: r._id as Id<"graphNodes"> });
+    const connections: string[] = [];
+    for (const edge of outgoing.slice(0, 3)) {
+      const target = await ctx.runQuery(internal.ragHelpers.getNodeById, { nodeId: edge.targetNodeId });
+      if (target) connections.push(`→ ${target.label} (${edge.relation})`);
+    }
+    for (const edge of incoming.slice(0, 3)) {
+      const source = await ctx.runQuery(internal.ragHelpers.getNodeById, { nodeId: edge.sourceNodeId });
+      if (source) connections.push(`← ${source.label} (${edge.relation})`);
+    }
+    graphParts.push(
+      `**${node.label}** [${node.type}]: ${node.description}${connections.length > 0 ? "\n  " + connections.join(", ") : ""}`,
+    );
+  }
+
+  if (graphParts.length === 0) return "";
+  let graphContext = "## Knowledge graph (GraphRAG — entities + relations)\n" + graphParts.join("\n\n");
+  if (graphContext.length > MAX_GRAPH_CONTEXT_CHARS) {
+    graphContext = graphContext.slice(0, MAX_GRAPH_CONTEXT_CHARS) + "\n...[graph context capped]";
+  }
+  return graphContext;
+}
 
 // ── Internal: Get study context (called from study.ts) ───────────────────────
 export const getStudyContextInternal = internalAction({
@@ -299,52 +414,11 @@ export const getStudyContextInternal = internalAction({
 
     try {
       const queryEmbedding = await generateEmbedding(args.query);
-
-      const chunkResults = await ctx.vectorSearch("ragChunks", "by_embedding", {
-        vector: queryEmbedding,
-        limit: 6,
-        filter: (q) => q.eq("userId", args.userId),
-      });
-
-      if (chunkResults.length > 0) {
-        const chunkTexts = await Promise.all(
-          chunkResults.map(r => ctx.runQuery(internal.ragHelpers.getChunkById, { chunkId: r._id as Id<"ragChunks"> }))
-        );
-        const validChunks = chunkTexts.filter(Boolean);
-        if (validChunks.length > 0) {
-          ragContext = "## Relevant Knowledge (Semantic Search)\n" +
-            validChunks.map((c, i) => `[${i + 1}] ${c!.text}`).join("\n\n");
-        }
-      }
-
-      const nodeResults = await ctx.vectorSearch("graphNodes", "by_embedding", {
-        vector: queryEmbedding,
-        limit: 4,
-        filter: (q) => q.eq("userId", args.userId),
-      });
-
-      if (nodeResults.length > 0) {
-        const graphParts: string[] = [];
-        for (const r of nodeResults) {
-          const node = await ctx.runQuery(internal.ragHelpers.getNodeById, { nodeId: r._id as Id<"graphNodes"> });
-          if (!node) continue;
-          const { outgoing, incoming } = await ctx.runQuery(internal.ragHelpers.getEdgesForNode, { nodeId: r._id as Id<"graphNodes"> });
-          const connections: string[] = [];
-          for (const edge of outgoing.slice(0, 3)) {
-            const target = await ctx.runQuery(internal.ragHelpers.getNodeById, { nodeId: edge.targetNodeId });
-            if (target) connections.push(`→ ${target.label} (${edge.relation})`);
-          }
-          for (const edge of incoming.slice(0, 3)) {
-            const source = await ctx.runQuery(internal.ragHelpers.getNodeById, { nodeId: edge.sourceNodeId });
-            if (source) connections.push(`← ${source.label} (${edge.relation})`);
-          }
-          graphParts.push(`**${node.label}** [${node.type}]: ${node.description}${connections.length > 0 ? "\n  " + connections.join(", ") : ""}`);
-        }
-        if (graphParts.length > 0) {
-          graphContext = "## Knowledge Graph Context\n" + graphParts.join("\n\n");
-        }
-      }
-    } catch { /* RAG unavailable */ }
+      ragContext = await buildChunkRagContext(ctx, args.userId, queryEmbedding, args.query);
+      graphContext = await buildGraphRagContextSection(ctx, args.userId, queryEmbedding);
+    } catch {
+      /* RAG unavailable — e.g. missing GEMINI_API_KEY */
+    }
 
     return { ragContext, graphContext, hasContext: ragContext.length > 0 || graphContext.length > 0 };
   },
@@ -509,7 +583,8 @@ export const checkGraphHealth = action({
     const chunks = await ctx.runQuery(internal.ragHelpers.getChunksForUser, { userId });
     if (chunks.length === 0 && nodes.length === 0) {
       issues.push("No RAG index found — no resources have been vectorized");
-      recommendations.push("Upload study resources to enable semantic search");
+      recommendations.push("Upload study materials and run vectorize; set GEMINI_API_KEY on Convex for embeddings.");
+      recommendations.push("Study docs are also pushed to the Hugging Face RAG Space (HF_RAG_SPACE_URL) for Chroma + GraphRAG.");
     }
 
     // Determine status
@@ -557,54 +632,9 @@ export const getStudyContext = action({
     let graphContext = "";
 
     try {
-      // Vector search for relevant chunks
       const queryEmbedding = await generateEmbedding(args.query);
-
-      const chunkResults = await ctx.vectorSearch("ragChunks", "by_embedding", {
-        vector: queryEmbedding,
-        limit: 6,
-        filter: (q) => q.eq("userId", userId),
-      });
-
-      if (chunkResults.length > 0) {
-        const chunkTexts = await Promise.all(
-          chunkResults.map(r => ctx.runQuery(internal.ragHelpers.getChunkById, { chunkId: r._id as Id<"ragChunks"> }))
-        );
-        const validChunks = chunkTexts.filter(Boolean);
-        if (validChunks.length > 0) {
-          ragContext = "## Relevant Knowledge (Semantic Search)\n" +
-            validChunks.map((c, i) => `[${i + 1}] ${c!.text}`).join("\n\n");
-        }
-      }
-
-      // Graph search for related concepts
-      const nodeResults = await ctx.vectorSearch("graphNodes", "by_embedding", {
-        vector: queryEmbedding,
-        limit: 4,
-        filter: (q) => q.eq("userId", userId),
-      });
-
-      if (nodeResults.length > 0) {
-        const graphParts: string[] = [];
-        for (const r of nodeResults) {
-          const node = await ctx.runQuery(internal.ragHelpers.getNodeById, { nodeId: r._id as Id<"graphNodes"> });
-          if (!node) continue;
-          const { outgoing, incoming } = await ctx.runQuery(internal.ragHelpers.getEdgesForNode, { nodeId: r._id as Id<"graphNodes"> });
-          const connections: string[] = [];
-          for (const edge of outgoing.slice(0, 3)) {
-            const target = await ctx.runQuery(internal.ragHelpers.getNodeById, { nodeId: edge.targetNodeId });
-            if (target) connections.push(`→ ${target.label} (${edge.relation})`);
-          }
-          for (const edge of incoming.slice(0, 3)) {
-            const source = await ctx.runQuery(internal.ragHelpers.getNodeById, { nodeId: edge.sourceNodeId });
-            if (source) connections.push(`← ${source.label} (${edge.relation})`);
-          }
-          graphParts.push(`**${node.label}** [${node.type}]: ${node.description}${connections.length > 0 ? "\n  " + connections.join(", ") : ""}`);
-        }
-        if (graphParts.length > 0) {
-          graphContext = "## Knowledge Graph Context\n" + graphParts.join("\n\n");
-        }
-      }
+      ragContext = await buildChunkRagContext(ctx, userId, queryEmbedding, args.query);
+      graphContext = await buildGraphRagContextSection(ctx, userId, queryEmbedding);
     } catch {
       // RAG/Graph search failed — continue without context
     }
