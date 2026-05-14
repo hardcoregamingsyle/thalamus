@@ -129,20 +129,24 @@ export const remove = mutation({
 export const getMessages = query({
   args: { conversationId: v.id("conversations"), token: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    if (!args.token) return [];
-    const sessions = await ctx.db
-      .query("customSessions")
-      .withIndex("by_token", (q) => q.eq("token", args.token!))
-      .take(1);
-    const session = sessions[0];
-    if (!session || session.expiresAt < Date.now()) return [];
-    const conv = await ctx.db.get(args.conversationId);
-    if (!conv || conv.userId !== session.userId) return [];
+    try {
+      if (!args.token) return [];
+      const sessions = await ctx.db
+        .query("customSessions")
+        .withIndex("by_token", (q) => q.eq("token", args.token!))
+        .take(1);
+      const session = sessions[0];
+      if (!session || session.expiresAt < Date.now()) return [];
+      const conv = await ctx.db.get(args.conversationId);
+      if (!conv || conv.userId !== session.userId) return [];
 
-    return await ctx.db
-      .query("messages")
-      .withIndex("by_conversation", (q) => q.eq("conversationId", args.conversationId))
-      .order("asc")
-      .take(200);
+      return await ctx.db
+        .query("messages")
+        .withIndex("by_conversation", (q) => q.eq("conversationId", args.conversationId))
+        .order("asc")
+        .take(200);
+    } catch {
+      return [];
+    }
   },
 });
