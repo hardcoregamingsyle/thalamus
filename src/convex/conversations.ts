@@ -150,3 +150,28 @@ export const getMessages = query({
     }
   },
 });
+
+export const saveUserMessage = mutation({
+  args: {
+    conversationId: v.id("conversations"),
+    content: v.string(),
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .take(1);
+    const session = sessions[0];
+    if (!session || session.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const conv = await ctx.db.get(args.conversationId);
+    if (!conv || conv.userId !== session.userId) throw new Error("Not found");
+    await ctx.db.insert("messages", {
+      conversationId: args.conversationId,
+      userId: session.userId,
+      role: "user",
+      content: args.content,
+    });
+    await ctx.db.patch(args.conversationId, { lastMessageAt: Date.now() });
+  },
+});
