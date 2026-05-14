@@ -23,10 +23,11 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
     "noPropertyAccessFromIndexSignature": false,
+    "ignoreDeprecations": "5.0",
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "vly-toolbar-readonly.tsx"]
+  "include": ["src"]
 }
