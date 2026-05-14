@@ -1,0 +1,21 @@
+# Cloudflare Pages Configuration
+name = "thalamus"
+compatibility_date = "2024-01-01"
+
+[build]
+command = "bun install && bun run build"
+cwd = ""
+
+[build.upload]
+format = "directory"
+dir = "isolate"
+
+[[build.upload.rules]]
+type = "Text"
+globs = ["**/*.html", "**/*.js", "**/*.css"]
+fallthrough = true
+
+[[build.upload.rules]]
+type = "Data"
+globs = ["**/*"]
+fallthrough = false
