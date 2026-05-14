@@ -243,8 +243,6 @@ body::after {
 
 ::selection { background: oklch(0.62 0.20 250 / 0.25); color: oklch(0.96 0.008 240); }
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
-
 .prose-html {
   font-size: 0.8rem;
   line-height: 1.6;
