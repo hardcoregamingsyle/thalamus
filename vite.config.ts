@@ -11,7 +11,7 @@ export default defineConfig({
   plugins: [vlyPlugin(), react(), tailwindcss()],
   resolve: {
     alias: {
-      "@": __dirname + "src",
+      "@": `${__dirname}src`,
     },
   },
   build: {
