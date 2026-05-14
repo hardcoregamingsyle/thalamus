@@ -2,6 +2,3 @@
 name = "thalamus"
 compatibility_date = "2024-01-01"
 pages_build_output_dir = "dist"
-
-[build]
-command = "bun install && bunx tsc -b && bunx vite build"
