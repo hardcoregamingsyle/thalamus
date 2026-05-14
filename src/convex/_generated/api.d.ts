@@ -24,6 +24,7 @@ import type * as dailyReset from "../dailyReset.js";
 import type * as fileSync from "../fileSync.js";
 import type * as github from "../github.js";
 import type * as githubHelpers from "../githubHelpers.js";
+import type * as hfRagSpace from "../hfRagSpace.js";
 import type * as http from "../http.js";
 import type * as rag from "../rag.js";
 import type * as ragHelpers from "../ragHelpers.js";
@@ -56,6 +57,7 @@ declare const fullApi: ApiFromModules<{
   fileSync: typeof fileSync;
   github: typeof github;
   githubHelpers: typeof githubHelpers;
+  hfRagSpace: typeof hfRagSpace;
   http: typeof http;
   rag: typeof rag;
   ragHelpers: typeof ragHelpers;
