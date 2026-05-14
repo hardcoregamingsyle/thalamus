@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { callGemini, callClaude, callModel, calcAgentBucksForTier, performSearch, performScrape, parseAgentOutput, parsePlannerOutput, parseDifficultyFromPlannerOutput, AGENT_SYSTEM_PROMPTS, PlannerTask, CLAUDE_PRICING, calcClaudeCost, calcAgentBucksFromTokens, AGENT_MODEL_MAP, DIFFICULTY_CODER_MODEL, DIFFICULTY_FRAMEWORK_AUDITOR_MODEL, DIFFICULTY_REDTEAM_SONNET_OVERRIDE, TaskDifficulty, ModelTier, InfoRequest } from "./agentCore";
+import { getHfRagSpaceUrl } from "./hfRagSpace";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_MESSAGES = 100_000; // No practical limit — sessions run until complete
@@ -13,7 +14,6 @@ const MODAL_UPGRADE_DURATION = 30;    // messages the upgrade lasts
 const DAYTONA_API = "https://app.daytona.io/api";
 const DAYTONA_API_KEY_FALLBACK = "dtn_7f36b63fc707555bd843029875fb29caf44e4607c2b3ab29a28c73c737e450b5";
 const MAX_CMD_LOOPS = 10;
-const RAG_BASE_URL = "https://leadshello-graph-rag-and-chroma-db.hf.space";
 
 // ─── Execution phases ─────────────────────────────────────────────────────────
 // "planning"      → Researcher → Analyser → Planner (produces JSON task list)
@@ -149,7 +149,7 @@ export const ragAddDocument = action({
   handler: async (ctx, args) => {
     const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
-    const response = await fetch(`${RAG_BASE_URL}/add_document`, {
+    const response = await fetch(`${getHfRagSpaceUrl()}/add_document`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: args.id, text: args.text }),
@@ -164,7 +164,7 @@ export const ragRunIndex = action({
   handler: async (ctx, args) => {
     const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
-    const response = await fetch(`${RAG_BASE_URL}/run_graphrag_index`, { method: "POST", headers: { "Content-Type": "application/json" } });
+    const response = await fetch(`${getHfRagSpaceUrl()}/run_graphrag_index`, { method: "POST", headers: { "Content-Type": "application/json" } });
     if (!response.ok) throw new Error(`GraphRAG indexing failed: ${await response.text()}`);
     return await response.json();
   },
@@ -176,7 +176,7 @@ export const ragQueryVector = action({
     const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
     const params = new URLSearchParams({ query: args.query, n_results: String(args.nResults ?? 3) });
-    const response = await fetch(`${RAG_BASE_URL}/query_vector?${params.toString()}`);
+    const response = await fetch(`${getHfRagSpaceUrl()}/query_vector?${params.toString()}`);
     if (!response.ok) throw new Error(`ChromaDB query failed: ${await response.text()}`);
     return await response.json();
   },
@@ -190,7 +190,7 @@ export const vectorizeFile = internalAction({
     const docId = `${args.sessionId}:${args.filepath}`;
     const text = `FILE: ${args.filepath}\n\n${args.content.slice(0, 8000)}`;
     try {
-      await fetch(`${RAG_BASE_URL}/add_document`, {
+      await fetch(`${getHfRagSpaceUrl()}/add_document`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: docId, text }),
@@ -213,7 +213,7 @@ export const vectorizeSessionPublic = action({
       const docId = `${args.sessionId}:${file.filepath}`;
       const text = `FILE: ${file.filepath}\n\n${file.content.slice(0, 8000)}`;
       try {
-        const res = await fetch(`${RAG_BASE_URL}/add_document`, {
+        const res = await fetch(`${getHfRagSpaceUrl()}/add_document`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: docId, text }),
@@ -223,7 +223,7 @@ export const vectorizeSessionPublic = action({
     }
     // Run GraphRAG index after all documents are added (non-fatal if fails)
     try {
-      await fetch(`${RAG_BASE_URL}/run_graphrag_index`, { method: "POST", headers: { "Content-Type": "application/json" } });
+      await fetch(`${getHfRagSpaceUrl()}/run_graphrag_index`, { method: "POST", headers: { "Content-Type": "application/json" } });
     } catch { /* non-fatal */ }
     return { indexed };
   },
@@ -240,7 +240,7 @@ export const vectorizeSession = internalAction({
       const docId = `${args.sessionId}:${file.filepath}`;
       const text = `FILE: ${file.filepath}\n\n${file.content.slice(0, 8000)}`;
       try {
-        const res = await fetch(`${RAG_BASE_URL}/add_document`, {
+        const res = await fetch(`${getHfRagSpaceUrl()}/add_document`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: docId, text }),
@@ -250,7 +250,7 @@ export const vectorizeSession = internalAction({
     }
     // Run GraphRAG index after all documents are added
     try {
-      await fetch(`${RAG_BASE_URL}/run_graphrag_index`, { method: "POST", headers: { "Content-Type": "application/json" } });
+      await fetch(`${getHfRagSpaceUrl()}/run_graphrag_index`, { method: "POST", headers: { "Content-Type": "application/json" } });
     } catch { /* non-fatal */ }
     return { indexed };
   },

@@ -1,6 +1,8 @@
 // Pure utility module - no Convex imports, just logic
 // This keeps agentTeam.ts lean for faster module loading
 
+import { hfQueryVector } from "./hfRagSpace";
+
 // ── Claude via Amazon Bedrock — Pricing (cents per million tokens) ────────────
 export const CLAUDE_PRICING = {
   "claude-haiku-4-5": {
@@ -676,18 +678,11 @@ export async function callGemini(prompt: string, systemPrompt: string, _maxToken
   throw lastError ?? new Error("All Gemini API keys exhausted");
 }
 
-const RAG_BASE_URL = "https://leadshello-graph-rag-and-chroma-db.hf.space";
-
 export async function performSearch(query: string): Promise<string> {
   let ragContext = "";
   try {
-    const params = new URLSearchParams({ query, n_results: "3" });
-    const ragResponse = await fetch(`${RAG_BASE_URL}/query_vector?${params.toString()}`);
-    if (ragResponse.ok) {
-      const ragData = await ragResponse.json() as { documents?: string[][] };
-      const docs = ragData.documents?.[0];
-      if (docs && docs.length > 0) ragContext = `\n\nRELEVANT KNOWLEDGE BASE CONTEXT:\n${docs.join("\n---\n")}`;
-    }
+    const docs = await hfQueryVector(query, 3);
+    if (docs.length > 0) ragContext = `\n\nRELEVANT KNOWLEDGE BASE CONTEXT:\n${docs.join("\n---\n")}`;
   } catch { /* RAG unavailable */ }
 
   const searchPrompt = `Search query: "${query}"${ragContext}\n\nProvide a concise, factual answer with key points, code examples if relevant, and best practices. Be brief.`;

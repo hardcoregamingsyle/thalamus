@@ -457,26 +457,49 @@ export const sendStudyMessage = action({
       liveSearchResults = await liveWebSearch(args.content, true);
     } catch { /* skip */ }
 
-    // Build resource context (traditional)
-    const resourceContext = resources.length > 0
-      ? resources.slice(0, 5).map((r: { title: string; content: string }) =>
-          `[RESOURCE: ${r.title}]\n${r.content.slice(0, 2000)}`
-        ).join("\n\n---\n\n")
-      : "";
+    const hasRetrieval =
+      ragContext.replace(/\s/g, "").length > 40 || graphContext.replace(/\s/g, "").length > 40;
 
-    const adminContext = adminMaterials.length > 0
-      ? adminMaterials.slice(0, 3).map((m: { title: string; content: string }) =>
-          `[KNOWLEDGE: ${m.title}]\n${m.content.slice(0, 3000)}`
-        ).join("\n\n---\n\n")
-      : "";
+    const resourceContext = hasRetrieval
+      ? resources.length > 0
+        ? "## Student resource titles (full text omitted — use semantic + graph context above)\n" +
+          resources
+            .slice(0, 24)
+            .map((r: { title: string }) => `- ${r.title}`)
+            .join("\n")
+        : ""
+      : resources.length > 0
+        ? resources
+            .slice(0, 4)
+            .map((r: { title: string; content: string }) => `[RESOURCE: ${r.title}]\n${r.content.slice(0, 1500)}`)
+            .join("\n\n---\n\n")
+        : "";
 
-    const systemPrompt = `You are Aether — the world's most effective study companion, powered by advanced RAG (Retrieval-Augmented Generation) and GraphRAG knowledge graph technology. Your mission: make students genuinely understand concepts so deeply that they could explain them to anyone.
+    const adminContext =
+      adminMaterials.length > 0
+        ? hasRetrieval
+          ? adminMaterials
+              .slice(0, 2)
+              .map((m: { title: string; content: string }) => `[KNOWLEDGE: ${m.title}]\n${m.content.slice(0, 1600)}`)
+              .join("\n\n---\n\n")
+          : adminMaterials
+              .slice(0, 3)
+              .map((m: { title: string; content: string }) => `[KNOWLEDGE: ${m.title}]\n${m.content.slice(0, 3000)}`)
+              .join("\n\n---\n\n")
+        : "";
+
+    const liveSearchTrimmed =
+      hasRetrieval && liveSearchResults.length > 1400
+        ? `${liveSearchResults.slice(0, 1400)}\n...[live search truncated — RAG context prioritized for tokens]`
+        : liveSearchResults;
+
+    const systemPrompt = `You are Aether — the world's most effective study companion, powered by retrieval (RAG) and a knowledge graph (GraphRAG). Retrieved passages come from the app's Hugging Face–hosted Chroma vector store plus per-user Convex chunks; graph context summarizes entities and relations. Your mission: make students genuinely understand concepts so deeply that they could explain them to anyone.
 
 ${ragContext ? `\n${ragContext}\n` : ""}
 ${graphContext ? `\n${graphContext}\n` : ""}
 ${adminContext ? `\n## Primary Knowledge Base\n${adminContext}\n` : ""}
 ${resourceContext ? `\n## Student's Study Resources\n${resourceContext}\n` : ""}
-${liveSearchResults ? `\n## Live Web Search Results\n${liveSearchResults}\n` : ""}
+${liveSearchTrimmed ? `\n## Live Web Search Results\n${liveSearchTrimmed}\n` : ""}
 
 CRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.
 Use: <h2>, <h3>, <h4>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <code>
