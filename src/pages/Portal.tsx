@@ -1014,6 +1014,16 @@ function PortalDesktop() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking, streamingContent]);
 
+  // Clear streamingContent once DB messages update with the new assistant reply
+  useEffect(() => {
+    if (streamingContent !== null && streamingContent !== "" && messages && messages.length > 0) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg?.role === "assistant") {
+        setStreamingContent(null);
+      }
+    }
+  }, [messages]);
+
   const handleSubmitSuggestion = async (title: string, description: string, files: SuggestionFile[]) => {
     setIsSuggestionSubmitting(true);
     try {
@@ -1195,8 +1205,13 @@ function PortalDesktop() {
           }
         }
       }
-      console.log("Setting streaming content to null");
-      setStreamingContent(null);
+      console.log("Stream read complete. accumulated length:", accumulated.length);
+      // Keep showing the last content - don't clear it until DB messages update
+      // This prevents the blank flash while Convex saves and useQuery refreshes
+      if (!accumulated) {
+        setStreamingContent(null);
+      }
+      // streamingContent will be cleared by useEffect below when messages update
     } catch (streamError) {
       console.error("Streaming failed, falling back to action:", streamError);
       setStreamingContent(null);
