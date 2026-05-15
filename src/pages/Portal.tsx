@@ -1185,13 +1185,16 @@ function PortalDesktop() {
         }
       }
       setStreamingContent(null);
-    } catch {
+    } catch (streamError) {
+      console.error("Streaming failed, falling back to action:", streamError);
       setStreamingContent(null);
       // Fallback to Convex action for chat mode
       setIsThinking(true);
       try {
         await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext });
+        // Message saved to DB, will appear via useQuery
       } catch (err) {
+        console.error("Fallback action also failed:", err);
         toast.error(err instanceof Error ? err.message : "Failed to send message");
       }
     }
