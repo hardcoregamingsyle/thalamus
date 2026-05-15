@@ -1014,14 +1014,22 @@ function PortalDesktop() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking, streamingContent]);
 
-  // Clear streamingContent once DB messages update with the new assistant reply
+  // Track how many messages existed before sending, so we only clear streaming
+  // content when a NEW assistant message arrives (not a pre-existing one)
+  const prevMessageCountRef = useRef<number>(0);
   useEffect(() => {
-    if (streamingContent !== null && streamingContent !== "" && messages && messages.length > 0) {
-      const lastMsg = messages[messages.length - 1];
+    const count = messages?.length ?? 0;
+    if (
+      streamingContent !== null &&
+      streamingContent !== "" &&
+      count > prevMessageCountRef.current
+    ) {
+      const lastMsg = messages?.[messages.length - 1];
       if (lastMsg?.role === "assistant") {
         setStreamingContent(null);
       }
     }
+    prevMessageCountRef.current = count;
   }, [messages]);
 
   const handleSubmitSuggestion = async (title: string, description: string, files: SuggestionFile[]) => {
