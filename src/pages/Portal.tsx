@@ -1154,8 +1154,12 @@ function PortalDesktop() {
         }),
       });
 
-      if (!response.ok || !response.body) throw new Error("Stream failed");
+      if (!response.ok || !response.body) {
+        console.error("Stream response not OK:", response.status, response.statusText);
+        throw new Error("Stream failed");
+      }
 
+      console.log("Stream started successfully");
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -1163,7 +1167,10 @@ function PortalDesktop() {
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          console.log("Stream completed. Total accumulated:", accumulated.length, "chars");
+          break;
+        }
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
@@ -1175,15 +1182,20 @@ function PortalDesktop() {
             const parsed = JSON.parse(jsonStr) as { chunk?: string; done?: boolean; fullText?: string };
             if (parsed.chunk) {
               accumulated += parsed.chunk;
+              console.log("Chunk received:", parsed.chunk.substring(0, 50));
               setStreamingContent(accumulated);
             }
             if (parsed.done && parsed.fullText) {
               accumulated = parsed.fullText;
+              console.log("Stream done signal received. Final text length:", accumulated.length);
               setStreamingContent(accumulated);
             }
-          } catch { /* skip */ }
+          } catch (e) {
+            console.error("Failed to parse SSE line:", jsonStr, e);
+          }
         }
       }
+      console.log("Setting streaming content to null");
       setStreamingContent(null);
     } catch (streamError) {
       console.error("Streaming failed, falling back to action:", streamError);
