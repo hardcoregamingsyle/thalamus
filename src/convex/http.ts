@@ -277,7 +277,7 @@ http.route({
             const result = await streamClaudeWithCreds(bedrockCreds, fullSystem, messages, (chunk) => {
               fullText += chunk;
               sendChunk(chunk);
-            });
+            }, userContext?.timezone);
             fullText = result.fullText;
             inputTokens = result.inputTokens;
             outputTokens = result.outputTokens;
