@@ -95,8 +95,8 @@ async function signBedrockRequest(
   };
 }
 
-// ── Parse Bedrock credentials ─────────────────────────────────────────────────
-function parseBedrockCreds(): { accessKeyId: string; secretAccessKey: string; region: string } | null {
+// ── Parse Bedrock credentials (env var fallback) ──────────────────────────────
+function parseBedrockCredsFromEnv(): { accessKeyId: string; secretAccessKey: string; region: string } | null {
   const raw = process.env.AWS_BEDROCK_API_KEY;
   if (!raw) return null;
   const isBase64 = /^[A-Za-z0-9+/]+=*$/.test(raw) && raw.length > 40;
@@ -123,14 +123,12 @@ function parseBedrockCreds(): { accessKeyId: string; secretAccessKey: string; re
 
 // ── Claude Bedrock streaming ──────────────────────────────────────────────────
 // Uses invoke-with-response-stream for real token-by-token streaming
-async function streamClaude(
+async function streamClaudeWithCreds(
+  creds: { accessKeyId: string; secretAccessKey: string; region: string },
   systemPrompt: string,
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   onChunk: (text: string) => void,
 ): Promise<{ fullText: string; inputTokens: number; outputTokens: number }> {
-  const creds = parseBedrockCreds();
-  if (!creds) throw new Error("No Bedrock credentials");
-
   const modelId = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
   const region = creds.region || "us-east-1";
   const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke-with-response-stream`;
@@ -257,8 +255,10 @@ http.route({
     let outputTokens = 0;
     let usedClaude = false;
 
-    // Try Claude Bedrock streaming first if preferred or if Bedrock creds exist
-    const hasBedrock = !!process.env.AWS_BEDROCK_API_KEY;
+    // Load AWS credentials: DB first, then env var fallback
+    const dbCreds = await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {});
+    const bedrockCreds = dbCreds ?? parseBedrockCredsFromEnv();
+    const hasBedrock = !!bedrockCreds;
 
     const transformedStream = new ReadableStream({
       async start(controller) {
@@ -269,9 +269,9 @@ http.route({
         let streamSuccess = false;
 
         // Try Claude streaming first (if Bedrock available)
-        if (hasBedrock && preferClaude !== false) {
+        if (hasBedrock && bedrockCreds && preferClaude !== false) {
           try {
-            const result = await streamClaude(fullSystem, messages, (chunk) => {
+            const result = await streamClaudeWithCreds(bedrockCreds, fullSystem, messages, (chunk) => {
               fullText += chunk;
               sendChunk(chunk);
             });

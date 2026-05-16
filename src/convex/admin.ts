@@ -452,3 +452,63 @@ export const getAdminStudyMaterials = internalQuery({
     return await ctx.db.query("adminStudyMaterials").order("desc").take(20);
   },
 });
+
+// ── AWS Bedrock Credentials ───────────────────────────────────────────────────
+
+export const getAwsCredentials = query({
+  args: { adminToken: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const creds = await ctx.db.query("awsCredentials").take(1);
+    if (creds.length === 0) return null;
+    return {
+      accessKeyId: creds[0].accessKeyId,
+      secretAccessKey: creds[0].secretAccessKey,
+      region: creds[0].region,
+      updatedAt: creds[0].updatedAt,
+    };
+  },
+});
+
+export const saveAwsCredentials = mutation({
+  args: {
+    adminToken: v.string(),
+    accessKeyId: v.string(),
+    secretAccessKey: v.string(),
+    region: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const existing = await ctx.db.query("awsCredentials").take(1);
+    if (existing.length > 0) {
+      await ctx.db.patch(existing[0]._id, {
+        accessKeyId: args.accessKeyId,
+        secretAccessKey: args.secretAccessKey,
+        region: args.region,
+        updatedAt: Date.now(),
+        updatedBy: "admin",
+      });
+    } else {
+      await ctx.db.insert("awsCredentials", {
+        accessKeyId: args.accessKeyId,
+        secretAccessKey: args.secretAccessKey,
+        region: args.region,
+        updatedAt: Date.now(),
+        updatedBy: "admin",
+      });
+    }
+  },
+});
+
+export const getAwsCredentialsInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const creds = await ctx.db.query("awsCredentials").take(1);
+    if (creds.length === 0) return null;
+    return {
+      accessKeyId: creds[0].accessKeyId,
+      secretAccessKey: creds[0].secretAccessKey,
+      region: creds[0].region,
+    };
+  },
+});

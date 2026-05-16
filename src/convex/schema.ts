@@ -352,6 +352,15 @@ const schema = defineSchema(
     })
       .index("by_user_and_date", ["userId", "dateKey"])
       .index("by_date", ["dateKey"]),
+
+    // AWS Bedrock IAM credentials (admin-managed)
+    awsCredentials: defineTable({
+      accessKeyId: v.string(),
+      secretAccessKey: v.string(),
+      region: v.string(),
+      updatedAt: v.number(),
+      updatedBy: v.optional(v.string()),
+    }),
   },
   {
     schemaValidation: false,
