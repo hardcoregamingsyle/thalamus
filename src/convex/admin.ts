@@ -479,8 +479,7 @@ export const saveAwsCredentials = mutation({
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
-    // Always use us-east-1 — Convex Cloud is in N. Virginia, same as Bedrock
-    const region = "us-east-1";
+    const region = args.region || "us-east-1";
     const existing = await ctx.db.query("awsCredentials").take(1);
     if (existing.length > 0) {
       await ctx.db.patch(existing[0]._id, {

@@ -20,6 +20,55 @@ const GEMINI_KEYS = [
   "AIzaSyAr5AlBQ2RIPiAlYZAJMVboV_0W6WZJh4g",
   "AIzaSyA6TuU_Xu635NSouv2Y9l9DuUowp5CYkzc",
   "AIzaSyDTCwP3prKrW3f2HdiZegHHVXfXZGiaHA0",
+  "AIzaSyDneLEfifQh1IXNoko3AxnTAB0NFbezKhA",
+  "AIzaSyA793SBkb73ezazr70XExT8iKKzS26uqy4",
+  "AIzaSyA88JXgwsL97y0JbWmO6QxMGJ0dE19vRVA",
+  "AIzaSyB_Hx34iB-rxaSsENMKdUIJSEAK5rMFf0w",
+  "AIzaSyDakGlolmstnXqmirkLex_z6Avl0Zn4vEs",
+  "AIzaSyChZvH5fNODWZ3mJa6RXwK1PthDTjpQgfM",
+  "AIzaSyBnPzwY7W3pUUlqeKYkA_c-pvjcM135038",
+  "AIzaSyB2w9KntAZ7bal3d9D4CIDdvT90rXIZ2pk",
+  "AIzaSyBqutBm0ydorD4tZ0SBOjjiGXdtTe8gd5s",
+  "AIzaSyDMiSElpUZrnAA90zEuwF2YLggqI_-EjLA",
+  "AIzaSyCfG5VQkykXL3DZctm8C80bhyWG2tdr6qk",
+  "AIzaSyCJyKJ7yPhh9KOIpb3Z7VNDfjgHA8yJQr4",
+  "AIzaSyC392jTpY8XbVGN358sESqj0E5FnIkYrcQ",
+  "AIzaSyCBBa1hgfmfXbLsRk2hJGyIEJzo95Ko6z4",
+  "AIzaSyC7grgkRNn4zE_0ZvnozWobmA7gBSDPwRs",
+  "AIzaSyApiopBDIVMBVkDer8i6E_GMGEogdHynhM",
+  "AIzaSyA2gJXoZTS-Ll6P6Qt6A9gSWFYI0C4s3l4",
+  "AIzaSyDVP_XzW-PDLV7LjDs8i63D0YoR8MoAU78",
+  "AIzaSyDkyRQ8OsenlR28zAYaCi0zfOTSWs_KnYU",
+  "AIzaSyDKulyCA6UxgQP9R-xe6TWce_uP_6EJTnQ",
+  "AIzaSyCUl4E8ejdI3r8p33M_i4QWfz6giVyIksI",
+  "AIzaSyBECrLldG06NXGRUhS5Q9TzslQITzDDKy0",
+  "AIzaSyDD3I84pRmeSqn7oSl_ButSLApsPF3sYWY",
+  "AIzaSyA_nBFap_luuVeWDnyb55mVWNeDpnuV2zA",
+  "AIzaSyDBaOsY9YEmpMWbsV8Hu9QNRPCMinga7Lg",
+  "AIzaSyANMS3D8AxlPM5K5-i4HmPbPA8dkc0aN7A",
+  "AIzaSyBMS5wcINLRNWYqynR3zZVgr4MX2_ptwtc",
+  "AIzaSyDsBiJQNTZNJaj4BGyJbZfCq53-sC_BTTY",
+  "AIzaSyDwZWGLK7eFJE5rL6GMJ22bIaAkSPXyiaI",
+  "AIzaSyBrYwXdIzJOFXgRhUkT_kjMKnYOIwwh7DY",
+  "AIzaSyB7u39uRWgz-lrnqamfQc9DatVh56XBK2M",
+  "AIzaSyCTSdSLE8ysGXjNRcfz25gY5DZbeItJV-I",
+  "AIzaSyDFIBN_K3FPLGS3Th--1xYgbpB3lhPL2ZI",
+  "AIzaSyCcEB5QyW6JEeLgT8wq0ccHJNvLKLmqh9s",
+  "AIzaSyDX3UPwaM11izKZyevMMzggJ6l0ug1MhLo",
+  "AIzaSyBoz8WhcxsU-i239Oz3Syx0MshAhuTTNfI",
+  "AIzaSyBHbPU7FYxN_4i-3MGZ7cCQgIAPPRzJqq4",
+  "AIzaSyDrrM9MTkFjs7BChVkU4SxyZnf1Xu5Xhhs",
+  "AIzaSyANGG0wzP0ITzPhqsxrdLl_lUMnYYipp1c",
+  "AIzaSyBdCYps0Q2RdhQNC3uZ0By_OhmG6n-ojAI",
+  "AIzaSyAi9t0GQT3xG3BGeea0dcdPc5WhvV5u1HY",
+  "AIzaSyBwzVuPWWQnFu8YHdywXdhRFNSzwHne3FU",
+  "AIzaSyB1hONrY0VZGR7GnqiObwV5o2Sbj5KEABc",
+  "AIzaSyD3TipoUWjPPoPPYBMDtqI2u3gpkL4rjAY",
+  "AIzaSyCS6BelDTp-2z5ijR0ty9YAPggMR5ZTkaY",
+  "AIzaSyBabAY1FFEWcNMs0p4KE_lQb4jo1ttq2CM",
+  "AIzaSyA7Ty_XryseCBotd6FEja19jhkVlanqEfQ",
+  "AIzaSyDp5Fp5PF3LGpuI2leyZVLKyiP4YnuWh5U",
+  "AIzaSyCxNvdLynYYtCSsRh51Pk8I534k2ryvyB0",
 ];
 let keyIdx = 0;
 function nextGeminiKey() { const k = GEMINI_KEYS[keyIdx % GEMINI_KEYS.length]; keyIdx++; return k; }
@@ -129,10 +178,14 @@ async function streamClaudeWithCreds(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   onChunk: (text: string) => void,
 ): Promise<{ fullText: string; inputTokens: number; outputTokens: number }> {
-  const modelId = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
-  // Always use us-east-1 — Convex Cloud runs in AWS us-east-1 (N. Virginia),
-  // so Bedrock calls are local with minimal latency. Cross-region routing would add latency.
-  const region = "us-east-1";
+  // Use the region stored with the credentials (set by admin)
+  const region = creds.region || "us-east-1";
+  // Cross-region inference prefix only works in us-east-1/us-west-2
+  // For other regions, use the base model ID without regional prefix
+  const isUsRegion = region.startsWith("us-");
+  const modelId = isUsRegion
+    ? "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    : "anthropic.claude-haiku-4-5-20251001-v1:0";
   const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke-with-response-stream`;
 
   const requestBody = JSON.stringify({
