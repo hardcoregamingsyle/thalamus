@@ -1152,7 +1152,7 @@ function PortalDesktop() {
     const historyMsgs = (messages ?? []).slice(-10).map((m: Message) => ({ role: m.role, content: m.content.slice(0, 1500) }));
     const systemPrompt = SYSTEM_PROMPTS[activeMode] ?? SYSTEM_PROMPTS.chat;
 
-    setIsThinking(false);
+    // Show skeleton immediately while waiting for stream to start
     setStreamingContent("");
 
     try {
@@ -1214,23 +1214,24 @@ function PortalDesktop() {
         }
       }
       console.log("Stream read complete. accumulated length:", accumulated.length);
-      // Keep showing the last content - don't clear it until DB messages update
-      // This prevents the blank flash while Convex saves and useQuery refreshes
+      // If nothing came back, clear the skeleton
       if (!accumulated) {
         setStreamingContent(null);
       }
-      // streamingContent will be cleared by useEffect below when messages update
+      // Otherwise keep streamingContent visible — useEffect will clear it when
+      // Convex useQuery delivers the saved assistant message
     } catch (streamError) {
       console.error("Streaming failed, falling back to action:", streamError);
       setStreamingContent(null);
-      // Fallback to Convex action for chat mode
+      // Fallback to Convex action
       setIsThinking(true);
       try {
         await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext });
-        // Message saved to DB, will appear via useQuery
       } catch (err) {
         console.error("Fallback action also failed:", err);
         toast.error(err instanceof Error ? err.message : "Failed to send message");
+      } finally {
+        setIsThinking(false);
       }
     }
 
@@ -1239,7 +1240,7 @@ function PortalDesktop() {
     }
 
     setIsThinking(false);
-    setStreamingContent(null);
+    // Do NOT clear streamingContent here — let the useEffect handle it when messages update
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
