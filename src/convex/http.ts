@@ -3,6 +3,7 @@ import { auth } from "./auth";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { getBedrockRegionForTimezone } from "./agentCore";
 
 const http = httpRouter();
 
@@ -128,9 +129,11 @@ async function streamClaudeWithCreds(
   systemPrompt: string,
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   onChunk: (text: string) => void,
+  userTimezone?: string,
 ): Promise<{ fullText: string; inputTokens: number; outputTokens: number }> {
   const modelId = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
-  const region = creds.region || "us-east-1";
+  // Use user's timezone to pick the closest AWS region for minimum latency
+  const region = userTimezone ? getBedrockRegionForTimezone(userTimezone) : (creds.region || "us-east-1");
   const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke-with-response-stream`;
 
   const requestBody = JSON.stringify({
