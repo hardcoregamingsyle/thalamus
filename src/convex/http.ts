@@ -292,7 +292,7 @@ http.route({
         if (!streamSuccess) {
           try {
             const key = nextGeminiKey();
-            const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:streamGenerateContent?key=${key}&alt=sse`;
+            const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:streamGenerateContent?key=${key}&alt=sse`;
 
             const geminiContents = messages.map(m => ({
               role: m.role === "assistant" ? "model" : "user",
