@@ -475,16 +475,18 @@ export const saveAwsCredentials = mutation({
     adminToken: v.string(),
     accessKeyId: v.string(),
     secretAccessKey: v.string(),
-    region: v.string(),
+    region: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
+    // Always use us-east-1 — Convex Cloud is in N. Virginia, same as Bedrock
+    const region = "us-east-1";
     const existing = await ctx.db.query("awsCredentials").take(1);
     if (existing.length > 0) {
       await ctx.db.patch(existing[0]._id, {
         accessKeyId: args.accessKeyId,
         secretAccessKey: args.secretAccessKey,
-        region: args.region,
+        region,
         updatedAt: Date.now(),
         updatedBy: "admin",
       });
@@ -492,7 +494,7 @@ export const saveAwsCredentials = mutation({
       await ctx.db.insert("awsCredentials", {
         accessKeyId: args.accessKeyId,
         secretAccessKey: args.secretAccessKey,
-        region: args.region,
+        region,
         updatedAt: Date.now(),
         updatedBy: "admin",
       });
