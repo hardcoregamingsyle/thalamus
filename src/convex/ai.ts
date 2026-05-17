@@ -334,6 +334,30 @@ export const testVlyHaiku = action({
   },
 });
 
+// ── VLY Fallback Completion (internal action) ─────────────────────────────────
+// Used as last-resort fallback in stream-chat when Bedrock and Gemini both fail
+export const vlyFallbackCompletion = internalAction({
+  args: {
+    systemPrompt: v.string(),
+    messages: v.array(v.object({ role: v.union(v.literal("user"), v.literal("assistant")), content: v.string() })),
+  },
+  handler: async (_ctx, args) => {
+    const { vly } = await import('../lib/vly-integrations');
+    const result = await vly.ai.completion({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: args.systemPrompt },
+        ...args.messages,
+      ],
+      maxTokens: 2048,
+    });
+    if (result.success && result.data) {
+      return result.data.choices[0]?.message?.content ?? "";
+    }
+    return "";
+  },
+});
+
 // ── Guest send message (no auth required, no DB storage) ─────────────────────
 export const guestSendMessage = action({
   args: {
