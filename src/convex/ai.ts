@@ -1,5 +1,5 @@
 "use node";
-import { action } from "./_generated/server";
+import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 // import Anthropic from "@anthropic-ai/sdk"; // COMMENTED OUT - will restore later
 import { internal } from "./_generated/api";
