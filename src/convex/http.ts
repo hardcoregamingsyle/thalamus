@@ -178,14 +178,10 @@ async function streamClaudeWithCreds(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   onChunk: (text: string) => void,
 ): Promise<{ fullText: string; inputTokens: number; outputTokens: number }> {
-  // Use the region stored with the credentials (set by admin)
-  const region = creds.region || "us-east-1";
-  // Cross-region inference prefix only works in us-east-1/us-west-2
-  // For other regions, use the base model ID without regional prefix
-  const isUsRegion = region.startsWith("us-");
-  const modelId = isUsRegion
-    ? "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-    : "anthropic.claude-haiku-4-5-20251001-v1:0";
+  // Always use us-east-1 — Convex Cloud runs in AWS us-east-1 (N. Virginia),
+  // so Bedrock calls are local with minimal latency.
+  const region = "us-east-1";
+  const modelId = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
   const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke-with-response-stream`;
 
   const requestBody = JSON.stringify({
