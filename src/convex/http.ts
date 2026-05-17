@@ -178,10 +178,13 @@ async function streamClaudeWithCreds(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   onChunk: (text: string) => void,
 ): Promise<{ fullText: string; inputTokens: number; outputTokens: number }> {
-  // Always use us-east-1 — Convex Cloud runs in AWS us-east-1 (N. Virginia),
-  // so Bedrock calls are local with minimal latency.
-  const region = "us-east-1";
-  const modelId = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+  // Use the region stored with the credentials — IAM credentials are region-specific
+  // and the SigV4 signature must match the region where Bedrock access is enabled.
+  const region = creds.region || "us-east-1";
+  // Cross-region inference prefix (us.) only works in us-east-1/us-west-2
+  const modelId = region.startsWith("us-")
+    ? "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    : "anthropic.claude-haiku-4-5-20251001-v1:0";
   const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke-with-response-stream`;
 
   const requestBody = JSON.stringify({
@@ -331,65 +334,75 @@ http.route({
             outputTokens = result.outputTokens;
             usedClaude = true;
             streamSuccess = true;
-          } catch {
+          } catch (bedrockErr) {
+            // Log the error for debugging
+            console.error("Bedrock streaming failed:", bedrockErr instanceof Error ? bedrockErr.message : String(bedrockErr));
             // Fall through to Gemini
             fullText = "";
           }
         }
 
-        // Fallback: Gemini streaming
+        // Fallback: Gemini streaming — try ALL keys, skip quota/revoked errors
         if (!streamSuccess) {
-          try {
-            const key = nextGeminiKey();
-            const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:streamGenerateContent?key=${key}&alt=sse`;
+          const geminiContents = messages.map(m => ({
+            role: m.role === "assistant" ? "model" : "user",
+            parts: [{ text: m.content }],
+          }));
+          const geminiBody = JSON.stringify({
+            system_instruction: { parts: [{ text: fullSystem }] },
+            contents: geminiContents,
+            generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
+          });
 
-            const geminiContents = messages.map(m => ({
-              role: m.role === "assistant" ? "model" : "user",
-              parts: [{ text: m.content }],
-            }));
+          for (let attempt = 0; attempt < GEMINI_KEYS.length && !streamSuccess; attempt++) {
+            try {
+              const key = nextGeminiKey();
+              const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:streamGenerateContent?key=${key}&alt=sse`;
 
-            const geminiRes = await fetch(streamUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                system_instruction: { parts: [{ text: fullSystem }] },
-                contents: geminiContents,
-                generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
-              }),
-            });
+              const geminiRes = await fetch(streamUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: geminiBody,
+              });
 
-            if (geminiRes.ok && geminiRes.body) {
-              const reader = geminiRes.body.getReader();
-              const decoder = new TextDecoder();
-              let buf = "";
-
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                buf += decoder.decode(value, { stream: true });
-                const lines = buf.split("\n");
-                buf = lines.pop() ?? "";
-                for (const line of lines) {
-                  if (!line.startsWith("data: ")) continue;
-                  const jsonStr = line.slice(6).trim();
-                  if (!jsonStr || jsonStr === "[DONE]") continue;
-                  try {
-                    const parsed = JSON.parse(jsonStr) as {
-                      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-                      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
-                    };
-                    const chunk = parsed.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-                    if (chunk) { fullText += chunk; sendChunk(chunk); }
-                    if (parsed.usageMetadata) {
-                      inputTokens = parsed.usageMetadata.promptTokenCount ?? 0;
-                      outputTokens = parsed.usageMetadata.candidatesTokenCount ?? 0;
-                    }
-                  } catch { /* skip */ }
-                }
+              // Skip quota-exhausted or revoked keys
+              if (geminiRes.status === 429 || geminiRes.status === 403) {
+                continue;
               }
-              streamSuccess = true;
-            }
-          } catch { /* stream failed */ }
+
+              if (geminiRes.ok && geminiRes.body) {
+                const reader = geminiRes.body.getReader();
+                const decoder = new TextDecoder();
+                let buf = "";
+
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  buf += decoder.decode(value, { stream: true });
+                  const lines = buf.split("\n");
+                  buf = lines.pop() ?? "";
+                  for (const line of lines) {
+                    if (!line.startsWith("data: ")) continue;
+                    const jsonStr = line.slice(6).trim();
+                    if (!jsonStr || jsonStr === "[DONE]") continue;
+                    try {
+                      const parsed = JSON.parse(jsonStr) as {
+                        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+                        usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+                      };
+                      const chunk = parsed.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+                      if (chunk) { fullText += chunk; sendChunk(chunk); }
+                      if (parsed.usageMetadata) {
+                        inputTokens = parsed.usageMetadata.promptTokenCount ?? 0;
+                        outputTokens = parsed.usageMetadata.candidatesTokenCount ?? 0;
+                      }
+                    } catch { /* skip */ }
+                  }
+                }
+                streamSuccess = true;
+              }
+            } catch { /* skip failed key */ }
+          }
         }
 
         if (!streamSuccess || !fullText) {
