@@ -1057,7 +1057,7 @@ function AwsBedrockTab({ adminToken }: { adminToken: string }) {
   const saveCredentials = useMutation(api.admin.saveAwsCredentials);
   const [accessKeyId, setAccessKeyId] = useState("");
   const [secretAccessKey, setSecretAccessKey] = useState("");
-  const [region, setRegion] = useState("ap-southeast-1");
+  const [region] = useState("us-east-1");
   const [showSecret, setShowSecret] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -1144,22 +1144,9 @@ function AwsBedrockTab({ adminToken }: { adminToken: string }) {
           </div>
         </div>
 
-        <div>
-          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">AWS REGION</label>
-          <select
-            value={region}
-            onChange={e => setRegion(e.target.value)}
-            className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground bg-background focus:outline-none focus:border-primary/60 transition-colors"
-          >
-            <option value="us-east-1">us-east-1 (N. Virginia)</option>
-            <option value="us-west-2">us-west-2 (Oregon)</option>
-            <option value="eu-west-1">eu-west-1 (Ireland)</option>
-            <option value="eu-central-1">eu-central-1 (Frankfurt)</option>
-            <option value="ap-southeast-1">ap-southeast-1 (Singapore)</option>
-            <option value="ap-northeast-1">ap-northeast-1 (Tokyo)</option>
-            <option value="ap-south-1">ap-south-1 (Mumbai)</option>
-            <option value="ap-southeast-2">ap-southeast-2 (Sydney)</option>
-          </select>
+        <div className="flex items-center gap-2 p-3 bg-primary/5 border border-primary/20 rounded-xl">
+          <Zap className="h-4 w-4 text-primary shrink-0" />
+          <p className="text-xs text-muted-foreground">Region is fixed to <span className="font-mono text-foreground font-bold">us-east-1</span> (N. Virginia) — same as Convex Cloud for minimum latency.</p>
         </div>
 
         <button
