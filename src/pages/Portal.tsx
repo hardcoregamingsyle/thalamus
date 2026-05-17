@@ -910,12 +910,8 @@ function PortalDesktop() {
   const navigate = useNavigate();
   const params = useParams<{ mode?: string; sessionId?: string }>();
 
-  // If no mode in URL, show mode selection screen
-  if (!params.mode) {
-    return <ModeSelection user={user} signOut={signOut} theme={theme} toggleTheme={toggleTheme} />;
-  }
-
-  const activeMode: Mode = (VALID_MODES.includes(params.mode as Mode) ? params.mode : "chat") as Mode;
+  // Compute these before hooks so they're stable
+  const activeMode: Mode = (params.mode && VALID_MODES.includes(params.mode as Mode) ? params.mode : "chat") as Mode;
   const urlSessionId = params.sessionId ?? null;
 
   const [activeConvId, setActiveConvId] = useState<Id<"conversations"> | null>(null);
