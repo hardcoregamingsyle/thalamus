@@ -406,6 +406,23 @@ http.route({
           }
         }
 
+        // Final fallback: VLY integrations (GPT-4o-mini)
+        if (!streamSuccess) {
+          try {
+            const vlyText = await ctx.runAction(internal.ai.vlyFallbackCompletion, {
+              systemPrompt: fullSystem,
+              messages,
+            });
+            if (vlyText) {
+              fullText = vlyText;
+              sendChunk(vlyText);
+              streamSuccess = true;
+            }
+          } catch (vlyErr) {
+            console.error("VLY fallback failed:", vlyErr instanceof Error ? vlyErr.message : String(vlyErr));
+          }
+        }
+
         if (!streamSuccess || !fullText) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ chunk: "Sorry, I couldn't generate a response. Please try again." })}\n\n`));
           fullText = "Sorry, I couldn't generate a response. Please try again.";
