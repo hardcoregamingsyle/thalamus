@@ -182,6 +182,7 @@ async function streamClaudeWithCreds(
   // and the SigV4 signature must match the region where Bedrock access is enabled.
   const region = creds.region || "us-east-1";
   // Cross-region inference prefix (us.) only works in us-east-1/us-west-2
+  // For ap-southeast-1 and other non-US regions, use the base model ID
   const modelId = region.startsWith("us-")
     ? "us.anthropic.claude-haiku-4-5-20251001-v1:0"
     : "anthropic.claude-haiku-4-5-20251001-v1:0";
