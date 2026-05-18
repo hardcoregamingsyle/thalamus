@@ -96,7 +96,7 @@ async function callGeminiChat(
       }));
 
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${key}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -283,7 +283,7 @@ export const generateConversationTitle = action({
     try {
       const key = GEMINI_KEYS[Math.floor(Math.random() * GEMINI_KEYS.length)];
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${key}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

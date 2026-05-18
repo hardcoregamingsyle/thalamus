@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -1057,9 +1057,14 @@ function AwsBedrockTab({ adminToken }: { adminToken: string }) {
   const saveCredentials = useMutation(api.admin.saveAwsCredentials);
   const [accessKeyId, setAccessKeyId] = useState("");
   const [secretAccessKey, setSecretAccessKey] = useState("");
-  const [region, setRegion] = useState(existing?.region ?? "ap-southeast-1");
+  const [region, setRegion] = useState<string>("ap-southeast-1");
   const [showSecret, setShowSecret] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Sync region from DB when credentials load
+  useEffect(() => {
+    if (existing?.region) setRegion(existing.region);
+  }, [existing?.region]);
 
   const handleSave = async () => {
     if (!accessKeyId.trim() || !secretAccessKey.trim()) {

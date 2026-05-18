@@ -358,7 +358,7 @@ http.route({
           for (let attempt = 0; attempt < GEMINI_KEYS.length && !streamSuccess; attempt++) {
             try {
               const key = nextGeminiKey();
-              const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:streamGenerateContent?key=${key}&alt=sse`;
+              const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:streamGenerateContent?key=${key}&alt=sse`;
 
               const geminiRes = await fetch(streamUrl, {
                 method: "POST",
