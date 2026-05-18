@@ -5,8 +5,26 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
-// Gemini keys (same pool as agentTeam.ts)
-const GEMINI_KEYS = [
+// Gemini keys — loaded from env var GEMINI_KEYS_JSON if set, else hardcoded pool
+function getGeminiKeys(): string[] {
+  const envKeys = process.env.GEMINI_KEYS_JSON;
+  if (envKeys) {
+    try { return JSON.parse(envKeys) as string[]; } catch { /* fall through */ }
+  }
+  return GEMINI_KEYS_HARDCODED;
+}
+
+const GEMINI_KEYS_HARDCODED = [
+  "AIzaSyDysoM0JcIQRyRxtFgT3syZIIH3WxuTPN4",
+  "AIzaSyBtlWl9YnacQaxDeER95AIb0c7hPv3XGJE",
+  "AIzaSyDnF_IrO56ddrX68WN1HVsRuwmugHSL_HY",
+  "AIzaSyB0cBYks96eYVwbHevT5LdKQWvVP_p9OVI",
+  "AIzaSyC-2Q_heWvG7MHEVEFjWYttRIwY2wb-5ok",
+  "AIzaSyAGxo7zhGRUKjz7OJ7hXXTBct9sBchvgZY",
+  "AIzaSyAJDy1roV3QYjh-9UJbWpVL8QZ59pMK_70",
+  "AIzaSyB4pM3_Jzj60JE9A2SAqUBRug1UD6Po12M",
+  "AIzaSyBCm-c_CSbDrzs4Jyg4DWhBj-r4uafwr9I",
+  "AIzaSyAO35yrqkR-Et65M53YOFrk0V9AaYqucYw",
   "AIzaSyB6LdCRxGz27Xpj-K8-EiOVBQRvl0SPzyQ",
   "AIzaSyBZHdEWGlYTpr26fVGGWBOHxn4dRKkd-9Y",
   "AIzaSyCJHWZmUwc2_HAV-KS0Q4C50aOBkvm7OwE",
@@ -68,6 +86,13 @@ const GEMINI_KEYS = [
   "AIzaSyCxNvdLynYYtCSsRh51Pk8I534k2ryvyB0",
 ];
 
+// Use dynamic key pool (env var takes priority)
+let _geminiKeys: string[] | null = null;
+function getGeminiKeysOnce(): string[] {
+  if (!_geminiKeys) _geminiKeys = getGeminiKeys();
+  return _geminiKeys;
+}
+
 let keyIndex = 0;
 
 interface GeminiResponse {
@@ -84,9 +109,10 @@ async function callGeminiChat(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   maxTokens = 4096
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
-  const maxRetries = GEMINI_KEYS.length;
+  const keys = getGeminiKeysOnce();
+  const maxRetries = keys.length;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const key = GEMINI_KEYS[keyIndex % GEMINI_KEYS.length];
+    const key = keys[keyIndex % keys.length];
     keyIndex++;
     try {
       // Convert messages to Gemini format (alternating user/model)
@@ -281,7 +307,8 @@ export const generateConversationTitle = action({
     
     let title = args.firstMessage.slice(0, 40);
     try {
-      const key = GEMINI_KEYS[Math.floor(Math.random() * GEMINI_KEYS.length)];
+      const keys = getGeminiKeysOnce();
+      const key = keys[Math.floor(Math.random() * keys.length)];
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`,
         {

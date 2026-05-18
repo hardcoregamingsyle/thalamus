@@ -9,7 +9,26 @@ const http = httpRouter();
 auth.addHttpRoutes(http);
 
 // ── Gemini key pool ───────────────────────────────────────────────────────────
-const GEMINI_KEYS = [
+// Keys loaded from GEMINI_KEYS_JSON env var if set, else hardcoded pool
+function loadGeminiKeys(): string[] {
+  const envKeys = process.env.GEMINI_KEYS_JSON;
+  if (envKeys) {
+    try { return JSON.parse(envKeys) as string[]; } catch { /* fall through */ }
+  }
+  return GEMINI_KEYS_HARDCODED;
+}
+
+const GEMINI_KEYS_HARDCODED = [
+  "AIzaSyDysoM0JcIQRyRxtFgT3syZIIH3WxuTPN4",
+  "AIzaSyBtlWl9YnacQaxDeER95AIb0c7hPv3XGJE",
+  "AIzaSyDnF_IrO56ddrX68WN1HVsRuwmugHSL_HY",
+  "AIzaSyB0cBYks96eYVwbHevT5LdKQWvVP_p9OVI",
+  "AIzaSyC-2Q_heWvG7MHEVEFjWYttRIwY2wb-5ok",
+  "AIzaSyAGxo7zhGRUKjz7OJ7hXXTBct9sBchvgZY",
+  "AIzaSyAJDy1roV3QYjh-9UJbWpVL8QZ59pMK_70",
+  "AIzaSyB4pM3_Jzj60JE9A2SAqUBRug1UD6Po12M",
+  "AIzaSyBCm-c_CSbDrzs4Jyg4DWhBj-r4uafwr9I",
+  "AIzaSyAO35yrqkR-Et65M53YOFrk0V9AaYqucYw",
   "AIzaSyB6LdCRxGz27Xpj-K8-EiOVBQRvl0SPzyQ",
   "AIzaSyBZHdEWGlYTpr26fVGGWBOHxn4dRKkd-9Y",
   "AIzaSyCJHWZmUwc2_HAV-KS0Q4C50aOBkvm7OwE",
@@ -70,6 +89,8 @@ const GEMINI_KEYS = [
   "AIzaSyDp5Fp5PF3LGpuI2leyZVLKyiP4YnuWh5U",
   "AIzaSyCxNvdLynYYtCSsRh51Pk8I534k2ryvyB0",
 ];
+
+const GEMINI_KEYS = loadGeminiKeys();
 let keyIdx = 0;
 function nextGeminiKey() { const k = GEMINI_KEYS[keyIdx % GEMINI_KEYS.length]; keyIdx++; return k; }
 
