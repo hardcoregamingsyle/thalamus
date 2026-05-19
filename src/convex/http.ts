@@ -8,92 +8,6 @@ const http = httpRouter();
 
 auth.addHttpRoutes(http);
 
-// ── Gemini key pool ───────────────────────────────────────────────────────────
-// Keys loaded from GEMINI_KEYS_JSON env var if set, else hardcoded pool
-function loadGeminiKeys(): string[] {
-  const envKeys = process.env.GEMINI_KEYS_JSON;
-  if (envKeys) {
-    try { return JSON.parse(envKeys) as string[]; } catch { /* fall through */ }
-  }
-  return GEMINI_KEYS_HARDCODED;
-}
-
-const GEMINI_KEYS_HARDCODED = [
-  "AIzaSyDysoM0JcIQRyRxtFgT3syZIIH3WxuTPN4",
-  "AIzaSyBtlWl9YnacQaxDeER95AIb0c7hPv3XGJE",
-  "AIzaSyDnF_IrO56ddrX68WN1HVsRuwmugHSL_HY",
-  "AIzaSyB0cBYks96eYVwbHevT5LdKQWvVP_p9OVI",
-  "AIzaSyC-2Q_heWvG7MHEVEFjWYttRIwY2wb-5ok",
-  "AIzaSyAGxo7zhGRUKjz7OJ7hXXTBct9sBchvgZY",
-  "AIzaSyAJDy1roV3QYjh-9UJbWpVL8QZ59pMK_70",
-  "AIzaSyB4pM3_Jzj60JE9A2SAqUBRug1UD6Po12M",
-  "AIzaSyBCm-c_CSbDrzs4Jyg4DWhBj-r4uafwr9I",
-  "AIzaSyAO35yrqkR-Et65M53YOFrk0V9AaYqucYw",
-  "AIzaSyB6LdCRxGz27Xpj-K8-EiOVBQRvl0SPzyQ",
-  "AIzaSyBZHdEWGlYTpr26fVGGWBOHxn4dRKkd-9Y",
-  "AIzaSyCJHWZmUwc2_HAV-KS0Q4C50aOBkvm7OwE",
-  "AIzaSyCOX7-EwKrZDVh6qUeGoqT_G-D3svl6tco",
-  "AIzaSyCyRPBb-rFOZD_6aKgX6cQiKOshjlXt1ho",
-  "AIzaSyBDXq8Oceo1DYXDjlM2t0voCxF8wRKCAK0",
-  "AIzaSyD4cuooT54P1oCkDq3kJxbRJ2Kf1A9aaXU",
-  "AIzaSyAr5AlBQ2RIPiAlYZAJMVboV_0W6WZJh4g",
-  "AIzaSyA6TuU_Xu635NSouv2Y9l9DuUowp5CYkzc",
-  "AIzaSyDTCwP3prKrW3f2HdiZegHHVXfXZGiaHA0",
-  "AIzaSyDneLEfifQh1IXNoko3AxnTAB0NFbezKhA",
-  "AIzaSyA793SBkb73ezazr70XExT8iKKzS26uqy4",
-  "AIzaSyA88JXgwsL97y0JbWmO6QxMGJ0dE19vRVA",
-  "AIzaSyB_Hx34iB-rxaSsENMKdUIJSEAK5rMFf0w",
-  "AIzaSyDakGlolmstnXqmirkLex_z6Avl0Zn4vEs",
-  "AIzaSyChZvH5fNODWZ3mJa6RXwK1PthDTjpQgfM",
-  "AIzaSyBnPzwY7W3pUUlqeKYkA_c-pvjcM135038",
-  "AIzaSyB2w9KntAZ7bal3d9D4CIDdvT90rXIZ2pk",
-  "AIzaSyBqutBm0ydorD4tZ0SBOjjiGXdtTe8gd5s",
-  "AIzaSyDMiSElpUZrnAA90zEuwF2YLggqI_-EjLA",
-  "AIzaSyCfG5VQkykXL3DZctm8C80bhyWG2tdr6qk",
-  "AIzaSyCJyKJ7yPhh9KOIpb3Z7VNDfjgHA8yJQr4",
-  "AIzaSyC392jTpY8XbVGN358sESqj0E5FnIkYrcQ",
-  "AIzaSyCBBa1hgfmfXbLsRk2hJGyIEJzo95Ko6z4",
-  "AIzaSyC7grgkRNn4zE_0ZvnozWobmA7gBSDPwRs",
-  "AIzaSyApiopBDIVMBVkDer8i6E_GMGEogdHynhM",
-  "AIzaSyA2gJXoZTS-Ll6P6Qt6A9gSWFYI0C4s3l4",
-  "AIzaSyDVP_XzW-PDLV7LjDs8i63D0YoR8MoAU78",
-  "AIzaSyDkyRQ8OsenlR28zAYaCi0zfOTSWs_KnYU",
-  "AIzaSyDKulyCA6UxgQP9R-xe6TWce_uP_6EJTnQ",
-  "AIzaSyCUl4E8ejdI3r8p33M_i4QWfz6giVyIksI",
-  "AIzaSyBECrLldG06NXGRUhS5Q9TzslQITzDDKy0",
-  "AIzaSyDD3I84pRmeSqn7oSl_ButSLApsPF3sYWY",
-  "AIzaSyA_nBFap_luuVeWDnyb55mVWNeDpnuV2zA",
-  "AIzaSyDBaOsY9YEmpMWbsV8Hu9QNRPCMinga7Lg",
-  "AIzaSyANMS3D8AxlPM5K5-i4HmPbPA8dkc0aN7A",
-  "AIzaSyBMS5wcINLRNWYqynR3zZVgr4MX2_ptwtc",
-  "AIzaSyDsBiJQNTZNJaj4BGyJbZfCq53-sC_BTTY",
-  "AIzaSyDwZWGLK7eFJE5rL6GMJ22bIaAkSPXyiaI",
-  "AIzaSyBrYwXdIzJOFXgRhUkT_kjMKnYOIwwh7DY",
-  "AIzaSyB7u39uRWgz-lrnqamfQc9DatVh56XBK2M",
-  "AIzaSyCTSdSLE8ysGXjNRcfz25gY5DZbeItJV-I",
-  "AIzaSyDFIBN_K3FPLGS3Th--1xYgbpB3lhPL2ZI",
-  "AIzaSyCcEB5QyW6JEeLgT8wq0ccHJNvLKLmqh9s",
-  "AIzaSyDX3UPwaM11izKZyevMMzggJ6l0ug1MhLo",
-  "AIzaSyBoz8WhcxsU-i239Oz3Syx0MshAhuTTNfI",
-  "AIzaSyBHbPU7FYxN_4i-3MGZ7cCQgIAPPRzJqq4",
-  "AIzaSyDrrM9MTkFjs7BChVkU4SxyZnf1Xu5Xhhs",
-  "AIzaSyANGG0wzP0ITzPhqsxrdLl_lUMnYYipp1c",
-  "AIzaSyBdCYps0Q2RdhQNC3uZ0By_OhmG6n-ojAI",
-  "AIzaSyAi9t0GQT3xG3BGeea0dcdPc5WhvV5u1HY",
-  "AIzaSyBwzVuPWWQnFu8YHdywXdhRFNSzwHne3FU",
-  "AIzaSyB1hONrY0VZGR7GnqiObwV5o2Sbj5KEABc",
-  "AIzaSyD3TipoUWjPPoPPYBMDtqI2u3gpkL4rjAY",
-  "AIzaSyCS6BelDTp-2z5ijR0ty9YAPggMR5ZTkaY",
-  "AIzaSyBabAY1FFEWcNMs0p4KE_lQb4jo1ttq2CM",
-  "AIzaSyA7Ty_XryseCBotd6FEja19jhkVlanqEfQ",
-  "AIzaSyDp5Fp5PF3LGpuI2leyZVLKyiP4YnuWh5U",
-  "AIzaSyCxNvdLynYYtCSsRh51Pk8I534k2ryvyB0",
-];
-
-const GEMINI_KEYS = loadGeminiKeys();
-let keyIdx = 0;
-function nextGeminiKey() { const k = GEMINI_KEYS[keyIdx % GEMINI_KEYS.length]; keyIdx++; return k; }
-
 // ── Decode state helper ───────────────────────────────────────────────────────
 function decodeStateHttp(state: string): string | null {
   try {
@@ -376,9 +290,11 @@ http.route({
             generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
           });
 
-          for (let attempt = 0; attempt < GEMINI_KEYS.length && !streamSuccess; attempt++) {
+          const geminiKeys = await ctx.runQuery(internal.admin.getGeminiKeysInternal, {}) as string[];
+          let geminiKeyIdx = 0;
+          for (let attempt = 0; attempt < geminiKeys.length && !streamSuccess; attempt++) {
             try {
-              const key = nextGeminiKey();
+              const key = geminiKeys[geminiKeyIdx % geminiKeys.length]; geminiKeyIdx++;
               const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:streamGenerateContent?key=${key}&alt=sse`;
 
               const geminiRes = await fetch(streamUrl, {
