@@ -361,6 +361,13 @@ const schema = defineSchema(
       updatedAt: v.number(),
       updatedBy: v.optional(v.string()),
     }),
+
+    // Gemini API keys pool (admin-managed, never stored in source code)
+    geminiKeys: defineTable({
+      keys: v.array(v.string()),
+      updatedAt: v.number(),
+      updatedBy: v.optional(v.string()),
+    }),
   },
   {
     schemaValidation: false,
