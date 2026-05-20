@@ -362,14 +362,16 @@ export const testBedrockDirect = action({
     const creds = await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {}) as { accessKeyId: string; secretAccessKey: string; region: string } | null;
     if (!creds) return { success: false, error: "No AWS credentials found in DB. Please set them in Admin → AWS Bedrock tab." };
 
-    const { accessKeyId, secretAccessKey } = creds;
+    const { accessKeyId } = creds;
+    // Strip any accidental surrounding quotes from the secret key
+    const secretAccessKey = creds.secretAccessKey.replace(/^["']|["']$/g, "");
     const region = "us-east-1";
     const modelId = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
-    // Manually encode the path — do NOT use new URL() as it double-encodes %3A to %253A
-    const encodedModelId = encodeURIComponent(modelId); // "us.anthropic.claude-haiku-4-5-20251001-v1%3A0"
-    const canonicalPath = `/model/${encodedModelId}/invoke`;
     const host = `bedrock-runtime.${region}.amazonaws.com`;
-    const url = `https://${host}${canonicalPath}`;
+    // Use raw URL for fetch (runtime will encode : to %3A automatically)
+    // Use encoded path for SigV4 canonical string (must match what AWS sees)
+    const rawUrl = `https://${host}/model/${modelId}/invoke`;
+    const canonicalPath = `/model/${encodeURIComponent(modelId)}/invoke`;
 
     const requestBody = JSON.stringify({
       anthropic_version: "bedrock-2023-05-31",
@@ -382,17 +384,22 @@ export const testBedrockDirect = action({
     const crypto = globalThis.crypto;
     const enc = new TextEncoder();
 
+    const toArrayBuffer = (data: Uint8Array): ArrayBuffer => {
+      const ab = new ArrayBuffer(data.byteLength);
+      new Uint8Array(ab).set(data);
+      return ab;
+    };
+
     const sha256 = async (data: string | Uint8Array): Promise<string> => {
       const encoded = typeof data === "string" ? enc.encode(data) : data;
-      const buf = encoded.buffer.slice(encoded.byteOffset, encoded.byteLength) as ArrayBuffer;
-      const hash = await crypto.subtle.digest("SHA-256", buf);
+      const hash = await crypto.subtle.digest("SHA-256", toArrayBuffer(encoded));
       return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
     };
 
     const hmac = async (key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> => {
-      const rawKey = key instanceof Uint8Array ? key.buffer as ArrayBuffer : key;
-      const k = await crypto.subtle.importKey("raw", rawKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-      return crypto.subtle.sign("HMAC", k, enc.encode(data).buffer as ArrayBuffer);
+      const keyBuf = key instanceof Uint8Array ? toArrayBuffer(key) : key;
+      const k = await crypto.subtle.importKey("raw", keyBuf, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+      return crypto.subtle.sign("HMAC", k, toArrayBuffer(enc.encode(data)));
     };
 
     const now = new Date();
@@ -422,7 +429,7 @@ export const testBedrockDirect = action({
     const authorization = `${algorithm} Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
     try {
-      const response = await fetch(url, {
+      const response = await fetch(rawUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
