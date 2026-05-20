@@ -35,6 +35,12 @@ function corsHeaders() {
 }
 
 // ── SigV4 signing for Bedrock streaming ──────────────────────────────────────
+function toAB(data: Uint8Array): ArrayBuffer {
+  const ab = new ArrayBuffer(data.byteLength);
+  new Uint8Array(ab).set(data);
+  return ab;
+}
+
 async function signBedrockRequest(
   method: string, url: string, body: string,
   accessKeyId: string, secretAccessKey: string, region: string,
@@ -43,14 +49,13 @@ async function signBedrockRequest(
   const enc = new TextEncoder();
   const sha256 = async (data: string | Uint8Array): Promise<string> => {
     const encoded = typeof data === "string" ? enc.encode(data) : data;
-    const buf = encoded.buffer.slice(encoded.byteOffset, encoded.byteLength) as ArrayBuffer;
-    const hash = await crypto.subtle.digest("SHA-256", buf);
+    const hash = await crypto.subtle.digest("SHA-256", toAB(encoded));
     return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
   };
   const hmac = async (key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> => {
-    const rawKey = key instanceof Uint8Array ? key.buffer as ArrayBuffer : key;
-    const k = await crypto.subtle.importKey("raw", rawKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-    return crypto.subtle.sign("HMAC", k, enc.encode(data).buffer as ArrayBuffer);
+    const keyBuf = key instanceof Uint8Array ? toAB(key) : key;
+    const k = await crypto.subtle.importKey("raw", keyBuf, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    return crypto.subtle.sign("HMAC", k, toAB(enc.encode(data)));
   };
   const now = new Date();
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
@@ -131,7 +136,8 @@ async function streamClaudeWithCreds(
     temperature: 0.7,
   });
 
-  const reqHeaders = await signBedrockRequest("POST", url, requestBody, creds.accessKeyId, creds.secretAccessKey, region);
+  const cleanSecret = creds.secretAccessKey.replace(/^["']|["']$/g, "");
+  const reqHeaders = await signBedrockRequest("POST", url, requestBody, creds.accessKeyId, cleanSecret, region);
 
   const response = await fetch(url, { method: "POST", headers: reqHeaders, body: requestBody });
   if (!response.ok || !response.body) {
