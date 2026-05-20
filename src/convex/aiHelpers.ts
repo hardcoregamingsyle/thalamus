@@ -118,13 +118,8 @@ export const saveStreamedMessage = internalMutation({
     if (!session || session.expiresAt < Date.now()) return;
     const userId = session.userId;
 
-    // Save user message
-    await ctx.db.insert("messages", {
-      conversationId: args.conversationId,
-      userId,
-      role: "user",
-      content: args.content,
-    });
+    // NOTE: User message is already saved by Portal via saveUserMessage before streaming.
+    // Only save the assistant response here.
 
     // Estimate tokens (~4 chars per token)
     const inputTokens = Math.ceil(args.content.length / 4);
