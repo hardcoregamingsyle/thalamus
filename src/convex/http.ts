@@ -41,8 +41,8 @@ function toAB(data: Uint8Array): ArrayBuffer {
   return ab;
 }
 
-async function signBedrockRequest(
-  method: string, url: string, body: string,
+async function signBedrockRequestWithPath(
+  method: string, host: string, canonicalPath: string, body: string,
   accessKeyId: string, secretAccessKey: string, region: string,
 ): Promise<Record<string, string>> {
   const crypto = globalThis.crypto;
@@ -60,14 +60,12 @@ async function signBedrockRequest(
   const now = new Date();
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
   const dateStamp = amzDate.substring(0, 8);
-  const parsedUrl = new URL(url);
-  const host = parsedUrl.host;
   const headers: Record<string, string> = { "content-type": "application/json", "host": host, "x-amz-date": amzDate };
   const sortedKeys = Object.keys(headers).sort();
   const canonicalHeaders = sortedKeys.map(k => `${k}:${headers[k]}\n`).join("");
   const signedHeaders = sortedKeys.join(";");
   const hashedPayload = await sha256(body);
-  const canonicalRequest = ["POST", parsedUrl.pathname, "", canonicalHeaders, signedHeaders, hashedPayload].join("\n");
+  const canonicalRequest = [method, canonicalPath, "", canonicalHeaders, signedHeaders, hashedPayload].join("\n");
   const credentialScope = `${dateStamp}/${region}/bedrock/aws4_request`;
   const stringToSign = ["AWS4-HMAC-SHA256", amzDate, credentialScope, await sha256(canonicalRequest)].join("\n");
   const kSecret = enc.encode(`AWS4${secretAccessKey}`);
@@ -126,7 +124,11 @@ async function streamClaudeWithCreds(
   const modelId = region.startsWith("us-")
     ? "us.anthropic.claude-haiku-4-5-20251001-v1:0"
     : "anthropic.claude-haiku-4-5-20251001-v1:0";
-  const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke-with-response-stream`;
+  // Use raw URL for fetch (runtime encodes : to %3A automatically)
+  // Use encoded path for SigV4 canonical string (must match what AWS sees)
+  const rawUrl = `https://bedrock-runtime.${region}.amazonaws.com/model/${modelId}/invoke-with-response-stream`;
+  const canonicalPath = `/model/${encodeURIComponent(modelId)}/invoke-with-response-stream`;
+  const host = `bedrock-runtime.${region}.amazonaws.com`;
 
   const requestBody = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
@@ -137,9 +139,9 @@ async function streamClaudeWithCreds(
   });
 
   const cleanSecret = creds.secretAccessKey.replace(/^["']|["']$/g, "");
-  const reqHeaders = await signBedrockRequest("POST", url, requestBody, creds.accessKeyId, cleanSecret, region);
+  const reqHeaders = await signBedrockRequestWithPath("POST", host, canonicalPath, requestBody, creds.accessKeyId, cleanSecret, region);
 
-  const response = await fetch(url, { method: "POST", headers: reqHeaders, body: requestBody });
+  const response = await fetch(rawUrl, { method: "POST", headers: reqHeaders, body: requestBody });
   if (!response.ok || !response.body) {
     const err = await response.text().catch(() => "");
     throw new Error(`Bedrock streaming error ${response.status}: ${err.slice(0, 200)}`);
