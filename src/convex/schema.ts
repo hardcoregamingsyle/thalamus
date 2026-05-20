@@ -43,6 +43,10 @@ const schema = defineSchema(
       githubConnectedAt: v.optional(v.number()),
       // Onboarding
       hasOnboarded: v.optional(v.boolean()),
+      // Study profile
+      studyGrade: v.optional(v.string()),
+      studyBoard: v.optional(v.string()),
+      studyLanguage: v.optional(v.string()),
     }).index("email", ["email"])
       .index("by_referral_code", ["referralCode"]),
 

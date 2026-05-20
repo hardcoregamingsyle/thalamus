@@ -2,6 +2,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useEffect, useRef, useState } from "react";
 import CreditModal from "@/components/CreditModal";
 import OnboardingModal from "@/components/OnboardingModal";
+import StudyProfileModal from "@/components/StudyProfileModal";
 import { useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
@@ -938,6 +939,7 @@ function PortalDesktop() {
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showStudyProfile, setShowStudyProfile] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -993,6 +995,7 @@ function PortalDesktop() {
   const submitSuggestionMutation = useMutation(api.admin.submitSuggestion);
   const [isSuggestionSubmitting, setIsSuggestionSubmitting] = useState(false);
   const saveUserMessage = useMutation(api.conversations.saveUserMessage);
+  const saveStudyProfile = useMutation(api.users.saveStudyProfile);
 
   // Resolve conversation from URL session ID
   useEffect(() => {
@@ -1047,9 +1050,29 @@ function PortalDesktop() {
     }
   };
 
+  const typedUserForProfile = user as { studyGrade?: string; studyBoard?: string; studyLanguage?: string } | null;
+  const studyGrade = typedUserForProfile?.studyGrade ?? null;
+  const studyBoard = typedUserForProfile?.studyBoard ?? null;
+  const studyLanguage = typedUserForProfile?.studyLanguage ?? null;
+
+  const handleSaveStudyProfile = async (grade: string, board: string, language: string) => {
+    if (!token) return;
+    try {
+      await saveStudyProfile({ token, grade, board, language });
+      setShowStudyProfile(false);
+      toast.success("Study profile saved!");
+    } catch {
+      toast.error("Failed to save profile");
+    }
+  };
+
   const setActiveMode = (mode: Mode) => {
     setActiveConvId(null);
     navigate(`/portal/${mode}`, { replace: false });
+    // Show study profile setup if entering study mode without a profile
+    if (mode === "study" && !studyGrade && !studyBoard) {
+      setTimeout(() => setShowStudyProfile(true), 400);
+    }
   };
 
   const handleNewConversation = async () => {
@@ -1142,7 +1165,7 @@ function PortalDesktop() {
     const SYSTEM_PROMPTS: Record<string, string> = {
       chat: `You are Thalamus AI, an advanced AI assistant.\n\nCRITICAL: You MUST respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.\nUse: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <code>, <pre><code>, <blockquote>, <table>\nHeadings: style="font-size:1.2em;font-weight:bold;margin:0.5em 0;color:#e5e7eb"\nParagraphs: style="margin:0.5em 0;line-height:1.6;color:#d1d5db"\nLists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db"\nCode blocks: style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em"\nInline code: style="background:#1f2937;color:#34d399;padding:0.1em 0.4em;border-radius:4px;font-family:monospace;font-size:0.85em"`,
       research: `You are Thalamus AI Research Mode — a deep research assistant. Search the web and synthesize comprehensive, well-cited reports.\n\nCRITICAL: You MUST respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.\nStructure: <h1> title, <h2> sections, <h3> sub-sections, <p> analysis, <ul>/<ol> findings, <table> comparisons, <blockquote> key insights.\nHeadings: style="font-size:1.3em;font-weight:bold;margin:0.8em 0 0.4em;color:#f9fafb"\nParagraphs: style="margin:0.5em 0;line-height:1.7;color:#d1d5db"\nLists: style="margin:0.3em 0 0.3em 1.5em;color:#d1d5db"\nCode: style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em"`,
-      study: `You are Thalamus AI Study Mode — the world's best study companion. You have deep knowledge of ALL school and college curricula worldwide, especially Indian education (NCERT, CBSE, ICSE, State Boards, JEE, NEET, UPSC). You know every textbook chapter, poem, story, lesson, and concept by name.\n\nWhen a student mentions ANY topic — a chapter name, poem title, story name, concept, or subject — you IMMEDIATELY know what it is and explain it thoroughly WITHOUT asking for clarification. If a student says "Reed ki Hadi" you know it's a Hindi story/poem from NCERT. If they say "Mijbaan" or "Kabir ke Dohe" you know exactly what it is. NEVER ask "which book?" or "which class?" — just answer comprehensively.\n\nYour job: explain concepts so deeply the student could teach it to someone else. Give:\n- Complete summary and key points\n- Important themes, characters, meanings\n- Exam-ready notes with likely questions\n- Memory tricks and mnemonics\n- Real examples and analogies\n\nCRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.\nUse: <h2>, <h3>, <h4>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <code>\nHeadings: style="font-size:1.15em;font-weight:bold;margin:0.8em 0 0.4em;color:#e5e7eb;border-left:4px solid #6366f1;padding-left:0.7em"\nSub-headings: style="font-size:1em;font-weight:bold;margin:0.7em 0 0.3em;color:#c4b5fd"\nParagraphs: style="margin:0.4em 0;line-height:1.7;color:#d1d5db;font-size:0.92em"\nLists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db;font-size:0.9em;line-height:1.6"\nKey facts: style="border-left:4px solid #f59e0b;padding:0.6em 1em;color:#fcd34d;margin:0.6em 0;background:rgba(245,158,11,0.08);border-radius:0 8px 8px 0;font-size:0.88em"`,
+      study: `You are Thalamus AI Study Mode — the world's best study companion.${studyGrade ? ` This student is in ${studyGrade}${studyBoard ? `, studying under ${studyBoard}` : ""}${studyLanguage && studyLanguage !== "English" ? `, and prefers ${studyLanguage}` : ""}.` : ""} You have deep knowledge of ALL school and college curricula worldwide, especially Indian education (NCERT, CBSE, ICSE, State Boards, JEE, NEET, UPSC). You know every textbook chapter, poem, story, lesson, and concept by name.\n\n${studyGrade ? `STUDENT PROFILE: Grade/Level: ${studyGrade}${studyBoard ? ` | Board: ${studyBoard}` : ""}${studyLanguage ? ` | Language: ${studyLanguage}` : ""}. Always tailor your answers to this exact grade and board. Reference the correct textbook chapters, exam patterns, and marking schemes for this board.\n\n` : ""}When a student mentions ANY topic — a chapter name, poem title, story name, concept, or subject — you IMMEDIATELY know what it is and explain it thoroughly WITHOUT asking for clarification. If a student says "Reed ki Hadi" you know it's a Hindi story/poem from NCERT. If they say "Mijbaan" or "Kabir ke Dohe" you know exactly what it is. NEVER ask "which book?" or "which class?" — just answer comprehensively.\n\nYour job: explain concepts so deeply the student could teach it to someone else. Give:\n- Complete summary and key points\n- Important themes, characters, meanings\n- Exam-ready notes with likely questions\n- Memory tricks and mnemonics\n- Real examples and analogies\n\nCRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.\nUse: <h2>, <h3>, <h4>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <code>\nHeadings: style="font-size:1.15em;font-weight:bold;margin:0.8em 0 0.4em;color:#e5e7eb;border-left:4px solid #6366f1;padding-left:0.7em"\nSub-headings: style="font-size:1em;font-weight:bold;margin:0.7em 0 0.3em;color:#c4b5fd"\nParagraphs: style="margin:0.4em 0;line-height:1.7;color:#d1d5db;font-size:0.92em"\nLists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db;font-size:0.9em;line-height:1.6"\nKey facts: style="border-left:4px solid #f59e0b;padding:0.6em 1em;color:#fcd34d;margin:0.6em 0;background:rgba(245,158,11,0.08);border-radius:0 8px 8px 0;font-size:0.88em"`,
     };
 
     const historyMsgs = (messages ?? []).slice(-10).map((m: Message) => ({ role: m.role, content: m.content.slice(0, 1500) }));
@@ -1482,6 +1505,13 @@ function PortalDesktop() {
                 <span className="text-muted-foreground/40 text-[10px]">/portal/{activeMode}{urlSessionId ? `/${urlSessionId}` : ""}</span>
                 {activeMode === "study" && (
                   <div className="ml-auto flex items-center gap-1.5">
+                    <button onClick={() => setShowStudyProfile(true)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] border transition-all ${studyGrade ? "border-indigo-400/30 text-indigo-400 bg-indigo-400/10" : "border-amber-400/30 text-amber-400 bg-amber-400/10 animate-pulse"}`}
+                      title={studyGrade ? `${studyGrade} · ${studyBoard}` : "Set your study profile for better answers"}
+                    >
+                      <span className="text-[10px]">🎓</span>
+                      {studyGrade ? `${studyGrade.replace("Class ", "Cls ")}` : "Set Profile"}
+                    </button>
                     <button onClick={() => { setAuditorOpen(o => !o); if (studyResourcesOpen) setStudyResourcesOpen(false); }}
                       className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] border transition-all ${auditorOpen ? "bg-amber-400/15 border-amber-400/30 text-amber-400 font-bold" : "border-border text-muted-foreground hover:text-amber-400 hover:border-amber-400/30"}`}
                     >
@@ -1879,6 +1909,19 @@ function PortalDesktop() {
           <OnboardingModal
             onComplete={handleOnboardingComplete}
             userName={(user as { name?: string } | null)?.name}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Study Profile Modal */}
+      <AnimatePresence>
+        {showStudyProfile && (
+          <StudyProfileModal
+            onSave={handleSaveStudyProfile}
+            onSkip={() => setShowStudyProfile(false)}
+            existingGrade={studyGrade}
+            existingBoard={studyBoard}
+            existingLanguage={studyLanguage}
           />
         )}
       </AnimatePresence>
