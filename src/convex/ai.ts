@@ -88,12 +88,28 @@ async function signBedrockHeaders(
   };
 }
 
+// ── Bedrock model ID mapping ──────────────────────────────────────────────────
+const BEDROCK_MODEL_IDS: Record<string, string> = {
+  "claude-haiku-4-5":  "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "claude-sonnet-4-6": "us.anthropic.claude-sonnet-4-6-20251101-v1:0",
+  "claude-opus-4-6":   "us.anthropic.claude-opus-4-6-20251101-v1:0",
+  "claude-opus-4-7":   "us.anthropic.claude-opus-4-7-20260101-v1:0",
+};
+
+const BEDROCK_MAX_TOKENS: Record<string, number> = {
+  "claude-haiku-4-5":  8192,
+  "claude-sonnet-4-6": 16000,
+  "claude-opus-4-6":   16000,
+  "claude-opus-4-7":   16000,
+};
+
 // ── Bedrock Claude call ───────────────────────────────────────────────────────
 async function callBedrockClaude(
   ctx: { runQuery: Function },
   systemPrompt: string,
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   maxTokens = 4096,
+  modelName = "claude-haiku-4-5",
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const creds = await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {}) as { accessKeyId: string; secretAccessKey: string; region: string } | null;
   if (!creds) throw new Error("No AWS credentials configured");
@@ -101,7 +117,8 @@ async function callBedrockClaude(
   const { accessKeyId } = creds;
   const secretAccessKey = creds.secretAccessKey.replace(/^["']|["']$/g, "");
   const region = "us-east-1";
-  const modelId = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+  const modelId = BEDROCK_MODEL_IDS[modelName] ?? BEDROCK_MODEL_IDS["claude-haiku-4-5"];
+  const effectiveMaxTokens = Math.min(maxTokens, BEDROCK_MAX_TOKENS[modelName] ?? 8192);
   const host = `bedrock-runtime.${region}.amazonaws.com`;
   const rawUrl = `https://${host}/model/${modelId}/invoke`;
   const canonicalPath = `/model/${encodeURIComponent(modelId)}/invoke`;
@@ -110,7 +127,7 @@ async function callBedrockClaude(
     anthropic_version: "bedrock-2023-05-31",
     system: systemPrompt,
     messages,
-    max_tokens: maxTokens,
+    max_tokens: effectiveMaxTokens,
     temperature: 0.7,
   });
 
@@ -187,9 +204,10 @@ async function callAI(
   systemPrompt: string,
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   maxTokens = 4096,
+  modelName = "claude-haiku-4-5",
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; provider: string }> {
   try {
-    const result = await callBedrockClaude(ctx, systemPrompt, messages, maxTokens);
+    const result = await callBedrockClaude(ctx, systemPrompt, messages, maxTokens, modelName);
     return { ...result, provider: "bedrock" };
   } catch (bedrockErr) {
     console.warn("Bedrock failed, falling back to Gemini:", bedrockErr instanceof Error ? bedrockErr.message : String(bedrockErr));
@@ -197,7 +215,7 @@ async function callAI(
       const result = await callGeminiChat(ctx, systemPrompt, messages, maxTokens);
       return { ...result, provider: "gemini" };
     } catch (geminiErr) {
-      console.warn("Gemini failed, falling back to VLY:", geminiErr instanceof Error ? geminiErr.message : String(geminiErr));
+      console.warn("Gemini failed:", geminiErr instanceof Error ? geminiErr.message : String(geminiErr));
       throw geminiErr;
     }
   }
@@ -209,6 +227,7 @@ export const sendMessage = action({
     content: v.string(),
     mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code")),
     token: v.optional(v.string()),
+    model: v.optional(v.string()),
     userContext: v.optional(v.object({
       datetime: v.string(),
       timezone: v.string(),
@@ -305,11 +324,13 @@ Always explain your code with clear HTML-formatted text before and after code bl
       ? `\n\n## CURRENT USER CONTEXT:\n- Date/Time: ${args.userContext.datetime}\n- Timezone: ${args.userContext.timezone}${args.userContext.location ? `\n- Location: ${args.userContext.location}` : ""}\n\nAlways use this context when answering time-sensitive or location-specific questions.\n`
       : "";
 
+    const modelName = args.model ?? "claude-haiku-4-5";
     const { text: responseContent, inputTokens, outputTokens } = await callAI(
       ctx,
       systemPrompts[args.mode] + contextHeader,
       messages,
-      4096
+      4096,
+      modelName,
     );
 
     const tokensUsed = inputTokens + outputTokens;
@@ -474,18 +495,21 @@ Key facts: style="border-left:3px solid #f59e0b;padding:0.4em 0.8em;color:#fcd34
 });
 
 export const testBedrockDirect = action({
-  args: { adminToken: v.string() },
-  handler: async (ctx, _args): Promise<{ success: boolean; response?: string; error?: string; region?: string; model?: string }> => {
+  args: { adminToken: v.string(), model: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<{ success: boolean; response?: string; error?: string; region?: string; model?: string }> => {
+    const modelName = args.model ?? "claude-haiku-4-5";
+    const modelId = BEDROCK_MODEL_IDS[modelName] ?? BEDROCK_MODEL_IDS["claude-haiku-4-5"];
     try {
       const result = await callBedrockClaude(
         ctx,
         "You are a helpful assistant.",
-        [{ role: "user", content: "Say hello in one sentence and confirm you are Claude running on AWS Bedrock." }],
+        [{ role: "user", content: `Say hello in one sentence and confirm you are ${modelName} running on AWS Bedrock.` }],
         200,
+        modelName,
       );
-      return { success: true, response: result.text, region: "us-east-1", model: "us.anthropic.claude-haiku-4-5-20251001-v1:0" };
+      return { success: true, response: result.text, region: "us-east-1", model: modelId };
     } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : String(err), region: "us-east-1", model: "us.anthropic.claude-haiku-4-5-20251001-v1:0" };
+      return { success: false, error: err instanceof Error ? err.message : String(err), region: "us-east-1", model: modelId };
     }
   },
 });
