@@ -1570,7 +1570,7 @@ function PortalDesktop() {
                       >
                         <div className={`max-w-[82%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-foreground"}`}>
                           {msg.role === "assistant" ? (
-                            <div className="prose-html" dangerouslySetInnerHTML={{ __html: msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>") }} />
+                            <MathRenderer html={msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")} />
                           ) : (
                             <p className="whitespace-pre-wrap">{msg.content}</p>
                           )}
@@ -1593,7 +1593,7 @@ function PortalDesktop() {
                             ))}
                           </div>
                         ) : (
-                          <div className="prose-html" dangerouslySetInnerHTML={{ __html: streamingContent.startsWith("<") ? streamingContent : streamingContent.replace(/\n/g, "<br/>") }} />
+                          <MathRenderer html={streamingContent.startsWith("<") ? streamingContent : streamingContent.replace(/\n/g, "<br/>")} />
                         )}
                       </div>
                     </motion.div>
