@@ -639,3 +639,263 @@ Please audit this answer step by step. Identify each logical step the student sh
     return responseContent;
   },
 });
+
+export const generateFlashcards = action({
+  args: {
+    token: v.string(),
+    chatHistory: v.array(v.object({ role: v.string(), content: v.string() })),
+    studyGrade: v.optional(v.string()),
+    studyBoard: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<Array<{ front: string; back: string; topic: string }>> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const historyText = args.chatHistory.slice(-20).map(m => `${m.role === "user" ? "Student" : "AI"}: ${m.content.replace(/<[^>]+>/g, "").slice(0, 500)}`).join("\n\n");
+    const profileCtx = args.studyGrade ? `Student is in ${args.studyGrade}${args.studyBoard ? `, ${args.studyBoard}` : ""}.` : "";
+
+    const systemPrompt = `You are a flashcard generator. ${profileCtx} Based on the study conversation provided, generate 10-15 high-quality flashcards for exam revision.
+
+Each flashcard must be a JSON object with:
+- "front": the question or term (concise, exam-style)
+- "back": the answer or definition (complete, accurate)
+- "topic": the subject/chapter name
+
+Output ONLY a valid JSON array of flashcard objects. No markdown, no explanation, just the JSON array.
+Example: [{"front":"What is Newton's First Law?","back":"An object at rest stays at rest unless acted upon by an external force.","topic":"Laws of Motion"}]`;
+
+    let responseContent = "";
+    try {
+      const result = await callClaude(historyText, systemPrompt, "claude-haiku-4-5");
+      responseContent = result.text;
+    } catch {
+      const { vly } = await import("../lib/vly-integrations");
+      const result = await vly.ai.completion({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: systemPrompt + "\n\n" + historyText }],
+        maxTokens: 3000,
+      });
+      responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "[]") : "[]";
+    }
+
+    try {
+      const jsonMatch = responseContent.match(/\[[\s\S]*\]/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]) as Array<{ front: string; back: string; topic: string }>;
+    } catch { /* fall through */ }
+    return [];
+  },
+});
+
+export const generateMockTest = action({
+  args: {
+    token: v.string(),
+    chatHistory: v.array(v.object({ role: v.string(), content: v.string() })),
+    studyGrade: v.optional(v.string()),
+    studyBoard: v.optional(v.string()),
+    studyLanguage: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{
+    title: string;
+    totalMarks: number;
+    duration: string;
+    sections: Array<{
+      name: string;
+      instructions: string;
+      questions: Array<{
+        id: number;
+        type: "mcq" | "short" | "long" | "hots" | "diagram";
+        marks: number;
+        question: string;
+        options?: string[];
+        correctAnswer?: string;
+        imagePrompt?: string;
+      }>;
+    }>;
+  }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const historyText = args.chatHistory.slice(-20).map(m => `${m.role === "user" ? "Student" : "AI"}: ${m.content.replace(/<[^>]+>/g, "").slice(0, 600)}`).join("\n\n");
+    const profileCtx = args.studyGrade ? `Student: ${args.studyGrade}${args.studyBoard ? `, ${args.studyBoard}` : ""}${args.studyLanguage ? `, prefers ${args.studyLanguage}` : ""}.` : "";
+
+    const systemPrompt = `You are an expert exam paper setter. ${profileCtx} Based on the study conversation, generate a comprehensive mock test paper.
+
+The test must have these sections:
+1. Section A: MCQ (4 questions, 1 mark each) — 4 options each, mark correct answer
+2. Section B: Short Answer (4 questions, 2 marks each) — concise answers expected
+3. Section C: Long Answer (2 questions, 5 marks each) — detailed answers
+4. Section D: HOTS (1 question, 4 marks) — Higher Order Thinking
+5. Section E: Diagram/Application (1 question, 3 marks) — may include diagram description
+
+Output ONLY valid JSON matching this exact structure:
+{
+  "title": "Mock Test: [Topic]",
+  "totalMarks": 30,
+  "duration": "1 hour",
+  "sections": [
+    {
+      "name": "Section A - Multiple Choice Questions",
+      "instructions": "Choose the correct option. Each question carries 1 mark.",
+      "questions": [
+        {
+          "id": 1,
+          "type": "mcq",
+          "marks": 1,
+          "question": "...",
+          "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+          "correctAnswer": "A) ..."
+        }
+      ]
+    }
+  ]
+}`;
+
+    let responseContent = "";
+    try {
+      const result = await callClaude(historyText, systemPrompt, "claude-haiku-4-5");
+      responseContent = result.text;
+    } catch {
+      const { vly } = await import("../lib/vly-integrations");
+      const result = await vly.ai.completion({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: systemPrompt + "\n\n" + historyText }],
+        maxTokens: 4000,
+      });
+      responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "{}") : "{}";
+    }
+
+    try {
+      const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    } catch { /* fall through */ }
+    return { title: "Mock Test", totalMarks: 30, duration: "1 hour", sections: [] };
+  },
+});
+
+export const evaluateMockTest = action({
+  args: {
+    token: v.string(),
+    questions: v.array(v.object({
+      id: v.number(),
+      type: v.string(),
+      marks: v.number(),
+      question: v.string(),
+      correctAnswer: v.optional(v.string()),
+    })),
+    answers: v.array(v.object({ id: v.number(), answer: v.string() })),
+    studyGrade: v.optional(v.string()),
+    studyBoard: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{
+    totalMarks: number;
+    obtainedMarks: number;
+    percentage: number;
+    grade: string;
+    feedback: Array<{ id: number; marks: number; maxMarks: number; feedback: string; correct: boolean }>;
+    overallFeedback: string;
+  }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const profileCtx = args.studyGrade ? `Student: ${args.studyGrade}${args.studyBoard ? `, ${args.studyBoard}` : ""}.` : "";
+    const qaText = args.questions.map(q => {
+      const ans = args.answers.find(a => a.id === q.id);
+      return `Q${q.id} (${q.type}, ${q.marks} marks): ${q.question}\nCorrect Answer: ${q.correctAnswer ?? "N/A"}\nStudent Answer: ${ans?.answer ?? "(no answer)"}`;
+    }).join("\n\n");
+
+    const systemPrompt = `You are a strict but fair examiner. ${profileCtx} Evaluate the student's answers and provide detailed feedback.
+
+For each question, award marks based on accuracy and completeness. For MCQs, it's all-or-nothing. For written answers, award partial marks.
+
+Output ONLY valid JSON:
+{
+  "totalMarks": <number>,
+  "obtainedMarks": <number>,
+  "percentage": <number>,
+  "grade": "A+/A/B/C/D/F",
+  "feedback": [
+    {"id": 1, "marks": <awarded>, "maxMarks": <max>, "feedback": "...", "correct": true/false}
+  ],
+  "overallFeedback": "Brief overall assessment and improvement tips"
+}`;
+
+    let responseContent = "";
+    try {
+      const result = await callClaude(qaText, systemPrompt, "claude-haiku-4-5");
+      responseContent = result.text;
+    } catch {
+      const { vly } = await import("../lib/vly-integrations");
+      const result = await vly.ai.completion({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: systemPrompt + "\n\n" + qaText }],
+        maxTokens: 3000,
+      });
+      responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "{}") : "{}";
+    }
+
+    try {
+      const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    } catch { /* fall through */ }
+    return { totalMarks: 30, obtainedMarks: 0, percentage: 0, grade: "F", feedback: [], overallFeedback: "Evaluation failed." };
+  },
+});
+
+export const generateQuiz = action({
+  args: {
+    token: v.string(),
+    chatHistory: v.array(v.object({ role: v.string(), content: v.string() })),
+    studyGrade: v.optional(v.string()),
+    studyBoard: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<Array<{
+    id: number;
+    question: string;
+    options: string[];
+    correctIndex: number;
+    explanation: string;
+    topic: string;
+  }>> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const historyText = args.chatHistory.slice(-20).map(m => `${m.role === "user" ? "Student" : "AI"}: ${m.content.replace(/<[^>]+>/g, "").slice(0, 500)}`).join("\n\n");
+    const profileCtx = args.studyGrade ? `Student: ${args.studyGrade}${args.studyBoard ? `, ${args.studyBoard}` : ""}.` : "";
+
+    const systemPrompt = `You are a quiz generator. ${profileCtx} Based on the study conversation, generate exactly 15 MCQ questions for a gamified quiz.
+
+Questions should range from easy (5) to medium (7) to hard (3). Each question has 4 options with exactly one correct answer.
+
+Output ONLY valid JSON array:
+[
+  {
+    "id": 1,
+    "question": "...",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "correctIndex": 0,
+    "explanation": "Brief explanation of why this is correct",
+    "topic": "Chapter/Topic name"
+  }
+]`;
+
+    let responseContent = "";
+    try {
+      const result = await callClaude(historyText, systemPrompt, "claude-haiku-4-5");
+      responseContent = result.text;
+    } catch {
+      const { vly } = await import("../lib/vly-integrations");
+      const result = await vly.ai.completion({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: systemPrompt + "\n\n" + historyText }],
+        maxTokens: 4000,
+      });
+      responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "[]") : "[]";
+    }
+
+    try {
+      const jsonMatch = responseContent.match(/\[[\s\S]*\]/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    } catch { /* fall through */ }
+    return [];
+  },
+});

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import CreditModal from "@/components/CreditModal";
 import OnboardingModal from "@/components/OnboardingModal";
 import StudyProfileModal from "@/components/StudyProfileModal";
+import StudentSuite from "@/components/StudentSuite";
 import { useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
@@ -13,7 +14,7 @@ import {
   MessageSquare, Search, Plus, Trash2, LogOut,
   Send, Loader2, Menu, X, Users, Zap, BookOpen,
   FileText, Globe, Image, Upload, Sparkles, ChevronRight,
-  Hash, Lightbulb, Lock, ArrowRight, Sun, Moon,
+  Hash, Lightbulb, Lock, ArrowRight, Sun, Moon, GraduationCap,
 } from "lucide-react";
 import TeamPortalInline from "./TeamPortalInline";
 import MobilePortal from "./MobilePortal";
@@ -928,11 +929,7 @@ function PortalDesktop() {
   const [studySearchQuery, setStudySearchQuery] = useState("");
   const [isAddingResource, setIsAddingResource] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
-  const [auditorOpen, setAuditorOpen] = useState(false);
-  const [auditorAnswer, setAuditorAnswer] = useState("");
-  const [auditorContext, setAuditorContext] = useState("");
-  const [auditorResult, setAuditorResult] = useState<string | null>(null);
-  const [isAuditing, setIsAuditing] = useState(false);
+  const [suiteOpen, setSuiteOpen] = useState(false);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const attachFileInputRef = useRef<HTMLInputElement>(null);
@@ -991,7 +988,6 @@ function PortalDesktop() {
   const deleteResource = useMutation(api.studyHelpers.deleteResource);
   const searchAndAddResource = useAction(api.study.searchAndAddResource);
   const processFileResource = useAction(api.study.processFileResource);
-  const auditAnswer = useAction(api.study.auditAnswer);
   const submitSuggestionMutation = useMutation(api.admin.submitSuggestion);
   const [isSuggestionSubmitting, setIsSuggestionSubmitting] = useState(false);
   const saveUserMessage = useMutation(api.conversations.saveUserMessage);
@@ -1512,13 +1508,13 @@ function PortalDesktop() {
                       <span className="text-[10px]">🎓</span>
                       {studyGrade ? `${studyGrade.replace("Class ", "Cls ")}` : "Set Profile"}
                     </button>
-                    <button onClick={() => { setAuditorOpen(o => !o); if (studyResourcesOpen) setStudyResourcesOpen(false); }}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] border transition-all ${auditorOpen ? "bg-amber-400/15 border-amber-400/30 text-amber-400 font-bold" : "border-border text-muted-foreground hover:text-amber-400 hover:border-amber-400/30"}`}
+                    <button onClick={() => setSuiteOpen(true)}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] border transition-all border-indigo-400/30 text-indigo-400 bg-indigo-400/10 hover:bg-indigo-400/20"
                     >
-                      <Lightbulb className="h-3 w-3" />
-                      Mark Auditor
+                      <GraduationCap className="h-3 w-3" />
+                      Student Suite
                     </button>
-                    <button onClick={() => { setStudyResourcesOpen(o => !o); if (auditorOpen) setAuditorOpen(false); }}
+                    <button onClick={() => setStudyResourcesOpen(o => !o)}
                       className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] border transition-all ${studyResourcesOpen ? "bg-indigo-400/15 border-indigo-400/30 text-indigo-400 font-bold" : "border-border text-muted-foreground hover:text-indigo-400 hover:border-indigo-400/30"}`}
                     >
                       <BookOpen className="h-3 w-3" />
@@ -1679,110 +1675,6 @@ function PortalDesktop() {
               </div>
             </div>
 
-            {/* ── Mark Auditor Panel ────────────────────────────────────── */}
-            <AnimatePresence>
-              {activeMode === "study" && auditorOpen && (
-                <motion.div
-                  initial={{ width: 0, opacity: 0 }}
-                  animate={{ width: 320, opacity: 1 }}
-                  exit={{ width: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="shrink-0 border-l border-border bg-card flex flex-col overflow-hidden"
-                  style={{ width: 320 }}
-                >
-                  {/* Header */}
-                  <div className="shrink-0 px-3 py-2.5 border-b border-border flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Lightbulb className="h-3.5 w-3.5 text-amber-400" />
-                      <span className="text-[11px] font-bold text-foreground">MARK AUDITOR</span>
-                      <span className="text-[9px] text-amber-400 border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 rounded-full">BETA</span>
-                    </div>
-                    <button onClick={() => setAuditorOpen(false)} className="text-muted-foreground hover:text-foreground p-1">
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-
-                  {/* Input area */}
-                  <div className="shrink-0 p-3 border-b border-border space-y-2">
-                    <div>
-                      <label className="text-[9px] font-bold text-muted-foreground mb-1 block">QUESTION / TOPIC (optional)</label>
-                      <input
-                        value={auditorContext}
-                        onChange={e => setAuditorContext(e.target.value)}
-                        placeholder="e.g. Newton's second law, 3 marks"
-                        className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-[10px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-amber-400/60 transition-colors"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-bold text-muted-foreground mb-1 block">YOUR WRITTEN ANSWER</label>
-                      <textarea
-                        value={auditorAnswer}
-                        onChange={e => setAuditorAnswer(e.target.value)}
-                        placeholder="Paste your answer here for step-by-step mark analysis..."
-                        rows={5}
-                        className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-[10px] text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-amber-400/60 transition-colors"
-                      />
-                    </div>
-                    <button
-                      onClick={async () => {
-                        if (!auditorAnswer.trim() || isAuditing || !token) return;
-                        setIsAuditing(true);
-                        setAuditorResult(null);
-                        try {
-                          const result = await auditAnswer({
-                            token,
-                            userAnswer: auditorAnswer.trim(),
-                            questionContext: auditorContext.trim() || undefined,
-                          });
-                          setAuditorResult(result);
-                        } catch (err) {
-                          toast.error(err instanceof Error ? err.message : "Audit failed");
-                        } finally {
-                          setIsAuditing(false);
-                        }
-                      }}
-                      disabled={!auditorAnswer.trim() || isAuditing}
-                      className="w-full py-1.5 bg-amber-400/15 border border-amber-400/30 text-amber-400 text-[10px] rounded-lg hover:bg-amber-400/25 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-1.5"
-                    >
-                      {isAuditing ? <><Loader2 className="h-3 w-3 animate-spin" />Auditing...</> : <><Zap className="h-3 w-3" />Audit My Answer</>}
-                    </button>
-                  </div>
-
-                  {/* Result area */}
-                  <div className="flex-1 overflow-y-auto min-h-0 p-3">
-                    {isAuditing && (
-                      <div className="flex flex-col items-center justify-center py-10 gap-3">
-                        <Loader2 className="h-6 w-6 animate-spin text-amber-400" />
-                        <p className="text-[10px] text-muted-foreground">Analysing your answer...</p>
-                      </div>
-                    )}
-                    {!isAuditing && auditorResult && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="bg-background border border-amber-400/20 rounded-xl p-3 overflow-x-auto"
-                      >
-                        <div className="text-[10px] leading-relaxed" dangerouslySetInnerHTML={{ __html: auditorResult.startsWith("<") ? auditorResult : auditorResult.replace(/\n/g, "<br/>") }} />
-                        <button
-                          onClick={() => { setAuditorResult(null); setAuditorAnswer(""); setAuditorContext(""); }}
-                          className="mt-3 text-[9px] text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          Clear & audit another →
-                        </button>
-                      </motion.div>
-                    )}
-                    {!isAuditing && !auditorResult && (
-                      <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
-                        <Lightbulb className="h-8 w-8 text-amber-400/30" />
-                        <p className="text-[10px] text-muted-foreground">Paste your answer above</p>
-                        <p className="text-[9px] text-muted-foreground/60">Get a step-by-step mark breakdown with a verdict on what you got right and where you lost marks.</p>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             {/* ── Study Resources Panel ──────────────────────────────────── */}
             <AnimatePresence>
               {activeMode === "study" && studyResourcesOpen && (
@@ -1915,6 +1807,17 @@ function PortalDesktop() {
 
       {/* Study Profile Modal */}
       <AnimatePresence>
+        {suiteOpen && token && (
+          <StudentSuite
+            token={token}
+            chatHistory={(messages ?? []).map(m => ({ role: m.role, content: m.content }))}
+            studyGrade={studyGrade}
+            studyBoard={studyBoard}
+            studyLanguage={studyLanguage}
+            onClose={() => setSuiteOpen(false)}
+          />
+        )}
+
         {showStudyProfile && (
           <StudyProfileModal
             onSave={handleSaveStudyProfile}
