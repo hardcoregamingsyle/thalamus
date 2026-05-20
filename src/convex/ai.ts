@@ -355,3 +355,93 @@ Key facts: style="border-left:3px solid #f59e0b;padding:0.4em 0.8em;color:#fcd34
     return text;
   },
 });
+
+export const testBedrockDirect = action({
+  args: { adminToken: v.string() },
+  handler: async (ctx, _args): Promise<{ success: boolean; response?: string; error?: string; region?: string; model?: string }> => {
+    const creds = await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {}) as { accessKeyId: string; secretAccessKey: string; region: string } | null;
+    if (!creds) return { success: false, error: "No AWS credentials found in DB. Please set them in Admin → AWS Bedrock tab." };
+
+    const { accessKeyId, secretAccessKey } = creds;
+    const region = "us-east-1";
+    const modelId = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+    // Manually encode the path — do NOT use new URL() as it double-encodes %3A to %253A
+    const encodedModelId = encodeURIComponent(modelId); // "us.anthropic.claude-haiku-4-5-20251001-v1%3A0"
+    const canonicalPath = `/model/${encodedModelId}/invoke`;
+    const host = `bedrock-runtime.${region}.amazonaws.com`;
+    const url = `https://${host}${canonicalPath}`;
+
+    const requestBody = JSON.stringify({
+      anthropic_version: "bedrock-2023-05-31",
+      system: "You are a helpful assistant.",
+      messages: [{ role: "user", content: "Say hello in one sentence and confirm you are Claude Haiku 4.5 running on AWS Bedrock." }],
+      max_tokens: 200,
+      temperature: 0.7,
+    });
+
+    const crypto = globalThis.crypto;
+    const enc = new TextEncoder();
+
+    const sha256 = async (data: string | Uint8Array): Promise<string> => {
+      const encoded = typeof data === "string" ? enc.encode(data) : data;
+      const buf = encoded.buffer.slice(encoded.byteOffset, encoded.byteLength) as ArrayBuffer;
+      const hash = await crypto.subtle.digest("SHA-256", buf);
+      return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+    };
+
+    const hmac = async (key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> => {
+      const rawKey = key instanceof Uint8Array ? key.buffer as ArrayBuffer : key;
+      const k = await crypto.subtle.importKey("raw", rawKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+      return crypto.subtle.sign("HMAC", k, enc.encode(data).buffer as ArrayBuffer);
+    };
+
+    const now = new Date();
+    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+    const dateStamp = amzDate.substring(0, 8);
+
+    const hdrs: Record<string, string> = {
+      "content-type": "application/json",
+      "host": host,
+      "x-amz-date": amzDate,
+    };
+    const sortedKeys = Object.keys(hdrs).sort();
+    const canonicalHeaders = sortedKeys.map(k => `${k}:${hdrs[k]}\n`).join("");
+    const signedHeaders = sortedKeys.join(";");
+    const hashedPayload = await sha256(requestBody);
+    const canonicalRequest = ["POST", canonicalPath, "", canonicalHeaders, signedHeaders, hashedPayload].join("\n");
+    const algorithm = "AWS4-HMAC-SHA256";
+    const credentialScope = `${dateStamp}/${region}/bedrock/aws4_request`;
+    const stringToSign = [algorithm, amzDate, credentialScope, await sha256(canonicalRequest)].join("\n");
+    const kSecret = enc.encode(`AWS4${secretAccessKey}`);
+    const kDate = await hmac(kSecret, dateStamp);
+    const kRegion = await hmac(kDate, region);
+    const kService = await hmac(kRegion, "bedrock");
+    const kSigning = await hmac(kService, "aws4_request");
+    const sigBuf = await hmac(kSigning, stringToSign);
+    const signature = Array.from(new Uint8Array(sigBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
+    const authorization = `${algorithm} Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Amz-Date": amzDate,
+          "Authorization": authorization,
+        },
+        body: requestBody,
+      });
+
+      const responseText = await response.text();
+      if (!response.ok) {
+        return { success: false, error: `Bedrock HTTP ${response.status}: ${responseText.slice(0, 500)}`, region, model: modelId };
+      }
+
+      const data = JSON.parse(responseText) as { content?: Array<{ type: string; text?: string }>; usage?: { input_tokens?: number; output_tokens?: number } };
+      const text = data.content?.find(c => c.type === "text")?.text ?? "";
+      return { success: true, response: text, region, model: modelId };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err), region, model: modelId };
+    }
+  },
+});
