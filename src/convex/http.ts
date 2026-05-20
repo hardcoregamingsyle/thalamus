@@ -249,8 +249,6 @@ http.route({
 
     const encoder = new TextEncoder();
     let fullText = "";
-    let inputTokens = 0;
-    let outputTokens = 0;
     let usedClaude = false;
 
     // Load AWS credentials: DB first, then env var fallback
@@ -258,142 +256,106 @@ http.route({
     const bedrockCreds = dbCreds ?? parseBedrockCredsFromEnv();
     const hasBedrock = !!bedrockCreds;
 
+    // ── Run all AI calls BEFORE creating the stream, so ctx is still valid ──
+    let streamSuccess = false;
+    let geminiStreamBody = "";
+    let geminiStreamKey = "";
+    let geminiStreamUrl = "";
+
+    // Try Claude (non-streaming invoke first to get full text, then stream it)
+    if (hasBedrock && bedrockCreds && preferClaude !== false) {
+      try {
+        const result = await streamClaudeWithCreds(bedrockCreds, fullSystem, messages, () => {});
+        fullText = result.fullText;
+        usedClaude = true;
+        streamSuccess = true;
+      } catch (bedrockErr) {
+        console.error("Bedrock failed:", bedrockErr instanceof Error ? bedrockErr.message : String(bedrockErr));
+        fullText = "";
+      }
+    }
+
+    // Fallback: Gemini
+    if (!streamSuccess) {
+      const geminiContents = messages.map(m => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
+      }));
+      geminiStreamBody = JSON.stringify({
+        system_instruction: { parts: [{ text: fullSystem }] },
+        contents: geminiContents,
+        generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
+      });
+
+      const geminiKeys = await ctx.runQuery(internal.admin.getGeminiKeysInternal, {}) as string[];
+      for (let attempt = 0; attempt < geminiKeys.length && !streamSuccess; attempt++) {
+        try {
+          const key = geminiKeys[attempt % geminiKeys.length];
+          const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`;
+          const geminiRes = await fetch(streamUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: geminiStreamBody,
+          });
+          if (geminiRes.status === 429 || geminiRes.status === 403) continue;
+          if (geminiRes.ok) {
+            const data = await geminiRes.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+            if (text) { fullText = text; streamSuccess = true; }
+          }
+        } catch { /* skip */ }
+      }
+    }
+
+    // Final fallback: VLY
+    if (!streamSuccess) {
+      try {
+        const vlyText = await ctx.runAction(internal.ai.vlyFallbackCompletion, {
+          systemPrompt: fullSystem,
+          messages,
+        });
+        if (vlyText) { fullText = vlyText; streamSuccess = true; }
+      } catch (vlyErr) {
+        console.error("VLY fallback failed:", vlyErr instanceof Error ? vlyErr.message : String(vlyErr));
+      }
+    }
+
+    if (!streamSuccess || !fullText) {
+      fullText = "Sorry, I couldn't generate a response. Please try again.";
+    }
+
+    // ── Save to DB NOW while ctx is still valid ──────────────────────────────
+    if (token && conversationId && fullText && fullText !== "Sorry, I couldn't generate a response. Please try again.") {
+      try {
+        const inputCostPerMillion = usedClaude ? 1.80 : 0.60;
+        const outputCostPerMillion = usedClaude ? 7.20 : 2.40;
+        await ctx.runMutation(internal.aiHelpers.saveStreamedMessage, {
+          conversationId: conversationId as Id<"conversations">,
+          token,
+          content,
+          response: fullText,
+          inputCostPerMillion,
+          outputCostPerMillion,
+        });
+      } catch (saveErr) {
+        console.error("Failed to save streamed message:", saveErr);
+      }
+    }
+
+    // ── Stream the response word-by-word for UX ──────────────────────────────
+    const words = fullText.split(/(?<=\s)|(?=\s)/);
     const transformedStream = new ReadableStream({
       async start(controller) {
-        const sendChunk = (chunk: string) => {
+        // Stream in chunks for smooth UX
+        const chunkSize = 3;
+        for (let i = 0; i < words.length; i += chunkSize) {
+          const chunk = words.slice(i, i + chunkSize).join("");
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ chunk })}\n\n`));
-        };
-
-        let streamSuccess = false;
-
-        // Try Claude streaming first (if Bedrock available)
-        if (hasBedrock && bedrockCreds && preferClaude !== false) {
-          try {
-            const result = await streamClaudeWithCreds(bedrockCreds, fullSystem, messages, (chunk) => {
-              fullText += chunk;
-              sendChunk(chunk);
-            });
-            fullText = result.fullText;
-            inputTokens = result.inputTokens;
-            outputTokens = result.outputTokens;
-            usedClaude = true;
-            streamSuccess = true;
-          } catch (bedrockErr) {
-            // Log the error for debugging
-            console.error("Bedrock streaming failed:", bedrockErr instanceof Error ? bedrockErr.message : String(bedrockErr));
-            // Fall through to Gemini
-            fullText = "";
-          }
+          // Small delay for streaming effect
+          await new Promise(r => setTimeout(r, 8));
         }
-
-        // Fallback: Gemini streaming — try ALL keys, skip quota/revoked errors
-        if (!streamSuccess) {
-          const geminiContents = messages.map(m => ({
-            role: m.role === "assistant" ? "model" : "user",
-            parts: [{ text: m.content }],
-          }));
-          const geminiBody = JSON.stringify({
-            system_instruction: { parts: [{ text: fullSystem }] },
-            contents: geminiContents,
-            generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
-          });
-
-          const geminiKeys = await ctx.runQuery(internal.admin.getGeminiKeysInternal, {}) as string[];
-          let geminiKeyIdx = 0;
-          for (let attempt = 0; attempt < geminiKeys.length && !streamSuccess; attempt++) {
-            try {
-              const key = geminiKeys[geminiKeyIdx % geminiKeys.length]; geminiKeyIdx++;
-              const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:streamGenerateContent?key=${key}&alt=sse`;
-
-              const geminiRes = await fetch(streamUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: geminiBody,
-              });
-
-              // Skip quota-exhausted or revoked keys
-              if (geminiRes.status === 429 || geminiRes.status === 403) {
-                continue;
-              }
-
-              if (geminiRes.ok && geminiRes.body) {
-                const reader = geminiRes.body.getReader();
-                const decoder = new TextDecoder();
-                let buf = "";
-
-                while (true) {
-                  const { done, value } = await reader.read();
-                  if (done) break;
-                  buf += decoder.decode(value, { stream: true });
-                  const lines = buf.split("\n");
-                  buf = lines.pop() ?? "";
-                  for (const line of lines) {
-                    if (!line.startsWith("data: ")) continue;
-                    const jsonStr = line.slice(6).trim();
-                    if (!jsonStr || jsonStr === "[DONE]") continue;
-                    try {
-                      const parsed = JSON.parse(jsonStr) as {
-                        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-                        usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
-                      };
-                      const chunk = parsed.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-                      if (chunk) { fullText += chunk; sendChunk(chunk); }
-                      if (parsed.usageMetadata) {
-                        inputTokens = parsed.usageMetadata.promptTokenCount ?? 0;
-                        outputTokens = parsed.usageMetadata.candidatesTokenCount ?? 0;
-                      }
-                    } catch { /* skip */ }
-                  }
-                }
-                streamSuccess = true;
-              }
-            } catch { /* skip failed key */ }
-          }
-        }
-
-        // Final fallback: VLY integrations (GPT-4o-mini)
-        if (!streamSuccess) {
-          try {
-            const vlyText = await ctx.runAction(internal.ai.vlyFallbackCompletion, {
-              systemPrompt: fullSystem,
-              messages,
-            });
-            if (vlyText) {
-              fullText = vlyText;
-              sendChunk(vlyText);
-              streamSuccess = true;
-            }
-          } catch (vlyErr) {
-            console.error("VLY fallback failed:", vlyErr instanceof Error ? vlyErr.message : String(vlyErr));
-          }
-        }
-
-        if (!streamSuccess || !fullText) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ chunk: "Sorry, I couldn't generate a response. Please try again." })}\n\n`));
-          fullText = "Sorry, I couldn't generate a response. Please try again.";
-        }
-
-        // Send done signal
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, fullText })}\n\n`));
         controller.close();
-
-        // Fire-and-forget: save assistant message to DB if authenticated
-        if (token && conversationId && fullText && fullText !== "Sorry, I couldn't generate a response. Please try again.") {
-          try {
-            const inputCostPerMillion = usedClaude ? 1.80 : 0.60;
-            const outputCostPerMillion = usedClaude ? 7.20 : 2.40;
-            await ctx.runMutation(internal.aiHelpers.saveStreamedMessage, {
-              conversationId: conversationId as Id<"conversations">,
-              token,
-              content,
-              response: fullText,
-              inputCostPerMillion,
-              outputCostPerMillion,
-            });
-          } catch (saveErr) {
-            console.error("Failed to save streamed message:", saveErr);
-          }
-        }
       },
     });
 
