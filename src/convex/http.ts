@@ -377,8 +377,8 @@ http.route({
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, fullText })}\n\n`));
         controller.close();
 
-        // Fire-and-forget: save to DB if authenticated
-        if (token && conversationId) {
+        // Fire-and-forget: save assistant message to DB if authenticated
+        if (token && conversationId && fullText && fullText !== "Sorry, I couldn't generate a response. Please try again.") {
           try {
             const inputCostPerMillion = usedClaude ? 1.80 : 0.60;
             const outputCostPerMillion = usedClaude ? 7.20 : 2.40;
@@ -390,7 +390,9 @@ http.route({
               inputCostPerMillion,
               outputCostPerMillion,
             });
-          } catch { /* non-critical */ }
+          } catch (saveErr) {
+            console.error("Failed to save streamed message:", saveErr);
+          }
         }
       },
     });
