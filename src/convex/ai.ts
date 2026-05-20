@@ -5,7 +5,6 @@ import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
 // Gemini keys are loaded from the DB (admin-managed via Admin UI → Gemini Keys tab)
-// No hardcoded keys in source — keys are stored securely in Convex DB
 async function getGeminiKeysFromDB(ctx: { runQuery: Function }): Promise<string[]> {
   try {
     const keys = await ctx.runQuery(internal.admin.getGeminiKeysInternal, {}) as string[];
@@ -25,6 +24,115 @@ interface GeminiResponse {
   };
 }
 
+// ── SigV4 helpers (Web Crypto, works in Convex "use node" runtime) ────────────
+function toArrayBuffer(data: Uint8Array): ArrayBuffer {
+  const ab = new ArrayBuffer(data.byteLength);
+  new Uint8Array(ab).set(data);
+  return ab;
+}
+
+async function sha256Hex(data: string | Uint8Array): Promise<string> {
+  const enc = new TextEncoder();
+  const encoded = typeof data === "string" ? enc.encode(data) : data;
+  const hash = await globalThis.crypto.subtle.digest("SHA-256", toArrayBuffer(encoded));
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function hmacSha256(key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> {
+  const enc = new TextEncoder();
+  const keyBuf = key instanceof Uint8Array ? toArrayBuffer(key) : key;
+  const k = await globalThis.crypto.subtle.importKey("raw", keyBuf, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return globalThis.crypto.subtle.sign("HMAC", k, toArrayBuffer(enc.encode(data)));
+}
+
+async function signBedrockHeaders(
+  method: string,
+  host: string,
+  canonicalPath: string,
+  body: string,
+  accessKeyId: string,
+  secretAccessKey: string,
+  region: string,
+): Promise<Record<string, string>> {
+  const enc = new TextEncoder();
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  const dateStamp = amzDate.substring(0, 8);
+
+  const hdrs: Record<string, string> = {
+    "content-type": "application/json",
+    "host": host,
+    "x-amz-date": amzDate,
+  };
+  const sortedKeys = Object.keys(hdrs).sort();
+  const canonicalHeaders = sortedKeys.map(k => `${k}:${hdrs[k]}\n`).join("");
+  const signedHeaders = sortedKeys.join(";");
+  const hashedPayload = await sha256Hex(body);
+  const canonicalRequest = [method, canonicalPath, "", canonicalHeaders, signedHeaders, hashedPayload].join("\n");
+  const algorithm = "AWS4-HMAC-SHA256";
+  const credentialScope = `${dateStamp}/${region}/bedrock/aws4_request`;
+  const stringToSign = [algorithm, amzDate, credentialScope, await sha256Hex(canonicalRequest)].join("\n");
+  const kSecret = enc.encode(`AWS4${secretAccessKey}`);
+  const kDate = await hmacSha256(kSecret, dateStamp);
+  const kRegion = await hmacSha256(kDate, region);
+  const kService = await hmacSha256(kRegion, "bedrock");
+  const kSigning = await hmacSha256(kService, "aws4_request");
+  const sigBuf = await hmacSha256(kSigning, stringToSign);
+  const signature = Array.from(new Uint8Array(sigBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
+  const authorization = `${algorithm} Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  return {
+    "Content-Type": "application/json",
+    "X-Amz-Date": amzDate,
+    "Authorization": authorization,
+  };
+}
+
+// ── Bedrock Claude call ───────────────────────────────────────────────────────
+async function callBedrockClaude(
+  ctx: { runQuery: Function },
+  systemPrompt: string,
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  maxTokens = 4096,
+): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+  const creds = await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {}) as { accessKeyId: string; secretAccessKey: string; region: string } | null;
+  if (!creds) throw new Error("No AWS credentials configured");
+
+  const { accessKeyId } = creds;
+  const secretAccessKey = creds.secretAccessKey.replace(/^["']|["']$/g, "");
+  const region = "us-east-1";
+  const modelId = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+  const host = `bedrock-runtime.${region}.amazonaws.com`;
+  const rawUrl = `https://${host}/model/${modelId}/invoke`;
+  const canonicalPath = `/model/${encodeURIComponent(modelId)}/invoke`;
+
+  const requestBody = JSON.stringify({
+    anthropic_version: "bedrock-2023-05-31",
+    system: systemPrompt,
+    messages,
+    max_tokens: maxTokens,
+    temperature: 0.7,
+  });
+
+  const headers = await signBedrockHeaders("POST", host, canonicalPath, requestBody, accessKeyId, secretAccessKey, region);
+
+  const response = await fetch(rawUrl, { method: "POST", headers, body: requestBody });
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`Bedrock HTTP ${response.status}: ${errText.slice(0, 300)}`);
+  }
+
+  const data = await response.json() as {
+    content?: Array<{ type: string; text?: string }>;
+    usage?: { input_tokens?: number; output_tokens?: number };
+  };
+  const text = data.content?.find(c => c.type === "text")?.text ?? "";
+  const inputTokens = data.usage?.input_tokens ?? 0;
+  const outputTokens = data.usage?.output_tokens ?? 0;
+  return { text, inputTokens, outputTokens };
+}
+
+// ── Gemini chat call ──────────────────────────────────────────────────────────
 async function callGeminiChat(
   ctx: { runQuery: Function },
   systemPrompt: string,
@@ -73,6 +181,28 @@ async function callGeminiChat(
   throw new Error("All Gemini API keys exhausted");
 }
 
+// ── Primary AI call: Bedrock first, Gemini fallback ───────────────────────────
+async function callAI(
+  ctx: { runQuery: Function },
+  systemPrompt: string,
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  maxTokens = 4096,
+): Promise<{ text: string; inputTokens: number; outputTokens: number; provider: string }> {
+  try {
+    const result = await callBedrockClaude(ctx, systemPrompt, messages, maxTokens);
+    return { ...result, provider: "bedrock" };
+  } catch (bedrockErr) {
+    console.warn("Bedrock failed, falling back to Gemini:", bedrockErr instanceof Error ? bedrockErr.message : String(bedrockErr));
+    try {
+      const result = await callGeminiChat(ctx, systemPrompt, messages, maxTokens);
+      return { ...result, provider: "gemini" };
+    } catch (geminiErr) {
+      console.warn("Gemini failed, falling back to VLY:", geminiErr instanceof Error ? geminiErr.message : String(geminiErr));
+      throw geminiErr;
+    }
+  }
+}
+
 export const sendMessage = action({
   args: {
     conversationId: v.id("conversations"),
@@ -105,37 +235,27 @@ export const sendMessage = action({
     );
 
     const systemPrompts: Record<string, string> = {
-      chat: `You are AgentAI, an advanced AI assistant powered by AMD MI300X GPUs. 
+      chat: `You are Thalamus AI, an advanced AI assistant by Aphantic Corporations.
 
 CRITICAL: You MUST respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.
 
-Use these HTML elements with inline Tailwind-compatible styles:
-- <h1>, <h2>, <h3> for headings (use style="font-size:1.2em;font-weight:bold;margin:0.5em 0;color:#e5e7eb")
-- <p> for paragraphs (use style="margin:0.5em 0;line-height:1.6;color:#d1d5db")
-- <ul>, <ol>, <li> for lists (use style="margin:0.3em 0 0.3em 1.2em")
-- <strong> for bold (use style="color:#f9fafb;font-weight:600")
+Use these HTML elements with inline styles:
+- <h1>, <h2>, <h3> for headings (style="font-size:1.2em;font-weight:bold;margin:0.5em 0;color:#e5e7eb")
+- <p> for paragraphs (style="margin:0.5em 0;line-height:1.6;color:#d1d5db")
+- <ul>, <ol>, <li> for lists (style="margin:0.3em 0 0.3em 1.2em")
+- <strong> for bold (style="color:#f9fafb;font-weight:600")
 - <em> for italic
-- <code> for inline code (use style="background:#1f2937;color:#34d399;padding:0.1em 0.4em;border-radius:4px;font-family:monospace;font-size:0.85em")
-- <pre><code> for code blocks (use style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em")
-- <blockquote> for quotes (use style="border-left:3px solid #374151;padding-left:1em;color:#9ca3af;margin:0.5em 0")
-- <hr> for dividers (use style="border:none;border-top:1px solid #374151;margin:1em 0")
-- <a> for links (use style="color:#60a5fa;text-decoration:underline")
-- <table>, <tr>, <th>, <td> for tables with appropriate styles
+- <code> for inline code (style="background:#1f2937;color:#34d399;padding:0.1em 0.4em;border-radius:4px;font-family:monospace;font-size:0.85em")
+- <pre><code> for code blocks (style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em")
+- <blockquote> for quotes (style="border-left:3px solid #374151;padding-left:1em;color:#9ca3af;margin:0.5em 0")
+- <hr> for dividers (style="border:none;border-top:1px solid #374151;margin:1em 0")
+- <a> for links (style="color:#60a5fa;text-decoration:underline")
+- <table>, <tr>, <th>, <td> for tables
 - <div> for sections with style="margin:0.5em 0"
 
-MEDIA & FILE OUTPUT: You can output rich media directly in your responses:
-- <img src="URL" alt="description" style="max-width:100%;border-radius:8px;margin:0.5em 0"> for images (use real URLs from the web)
-- <audio controls style="width:100%;margin:0.5em 0"><source src="URL" type="audio/mpeg"></audio> for audio (use real URLs)
-- <video controls style="width:100%;border-radius:8px;margin:0.5em 0"><source src="URL" type="video/mp4"></video> for video (use real URLs)
-- <a href="data:text/plain;charset=utf-8,CONTENT" download="filename.txt" class="file-download">📄 Download filename.txt</a> for downloadable text files (encode content as URI)
-- <a href="data:application/json;charset=utf-8,CONTENT" download="data.json" class="file-download">📊 Download data.json</a> for JSON files
-- <a href="data:text/csv;charset=utf-8,CONTENT" download="data.csv" class="file-download">📊 Download data.csv</a> for CSV files
+Be thorough, helpful, and well-structured. Use rich HTML formatting.`,
 
-When asked to generate audio, video, or files: use real URLs from the web for media, or data URIs for text-based files. Always provide a download link for generated content.
-
-Be thorough, helpful, and well-structured. Use rich HTML formatting to make responses beautiful and readable.`,
-
-      research: `You are AgentAI Research Mode — a deep research assistant powered by AMD MI300X GPUs.
+      research: `You are Thalamus AI Research Mode — a deep research assistant by Aphantic Corporations.
 
 CRITICAL: You MUST respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.
 
@@ -156,13 +276,10 @@ Use these styles:
 - Paragraphs: style="margin:0.5em 0;line-height:1.7;color:#d1d5db"
 - Lists: style="margin:0.3em 0 0.3em 1.5em;color:#d1d5db"
 - Code: style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em"
-- Tables: style="width:100%;border-collapse:collapse;margin:0.5em 0"
-- Table headers: style="background:#1f2937;padding:0.5em;text-align:left;color:#f9fafb;border:1px solid #374151"
-- Table cells: style="padding:0.5em;border:1px solid #374151;color:#d1d5db"
 
 Be comprehensive, cite reasoning, and provide structured analysis.`,
 
-      code: `You are AgentAI Code Mode — an expert software engineer powered by AMD MI300X GPUs.
+      code: `You are Thalamus AI Code Mode — an expert software engineer by Aphantic Corporations.
 
 CRITICAL: You MUST respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML.
 
@@ -188,7 +305,7 @@ Always explain your code with clear HTML-formatted text before and after code bl
       ? `\n\n## CURRENT USER CONTEXT:\n- Date/Time: ${args.userContext.datetime}\n- Timezone: ${args.userContext.timezone}${args.userContext.location ? `\n- Location: ${args.userContext.location}` : ""}\n\nAlways use this context when answering time-sensitive or location-specific questions.\n`
       : "";
 
-    const { text: responseContent, inputTokens, outputTokens } = await callGeminiChat(
+    const { text: responseContent, inputTokens, outputTokens } = await callAI(
       ctx,
       systemPrompts[args.mode] + contextHeader,
       messages,
@@ -317,7 +434,7 @@ export const guestSendMessage = action({
   },
   handler: async (ctx, args): Promise<string> => {
     const systemPrompts: Record<string, string> = {
-      chat: `You are Thalamus AI, an advanced AI assistant. Be helpful, accurate, and concise.
+      chat: `You are Thalamus AI, an advanced AI assistant by Aphantic Corporations. Be helpful, accurate, and concise.
 
 CRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.
 Use: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <code>, <pre><code>, <blockquote>
@@ -345,7 +462,7 @@ Key facts: style="border-left:3px solid #f59e0b;padding:0.4em 0.8em;color:#fcd34
       { role: "user" as const, content: args.content },
     ];
 
-    const { text } = await callGeminiChat(
+    const { text } = await callAI(
       ctx,
       systemPrompts[args.mode] + contextHeader,
       messages,
@@ -359,96 +476,16 @@ Key facts: style="border-left:3px solid #f59e0b;padding:0.4em 0.8em;color:#fcd34
 export const testBedrockDirect = action({
   args: { adminToken: v.string() },
   handler: async (ctx, _args): Promise<{ success: boolean; response?: string; error?: string; region?: string; model?: string }> => {
-    const creds = await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {}) as { accessKeyId: string; secretAccessKey: string; region: string } | null;
-    if (!creds) return { success: false, error: "No AWS credentials found in DB. Please set them in Admin → AWS Bedrock tab." };
-
-    const { accessKeyId } = creds;
-    // Strip any accidental surrounding quotes from the secret key
-    const secretAccessKey = creds.secretAccessKey.replace(/^["']|["']$/g, "");
-    const region = "us-east-1";
-    const modelId = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
-    const host = `bedrock-runtime.${region}.amazonaws.com`;
-    // Use raw URL for fetch (runtime will encode : to %3A automatically)
-    // Use encoded path for SigV4 canonical string (must match what AWS sees)
-    const rawUrl = `https://${host}/model/${modelId}/invoke`;
-    const canonicalPath = `/model/${encodeURIComponent(modelId)}/invoke`;
-
-    const requestBody = JSON.stringify({
-      anthropic_version: "bedrock-2023-05-31",
-      system: "You are a helpful assistant.",
-      messages: [{ role: "user", content: "Say hello in one sentence and confirm you are Claude Haiku 4.5 running on AWS Bedrock." }],
-      max_tokens: 200,
-      temperature: 0.7,
-    });
-
-    const crypto = globalThis.crypto;
-    const enc = new TextEncoder();
-
-    const toArrayBuffer = (data: Uint8Array): ArrayBuffer => {
-      const ab = new ArrayBuffer(data.byteLength);
-      new Uint8Array(ab).set(data);
-      return ab;
-    };
-
-    const sha256 = async (data: string | Uint8Array): Promise<string> => {
-      const encoded = typeof data === "string" ? enc.encode(data) : data;
-      const hash = await crypto.subtle.digest("SHA-256", toArrayBuffer(encoded));
-      return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
-    };
-
-    const hmac = async (key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> => {
-      const keyBuf = key instanceof Uint8Array ? toArrayBuffer(key) : key;
-      const k = await crypto.subtle.importKey("raw", keyBuf, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-      return crypto.subtle.sign("HMAC", k, toArrayBuffer(enc.encode(data)));
-    };
-
-    const now = new Date();
-    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
-    const dateStamp = amzDate.substring(0, 8);
-
-    const hdrs: Record<string, string> = {
-      "content-type": "application/json",
-      "host": host,
-      "x-amz-date": amzDate,
-    };
-    const sortedKeys = Object.keys(hdrs).sort();
-    const canonicalHeaders = sortedKeys.map(k => `${k}:${hdrs[k]}\n`).join("");
-    const signedHeaders = sortedKeys.join(";");
-    const hashedPayload = await sha256(requestBody);
-    const canonicalRequest = ["POST", canonicalPath, "", canonicalHeaders, signedHeaders, hashedPayload].join("\n");
-    const algorithm = "AWS4-HMAC-SHA256";
-    const credentialScope = `${dateStamp}/${region}/bedrock/aws4_request`;
-    const stringToSign = [algorithm, amzDate, credentialScope, await sha256(canonicalRequest)].join("\n");
-    const kSecret = enc.encode(`AWS4${secretAccessKey}`);
-    const kDate = await hmac(kSecret, dateStamp);
-    const kRegion = await hmac(kDate, region);
-    const kService = await hmac(kRegion, "bedrock");
-    const kSigning = await hmac(kService, "aws4_request");
-    const sigBuf = await hmac(kSigning, stringToSign);
-    const signature = Array.from(new Uint8Array(sigBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
-    const authorization = `${algorithm} Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
     try {
-      const response = await fetch(rawUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Amz-Date": amzDate,
-          "Authorization": authorization,
-        },
-        body: requestBody,
-      });
-
-      const responseText = await response.text();
-      if (!response.ok) {
-        return { success: false, error: `Bedrock HTTP ${response.status}: ${responseText.slice(0, 500)}`, region, model: modelId };
-      }
-
-      const data = JSON.parse(responseText) as { content?: Array<{ type: string; text?: string }>; usage?: { input_tokens?: number; output_tokens?: number } };
-      const text = data.content?.find(c => c.type === "text")?.text ?? "";
-      return { success: true, response: text, region, model: modelId };
+      const result = await callBedrockClaude(
+        ctx,
+        "You are a helpful assistant.",
+        [{ role: "user", content: "Say hello in one sentence and confirm you are Claude running on AWS Bedrock." }],
+        200,
+      );
+      return { success: true, response: result.text, region: "us-east-1", model: "us.anthropic.claude-haiku-4-5-20251001-v1:0" };
     } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : String(err), region, model: modelId };
+      return { success: false, error: err instanceof Error ? err.message : String(err), region: "us-east-1", model: "us.anthropic.claude-haiku-4-5-20251001-v1:0" };
     }
   },
 });
