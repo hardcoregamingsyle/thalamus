@@ -2404,7 +2404,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                               <span className="text-[9px] text-muted-foreground font-normal">is working...</span>
                             </div>
                             <div className="bg-card border border-border rounded-xl px-4 py-3 text-xs leading-relaxed text-foreground">
-                              <ReactMarkdown>{streamingOutput.slice(0, 2000)}</ReactMarkdown>
+                              <ReactMarkdown>{streamingOutput}</ReactMarkdown>
                               <span className="animate-pulse text-primary">█</span>
                             </div>
                           </div>
