@@ -379,6 +379,7 @@ async function runResearchTeam(
   ctx: { runQuery: Function; runMutation: Function },
   sessionId: Id<"teamSessions">,
   topic: string,
+  geminiKeys?: string[],
 ): Promise<{ rawContent: string; inputTokens: number; outputTokens: number }> {
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
@@ -392,6 +393,8 @@ async function runResearchTeam(
   const plannerResult = await callGemini(
     `Research topic: ${topic}\n\nBreak this into specific subtopics and search queries.`,
     AGENT_SYSTEM_PROMPTS["ResearchPlanner"],
+    undefined,
+    geminiKeys,
   );
   totalInputTokens += plannerResult.inputTokens;
   totalOutputTokens += plannerResult.outputTokens;
@@ -426,7 +429,7 @@ async function runResearchTeam(
   });
 
   const searchResults = await Promise.allSettled(
-    searchSubtopics.map(sub => performSearch(sub.query))
+    searchSubtopics.map(sub => performSearch(sub.query, geminiKeys))
   );
 
   for (let i = 0; i < searchSubtopics.length; i++) {
@@ -471,7 +474,7 @@ ${rawData.slice(0, 12000)}${rawData.length > 12000 ? "\n...[truncated for length
 
 Now synthesize this into a comprehensive Research Report.`;
 
-  const organiserResult = await callGemini(organiserPrompt, AGENT_SYSTEM_PROMPTS["ResearchOrganiser"]);
+  const organiserResult = await callGemini(organiserPrompt, AGENT_SYSTEM_PROMPTS["ResearchOrganiser"], undefined, geminiKeys);
   totalInputTokens += organiserResult.inputTokens;
   totalOutputTokens += organiserResult.outputTokens;
 
@@ -502,6 +505,7 @@ async function runRedTeam(
   ctx: { runQuery: Function; runMutation: Function },
   sessionId: Id<"teamSessions">,
   codeContext: string,
+  geminiKeys?: string[],
 ): Promise<{ rawContent: string; inputTokens: number; outputTokens: number }> {
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
@@ -565,7 +569,7 @@ async function runRedTeam(
 
     // Run spotter
     const spotterTier = (AGENT_MODEL_MAP[stage.spotter] as ModelTier) ?? "sonnet";
-    const spotterResult = await callModel(spotterPrompt, AGENT_SYSTEM_PROMPTS[stage.spotter], spotterTier);
+    const spotterResult = await callModel(spotterPrompt, AGENT_SYSTEM_PROMPTS[stage.spotter], spotterTier, geminiKeys);
     totalInputTokens += spotterResult.inputTokens;
     totalOutputTokens += spotterResult.outputTokens;
 
@@ -604,7 +608,7 @@ async function runRedTeam(
       const fixerPrompt = `SECURITY FIX REQUIRED\n\nThe following security issues were found in the codebase:\n\n${lastSpotterReport.slice(0, 8000)}\n\n${fixerFilesContext}\n\nFix ALL identified issues now. Write complete, production-ready fixed files.`;
 
       const fixerTier = (AGENT_MODEL_MAP[stage.fixer] as ModelTier) ?? "sonnet";
-      const fixerResult = await callModel(fixerPrompt, AGENT_SYSTEM_PROMPTS[stage.fixer], fixerTier);
+      const fixerResult = await callModel(fixerPrompt, AGENT_SYSTEM_PROMPTS[stage.fixer], fixerTier, geminiKeys);
       totalInputTokens += fixerResult.inputTokens;
       totalOutputTokens += fixerResult.outputTokens;
 
@@ -635,7 +639,7 @@ async function runRedTeam(
 
       const verifyPrompt = `AUTHORIZED SECURITY VERIFICATION — ISOLATED SANDBOX ENVIRONMENT\nAll targets are owned by this project.\n\nPrevious issues were found and fixes were applied. Verify that ALL issues are now resolved.\n\nPREVIOUS ISSUES:\n${lastSpotterReport.slice(0, 4000)}\n\nFIXES APPLIED:\n${fixerResult.text.slice(0, 4000)}\n\n${verifyFilesContext}\n\nRe-run your security analysis to verify all issues are fixed.`;
 
-      const verifyResult = await callModel(verifyPrompt, AGENT_SYSTEM_PROMPTS[stage.spotter], spotterTier);
+      const verifyResult = await callModel(verifyPrompt, AGENT_SYSTEM_PROMPTS[stage.spotter], spotterTier, geminiKeys);
       totalInputTokens += verifyResult.inputTokens;
       totalOutputTokens += verifyResult.outputTokens;
 
@@ -664,7 +668,7 @@ async function runRedTeam(
   });
 
   const orchestratorPrompt = `SECURITY TEAM FINAL CONSOLIDATION\n\nYou have received reports from the Security Team (spotters and fixers for all 4 security domains).\n\nINDIVIDUAL REPORTS:\n${allReports.join("\n\n---\n\n").slice(0, 16000)}\n\nNow produce the final consolidated Security Team Assessment.`;
-  const finalResult = await callGemini(orchestratorPrompt, AGENT_SYSTEM_PROMPTS["RedTeamOrchestrator"]);
+  const finalResult = await callGemini(orchestratorPrompt, AGENT_SYSTEM_PROMPTS["RedTeamOrchestrator"], undefined, geminiKeys);
   totalInputTokens += finalResult.inputTokens;
   totalOutputTokens += finalResult.outputTokens;
 
@@ -687,6 +691,7 @@ async function runSingleAgentCall(
   sandboxDaytonaId: string | null,
   sandboxDbId: Id<"sandboxes"> | null,
   modelTier?: ModelTier,
+  geminiKeys?: string[],
 ): Promise<{ rawContent: string; inputTokens: number; outputTokens: number; tier: ModelTier }> {
   const tier: ModelTier = modelTier ?? (AGENT_MODEL_MAP[currentPhase] as ModelTier) ?? "gemini";
 
@@ -696,7 +701,7 @@ async function runSingleAgentCall(
     currentAgentOutput: `[${currentPhase} is thinking...]`,
   });
 
-  let modelResult = await callModel(prompt, systemPrompt, tier);
+  let modelResult = await callModel(prompt, systemPrompt, tier, geminiKeys);
   let rawContent = modelResult.text;
   let totalInputTokens = modelResult.inputTokens;
   let totalOutputTokens = modelResult.outputTokens;
@@ -2451,11 +2456,8 @@ export const syncGithub = action({
                   const potentialBaseSha = baseRefData.object?.sha ?? "";
                   // Verify base commit exists
                   if (potentialBaseSha) {
-                    const baseCheckRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits/${potentialBaseSha}`, { headers });
-                    if (baseCheckRes.ok) {
-                      baseSha = potentialBaseSha;
-                      console.log(`[syncGithub] Using ${defaultBranch} as base: ${baseSha.slice(0, 7)}`);
-                    }
+                    baseSha = potentialBaseSha;
+                    console.log(`[syncGithub] Using ${defaultBranch} as base: ${baseSha.slice(0, 7)}`);
                   }
                 }
               }
