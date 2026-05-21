@@ -467,23 +467,28 @@ export async function callClaude(
   };
 
   try {
-    // ── Streaming path ────────────────────────────────────────────────────────
-    const streamHeaders = await buildHeaders(streamUrl);
-    const streamRes = await fetch(streamUrl, {
-      method: "POST",
-      headers: streamHeaders,
-      body: requestBody,
-    });
+    // ── Streaming path DISABLED — too slow and prone to hanging ──────────────
+    // Skip streaming entirely and go straight to non-streaming invoke
+    // The streaming endpoint often hangs or times out in Convex actions
+    const USE_STREAMING = false; // Set to false to force non-streaming
 
-    if (streamRes.ok && streamRes.body) {
-      // Read the full binary event stream
-      const reader = streamRes.body.getReader();
-      const chunks: Uint8Array[] = [];
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (value) chunks.push(value);
-      }
+    if (USE_STREAMING) {
+      const streamHeaders = await buildHeaders(streamUrl);
+      const streamRes = await fetch(streamUrl, {
+        method: "POST",
+        headers: streamHeaders,
+        body: requestBody,
+      });
+
+      if (streamRes.ok && streamRes.body) {
+        // Read the full binary event stream
+        const reader = streamRes.body.getReader();
+        const chunks: Uint8Array[] = [];
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) chunks.push(value);
+        }
 
       // Concatenate all chunks into one buffer
       const totalLen = chunks.reduce((s, c) => s + c.byteLength, 0);
@@ -532,11 +537,13 @@ export async function callClaude(
         } catch { /* skip malformed frames */ }
       }
 
-      if (text) return { text, inputTokens, outputTokens };
-      // If streaming gave empty text, fall through to non-streaming
+        if (text) return { text, inputTokens, outputTokens };
+        // If streaming gave empty text, fall through to non-streaming
+      }
     }
 
-    // ── Non-streaming fallback ────────────────────────────────────────────────
+    // ── Non-streaming invoke (primary path now) ───────────────────────────────
+    console.log(`🔧 Calling Bedrock non-streaming: ${model} in ${region}`);
     const fallbackHeaders = await buildHeaders(fallbackUrl);
     const response = await fetch(fallbackUrl, {
       method: "POST",
@@ -546,11 +553,14 @@ export async function callClaude(
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
+      console.error(`❌ Bedrock error ${response.status}: ${errText.slice(0, 500)}`);
       if (userRegion && userRegion !== "us-east-1") {
         console.warn(`Bedrock region ${userRegion} failed, falling back to us-east-1`);
         return callClaude(prompt, systemPrompt, model, "us-east-1", dbCreds);
       }
-      throw new Error(`AWS Bedrock error ${response.status}: ${errText.slice(0, 300)}`);
+      // Try Gemini fallback instead of throwing
+      console.warn(`AWS Bedrock ${model} failed, falling back to Gemini`);
+      return callGemini(prompt, systemPrompt, undefined, undefined, dbCreds);
     }
 
     const data = await response.json() as {
@@ -562,9 +572,10 @@ export async function callClaude(
     const inputTokens = data.usage?.input_tokens ?? 0;
     const outputTokens = data.usage?.output_tokens ?? 0;
 
+    console.log(`✅ Bedrock success: ${model} - ${inputTokens} in / ${outputTokens} out tokens`);
     return { text, inputTokens, outputTokens };
   } catch (err) {
-    console.error(`Claude ${model} (Bedrock) failed, falling back to Gemini:`, err);
+    console.error(`❌ Claude ${model} (Bedrock) failed, falling back to Gemini:`, err);
     return callGemini(prompt, systemPrompt, undefined, undefined, dbCreds);
   }
 }
