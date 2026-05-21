@@ -3186,3 +3186,96 @@ Chat mode is fine for: questions about the platform, how-to questions, explanati
     }
   },
 });
+
+// ─── Research Mode: standalone research pipeline for Portal research mode ─────
+export const runResearchMode = action({
+  args: {
+    conversationId: v.id("conversations"),
+    topic: v.string(),
+    token: v.string(),
+  },
+  handler: async (ctx, args): Promise<string> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    // Fetch credentials from DB
+    const geminiKeys = (await ctx.runQuery(internal.admin.getGeminiKeysInternal, {})) as string[];
+    const dbCreds = (await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {})) as { accessKeyId: string; secretAccessKey: string; region: string } | null;
+
+    // Run the Research Team pipeline (ResearchPlanner → DataTaker → ResearchOrganiser)
+    // We need a dummy sessionId for updateStreamingOutput — use a fake one since we don't have a teamSession
+    // Instead, run the pipeline directly without streaming updates
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+
+    // Step 1: ResearchPlanner — break topic into subtopics
+    const plannerResult = await callGemini(
+      `Research topic: ${args.topic}\n\nBreak this into specific subtopics and search queries. Respond with JSON: {"topic": "...", "subtopics": [{"title": "...", "query": "...", "why": "..."}]}`,
+      AGENT_SYSTEM_PROMPTS["ResearchPlanner"],
+      undefined,
+      geminiKeys,
+      dbCreds,
+    );
+    totalInputTokens += plannerResult.inputTokens;
+    totalOutputTokens += plannerResult.outputTokens;
+
+    interface ResearchSubtopic { title: string; query: string; why: string; }
+    interface ResearchPlan { topic: string; subtopics: ResearchSubtopic[]; }
+    let researchPlan: ResearchPlan = { topic: args.topic, subtopics: [] };
+    try {
+      const jsonMatch = plannerResult.text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) researchPlan = JSON.parse(jsonMatch[0]) as ResearchPlan;
+    } catch { /* use empty plan */ }
+
+    const subtopics = researchPlan.subtopics.length > 0
+      ? researchPlan.subtopics
+      : [{ title: args.topic, query: args.topic, why: "Main topic" }];
+
+    // Step 2: DataTaker — search all subtopics in parallel
+    const searchSubtopics = subtopics.slice(0, 5);
+    const searchResults = await Promise.allSettled(
+      searchSubtopics.map(sub => performSearch(sub.query, geminiKeys, dbCreds))
+    );
+
+    const rawDataParts: string[] = [];
+    for (let i = 0; i < searchSubtopics.length; i++) {
+      const result = searchResults[i];
+      if (result.status === "fulfilled") {
+        rawDataParts.push(`## ${searchSubtopics[i].title}\n${result.value}`);
+      }
+    }
+    const rawData = rawDataParts.join("\n\n---\n\n");
+
+    // Step 3: ResearchOrganiser — synthesize into final report
+    const organiserPrompt = `Research topic: ${args.topic}
+
+Subtopics researched:
+${subtopics.map((s, i) => `${i + 1}. ${s.title} — ${s.why}`).join("\n")}
+
+RAW DATA COLLECTED:
+${rawData.slice(0, 12000)}${rawData.length > 12000 ? "\n...[truncated for length]" : ""}
+
+Now synthesize this into a comprehensive Research Report in clean HTML format.
+
+CRITICAL: Respond in clean, semantic HTML only. No markdown. No plain text. Pure HTML. Do NOT wrap in \`\`\`html code blocks.
+
+Use these HTML elements with inline styles:
+- <h1 style="font-size:1.5em;font-weight:800;margin:0.5em 0 0.8em;color:#f9fafb;border-bottom:2px solid rgba(99,102,241,0.4);padding-bottom:0.4em"> for main title
+- <h2 style="font-size:1.2em;font-weight:700;margin:1em 0 0.4em;color:#e5e7eb;border-left:4px solid #6366f1;padding-left:0.7em"> for sections
+- <h3 style="font-size:1em;font-weight:700;margin:0.8em 0 0.3em;color:#c4b5fd"> for sub-sections
+- <p style="margin:0.5em 0;line-height:1.7;color:#d1d5db;font-size:0.9em"> for paragraphs
+- <ul style="margin:0.4em 0 0.4em 1.5em;color:#d1d5db;font-size:0.9em"> and <li style="margin:0.2em 0"> for lists
+- <blockquote style="border-left:4px solid #6366f1;padding:0.5em 1em;background:rgba(99,102,241,0.08);border-radius:0 8px 8px 0;margin:0.6em 0;color:#c4b5fd;font-style:italic"> for key insights
+- <strong style="color:#f9fafb;font-weight:700"> for emphasis
+- <table style="width:100%;border-collapse:collapse;margin:0.8em 0;font-size:0.85em"> for tables
+- <hr style="border:none;border-top:1px solid rgba(99,102,241,0.2);margin:1em 0"> for section dividers
+
+Be comprehensive, analytical, and well-structured. Minimum 800 words.`;
+
+    const organiserResult = await callGemini(organiserPrompt, AGENT_SYSTEM_PROMPTS["ResearchOrganiser"], undefined, geminiKeys, dbCreds);
+    totalInputTokens += organiserResult.inputTokens;
+    totalOutputTokens += organiserResult.outputTokens;
+
+    return organiserResult.text;
+  },
+});
