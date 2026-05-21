@@ -354,7 +354,7 @@ export async function callModel(
   };
   const claudeModel = TIER_TO_CLAUDE[tier];
   if (claudeModel) {
-    const result = await callClaude(prompt, systemPrompt, claudeModel, undefined, dbCreds);
+    const result = await callClaude(prompt, systemPrompt, claudeModel, undefined, dbCreds, geminiKeys);
     return { ...result, tier };
   }
   // Gemini tier — callGemini already falls back to Claude Haiku if all keys fail
@@ -411,6 +411,7 @@ export async function callClaude(
   model: ClaudeModel,
   userRegion?: string,
   dbCreds?: { accessKeyId: string; secretAccessKey: string; region: string } | null,
+  geminiKeys?: string[],
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   // Increased context limit for long reports — 32k chars
   const trimmedPrompt = prompt.length > 48000 ? prompt.slice(0, 48000) + "\n...[context trimmed for efficiency]" : prompt;
@@ -434,15 +435,16 @@ export async function callClaude(
 
   if (!creds) {
     console.warn("No AWS credentials available (env or DB), falling back to Gemini");
-    return callGemini(prompt, systemPrompt, undefined, undefined);
+    return callGemini(prompt, systemPrompt, undefined, geminiKeys, dbCreds);
   }
 
   const region = userRegion || creds.region;
   const modelId = BEDROCK_MODEL_IDS[model];
 
   // Use streaming endpoint for lower latency and to avoid timeouts on long responses
-  const streamUrl = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke-with-response-stream`;
-  const fallbackUrl = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke`;
+  // NOTE: Do NOT encodeURIComponent the modelId - AWS expects it raw in the path for SigV4 signing
+  const streamUrl = `https://bedrock-runtime.${region}.amazonaws.com/model/${modelId}/invoke-with-response-stream`;
+  const fallbackUrl = `https://bedrock-runtime.${region}.amazonaws.com/model/${modelId}/invoke`;
 
   const requestBody = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
@@ -559,8 +561,8 @@ export async function callClaude(
         return callClaude(prompt, systemPrompt, model, "us-east-1", dbCreds);
       }
       // Try Gemini fallback instead of throwing
-      console.warn(`AWS Bedrock ${model} failed, falling back to Gemini`);
-      return callGemini(prompt, systemPrompt, undefined, undefined, dbCreds);
+      console.warn(`AWS Bedrock ${model} failed (${response.status}), falling back to Gemini`);
+      return callGemini(prompt, systemPrompt, undefined, geminiKeys, dbCreds);
     }
 
     const data = await response.json() as {
@@ -575,8 +577,8 @@ export async function callClaude(
     console.log(`✅ Bedrock success: ${model} - ${inputTokens} in / ${outputTokens} out tokens`);
     return { text, inputTokens, outputTokens };
   } catch (err) {
-    console.error(`❌ Claude ${model} (Bedrock) failed, falling back to Gemini:`, err);
-    return callGemini(prompt, systemPrompt, undefined, undefined, dbCreds);
+    console.error(`❌ Claude ${model} (Bedrock) exception, falling back to Gemini:`, err);
+    return callGemini(prompt, systemPrompt, undefined, geminiKeys, dbCreds);
   }
 }
 
