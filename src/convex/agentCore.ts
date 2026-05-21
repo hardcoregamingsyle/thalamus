@@ -623,7 +623,7 @@ interface GeminiTeamResponse {
 
 const RETRIES_PER_KEY = 2;
 
-// ── Highest thinking mode: gemini-3.1-flash-lite-preview with max thinking ──
+// ── Gemini 2.0 Flash Lite ──────────────────────────────────────────────────
 export async function callGemini(prompt: string, systemPrompt: string, _maxTokens?: number): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   let lastError: unknown;
   for (let keyAttempt = 0; keyAttempt < GEMINI_KEYS.length; keyAttempt++) {
@@ -633,7 +633,7 @@ export async function callGemini(prompt: string, systemPrompt: string, _maxToken
     for (let retry = 0; retry < RETRIES_PER_KEY; retry++) {
       try {
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${key}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
