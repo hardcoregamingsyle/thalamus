@@ -418,15 +418,18 @@ export async function callClaude(
 
   const maxTokens = MAX_OUTPUT_TOKENS[model];
   
-  // Use DB credentials if provided, otherwise fall back to env var
-  let creds = parseBedrockCredentials();
-  if (!creds && dbCreds) {
+  // Prefer DB credentials if provided, fall back to env var
+  let creds: { accessKeyId: string; secretAccessKey: string; region: string; isCustomKey: boolean } | null = null;
+  if (dbCreds) {
     creds = {
       accessKeyId: dbCreds.accessKeyId,
       secretAccessKey: dbCreds.secretAccessKey,
       region: dbCreds.region,
       isCustomKey: false,
     };
+  }
+  if (!creds) {
+    creds = parseBedrockCredentials();
   }
 
   if (!creds) {
@@ -600,7 +603,7 @@ export async function callGemini(prompt: string, systemPrompt: string, _maxToken
     for (let retry = 0; retry < RETRIES_PER_KEY; retry++) {
       try {
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${key}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
