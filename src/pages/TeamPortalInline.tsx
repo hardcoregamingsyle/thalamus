@@ -146,6 +146,29 @@ const PIPELINE_DISPLAY: Record<string, { displayName: string; subAgents: Array<{
 };
 const MAX_MESSAGES = 100_000; // No practical limit
 
+// ── Sub-agent to parent team mapping ─────────────────────────────────────────
+// Maps sub-agents to their parent pipeline agent for in-place streaming
+const SUB_AGENT_TO_PARENT: Record<string, string> = {
+  ResearchPlanner: "Researcher", DataTaker: "Researcher", ResearchOrganiser: "Researcher",
+  VulnerabilitySpotter: "Hacker", VulnerabilityFixer: "Hacker",
+  DataCorruptor: "Hacker", DataFixer: "Hacker",
+  ZeroDayExploiter: "Hacker", ZeroDayRemover: "Hacker",
+  FrameworkAuditor: "Hacker", FrameworkRefiner: "Hacker",
+  SecurityOrchestrator: "Hacker", RedTeamOrchestrator: "Hacker",
+};
+
+// Returns the parent pipeline agent for a given agent name (or itself if top-level)
+function getAgentParent(agent: string): string {
+  return SUB_AGENT_TO_PARENT[agent] ?? agent;
+}
+
+// Returns a short label for sub-agents (e.g. "ResearchPlanner" → "Research Planner")
+function getSubAgentLabel(agent: string): string | null {
+  if (!SUB_AGENT_TO_PARENT[agent]) return null;
+  // Convert CamelCase to spaced words
+  return agent.replace(/([A-Z])/g, " $1").trim();
+}
+
 // ── Sub-mode types ─────────────────────────────────────────────────────────────
 type SubMode = "code" | "chat" | "minor";
 const SUB_MODES: Array<{ id: SubMode; label: string; icon: typeof Code2; color: string; accent: string; desc: string }> = [
@@ -2360,21 +2383,34 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                       </div>
                     )}
 
-                    {/* Streaming output */}
-                    {streamingOutput && streamingAgent && (
-                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
-                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border animate-pulse ${AGENT_BG[streamingAgent] || "bg-primary/10 border-primary/20"}`}>
-                          {AGENT_ICONS[streamingAgent] || streamingAgent[0]}
-                        </div>
-                        <div className="flex-1 max-w-2xl flex flex-col gap-1">
-                          <span className={`text-[10px] font-bold ${AGENT_COLORS[streamingAgent] || "text-primary"}`}>{streamingAgent} <span className="text-muted-foreground font-normal">is thinking...</span></span>
-                          <div className="bg-card border border-border rounded-xl px-4 py-3 text-xs leading-relaxed text-foreground">
-                            <ReactMarkdown>{streamingOutput.slice(0, 2000)}</ReactMarkdown>
-                            <span className="animate-pulse text-primary">█</span>
+                    {/* Streaming output — in-place within same team, new bubble on team change */}
+                    {streamingOutput && streamingAgent && (() => {
+                      const parentAgent = getAgentParent(streamingAgent);
+                      const subLabel = getSubAgentLabel(streamingAgent);
+                      const displayAgent = PIPELINE_DISPLAY[parentAgent]?.displayName ?? parentAgent;
+                      return (
+                        <motion.div key={`streaming-${parentAgent}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border animate-pulse ${AGENT_BG[parentAgent] || "bg-primary/10 border-primary/20"}`}>
+                            {AGENT_ICONS[parentAgent] || parentAgent[0]}
                           </div>
-                        </div>
-                      </motion.div>
-                    )}
+                          <div className="flex-1 max-w-2xl flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[10px] font-bold ${AGENT_COLORS[parentAgent] || "text-primary"}`}>{displayAgent}</span>
+                              {subLabel && (
+                                <span className="text-[9px] text-muted-foreground/70 font-mono bg-muted/30 px-1.5 py-0.5 rounded">
+                                  {subLabel}
+                                </span>
+                              )}
+                              <span className="text-[9px] text-muted-foreground font-normal">is working...</span>
+                            </div>
+                            <div className="bg-card border border-border rounded-xl px-4 py-3 text-xs leading-relaxed text-foreground">
+                              <ReactMarkdown>{streamingOutput.slice(0, 2000)}</ReactMarkdown>
+                              <span className="animate-pulse text-primary">█</span>
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })()}
 
                     {/* Queue indicator */}
                     {messageQueue.length > 0 && (
