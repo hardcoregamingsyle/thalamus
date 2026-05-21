@@ -91,6 +91,14 @@ export const verifyAndCreateSession = internalMutation({
         }
       }
 
+      // Detect @stkabir.co.in school accounts
+      const emailDomain = args.email.split("@")[1] ?? "";
+      const emailUsername = args.email.split("@")[0] ?? "";
+      const isSchoolAccount = emailDomain === "stkabir.co.in";
+      const isStudyFree = isSchoolAccount;
+      // Teacher: first character of username is a letter (not a digit)
+      const isTeacher = isSchoolAccount && /^[a-zA-Z]/.test(emailUsername);
+
       userId = await ctx.db.insert("users", {
         email: args.email,
         name: args.email.split("@")[0],
@@ -100,6 +108,8 @@ export const verifyAndCreateSession = internalMutation({
         referralCode: newReferralCode,
         referralSpins: referredByCode ? 1 : 0, // 1 free spin if signed up via referral
         referredBy: referredByCode,
+        ...(isStudyFree ? { isStudyFree: true } : {}),
+        ...(isTeacher ? { isTeacher: true } : {}),
       });
 
       // Give referrer 1 spin

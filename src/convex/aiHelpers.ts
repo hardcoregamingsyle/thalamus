@@ -107,6 +107,7 @@ export const saveStreamedMessage = internalMutation({
     response: v.string(),
     inputCostPerMillion: v.number(),
     outputCostPerMillion: v.number(),
+    mode: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Look up user by token using customSessions table
@@ -139,15 +140,24 @@ export const saveStreamedMessage = internalMutation({
 
     await ctx.db.patch(args.conversationId, { lastMessageAt: Date.now() });
 
-    // Deduct AB
+    // Deduct AB — skip for isStudyFree users in study mode
     const user = await ctx.db.get(userId);
     if (user) {
-      const current = (user as { totalUsageCents?: number }).totalUsageCents || 0;
+      const typedUser = user as { totalUsageCents?: number; dailyAgentBucks?: number; purchasedAgentBucks?: number; isStudyFree?: boolean };
+      const isStudyFree = typedUser.isStudyFree === true;
+      const isStudyMode = args.mode === "study";
+
+      // Skip credit deduction for school accounts in study mode
+      if (isStudyFree && isStudyMode) {
+        return;
+      }
+
+      const current = typedUser.totalUsageCents || 0;
       const inputAB = 1.5 * inputTokens * args.inputCostPerMillion;
       const outputAB = 1.5 * outputTokens * args.outputCostPerMillion;
       const agentBucksToDeduct = Math.ceil(inputAB + outputAB);
-      const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? 0;
-      const purchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
+      const daily = typedUser.dailyAgentBucks ?? 0;
+      const purchased = typedUser.purchasedAgentBucks ?? 0;
       let remainingDeduct = agentBucksToDeduct;
       const newPurchased = Math.max(0, purchased - remainingDeduct);
       remainingDeduct = Math.max(0, remainingDeduct - purchased);

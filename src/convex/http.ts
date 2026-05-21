@@ -235,7 +235,7 @@ http.route({
       return new Response("Bad request", { status: 400, headers: corsHeaders() });
     }
 
-    const { content, history, systemPrompt, userContext, token, conversationId, preferClaude } = body;
+    const { content, mode, history, systemPrompt, userContext, token, conversationId, preferClaude } = body;
 
     const contextHeader = userContext
       ? `\n\nCurrent date/time: ${userContext.datetime} (${userContext.timezone})\n`
@@ -336,6 +336,7 @@ http.route({
           response: fullText,
           inputCostPerMillion,
           outputCostPerMillion,
+          mode,
         });
       } catch (saveErr) {
         console.error("Failed to save streamed message:", saveErr);

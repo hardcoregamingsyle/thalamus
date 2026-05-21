@@ -47,6 +47,9 @@ const schema = defineSchema(
       studyGrade: v.optional(v.string()),
       studyBoard: v.optional(v.string()),
       studyLanguage: v.optional(v.string()),
+      // School/institution accounts
+      isStudyFree: v.optional(v.boolean()),   // true = unlimited study mode (no credits charged)
+      isTeacher: v.optional(v.boolean()),      // true = teacher account (first char is letter, @stkabir.co.in)
     }).index("email", ["email"])
       .index("by_referral_code", ["referralCode"]),
 
