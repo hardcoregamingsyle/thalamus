@@ -344,6 +344,7 @@ export async function callModel(
   systemPrompt: string,
   tier: ModelTier,
   geminiKeys?: string[],
+  dbCreds?: { accessKeyId: string; secretAccessKey: string; region: string } | null,
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: ModelTier }> {
   const TIER_TO_CLAUDE: Partial<Record<ModelTier, ClaudeModel>> = {
     haiku: "claude-haiku-4-5",
@@ -353,11 +354,11 @@ export async function callModel(
   };
   const claudeModel = TIER_TO_CLAUDE[tier];
   if (claudeModel) {
-    const result = await callClaude(prompt, systemPrompt, claudeModel);
+    const result = await callClaude(prompt, systemPrompt, claudeModel, undefined, dbCreds);
     return { ...result, tier };
   }
   // Gemini tier — callGemini already falls back to Claude Haiku if all keys fail
-  const result = await callGemini(prompt, systemPrompt, undefined, geminiKeys);
+  const result = await callGemini(prompt, systemPrompt, undefined, geminiKeys, dbCreds);
   return { ...result, tier };
 }
 
@@ -409,16 +410,27 @@ export async function callClaude(
   systemPrompt: string,
   model: ClaudeModel,
   userRegion?: string,
+  dbCreds?: { accessKeyId: string; secretAccessKey: string; region: string } | null,
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   // Increased context limit for long reports — 32k chars
   const trimmedPrompt = prompt.length > 48000 ? prompt.slice(0, 48000) + "\n...[context trimmed for efficiency]" : prompt;
   const trimmedSystem = systemPrompt.length > 8000 ? systemPrompt.slice(0, 8000) + "\n...[system trimmed]" : systemPrompt;
 
   const maxTokens = MAX_OUTPUT_TOKENS[model];
-  const creds = parseBedrockCredentials();
+  
+  // Use DB credentials if provided, otherwise fall back to env var
+  let creds = parseBedrockCredentials();
+  if (!creds && dbCreds) {
+    creds = {
+      accessKeyId: dbCreds.accessKeyId,
+      secretAccessKey: dbCreds.secretAccessKey,
+      region: dbCreds.region,
+      isCustomKey: false,
+    };
+  }
 
   if (!creds) {
-    console.warn("AWS_BEDROCK_API_KEY not set, falling back to Gemini");
+    console.warn("No AWS credentials available (env or DB), falling back to Gemini");
     return callGemini(prompt, systemPrompt, undefined, undefined);
   }
 
@@ -572,12 +584,12 @@ const RETRIES_PER_KEY = 2;
 // ── Gemini 3.1 Flash Lite Preview ─────────────────────────────────────────────
 // Accepts optional keys array — if not provided, falls back to GEMINI_KEYS constant.
 // agentTeam.ts fetches fresh keys from DB and passes them here.
-export async function callGemini(prompt: string, systemPrompt: string, _maxTokens?: number, keys?: string[]): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+export async function callGemini(prompt: string, systemPrompt: string, _maxTokens?: number, keys?: string[], dbCreds?: { accessKeyId: string; secretAccessKey: string; region: string } | null): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const activeKeys = (keys && keys.length > 0) ? keys : GEMINI_KEYS;
   if (activeKeys.length === 0) {
     // No Gemini keys — fall back to Claude Haiku via Bedrock
     console.warn("No Gemini API keys available, falling back to Claude Haiku");
-    return callClaude(prompt, systemPrompt, "claude-haiku-4-5");
+    return callClaude(prompt, systemPrompt, "claude-haiku-4-5", undefined, dbCreds);
   }
   let lastError: unknown;
   let localKeyIndex = 0;
@@ -632,10 +644,10 @@ export async function callGemini(prompt: string, systemPrompt: string, _maxToken
   }
   // All Gemini keys exhausted — fall back to Claude Haiku via Bedrock
   console.warn("All Gemini API keys exhausted, falling back to Claude Haiku:", lastError);
-  return callClaude(prompt, systemPrompt, "claude-haiku-4-5");
+  return callClaude(prompt, systemPrompt, "claude-haiku-4-5", undefined, dbCreds);
 }
 
-export async function performSearch(query: string, keys?: string[]): Promise<string> {
+export async function performSearch(query: string, keys?: string[], dbCreds?: { accessKeyId: string; secretAccessKey: string; region: string } | null): Promise<string> {
   let ragContext = "";
   try {
     const docs = await hfQueryVector(query, 3);
@@ -643,7 +655,7 @@ export async function performSearch(query: string, keys?: string[]): Promise<str
   } catch { /* RAG unavailable */ }
 
   const searchPrompt = `Search query: "${query}"${ragContext}\n\nProvide a concise, factual answer with key points, code examples if relevant, and best practices. Be brief.`;
-  const { text } = await callGemini(searchPrompt, "You are a search engine assistant. Provide accurate, detailed search results for technical queries.", undefined, keys);
+  const { text } = await callGemini(searchPrompt, "You are a search engine assistant. Provide accurate, detailed search results for technical queries.", undefined, keys, dbCreds);
   return text;
 }
 
