@@ -535,19 +535,27 @@ export const saveGeminiKeys = mutation({
   args: {
     adminToken: v.string(),
     keys: v.array(v.string()),
+    append: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
     const existing = await ctx.db.query("geminiKeys").take(1);
+    let finalKeys = args.keys;
+    if (args.append && existing.length > 0) {
+      // Merge: existing keys + new keys, deduplicated
+      const existingSet = new Set(existing[0].keys);
+      for (const k of args.keys) existingSet.add(k);
+      finalKeys = Array.from(existingSet);
+    }
     if (existing.length > 0) {
       await ctx.db.patch(existing[0]._id, {
-        keys: args.keys,
+        keys: finalKeys,
         updatedAt: Date.now(),
         updatedBy: "admin",
       });
     } else {
       await ctx.db.insert("geminiKeys", {
-        keys: args.keys,
+        keys: finalKeys,
         updatedAt: Date.now(),
         updatedBy: "admin",
       });
