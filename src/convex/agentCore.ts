@@ -356,6 +356,7 @@ export async function callModel(
     const result = await callClaude(prompt, systemPrompt, claudeModel);
     return { ...result, tier };
   }
+  // Gemini tier — callGemini already falls back to Claude Haiku if all keys fail
   const result = await callGemini(prompt, systemPrompt, undefined, geminiKeys);
   return { ...result, tier };
 }
@@ -574,7 +575,9 @@ const RETRIES_PER_KEY = 2;
 export async function callGemini(prompt: string, systemPrompt: string, _maxTokens?: number, keys?: string[]): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const activeKeys = (keys && keys.length > 0) ? keys : GEMINI_KEYS;
   if (activeKeys.length === 0) {
-    throw new Error("No Gemini API keys available. Please add keys via the Admin panel → Gemini Keys tab.");
+    // No Gemini keys — fall back to Claude Haiku via Bedrock
+    console.warn("No Gemini API keys available, falling back to Claude Haiku");
+    return callClaude(prompt, systemPrompt, "claude-haiku-4-5");
   }
   let lastError: unknown;
   let localKeyIndex = 0;
@@ -606,6 +609,7 @@ export async function callGemini(prompt: string, systemPrompt: string, _maxToken
             await new Promise(r => setTimeout(r, delay));
             continue;
           }
+          // 403 (leaked/revoked key) or other non-retryable error — try next key
           break;
         }
         const data = await response.json() as GeminiTeamResponse;
@@ -626,7 +630,9 @@ export async function callGemini(prompt: string, systemPrompt: string, _maxToken
       }
     }
   }
-  throw lastError ?? new Error("All Gemini API keys exhausted");
+  // All Gemini keys exhausted — fall back to Claude Haiku via Bedrock
+  console.warn("All Gemini API keys exhausted, falling back to Claude Haiku:", lastError);
+  return callClaude(prompt, systemPrompt, "claude-haiku-4-5");
 }
 
 export async function performSearch(query: string, keys?: string[]): Promise<string> {
