@@ -380,6 +380,7 @@ async function runResearchTeam(
   sessionId: Id<"teamSessions">,
   topic: string,
   geminiKeys?: string[],
+  dbCreds?: { accessKeyId: string; secretAccessKey: string; region: string } | null,
 ): Promise<{ rawContent: string; inputTokens: number; outputTokens: number }> {
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
@@ -395,6 +396,7 @@ async function runResearchTeam(
     AGENT_SYSTEM_PROMPTS["ResearchPlanner"],
     undefined,
     geminiKeys,
+    dbCreds,
   );
   totalInputTokens += plannerResult.inputTokens;
   totalOutputTokens += plannerResult.outputTokens;
@@ -429,7 +431,7 @@ async function runResearchTeam(
   });
 
   const searchResults = await Promise.allSettled(
-    searchSubtopics.map(sub => performSearch(sub.query, geminiKeys))
+    searchSubtopics.map(sub => performSearch(sub.query, geminiKeys, dbCreds))
   );
 
   for (let i = 0; i < searchSubtopics.length; i++) {
@@ -474,7 +476,7 @@ ${rawData.slice(0, 12000)}${rawData.length > 12000 ? "\n...[truncated for length
 
 Now synthesize this into a comprehensive Research Report.`;
 
-  const organiserResult = await callGemini(organiserPrompt, AGENT_SYSTEM_PROMPTS["ResearchOrganiser"], undefined, geminiKeys);
+  const organiserResult = await callGemini(organiserPrompt, AGENT_SYSTEM_PROMPTS["ResearchOrganiser"], undefined, geminiKeys, dbCreds);
   totalInputTokens += organiserResult.inputTokens;
   totalOutputTokens += organiserResult.outputTokens;
 
@@ -506,6 +508,7 @@ async function runRedTeam(
   sessionId: Id<"teamSessions">,
   codeContext: string,
   geminiKeys?: string[],
+  dbCreds?: { accessKeyId: string; secretAccessKey: string; region: string } | null,
 ): Promise<{ rawContent: string; inputTokens: number; outputTokens: number }> {
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
@@ -569,7 +572,7 @@ async function runRedTeam(
 
     // Run spotter
     const spotterTier = (AGENT_MODEL_MAP[stage.spotter] as ModelTier) ?? "sonnet";
-    const spotterResult = await callModel(spotterPrompt, AGENT_SYSTEM_PROMPTS[stage.spotter], spotterTier, geminiKeys);
+    const spotterResult = await callModel(spotterPrompt, AGENT_SYSTEM_PROMPTS[stage.spotter], spotterTier, geminiKeys, dbCreds);
     totalInputTokens += spotterResult.inputTokens;
     totalOutputTokens += spotterResult.outputTokens;
 
@@ -608,7 +611,7 @@ async function runRedTeam(
       const fixerPrompt = `SECURITY FIX REQUIRED\n\nThe following security issues were found in the codebase:\n\n${lastSpotterReport.slice(0, 8000)}\n\n${fixerFilesContext}\n\nFix ALL identified issues now. Write complete, production-ready fixed files.`;
 
       const fixerTier = (AGENT_MODEL_MAP[stage.fixer] as ModelTier) ?? "sonnet";
-      const fixerResult = await callModel(fixerPrompt, AGENT_SYSTEM_PROMPTS[stage.fixer], fixerTier, geminiKeys);
+      const fixerResult = await callModel(fixerPrompt, AGENT_SYSTEM_PROMPTS[stage.fixer], fixerTier, geminiKeys, dbCreds);
       totalInputTokens += fixerResult.inputTokens;
       totalOutputTokens += fixerResult.outputTokens;
 
@@ -639,7 +642,7 @@ async function runRedTeam(
 
       const verifyPrompt = `AUTHORIZED SECURITY VERIFICATION — ISOLATED SANDBOX ENVIRONMENT\nAll targets are owned by this project.\n\nPrevious issues were found and fixes were applied. Verify that ALL issues are now resolved.\n\nPREVIOUS ISSUES:\n${lastSpotterReport.slice(0, 4000)}\n\nFIXES APPLIED:\n${fixerResult.text.slice(0, 4000)}\n\n${verifyFilesContext}\n\nRe-run your security analysis to verify all issues are fixed.`;
 
-      const verifyResult = await callModel(verifyPrompt, AGENT_SYSTEM_PROMPTS[stage.spotter], spotterTier, geminiKeys);
+      const verifyResult = await callModel(verifyPrompt, AGENT_SYSTEM_PROMPTS[stage.spotter], spotterTier, geminiKeys, dbCreds);
       totalInputTokens += verifyResult.inputTokens;
       totalOutputTokens += verifyResult.outputTokens;
 
@@ -668,7 +671,7 @@ async function runRedTeam(
   });
 
   const orchestratorPrompt = `SECURITY TEAM FINAL CONSOLIDATION\n\nYou have received reports from the Security Team (spotters and fixers for all 4 security domains).\n\nINDIVIDUAL REPORTS:\n${allReports.join("\n\n---\n\n").slice(0, 16000)}\n\nNow produce the final consolidated Security Team Assessment.`;
-  const finalResult = await callGemini(orchestratorPrompt, AGENT_SYSTEM_PROMPTS["RedTeamOrchestrator"], undefined, geminiKeys);
+  const finalResult = await callGemini(orchestratorPrompt, AGENT_SYSTEM_PROMPTS["RedTeamOrchestrator"], undefined, geminiKeys, dbCreds);
   totalInputTokens += finalResult.inputTokens;
   totalOutputTokens += finalResult.outputTokens;
 
@@ -692,6 +695,7 @@ async function runSingleAgentCall(
   sandboxDbId: Id<"sandboxes"> | null,
   modelTier?: ModelTier,
   geminiKeys?: string[],
+  dbCreds?: { accessKeyId: string; secretAccessKey: string; region: string } | null,
 ): Promise<{ rawContent: string; inputTokens: number; outputTokens: number; tier: ModelTier }> {
   const tier: ModelTier = modelTier ?? (AGENT_MODEL_MAP[currentPhase] as ModelTier) ?? "gemini";
 
@@ -701,7 +705,7 @@ async function runSingleAgentCall(
     currentAgentOutput: `[${currentPhase} is thinking...]`,
   });
 
-  let modelResult = await callModel(prompt, systemPrompt, tier, geminiKeys);
+  let modelResult = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
   let rawContent = modelResult.text;
   let totalInputTokens = modelResult.inputTokens;
   let totalOutputTokens = modelResult.outputTokens;
@@ -728,7 +732,7 @@ async function runSingleAgentCall(
       scrapeResults.push(`SCRAPED CONTENT from "${scrapeOp.url}":\n${result}`);
     }
     const promptWithScrapes = `${prompt}\n\nURL scrape results:\n\n${scrapeResults.join("\n\n---\n\n")}\n\nNow provide your complete ${currentPhase} output incorporating this information.`;
-    const modelResult2 = await callModel(promptWithScrapes, systemPrompt, tier);
+    const modelResult2 = await callModel(promptWithScrapes, systemPrompt, tier, geminiKeys, dbCreds);
     rawContent = modelResult2.text;
     totalInputTokens += modelResult2.inputTokens;
     totalOutputTokens += modelResult2.outputTokens;
@@ -752,7 +756,7 @@ async function runSingleAgentCall(
       searchResults.push(`SEARCH RESULT for "${searchOp.query}":\n${result}`);
     }
     const promptWithSearch = `${prompt}\n\nSearch results:\n\n${searchResults.join("\n\n---\n\n")}\n\nNow provide your complete ${currentPhase} output incorporating these results.`;
-    const modelResult3 = await callModel(promptWithSearch, systemPrompt, tier);
+    const modelResult3 = await callModel(promptWithSearch, systemPrompt, tier, geminiKeys, dbCreds);
     rawContent = modelResult3.text;
     totalInputTokens += modelResult3.inputTokens;
     totalOutputTokens += modelResult3.outputTokens;
@@ -791,7 +795,7 @@ async function runSingleAgentCall(
         }
       }
       const promptWithCmds = `${currentPrompt}\n\nSandbox command results:\n\n${cmdResults.join("\n\n---\n\n")}\n\nProvide your updated ${currentPhase} output. Use RUN-CMD again if needed, or provide final output without RUN-CMD.`;
-      const modelResultCmd = await callModel(promptWithCmds, systemPrompt, tier);
+      const modelResultCmd = await callModel(promptWithCmds, systemPrompt, tier, geminiKeys, dbCreds);
       rawContent = modelResultCmd.text;
       totalInputTokens += modelResultCmd.inputTokens;
       totalOutputTokens += modelResultCmd.outputTokens;
@@ -815,7 +819,7 @@ async function runSingleAgentCall(
     // For Tester: if no explicit pass/fail was set after running commands, force a final evaluation
     if (currentPhase === "Tester" && !parsed.testerResult && allCmdResults.length > 0) {
       const evalPrompt = `${currentPrompt}\n\nALL COMMAND RESULTS SO FAR:\n${allCmdResults.join("\n\n---\n\n")}\n\nBased on the ACTUAL command output above, you MUST now output your final verdict:\n- If ALL tests passed (no errors, no failures, exit code 0): output <<test.success>>\n- If ANY test failed, errored, or had non-zero exit code: output <<test.failed="exact error message from output">>`;
-      const evalResult = await callModel(evalPrompt, systemPrompt, tier);
+      const evalResult = await callModel(evalPrompt, systemPrompt, tier, geminiKeys, dbCreds);
       rawContent = evalResult.text;
       totalInputTokens += evalResult.inputTokens;
       totalOutputTokens += evalResult.outputTokens;
@@ -880,6 +884,10 @@ export const runAgentRound = action({
       });
       throw new Error("Platform budget exhausted ($5 threshold reached). Contact admin to add more credits.");
     }
+
+    // Fetch credentials from DB for this run
+    const geminiKeys = (await ctx.runQuery(internal.admin.getGeminiKeysInternal, {})) as string[];
+    const dbCreds = (await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {})) as { accessKeyId: string; secretAccessKey: string; region: string } | null;
 
     // Determine execution state
     const executionPhase = session.executionPhase ?? "planning";
@@ -1059,14 +1067,14 @@ export const runAgentRound = action({
     // Run the agent
     let agentResult: { rawContent: string; inputTokens: number; outputTokens: number; tier: ModelTier };
     if (currentPhase === "Researcher") {
-      const r = await runResearchTeam(ctx, args.sessionId, session.task + (taskContext ? `\n\nCurrent task context: ${taskContext}` : ""));
+      const r = await runResearchTeam(ctx, args.sessionId, session.task + (taskContext ? `\n\nCurrent task context: ${taskContext}` : ""), geminiKeys, dbCreds);
       agentResult = { ...r, tier: "gemini" };
     } else if (currentPhase === "Hacker") {
       const redTeamContext = `PROJECT TASK: ${session.task}\n\nCURRENT PHASE: ${phaseLabel}\n\nPROJECT FILES:\n${projectFiles.map(f => `--- ${f.filepath} ---\n${f.content.slice(0, 2000)}`).join("\n\n").slice(0, 12000)}\n\nPREVIOUS AGENT OUTPUTS:\n${contextLines.slice(0, 4000)}`;
-      const r = await runRedTeam(ctx, args.sessionId, redTeamContext);
+      const r = await runRedTeam(ctx, args.sessionId, redTeamContext, geminiKeys, dbCreds);
       agentResult = { ...r, tier: "gemini" };
     } else {
-      agentResult = await runSingleAgentCall(ctx, args.sessionId, userId, currentPhase, prompt, systemPrompt, sandboxDaytonaId, sandboxDbId, agentTier);
+      agentResult = await runSingleAgentCall(ctx, args.sessionId, userId, currentPhase, prompt, systemPrompt, sandboxDaytonaId, sandboxDbId, agentTier, geminiKeys, dbCreds);
     }
 
     const { rawContent, inputTokens, outputTokens } = agentResult;
@@ -1463,6 +1471,10 @@ export const backgroundRunOneRound = internalAction({
       return;
     }
 
+    // Fetch credentials from DB for this run
+    const geminiKeys = (await ctx.runQuery(internal.admin.getGeminiKeysInternal, {})) as string[];
+    const dbCreds = (await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {})) as { accessKeyId: string; secretAccessKey: string; region: string } | null;
+
     const executionPhase = session.executionPhase ?? "planning";
     const currentTaskIndex = session.currentTaskIndex ?? 0;
     const loopCount = session.loopCount ?? 0;
@@ -1614,14 +1626,14 @@ export const backgroundRunOneRound = internalAction({
     // Run the agent
     let agentResult: { rawContent: string; inputTokens: number; outputTokens: number; tier: ModelTier };
     if (currentPhase === "Researcher") {
-      const r = await runResearchTeam(ctx, args.sessionId, session.task + (taskContext ? `\n\nCurrent task context: ${taskContext}` : ""));
+      const r = await runResearchTeam(ctx, args.sessionId, session.task + (taskContext ? `\n\nCurrent task context: ${taskContext}` : ""), geminiKeys, dbCreds);
       agentResult = { ...r, tier: "gemini" };
     } else if (currentPhase === "Hacker") {
       const redTeamContext = `PROJECT TASK: ${session.task}\n\nCURRENT PHASE: ${phaseLabel}\n\nPROJECT FILES:\n${projectFiles.map(f => `--- ${f.filepath} ---\n${f.content.slice(0, 2000)}`).join("\n\n").slice(0, 12000)}\n\nPREVIOUS AGENT OUTPUTS:\n${contextLines.slice(0, 4000)}`;
-      const r = await runRedTeam(ctx, args.sessionId, redTeamContext);
+      const r = await runRedTeam(ctx, args.sessionId, redTeamContext, geminiKeys, dbCreds);
       agentResult = { ...r, tier: "gemini" };
     } else {
-      agentResult = await runSingleAgentCall(ctx, args.sessionId, userId, currentPhase, prompt, systemPrompt, sandboxDaytonaId, sandboxDbId, agentTier);
+      agentResult = await runSingleAgentCall(ctx, args.sessionId, userId, currentPhase, prompt, systemPrompt, sandboxDaytonaId, sandboxDbId, agentTier, geminiKeys, dbCreds);
     }
 
     const { rawContent, inputTokens, outputTokens, tier } = agentResult;
