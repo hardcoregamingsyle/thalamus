@@ -211,10 +211,13 @@ export const submitSuggestion = mutation({
 
 // Cost per million tokens in dollars (8 decimal precision)
 const PLATFORM_PRICING: Record<string, { input: number; output: number }> = {
-  "claude-haiku-4-5":  { input: 1,  output: 5  },
-  "claude-sonnet-4-6": { input: 3,  output: 15 },
-  "claude-opus-4-6":   { input: 5,  output: 25 },
-  "claude-opus-4-7":   { input: 7,  output: 34 },
+  // Gemini pricing (Flash Lite)
+  "gemini-3.1-flash-lite-preview": { input: 0.60, output: 2.40 },
+  // Claude pricing via AWS Bedrock
+  "claude-haiku-4-5":  { input: 1.80,  output: 7.20 },
+  "claude-sonnet-4-6": { input: 5.40,  output: 26.50 },
+  "claude-opus-4-6":   { input: 7.44,  output: 42.00 },
+  "claude-opus-4-7":   { input: 12.00, output: 60.00 },
 };
 
 const BUDGET_THRESHOLD = 5.0; // disable at $5 remaining
@@ -245,23 +248,36 @@ export const getPlatformBudget = query({
 });
 
 export const setPlatformBudget = mutation({
-  args: { adminToken: v.string(), totalDollars: v.number() },
+  args: { adminToken: v.string(), totalDollars: v.number(), operation: v.optional(v.union(v.literal("add"), v.literal("set"), v.literal("subtract"))) },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
+    const operation = args.operation ?? "add"; // default to "add" for backward compatibility
     const budgets = await ctx.db.query("platformBudget").take(1);
+
     if (budgets.length === 0) {
       // First time: create with the given amount
       const isDisabled = args.totalDollars < BUDGET_THRESHOLD;
       await ctx.db.insert("platformBudget", {
-        totalDollars: args.totalDollars,
+        totalDollars: Math.max(0, args.totalDollars),
         spentDollars: 0,
         isDisabled,
         updatedAt: Date.now(),
       });
     } else {
-      // Add to existing total (old + new)
       const b = budgets[0];
-      const newTotal = parseFloat((b.totalDollars + args.totalDollars).toFixed(8));
+      let newTotal: number;
+
+      if (operation === "set") {
+        // Set absolute value
+        newTotal = Math.max(0, args.totalDollars);
+      } else if (operation === "subtract") {
+        // Subtract from existing total
+        newTotal = Math.max(0, parseFloat((b.totalDollars - args.totalDollars).toFixed(8)));
+      } else {
+        // Add to existing total (default behavior)
+        newTotal = parseFloat((b.totalDollars + args.totalDollars).toFixed(8));
+      }
+
       const remaining = newTotal - b.spentDollars;
       await ctx.db.patch(b._id, {
         totalDollars: newTotal,
@@ -293,12 +309,27 @@ export const deductPlatformCost = internalMutation({
   args: { modelName: v.string(), inputTokens: v.number(), outputTokens: v.number() },
   handler: async (ctx, args) => {
     const cost = calcPlatformCost(args.modelName, args.inputTokens, args.outputTokens);
-    if (cost <= 0) return;
+
+    // Log for debugging
+    console.log(`💰 Platform cost deduction: ${args.modelName} | ${args.inputTokens} in / ${args.outputTokens} out → $${cost.toFixed(6)}`);
+
+    if (cost <= 0) {
+      console.warn(`⚠️ Zero cost for model ${args.modelName} - check PLATFORM_PRICING config`);
+      return;
+    }
+
     const budgets = await ctx.db.query("platformBudget").take(1);
-    if (budgets.length === 0) return; // no budget set, allow
+    if (budgets.length === 0) {
+      console.warn("⚠️ No platform budget configured - cost not tracked");
+      return; // no budget set, allow
+    }
+
     const b = budgets[0];
     const newSpent = parseFloat((b.spentDollars + cost).toFixed(8));
     const remaining = b.totalDollars - newSpent;
+
+    console.log(`💳 Budget updated: $${b.spentDollars.toFixed(2)} → $${newSpent.toFixed(2)} (remaining: $${remaining.toFixed(2)})`);
+
     await ctx.db.patch(b._id, {
       spentDollars: newSpent,
       isDisabled: remaining < BUDGET_THRESHOLD,

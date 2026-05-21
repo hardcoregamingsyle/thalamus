@@ -494,10 +494,11 @@ function DauTab({ adminToken }: { adminToken: string }) {
 
 // ── Platform pricing rates ($ per million tokens) ─────────────────────────────
 const PLATFORM_PRICING = [
-  { modelId: "claude-haiku-4-5",  displayName: "Claude Haiku 4.5",  input: 1,  output: 5  },
-  { modelId: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6", input: 3,  output: 15 },
-  { modelId: "claude-opus-4-6",   displayName: "Claude Opus 4.6",   input: 5,  output: 25 },
-  { modelId: "claude-opus-4-7",   displayName: "Claude Opus 4.7",   input: 7,  output: 34 },
+  { modelId: "gemini-3.1-flash-lite-preview", displayName: "Gemini 3.1 Flash Lite", input: 0.60, output: 2.40 },
+  { modelId: "claude-haiku-4-5",  displayName: "Claude Haiku 4.5",  input: 1.80,  output: 7.20  },
+  { modelId: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6", input: 5.40,  output: 26.50 },
+  { modelId: "claude-opus-4-6",   displayName: "Claude Opus 4.6",   input: 7.44,  output: 42.00 },
+  { modelId: "claude-opus-4-7",   displayName: "Claude Opus 4.7",   input: 12.00, output: 60.00 },
 ];
 
 // ── Credits Tab ───────────────────────────────────────────────────────────────
@@ -509,13 +510,16 @@ function CreditsTab({ adminToken }: { adminToken: string }) {
   const [isSaving, setIsSaving] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
 
-  const handleSetBudget = async () => {
+  const handleSetBudget = async (operation: "add" | "set" | "subtract") => {
     const val = parseFloat(budgetInput);
     if (isNaN(val) || val <= 0) { toast.error("Enter a valid dollar amount"); return; }
     setIsSaving(true);
     try {
-      await setPlatformBudget({ adminToken, totalDollars: val });
-      toast.success(`Budget set to ${val.toFixed(2)}`);
+      await setPlatformBudget({ adminToken, totalDollars: val, operation });
+      const msg = operation === "add" ? `Added $${val.toFixed(2)}` :
+                  operation === "subtract" ? `Subtracted $${val.toFixed(2)}` :
+                  `Budget set to $${val.toFixed(2)}`;
+      toast.success(msg);
       setBudgetInput("");
     } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); }
     finally { setIsSaving(false); }
@@ -617,17 +621,17 @@ function CreditsTab({ adminToken }: { adminToken: string }) {
         </div>
       )}
 
-      {/* Set budget */}
+      {/* Manage budget */}
       <div className="bg-card border border-border rounded-xl p-5">
-        <p className="text-sm font-bold text-foreground mb-1">Set Total Budget</p>
-        <p className="text-xs text-muted-foreground mb-4">Enter the total dollar amount you want to allocate. This replaces the current total (spent amount is preserved).</p>
-        <div className="flex gap-3">
+        <p className="text-sm font-bold text-foreground mb-1">Manage Budget</p>
+        <p className="text-xs text-muted-foreground mb-4">Add, subtract, or set your total budget amount. Spent amount is preserved.</p>
+        <div className="flex flex-col gap-3">
           <div className="relative flex-1">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
             <input
               value={budgetInput}
               onChange={e => setBudgetInput(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") handleSetBudget(); }}
+              onKeyDown={e => { if (e.key === "Enter") handleSetBudget("add"); }}
               placeholder="100.00"
               type="number"
               min="0"
@@ -635,23 +639,41 @@ function CreditsTab({ adminToken }: { adminToken: string }) {
               className="w-full bg-background border border-border rounded-xl pl-7 pr-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
             />
           </div>
-          <button
-            onClick={handleSetBudget}
-            disabled={isSaving || !budgetInput.trim()}
-            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-all"
-          >
-            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-            Set Budget
-          </button>
-          <button
-            onClick={handleResetSpend}
-            disabled={isResetting}
-            title="Reset spent counter to $0"
-            className="flex items-center gap-2 px-4 py-2.5 bg-muted/50 border border-border text-muted-foreground rounded-xl text-sm hover:bg-muted hover:text-foreground disabled:opacity-50 transition-all"
-          >
-            {isResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Reset Spend
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => handleSetBudget("add")}
+              disabled={isSaving || !budgetInput.trim()}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500 text-white rounded-xl text-sm font-bold hover:bg-emerald-600 disabled:opacity-50 transition-all"
+            >
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              Add Credits
+            </button>
+            <button
+              onClick={() => handleSetBudget("subtract")}
+              disabled={isSaving || !budgetInput.trim()}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-500 text-white rounded-xl text-sm font-bold hover:bg-red-600 disabled:opacity-50 transition-all"
+            >
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingDown className="h-4 w-4" />}
+              Subtract Credits
+            </button>
+            <button
+              onClick={() => handleSetBudget("set")}
+              disabled={isSaving || !budgetInput.trim()}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-all"
+            >
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Set Total
+            </button>
+            <button
+              onClick={handleResetSpend}
+              disabled={isResetting}
+              title="Reset spent counter to $0"
+              className="flex items-center gap-2 px-4 py-2.5 bg-muted/50 border border-border text-muted-foreground rounded-xl text-sm hover:bg-muted hover:text-foreground disabled:opacity-50 transition-all"
+            >
+              {isResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Reset Spend
+            </button>
+          </div>
         </div>
       </div>
 
