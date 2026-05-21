@@ -184,6 +184,21 @@ export const getUserByToken = query({
   },
 });
 
+// Get full user record by session token (for internal use)
+export const getUserByTokenInternal = internalQuery({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    if (!args.token) return null;
+    const sessions = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .take(1);
+    const session = sessions[0];
+    if (!session || session.expiresAt < Date.now()) return null;
+    return await ctx.db.get(session.userId);
+  },
+});
+
 // Get user ID by session token (for internal use)
 export const getUserIdByToken = internalQuery({
   args: { token: v.string() },
