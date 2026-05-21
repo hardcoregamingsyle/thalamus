@@ -1015,18 +1015,22 @@ function PortalDesktop() {
   const prevMessageCountRef = useRef<number>(0);
   useEffect(() => {
     const count = messages?.length ?? 0;
+    // Only clear streamingContent when a NEW assistant message arrives from DB
+    // (count increased AND last message is assistant)
     if (
       streamingContent !== null &&
       streamingContent !== "" &&
-      count > prevMessageCountRef.current
+      count > prevMessageCountRef.current &&
+      count > 0
     ) {
       const lastMsg = messages?.[messages.length - 1];
       if (lastMsg?.role === "assistant") {
-        setStreamingContent(null);
+        // Small delay to avoid flash — let the DB message render first
+        setTimeout(() => setStreamingContent(null), 50);
       }
     }
     prevMessageCountRef.current = count;
-  }, [messages]);
+  }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmitSuggestion = async (title: string, description: string, files: SuggestionFile[]) => {
     setIsSuggestionSubmitting(true);
@@ -1065,6 +1069,8 @@ function PortalDesktop() {
 
   const setActiveMode = (mode: Mode) => {
     setActiveConvId(null);
+    setStreamingContent(null);
+    prevMessageCountRef.current = 0;
     navigate(`/portal/${mode}`, { replace: false });
     // Show study profile setup if entering study mode without a profile
     if (mode === "study" && !studyGrade && !studyBoard) {
@@ -1084,6 +1090,8 @@ function PortalDesktop() {
   };
 
   const handleSelectConversation = (conv: Conversation) => {
+    setStreamingContent(null);
+    prevMessageCountRef.current = 0;
     setActiveConvId(conv._id);
     if (conv.customId) navigate(`/portal/${activeMode}/${conv.customId}`, { replace: false });
   };
@@ -1141,17 +1149,8 @@ function PortalDesktop() {
       await saveUserMessage({ conversationId: convId, content: msg, token });
     } catch { /* non-critical */ }
 
-    // Code mode: use TeamPortal inline (no streaming needed here)
+    // Code mode: handled entirely by TeamPortalInline — do not send here
     if (activeMode === "code") {
-      setIsThinking(true);
-      try {
-        await sendMessage({ conversationId: convId, content: msg, mode: "code", token, userContext });
-        if (!activeConvId) generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to send message");
-      } finally {
-        setIsThinking(false);
-      }
       return;
     }
 
