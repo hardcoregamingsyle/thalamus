@@ -548,7 +548,7 @@ export async function callClaude(
       const errText = await response.text().catch(() => "");
       if (userRegion && userRegion !== "us-east-1") {
         console.warn(`Bedrock region ${userRegion} failed, falling back to us-east-1`);
-        return callClaude(prompt, systemPrompt, model, "us-east-1");
+        return callClaude(prompt, systemPrompt, model, "us-east-1", dbCreds);
       }
       throw new Error(`AWS Bedrock error ${response.status}: ${errText.slice(0, 300)}`);
     }
