@@ -1206,18 +1206,18 @@ function GeminiKeysTab({ adminToken }: { adminToken: string }) {
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
-    const keys = keysText
+    const newKeys = keysText
       .split(/[\n,]+/)
       .map(k => k.trim())
       .filter(k => k.startsWith("AIza") && k.length > 20);
-    if (keys.length === 0) {
+    if (newKeys.length === 0) {
       toast.error("No valid Gemini API keys found. Keys must start with 'AIza'.");
       return;
     }
     setSaving(true);
     try {
-      await saveKeys({ adminToken, keys });
-      toast.success(`Saved ${keys.length} Gemini API keys`);
+      await saveKeys({ adminToken, keys: newKeys, append: true });
+      toast.success(`Added ${newKeys.length} Gemini API keys`);
       setKeysText("");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save");
@@ -1269,7 +1269,7 @@ function GeminiKeysTab({ adminToken }: { adminToken: string }) {
       </motion.div>
 
       <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-        <h3 className="text-sm font-bold text-foreground">Add / Replace Keys</h3>
+        <h3 className="text-sm font-bold text-foreground">Add Keys (appends to existing)</h3>
         <div>
           <label className="text-xs font-bold text-muted-foreground mb-1.5 block">
             PASTE KEYS (one per line, or comma-separated)
