@@ -983,6 +983,7 @@ function PortalDesktop() {
   const createConversation = useMutation(api.conversations.create);
   const deleteConversation = useMutation(api.conversations.remove);
   const sendMessage = useAction(api.ai.sendMessage);
+  const runResearchMode = useAction(api.agentTeam.runResearchMode);
   const sendStudyMessage = useAction(api.study.sendStudyMessage);
   const generateTitle = useAction(api.ai.generateConversationTitle);
   const addTextResource = useMutation(api.studyHelpers.addTextResource);
@@ -1152,6 +1153,21 @@ function PortalDesktop() {
     // Code mode: handled entirely by TeamPortalInline — do not send here
     if (activeMode === "code") {
       return;
+    }
+
+    // Research mode: use the Research Team pipeline (ResearchPlanner → DataTaker → ResearchOrganiser)
+    if (activeMode === "research") {
+      setIsThinking(true);
+      try {
+        const result = await runResearchMode({ conversationId: convId, topic: msg, token });
+        // Result is already saved to DB by the action — useQuery will pick it up
+        // Strip any stray 
+      } catch (err) {
+        console.error("Research mode failed:", err);
+        toast.error(err instanceof Error ? err.message : "Failed to research");
+      } finally {
+        setIsThinking(false);
+      }
     }
 
     // All other modes: use streaming HTTP endpoint
