@@ -1772,16 +1772,20 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     if (!branchModalSession || !token) return;
     setIsBranching(true);
     try {
+      console.log("[Branch] Creating branch with purpose:", purpose, "for session:", branchModalSession._id);
       const result = await createBranchAction({ mainSessionId: branchModalSession._id, branchPurpose: purpose, token });
-      const { branchSessionId, groupName } = result as { branchSessionId: Id<"teamSessions">; groupName: string; groupId: string };
+      console.log("[Branch] Result:", result);
+      const { branchSessionId, groupName, branchCustomId } = result as { branchSessionId: Id<"teamSessions">; branchCustomId: string; groupName: string; groupId: string };
       toast.success(`Branch created! Group: "${groupName}"`);
       setBranchModalSession(null);
       await loadSessions();
       // Navigate to the new branch
       setActiveSessionId(branchSessionId);
+      if (branchCustomId) onSessionChange?.(branchCustomId);
       setUserMessages([]);
       setMessageQueue([]);
     } catch (err) {
+      console.error("[Branch] Error:", err);
       toast.error(err instanceof Error ? err.message : "Failed to create branch");
     } finally {
       setIsBranching(false);
