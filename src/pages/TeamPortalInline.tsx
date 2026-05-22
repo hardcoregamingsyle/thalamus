@@ -2399,6 +2399,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                 animate={{ opacity: 1, y: 0 }}
                 whileHover={{ scale: 1.02 }}
                 className="relative group"
+                onClick={() => setShowProjectCreationModal(true)}
               >
                 <div className="h-48 rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 hover:border-primary/50 hover:bg-primary/10 transition-all cursor-pointer flex flex-col items-center justify-center gap-3 p-6">
                   <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
@@ -2408,14 +2409,9 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                     <h3 className="text-sm font-bold text-foreground mb-1">Start New Project</h3>
                     <p className="text-xs text-muted-foreground">Import from GitHub or start from scratch</p>
                   </div>
-                  <button
-                    onClick={() => {
-                      setShowProjectCreationModal(true);
-                    }}
-                    className="text-xs px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all font-medium"
-                  >
+                  <div className="text-xs px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all font-medium">
                     Get Started
-                  </button>
+                  </div>
                 </div>
               </motion.div>
 
