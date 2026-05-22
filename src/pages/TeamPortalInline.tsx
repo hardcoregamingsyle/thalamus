@@ -622,6 +622,247 @@ function BranchModal({
 }
 
 // ── GitHub Sync Modal ─────────────────────────────────────────────────────────
+// ── GitHub Import Modal ──────────────────────────────────────────────────────
+function GithubImportModal({
+  onClose,
+  onConnect,
+  onSelectRepo,
+  isConnecting,
+  isLoadingRepos,
+  repos,
+  githubUsername,
+  isGithubConnected,
+}: {
+  onClose: () => void;
+  onConnect: () => Promise<void>;
+  onSelectRepo: (repoName: string, branch: string) => Promise<void>;
+  isConnecting: boolean;
+  isLoadingRepos: boolean;
+  repos: Array<{ name: string; full_name: string; private: boolean; default_branch: string }>;
+  githubUsername?: string | null;
+  isGithubConnected: boolean;
+}) {
+  const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
+  const [selectedBranch, setSelectedBranch] = useState("main");
+  const [isImporting, setIsImporting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredRepos = repos.filter(repo =>
+    repo.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    repo.full_name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const handleImport = async () => {
+    if (!selectedRepo) return;
+    setIsImporting(true);
+    try {
+      await onSelectRepo(selectedRepo, selectedBranch);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="relative z-10 bg-card border border-border rounded-2xl p-6 max-w-2xl w-full shadow-2xl max-h-[80vh] flex flex-col"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Github className="h-5 w-5 text-foreground" />
+            <h3 className="text-sm font-bold text-foreground">Import from GitHub</h3>
+            {isGithubConnected && (
+              <span className="text-[9px] bg-green-400/15 text-green-400 border border-green-400/30 px-1.5 py-0.5 rounded-full font-bold">CONNECTED</span>
+            )}
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {!isGithubConnected ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center mb-4">
+              <Github className="h-8 w-8 text-primary" />
+            </div>
+            <p className="text-sm text-foreground font-bold mb-2">Connect your GitHub account</p>
+            <p className="text-xs text-muted-foreground mb-6 text-center max-w-sm">
+              Authorize Thalamus to access your repositories and import existing projects
+            </p>
+            <button
+              onClick={onConnect}
+              disabled={isConnecting}
+              className="flex items-center gap-2 px-6 py-3 bg-foreground text-background text-sm rounded-lg hover:bg-foreground/90 disabled:opacity-50 transition-all font-bold"
+            >
+              {isConnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Github className="h-4 w-4" />}
+              Connect GitHub
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="mb-4">
+              <p className="text-[10px] text-muted-foreground mb-2">Connected as <span className="text-green-400 font-bold">@{githubUsername}</span></p>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search repositories..."
+                className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 mb-4">
+              {isLoadingRepos ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : filteredRepos.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-xs text-muted-foreground">
+                    {searchQuery ? "No repositories match your search" : "No repositories found"}
+                  </p>
+                </div>
+              ) : (
+                filteredRepos.map((repo) => (
+                  <div
+                    key={repo.full_name}
+                    onClick={() => {
+                      setSelectedRepo(repo.name);
+                      setSelectedBranch(repo.default_branch);
+                    }}
+                    className={`p-3 rounded-lg border-2 transition-all cursor-pointer ${
+                      selectedRepo === repo.name
+                        ? "border-primary bg-primary/10"
+                        : "border-border bg-card hover:border-primary/30"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-bold text-foreground">{repo.name}</p>
+                          {repo.private && (
+                            <span className="text-[9px] bg-amber-400/15 text-amber-400 border border-amber-400/30 px-1.5 py-0.5 rounded-full font-bold">PRIVATE</span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{repo.full_name}</p>
+                      </div>
+                      {selectedRepo === repo.name && (
+                        <CheckCircle className="h-4 w-4 text-primary shrink-0" />
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {selectedRepo && (
+              <div className="mb-4 p-3 bg-primary/5 border border-primary/20 rounded-xl">
+                <label className="text-[10px] text-muted-foreground font-bold block mb-1">BRANCH</label>
+                <input
+                  value={selectedBranch}
+                  onChange={(e) => setSelectedBranch(e.target.value)}
+                  placeholder="main"
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
+                />
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                onClick={onClose}
+                className="flex-1 py-2 border border-border text-muted-foreground text-xs rounded-xl hover:bg-muted/50 transition-all font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleImport}
+                disabled={!selectedRepo || isImporting}
+                className="flex-1 py-2 bg-primary/15 border border-primary/30 text-primary text-xs rounded-xl hover:bg-primary/25 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-1.5"
+              >
+                {isImporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Github className="h-3 w-3" />}
+                Import Repository
+              </button>
+            </div>
+          </>
+        )}
+      </motion.div>
+    </div>
+  );
+}
+
+// ── Project Creation Modal ───────────────────────────────────────────────────
+function ProjectCreationModal({
+  onClose,
+  onImportFromGithub,
+  onStartFromScratch,
+}: {
+  onClose: () => void;
+  onImportFromGithub: () => void;
+  onStartFromScratch: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="relative z-10 bg-card border border-border rounded-2xl p-6 max-w-lg w-full shadow-2xl"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-foreground">Create New Project</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <p className="text-sm text-muted-foreground mb-6">Choose how you want to start your new project</p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Import from GitHub */}
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            onClick={onImportFromGithub}
+            className="cursor-pointer"
+          >
+            <div className="h-48 rounded-xl border-2 border-border bg-card hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-3 p-6 text-center">
+              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                <Github className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-foreground mb-1">Import from GitHub</h4>
+                <p className="text-xs text-muted-foreground">Connect your GitHub account and select an existing repository</p>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Start from Scratch */}
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            onClick={onStartFromScratch}
+            className="cursor-pointer"
+          >
+            <div className="h-48 rounded-xl border-2 border-border bg-card hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-3 p-6 text-center">
+              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                <Plus className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-foreground mb-1">Start from Scratch</h4>
+                <p className="text-xs text-muted-foreground">Create a new empty project and build from the ground up</p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ── GitHub Sync Modal ─────────────────────────────────────────────────────────
 function GithubSyncModal({
   onClose,
   onSave,
@@ -1588,13 +1829,18 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     }
   }, [sessionInfo?.status, sessionInfo?.totalMessages, activeSessionId]);
 
+  const [showProjectCreationModal, setShowProjectCreationModal] = useState(false);
+  const [showGithubImportModal, setShowGithubImportModal] = useState(false);
   const [showGithubModal, setShowGithubModal] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [isSuggestionSubmitting, setIsSuggestionSubmitting] = useState(false);
+  const [isLoadingGithubRepos, setIsLoadingGithubRepos] = useState(false);
+  const [githubRepos, setGithubRepos] = useState<Array<{ name: string; full_name: string; private: boolean; default_branch: string }>>([]);
   const saveGithubConfigAction = useAction(api.agentTeam.saveGithubConfig);
   const syncGithubAction = useAction(api.agentTeam.syncGithub);
   const getGithubAuthUrlAction = useAction(api.github.getAuthorizationUrl);
+  const listUserReposAction = useAction(api.github.listUserRepos);
   const disconnectGithubMutation = useMutation(api.githubHelpers.disconnectGithub);
   const githubStatus = useQuery(api.githubHelpers.getGithubStatus, token ? { token } : "skip");
   const setCustomDomainAction = useAction(api.sandbox.setCustomDomain);
@@ -1745,6 +1991,106 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
       toast.success("GitHub account disconnected");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to disconnect");
+    }
+  };
+
+  const handleImportFromGithub = async () => {
+    // Close project creation modal and open GitHub import modal
+    setShowProjectCreationModal(false);
+    setShowGithubImportModal(true);
+
+    // If GitHub is connected, load repositories
+    if (githubStatus?.connected && token) {
+      setIsLoadingGithubRepos(true);
+      try {
+        const repos = await listUserReposAction({ token });
+        setGithubRepos(repos);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to load repositories");
+      } finally {
+        setIsLoadingGithubRepos(false);
+      }
+    }
+  };
+
+  const handleSelectGithubRepo = async (repoName: string, branch: string) => {
+    if (!token) return;
+
+    try {
+      // Create a new session with the repo name as initial task
+      const result = await createSession({
+        task: `Import and work on repository: ${repoName}`,
+        token
+      });
+      const { sessionId, customId } = result as { sessionId: Id<"teamSessions">; customId: string };
+
+      // Configure the repository for this session
+      await saveGithubConfigAction({
+        sessionId,
+        githubRepo: repoName,
+        githubBranch: branch,
+        token
+      });
+
+      // Sync the repository
+      toast.success("Importing repository...");
+      setIsSyncing(true);
+      try {
+        const syncResult = await syncGithubAction({ sessionId, token });
+        toast.success(`Repository imported! ↓${syncResult.pulled} files`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Sync failed");
+      } finally {
+        setIsSyncing(false);
+      }
+
+      // Navigate to the new session
+      setActiveSessionId(sessionId);
+      onSessionChange?.(customId);
+      setUserMessages([]);
+      setMessageQueue([]);
+      await loadSessions();
+
+      // Close the modal
+      setShowGithubImportModal(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to import repository");
+    }
+  };
+
+  const handleGithubImportConnect = async () => {
+    if (!token) return;
+    try {
+      const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
+      const convexSiteUrl = convexUrl.replace(".convex.cloud", ".convex.site");
+      const redirectUri = `${convexSiteUrl}/github/callback`;
+      const authUrl = await getGithubAuthUrlAction({ token, redirectUri });
+      window.location.href = authUrl;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to initiate GitHub OAuth");
+    }
+  };
+
+  const handleStartFromScratch = async () => {
+    // Close project creation modal
+    setShowProjectCreationModal(false);
+
+    // Create a new empty session
+    if (!token) return;
+
+    const defaultTask = "New project - describe what you want to build";
+
+    try {
+      const result = await createSession({ task: defaultTask, token });
+      const { sessionId, customId } = result as { sessionId: Id<"teamSessions">; customId: string };
+      setActiveSessionId(sessionId);
+      onSessionChange?.(customId);
+      setUserMessages([]);
+      setMessageQueue([]);
+      await loadSessions();
+      toast.success("New project created! Describe what you want to build.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create project");
     }
   };
 
@@ -2064,7 +2410,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                   </div>
                   <button
                     onClick={() => {
-                      setShowGithubModal(true);
+                      setShowProjectCreationModal(true);
                     }}
                     className="text-xs px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all font-medium"
                   >
@@ -2736,6 +3082,33 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
           </div>
         </div>
       )}
+
+      {/* Project Creation Modal */}
+      <AnimatePresence>
+        {showProjectCreationModal && (
+          <ProjectCreationModal
+            onClose={() => setShowProjectCreationModal(false)}
+            onImportFromGithub={handleImportFromGithub}
+            onStartFromScratch={handleStartFromScratch}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* GitHub Import Modal */}
+      <AnimatePresence>
+        {showGithubImportModal && (
+          <GithubImportModal
+            onClose={() => setShowGithubImportModal(false)}
+            onConnect={handleGithubImportConnect}
+            onSelectRepo={handleSelectGithubRepo}
+            isConnecting={false}
+            isLoadingRepos={isLoadingGithubRepos}
+            repos={githubRepos}
+            githubUsername={githubStatus?.username}
+            isGithubConnected={githubStatus?.connected ?? false}
+          />
+        )}
+      </AnimatePresence>
 
       {/* GitHub Sync Modal */}
       <AnimatePresence>
