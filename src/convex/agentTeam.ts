@@ -2778,16 +2778,17 @@ export const createBranch = action({
     token: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ branchSessionId: Id<"teamSessions">; branchCustomId: string; groupId: string; groupName: string }> => {
-    console.log("[createBranch] Starting branch creation for purpose:", args.branchPurpose);
+    try {
+      console.log("[createBranch] Starting branch creation for purpose:", args.branchPurpose);
 
-    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
-    if (!userId) throw new Error("Not authenticated");
-    console.log("[createBranch] User authenticated:", userId);
+      const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
+      if (!userId) throw new Error("Not authenticated");
+      console.log("[createBranch] User authenticated:", userId);
 
-    const mainSession = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.mainSessionId })) as SessionRow | null;
-    if (!mainSession) throw new Error("Session not found");
-    if (mainSession.userId !== userId) throw new Error("Not authorized");
-    console.log("[createBranch] Main session loaded:", mainSession._id);
+      const mainSession = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.mainSessionId })) as SessionRow | null;
+      if (!mainSession) throw new Error("Session not found");
+      if (mainSession.userId !== userId) throw new Error("Not authorized");
+      console.log("[createBranch] Main session loaded:", mainSession._id);
 
     // Use Gemini to generate a group name and branch task
     let groupName = `${mainSession.title.slice(0, 30)} Group`;
@@ -2843,14 +2844,22 @@ Respond in JSON only:
 
       // Copy files from main session to branch
       const mainFiles = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.mainSessionId })) as FileRow[];
-      for (const file of mainFiles) {
-        await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
-          sessionId: branchResult.sessionId,
-          userId,
-          filepath: file.filepath,
-          content: file.content,
-          agent: "Branch Copy",
-        });
+      console.log(`[createBranch] Copying ${mainFiles.length} files from main session...`);
+
+      // Copy files in batches to avoid timeout
+      const batchSize = 50;
+      for (let i = 0; i < mainFiles.length; i += batchSize) {
+        const batch = mainFiles.slice(i, i + batchSize);
+        await Promise.all(batch.map(file =>
+          ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
+            sessionId: branchResult.sessionId,
+            userId,
+            filepath: file.filepath,
+            content: file.content,
+            agent: "Branch Copy",
+          })
+        ));
+        console.log(`[createBranch] Copied ${Math.min(i + batchSize, mainFiles.length)}/${mainFiles.length} files`);
       }
 
       // Copy tech stack and summaries
@@ -2951,14 +2960,22 @@ Respond in JSON only:
 
       // Copy files from main session to branch
       const mainFiles = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.mainSessionId })) as FileRow[];
-      for (const file of mainFiles) {
-        await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
-          sessionId: branchResult.sessionId,
-          userId,
-          filepath: file.filepath,
-          content: file.content,
-          agent: "Branch Copy",
-        });
+      console.log(`[createBranch] Copying ${mainFiles.length} files from main session...`);
+
+      // Copy files in batches to avoid timeout
+      const batchSize = 50;
+      for (let i = 0; i < mainFiles.length; i += batchSize) {
+        const batch = mainFiles.slice(i, i + batchSize);
+        await Promise.all(batch.map(file =>
+          ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
+            sessionId: branchResult.sessionId,
+            userId,
+            filepath: file.filepath,
+            content: file.content,
+            agent: "Branch Copy",
+          })
+        ));
+        console.log(`[createBranch] Copied ${Math.min(i + batchSize, mainFiles.length)}/${mainFiles.length} files`);
       }
 
       // Copy tech stack
@@ -3034,6 +3051,10 @@ Respond in JSON only:
 
       console.log("[createBranch] Branch created successfully (new group):", branchResult.sessionId);
       return { branchSessionId: branchResult.sessionId, branchCustomId: branchResult.customId, groupId, groupName };
+    }
+    } catch (error) {
+      console.error("[createBranch] Fatal error:", error);
+      throw new Error(`Branch creation failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   },
 });
