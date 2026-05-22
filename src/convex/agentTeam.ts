@@ -2778,12 +2778,16 @@ export const createBranch = action({
     token: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ branchSessionId: Id<"teamSessions">; branchCustomId: string; groupId: string; groupName: string }> => {
+    console.log("[createBranch] Starting branch creation for purpose:", args.branchPurpose);
+
     const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
+    console.log("[createBranch] User authenticated:", userId);
 
     const mainSession = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.mainSessionId })) as SessionRow | null;
     if (!mainSession) throw new Error("Session not found");
     if (mainSession.userId !== userId) throw new Error("Not authorized");
+    console.log("[createBranch] Main session loaded:", mainSession._id);
 
     // Use Gemini to generate a group name and branch task
     let groupName = `${mainSession.title.slice(0, 30)} Group`;
@@ -2791,6 +2795,7 @@ export const createBranch = action({
     let branchTitle = `${args.branchPurpose} — ${mainSession.title.slice(0, 40)}`;
 
     try {
+      console.log("[createBranch] Generating branch names with Gemini...");
       const techStack = mainSession.techStackJson ? (() => { try { return JSON.parse(mainSession.techStackJson); } catch { return null; } })() : null;
       const techStackStr = techStack ? `\nTech Stack: ${JSON.stringify(techStack).slice(0, 500)}` : "";
       const prompt = `You are helping organize a software project into branches.
@@ -2812,7 +2817,11 @@ Respond in JSON only:
       if (parsed.groupName) groupName = parsed.groupName;
       if (parsed.branchTask) branchTask = parsed.branchTask;
       if (parsed.branchTitle) branchTitle = parsed.branchTitle;
-    } catch { /* use defaults */ }
+      console.log("[createBranch] Generated names:", { groupName, branchTitle });
+    } catch (err) {
+      console.warn("[createBranch] Gemini naming failed, using defaults:", err);
+      /* use defaults */
+    }
 
     // Check if main session already has a branch group
     let groupId: Id<"sessionBranchGroups">;
@@ -2915,6 +2924,7 @@ Respond in JSON only:
         }
       }
 
+      console.log("[createBranch] Branch created successfully (existing group):", branchResult.sessionId);
       return { branchSessionId: branchResult.sessionId, branchCustomId: branchResult.customId, groupId, groupName };
     } else {
       // Create new branch group
@@ -3022,6 +3032,7 @@ Respond in JSON only:
         }
       }
 
+      console.log("[createBranch] Branch created successfully (new group):", branchResult.sessionId);
       return { branchSessionId: branchResult.sessionId, branchCustomId: branchResult.customId, groupId, groupName };
     }
   },
