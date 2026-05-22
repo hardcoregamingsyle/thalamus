@@ -1313,7 +1313,11 @@ export const runAgentRound = action({
         // Critic passed — run Summarizer next (Summarizer will advance the task index)
         nextPhase = "Summarizer";
       } else if (currentPhase === "Summarizer") {
-        // Summarizer complete — now advance to next task or final review
+        // Summarizer complete — trigger background auto-indexing for this task's files
+        await ctx.scheduler.runAfter(0, internal.agentTeam.vectorizeSession, { sessionId: args.sessionId, token: undefined });
+        console.log(`[agentTeam] Scheduled background RAG indexing after task ${currentTaskIndex + 1} completion`);
+
+        // Now advance to next task or final review
         const nextTaskIndex = currentTaskIndex + 1;
         if (nextTaskIndex < plannerTasks.length) {
           newTaskIndex = nextTaskIndex;
@@ -1359,6 +1363,12 @@ export const runAgentRound = action({
     }
 
     if (newTotalMessages >= MAX_MESSAGES) { done = true; nextPhase = "completed"; }
+
+    // If session is complete, trigger final RAG/GraphRAG indexing
+    if (done) {
+      await ctx.scheduler.runAfter(0, internal.agentTeam.vectorizeSession, { sessionId: args.sessionId, token: undefined });
+      console.log(`[agentTeam] Scheduled final RAG/GraphRAG indexing for completed session`);
+    }
 
     // If done and there are unfixable tasks, save a final report message
     if (done && newUnfixableTasks.length > 0) {
@@ -2247,6 +2257,14 @@ export const syncGithub = action({
       // This allows us to create tree without base_tree reference
       const treeItems: Array<{ path: string; mode: string; type: string; content: string }> = [];
       for (const [path, content] of Object.entries(localMap)) {
+        // Skip .github/workflows/ files (requires workflow scope)
+        // Skip other sensitive/protected paths
+        if (path.startsWith(".github/workflows/") ||
+            path.startsWith(".github/actions/") ||
+            path === ".github/CODEOWNERS") {
+          console.log(`[syncGithub] Skipping protected path: ${path} (requires workflow scope)`);
+          continue;
+        }
         // Include ALL files to create complete tree snapshot
         treeItems.push({ path, mode: "100644", type: "blob", content });
       }
