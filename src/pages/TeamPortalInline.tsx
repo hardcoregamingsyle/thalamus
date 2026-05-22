@@ -2033,6 +2033,128 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
 
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
+  // Project Home Screen — show when no session is active
+  if (!activeSessionId) {
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden bg-background">
+        {/* Header */}
+        <div className="shrink-0 px-6 py-4 border-b border-border bg-card/50">
+          <h1 className="text-2xl font-bold text-foreground">Code Mode Projects</h1>
+          <p className="text-sm text-muted-foreground mt-1">Your AI-powered software development workspace</p>
+        </div>
+
+        {/* Project grid */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Create new project card */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                whileHover={{ scale: 1.02 }}
+                className="relative group"
+              >
+                <div className="h-48 rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 hover:border-primary/50 hover:bg-primary/10 transition-all cursor-pointer flex flex-col items-center justify-center gap-3 p-6">
+                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                    <Plus className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-sm font-bold text-foreground mb-1">Start New Project</h3>
+                    <p className="text-xs text-muted-foreground">Import from GitHub or start from scratch</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowGithubModal(true);
+                    }}
+                    className="text-xs px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all font-medium"
+                  >
+                    Get Started
+                  </button>
+                </div>
+              </motion.div>
+
+              {/* Existing projects */}
+              {sessions.map((session, i) => {
+                const raw = session as unknown as Record<string, unknown>;
+                const customId = raw.customId as string | undefined;
+                const isCompleted = session.status === "complete" || raw.executionPhase === "completed";
+                const isRunning = session.status === "running";
+                const taskCount = (() => {
+                  try {
+                    const tasks = JSON.parse(session.plannerTasksJson || "[]") as Array<unknown>;
+                    return tasks.length;
+                  } catch { return 0; }
+                })();
+
+                return (
+                  <motion.div
+                    key={session._id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    whileHover={{ scale: 1.02 }}
+                    className="relative group"
+                  >
+                    <div
+                      onClick={() => {
+                        setActiveSessionId(session._id);
+                        if (customId) onSessionChange?.(customId);
+                      }}
+                      className="h-48 rounded-xl border border-border bg-card hover:border-primary/40 transition-all cursor-pointer overflow-hidden flex flex-col"
+                    >
+                      {/* Project header */}
+                      <div className="p-4 border-b border-border bg-card/50">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <h3 className="text-sm font-bold text-foreground line-clamp-2 flex-1">{session.title}</h3>
+                          {isRunning && (
+                            <div className="shrink-0">
+                              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground font-mono">{customId || "ID not set"}</span>
+                          {isCompleted && (
+                            <span className="text-[10px] px-2 py-0.5 bg-green-400/10 text-green-400 rounded border border-green-400/20 font-bold">COMPLETE</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Project stats */}
+                      <div className="flex-1 p-4 space-y-2">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Terminal className="h-3 w-3" />
+                          <span>{session.phase || "Initializing"}</span>
+                        </div>
+                        {taskCount > 0 && (
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <ListPlus className="h-3 w-3" />
+                            <span>{taskCount} tasks</span>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <MessageSquare className="h-3 w-3" />
+                          <span>{session.totalMessages || 0} messages</span>
+                        </div>
+                      </div>
+
+                      {/* Open button on hover */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-6">
+                        <div className="px-4 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-lg flex items-center gap-1.5">
+                          Open Project <ChevronRight className="h-3 w-3" />
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-1 overflow-hidden h-full relative">
       {/* Mobile sidebar overlay */}
