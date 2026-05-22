@@ -2493,6 +2493,33 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
             </div>
           </div>
         </div>
+
+        {/* Project Creation Modal */}
+        <AnimatePresence>
+          {showProjectCreationModal && (
+            <ProjectCreationModal
+              onClose={() => setShowProjectCreationModal(false)}
+              onImportFromGithub={handleImportFromGithub}
+              onStartFromScratch={handleStartFromScratch}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* GitHub Import Modal */}
+        <AnimatePresence>
+          {showGithubImportModal && (
+            <GithubImportModal
+              onClose={() => setShowGithubImportModal(false)}
+              onConnect={handleGithubImportConnect}
+              onSelectRepo={handleSelectGithubRepo}
+              isConnecting={false}
+              isLoadingRepos={isLoadingGithubRepos}
+              repos={githubRepos}
+              githubUsername={githubStatus?.username}
+              isGithubConnected={githubStatus?.connected ?? false}
+            />
+          )}
+        </AnimatePresence>
       </div>
     );
   }
