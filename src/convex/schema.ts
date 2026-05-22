@@ -118,7 +118,10 @@ const schema = defineSchema(
       techStackJson: v.optional(v.string()),
       infoRequestJson: v.optional(v.string()),
       runningAt: v.optional(v.number()),        // timestamp when status was set to "running"
-      // Branch fields
+      // NEW: True branch system fields
+      currentBranch: v.optional(v.string()),    // Current active branch name (default: "main")
+      branchesJson: v.optional(v.string()),     // JSON array of branch metadata [{name, createdAt, createdFrom, gitBranch}]
+      // OLD: Branch group fields (deprecated, keep for migration)
       branchGroupId: v.optional(v.string()),   // ID of the branch group this session belongs to
       branchNumber: v.optional(v.number()),     // 1 = main, 2+ = branches
       branchName: v.optional(v.string()),       // e.g. "Main Branch", "Android APK", "Windows EXE"
@@ -153,9 +156,11 @@ const schema = defineSchema(
       filepath: v.string(),
       content: v.string(),
       lastModifiedBy: v.string(),
+      branch: v.optional(v.string()),           // NEW: Branch this file belongs to (default: "main")
     })
       .index("by_session", ["sessionId"])
-      .index("by_session_and_path", ["sessionId", "filepath"]),
+      .index("by_session_and_path", ["sessionId", "filepath"])
+      .index("by_session_and_branch", ["sessionId", "branch"]),  // NEW: Query files by branch
 
     creditBatches: defineTable({
       userId: v.id("users"),
