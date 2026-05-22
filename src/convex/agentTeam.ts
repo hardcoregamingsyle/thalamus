@@ -2858,6 +2858,63 @@ Respond in JSON only:
         mainSessionId: args.mainSessionId,
       });
 
+      // Create Git branch if GitHub is configured
+      const githubRepo = (mainSession as Record<string, unknown>).githubRepo as string | undefined;
+      const githubBranch = (mainSession as Record<string, unknown>).githubBranch as string | undefined;
+      if (githubRepo && githubBranch) {
+        try {
+          const user = await ctx.runQuery(internal.githubHelpers.getUserById, { userId });
+          if (user?.githubAccessToken) {
+            const [owner, repo] = githubRepo.includes("/") ? githubRepo.split("/") : [user.githubUsername, githubRepo];
+            const headers = {
+              "Authorization": `Bearer ${user.githubAccessToken}`,
+              "Accept": "application/vnd.github.v3+json",
+              "User-Agent": "Thalamus-AI/1.0",
+            };
+
+            // Get the current commit SHA from the base branch
+            const baseRefRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${githubBranch}`, { headers });
+            if (baseRefRes.ok) {
+              const baseRefData = await baseRefRes.json() as { object: { sha: string } };
+              const baseSha = baseRefData.object.sha;
+
+              // Create a new Git branch with a sanitized name
+              const sanitizedBranchName = args.branchPurpose.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/--+/g, "-").slice(0, 50);
+              const newBranchName = `${sanitizedBranchName}-${Date.now().toString(36).slice(-4)}`;
+
+              const createBranchRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                  ref: `refs/heads/${newBranchName}`,
+                  sha: baseSha,
+                }),
+              });
+
+              if (createBranchRes.ok) {
+                // Save the Git branch name to the branch session
+                await ctx.runMutation(internal.agentTeamHelpers.saveGithubConfigMutation, {
+                  sessionId: branchResult.sessionId,
+                  githubRepo,
+                  githubBranch: newBranchName,
+                });
+                console.log(`[createBranch] Created Git branch: ${newBranchName}`);
+              } else if (createBranchRes.status === 422) {
+                // Branch already exists, use it
+                await ctx.runMutation(internal.agentTeamHelpers.saveGithubConfigMutation, {
+                  sessionId: branchResult.sessionId,
+                  githubRepo,
+                  githubBranch: newBranchName,
+                });
+              }
+            }
+          }
+        } catch (gitError) {
+          // Don't fail the branch creation if Git branch creation fails
+          console.warn("[createBranch] Failed to create Git branch:", gitError);
+        }
+      }
+
       return { branchSessionId: branchResult.sessionId, branchCustomId: branchResult.customId, groupId, groupName };
     } else {
       // Create new branch group
@@ -2907,6 +2964,63 @@ Respond in JSON only:
         branchNumber: 2,
         mainSessionId: args.mainSessionId,
       });
+
+      // Create Git branch if GitHub is configured
+      const githubRepo = (mainSession as Record<string, unknown>).githubRepo as string | undefined;
+      const githubBranch = (mainSession as Record<string, unknown>).githubBranch as string | undefined;
+      if (githubRepo && githubBranch) {
+        try {
+          const user = await ctx.runQuery(internal.githubHelpers.getUserById, { userId });
+          if (user?.githubAccessToken) {
+            const [owner, repo] = githubRepo.includes("/") ? githubRepo.split("/") : [user.githubUsername, githubRepo];
+            const headers = {
+              "Authorization": `Bearer ${user.githubAccessToken}`,
+              "Accept": "application/vnd.github.v3+json",
+              "User-Agent": "Thalamus-AI/1.0",
+            };
+
+            // Get the current commit SHA from the base branch
+            const baseRefRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${githubBranch}`, { headers });
+            if (baseRefRes.ok) {
+              const baseRefData = await baseRefRes.json() as { object: { sha: string } };
+              const baseSha = baseRefData.object.sha;
+
+              // Create a new Git branch with a sanitized name
+              const sanitizedBranchName = args.branchPurpose.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/--+/g, "-").slice(0, 50);
+              const newBranchName = `${sanitizedBranchName}-${Date.now().toString(36).slice(-4)}`;
+
+              const createBranchRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                  ref: `refs/heads/${newBranchName}`,
+                  sha: baseSha,
+                }),
+              });
+
+              if (createBranchRes.ok) {
+                // Save the Git branch name to the branch session
+                await ctx.runMutation(internal.agentTeamHelpers.saveGithubConfigMutation, {
+                  sessionId: branchResult.sessionId,
+                  githubRepo,
+                  githubBranch: newBranchName,
+                });
+                console.log(`[createBranch] Created Git branch: ${newBranchName}`);
+              } else if (createBranchRes.status === 422) {
+                // Branch already exists, use it
+                await ctx.runMutation(internal.agentTeamHelpers.saveGithubConfigMutation, {
+                  sessionId: branchResult.sessionId,
+                  githubRepo,
+                  githubBranch: newBranchName,
+                });
+              }
+            }
+          }
+        } catch (gitError) {
+          // Don't fail the branch creation if Git branch creation fails
+          console.warn("[createBranch] Failed to create Git branch:", gitError);
+        }
+      }
 
       return { branchSessionId: branchResult.sessionId, branchCustomId: branchResult.customId, groupId, groupName };
     }
