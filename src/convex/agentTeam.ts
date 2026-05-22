@@ -3158,6 +3158,16 @@ Respond appropriately — answer the question OR make the code change.`;
 
     const parsed = parseAgentOutput(response);
 
+    // Save the user's message first
+    await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
+      sessionId: args.sessionId,
+      userId,
+      agent: "User",
+      content: args.content,
+      round: 0,
+      messageIndex: Date.now(),
+    });
+
     // Only apply file operations if there are actual file edits (not just a question answer)
     if (parsed.fileOps.length > 0) {
       for (const fileOp of parsed.fileOps) {
@@ -3171,14 +3181,14 @@ Respond appropriately — answer the question OR make the code change.`;
       }
     }
 
-    // Save to session messages
+    // Save the AI's response
     await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
       sessionId: args.sessionId,
       userId,
       agent: "MinorEdit",
       content: parsed.cleanContent,
       round: 0,
-      messageIndex: Date.now(),
+      messageIndex: Date.now() + 1, // Ensure it comes after user message
     });
 
     return { response: parsed.cleanContent, changeMode: parsed.changeMode };
