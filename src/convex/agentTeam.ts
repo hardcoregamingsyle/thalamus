@@ -1454,6 +1454,16 @@ export const backgroundRunOneRound = internalAction({
     if (!session) return;
     if (session.status === "completed") return;
 
+    // CRITICAL: If status is "idle" but runningAt is undefined, user explicitly stopped
+    // Do NOT continue execution — wait for user to click RUN again
+    if (session.status === "idle") {
+      const runningAt = (session as Record<string, unknown>).runningAt as number | undefined;
+      if (!runningAt) {
+        console.log(`backgroundRunOneRound: session ${args.sessionId} is idle with no runningAt — user stopped, not continuing`);
+        return; // User explicitly stopped — do not auto-resume
+      }
+    }
+
     // If status is "running", skip — the existing chain is active.
     // Only recover if stale (action timed out > 12 minutes ago).
     // startBackgroundSession handles stale recovery for external triggers.
