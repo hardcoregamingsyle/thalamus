@@ -2979,7 +2979,7 @@ export const continueSession = action({
     if (session.status === "completed" || session.executionPhase === "completed") {
       await ctx.runMutation(internal.agentTeamHelpers.resetSessionForNewTask, { sessionId: args.sessionId, newTask: args.newTask });
     } else {
-      await ctx.runMutation(internal.agentTeamHelpers.appendTaskContext, { sessionId: args.sessionId, additionalContext: args.newTask });
+      await ctx.runMutation(internal.agentTeamHelpers.appendTaskContext, { sessionId: args.sessionId, additionalContext: args.newTask, userId });
     }
   },
 });
