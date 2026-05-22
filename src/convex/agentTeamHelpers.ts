@@ -88,12 +88,23 @@ export const createSessionMutation = internalMutation({
       round: 0,
       loopCount: 0,
       phase: "Researcher",
-      totalMessages: 0,
+      totalMessages: 1, // Start at 1 because we're saving the initial user message
       executionPhase: "planning",
       currentTaskIndex: 0,
       finalReviewCoderEnabled: false,
       customId,
     });
+
+    // Save the initial user message to agentMessages table
+    await ctx.db.insert("agentMessages", {
+      sessionId,
+      userId: args.userId,
+      agent: "User",
+      content: args.task,
+      round: 0,
+      messageIndex: 1,
+    });
+
     return { sessionId, customId };
   },
 });
@@ -349,15 +360,29 @@ export const appendTaskContext = internalMutation({
   args: {
     sessionId: v.id("teamSessions"),
     additionalContext: v.string(),
+    userId: v.id("users"),
   },
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
     if (!session) throw new Error("Session not found");
+
+    // Save the user message to agentMessages table
+    const currentMessageCount = session.totalMessages ?? 0;
+    await ctx.db.insert("agentMessages", {
+      sessionId: args.sessionId,
+      userId: args.userId,
+      agent: "User",
+      content: args.additionalContext,
+      round: session.round,
+      messageIndex: currentMessageCount + 1,
+    });
+
     // Append the new instruction to the existing task text
     const updatedTask = session.task + "\n\n[USER FOLLOW-UP]: " + args.additionalContext;
     await ctx.db.patch(args.sessionId, {
       task: updatedTask,
       status: "idle",
+      totalMessages: currentMessageCount + 1,
     });
   },
 });
