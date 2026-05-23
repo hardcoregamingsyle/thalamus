@@ -19,35 +19,17 @@ async function loadQEMU() {
 
   qemuLoading = (async () => {
     try {
-      // Load QEMU Wasm from container2wasm CDN
-      // This is a lightweight QEMU implementation that runs in WebAssembly
-      await new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = 'https://ktock.github.io/container2wasm-demo/js/xterm-pty.js';
-        script.onload = resolve;
-        script.onerror = () => reject(new Error('Failed to load QEMU Wasm xterm'));
-        document.head.appendChild(script);
-      });
-
-      await new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = 'https://ktock.github.io/container2wasm-demo/js/qemu.js';
-        script.onload = resolve;
-        script.onerror = () => reject(new Error('Failed to load QEMU Wasm'));
-        document.head.appendChild(script);
-      });
-
-      // Check if QEMU was loaded
-      if (!(window as any).QEMU) {
-        throw new Error('QEMU Wasm loaded but QEMU object not found');
-      }
-
-      QEMU = (window as any).QEMU;
-      return QEMU;
+      // QEMU Wasm is complex and the container2wasm demo uses specific infrastructure
+      // For now, we'll show a clear message that QEMU needs more integration work
+      throw new Error(
+        'QEMU Wasm integration is in progress. ' +
+        'The container2wasm project requires additional setup. ' +
+        'For 64-bit OS testing, please use v86 for 32-bit legacy systems.'
+      );
     } catch (error) {
-      console.error('Failed to load QEMU Wasm:', error);
+      console.error('QEMU Wasm not ready:', error);
       qemuLoading = null;
-      throw new Error(`QEMU Wasm failed to load: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
     }
   })();
 

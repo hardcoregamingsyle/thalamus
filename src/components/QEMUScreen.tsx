@@ -277,16 +277,19 @@ export function QEMUScreen({ sessionId, onCommandOutput }: QEMUScreenProps) {
                 Choose a modern 64-bit OS. QEMU provides full x86_64 emulation for Windows 11, modern Linux, etc.
               </p>
 
-              {/* Performance Warning */}
+              {/* Integration Status Warning */}
               <div className="mb-6 p-4 bg-amber-400/10 border border-amber-400/30 rounded-xl">
                 <div className="flex items-start gap-3">
                   <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-xs text-amber-400 font-bold mb-1">⚠️ QEMU Wasm Performance Warning</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      QEMU in WebAssembly is <strong>10-50x slower</strong> than native execution.
-                      Boot time: 2-10 minutes. Uses container images, not full OS installations.
-                      Best for lightweight Linux testing. For full Windows 11/macOS, v86 is faster for legacy 32-bit.
+                    <p className="text-xs text-amber-400 font-bold mb-1">🚧 QEMU Wasm - Integration In Progress</p>
+                    <p className="text-[10px] text-muted-foreground mb-2">
+                      QEMU WebAssembly integration requires additional setup with container2wasm infrastructure.
+                      This mode is currently under development.
+                    </p>
+                    <p className="text-[10px] text-foreground font-bold">
+                      ✅ <strong>Use v86 mode instead</strong> → Fully functional for 32-bit legacy OS (Windows XP, old Linux, DOS)<br/>
+                      ⚙️ QEMU Wasm coming soon with full 64-bit support
                     </p>
                   </div>
                 </div>
@@ -435,10 +438,11 @@ export function QEMUScreen({ sessionId, onCommandOutput }: QEMUScreenProps) {
 
               <button
                 onClick={handleCreateVM}
-                disabled={vmState === "booting"}
-                className="w-full mt-6 py-3 bg-blue-400 text-background rounded-xl font-bold hover:bg-blue-400/90 disabled:opacity-50 transition-all"
+                disabled={true}
+                className="w-full mt-6 py-3 bg-muted text-muted-foreground rounded-xl font-bold cursor-not-allowed opacity-50"
+                title="QEMU Wasm integration in progress"
               >
-                {vmState === "booting" ? "Creating QEMU VM (Takes 2-10 min)..." : "Boot 64-bit Virtual Machine"}
+                QEMU Wasm Integration In Progress (Use v86 Instead)
               </button>
             </div>
           </motion.div>
