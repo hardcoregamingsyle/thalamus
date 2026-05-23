@@ -328,7 +328,7 @@ function GuestPortal() {
       <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-border bg-card/80 backdrop-blur-sm">
         <div className="flex items-center gap-3">
           <div className="w-7 h-7 rounded-lg border border-primary/30 overflow-hidden bg-card">
-            <img src="/logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
+            <img src="/thalamus-logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
           </div>
           <span className="text-primary font-bold text-xs tracking-widest">THALAMUS_AI</span>
         </div>
@@ -1419,7 +1419,7 @@ function PortalDesktop() {
             )}
             <div className="flex items-center gap-2">
               <div className="w-5 h-5 rounded border border-primary/40 overflow-hidden bg-card">
-                <img src="/logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
+                <img src="/thalamus-logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
               </div>
               <span className="text-primary font-bold text-xs tracking-widest hidden sm:block">THALAMUS_AI</span>
             </div>

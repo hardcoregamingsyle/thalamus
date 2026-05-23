@@ -540,7 +540,7 @@ function MobileHomeScreen({
       {/* Header */}
       <div className="px-4 pt-5 pb-4">
         <div className="flex items-center justify-between mb-4">
-          <img src="/logo.png" alt="Thalamus AI" className="h-8 object-contain" />
+          <img src="/thalamus-logo.png" alt="Thalamus AI" className="h-8 object-contain" />
           <div className="flex items-center gap-2">
             <button onClick={() => setCreditModalOpen(true)}
               className="flex items-center gap-1.5 bg-card border border-border px-3 py-2 rounded-xl text-sm text-foreground">
