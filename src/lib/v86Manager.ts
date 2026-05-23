@@ -1,10 +1,19 @@
 // v86 Virtual Machine Manager
 // Manages x86 VM instances for testing code in real OS environments
 
-// @ts-ignore - v86 doesn't have proper TypeScript definitions
-import V86 from "v86";
-
 type V86Starter = any; // v86 emulator instance type
+
+// Lazy load v86 to avoid bundling issues
+let V86: any = null;
+
+async function loadV86() {
+  if (!V86) {
+    // @ts-ignore - dynamic import
+    const v86Module: any = await import("v86");
+    V86 = v86Module.default || v86Module.V86 || v86Module;
+  }
+  return V86;
+}
 
 export interface VMConfig {
   id: string;
@@ -69,6 +78,9 @@ class V86Manager {
       throw new Error(`VM with id ${config.id} already exists`);
     }
 
+    // Load v86 dynamically
+    const V86Class = await loadV86();
+
     // Create screen canvas
     const canvas = document.createElement("canvas");
     canvas.style.width = "100%";
@@ -80,7 +92,7 @@ class V86Manager {
     }
 
     // Initialize v86 emulator
-    const emulator = new V86({
+    const emulator = new V86Class({
       memory_size: config.memory * 1024 * 1024,
       vga_memory_size: config.vga_memory * 1024 * 1024,
       screen_container: config.screen_container,

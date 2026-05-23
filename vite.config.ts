@@ -68,7 +68,7 @@ export default defineConfig({
       'react-router',
       '@convex-dev/auth/react',
     ],
-    exclude: ['three', '@react-three/fiber', '@react-three/drei'],
+    exclude: ['three', '@react-three/fiber', '@react-three/drei', 'v86'],
   },
   server: {
     hmr: true,
