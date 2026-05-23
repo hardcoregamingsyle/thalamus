@@ -117,6 +117,7 @@ const schema = defineSchema(
       customId: v.optional(v.string()),
       techStackJson: v.optional(v.string()),
       infoRequestJson: v.optional(v.string()),
+      instructionsJson: v.optional(v.string()),  // JSON array of instruction sets for user
       runningAt: v.optional(v.number()),        // timestamp when status was set to "running"
       // NEW: True branch system fields
       currentBranch: v.optional(v.string()),    // Current active branch name (default: "main")

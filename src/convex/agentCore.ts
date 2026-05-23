@@ -732,6 +732,22 @@ export interface InfoRequest {
   fields: InfoField[];
 }
 
+export interface InstructionStep {
+  step: number;
+  title: string;
+  description: string;
+  command?: string;
+  warning?: string;
+}
+
+export interface Instructions {
+  agentName: string;
+  title: string;
+  description: string;
+  steps: InstructionStep[];
+  icon?: string; // emoji icon
+}
+
 export interface ParsedOutput {
   fileOps: FileOp[];
   searchOps: SearchOp[];
@@ -744,6 +760,7 @@ export interface ParsedOutput {
   criticResult?: "pass" | "fail";
   deployCommands?: string[];
   infoRequest?: InfoRequest;
+  instructions?: Instructions;
   changeMode?: "Code" | "Chat" | "Minor"; // AI-requested mode switch
 }
 
@@ -873,6 +890,24 @@ export function parseAgentOutput(content: string): ParsedOutput {
     }
   }
 
+  // Parse INSTRUCTIONS block
+  let instructions: Instructions | undefined;
+  const instructionsBlockMatch = content.match(/(?:<<<<<|<<)INSTRUCTIONS(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.INSTRUCTIONS(?:>>>>>|>>)/);
+  if (instructionsBlockMatch) {
+    try {
+      const block = instructionsBlockMatch[1].trim();
+      const parsed = JSON.parse(block) as Instructions;
+      if (parsed.steps && Array.isArray(parsed.steps)) {
+        instructions = parsed;
+      }
+    } catch {
+      // Ignore parse errors
+    }
+    if (instructions) {
+      cleanContent = cleanContent.replace(instructionsBlockMatch[0], `[INSTRUCTIONS PROVIDED: ${instructions.title}]`);
+    }
+  }
+
   // Parse CHANGE_MODE directive
   let changeMode: "Code" | "Chat" | "Minor" | undefined;
   const changeModeMatch = content.match(/<<CHANGE_MODE=(Code|Chat|Minor)>>/i);
@@ -881,7 +916,7 @@ export function parseAgentOutput(content: string): ParsedOutput {
     cleanContent = cleanContent.replace(changeModeMatch[0], `[MODE SWITCH REQUESTED: ${changeMode}]`);
   }
 
-  return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, changeMode };
+  return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode };
 }
 
 const SANDBOX_CMD_INSTRUCTIONS = `
@@ -1323,6 +1358,47 @@ When you need API keys, credentials, or configuration that only the user can pro
 <<END.GET-INFO>>
 
 IMPORTANT: When you use GET-INFO, STOP your output there. Do NOT write any code after it. The user will fill in the form and the data will be sent back to you. You will then continue with the actual implementation using those values.
+
+INSTRUCTIONS TOOL — USE TO PROVIDE STEP-BY-STEP DEPLOYMENT OR SETUP INSTRUCTIONS:
+When you need to provide manual instructions for deployment, configuration, or setup that the user must perform, use this tool:
+<<INSTRUCTIONS>>
+{
+  "agentName": "Organizer",
+  "title": "Deploy to Vercel",
+  "description": "Follow these steps to deploy your application to Vercel",
+  "icon": "🚀",
+  "steps": [
+    {
+      "step": 1,
+      "title": "Install Vercel CLI",
+      "description": "Install the Vercel CLI globally on your machine",
+      "command": "npm install -g vercel"
+    },
+    {
+      "step": 2,
+      "title": "Login to Vercel",
+      "description": "Authenticate your Vercel account",
+      "command": "vercel login"
+    },
+    {
+      "step": 3,
+      "title": "Deploy",
+      "description": "Deploy your project to Vercel",
+      "command": "vercel --prod",
+      "warning": "Make sure all environment variables are set in Vercel dashboard first"
+    }
+  ]
+}
+<<END.INSTRUCTIONS>>
+
+Use INSTRUCTIONS for:
+- Deployment procedures
+- External service setup (DNS, domain configuration, third-party integrations)
+- Manual configuration steps
+- Environment setup instructions
+- Any step-by-step process the user must perform outside the codebase
+
+The instructions will be displayed in an interactive step-by-step UI with copy buttons for commands.
 
 DEPLOY COMMANDS — MANDATORY — SET THESE EVERY TIME:
 <<DEPLOY-COMMANDS>>

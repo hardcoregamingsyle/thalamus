@@ -674,6 +674,39 @@ export const setInfoRequest = internalMutation({
       status: "idle", // pause execution
     });
   },
+})
+
+export const addInstructions = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    instructionsJson: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) return;
+
+    // Append to existing instructions array
+    let instructions: unknown[] = [];
+    if (session.instructionsJson) {
+      try {
+        instructions = JSON.parse(session.instructionsJson) as unknown[];
+      } catch {
+        // If parse fails, start fresh
+      }
+    }
+
+    // Parse the new instruction and add it
+    try {
+      const newInstruction = JSON.parse(args.instructionsJson);
+      instructions.push(newInstruction);
+    } catch {
+      // Ignore invalid JSON
+    }
+
+    await ctx.db.patch(args.sessionId, {
+      instructionsJson: JSON.stringify(instructions),
+    });
+  },
 });
 
 export const clearInfoRequest = internalMutation({

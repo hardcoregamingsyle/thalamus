@@ -1149,6 +1149,14 @@ export const runAgentRound = action({
       return { agent: currentPhase, content: parsed.cleanContent, done: false, nextAgent: currentPhase, loopCount, totalMessages: newTotalMsgsInfo, fileOpsCount: 0 };
     }
 
+    // Handle INSTRUCTIONS — add to session instructions list
+    if (parsed.instructions) {
+      await ctx.runMutation(internal.agentTeamHelpers.addInstructions, {
+        sessionId: args.sessionId,
+        instructionsJson: JSON.stringify({ ...parsed.instructions, agentName: currentPhase }),
+      });
+    }
+
     // Handle deploy commands from Planner
     if (parsed.deployCommands && parsed.deployCommands.length > 0) {
       await ctx.runMutation(internal.agentTeamHelpers.updateDeployCommands, {
@@ -1684,6 +1692,10 @@ export const backgroundRunOneRound = internalAction({
         await ctx.runMutation(internal.agentTeamHelpers.deleteFile, { sessionId: args.sessionId, filepath: fileOp.filepath });
         fileOpsCount++;
       }
+    }
+
+    if (parsed.instructions) {
+      await ctx.runMutation(internal.agentTeamHelpers.addInstructions, { sessionId: args.sessionId, instructionsJson: JSON.stringify({ ...parsed.instructions, agentName: currentPhase }) });
     }
 
     if (parsed.deployCommands && parsed.deployCommands.length > 0) {
