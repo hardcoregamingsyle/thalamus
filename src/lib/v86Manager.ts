@@ -8,9 +8,18 @@ let V86: any = null;
 
 async function loadV86() {
   if (!V86) {
-    // @ts-ignore - dynamic import
-    const v86Module: any = await import("v86");
-    V86 = v86Module.default || v86Module.V86 || v86Module;
+    try {
+      // @ts-ignore - dynamic import
+      const v86Module: any = await import("v86");
+      V86 = v86Module.default || v86Module.V86 || v86Module;
+
+      if (!V86) {
+        throw new Error("v86 module loaded but V86 class not found");
+      }
+    } catch (error) {
+      console.error("Failed to load v86:", error);
+      throw new Error(`v86 WebAssembly module failed to load. This is a browser compatibility issue. Error: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   return V86;
 }
@@ -56,26 +65,30 @@ export const OS_TEMPLATES: Record<string, Partial<VMConfig>> = {
     vga_memory: 16,
     cdrom_url: "https://cdimage.debian.org/debian-cd/current/i386/iso-cd/debian-12.4.0-i386-netinst.iso",
   },
-  "windows-98": {
-    name: "Windows 98 SE",
-    os: "windows",
-    memory: 256,
-    vga_memory: 8,
-    cdrom_url: "https://archive.org/download/win98se_201910/Win98SE.iso",
-  },
   "windows-xp": {
-    name: "Windows XP (32-bit)",
+    name: "Windows XP SP3 (32-bit) - Legacy",
     os: "windows",
     memory: 512,
     vga_memory: 16,
-    cdrom_url: "https://archive.org/download/WinXPProSP3x86/en_windows_xp_professional_with_service_pack_3_x86_cd_x14-80428.iso",
+    // Note: User must provide their own Windows XP ISO
+    // v86 cannot run Windows 10/11 (64-bit only)
+    cdrom_url: undefined,
   },
-  "macos-rhapsody": {
-    name: "Rhapsody DR2 (Mac OS X Beta)",
-    os: "windows", // v86 treats it as generic x86
+  "windows-2000": {
+    name: "Windows 2000 Professional - Legacy",
+    os: "windows",
     memory: 256,
     vga_memory: 8,
-    cdrom_url: "https://winworldpc.com/download/3dc38dc3-93c2-bbe2-80c3-a411c3a4c2ae",
+    // Note: User must provide their own Windows 2000 ISO
+    cdrom_url: undefined,
+  },
+  "kolibrios": {
+    name: "KolibriOS (Tiny Modern OS)",
+    os: "linux",
+    memory: 32,
+    vga_memory: 4,
+    // KolibriOS is a tiny, modern OS that boots in <5 seconds
+    cdrom_url: "https://builds.kolibrios.org/eng/latest-iso.7z",
   },
   "freedos": {
     name: "FreeDOS 1.3",
