@@ -457,24 +457,27 @@ export const sendStudyMessage = action({
     let ragContext = "";
     let graphContext = "";
     let liveSearchResults = "";
-    try {
-      const [studyCtx, live] = await Promise.all([
-        withTimeout(
-          ctx.runAction(internal.rag.getStudyContextInternal, {
-            userId,
-            query: args.content,
-          }) as Promise<{ ragContext: string; graphContext: string }>,
-          14_000,
-          { ragContext: "", graphContext: "" },
-        ),
-        withTimeout(liveWebSearch(args.content, true), 2_800, ""),
-      ]);
-      ragContext = studyCtx.ragContext;
-      graphContext = studyCtx.graphContext;
-      liveSearchResults = live;
-    } catch {
-      // RAG / search unavailable — continue
-    }
+
+    // Run RAG and search in parallel with aggressive timeouts to prevent connection loss
+    await Promise.allSettled([
+      // RAG with 8s timeout (reduced from 14s to prevent WebSocket timeout)
+      withTimeout(
+        ctx.runAction(internal.rag.getStudyContextInternal, {
+          userId,
+          query: args.content,
+        }) as Promise<{ ragContext: string; graphContext: string }>,
+        8_000,
+        { ragContext: "", graphContext: "" },
+      ).then(result => {
+        ragContext = result.ragContext;
+        graphContext = result.graphContext;
+      }).catch(() => {}),
+
+      // Live search with 2s timeout
+      withTimeout(liveWebSearch(args.content, true), 2_000, "")
+        .then(result => { liveSearchResults = result; })
+        .catch(() => {}),
+    ]);
 
     const hasRetrieval =
       ragContext.replace(/\s/g, "").length > 40 || graphContext.replace(/\s/g, "").length > 40;
@@ -565,19 +568,33 @@ Write answers that are 400-800 words minimum. Be thorough. Be the teacher every 
     let inputTokens = 0;
     let outputTokens = 0;
 
+    // Call AI with timeout to prevent WebSocket disconnection
     try {
-      const result = await callClaude(fullPrompt, systemPrompt, "claude-haiku-4-5");
-      responseContent = result.text;
-      inputTokens = result.inputTokens;
-      outputTokens = result.outputTokens;
-    } catch {
-      const { vly } = await import('../lib/vly-integrations');
-      const result = await vly.ai.completion({
-        model: "claude-haiku-4-5",
-        messages: [{ role: "user", content: systemPrompt + "\n\n" + fullPrompt }],
-        maxTokens: 4096,
-      });
-      responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "No response") : "Failed to get response";
+      const aiResult = await withTimeout(
+        callClaude(fullPrompt, systemPrompt, "claude-haiku-4-5"),
+        25_000, // 25s timeout for AI call
+        { text: "Response timed out. Please try again.", inputTokens: 0, outputTokens: 0 }
+      );
+      responseContent = aiResult.text;
+      inputTokens = aiResult.inputTokens;
+      outputTokens = aiResult.outputTokens;
+    } catch (error) {
+      // Fallback to VLY if Claude fails
+      try {
+        const { vly } = await import('../lib/vly-integrations');
+        const result = await withTimeout(
+          vly.ai.completion({
+            model: "claude-haiku-4-5",
+            messages: [{ role: "user", content: systemPrompt + "\n\n" + fullPrompt }],
+            maxTokens: 4096,
+          }),
+          20_000,
+          { success: false, data: undefined, error: "Timeout" }
+        );
+        responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "No response") : "Failed to get response. Please try again.";
+      } catch {
+        responseContent = "Service temporarily unavailable. Please try again.";
+      }
     }
 
     const estimatedInput = inputTokens || Math.ceil(fullPrompt.length / 4);
