@@ -126,6 +126,7 @@ class V86Manager {
 
     // Initialize v86 emulator
     const emulator = new V86Class({
+      wasm_path: "/v86/v86.wasm",  // Path to WASM file in public directory
       memory_size: config.memory * 1024 * 1024,
       vga_memory_size: config.vga_memory * 1024 * 1024,
       screen_container: config.screen_container,
