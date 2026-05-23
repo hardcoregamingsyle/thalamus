@@ -8,7 +8,7 @@
   "theme_color": "#020b1d",
   "icons": [
     {
-      "src": "/logo.png",
+      "src": "/thalamus-logo.png",
       "sizes": "any",
       "type": "image/png",
       "purpose": "any maskable"

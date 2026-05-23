@@ -79,7 +79,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       <nav className="relative z-10 border-b border-border px-6 h-14 flex items-center">
         <button onClick={() => navigate("/")} className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg border border-primary/40 overflow-hidden bg-card">
-            <img src="/logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
+            <img src="/thalamus-logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
           </div>
           <span className="text-primary font-bold text-sm tracking-widest">THALAMUS_AI</span>
           <span className="text-[10px] text-muted-foreground">by Aphantic Corporations</span>
