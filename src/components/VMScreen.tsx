@@ -59,8 +59,8 @@ export function VMScreen({ sessionId, onCommandOutput }: VMScreenProps) {
         memory: customRAM,  // Use custom RAM
         vga_memory: customVRAM,  // Use custom VRAM
         screen_container: containerRef.current,
-        bios_url: "https://copy.sh/v86/bios/seabios.bin",
-        vga_bios_url: "https://copy.sh/v86/bios/vgabios.bin",
+        bios_url: "/v86/seabios.bin",
+        vga_bios_url: "/v86/vgabios.bin",
         cdrom_url: template.cdrom_url,
       });
 
