@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { motion } from "framer-motion";
-import { Play, Square, Pause, RotateCcw, Download, Upload, Monitor, Cpu, HardDrive, Apple } from "lucide-react";
+import { Play, Square, Pause, RotateCcw, Download, Upload, Monitor, Cpu, HardDrive, Apple, Settings } from "lucide-react";
 import { vmManager, VMInstance, OS_TEMPLATES } from "@/lib/v86Manager";
+import { detectSystemResources, getV86Recommendations, getOSRecommendations, formatRAM, formatCores } from "@/lib/systemResources";
 import { toast } from "sonner";
 
 interface VMScreenProps {
@@ -15,6 +16,19 @@ export function VMScreen({ sessionId, onCommandOutput }: VMScreenProps) {
   const [selectedOS, setSelectedOS] = useState<string>("linux-alpine");
   const [vmState, setVmState] = useState<"stopped" | "booting" | "running" | "paused">("stopped");
   const [showOSSelector, setShowOSSelector] = useState(true);
+
+  // Resource configuration
+  const systemResources = useMemo(() => detectSystemResources(), []);
+  const recommendations = useMemo(() => getV86Recommendations(systemResources), [systemResources]);
+  const [customRAM, setCustomRAM] = useState<number>(recommendations.recommendedRAM);
+  const [customVRAM, setCustomVRAM] = useState<number>(recommendations.recommendedVRAM);
+  const [showResourceConfig, setShowResourceConfig] = useState(false);
+
+  // Update RAM when OS changes
+  useEffect(() => {
+    const osRec = getOSRecommendations(selectedOS);
+    setCustomRAM(Math.min(osRec.recommendedRAM, recommendations.maxRAM));
+  }, [selectedOS, recommendations.maxRAM]);
 
   useEffect(() => {
     return () => {
@@ -42,8 +56,8 @@ export function VMScreen({ sessionId, onCommandOutput }: VMScreenProps) {
         id: `vm_${sessionId}`,
         name: template.name!,
         os: template.os!,
-        memory: template.memory!,
-        vga_memory: template.vga_memory!,
+        memory: customRAM,  // Use custom RAM
+        vga_memory: customVRAM,  // Use custom VRAM
         screen_container: containerRef.current,
         bios_url: "https://copy.sh/v86/bios/seabios.bin",
         vga_bios_url: "https://copy.sh/v86/bios/vgabios.bin",
@@ -294,6 +308,100 @@ export function VMScreen({ sessionId, onCommandOutput }: VMScreenProps) {
                     </div>
                   </button>
                 ))}
+              </div>
+
+              {/* System Resources & Configuration */}
+              <div className="mt-6 p-4 bg-card border border-border rounded-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Settings className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-bold text-foreground">VM Resources</span>
+                  </div>
+                  <button
+                    onClick={() => setShowResourceConfig(!showResourceConfig)}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    {showResourceConfig ? "Hide" : "Customize"}
+                  </button>
+                </div>
+
+                {/* System Detection Info */}
+                <div className="grid grid-cols-2 gap-3 text-[10px]">
+                  <div className="p-2 bg-muted/30 rounded-lg">
+                    <p className="text-muted-foreground mb-1">System RAM</p>
+                    <p className="font-bold text-foreground">{formatRAM(systemResources.totalRAM)}</p>
+                  </div>
+                  <div className="p-2 bg-muted/30 rounded-lg">
+                    <p className="text-muted-foreground mb-1">CPU Cores</p>
+                    <p className="font-bold text-foreground">{formatCores(systemResources.cpuCores)}</p>
+                  </div>
+                </div>
+
+                {showResourceConfig && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="space-y-4"
+                  >
+                    {/* RAM Slider */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-bold text-foreground">VM RAM</label>
+                        <span className="text-xs text-primary font-bold">{formatRAM(customRAM)}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={recommendations.minRAM}
+                        max={recommendations.maxRAM}
+                        step={128}
+                        value={customRAM}
+                        onChange={(e) => setCustomRAM(parseInt(e.target.value))}
+                        className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                      />
+                      <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
+                        <span>Min: {formatRAM(recommendations.minRAM)}</span>
+                        <span>Max: {formatRAM(recommendations.maxRAM)}</span>
+                      </div>
+                    </div>
+
+                    {/* VRAM Slider */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-bold text-foreground">Video RAM (VRAM)</label>
+                        <span className="text-xs text-primary font-bold">{customVRAM}MB</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={4}
+                        max={64}
+                        step={4}
+                        value={customVRAM}
+                        onChange={(e) => setCustomVRAM(parseInt(e.target.value))}
+                        className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                      />
+                      <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
+                        <span>Min: 4MB</span>
+                        <span>Max: 64MB</span>
+                      </div>
+                    </div>
+
+                    {/* Info Text */}
+                    <p className="text-[9px] text-muted-foreground">
+                      💡 Higher RAM improves performance but may slow down your system.
+                      Recommended: {formatRAM(recommendations.recommendedRAM)}
+                    </p>
+                  </motion.div>
+                )}
+
+                {/* Quick Stats */}
+                {!showResourceConfig && (
+                  <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
+                    <span>RAM: <strong className="text-foreground">{formatRAM(customRAM)}</strong></span>
+                    <span>VRAM: <strong className="text-foreground">{customVRAM}MB</strong></span>
+                    <span>CPU: <strong className="text-foreground">1 core</strong></span>
+                  </div>
+                )}
               </div>
 
               <button
