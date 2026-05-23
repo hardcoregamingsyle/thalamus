@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
 import { useAction, useQuery, useMutation } from "convex/react";
@@ -14,7 +14,8 @@ import {
 } from "lucide-react";
 import { FileTreeView, FileTreeFile, FileTreeNode } from "@/components/FileTree";
 import { VMScreen } from "@/components/VMScreen";
-import { QEMUScreen } from "@/components/QEMUScreen";
+// Lazy load QEMU to avoid loading heavy dependencies unless needed
+const QEMUScreen = lazy(() => import("@/components/QEMUScreen").then(m => ({ default: m.QEMUScreen })));
 import ReactMarkdown from "react-markdown";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -3485,12 +3486,18 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
 
                 {/* QEMU Mode (64-bit) */}
                 {sandboxMode === "qemu" && activeSessionId ? (
-                  <QEMUScreen
-                    sessionId={activeSessionId}
-                    onCommandOutput={(output, exitCode) => {
-                      setSandboxOutput(prev => [...prev, { cmd: "qemu-command", out: output, code: exitCode }]);
-                    }}
-                  />
+                  <Suspense fallback={
+                    <div className="flex-1 flex items-center justify-center">
+                      <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
+                    </div>
+                  }>
+                    <QEMUScreen
+                      sessionId={activeSessionId}
+                      onCommandOutput={(output, exitCode) => {
+                        setSandboxOutput(prev => [...prev, { cmd: "qemu-command", out: output, code: exitCode }]);
+                      }}
+                    />
+                  </Suspense>
                 ) : sandboxMode === "qemu" ? (
                   <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
                     <Cpu className="h-12 w-12 text-blue-400/20" />
