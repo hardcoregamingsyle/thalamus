@@ -1623,6 +1623,10 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const [newBranchName, setNewBranchName] = useState("");
   const [isCreatingBranch, setIsCreatingBranch] = useState(false);
   const [isSwitchingBranch, setIsSwitchingBranch] = useState(false);
+  const [sourceBranchForMerge, setSourceBranchForMerge] = useState("");
+  const [targetBranchForMerge, setTargetBranchForMerge] = useState("");
+  const [isMerging, setIsMerging] = useState(false);
+  const [mergeConflicts, setMergeConflicts] = useState<Array<{ filepath: string; sourceContent: string; targetContent: string }>>([]);
 
   // Reactive queries
   const liveSession = useQuery(api.agentTeamHelpers.watchSession, activeSessionId ? { sessionId: activeSessionId } : "skip");
@@ -1852,6 +1856,8 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const createBranchAction = useAction(api.agentTeam.createBranchV2);
   const switchBranchAction = useAction(api.agentTeam.switchBranch);
   const mergeBranchAction = useAction(api.agentTeam.mergeBranch);
+  const deleteBranchAction = useAction(api.agentTeam.deleteBranch);
+  const createFileMutation = useMutation(api.agentTeamHelpers.createFilePublic);
   const githubStatus = useQuery(api.githubHelpers.getGithubStatus, token ? { token } : "skip");
   const setCustomDomainAction = useAction(api.sandbox.setCustomDomain);
   const submitInfoResponseAction = useAction(api.agentTeam.submitInfoResponse);
@@ -2052,6 +2058,88 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
       toast.error(err instanceof Error ? err.message : "Failed to switch branch");
     } finally {
       setIsSwitchingBranch(false);
+    }
+  };
+
+  const handleMergeBranch = async () => {
+    if (!activeSessionId || !token || !sourceBranchForMerge || !targetBranchForMerge) {
+      toast.error("Please select both source and target branches");
+      return;
+    }
+    setIsMerging(true);
+    try {
+      const result = await mergeBranchAction({
+        sessionId: activeSessionId,
+        sourceBranch: sourceBranchForMerge,
+        targetBranch: targetBranchForMerge,
+        token
+      });
+      if (result.conflicts.length > 0) {
+        setMergeConflicts(result.conflicts);
+        toast.warning(`${result.merged} files merged, ${result.conflicts.length} conflicts need resolution`);
+      } else {
+        toast.success(`Successfully merged ${result.merged} files from ${sourceBranchForMerge} → ${targetBranchForMerge}`);
+        setMergeBranchModalOpen(false);
+        setSourceBranchForMerge("");
+        setTargetBranchForMerge("");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to merge branches");
+    } finally {
+      setIsMerging(false);
+    }
+  };
+
+  const handleResolveConflict = async (filepath: string, resolution: "source" | "target") => {
+    if (!activeSessionId || !token) return;
+    const conflict = mergeConflicts.find(c => c.filepath === filepath);
+    if (!conflict) return;
+
+    try {
+      const content = resolution === "source" ? conflict.sourceContent : conflict.targetContent;
+      await createFileMutation({ sessionId: activeSessionId, filepath, content, token });
+
+      // Remove from conflicts list
+      setMergeConflicts(prev => prev.filter(c => c.filepath !== filepath));
+      toast.success(`Resolved: ${filepath} (used ${resolution})`);
+
+      // Close modal if all conflicts resolved
+      if (mergeConflicts.length === 1) {
+        setMergeBranchModalOpen(false);
+        setSourceBranchForMerge("");
+        setTargetBranchForMerge("");
+        toast.success("All conflicts resolved! Merge complete.");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to resolve conflict");
+    }
+  };
+
+  const handleDeleteBranch = async (branchName: string) => {
+    if (!activeSessionId || !token || branchName === "main") {
+      toast.error("Cannot delete main branch");
+      return;
+    }
+    if (!confirm(`Delete branch "${branchName}"? All files in this branch will be permanently removed.`)) {
+      return;
+    }
+    try {
+      const result = await deleteBranchAction({
+        sessionId: activeSessionId,
+        branchName,
+        token
+      });
+      if (result.success) {
+        toast.success(`Deleted branch: ${branchName}`);
+        // If we were on the deleted branch, switch to main
+        if (currentBranch === branchName) {
+          await handleSwitchBranch("main");
+        }
+      } else {
+        toast.error("Failed to delete branch");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete branch");
     }
   };
 
@@ -2835,17 +2923,33 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                       >
                         <div className="max-h-64 overflow-y-auto py-1">
                           {branches.map(branch => (
-                            <button
+                            <div
                               key={branch.name}
-                              onClick={() => handleSwitchBranch(branch.name)}
-                              disabled={isSwitchingBranch || branch.name === currentBranch}
                               className={`w-full px-3 py-2 text-left text-xs hover:bg-muted/50 transition-colors flex items-center gap-2 ${
                                 branch.name === currentBranch ? "bg-primary/10 text-primary font-bold" : "text-foreground"
                               }`}
                             >
-                              {branch.name === currentBranch && <span className="text-primary">●</span>}
-                              <span className="flex-1 font-mono">{branch.name}</span>
-                            </button>
+                              <button
+                                onClick={() => handleSwitchBranch(branch.name)}
+                                disabled={isSwitchingBranch || branch.name === currentBranch}
+                                className="flex items-center gap-2 flex-1"
+                              >
+                                {branch.name === currentBranch && <span className="text-primary">●</span>}
+                                <span className="font-mono">{branch.name}</span>
+                              </button>
+                              {branch.name !== "main" && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteBranch(branch.name);
+                                  }}
+                                  className="text-red-400 hover:text-red-300 p-1 hover:bg-red-400/10 rounded transition-colors"
+                                  title="Delete branch"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
                           ))}
                         </div>
                         <div className="border-t border-border py-1">
@@ -2863,6 +2967,8 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                             onClick={() => {
                               setBranchMenuOpen(false);
                               setMergeBranchModalOpen(true);
+                              // Pre-populate target with current branch
+                              setTargetBranchForMerge(currentBranch);
                             }}
                             className="w-full px-3 py-2 text-left text-xs text-blue-400 hover:bg-blue-400/10 transition-colors flex items-center gap-2"
                           >
@@ -3352,7 +3458,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+              className="w-full max-w-2xl bg-card border border-border rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
             >
               <div className="px-6 py-4 border-b border-border bg-card/80 backdrop-blur-sm">
                 <div className="flex items-center gap-3">
@@ -3361,23 +3467,132 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                   </div>
                   <div className="flex-1">
                     <h3 className="text-sm font-bold text-foreground">Merge Branch</h3>
-                    <p className="text-[10px] text-muted-foreground">Coming soon</p>
+                    <p className="text-[10px] text-muted-foreground">Merge file changes between branches</p>
                   </div>
                 </div>
               </div>
-              <div className="px-6 py-5">
-                <p className="text-xs text-muted-foreground">
-                  Branch merging functionality will be available soon. You can manually copy files between branches for now.
-                </p>
-              </div>
-              <div className="px-6 py-4 border-t border-border bg-muted/20 flex gap-2">
-                <button
-                  onClick={() => setMergeBranchModalOpen(false)}
-                  className="flex-1 py-2 bg-primary/15 border border-primary/30 text-primary text-xs rounded-xl hover:bg-primary/25 transition-all font-bold"
-                >
-                  Close
-                </button>
-              </div>
+
+              {mergeConflicts.length === 0 ? (
+                <>
+                  <div className="px-6 py-5 space-y-4">
+                    <div>
+                      <label className="text-[10px] text-muted-foreground font-bold block mb-2">SOURCE BRANCH (merge from)</label>
+                      <select
+                        value={sourceBranchForMerge}
+                        onChange={(e) => setSourceBranchForMerge(e.target.value)}
+                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary/60 transition-colors"
+                      >
+                        <option value="">Select source branch...</option>
+                        {branches.filter(b => b.name !== targetBranchForMerge).map(branch => (
+                          <option key={branch.name} value={branch.name}>{branch.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-center justify-center">
+                      <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground font-bold block mb-2">TARGET BRANCH (merge into)</label>
+                      <select
+                        value={targetBranchForMerge}
+                        onChange={(e) => setTargetBranchForMerge(e.target.value)}
+                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary/60 transition-colors"
+                      >
+                        <option value="">Select target branch...</option>
+                        {branches.filter(b => b.name !== sourceBranchForMerge).map(branch => (
+                          <option key={branch.name} value={branch.name}>{branch.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="bg-blue-400/5 border border-blue-400/20 rounded-xl px-4 py-3">
+                      <p className="text-[10px] text-blue-400 font-bold mb-1">HOW IT WORKS</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        Files from the source branch will be merged into the target branch. Non-conflicting files are auto-merged. Conflicts require manual resolution.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="px-6 py-4 border-t border-border bg-muted/20 flex gap-2">
+                    <button
+                      onClick={() => {
+                        setMergeBranchModalOpen(false);
+                        setSourceBranchForMerge("");
+                        setTargetBranchForMerge("");
+                      }}
+                      disabled={isMerging}
+                      className="flex-1 py-2 border border-border text-muted-foreground text-xs rounded-xl hover:bg-muted/50 disabled:opacity-50 transition-all font-bold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleMergeBranch}
+                      disabled={!sourceBranchForMerge || !targetBranchForMerge || isMerging}
+                      className="flex-1 py-2 bg-blue-400/15 border border-blue-400/30 text-blue-400 text-xs rounded-xl hover:bg-blue-400/25 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-1.5"
+                    >
+                      {isMerging ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitMerge className="h-3 w-3" />}
+                      Merge Branches
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex-1 overflow-y-auto px-6 py-5 space-y-3">
+                    <div className="bg-amber-400/5 border border-amber-400/20 rounded-xl px-4 py-3">
+                      <p className="text-[10px] text-amber-400 font-bold mb-1">⚠️ MERGE CONFLICTS</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {mergeConflicts.length} file(s) have conflicts. Choose which version to keep for each file.
+                      </p>
+                    </div>
+
+                    {mergeConflicts.map((conflict) => (
+                      <div key={conflict.filepath} className="bg-card border border-border rounded-xl overflow-hidden">
+                        <div className="px-4 py-2 bg-muted/30 border-b border-border">
+                          <p className="text-xs font-bold text-foreground font-mono">{conflict.filepath}</p>
+                        </div>
+                        <div className="p-4 space-y-3">
+                          <button
+                            onClick={() => handleResolveConflict(conflict.filepath, "source")}
+                            className="w-full text-left p-3 bg-emerald-400/5 border border-emerald-400/20 rounded-lg hover:bg-emerald-400/10 transition-all"
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              <CheckCircle className="h-3 w-3 text-emerald-400" />
+                              <span className="text-[10px] font-bold text-emerald-400">USE SOURCE ({sourceBranchForMerge})</span>
+                            </div>
+                            <pre className="text-[9px] text-muted-foreground font-mono overflow-x-auto max-h-24 whitespace-pre-wrap">
+                              {conflict.sourceContent.slice(0, 300)}{conflict.sourceContent.length > 300 ? "..." : ""}
+                            </pre>
+                          </button>
+
+                          <button
+                            onClick={() => handleResolveConflict(conflict.filepath, "target")}
+                            className="w-full text-left p-3 bg-blue-400/5 border border-blue-400/20 rounded-lg hover:bg-blue-400/10 transition-all"
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              <CheckCircle className="h-3 w-3 text-blue-400" />
+                              <span className="text-[10px] font-bold text-blue-400">USE TARGET ({targetBranchForMerge})</span>
+                            </div>
+                            <pre className="text-[9px] text-muted-foreground font-mono overflow-x-auto max-h-24 whitespace-pre-wrap">
+                              {conflict.targetContent.slice(0, 300)}{conflict.targetContent.length > 300 ? "..." : ""}
+                            </pre>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="px-6 py-4 border-t border-border bg-muted/20 flex gap-2">
+                    <button
+                      onClick={() => {
+                        setMergeBranchModalOpen(false);
+                        setSourceBranchForMerge("");
+                        setTargetBranchForMerge("");
+                        setMergeConflicts([]);
+                      }}
+                      className="flex-1 py-2 border border-border text-muted-foreground text-xs rounded-xl hover:bg-muted/50 transition-all font-bold"
+                    >
+                      Cancel Merge
+                    </button>
+                  </div>
+                </>
+              )}
             </motion.div>
           </div>
         )}
