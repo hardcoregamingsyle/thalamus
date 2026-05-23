@@ -6,11 +6,12 @@ import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { useNavigate, useParams } from "react-router";
 import { useAuth } from "@/hooks/use-auth";
+import { useTheme } from "@/hooks/use-theme";
 import CreditModal from "@/components/CreditModal";
 import {
   MessageSquare, Search, BookOpen, Users, Plus, Send, Loader2,
   Trash2, Zap, LogOut, Cpu, ChevronRight,
-  ArrowLeft, Paperclip, Settings, Sparkles,
+  ArrowLeft, Paperclip, Settings, Sparkles, Moon, Sun, GraduationCap,
 } from "lucide-react";
 import TeamPortalInline from "./TeamPortalInline";
 
@@ -100,6 +101,7 @@ function MobileChatView({
   onBack: () => void;
   totalAB: number;
 }) {
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const params = useParams<{ mode?: string; sessionId?: string }>();
   const urlSessionId = params.sessionId ?? null;
@@ -276,6 +278,9 @@ function MobileChatView({
           <Zap className="h-3 w-3" />
           {(dailyAB / 1_000_000).toFixed(1)}M
         </button>
+        <button onClick={toggleTheme} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-muted/50 transition-colors" title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+          {theme === 'dark' ? <Sun className="h-4 w-4 text-muted-foreground" /> : <Moon className="h-4 w-4 text-muted-foreground" />}
+        </button>
         <button onClick={() => setShowConvList(true)} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-muted/50 transition-colors">
           <Settings className="h-4 w-4 text-muted-foreground" />
         </button>
@@ -415,6 +420,11 @@ function MobileChatView({
               <Paperclip className="h-3 w-3" />
               Attach file
             </button>
+            <button onClick={() => navigate('/portal/study')}
+              className="flex items-center gap-1.5 text-[11px] text-indigo-400 border border-indigo-400/30 bg-indigo-400/10 px-3 py-1.5 rounded-full active:bg-indigo-400/20 transition-colors">
+              <GraduationCap className="h-3 w-3" />
+              Student Suite
+            </button>
           </div>
         )}
         <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept="image/*,.pdf,.txt,.md,.docx" />
@@ -518,6 +528,7 @@ function MobileHomeScreen({
   onSignOut: () => void;
 }) {
   const [creditModalOpen, setCreditModalOpen] = useState(false);
+  const { theme, toggleTheme } = useTheme();
   const typedUser = user as { email?: string; name?: string; dailyAgentBucks?: number; purchasedAgentBucks?: number; agentBucksBalance?: number } | null;
   const dailyAB = typedUser?.dailyAgentBucks ?? typedUser?.agentBucksBalance ?? 0;
   const purchasedAB = typedUser?.purchasedAgentBucks ?? 0;
@@ -527,16 +538,24 @@ function MobileHomeScreen({
   return (
     <div className="flex flex-col h-full bg-background overflow-y-auto" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       {/* Header */}
-      <div className="px-4 pt-5 pb-4 flex items-center justify-between">
+      <div className="px-4 pt-5 pb-4">
+        <div className="flex items-center justify-between mb-4">
+          <img src="/logo.png" alt="Thalamus AI" className="h-8 object-contain" />
+          <div className="flex items-center gap-2">
+            <button onClick={() => setCreditModalOpen(true)}
+              className="flex items-center gap-1.5 bg-card border border-border px-3 py-2 rounded-xl text-sm text-foreground">
+              <Zap className="h-4 w-4 text-amber-400" />
+              <span className="font-medium">{(totalAB / 1_000_000).toFixed(1)}M</span>
+            </button>
+            <button onClick={toggleTheme} className="w-10 h-10 flex items-center justify-center rounded-xl bg-card border border-border hover:bg-muted/50 transition-colors" title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+              {theme === 'dark' ? <Sun className="h-4 w-4 text-muted-foreground" /> : <Moon className="h-4 w-4 text-muted-foreground" />}
+            </button>
+          </div>
+        </div>
         <div>
           <p className="text-sm text-muted-foreground">Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 17 ? "afternoon" : "evening"}</p>
           <p className="text-2xl font-semibold text-foreground capitalize mt-0.5">{displayName}</p>
         </div>
-        <button onClick={() => setCreditModalOpen(true)}
-          className="flex items-center gap-1.5 bg-card border border-border px-3 py-2 rounded-xl text-sm text-foreground">
-          <Zap className="h-4 w-4 text-amber-400" />
-          <span className="font-medium">{(totalAB / 1_000_000).toFixed(1)}M</span>
-        </button>
       </div>
 
       {/* Mode cards */}
