@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Play, Square, Pause, RotateCcw, Download, Upload, Monitor, Cpu, HardDrive } from "lucide-react";
+import { Play, Square, Pause, RotateCcw, Download, Upload, Monitor, Cpu, HardDrive, Apple } from "lucide-react";
 import { vmManager, VMInstance, OS_TEMPLATES } from "@/lib/v86Manager";
 import { toast } from "sonner";
 
@@ -277,6 +277,7 @@ export function VMScreen({ sessionId, onCommandOutput }: VMScreenProps) {
                     <div className="flex items-center gap-3 mb-2">
                       {template.os === "linux" && <Cpu className="h-5 w-5 text-primary" />}
                       {template.os === "windows" && <Monitor className="h-5 w-5 text-blue-400" />}
+                      {template.os === "macos" && <Apple className="h-5 w-5 text-foreground" />}
                       {template.os === "freedos" && <HardDrive className="h-5 w-5 text-amber-400" />}
                       <span className="text-sm font-bold text-foreground">{template.name}</span>
                     </div>

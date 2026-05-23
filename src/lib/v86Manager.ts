@@ -18,7 +18,7 @@ async function loadV86() {
 export interface VMConfig {
   id: string;
   name: string;
-  os: "linux" | "windows" | "freedos";
+  os: "linux" | "windows" | "macos" | "freedos";
   memory: number; // MB
   vga_memory: number; // MB
   screen_container: HTMLElement | null;
@@ -54,8 +54,28 @@ export const OS_TEMPLATES: Record<string, Partial<VMConfig>> = {
     os: "linux",
     memory: 1024,
     vga_memory: 16,
-    // Debian netinstall is small enough for browser
     cdrom_url: "https://cdimage.debian.org/debian-cd/current/i386/iso-cd/debian-12.4.0-i386-netinst.iso",
+  },
+  "windows-98": {
+    name: "Windows 98 SE",
+    os: "windows",
+    memory: 256,
+    vga_memory: 8,
+    cdrom_url: "https://archive.org/download/win98se_201910/Win98SE.iso",
+  },
+  "windows-xp": {
+    name: "Windows XP (32-bit)",
+    os: "windows",
+    memory: 512,
+    vga_memory: 16,
+    cdrom_url: "https://archive.org/download/WinXPProSP3x86/en_windows_xp_professional_with_service_pack_3_x86_cd_x14-80428.iso",
+  },
+  "macos-rhapsody": {
+    name: "Rhapsody DR2 (Mac OS X Beta)",
+    os: "windows", // v86 treats it as generic x86
+    memory: 256,
+    vga_memory: 8,
+    cdrom_url: "https://winworldpc.com/download/3dc38dc3-93c2-bbe2-80c3-a411c3a4c2ae",
   },
   "freedos": {
     name: "FreeDOS 1.3",

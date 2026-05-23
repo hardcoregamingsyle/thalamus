@@ -176,6 +176,24 @@ If daytona: Execute via API (existing)
 - **Use case**: Full Linux environment
 - **Boot time**: ~2 minutes
 
+### 🪟 Windows 98 SE
+- **RAM**: 256MB
+- **VRAM**: 8MB
+- **Use case**: Legacy Windows applications, retro testing
+- **Boot time**: ~1 minute
+
+### 🪟 Windows XP (32-bit)
+- **RAM**: 512MB
+- **VRAM**: 16MB
+- **Use case**: Classic Windows environment, .NET 1.x/2.0
+- **Boot time**: ~2 minutes
+
+### 🍎 Rhapsody DR2 (Mac OS X Beta)
+- **RAM**: 256MB
+- **VRAM**: 8MB
+- **Use case**: Early macOS testing, NeXTSTEP compatibility
+- **Boot time**: ~1.5 minutes
+
 ### 💾 FreeDOS 1.3
 - **RAM**: 64MB
 - **VRAM**: 2MB

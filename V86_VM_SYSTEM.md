@@ -86,6 +86,27 @@ Agent fixes errors OR proceeds
 - **Boot time**: ~2 minutes
 - **Features**: apt package manager, wide software support
 
+### 🪟 Windows 98 SE
+- **RAM**: 256MB
+- **VRAM**: 8MB
+- **Use case**: Legacy Windows applications, retro testing
+- **Boot time**: ~1 minute
+- **Features**: Classic Win32 API, IE5, DirectX support
+
+### 🪟 Windows XP Professional (32-bit)
+- **RAM**: 512MB
+- **VRAM**: 16MB
+- **Use case**: Classic Windows environment, .NET Framework 1.x/2.0
+- **Boot time**: ~2 minutes
+- **Features**: Full Windows XP environment, IIS 5.1, COM+
+
+### 🍎 Rhapsody DR2 (Mac OS X Beta)
+- **RAM**: 256MB
+- **VRAM**: 8MB
+- **Use case**: Early macOS testing, NeXTSTEP/OpenStep compatibility
+- **Boot time**: ~1.5 minutes
+- **Features**: Unix-like environment, Mach kernel, Display PostScript
+
 ### 💾 FreeDOS 1.3
 - **RAM**: 64MB
 - **VRAM**: 2MB
