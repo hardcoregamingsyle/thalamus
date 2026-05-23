@@ -34,6 +34,7 @@ import type * as sandboxHelpers from "../sandboxHelpers.js";
 import type * as study from "../study.js";
 import type * as studyHelpers from "../studyHelpers.js";
 import type * as users from "../users.js";
+import type * as v86Sandbox from "../v86Sandbox.js";
 
 import type {
   ApiFromModules,
@@ -68,6 +69,7 @@ declare const fullApi: ApiFromModules<{
   study: typeof study;
   studyHelpers: typeof studyHelpers;
   users: typeof users;
+  v86Sandbox: typeof v86Sandbox;
 }>;
 
 /**
