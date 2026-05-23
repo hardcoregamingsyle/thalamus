@@ -117,8 +117,12 @@ const schema = defineSchema(
       customId: v.optional(v.string()),
       techStackJson: v.optional(v.string()),
       infoRequestJson: v.optional(v.string()),
+      instructionsJson: v.optional(v.string()),  // JSON array of instruction sets for user
       runningAt: v.optional(v.number()),        // timestamp when status was set to "running"
-      // Branch fields
+      // NEW: True branch system fields
+      currentBranch: v.optional(v.string()),    // Current active branch name (default: "main")
+      branchesJson: v.optional(v.string()),     // JSON array of branch metadata [{name, createdAt, createdFrom, gitBranch}]
+      // OLD: Branch group fields (deprecated, keep for migration)
       branchGroupId: v.optional(v.string()),   // ID of the branch group this session belongs to
       branchNumber: v.optional(v.number()),     // 1 = main, 2+ = branches
       branchName: v.optional(v.string()),       // e.g. "Main Branch", "Android APK", "Windows EXE"
@@ -130,6 +134,10 @@ const schema = defineSchema(
       githubToken: v.optional(v.string()),
       githubLastSyncAt: v.optional(v.number()),
       githubLastCommitSha: v.optional(v.string()),
+      // VM sandbox mode
+      sandboxType: v.optional(v.union(v.literal("daytona"), v.literal("v86"))),  // Which sandbox to use
+      vmOS: v.optional(v.union(v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos"))),  // Selected OS for v86
+      vmCommandQueueJson: v.optional(v.string()),  // Queue of commands waiting for VM execution
     })
       .index("by_user", ["userId"])
       .index("by_custom_id", ["customId"])
@@ -153,9 +161,11 @@ const schema = defineSchema(
       filepath: v.string(),
       content: v.string(),
       lastModifiedBy: v.string(),
+      branch: v.optional(v.string()),           // NEW: Branch this file belongs to (default: "main")
     })
       .index("by_session", ["sessionId"])
-      .index("by_session_and_path", ["sessionId", "filepath"]),
+      .index("by_session_and_path", ["sessionId", "filepath"])
+      .index("by_session_and_branch", ["sessionId", "branch"]),  // NEW: Query files by branch
 
     creditBatches: defineTable({
       userId: v.id("users"),

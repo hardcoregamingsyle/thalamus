@@ -77,6 +77,8 @@ export const createSessionMutation = internalMutation({
     userId: v.id("users"),
     task: v.string(),
     title: v.string(),
+    sandboxType: v.optional(v.union(v.literal("daytona"), v.literal("v86"))),
+    vmOS: v.optional(v.union(v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos"))),
   },
   handler: async (ctx, args): Promise<{ sessionId: Id<"teamSessions">; customId: string }> => {
     const customId = generateCustomId();
@@ -93,6 +95,8 @@ export const createSessionMutation = internalMutation({
       currentTaskIndex: 0,
       finalReviewCoderEnabled: false,
       customId,
+      sandboxType: args.sandboxType || "daytona",
+      vmOS: args.vmOS || "linux",
     });
 
     // Save the initial user message to agentMessages table
@@ -674,6 +678,39 @@ export const setInfoRequest = internalMutation({
       status: "idle", // pause execution
     });
   },
+})
+
+export const addInstructions = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    instructionsJson: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) return;
+
+    // Append to existing instructions array
+    let instructions: unknown[] = [];
+    if (session.instructionsJson) {
+      try {
+        instructions = JSON.parse(session.instructionsJson) as unknown[];
+      } catch {
+        // If parse fails, start fresh
+      }
+    }
+
+    // Parse the new instruction and add it
+    try {
+      const newInstruction = JSON.parse(args.instructionsJson);
+      instructions.push(newInstruction);
+    } catch {
+      // Ignore invalid JSON
+    }
+
+    await ctx.db.patch(args.sessionId, {
+      instructionsJson: JSON.stringify(instructions),
+    });
+  },
 });
 
 export const clearInfoRequest = internalMutation({
@@ -800,5 +837,79 @@ export const forceIdleSession = internalMutation({
       totalMessages: args.totalMessages,
       runningAt: undefined, // Clear runningAt so stale-state check never blocks future runs
     });
+  },
+});
+
+// ─── NEW: True Branch System Helpers ──────────────────────────────────────────
+
+export const updateSessionBranches = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    currentBranch: v.string(),
+    branchesJson: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      currentBranch: args.currentBranch,
+      branchesJson: args.branchesJson,
+    });
+  },
+});
+
+export const upsertFileWithBranch = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    userId: v.id("users"),
+    filepath: v.string(),
+    content: v.string(),
+    agent: v.string(),
+    branch: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const branch = args.branch || "main";
+
+    // Check if file exists for this branch
+    const existing = await ctx.db
+      .query("projectFiles")
+      .withIndex("by_session_and_branch", q =>
+        q.eq("sessionId", args.sessionId).eq("branch", branch)
+      )
+      .filter(q => q.eq(q.field("filepath"), args.filepath))
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        content: args.content,
+        lastModifiedBy: args.agent,
+      });
+    } else {
+      await ctx.db.insert("projectFiles", {
+        sessionId: args.sessionId,
+        userId: args.userId,
+        filepath: args.filepath,
+        content: args.content,
+        lastModifiedBy: args.agent,
+        branch,
+      });
+    }
+  },
+});
+
+export const deleteBranchFiles = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    branchName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const files = await ctx.db
+      .query("projectFiles")
+      .withIndex("by_session_and_branch", q =>
+        q.eq("sessionId", args.sessionId).eq("branch", args.branchName)
+      )
+      .collect();
+
+    for (const file of files) {
+      await ctx.db.delete(file._id);
+    }
   },
 });

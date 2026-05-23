@@ -16,6 +16,7 @@ import type * as ai from "../ai.js";
 import type * as aiHelpers from "../aiHelpers.js";
 import type * as auth from "../auth.js";
 import type * as auth_emailOtp from "../auth/emailOtp.js";
+import type * as claudeCode from "../claudeCode.js";
 import type * as conversations from "../conversations.js";
 import type * as crons from "../crons.js";
 import type * as customAuth from "../customAuth.js";
@@ -33,6 +34,7 @@ import type * as sandboxHelpers from "../sandboxHelpers.js";
 import type * as study from "../study.js";
 import type * as studyHelpers from "../studyHelpers.js";
 import type * as users from "../users.js";
+import type * as v86Sandbox from "../v86Sandbox.js";
 
 import type {
   ApiFromModules,
@@ -49,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   aiHelpers: typeof aiHelpers;
   auth: typeof auth;
   "auth/emailOtp": typeof auth_emailOtp;
+  claudeCode: typeof claudeCode;
   conversations: typeof conversations;
   crons: typeof crons;
   customAuth: typeof customAuth;
@@ -66,6 +69,7 @@ declare const fullApi: ApiFromModules<{
   study: typeof study;
   studyHelpers: typeof studyHelpers;
   users: typeof users;
+  v86Sandbox: typeof v86Sandbox;
 }>;
 
 /**

@@ -732,6 +732,22 @@ export interface InfoRequest {
   fields: InfoField[];
 }
 
+export interface InstructionStep {
+  step: number;
+  title: string;
+  description: string;
+  command?: string;
+  warning?: string;
+}
+
+export interface Instructions {
+  agentName: string;
+  title: string;
+  description: string;
+  steps: InstructionStep[];
+  icon?: string; // emoji icon
+}
+
 export interface ParsedOutput {
   fileOps: FileOp[];
   searchOps: SearchOp[];
@@ -744,6 +760,7 @@ export interface ParsedOutput {
   criticResult?: "pass" | "fail";
   deployCommands?: string[];
   infoRequest?: InfoRequest;
+  instructions?: Instructions;
   changeMode?: "Code" | "Chat" | "Minor"; // AI-requested mode switch
 }
 
@@ -873,6 +890,24 @@ export function parseAgentOutput(content: string): ParsedOutput {
     }
   }
 
+  // Parse INSTRUCTIONS block
+  let instructions: Instructions | undefined;
+  const instructionsBlockMatch = content.match(/(?:<<<<<|<<)INSTRUCTIONS(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.INSTRUCTIONS(?:>>>>>|>>)/);
+  if (instructionsBlockMatch) {
+    try {
+      const block = instructionsBlockMatch[1].trim();
+      const parsed = JSON.parse(block) as Instructions;
+      if (parsed.steps && Array.isArray(parsed.steps)) {
+        instructions = parsed;
+      }
+    } catch {
+      // Ignore parse errors
+    }
+    if (instructions) {
+      cleanContent = cleanContent.replace(instructionsBlockMatch[0], `[INSTRUCTIONS PROVIDED: ${instructions.title}]`);
+    }
+  }
+
   // Parse CHANGE_MODE directive
   let changeMode: "Code" | "Chat" | "Minor" | undefined;
   const changeModeMatch = content.match(/<<CHANGE_MODE=(Code|Chat|Minor)>>/i);
@@ -881,32 +916,39 @@ export function parseAgentOutput(content: string): ParsedOutput {
     cleanContent = cleanContent.replace(changeModeMatch[0], `[MODE SWITCH REQUESTED: ${changeMode}]`);
   }
 
-  return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, changeMode };
+  return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode };
 }
 
 const SANDBOX_CMD_INSTRUCTIONS = `
-You have access to a live sandbox (Daytona cloud environment). Run shell commands using this format:
+You have access to a live sandbox environment. Run shell commands using:
 
 <<RUN-CMD="command here">>
 
-PACKAGE MANAGER: Use the appropriate package manager for the project type:
-- Node.js/TypeScript: use npm, yarn, pnpm, or bun — whichever the project uses (check package.json for lock files)
-  - npm:  <<RUN-CMD="npm install">>  <<RUN-CMD="npm run dev">>
-  - bun:  <<RUN-CMD="bun install">>  <<RUN-CMD="bun run dev">>
-  - yarn: <<RUN-CMD="yarn install">> <<RUN-CMD="yarn dev">>
-  - pnpm: <<RUN-CMD="pnpm install">> <<RUN-CMD="pnpm dev">>
-- Python: use pip or poetry as appropriate
-  - pip:    <<RUN-CMD="pip install -r requirements.txt">>
-  - poetry: <<RUN-CMD="poetry install">>
-- Android/Kotlin/Java: use gradle
-  - <<RUN-CMD="./gradlew assembleDebug">>
-- Rust: use cargo
-  - <<RUN-CMD="cargo build">>
-- Go: use go modules
-  - <<RUN-CMD="go mod tidy">> <<RUN-CMD="go build ./...">>
-- For system commands, use standard shell (bash/sh).
+**IMPORTANT**: When you run a command, the output will be returned to YOU.
+- If the command succeeds, you see the output and can continue
+- If the command fails, you see the error and MUST fix it before proceeding
+- The next agent will NOT run until you verify your work is correct
 
-Always detect the project type from existing files (package.json, requirements.txt, build.gradle, Cargo.toml, go.mod, etc.) and use the correct toolchain.
+PACKAGE MANAGERS (auto-detect from project files):
+- Node.js: npm, yarn, pnpm, or bun (check for lock files)
+  Examples:
+  <<RUN-CMD="npm install">>
+  <<RUN-CMD="npm run build">>
+  <<RUN-CMD="npm test">>
+
+- Python: pip or poetry
+  Examples:
+  <<RUN-CMD="pip install -r requirements.txt">>
+  <<RUN-CMD="python -m pytest">>
+
+- Other languages: Use standard build tools (cargo, go, gradle, etc.)
+
+TESTING STRATEGY:
+1. Install dependencies first
+2. Run build/compile to catch syntax errors
+3. Run tests if they exist
+4. Start the application to verify it runs
+5. If ANY command fails, analyze the error and fix before proceeding
 `;
 
 export interface PlannerTask {
@@ -1218,15 +1260,24 @@ DAYTONA CONSTRAINTS (MANDATORY):
 
 Be DECISIVE — pick ONE option for each category. No "or" choices.`,
 
-  Coder: `You are the Coder agent — a SENIOR PRINCIPAL ENGINEER with 20+ years of experience. You MUST produce COMPLETE, PRODUCTION-READY, DEPLOYABLE code. FAILURE IS NOT AN OPTION. YOU ARE AGGRESSIVE, THOROUGH, AND RELENTLESS.
+  Coder: `You are the Coder agent — a SENIOR PRINCIPAL ENGINEER with 20+ years of experience.
 
-## ANTI-DUPLICATION RULES — CRITICAL (VIOLATING THESE CAUSES COMPILE ERRORS):
-1. **ALWAYS check the EXISTING FILE MANIFEST** before creating any file. If a file path already exists, use <<EDITFILE>> — NEVER <<CREATEFILE>> for it.
-2. **NEVER create two files with the same purpose** in different folders (e.g., two SceneSerializer.cs, two auth_handler.go). Pick ONE canonical location.
-3. **NEVER put a file in the wrong project folder** (e.g., no .ts files in a C# project, no .go files in a Godot app folder).
-4. **NEVER create a file that conflicts with an existing one** — check the manifest for similar names before creating.
-5. If you see a file already exists with similar functionality, EDIT it instead of creating a new one.
-6. **File naming rule**: If you're unsure whether a file exists, assume it does and use <<EDITFILE>>.
+Your job is to write COMPLETE, WORKING code that can be deployed immediately.
+
+## CRITICAL RULES:
+
+**File Operations:**
+- ALWAYS check existing files FIRST before creating
+- If file exists → use <<EDITFILE>>
+- If file is new → use <<CREATEFILE>>
+- ONE file per purpose (no duplicates)
+- Complete file content ONLY (no placeholders, no TODOs, no "add your code here")
+
+**Code Quality:**
+- Every function must be fully implemented
+- Every import must be correct
+- Every dependency must be in package.json/requirements.txt
+- Code must actually work when deployed
 =======
 
 ⚠️ SECURITY ALERT — YOUR CODE WILL BE TESTED BY A DEDICATED SECURITY TEAM:
@@ -1249,23 +1300,15 @@ After you finish, a specialized Security Team (VulnerabilitySpotter, ZeroDayExpl
 
 WRITE CODE AS IF A HOSTILE PENETRATION TESTER WILL IMMEDIATELY TRY TO BREAK IT. Every input is malicious. Every user is an attacker. Every endpoint is a target.
 
-DEPLOYMENT ENVIRONMENT — DAYTONA CLOUD SANDBOX:
-- OS: Ubuntu/Debian Linux, working dir: /home/daytona
-- Node.js, Python 3, npm, pip pre-installed
-- App MUST listen on port 3000, bound to 0.0.0.0 (NOT localhost)
-- No Docker needed — run app directly
-- Internet access available for npm/pip install
+DEPLOYMENT:
+- Code will be deployed to a web environment
+- Port 3000, host 0.0.0.0 (for Vite, Express, FastAPI, etc.)
+- Use SQLite for databases (no external setup)
+- All dependencies must be in package.json/requirements.txt
+- Include proper start scripts in package.json
 
-DAYTONA PORT RULES (CRITICAL — BREAKING THESE KILLS THE PREVIEW):
-1. Node.js: app.listen(3000, '0.0.0.0')
-2. Vite/React: vite --port 3000 --host 0.0.0.0
-3. Next.js: next start -p 3000 -H 0.0.0.0
-5. For Python FastAPI: uvicorn main:app --host 0.0.0.0 --port 3000
-6. For Python Flask: flask run --host=0.0.0.0 --port=3000
-7. NEVER use localhost or 127.0.0.1 in the start command
-8. ALWAYS run npm install before starting
-9. Use SQLite (better-sqlite3) for databases — no external DB setup needed
-10. Keep .env files with sensible defaults so the app works without configuration
+**IMPORTANT**: Do NOT use sandbox commands or bash execution.
+Focus ONLY on creating/editing files. The user will handle deployment.
 
 ABSOLUTE RULES — VIOLATING ANY OF THESE IS A CRITICAL FAILURE:
 1. EVERY file must be 100% complete — zero placeholders, zero TODOs, zero "implement later", zero "add your logic here"
@@ -1324,6 +1367,47 @@ When you need API keys, credentials, or configuration that only the user can pro
 
 IMPORTANT: When you use GET-INFO, STOP your output there. Do NOT write any code after it. The user will fill in the form and the data will be sent back to you. You will then continue with the actual implementation using those values.
 
+INSTRUCTIONS TOOL — USE TO PROVIDE STEP-BY-STEP DEPLOYMENT OR SETUP INSTRUCTIONS:
+When you need to provide manual instructions for deployment, configuration, or setup that the user must perform, use this tool:
+<<INSTRUCTIONS>>
+{
+  "agentName": "Organizer",
+  "title": "Deploy to Vercel",
+  "description": "Follow these steps to deploy your application to Vercel",
+  "icon": "🚀",
+  "steps": [
+    {
+      "step": 1,
+      "title": "Install Vercel CLI",
+      "description": "Install the Vercel CLI globally on your machine",
+      "command": "npm install -g vercel"
+    },
+    {
+      "step": 2,
+      "title": "Login to Vercel",
+      "description": "Authenticate your Vercel account",
+      "command": "vercel login"
+    },
+    {
+      "step": 3,
+      "title": "Deploy",
+      "description": "Deploy your project to Vercel",
+      "command": "vercel --prod",
+      "warning": "Make sure all environment variables are set in Vercel dashboard first"
+    }
+  ]
+}
+<<END.INSTRUCTIONS>>
+
+Use INSTRUCTIONS for:
+- Deployment procedures
+- External service setup (DNS, domain configuration, third-party integrations)
+- Manual configuration steps
+- Environment setup instructions
+- Any step-by-step process the user must perform outside the codebase
+
+The instructions will be displayed in an interactive step-by-step UI with copy buttons for commands.
+
 DEPLOY COMMANDS — MANDATORY — SET THESE EVERY TIME:
 <<DEPLOY-COMMANDS>>
 "npm install"
@@ -1331,10 +1415,30 @@ DEPLOY COMMANDS — MANDATORY — SET THESE EVERY TIME:
 "npm run start"
 <<END.DEPLOY-COMMAND>>
 
-SANDBOX COMMANDS — USE THESE TO VERIFY YOUR CODE WORKS:
-<<RUN-CMD="npm install 2>&1 | tail -5">>
+**TESTING YOUR CODE - MANDATORY**:
+After creating files, you MUST test them:
+
+1. Install dependencies:
+   <<RUN-CMD="npm install">>
+
+2. Check for syntax errors:
+   <<RUN-CMD="npm run build">>
+
+3. Run tests:
+   <<RUN-CMD="npm test">>
+
+4. Start the app to verify it works:
+   <<RUN-CMD="npm run dev">>
+
+**CRITICAL**: The command output comes back to YOU. If you see errors, you MUST:
+- Analyze the error message
+- Fix the code
+- Run the command again
+- Repeat until it works
+
+Do NOT move forward if commands fail. The next agent won't run until you succeed.
 <<RUN-CMD="node -e 'console.log(\"syntax check ok\")' 2>&1">>
-<<RUN-CMD="npm run build 2>&1 | tail -20">>
+
 
 WHAT TO CREATE — ALWAYS CREATE ALL OF THESE:
 1. package.json with ALL dependencies and correct scripts
@@ -1513,8 +1617,7 @@ TESTING REQUIREMENTS — cover ALL of these:
 
 INFRASTRUCTURE CONSISTENCY CHECKS — MANDATORY (run these BEFORE writing tests):
 <<RUN-CMD="ls -la 2>&1 | head -40">>
-<<RUN-CMD="find . -name '*.md' -not -path '*/node_modules/*' -not -path '*/.git/*' 2>&1 | head -20">>
-<<RUN-CMD="cat package.json 2>&1 | head -30 || cat requirements.txt 2>&1 | head -20 || cat go.mod 2>&1 | head -20 || cat Cargo.toml 2>&1 | head -20">>
+<<RUN-CMD="cat package.json 2>&1 || cat requirements.txt 2>&1 || cat go.mod 2>&1 || echo 'No package file found'">>
 
 INFRASTRUCTURE RULES — FAIL if any of these are violated (TECH-STACK-AGNOSTIC):
 - If docker-compose.yml exists but Dockerfile does NOT → <<test.failed="docker-compose.yml exists but Dockerfile is missing — the container cannot be built">>
@@ -1532,8 +1635,14 @@ Use the file creation format for test files:
 test content
 <<END.CREATEFILE>>
 
-If you have a sandbox, run the tests:
-<<RUN-CMD="<appropriate test command>">>
+**RUN THE TESTS - MANDATORY**:
+1. Install dependencies:
+   <<RUN-CMD="npm install 2>&1 | tail -20">>
+
+2. Run the test suite:
+   <<RUN-CMD="npm test 2>&1">>
+
+3. If tests fail, you MUST analyze the output and report the failure
 
 After running tests, output your verdict:
 - If ALL tests passed: <<test.success>>
@@ -1584,8 +1693,8 @@ CRITICAL RULES:
 4. For each fix, explain WHY the fix works and what attack it prevents
 5. Ensure fixes don't introduce new vulnerabilities — think adversarially
 6. Run verification commands to confirm fixes work:
-   <<RUN-CMD="npm audit --json 2>&1 | head -50">>
-   <<RUN-CMD="grep -r 'eval\\|innerHTML\\|dangerouslySetInnerHTML' src/ 2>&1 | head -20">>
+   
+   
 
 FILE FIX FORMAT — ALWAYS write the COMPLETE file, never partial:
 <<CREATEFILE="path/to/file">>
@@ -1648,7 +1757,13 @@ CRITICAL RULES:
 3. Add output encoding to prevent XSS
 4. Add parameterized queries to prevent SQL/NoSQL injection
 5. Write COMPLETE, PRODUCTION-READY fixed files — every line, every function
-6. Test your fixes with the actual payloads from the report:
+6. Verify your fixes work:
+   <<RUN-CMD="npm install 2>&1 | tail -10">>
+   <<RUN-CMD="npm run build 2>&1 | tail -20">>
+7. Test your fixes with the actual payloads from the report:
+   <<RUN-CMD="curl -X POST http://localhost:3000/api/endpoint -H 'Content-Type: application/json' -d '{\"field\": \"<script>alert(1)</script>\"}' 2>&1">>
+
+If build or test commands fail, you MUST fix the code before proceeding.
    <<RUN-CMD="curl -X POST http://localhost:3000/api/endpoint -H 'Content-Type: application/json' -d '{\"field\": \"<script>alert(1)</script>\"}' 2>&1">>
 
 FILE FIX FORMAT — ALWAYS write the COMPLETE file:
@@ -1674,7 +1789,7 @@ YOUR REPORT MUST BE EXHAUSTIVE — MINIMUM 5000-8000 WORDS.
 
 ANALYSIS AREAS — analyze ALL of these in DEPTH:
 1. RACE CONDITIONS: Can concurrent requests cause inconsistent state?
-   <<RUN-CMD="for i in {1..10}; do curl -X POST http://localhost:3000/api/action & done; wait 2>&1">>
+   
 2. BUSINESS LOGIC BYPASS: Can the intended workflow be skipped?
 3. PARAMETER TAMPERING: Can hidden or server-side parameters be overridden?
 4. SESSION FIXATION: Can a session token be predicted, reused, or transferred?
@@ -1709,7 +1824,7 @@ CRITICAL RULES:
 4. Add proper RBAC for privilege escalation fixes
 5. Write COMPLETE, PRODUCTION-READY fixed files — every line, every function
 6. Test your fixes with concurrent requests:
-   <<RUN-CMD="for i in {1..5}; do curl -X POST http://localhost:3000/api/action & done; wait 2>&1">>
+   
 
 FILE FIX FORMAT:
 <<CREATEFILE="path/to/file">>
@@ -1733,13 +1848,13 @@ YOUR REPORT MUST BE EXHAUSTIVE — MINIMUM 5000-8000 WORDS.
 
 AUDIT AREAS — check ALL of these:
 1. FRAMEWORK CVEs: Check EVERY framework and library version.
-   <<RUN-CMD="npm audit --json 2>&1 || pip-audit 2>&1 || safety check 2>&1">>
+   
 2. OUTDATED DEPENDENCIES: Check ALL packages for available updates.
-   <<RUN-CMD="npm outdated 2>&1 || pip list --outdated 2>&1">>
+   
 3. SUPPLY CHAIN RISK: Check for typosquatting, suspicious packages.
 4. FRAMEWORK MISCONFIGURATIONS: Check ALL security features (CSRF, security headers, rate limiting, CORS, debug mode).
 5. RUNTIME ENVIRONMENT: Check Node/Python/OS versions.
-   <<RUN-CMD="node --version && npm --version 2>&1">>
+   
 6. SECRETS IN ENVIRONMENT: Check for hardcoded secrets.
 7. DEPENDENCY LOCK FILES: Are lock files present and committed?
 
@@ -1833,11 +1948,11 @@ CRITICAL DECISION — ONLY FIX SECURITY ISSUES, DO NOT IMPLEMENT NEW FEATURES:
 
 AUDIT SCOPE (run these checks):
 1. STATIC ANALYSIS: Review files for vulnerabilities (SQL injection, XSS, command injection, etc.)
-   <<RUN-CMD="npm audit --json 2>&1 | head -50 || echo 'No npm audit available'">>
+   
 2. DEPENDENCY SECURITY: Check for vulnerable dependencies
-   <<RUN-CMD="npm outdated 2>&1 | head -30 || echo 'No package.json found'">>
+   
 3. COMMON SECURITY PATTERNS: grep for dangerous patterns
-   <<RUN-CMD="grep -r 'eval\\|innerHTML\\|dangerouslySetInnerHTML\\|exec(' src/ 2>&1 | head -20 || echo 'No dangerous patterns found'">>
+   
 
 OUTPUT FORMAT:
 
