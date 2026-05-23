@@ -651,7 +651,7 @@ export default function MobilePortal() {
               </div>
             </div>
             <div className="flex-1 overflow-hidden">
-              <TeamPortalInline token={token ?? ""} />
+              <TeamPortalInline />
             </div>
           </motion.div>
         ) : (
