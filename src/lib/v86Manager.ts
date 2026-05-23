@@ -131,10 +131,10 @@ class V86Manager {
       vga_memory_size: config.vga_memory * 1024 * 1024,
       screen_container: config.screen_container,
       bios: {
-        url: config.bios_url || "https://copy.sh/v86/bios/seabios.bin",
+        url: config.bios_url || "/v86/seabios.bin",
       },
       vga_bios: {
-        url: config.vga_bios_url || "https://copy.sh/v86/bios/vgabios.bin",
+        url: config.vga_bios_url || "/v86/vgabios.bin",
       },
       cdrom: config.cdrom_url ? {
         url: config.cdrom_url,

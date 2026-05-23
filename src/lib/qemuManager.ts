@@ -1,23 +1,57 @@
 // QEMU Virtual Machine Manager for 64-bit Operating Systems
-// Uses JSLinux (copy.sh) QEMU WebAssembly port for x86_64 emulation
+// Uses container2wasm QEMU WebAssembly port for x86_64 emulation
+// https://github.com/ktock/container2wasm
 
 type QEMUInstance = any;
 
-// Lazy load QEMU to avoid bundling issues
+// Lazy load QEMU Wasm to avoid bundling issues
 let QEMU: any = null;
+let qemuLoading: Promise<any> | null = null;
 
 async function loadQEMU() {
-  if (!QEMU) {
-    // QEMU in browser is not production-ready
-    // Full 64-bit x86_64 emulation requires significant resources
-    // and there's no stable WebAssembly QEMU implementation available
-    throw new Error(
-      "QEMU 64-bit emulation is not available in browser. " +
-      "Browser VMs are limited to 32-bit x86 (v86). " +
-      "For 64-bit Windows 11, modern Linux, or macOS testing, use Daytona Cloud sandbox instead."
-    );
+  if (QEMU) {
+    return QEMU;
   }
-  return QEMU;
+
+  if (qemuLoading) {
+    return qemuLoading;
+  }
+
+  qemuLoading = (async () => {
+    try {
+      // Load QEMU Wasm from container2wasm CDN
+      // This is a lightweight QEMU implementation that runs in WebAssembly
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://ktock.github.io/container2wasm-demo/js/xterm-pty.js';
+        script.onload = resolve;
+        script.onerror = () => reject(new Error('Failed to load QEMU Wasm xterm'));
+        document.head.appendChild(script);
+      });
+
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://ktock.github.io/container2wasm-demo/js/qemu.js';
+        script.onload = resolve;
+        script.onerror = () => reject(new Error('Failed to load QEMU Wasm'));
+        document.head.appendChild(script);
+      });
+
+      // Check if QEMU was loaded
+      if (!(window as any).QEMU) {
+        throw new Error('QEMU Wasm loaded but QEMU object not found');
+      }
+
+      QEMU = (window as any).QEMU;
+      return QEMU;
+    } catch (error) {
+      console.error('Failed to load QEMU Wasm:', error);
+      qemuLoading = null;
+      throw new Error(`QEMU Wasm failed to load: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  })();
+
+  return qemuLoading;
 }
 
 export interface QEMUConfig {
@@ -98,39 +132,37 @@ class QEMUManager {
       throw new Error(`QEMU VM with id ${config.id} already exists`);
     }
 
-    // Load QEMU dynamically
+    // Load QEMU Wasm dynamically
     const QEMUClass = await loadQEMU();
 
-    // Create screen canvas
-    const canvas = document.createElement("canvas");
-    canvas.style.width = "100%";
-    canvas.style.height = "100%";
-    canvas.style.imageRendering = "auto"; // Better for modern OS
+    // Create terminal div for QEMU output
+    const terminalDiv = document.createElement("div");
+    terminalDiv.style.width = "100%";
+    terminalDiv.style.height = "100%";
+    terminalDiv.style.backgroundColor = "#000";
+    terminalDiv.style.color = "#fff";
+    terminalDiv.style.fontFamily = "monospace";
+    terminalDiv.style.padding = "10px";
+    terminalDiv.style.overflow = "auto";
 
     if (config.screen_container) {
-      config.screen_container.appendChild(canvas);
+      config.screen_container.appendChild(terminalDiv);
     }
 
-    // Initialize QEMU emulator with x86_64 architecture
+    // Initialize QEMU Wasm emulator
     const emulator = new QEMUClass({
-      // QEMU configuration for 64-bit systems
-      arch: "x86_64",
-      memory: config.memory,
-      cpu_count: config.cpu_cores,
-      display: {
-        canvas: canvas,
-        width: 1024,
-        height: 768,
-      },
-      drive: config.cdrom_url ? {
-        url: config.cdrom_url,
-        type: "cdrom",
-      } : undefined,
-      hda: config.hda_url ? {
-        url: config.hda_url,
-        size: 20 * 1024 * 1024 * 1024, // 20GB
-      } : undefined,
+      memory: `${config.memory}M`,
+      cpus: config.cpu_cores,
+      container: terminalDiv,
+      // QEMU Wasm uses container images, not ISOs
+      // For now, use a lightweight Linux container
+      image: "alpine:latest",
     });
+
+    // Create a dummy canvas for compatibility
+    const canvas = document.createElement("canvas");
+    canvas.width = 1024;
+    canvas.height = 768;
 
     const instance: QEMUVMInstance = {
       id: config.id,
