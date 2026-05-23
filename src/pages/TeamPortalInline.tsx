@@ -2872,27 +2872,31 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
         {/* New session input */}
         <div className="shrink-0 p-2 border-t border-border bg-card space-y-2">
           {/* Sandbox type selector */}
-          <div className="flex items-center gap-1 text-[9px]">
-            <span className="text-muted-foreground">Sandbox:</span>
-            <select
-              value={newSessionSandboxType}
-              onChange={e => setNewSessionSandboxType(e.target.value as "daytona" | "v86")}
-              className="flex-1 bg-background border border-border rounded px-1.5 py-0.5 text-[9px] text-foreground focus:outline-none focus:border-primary/60 transition-colors"
-            >
-              <option value="daytona">Daytona Cloud</option>
-              <option value="v86">VM (In-Browser)</option>
-            </select>
-            {newSessionSandboxType === "v86" && (
+          <div className="space-y-1">
+            <div className="flex items-center gap-1 text-[9px]">
+              <span className="text-muted-foreground">Sandbox:</span>
               <select
-                value={newSessionVmOS}
-                onChange={e => setNewSessionVmOS(e.target.value as "linux" | "windows" | "macos" | "freedos")}
+                value={newSessionSandboxType}
+                onChange={e => setNewSessionSandboxType(e.target.value as "daytona" | "v86")}
                 className="flex-1 bg-background border border-border rounded px-1.5 py-0.5 text-[9px] text-foreground focus:outline-none focus:border-primary/60 transition-colors"
               >
-                <option value="linux">Linux</option>
-                <option value="windows">Windows</option>
-                <option value="macos">macOS</option>
-                <option value="freedos">FreeDOS</option>
+                <option value="daytona">Daytona Cloud (Recommended)</option>
+                <option value="v86">VM (Legacy 32-bit Only)</option>
               </select>
+              {newSessionSandboxType === "v86" && (
+                <select
+                  value={newSessionVmOS}
+                  onChange={e => setNewSessionVmOS(e.target.value as "linux" | "windows" | "macos" | "freedos")}
+                  className="flex-1 bg-background border border-border rounded px-1.5 py-0.5 text-[9px] text-foreground focus:outline-none focus:border-primary/60 transition-colors"
+                >
+                  <option value="linux">Linux (32-bit)</option>
+                  <option value="windows">Windows (Legacy)</option>
+                  <option value="freedos">FreeDOS</option>
+                </select>
+              )}
+            </div>
+            {newSessionSandboxType === "v86" && (
+              <p className="text-[8px] text-amber-400">⚠️ VM supports legacy 32-bit OS only. No Win11/modern macOS.</p>
             )}
           </div>
           <div className="flex gap-1">

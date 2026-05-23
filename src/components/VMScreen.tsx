@@ -259,9 +259,16 @@ export function VMScreen({ sessionId, onCommandOutput }: VMScreenProps) {
           >
             <div className="max-w-2xl w-full">
               <h3 className="text-lg font-bold text-foreground mb-2">Select Operating System</h3>
-              <p className="text-sm text-muted-foreground mb-6">
+              <p className="text-sm text-muted-foreground mb-2">
                 Choose an OS to boot in the virtual machine. Your code will be tested in this environment.
               </p>
+              <div className="mb-6 p-3 bg-amber-400/10 border border-amber-400/30 rounded-lg">
+                <p className="text-xs text-amber-400 font-bold mb-1">⚠️ Legacy OS Only (32-bit x86)</p>
+                <p className="text-[10px] text-muted-foreground">
+                  VM mode supports 32-bit operating systems only. Windows 11, modern macOS, and 64-bit systems cannot run in browser VMs.
+                  For modern testing, use Daytona Cloud sandbox.
+                </p>
+              </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {Object.entries(OS_TEMPLATES).map(([key, template]) => (
