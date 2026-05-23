@@ -12,7 +12,7 @@ import {
   Trash2, Zap, LogOut, Cpu, ChevronRight,
   ArrowLeft, Paperclip, Settings, Sparkles,
 } from "lucide-react";
-import TeamPortalInline from "./TeamPortalInline.tsx";
+import TeamPortalInline from "./TeamPortalInline";
 
 type Mode = "chat" | "research" | "study" | "code";
 

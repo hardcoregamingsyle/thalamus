@@ -233,11 +233,12 @@ export const upsertFile = internalMutation({
       });
     }
     // Auto-vectorize this file into RAG in the background (non-blocking)
-    await ctx.scheduler.runAfter(0, internal.agentTeam.vectorizeFile, {
-      sessionId: args.sessionId,
-      filepath: args.filepath,
-      content: args.content,
-    });
+    // TODO: Re-enable when vectorizeFile is implemented
+    // await ctx.scheduler.runAfter(0, internal.agentTeam.vectorizeFile, {
+    //   sessionId: args.sessionId,
+    //   filepath: args.filepath,
+    //   content: args.content,
+    // });
   },
 });
 

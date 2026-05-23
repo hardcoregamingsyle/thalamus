@@ -8,30 +8,14 @@ let QEMU: any = null;
 
 async function loadQEMU() {
   if (!QEMU) {
-    try {
-      // JSLinux is loaded via script tag, not npm package
-      // Check if it's already loaded in global scope
-      if ((window as any).JSLinux) {
-        QEMU = (window as any).JSLinux;
-      } else {
-        // Dynamically load JSLinux from copy.sh CDN
-        await new Promise((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = 'https://bellard.org/jslinux/jslinux.js';
-          script.onload = resolve;
-          script.onerror = reject;
-          document.head.appendChild(script);
-        });
-        QEMU = (window as any).JSLinux;
-      }
-
-      if (!QEMU) {
-        throw new Error("QEMU module loaded but JSLinux not found");
-      }
-    } catch (error) {
-      console.error("Failed to load QEMU:", error);
-      throw new Error(`QEMU WebAssembly module failed to load. Error: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    // QEMU in browser is not production-ready
+    // Full 64-bit x86_64 emulation requires significant resources
+    // and there's no stable WebAssembly QEMU implementation available
+    throw new Error(
+      "QEMU 64-bit emulation is not available in browser. " +
+      "Browser VMs are limited to 32-bit x86 (v86). " +
+      "For 64-bit Windows 11, modern Linux, or macOS testing, use Daytona Cloud sandbox instead."
+    );
   }
   return QEMU;
 }
