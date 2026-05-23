@@ -1,93 +1,119 @@
-# AI Code Generation Improvements
+# AI Code Generation with Sandbox Testing
 
-## Problem: Sandbox Hallucinations
+## How the System Works
 
-The previous system had major issues:
+The AI agents run in a feedback loop with a live Daytona sandbox:
 
-### Issues with Daytona Sandbox:
-- **Timeouts**: Commands would hang or timeout (635 seconds)
-- **Unreliable**: Sometimes worked, sometimes didn't
-- **Hallucinations**: AI would make up command results when execution failed
-- **Serverless incompatibility**: Convex can't run long-running commands
-- **False confidence**: AI thought code was tested when it wasn't
+### Command Execution Flow:
+1. **Agent writes code** → Creates/edits files
+2. **Agent tests code** → Runs `<<RUN-CMD="npm install">>`, `<<RUN-CMD="npm test">>`, etc.
+3. **Sandbox executes** → Daytona runs the command
+4. **Output returns** → Result comes BACK to the SAME agent
+5. **Agent analyzes** → Sees success/failure
+6. **Agent fixes or proceeds** → If error, fix and re-run; if success, continue
+7. **Loop repeats** → Up to 10 times (MAX_CMD_LOOPS)
 
-### Result:
-- AI generated broken code thinking it worked
-- Spent more time debugging than building
-- Users had to manually fix what AI claimed was "tested"
+### Key Point: Output Goes Back to Same Agent
+- Agent sees **actual command output**
+- If command fails, agent **must fix the error**
+- Next agent **doesn't run** until current one succeeds
+- Tester agent **must mark pass/fail** based on real test results
 
 ---
 
-## Solution: Focus on What Works
+## Agent Testing Requirements
 
-### Removed:
-- ❌ All `<<RUN-CMD>>` execution (19+ occurrences)
-- ❌ Sandbox command instructions
-- ❌ Fake testing prompts
-- ❌ Complex deployment instructions
+### Coder Agent:
+After creating files, MUST:
+1. `npm install` - Install dependencies
+2. `npm run build` - Check for syntax/compile errors
+3. Fix any errors before proceeding
 
-### Improved:
-- ✅ **File operations only** - AI focuses on creating/editing files
-- ✅ **Cleaner prompts** - Less confusion, more structured
-- ✅ **No false testing** - AI doesn't claim code is tested when it isn't
-- ✅ **User handles deployment** - Explicit separation of concerns
+### Tester Agent:
+MUST run actual tests:
+1. `npm install` - Ensure dependencies
+2. `npm test` - Run test suite
+3. Mark `<<test.success>>` or `<<test.failed>>` based on REAL output
+
+### Security Fixers:
+After fixing vulnerabilities, MUST:
+1. `npm run build` - Verify code compiles
+2. Test the fix actually works
 
 ---
 
 ## What Changed in Prompts
 
-### Before:
+### Now (Current System):
 ```
-DAYTONA PORT RULES (CRITICAL — BREAKING THESE KILLS THE PREVIEW):
-1. Node.js: app.listen(3000, '0.0.0.0')
-2. Vite/React: vite --port 3000 --host 0.0.0.0
-...
-<<RUN-CMD="npm install 2>&1 | tail -5">>
-<<RUN-CMD="npm run build 2>&1 | tail -20">>
+**TESTING YOUR CODE - MANDATORY**:
+After creating files, you MUST test them:
+
+1. Install dependencies:
+   <<RUN-CMD="npm install">>
+
+2. Check for syntax errors:
+   <<RUN-CMD="npm run build">>
+
+3. Run tests:
+   <<RUN-CMD="npm test">>
+
+**CRITICAL**: The command output comes back to YOU.
+If you see errors, you MUST:
+- Analyze the error message
+- Fix the code
+- Run the command again
+- Repeat until it works
+
+Do NOT move forward if commands fail.
+The next agent won't run until you succeed.
 ```
 
-### After:
-```
-DEPLOYMENT:
-- Code will be deployed to a web environment
-- Port 3000, host 0.0.0.0
-- Use SQLite for databases (no external setup)
-
-**IMPORTANT**: Do NOT use sandbox commands.
-Focus ONLY on creating/editing files.
-The user will handle deployment.
-```
+This makes agents **responsible for their code** and forces them to **actually test it**.
 
 ---
 
 ## Benefits
 
-### For AI:
-- **Less confusion** - Clear boundaries on what it can/can't do
-- **No hallucinations** - Can't make up test results
-- **Better code** - Focuses on correctness, not fake testing
+### Self-Correcting Loop:
+- **Agent sees errors** - Real command output, not imagination
+- **Agent fixes errors** - Can't proceed until code works
+- **Verified quality** - Tests actually run in sandbox
+- **No false passes** - Tester must see real test output
 
 ### For Users:
-- **Faster iterations** - No waiting for timeouts
-- **Honest results** - AI says "user needs to test" instead of lying
-- **Better code quality** - AI writes complete files instead of half-tested garbage
+- **Working code** - Actually tested before deployment
+- **Fewer bugs** - Errors caught in agent loop, not production
+- **Confidence** - Know the code was tested in a real environment
 
 ---
 
-## File Operations Still Work
+## What Agents Can Do
 
-The AI can still:
+The AI agents have full capabilities:
 - ✅ Create files (`<<CREATEFILE>>`)
 - ✅ Edit files (`<<EDITFILE>>`)
+- ✅ Execute commands (`<<RUN-CMD>>`)
+- ✅ Install packages (`npm install`, `pip install`, etc.)
+- ✅ Run tests (`npm test`, `pytest`, etc.)
+- ✅ Build projects (`npm run build`, `cargo build`, etc.)
 - ✅ Request API keys (`<<GET-INFO>>`)
-- ✅ Provide deployment instructions (`<<INSTRUCTIONS>>`)
-- ✅ Set deploy commands (`<<DEPLOY-COMMANDS>>`)
+- ✅ Provide instructions (`<<INSTRUCTIONS>>`)
 
-But it **cannot** and **will not**:
-- ❌ Execute bash commands
-- ❌ Test the code
-- ❌ Install packages
-- ❌ Run the application
+### Command Loop Example:
+```
+Coder: Creates React app
+Coder: <<RUN-CMD="npm install">>
+Sandbox: ✅ Dependencies installed
+Coder: <<RUN-CMD="npm run build">>
+Sandbox: ❌ Error: Cannot find module 'react'
+Coder: Fixes package.json
+Coder: <<RUN-CMD="npm install">>
+Sandbox: ✅ Success
+Coder: <<RUN-CMD="npm run build">>
+Sandbox: ✅ Build successful
+Coder: Proceeds to next agent
+```
 
 ---
 
@@ -133,7 +159,14 @@ Added `src/convex/claudeCode.ts` as foundation for future work:
 
 ## Summary
 
-**Before**: AI hallucinates test results from broken sandbox
-**After**: AI writes complete code, user handles deployment
+The system uses a **self-correcting feedback loop**:
+1. Agent writes code
+2. Agent tests code in sandbox
+3. Agent sees actual results
+4. Agent fixes errors OR proceeds
+5. Loop repeats until success
 
-This is a **massive improvement** in reliability and code quality.
+**Result**: Agents produce **tested, working code** that actually runs.
+
+The key insight: **Output goes back to the same agent** so it can self-correct.
+This eliminates hallucinations because agents see real command output.
