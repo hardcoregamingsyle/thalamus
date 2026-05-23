@@ -135,8 +135,8 @@ const schema = defineSchema(
       githubLastSyncAt: v.optional(v.number()),
       githubLastCommitSha: v.optional(v.string()),
       // VM sandbox mode
-      sandboxType: v.optional(v.union(v.literal("daytona"), v.literal("v86"))),  // Which sandbox to use
-      vmOS: v.optional(v.union(v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos"))),  // Selected OS for v86
+      sandboxType: v.optional(v.union(v.literal("daytona"), v.literal("v86"), v.literal("qemu"))),  // Which sandbox to use
+      vmOS: v.optional(v.union(v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos"), v.literal("linux64"), v.literal("windows64"), v.literal("macos64"))),  // Selected OS for v86/qemu
       vmCommandQueueJson: v.optional(v.string()),  // Queue of commands waiting for VM execution
     })
       .index("by_user", ["userId"])
