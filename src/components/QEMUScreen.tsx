@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { motion } from "framer-motion";
-import { Play, Square, Pause, RotateCcw, Download, Upload, Monitor, Cpu, Apple, AlertTriangle } from "lucide-react";
+import { Play, Square, Pause, RotateCcw, Download, Upload, Monitor, Cpu, Apple, AlertTriangle, Settings, HardDrive } from "lucide-react";
 import { qemuManager, QEMUVMInstance, QEMU_OS_TEMPLATES } from "@/lib/qemuManager";
+import { detectSystemResources, getQEMURecommendations, getOSRecommendations, formatRAM, formatCores } from "@/lib/systemResources";
 import { toast } from "sonner";
 
 interface QEMUScreenProps {
@@ -15,6 +16,21 @@ export function QEMUScreen({ sessionId, onCommandOutput }: QEMUScreenProps) {
   const [selectedOS, setSelectedOS] = useState<string>("linux-ubuntu");
   const [vmState, setVmState] = useState<"stopped" | "booting" | "running" | "paused">("stopped");
   const [showOSSelector, setShowOSSelector] = useState(true);
+
+  // Resource configuration
+  const systemResources = useMemo(() => detectSystemResources(), []);
+  const recommendations = useMemo(() => getQEMURecommendations(systemResources), [systemResources]);
+  const [customRAM, setCustomRAM] = useState<number>(recommendations.recommendedRAM);
+  const [customVRAM, setCustomVRAM] = useState<number>(recommendations.recommendedVRAM);
+  const [customCores, setCustomCores] = useState<number>(recommendations.recommendedCores);
+  const [showResourceConfig, setShowResourceConfig] = useState(false);
+
+  // Update RAM and cores when OS changes
+  useEffect(() => {
+    const osRec = getOSRecommendations(selectedOS);
+    setCustomRAM(Math.min(osRec.recommendedRAM, recommendations.maxRAM));
+    setCustomCores(Math.max(osRec.minCores, Math.min(recommendations.recommendedCores, recommendations.maxCores)));
+  }, [selectedOS, recommendations.maxRAM, recommendations.recommendedCores, recommendations.maxCores]);
 
   useEffect(() => {
     return () => {
@@ -41,9 +57,9 @@ export function QEMUScreen({ sessionId, onCommandOutput }: QEMUScreenProps) {
         id: `qemu_${sessionId}`,
         name: template.name!,
         os: template.os!,
-        memory: template.memory!,
-        vga_memory: template.vga_memory!,
-        cpu_cores: template.cpu_cores!,
+        memory: customRAM,  // Use custom RAM
+        vga_memory: customVRAM,  // Use custom VRAM
+        cpu_cores: customCores,  // Use custom CPU cores
         screen_container: containerRef.current,
         cdrom_url: template.cdrom_url,
       });
@@ -302,6 +318,121 @@ export function QEMUScreen({ sessionId, onCommandOutput }: QEMUScreenProps) {
                 ))}
               </div>
 
+              {/* System Resources & Configuration */}
+              <div className="mt-6 p-4 bg-card border border-border rounded-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Settings className="h-4 w-4 text-blue-400" />
+                    <span className="text-sm font-bold text-foreground">QEMU VM Resources</span>
+                  </div>
+                  <button
+                    onClick={() => setShowResourceConfig(!showResourceConfig)}
+                    className="text-xs text-blue-400 hover:underline"
+                  >
+                    {showResourceConfig ? "Hide" : "Customize"}
+                  </button>
+                </div>
+
+                {/* System Detection Info */}
+                <div className="grid grid-cols-2 gap-3 text-[10px]">
+                  <div className="p-2 bg-muted/30 rounded-lg">
+                    <p className="text-muted-foreground mb-1">System RAM</p>
+                    <p className="font-bold text-foreground">{formatRAM(systemResources.totalRAM)}</p>
+                  </div>
+                  <div className="p-2 bg-muted/30 rounded-lg">
+                    <p className="text-muted-foreground mb-1">CPU Cores</p>
+                    <p className="font-bold text-foreground">{formatCores(systemResources.cpuCores)}</p>
+                  </div>
+                </div>
+
+                {showResourceConfig && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="space-y-4"
+                  >
+                    {/* RAM Slider */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-bold text-foreground">VM RAM</label>
+                        <span className="text-xs text-blue-400 font-bold">{formatRAM(customRAM)}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={recommendations.minRAM}
+                        max={recommendations.maxRAM}
+                        step={256}
+                        value={customRAM}
+                        onChange={(e) => setCustomRAM(parseInt(e.target.value))}
+                        className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-blue-400"
+                      />
+                      <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
+                        <span>Min: {formatRAM(recommendations.minRAM)}</span>
+                        <span>Max: {formatRAM(recommendations.maxRAM)}</span>
+                      </div>
+                    </div>
+
+                    {/* VRAM Slider */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-bold text-foreground">Video RAM (VRAM)</label>
+                        <span className="text-xs text-blue-400 font-bold">{customVRAM}MB</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={32}
+                        max={128}
+                        step={16}
+                        value={customVRAM}
+                        onChange={(e) => setCustomVRAM(parseInt(e.target.value))}
+                        className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-blue-400"
+                      />
+                      <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
+                        <span>Min: 32MB</span>
+                        <span>Max: 128MB</span>
+                      </div>
+                    </div>
+
+                    {/* CPU Cores Slider */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-bold text-foreground">CPU Cores</label>
+                        <span className="text-xs text-blue-400 font-bold">{formatCores(customCores)}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={recommendations.minCores}
+                        max={recommendations.maxCores}
+                        step={1}
+                        value={customCores}
+                        onChange={(e) => setCustomCores(parseInt(e.target.value))}
+                        className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-blue-400"
+                      />
+                      <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
+                        <span>Min: {formatCores(recommendations.minCores)}</span>
+                        <span>Max: {formatCores(recommendations.maxCores)}</span>
+                      </div>
+                    </div>
+
+                    {/* Info Text */}
+                    <p className="text-[9px] text-muted-foreground">
+                      💡 Higher resources improve VM performance but may slow down your system.
+                      Recommended: {formatRAM(recommendations.recommendedRAM)}, {formatCores(recommendations.recommendedCores)}
+                    </p>
+                  </motion.div>
+                )}
+
+                {/* Quick Stats */}
+                {!showResourceConfig && (
+                  <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
+                    <span>RAM: <strong className="text-foreground">{formatRAM(customRAM)}</strong></span>
+                    <span>VRAM: <strong className="text-foreground">{customVRAM}MB</strong></span>
+                    <span>CPU: <strong className="text-foreground">{formatCores(customCores)}</strong></span>
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={handleCreateVM}
                 disabled={vmState === "booting"}
@@ -325,6 +456,7 @@ export function QEMUScreen({ sessionId, onCommandOutput }: QEMUScreenProps) {
         <div className="shrink-0 border-t border-border bg-card/50 px-4 py-1 flex items-center justify-between text-[10px] text-muted-foreground">
           <div>OS: {vm.config.name} (64-bit x86_64)</div>
           <div>RAM: {vm.config.memory}MB</div>
+          <div>VRAM: {vm.config.vga_memory}MB</div>
           <div>CPU: {vm.config.cpu_cores} cores</div>
           <div className="text-amber-400">QEMU (Slow)</div>
         </div>
