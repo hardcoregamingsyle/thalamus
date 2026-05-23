@@ -1156,19 +1156,46 @@ function PortalDesktop() {
       return;
     }
 
+    // Study mode: use sendStudyMessage with web search + RAG
+    if (activeMode === "study") {
+      setIsThinking(true);
+      try {
+        const result = await sendStudyMessage({ conversationId: convId, content: msg, token, userContext });
+        // Result is HTML string that gets saved to DB
+        // useQuery will pick it up and display it
+      } catch (err) {
+        console.error("Study mode failed:", err);
+        toast.error(err instanceof Error ? err.message : "Failed to send study message");
+      } finally {
+        setIsThinking(false);
+      }
+      // Generate title if this is first message
+      if (!activeConvId) {
+        generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
+      }
+      setIsThinking(false);
+      return; // Exit early for study mode
+    }
+
     // Research mode: use the Research Team pipeline (ResearchPlanner → DataTaker → ResearchOrganiser)
     if (activeMode === "research") {
       setIsThinking(true);
       try {
         const result = await runResearchMode({ conversationId: convId, topic: msg, token });
         // Result is already saved to DB by the action — useQuery will pick it up
-        // Strip any stray 
+        // Strip any stray
       } catch (err) {
         console.error("Research mode failed:", err);
         toast.error(err instanceof Error ? err.message : "Failed to research");
       } finally {
         setIsThinking(false);
       }
+      // Generate title if this is first message
+      if (!activeConvId) {
+        generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
+      }
+      setIsThinking(false);
+      return; // Exit early for research mode
     }
 
     // All other modes: use streaming HTTP endpoint
