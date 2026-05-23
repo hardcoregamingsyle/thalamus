@@ -43,6 +43,22 @@ interface InfoRequest {
   fields: InfoField[];
 }
 
+interface InstructionStep {
+  step: number;
+  title: string;
+  description: string;
+  command?: string;
+  warning?: string;
+}
+
+interface Instructions {
+  agentName: string;
+  title: string;
+  description: string;
+  steps: InstructionStep[];
+  icon?: string;
+}
+
 interface TeamSession {
   _id: Id<"teamSessions">;
   title: string;
@@ -1875,6 +1891,15 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     try { return JSON.parse(raw) as InfoRequest & { agentName: string }; } catch { return null; }
   })();
 
+  // Parse instructions from live session
+  const instructions: (Instructions & { agentName: string })[] = (() => {
+    const raw = (liveSession as Record<string, unknown> | null)?.instructionsJson as string | undefined;
+    if (!raw) return [];
+    try { return JSON.parse(raw) as (Instructions & { agentName: string })[]; } catch { return []; }
+  })();
+
+  const [instructionsExpanded, setInstructionsExpanded] = useState<Record<number, boolean>>({});
+
   const handleSubmitInfo = async (responses: Array<{ fieldId: string; value: string }>) => {
     if (!activeSessionId || !token) return;
     setIsSubmittingInfo(true);
@@ -3109,6 +3134,84 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                         />
                       </div>
                     )}
+
+                    {/* Instructions — step-by-step guides */}
+                    {instructions.length > 0 && instructions.map((inst, idx) => (
+                      <div key={idx} className="max-w-3xl mx-auto w-full">
+                        <motion.div
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="bg-gradient-to-br from-blue-400/5 to-purple-400/5 border border-blue-400/20 rounded-2xl p-6 shadow-lg"
+                        >
+                          <div className="flex items-start gap-4 mb-4">
+                            {inst.icon && (
+                              <div className="text-4xl">{inst.icon}</div>
+                            )}
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="text-sm font-bold text-foreground">{inst.title}</h3>
+                                <span className="text-[9px] text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded-full font-bold">
+                                  {inst.agentName}
+                                </span>
+                              </div>
+                              <p className="text-xs text-muted-foreground">{inst.description}</p>
+                            </div>
+                            <button
+                              onClick={() => setInstructionsExpanded(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                              className="text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              <ChevronDown className={`h-4 w-4 transition-transform ${instructionsExpanded[idx] ? "rotate-180" : ""}`} />
+                            </button>
+                          </div>
+
+                          <AnimatePresence>
+                            {instructionsExpanded[idx] && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="space-y-3 overflow-hidden"
+                              >
+                                {inst.steps.map((step) => (
+                                  <div key={step.step} className="bg-card/50 border border-border rounded-xl p-4">
+                                    <div className="flex items-start gap-3">
+                                      <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold shrink-0">
+                                        {step.step}
+                                      </div>
+                                      <div className="flex-1">
+                                        <h4 className="text-xs font-bold text-foreground mb-1">{step.title}</h4>
+                                        <p className="text-[10px] text-muted-foreground mb-2">{step.description}</p>
+                                        {step.command && (
+                                          <div className="bg-background border border-border rounded-lg p-2 flex items-center gap-2">
+                                            <code className="flex-1 text-[10px] font-mono text-foreground">{step.command}</code>
+                                            <button
+                                              onClick={() => {
+                                                navigator.clipboard.writeText(step.command!);
+                                                toast.success("Copied to clipboard!");
+                                              }}
+                                              className="text-primary hover:text-primary/80 transition-colors"
+                                              title="Copy command"
+                                            >
+                                              <ClipboardList className="h-3 w-3" />
+                                            </button>
+                                          </div>
+                                        )}
+                                        {step.warning && (
+                                          <div className="mt-2 bg-amber-400/5 border border-amber-400/20 rounded-lg p-2 flex items-start gap-2">
+                                            <AlertCircle className="h-3 w-3 text-amber-400 shrink-0 mt-0.5" />
+                                            <p className="text-[10px] text-amber-400">{step.warning}</p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </motion.div>
+                      </div>
+                    ))}
 
                     {/* Streaming output — in-place within same team, new bubble on team change */}
                     {streamingOutput && streamingAgent && (() => {
