@@ -10,7 +10,7 @@ import {
   MessageSquare, StopCircle, ListPlus, Cpu, Shield, Search, Code2,
   CheckSquare, AlertCircle, RefreshCw, Upload, Menu, X, PanelLeftClose, PanelLeftOpen,
   Github, Database, ClipboardList, GitBranch, Network, Lightbulb, FileText,
-  ChevronDown, Zap, Edit3, Bot, Wrench,
+  ChevronDown, Zap, Edit3, Bot, Wrench, GitMerge, Trash2,
 } from "lucide-react";
 import { FileTreeView, FileTreeFile, FileTreeNode } from "@/components/FileTree";
 import ReactMarkdown from "react-markdown";
@@ -1191,13 +1191,14 @@ function PreviewTab({
 
 // ── Files Tab for TeamPortalInline ────────────────────────────────────────────
 function FilesTabInline({
-  projectFiles, selectedFile, setSelectedFile, activeSessionId, token,
+  projectFiles, selectedFile, setSelectedFile, activeSessionId, token, currentBranch,
 }: {
   projectFiles: ProjectFile[];
   selectedFile: ProjectFile | null;
   setSelectedFile: (f: ProjectFile | null) => void;
   activeSessionId: Id<"teamSessions"> | null;
   token: string;
+  currentBranch?: string;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
@@ -1451,7 +1452,14 @@ function FilesTabInline({
         {/* Header */}
         <div className="shrink-0 px-3 py-2 border-b border-border bg-card/50 flex flex-col gap-1.5">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold text-foreground">{projectFiles.length} FILES</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold text-foreground">{projectFiles.length} FILES</span>
+              {currentBranch && (
+                <span className="text-[8px] text-muted-foreground font-mono bg-muted/30 px-1.5 py-0.5 rounded border border-border">
+                  {currentBranch}
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => handleCreateFile("")}
@@ -1581,8 +1589,6 @@ function FilesTabInline({
 export default function TeamPortalInline({ token, initialSessionCustomId, onSessionChange }: { token: string; initialSessionCustomId?: string | null; onSessionChange?: (customId: string | null) => void }) {
   const [sessions, setSessions] = useState<TeamSession[]>([]);
   const [contextMenu, setContextMenu] = useState<{ sessionId: Id<"teamSessions">; x: number; y: number } | null>(null);
-  const [branchModalSession, setBranchModalSession] = useState<TeamSession | null>(null);
-  const [isBranching, setIsBranching] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<Id<"teamSessions"> | null>(null);
   const [task, setTask] = useState("");
   const [isRunning, setIsRunning] = useState(false);
@@ -1609,6 +1615,14 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const [deployCommands, setDeployCommands] = useState<string[]>([]);
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployLog, setDeployLog] = useState<Array<{ cmd: string; output: string; exitCode: number }>>([]);
+
+  // Branch state
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const [createBranchModalOpen, setCreateBranchModalOpen] = useState(false);
+  const [mergeBranchModalOpen, setMergeBranchModalOpen] = useState(false);
+  const [newBranchName, setNewBranchName] = useState("");
+  const [isCreatingBranch, setIsCreatingBranch] = useState(false);
+  const [isSwitchingBranch, setIsSwitchingBranch] = useState(false);
 
   // Reactive queries
   const liveSession = useQuery(api.agentTeamHelpers.watchSession, activeSessionId ? { sessionId: activeSessionId } : "skip");
@@ -1637,6 +1651,21 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     plannerTasksJson: (liveSession as Record<string, unknown>).plannerTasksJson as string | undefined,
     finalReviewCoderEnabled: (liveSession as Record<string, unknown>).finalReviewCoderEnabled as boolean | undefined,
   } as TeamSession : null, [liveSession]);
+
+  // Parse branch data
+  const currentBranch = useMemo(() => {
+    return (liveSession as Record<string, unknown> | null)?.currentBranch as string | undefined || "main";
+  }, [liveSession]);
+
+  const branches = useMemo(() => {
+    const branchesJson = (liveSession as Record<string, unknown> | null)?.branchesJson as string | undefined;
+    if (!branchesJson) return [{ name: "main", createdAt: Date.now(), createdFrom: "" }];
+    try {
+      return JSON.parse(branchesJson) as Array<{ name: string; createdAt: number; createdFrom: string; gitBranch?: string }>;
+    } catch {
+      return [{ name: "main", createdAt: Date.now(), createdFrom: "" }];
+    }
+  }, [liveSession]);
 
   const agentMessages: AgentMessage[] = useMemo(() => (liveMessages ?? []).map((m) => ({
     _id: m._id as string, agent: m.agent, content: m.content, round: m.round, messageIndex: m.messageIndex,
@@ -1688,8 +1717,6 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const resetSessionLimitAction = useAction(api.agentTeam.resetSessionLimit);
   const listSessionsAction = useAction(api.agentTeam.listSessions);
   const continueSessionAction = useAction(api.agentTeam.continueSession);
-  const createBranchAction = useAction(api.agentTeam.createBranch);
-  const propagateBranchAction = useAction(api.agentTeam.propagateBranchUpdate);
   const branchGroups = useQuery(api.agentTeamHelpers.watchBranchGroups, token ? { token } : "skip");
   const createSandboxAction = useAction(api.sandbox.createSandbox);
   const executeCommandAction = useAction(api.sandbox.executeCommand);
@@ -1768,26 +1795,6 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     setContextMenu({ sessionId: session._id, x: e.clientX, y: e.clientY });
   };
 
-  const handleCreateBranch = async (purpose: string) => {
-    if (!branchModalSession || !token) return;
-    setIsBranching(true);
-    try {
-      const result = await createBranchAction({ mainSessionId: branchModalSession._id, branchPurpose: purpose, token });
-      const { branchSessionId, groupName } = result as { branchSessionId: Id<"teamSessions">; groupName: string; groupId: string };
-      toast.success(`Branch created! Group: "${groupName}"`);
-      setBranchModalSession(null);
-      await loadSessions();
-      // Navigate to the new branch
-      setActiveSessionId(branchSessionId);
-      setUserMessages([]);
-      setMessageQueue([]);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create branch");
-    } finally {
-      setIsBranching(false);
-    }
-  };
-
   const handleCreateSession = async () => {
     if (!task.trim() || !token) return;
     setIsRunning(true);
@@ -1842,6 +1849,9 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const getGithubAuthUrlAction = useAction(api.github.getAuthorizationUrl);
   const listUserReposAction = useAction(api.github.listUserRepos);
   const disconnectGithubMutation = useMutation(api.githubHelpers.disconnectGithub);
+  const createBranchAction = useAction(api.agentTeam.createBranchV2);
+  const switchBranchAction = useAction(api.agentTeam.switchBranch);
+  const mergeBranchAction = useAction(api.agentTeam.mergeBranch);
   const githubStatus = useQuery(api.githubHelpers.getGithubStatus, token ? { token } : "skip");
   const setCustomDomainAction = useAction(api.sandbox.setCustomDomain);
   const submitInfoResponseAction = useAction(api.agentTeam.submitInfoResponse);
@@ -1991,6 +2001,57 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
       toast.success("GitHub account disconnected");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to disconnect");
+    }
+  };
+
+  // Branch handlers
+  const handleCreateBranch = async () => {
+    if (!activeSessionId || !token || !newBranchName.trim()) {
+      toast.error("Branch name is required");
+      return;
+    }
+    setIsCreatingBranch(true);
+    try {
+      const result = await createBranchAction({
+        sessionId: activeSessionId,
+        branchName: newBranchName.trim(),
+        fromBranch: currentBranch,
+        token
+      });
+      if (result.success) {
+        toast.success(`Created and switched to branch: ${result.branchName}`);
+        setCreateBranchModalOpen(false);
+        setNewBranchName("");
+      } else {
+        toast.error("Failed to create branch");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create branch");
+    } finally {
+      setIsCreatingBranch(false);
+    }
+  };
+
+  const handleSwitchBranch = async (branchName: string) => {
+    if (!activeSessionId || !token || branchName === currentBranch) return;
+    setIsSwitchingBranch(true);
+    try {
+      const result = await switchBranchAction({
+        sessionId: activeSessionId,
+        branchName,
+        token
+      });
+      if (result.success) {
+        toast.success(`Switched to branch: ${result.branchName}`);
+        setBranchMenuOpen(false);
+        setSelectedFile(null); // Clear selected file as it may not exist in new branch
+      } else {
+        toast.error("Failed to switch branch");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to switch branch");
+    } finally {
+      setIsSwitchingBranch(false);
     }
   };
 
@@ -2240,6 +2301,14 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
+
+  // Close branch menu on outside click
+  useEffect(() => {
+    if (!branchMenuOpen) return;
+    const handleClick = () => setBranchMenuOpen(false);
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [branchMenuOpen]);
 
   // Sandbox handlers
   const handleCreateSandbox = async () => {
@@ -2744,6 +2813,67 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                 <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${execPhaseColor} border-current/30 bg-current/5 shrink-0`}>
                   <span className={execPhaseColor}>{execPhaseLabel}</span>
                 </span>
+                {/* Branch Switcher */}
+                <div className="relative">
+                  <motion.button
+                    onClick={() => setBranchMenuOpen(!branchMenuOpen)}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-card border border-border hover:border-primary/40 transition-all shrink-0"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <GitBranch className="h-3 w-3 text-primary" />
+                    <span className="font-mono text-[10px] text-foreground">{currentBranch}</span>
+                    <ChevronDown className="h-2.5 w-2.5 text-muted-foreground" />
+                  </motion.button>
+                  <AnimatePresence>
+                    {branchMenuOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        className="absolute top-full left-0 mt-1 w-56 bg-card border border-border rounded-xl shadow-xl overflow-hidden z-50"
+                      >
+                        <div className="max-h-64 overflow-y-auto py-1">
+                          {branches.map(branch => (
+                            <button
+                              key={branch.name}
+                              onClick={() => handleSwitchBranch(branch.name)}
+                              disabled={isSwitchingBranch || branch.name === currentBranch}
+                              className={`w-full px-3 py-2 text-left text-xs hover:bg-muted/50 transition-colors flex items-center gap-2 ${
+                                branch.name === currentBranch ? "bg-primary/10 text-primary font-bold" : "text-foreground"
+                              }`}
+                            >
+                              {branch.name === currentBranch && <span className="text-primary">●</span>}
+                              <span className="flex-1 font-mono">{branch.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="border-t border-border py-1">
+                          <button
+                            onClick={() => {
+                              setBranchMenuOpen(false);
+                              setCreateBranchModalOpen(true);
+                            }}
+                            className="w-full px-3 py-2 text-left text-xs text-emerald-400 hover:bg-emerald-400/10 transition-colors flex items-center gap-2"
+                          >
+                            <Plus className="h-3 w-3" />
+                            Create Branch...
+                          </button>
+                          <button
+                            onClick={() => {
+                              setBranchMenuOpen(false);
+                              setMergeBranchModalOpen(true);
+                            }}
+                            className="w-full px-3 py-2 text-left text-xs text-blue-400 hover:bg-blue-400/10 transition-colors flex items-center gap-2"
+                          >
+                            <GitMerge className="h-3 w-3" />
+                            Merge Branch...
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
                 <span className="text-xs text-muted-foreground truncate max-w-[120px] md:max-w-xs">{sessionInfo?.title}</span>
               </div>
               <div className="flex items-center gap-2">
@@ -2993,6 +3123,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                 setSelectedFile={setSelectedFile}
                 activeSessionId={activeSessionId}
                 token={token}
+                currentBranch={currentBranch}
               />
             )}
 
@@ -3152,6 +3283,106 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
         )}
       </AnimatePresence>
 
+      {/* Create Branch Modal */}
+      <AnimatePresence>
+        {createBranchModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+            >
+              <div className="px-6 py-4 border-b border-border bg-card/80 backdrop-blur-sm">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-400/10 border border-emerald-400/30 flex items-center justify-center">
+                    <GitBranch className="h-5 w-5 text-emerald-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-sm font-bold text-foreground">Create New Branch</h3>
+                    <p className="text-[10px] text-muted-foreground">Branch from: {currentBranch}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="px-6 py-5">
+                <label className="text-[10px] text-muted-foreground font-bold block mb-2">BRANCH NAME</label>
+                <input
+                  type="text"
+                  value={newBranchName}
+                  onChange={(e) => setNewBranchName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !isCreatingBranch) handleCreateBranch(); }}
+                  placeholder="e.g., feature/dark-mode"
+                  autoFocus
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors font-mono"
+                />
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  Creates a new branch with its own file state. Messages and agents are shared.
+                </p>
+              </div>
+              <div className="px-6 py-4 border-t border-border bg-muted/20 flex gap-2">
+                <button
+                  onClick={() => {
+                    setCreateBranchModalOpen(false);
+                    setNewBranchName("");
+                  }}
+                  disabled={isCreatingBranch}
+                  className="flex-1 py-2 border border-border text-muted-foreground text-xs rounded-xl hover:bg-muted/50 disabled:opacity-50 transition-all font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateBranch}
+                  disabled={!newBranchName.trim() || isCreatingBranch}
+                  className="flex-1 py-2 bg-emerald-400/15 border border-emerald-400/30 text-emerald-400 text-xs rounded-xl hover:bg-emerald-400/25 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-1.5"
+                >
+                  {isCreatingBranch ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitBranch className="h-3 w-3" />}
+                  Create Branch
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Merge Branch Modal */}
+      <AnimatePresence>
+        {mergeBranchModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+            >
+              <div className="px-6 py-4 border-b border-border bg-card/80 backdrop-blur-sm">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-400/10 border border-blue-400/30 flex items-center justify-center">
+                    <GitMerge className="h-5 w-5 text-blue-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-sm font-bold text-foreground">Merge Branch</h3>
+                    <p className="text-[10px] text-muted-foreground">Coming soon</p>
+                  </div>
+                </div>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-xs text-muted-foreground">
+                  Branch merging functionality will be available soon. You can manually copy files between branches for now.
+                </p>
+              </div>
+              <div className="px-6 py-4 border-t border-border bg-muted/20 flex gap-2">
+                <button
+                  onClick={() => setMergeBranchModalOpen(false)}
+                  className="flex-1 py-2 bg-primary/15 border border-primary/30 text-primary text-xs rounded-xl hover:bg-primary/25 transition-all font-bold"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Right-click context menu */}
       <AnimatePresence>
         {contextMenu && (
@@ -3168,24 +3399,6 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
               <button
                 onClick={() => {
                   const session = sessions.find(s => s._id === contextMenu.sessionId);
-                  if (session) {
-                    const raw = session as unknown as Record<string, unknown>;
-                    if (raw.branchGroupId) {
-                      toast.error("This session is already part of a branch group");
-                    } else {
-                      setBranchModalSession(session);
-                    }
-                  }
-                  setContextMenu(null);
-                }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-foreground hover:bg-violet-400/10 hover:text-violet-400 transition-colors"
-              >
-                <GitBranch className="h-3.5 w-3.5" />
-                Create Branch
-              </button>
-              <button
-                onClick={() => {
-                  const session = sessions.find(s => s._id === contextMenu.sessionId);
                   if (session) handleSelectSession(session._id);
                   setContextMenu(null);
                 }}
@@ -3196,18 +3409,6 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
               </button>
             </motion.div>
           </>
-        )}
-      </AnimatePresence>
-
-      {/* Branch Modal */}
-      <AnimatePresence>
-        {branchModalSession && (
-          <BranchModal
-            session={branchModalSession}
-            onClose={() => setBranchModalSession(null)}
-            onBranch={handleCreateBranch}
-            isBranching={isBranching}
-          />
         )}
       </AnimatePresence>
 

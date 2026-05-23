@@ -3046,6 +3046,288 @@ export const createBranch = action({
   },
 });
 
+// ─── NEW: True Branch System ──────────────────────────────────────────────────
+
+// Create a new branch (fast, no file copying)
+export const createBranchV2 = action({
+  args: {
+    sessionId: v.id("teamSessions"),
+    branchName: v.string(),
+    fromBranch: v.optional(v.string()), // defaults to current branch
+    token: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean; branchName: string; gitBranch?: string }> => {
+    try {
+      console.log(`[createBranchV2] Creating branch "${args.branchName}" from "${args.fromBranch || 'current'}"`);
+
+      const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+      if (!userId) throw new Error("Not authenticated");
+
+      const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
+      if (!session) throw new Error("Session not found");
+      if (session.userId !== userId) throw new Error("Not authorized");
+
+      // Get current branches
+      const currentBranch = (session as Record<string, unknown>).currentBranch as string | undefined || "main";
+      const branchesJsonStr = (session as Record<string, unknown>).branchesJson as string | undefined;
+      const branches = branchesJsonStr ? JSON.parse(branchesJsonStr) as Array<{ name: string; createdAt: number; createdFrom: string; gitBranch?: string }> : [{ name: "main", createdAt: Date.now(), createdFrom: "", gitBranch: "main" }];
+
+      // Check if branch already exists
+      if (branches.some(b => b.name === args.branchName)) {
+        throw new Error(`Branch "${args.branchName}" already exists`);
+      }
+
+      const sourceBranch = args.fromBranch || currentBranch;
+
+      // Get all files from source branch
+      const sourceFiles = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.sessionId })) as Array<{ filepath: string; content: string; lastModifiedBy: string; branch?: string }>;
+      const branchFiles = sourceFiles.filter(f => (f.branch || "main") === sourceBranch);
+      console.log(`[createBranchV2] Copying ${branchFiles.length} file references to new branch`);
+
+      // Copy files to new branch (just update branch tag)
+      await Promise.all(branchFiles.map(file =>
+        ctx.runMutation(internal.agentTeamHelpers.upsertFileWithBranch, {
+          sessionId: args.sessionId,
+          userId,
+          filepath: file.filepath,
+          content: file.content,
+          agent: "Branch Copy",
+          branch: args.branchName,
+        })
+      ));
+
+      // Create Git branch if GitHub is connected
+      let gitBranchName: string | undefined;
+      const githubRepo = (session as Record<string, unknown>).githubRepo as string | undefined;
+      const githubBranch = (session as Record<string, unknown>).githubBranch as string | undefined;
+
+      if (githubRepo && githubBranch) {
+        try {
+          const user = await ctx.runQuery(internal.githubHelpers.getUserById, { userId });
+          if (user?.githubAccessToken) {
+            const [owner, repo] = githubRepo.includes("/") ? githubRepo.split("/") : [user.githubUsername, githubRepo];
+            const headers = {
+              "Authorization": `Bearer ${user.githubAccessToken}`,
+              "Accept": "application/vnd.github.v3+json",
+              "User-Agent": "Thalamus-AI/1.0",
+            };
+
+            // Get current commit SHA
+            const baseRefRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${githubBranch}`, { headers });
+            if (baseRefRes.ok) {
+              const baseRefData = await baseRefRes.json() as { object: { sha: string } };
+              const baseSha = baseRefData.object.sha;
+
+              // Create Git branch
+              const sanitizedName = args.branchName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/--+/g, "-").slice(0, 50);
+              gitBranchName = sanitizedName;
+
+              const createRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ ref: `refs/heads/${gitBranchName}`, sha: baseSha }),
+              });
+
+              if (createRes.ok) {
+                console.log(`[createBranchV2] Created Git branch: ${gitBranchName}`);
+              }
+            }
+          }
+        } catch (gitError) {
+          console.warn("[createBranchV2] Git branch creation failed (non-fatal):", gitError);
+        }
+      }
+
+      // Add branch to branches array
+      branches.push({
+        name: args.branchName,
+        createdAt: Date.now(),
+        createdFrom: sourceBranch,
+        gitBranch: gitBranchName,
+      });
+
+      // Update session
+      await ctx.runMutation(internal.agentTeamHelpers.updateSessionBranches, {
+        sessionId: args.sessionId,
+        currentBranch: args.branchName, // Switch to new branch
+        branchesJson: JSON.stringify(branches),
+      });
+
+      console.log(`[createBranchV2] Branch created successfully: ${args.branchName}`);
+      return { success: true, branchName: args.branchName, gitBranch: gitBranchName };
+    } catch (error) {
+      console.error("[createBranchV2] Error:", error);
+      throw new Error(`Failed to create branch: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  },
+});
+
+// Switch to a different branch
+export const switchBranch = action({
+  args: {
+    sessionId: v.id("teamSessions"),
+    branchName: v.string(),
+    token: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean; branchName: string }> => {
+    try {
+      console.log(`[switchBranch] Switching to branch "${args.branchName}"`);
+
+      const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+      if (!userId) throw new Error("Not authenticated");
+
+      const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
+      if (!session) throw new Error("Session not found");
+      if (session.userId !== userId) throw new Error("Not authorized");
+
+      // Get branches
+      const branchesJsonStr = (session as Record<string, unknown>).branchesJson as string | undefined;
+      const branches = branchesJsonStr ? JSON.parse(branchesJsonStr) as Array<{ name: string; gitBranch?: string }> : [{ name: "main", gitBranch: "main" }];
+
+      const branch = branches.find(b => b.name === args.branchName);
+      if (!branch) {
+        throw new Error(`Branch "${args.branchName}" not found`);
+      }
+
+      // Update current branch
+      await ctx.runMutation(internal.agentTeamHelpers.updateSessionBranches, {
+        sessionId: args.sessionId,
+        currentBranch: args.branchName,
+        branchesJson: branchesJsonStr || JSON.stringify(branches),
+      });
+
+      console.log(`[switchBranch] Switched to branch: ${args.branchName}`);
+      return { success: true, branchName: args.branchName };
+    } catch (error) {
+      console.error("[switchBranch] Error:", error);
+      throw new Error(`Failed to switch branch: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  },
+});
+
+// Merge one branch into another
+export const mergeBranch = action({
+  args: {
+    sessionId: v.id("teamSessions"),
+    sourceBranch: v.string(),
+    targetBranch: v.string(),
+    token: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean; merged: number; conflicts: Array<{ filepath: string; sourceContent: string; targetContent: string }> }> => {
+    try {
+      console.log(`[mergeBranch] Merging "${args.sourceBranch}" into "${args.targetBranch}"`);
+
+      const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+      if (!userId) throw new Error("Not authenticated");
+
+      const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
+      if (!session) throw new Error("Session not found");
+      if (session.userId !== userId) throw new Error("Not authorized");
+
+      // Get all files
+      const allFiles = (await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId: args.sessionId })) as Array<{ filepath: string; content: string; lastModifiedBy: string; branch?: string }>;
+
+      const sourceFiles = allFiles.filter(f => (f.branch || "main") === args.sourceBranch);
+      const targetFiles = allFiles.filter(f => (f.branch || "main") === args.targetBranch);
+
+      console.log(`[mergeBranch] Source: ${sourceFiles.length} files, Target: ${targetFiles.length} files`);
+
+      const conflicts: Array<{ filepath: string; sourceContent: string; targetContent: string }> = [];
+      let merged = 0;
+
+      // Merge files
+      for (const sourceFile of sourceFiles) {
+        const targetFile = targetFiles.find(f => f.filepath === sourceFile.filepath);
+
+        if (!targetFile) {
+          // New file in source - add to target
+          await ctx.runMutation(internal.agentTeamHelpers.upsertFileWithBranch, {
+            sessionId: args.sessionId,
+            userId,
+            filepath: sourceFile.filepath,
+            content: sourceFile.content,
+            agent: "Branch Merge",
+            branch: args.targetBranch,
+          });
+          merged++;
+        } else if (sourceFile.content === targetFile.content) {
+          // No changes - skip
+          continue;
+        } else {
+          // Conflict - both branches modified the same file differently
+          conflicts.push({
+            filepath: sourceFile.filepath,
+            sourceContent: sourceFile.content,
+            targetContent: targetFile.content,
+          });
+        }
+      }
+
+      console.log(`[mergeBranch] Merged ${merged} files, ${conflicts.length} conflicts`);
+      return { success: true, merged, conflicts };
+    } catch (error) {
+      console.error("[mergeBranch] Error:", error);
+      throw new Error(`Failed to merge branches: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  },
+});
+
+// Delete a branch
+export const deleteBranch = action({
+  args: {
+    sessionId: v.id("teamSessions"),
+    branchName: v.string(),
+    token: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean }> => {
+    try {
+      console.log(`[deleteBranch] Deleting branch "${args.branchName}"`);
+
+      const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+      if (!userId) throw new Error("Not authenticated");
+
+      const session = (await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId: args.sessionId })) as SessionRow | null;
+      if (!session) throw new Error("Session not found");
+      if (session.userId !== userId) throw new Error("Not authorized");
+
+      if (args.branchName === "main") {
+        throw new Error("Cannot delete main branch");
+      }
+
+      const currentBranch = (session as Record<string, unknown>).currentBranch as string | undefined || "main";
+      if (currentBranch === args.branchName) {
+        throw new Error("Cannot delete current branch. Switch to another branch first.");
+      }
+
+      // Get branches
+      const branchesJsonStr = (session as Record<string, unknown>).branchesJson as string | undefined;
+      const branches = branchesJsonStr ? JSON.parse(branchesJsonStr) as Array<{ name: string }> : [{ name: "main" }];
+
+      // Remove branch
+      const updatedBranches = branches.filter(b => b.name !== args.branchName);
+
+      // Delete all files for this branch
+      await ctx.runMutation(internal.agentTeamHelpers.deleteBranchFiles, {
+        sessionId: args.sessionId,
+        branchName: args.branchName,
+      });
+
+      // Update session
+      await ctx.runMutation(internal.agentTeamHelpers.updateSessionBranches, {
+        sessionId: args.sessionId,
+        currentBranch,
+        branchesJson: JSON.stringify(updatedBranches),
+      });
+
+      console.log(`[deleteBranch] Branch deleted: ${args.branchName}`);
+      return { success: true };
+    } catch (error) {
+      console.error("[deleteBranch] Error:", error);
+      throw new Error(`Failed to delete branch: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  },
+});
+
 // Propagate main branch file updates to all child branches
 export const propagateBranchUpdate = action({
   args: {

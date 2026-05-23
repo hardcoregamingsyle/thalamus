@@ -802,3 +802,77 @@ export const forceIdleSession = internalMutation({
     });
   },
 });
+
+// ─── NEW: True Branch System Helpers ──────────────────────────────────────────
+
+export const updateSessionBranches = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    currentBranch: v.string(),
+    branchesJson: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      currentBranch: args.currentBranch,
+      branchesJson: args.branchesJson,
+    });
+  },
+});
+
+export const upsertFileWithBranch = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    userId: v.id("users"),
+    filepath: v.string(),
+    content: v.string(),
+    agent: v.string(),
+    branch: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const branch = args.branch || "main";
+
+    // Check if file exists for this branch
+    const existing = await ctx.db
+      .query("projectFiles")
+      .withIndex("by_session_and_branch", q =>
+        q.eq("sessionId", args.sessionId).eq("branch", branch)
+      )
+      .filter(q => q.eq(q.field("filepath"), args.filepath))
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        content: args.content,
+        lastModifiedBy: args.agent,
+      });
+    } else {
+      await ctx.db.insert("projectFiles", {
+        sessionId: args.sessionId,
+        userId: args.userId,
+        filepath: args.filepath,
+        content: args.content,
+        lastModifiedBy: args.agent,
+        branch,
+      });
+    }
+  },
+});
+
+export const deleteBranchFiles = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    branchName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const files = await ctx.db
+      .query("projectFiles")
+      .withIndex("by_session_and_branch", q =>
+        q.eq("sessionId", args.sessionId).eq("branch", args.branchName)
+      )
+      .collect();
+
+    for (const file of files) {
+      await ctx.db.delete(file._id);
+    }
+  },
+});
