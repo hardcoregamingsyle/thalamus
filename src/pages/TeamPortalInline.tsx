@@ -13,6 +13,7 @@ import {
   ChevronDown, Zap, Edit3, Bot, Wrench, GitMerge, Trash2,
 } from "lucide-react";
 import { FileTreeView, FileTreeFile, FileTreeNode } from "@/components/FileTree";
+import { VMScreen } from "@/components/VMScreen";
 import ReactMarkdown from "react-markdown";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -1610,6 +1611,8 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const [isRunning, setIsRunning] = useState(false);
   const [currentAgent, setCurrentAgent] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"chat" | "files" | "sandbox" | "preview">("chat");
+  const [newSessionSandboxType, setNewSessionSandboxType] = useState<"daytona" | "v86">("daytona");
+  const [newSessionVmOS, setNewSessionVmOS] = useState<"linux" | "windows" | "freedos">("linux");
   const [selectedFile, setSelectedFile] = useState<ProjectFile | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>([]);
@@ -1626,6 +1629,9 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const [isSandboxLoading, setIsSandboxLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const sandboxOutputEndRef = useRef<HTMLDivElement>(null);
+
+  // VM state
+  const [sandboxMode, setSandboxMode] = useState<"classic" | "vm">("classic");
 
   // Deploy commands state
   const [deployCommands, setDeployCommands] = useState<string[]>([]);
@@ -1819,7 +1825,12 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
     if (!task.trim() || !token) return;
     setIsRunning(true);
     try {
-      const result = await createSession({ task: task.trim(), token });
+      const result = await createSession({
+        task: task.trim(),
+        token,
+        sandboxType: newSessionSandboxType,
+        vmOS: newSessionVmOS,
+      });
       const { sessionId, customId } = result as { sessionId: Id<"teamSessions">; customId: string };
       setActiveSessionId(sessionId);
       onSessionChange?.(customId);
@@ -2859,7 +2870,30 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
         </div>
 
         {/* New session input */}
-        <div className="shrink-0 p-2 border-t border-border bg-card">
+        <div className="shrink-0 p-2 border-t border-border bg-card space-y-2">
+          {/* Sandbox type selector */}
+          <div className="flex items-center gap-1 text-[9px]">
+            <span className="text-muted-foreground">Sandbox:</span>
+            <select
+              value={newSessionSandboxType}
+              onChange={e => setNewSessionSandboxType(e.target.value as "daytona" | "v86")}
+              className="flex-1 bg-background border border-border rounded px-1.5 py-0.5 text-[9px] text-foreground focus:outline-none focus:border-primary/60 transition-colors"
+            >
+              <option value="daytona">Daytona Cloud</option>
+              <option value="v86">VM (In-Browser)</option>
+            </select>
+            {newSessionSandboxType === "v86" && (
+              <select
+                value={newSessionVmOS}
+                onChange={e => setNewSessionVmOS(e.target.value as "linux" | "windows" | "freedos")}
+                className="flex-1 bg-background border border-border rounded px-1.5 py-0.5 text-[9px] text-foreground focus:outline-none focus:border-primary/60 transition-colors"
+              >
+                <option value="linux">Linux</option>
+                <option value="windows">Windows</option>
+                <option value="freedos">FreeDOS</option>
+              </select>
+            )}
+          </div>
           <div className="flex gap-1">
             <input
               value={task}
@@ -3343,11 +3377,25 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                   <div className="flex items-center gap-2">
                     <Terminal className="h-3.5 w-3.5 text-amber-400" />
                     <span className="text-xs font-bold text-amber-400">SANDBOX</span>
-                    {activeSandbox && (
+                    {activeSandbox && sandboxMode === "classic" && (
                       <span className={`text-[10px] px-1.5 py-0.5 rounded border ${activeSandbox.status === "running" ? "text-green-400 border-green-400/30 bg-green-400/10" : "text-muted-foreground border-border"}`}>
                         {activeSandbox.status}
                       </span>
                     )}
+                    <div className="flex items-center gap-1 ml-2 px-1.5 py-0.5 bg-muted/30 rounded-lg border border-border">
+                      <button
+                        onClick={() => setSandboxMode("classic")}
+                        className={`px-2 py-0.5 text-[9px] rounded transition-all font-bold ${sandboxMode === "classic" ? "bg-amber-400/20 text-amber-400" : "text-muted-foreground hover:text-foreground"}`}
+                      >
+                        CLASSIC
+                      </button>
+                      <button
+                        onClick={() => setSandboxMode("vm")}
+                        className={`px-2 py-0.5 text-[9px] rounded transition-all font-bold ${sandboxMode === "vm" ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                      >
+                        VM
+                      </button>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {!activeSandboxId ? (
@@ -3383,7 +3431,27 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                     )}
                   </div>
                 </div>
-                {activeSandboxId ? (
+
+                {/* VM Mode */}
+                {sandboxMode === "vm" && activeSessionId ? (
+                  <VMScreen
+                    sessionId={activeSessionId}
+                    onCommandOutput={(output, exitCode) => {
+                      setSandboxOutput(prev => [...prev, { cmd: "vm-command", out: output, code: exitCode }]);
+                    }}
+                  />
+                ) : sandboxMode === "vm" ? (
+                  <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+                    <Monitor className="h-12 w-12 text-primary/20" />
+                    <div className="text-center">
+                      <p className="text-sm font-bold text-foreground mb-1">No Active Session</p>
+                      <p className="text-xs text-muted-foreground">Select a session to start a virtual machine</p>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Classic Sandbox Mode */}
+                {sandboxMode === "classic" && activeSandboxId ? (
                   <>
                     <div className="flex-1 overflow-y-auto min-h-0 p-3 font-mono">
                       {sandboxOutput.length === 0 ? (
@@ -3414,7 +3482,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                       </button>
                     </div>
                   </>
-                ) : (
+                ) : sandboxMode === "classic" && !activeSandboxId ? (
                   <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
                     <Box className="h-12 w-12 text-amber-400/20" />
                     <div className="text-center">
@@ -3422,7 +3490,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                       <p className="text-xs text-muted-foreground">Create a sandbox to execute commands</p>
                     </div>
                   </div>
-                )}
+                ) : null}
               </div>
             )}
 

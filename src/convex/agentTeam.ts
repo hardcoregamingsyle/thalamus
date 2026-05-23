@@ -361,12 +361,21 @@ async function processGithubTree(
 
 // ─── Session management ───────────────────────────────────────────────────────
 export const createSession = action({
-  args: { task: v.string(), token: v.optional(v.string()) },
+  args: {
+    task: v.string(),
+    token: v.optional(v.string()),
+    sandboxType: v.optional(v.union(v.literal("daytona"), v.literal("v86"))),
+    vmOS: v.optional(v.union(v.literal("linux"), v.literal("windows"), v.literal("freedos"))),
+  },
   handler: async (ctx, args): Promise<{ sessionId: Id<"teamSessions">; customId: string }> => {
     const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token || "" })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
     const result = (await ctx.runMutation(internal.agentTeamHelpers.createSessionMutation, {
-      userId, task: args.task, title: args.task.slice(0, 60),
+      userId,
+      task: args.task,
+      title: args.task.slice(0, 60),
+      sandboxType: args.sandboxType,
+      vmOS: args.vmOS,
     })) as { sessionId: Id<"teamSessions">; customId: string };
     return result;
   },
