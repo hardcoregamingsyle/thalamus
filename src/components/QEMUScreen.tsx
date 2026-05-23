@@ -277,16 +277,19 @@ export function QEMUScreen({ sessionId, onCommandOutput }: QEMUScreenProps) {
                 Choose a modern 64-bit OS. QEMU provides full x86_64 emulation for Windows 11, modern Linux, etc.
               </p>
 
-              {/* Performance Warning */}
-              <div className="mb-6 p-4 bg-amber-400/10 border border-amber-400/30 rounded-xl">
+              {/* Technical Limitation Warning */}
+              <div className="mb-6 p-4 bg-red-400/10 border border-red-400/30 rounded-xl">
                 <div className="flex items-start gap-3">
-                  <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+                  <AlertTriangle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-xs text-amber-400 font-bold mb-1">⚠️ Performance Warning</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      QEMU is <strong>10-100x slower</strong> than v86 due to full 64-bit emulation in browser.
-                      Boot time: 2-5 minutes. RAM usage: 2-4GB. Best for testing only, not development.
-                      For better performance, use Daytona Cloud sandbox.
+                    <p className="text-xs text-red-400 font-bold mb-1">❌ QEMU 64-bit Not Available</p>
+                    <p className="text-[10px] text-muted-foreground mb-2">
+                      Full 64-bit x86_64 emulation (QEMU) cannot run in browsers due to technical limitations.
+                      There is no stable WebAssembly QEMU port for Windows 11, modern Linux, or macOS.
+                    </p>
+                    <p className="text-[10px] text-foreground font-bold">
+                      ✅ For 64-bit OS testing → Use Daytona Cloud sandbox<br/>
+                      ✅ For 32-bit legacy OS → Use v86 mode (Windows XP, old Linux, DOS)
                     </p>
                   </div>
                 </div>
@@ -435,10 +438,11 @@ export function QEMUScreen({ sessionId, onCommandOutput }: QEMUScreenProps) {
 
               <button
                 onClick={handleCreateVM}
-                disabled={vmState === "booting"}
-                className="w-full mt-6 py-3 bg-blue-400 text-background rounded-xl font-bold hover:bg-blue-400/90 disabled:opacity-50 transition-all"
+                disabled={true}
+                className="w-full mt-6 py-3 bg-muted text-muted-foreground rounded-xl font-bold cursor-not-allowed opacity-50"
+                title="QEMU 64-bit is not available in browser"
               >
-                {vmState === "booting" ? "Creating QEMU VM (This takes time)..." : "Boot 64-bit Virtual Machine"}
+                64-bit Emulation Not Available (Use Daytona Cloud)
               </button>
             </div>
           </motion.div>

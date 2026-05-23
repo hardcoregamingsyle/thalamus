@@ -12,7 +12,7 @@ import "./types/global.d.ts";
 // Lazy load route components for better code splitting
 const Landing = lazy(() => import("./pages/Landing"));
 const AuthPage = lazy(() => import("./pages/Auth"));
-const Portal = lazy(() => import("./pages/Portal.tsx"));
+const Portal = lazy(() => import("./pages/Portal"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const SyncPage = lazy(() => import("./pages/Sync"));
 const TeamPortal = lazy(() => import("./pages/TeamPortal"));
