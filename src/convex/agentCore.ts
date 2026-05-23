@@ -800,8 +800,10 @@ export function parseAgentOutput(content: string): ParsedOutput {
     cleanContent = cleanContent.replace(m[0], `[SCRAPING: ${m[1]}]`);
   }
 
-  // RUN-CMD disabled - sandbox not reliable
-  // Agents should focus on file operations only
+  for (const m of content.matchAll(/(?:<<<<<|<<)RUN-CMD="([^"]+)"(?:>>>>>|>>)/g)) {
+    cmdOps.push({ command: m[1] });
+    cleanContent = cleanContent.replace(m[0], `[CMD: ${m[1]}]`);
+  }
 
   let testerResult: "pass" | "fail" | undefined;
   let testerFailReason: string | undefined;
@@ -917,11 +919,36 @@ export function parseAgentOutput(content: string): ParsedOutput {
   return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode };
 }
 
-// Sandbox commands disabled - focus on file operations only
 const SANDBOX_CMD_INSTRUCTIONS = `
-**IMPORTANT**: You cannot execute commands or test code.
-Focus ONLY on creating correct, complete files.
-The user will handle installation, testing, and deployment.
+You have access to a live sandbox environment. Run shell commands using:
+
+<<RUN-CMD="command here">>
+
+**IMPORTANT**: When you run a command, the output will be returned to YOU.
+- If the command succeeds, you see the output and can continue
+- If the command fails, you see the error and MUST fix it before proceeding
+- The next agent will NOT run until you verify your work is correct
+
+PACKAGE MANAGERS (auto-detect from project files):
+- Node.js: npm, yarn, pnpm, or bun (check for lock files)
+  Examples:
+  <<RUN-CMD="npm install">>
+  <<RUN-CMD="npm run build">>
+  <<RUN-CMD="npm test">>
+
+- Python: pip or poetry
+  Examples:
+  <<RUN-CMD="pip install -r requirements.txt">>
+  <<RUN-CMD="python -m pytest">>
+
+- Other languages: Use standard build tools (cargo, go, gradle, etc.)
+
+TESTING STRATEGY:
+1. Install dependencies first
+2. Run build/compile to catch syntax errors
+3. Run tests if they exist
+4. Start the application to verify it runs
+5. If ANY command fails, analyze the error and fix before proceeding
 `;
 
 export interface PlannerTask {
@@ -1388,10 +1415,28 @@ DEPLOY COMMANDS — MANDATORY — SET THESE EVERY TIME:
 "npm run start"
 <<END.DEPLOY-COMMAND>>
 
-**NO SANDBOX COMMANDS**:
-Do NOT use <<RUN-CMD>> or any bash execution.
-You cannot test code execution - just write correct, complete code.
-The user will handle testing and deployment.
+**TESTING YOUR CODE - MANDATORY**:
+After creating files, you MUST test them:
+
+1. Install dependencies:
+   <<RUN-CMD="npm install">>
+
+2. Check for syntax errors:
+   <<RUN-CMD="npm run build">>
+
+3. Run tests:
+   <<RUN-CMD="npm test">>
+
+4. Start the app to verify it works:
+   <<RUN-CMD="npm run dev">>
+
+**CRITICAL**: The command output comes back to YOU. If you see errors, you MUST:
+- Analyze the error message
+- Fix the code
+- Run the command again
+- Repeat until it works
+
+Do NOT move forward if commands fail. The next agent won't run until you succeed.
 <<RUN-CMD="node -e 'console.log(\"syntax check ok\")' 2>&1">>
 
 
@@ -1571,9 +1616,8 @@ TESTING REQUIREMENTS — cover ALL of these:
 6. Security tests (injection, auth bypass attempts)
 
 INFRASTRUCTURE CONSISTENCY CHECKS — MANDATORY (run these BEFORE writing tests):
-
-
-
+<<RUN-CMD="ls -la 2>&1 | head -40">>
+<<RUN-CMD="cat package.json 2>&1 || cat requirements.txt 2>&1 || cat go.mod 2>&1 || echo 'No package file found'">>
 
 INFRASTRUCTURE RULES — FAIL if any of these are violated (TECH-STACK-AGNOSTIC):
 - If docker-compose.yml exists but Dockerfile does NOT → <<test.failed="docker-compose.yml exists but Dockerfile is missing — the container cannot be built">>
@@ -1591,8 +1635,14 @@ Use the file creation format for test files:
 test content
 <<END.CREATEFILE>>
 
-If you have a sandbox, run the tests:
+**RUN THE TESTS - MANDATORY**:
+1. Install dependencies:
+   <<RUN-CMD="npm install 2>&1 | tail -20">>
 
+2. Run the test suite:
+   <<RUN-CMD="npm test 2>&1">>
+
+3. If tests fail, you MUST analyze the output and report the failure
 
 After running tests, output your verdict:
 - If ALL tests passed: <<test.success>>
@@ -1707,7 +1757,13 @@ CRITICAL RULES:
 3. Add output encoding to prevent XSS
 4. Add parameterized queries to prevent SQL/NoSQL injection
 5. Write COMPLETE, PRODUCTION-READY fixed files — every line, every function
-6. Test your fixes with the actual payloads from the report:
+6. Verify your fixes work:
+   <<RUN-CMD="npm install 2>&1 | tail -10">>
+   <<RUN-CMD="npm run build 2>&1 | tail -20">>
+7. Test your fixes with the actual payloads from the report:
+   <<RUN-CMD="curl -X POST http://localhost:3000/api/endpoint -H 'Content-Type: application/json' -d '{\"field\": \"<script>alert(1)</script>\"}' 2>&1">>
+
+If build or test commands fail, you MUST fix the code before proceeding.
    <<RUN-CMD="curl -X POST http://localhost:3000/api/endpoint -H 'Content-Type: application/json' -d '{\"field\": \"<script>alert(1)</script>\"}' 2>&1">>
 
 FILE FIX FORMAT — ALWAYS write the COMPLETE file:
