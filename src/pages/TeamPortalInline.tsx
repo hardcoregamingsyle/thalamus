@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { FileTreeView, FileTreeFile, FileTreeNode } from "@/components/FileTree";
 import { VMScreen } from "@/components/VMScreen";
+import { QEMUScreen } from "@/components/QEMUScreen";
 import ReactMarkdown from "react-markdown";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -1611,8 +1612,8 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const [isRunning, setIsRunning] = useState(false);
   const [currentAgent, setCurrentAgent] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"chat" | "files" | "sandbox" | "preview">("chat");
-  const [newSessionSandboxType, setNewSessionSandboxType] = useState<"daytona" | "v86">("daytona");
-  const [newSessionVmOS, setNewSessionVmOS] = useState<"linux" | "windows" | "macos" | "freedos">("linux");
+  const [newSessionSandboxType, setNewSessionSandboxType] = useState<"daytona" | "v86" | "qemu">("daytona");
+  const [newSessionVmOS, setNewSessionVmOS] = useState<"linux" | "windows" | "macos" | "freedos" | "linux64" | "windows64" | "macos64">("linux");
   const [selectedFile, setSelectedFile] = useState<ProjectFile | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>([]);
@@ -1631,7 +1632,7 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const sandboxOutputEndRef = useRef<HTMLDivElement>(null);
 
   // VM state
-  const [sandboxMode, setSandboxMode] = useState<"classic" | "vm">("classic");
+  const [sandboxMode, setSandboxMode] = useState<"classic" | "vm" | "qemu">("classic");
 
   // Deploy commands state
   const [deployCommands, setDeployCommands] = useState<string[]>([]);
@@ -2877,16 +2878,23 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
               <span className="text-muted-foreground">Sandbox:</span>
               <select
                 value={newSessionSandboxType}
-                onChange={e => setNewSessionSandboxType(e.target.value as "daytona" | "v86")}
+                onChange={e => {
+                  const type = e.target.value as "daytona" | "v86" | "qemu";
+                  setNewSessionSandboxType(type);
+                  // Auto-switch OS when changing sandbox type
+                  if (type === "qemu") setNewSessionVmOS("linux64");
+                  else if (type === "v86") setNewSessionVmOS("linux");
+                }}
                 className="flex-1 bg-background border border-border rounded px-1.5 py-0.5 text-[9px] text-foreground focus:outline-none focus:border-primary/60 transition-colors"
               >
                 <option value="daytona">Daytona Cloud (Recommended)</option>
-                <option value="v86">VM (Legacy 32-bit Only)</option>
+                <option value="v86">v86 (Legacy 32-bit)</option>
+                <option value="qemu">QEMU (Modern 64-bit, Slow)</option>
               </select>
               {newSessionSandboxType === "v86" && (
                 <select
                   value={newSessionVmOS}
-                  onChange={e => setNewSessionVmOS(e.target.value as "linux" | "windows" | "macos" | "freedos")}
+                  onChange={e => setNewSessionVmOS(e.target.value as any)}
                   className="flex-1 bg-background border border-border rounded px-1.5 py-0.5 text-[9px] text-foreground focus:outline-none focus:border-primary/60 transition-colors"
                 >
                   <option value="linux">Linux (32-bit)</option>
@@ -2894,9 +2902,23 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                   <option value="freedos">FreeDOS</option>
                 </select>
               )}
+              {newSessionSandboxType === "qemu" && (
+                <select
+                  value={newSessionVmOS}
+                  onChange={e => setNewSessionVmOS(e.target.value as any)}
+                  className="flex-1 bg-background border border-border rounded px-1.5 py-0.5 text-[9px] text-foreground focus:outline-none focus:border-primary/60 transition-colors"
+                >
+                  <option value="linux64">Ubuntu/Fedora (64-bit)</option>
+                  <option value="windows64">Windows 10/11 (64-bit)</option>
+                  <option value="macos64">macOS (64-bit)</option>
+                </select>
+              )}
             </div>
             {newSessionSandboxType === "v86" && (
-              <p className="text-[8px] text-amber-400">⚠️ VM supports legacy 32-bit OS only. No Win11/modern macOS.</p>
+              <p className="text-[8px] text-amber-400">⚠️ v86 = 32-bit only. No Win11/modern macOS.</p>
+            )}
+            {newSessionSandboxType === "qemu" && (
+              <p className="text-[8px] text-red-400">⚠️ QEMU = 10-100x slower! Use for testing only.</p>
             )}
           </div>
           <div className="flex gap-1">
@@ -3392,13 +3414,19 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                         onClick={() => setSandboxMode("classic")}
                         className={`px-2 py-0.5 text-[9px] rounded transition-all font-bold ${sandboxMode === "classic" ? "bg-amber-400/20 text-amber-400" : "text-muted-foreground hover:text-foreground"}`}
                       >
-                        CLASSIC
+                        CLOUD
                       </button>
                       <button
                         onClick={() => setSandboxMode("vm")}
                         className={`px-2 py-0.5 text-[9px] rounded transition-all font-bold ${sandboxMode === "vm" ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground"}`}
                       >
-                        VM
+                        v86
+                      </button>
+                      <button
+                        onClick={() => setSandboxMode("qemu")}
+                        className={`px-2 py-0.5 text-[9px] rounded transition-all font-bold ${sandboxMode === "qemu" ? "bg-blue-400/20 text-blue-400" : "text-muted-foreground hover:text-foreground"}`}
+                      >
+                        QEMU
                       </button>
                     </div>
                   </div>
@@ -3437,7 +3465,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                   </div>
                 </div>
 
-                {/* VM Mode */}
+                {/* v86 VM Mode (32-bit) */}
                 {sandboxMode === "vm" && activeSessionId ? (
                   <VMScreen
                     sessionId={activeSessionId}
@@ -3450,7 +3478,25 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                     <Monitor className="h-12 w-12 text-primary/20" />
                     <div className="text-center">
                       <p className="text-sm font-bold text-foreground mb-1">No Active Session</p>
-                      <p className="text-xs text-muted-foreground">Select a session to start a virtual machine</p>
+                      <p className="text-xs text-muted-foreground">Select a session to start v86 virtual machine</p>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* QEMU Mode (64-bit) */}
+                {sandboxMode === "qemu" && activeSessionId ? (
+                  <QEMUScreen
+                    sessionId={activeSessionId}
+                    onCommandOutput={(output, exitCode) => {
+                      setSandboxOutput(prev => [...prev, { cmd: "qemu-command", out: output, code: exitCode }]);
+                    }}
+                  />
+                ) : sandboxMode === "qemu" ? (
+                  <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+                    <Cpu className="h-12 w-12 text-blue-400/20" />
+                    <div className="text-center">
+                      <p className="text-sm font-bold text-foreground mb-1">No Active Session</p>
+                      <p className="text-xs text-muted-foreground">Select a session to start QEMU 64-bit VM</p>
                     </div>
                   </div>
                 ) : null}
