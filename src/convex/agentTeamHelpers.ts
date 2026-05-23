@@ -78,7 +78,7 @@ export const createSessionMutation = internalMutation({
     task: v.string(),
     title: v.string(),
     sandboxType: v.optional(v.union(v.literal("daytona"), v.literal("v86"))),
-    vmOS: v.optional(v.union(v.literal("linux"), v.literal("windows"), v.literal("freedos"))),
+    vmOS: v.optional(v.union(v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos"))),
   },
   handler: async (ctx, args): Promise<{ sessionId: Id<"teamSessions">; customId: string }> => {
     const customId = generateCustomId();

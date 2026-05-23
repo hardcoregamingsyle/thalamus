@@ -1612,7 +1612,7 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const [currentAgent, setCurrentAgent] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"chat" | "files" | "sandbox" | "preview">("chat");
   const [newSessionSandboxType, setNewSessionSandboxType] = useState<"daytona" | "v86">("daytona");
-  const [newSessionVmOS, setNewSessionVmOS] = useState<"linux" | "windows" | "freedos">("linux");
+  const [newSessionVmOS, setNewSessionVmOS] = useState<"linux" | "windows" | "macos" | "freedos">("linux");
   const [selectedFile, setSelectedFile] = useState<ProjectFile | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>([]);
@@ -2885,11 +2885,12 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
             {newSessionSandboxType === "v86" && (
               <select
                 value={newSessionVmOS}
-                onChange={e => setNewSessionVmOS(e.target.value as "linux" | "windows" | "freedos")}
+                onChange={e => setNewSessionVmOS(e.target.value as "linux" | "windows" | "macos" | "freedos")}
                 className="flex-1 bg-background border border-border rounded px-1.5 py-0.5 text-[9px] text-foreground focus:outline-none focus:border-primary/60 transition-colors"
               >
                 <option value="linux">Linux</option>
                 <option value="windows">Windows</option>
+                <option value="macos">macOS</option>
                 <option value="freedos">FreeDOS</option>
               </select>
             )}

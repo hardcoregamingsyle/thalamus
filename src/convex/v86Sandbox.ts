@@ -10,7 +10,7 @@ import { internal } from "./_generated/api";
 // VM session management
 const activeSessions = new Map<string, {
   vmId: string;
-  os: "linux" | "windows" | "freedos";
+  os: "linux" | "windows" | "macos" | "freedos";
   createdAt: number;
   lastActivity: number;
 }>();
@@ -21,7 +21,7 @@ const activeSessions = new Map<string, {
 export const createV86Sandbox = action({
   args: {
     sessionId: v.id("teamSessions"),
-    os: v.union(v.literal("linux"), v.literal("windows"), v.literal("freedos")),
+    os: v.union(v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos")),
     token: v.string(),
   },
   handler: async (ctx, args): Promise<{
