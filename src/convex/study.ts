@@ -453,20 +453,20 @@ export const sendStudyMessage = action({
       >,
     ]);
 
-    // ── RAG + GraphRAG (HF + Convex) and live web search — parallel for latency ─
+    // ── RAG + live web search — with very short timeouts to prevent WebSocket timeout ─
     let ragContext = "";
     let graphContext = "";
     let liveSearchResults = "";
 
-    // Run RAG and search in parallel with aggressive timeouts to prevent connection loss
+    // Run RAG and search in parallel with aggressive timeouts
     await Promise.allSettled([
-      // RAG with 8s timeout (reduced from 14s to prevent WebSocket timeout)
+      // RAG with 4s timeout (very short to prevent connection loss)
       withTimeout(
         ctx.runAction(internal.rag.getStudyContextInternal, {
           userId,
           query: args.content,
         }) as Promise<{ ragContext: string; graphContext: string }>,
-        8_000,
+        4_000,
         { ragContext: "", graphContext: "" },
       ).then(result => {
         ragContext = result.ragContext;
@@ -530,16 +530,15 @@ When a student mentions ANY topic — a chapter name, poem title, story name, co
 - If they say "First Flight" → you know it's the Class 10 CBSE English textbook
 - NEVER say "Could you clarify?" or "Which book?" or "Which class?" — just answer comprehensively based on the student's profile
 
-INDIAN EDUCATION KNOWLEDGE (memorized):
-- Class 9 CBSE English Beehive: Ch1 The Fun They Had, Ch2 The Sound of Music, Ch3 The Little Girl, Ch4 A Truly Beautiful Mind, Ch5 The Snake and the Mirror, Ch6 My Childhood, Ch7 Packing, Ch8 Reach for the Top, Ch9 The Bond of Love, Ch10 Kathmandu, Ch11 If I Were You
-- Class 9 CBSE English Moments (Supplementary): Ch1 The Lost Child, Ch2 The Adventures of Toto, Ch3 Iswaran the Storyteller, Ch4 In the Kingdom of Fools, Ch5 The Happy Prince, Ch6 Weathering the Storm in Ersama, Ch7 The Last Leaf, Ch8 A House is Not a Home, Ch9 The Accidental Tourist, Ch10 The Beggar
-- Class 10 CBSE English First Flight: Ch1 A Letter to God, Ch2 Nelson Mandela, Ch3 Two Stories about Flying, Ch4 From the Diary of Anne Frank, Ch5 The Hundred Dresses, Ch6 The Hundred Dresses II, Ch7 Glimpses of India, Ch8 Mijbaan, Ch9 Madam Rides the Bus, Ch10 The Sermon at Benares, Ch11 The Proposal
-- Class 10 CBSE English Footprints Without Feet (Supplementary): Ch1 A Triumph of Surgery, Ch2 The Thief's Story, Ch3 The Midnight Visitor, Ch4 A Question of Trust, Ch5 Footprints Without Feet, Ch6 The Making of a Scientist, Ch7 The Necklace, Ch8 The Hack Driver, Ch9 Bholi, Ch10 The Book That Saved the Earth
-- NCERT Hindi Kshitij, Kritika, Sparsh, Sanchayan — all chapters known
-- NCERT Science, Maths, Social Science — all chapters known for all classes
+COMPLETE KNOWLEDGE BASE (Indian Education):
+- Class 9 CBSE English Beehive: Ch1 "The Fun They Had", Ch2 "The Sound of Music", Ch3 "The Little Girl", Ch4 "A Truly Beautiful Mind", Ch5 "The Snake and the Mirror", Ch6 "My Childhood", Ch7 "Packing", Ch8 "Reach for the Top", Ch9 "The Bond of Love", Ch10 "Kathmandu", Ch11 "If I Were You"
+- Class 9 CBSE English Moments: Ch1 "The Lost Child", Ch2 "The Adventures of Toto", Ch3 "Iswaran the Storyteller", Ch4 "In the Kingdom of Fools", Ch5 "The Happy Prince", Ch6 "Weathering the Storm in Ersama", Ch7 "The Last Leaf", Ch8 "A House Is Not a Home", Ch9 "The Accidental Tourist", Ch10 "The Beggar"
+- Class 10 CBSE English First Flight: Ch1 "A Letter to God", Ch2 "Nelson Mandela: Long Walk to Freedom", Ch3 "Two Stories about Flying", Ch4 "From the Diary of Anne Frank", Ch5 "The Hundred Dresses", Ch6 "The Hundred Dresses II", Ch7 "Glimpses of India", Ch8 "Mijbaan at the Bridge", Ch9 "Madam Rides the Bus", Ch10 "The Sermon at Benares", Ch11 "The Proposal"
+- Class 10 CBSE English Footprints Without Feet: Ch1 "A Triumph of Surgery", Ch2 "The Thief's Story", Ch3 "The Midnight Visitor", Ch4 "A Question of Trust", Ch5 "Footprints Without Feet", Ch6 "The Making of a Scientist", Ch7 "The Necklace", Ch8 "The Hack Driver", Ch9 "Bholi", Ch10 "The Book That Saved the Earth"
+- All NCERT subjects: Science, Maths, Social Science, Hindi (Kshitij, Sparsh, Sanchayan, Kritika), Sanskrit, etc.
 
-${ragContext ? `\n${ragContext}\n` : ""}
-${graphContext ? `\n${graphContext}\n` : ""}
+${ragContext ? `\n## Retrieved Knowledge (RAG)\n${ragContext}\n` : ""}
+${graphContext ? `\n## Knowledge Graph Context\n${graphContext}\n` : ""}
 ${adminContext ? `\n## Primary Knowledge Base\n${adminContext}\n` : ""}
 ${resourceContext ? `\n## Student's Study Resources\n${resourceContext}\n` : ""}
 ${liveSearchTrimmed ? `\n## Live Web Search Results\n${liveSearchTrimmed}\n` : ""}
@@ -554,7 +553,7 @@ Key facts box: style="border-left:4px solid #f59e0b;padding:0.6em 1em;color:#fcd
 Code: style="background:#1f2937;color:#34d399;padding:0.15em 0.5em;border-radius:4px;font-family:monospace;font-size:0.88em"
 - <div> for QUICK SUMMARY box (style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.3);border-radius:8px;padding:0.8em 1em;margin:0.8em 0")
 
-Write answers that are 400-800 words minimum. Be thorough. Be the teacher every student wishes they had. NEVER ask for clarification — always answer immediately and comprehensively.`;
+Write answers that are 400-800 words minimum. Be thorough. Be the teacher every student wishes they had.`;
 
     const conversationContext = history.slice(-10).map((m: { role: string; content: string }) =>
       `${m.role === "user" ? "Human" : "Assistant"}: ${m.content.slice(0, 800)}`
@@ -568,33 +567,19 @@ Write answers that are 400-800 words minimum. Be thorough. Be the teacher every 
     let inputTokens = 0;
     let outputTokens = 0;
 
-    // Call AI with timeout to prevent WebSocket disconnection
     try {
-      const aiResult = await withTimeout(
-        callClaude(fullPrompt, systemPrompt, "claude-haiku-4-5"),
-        25_000, // 25s timeout for AI call
-        { text: "Response timed out. Please try again.", inputTokens: 0, outputTokens: 0 }
-      );
-      responseContent = aiResult.text;
-      inputTokens = aiResult.inputTokens;
-      outputTokens = aiResult.outputTokens;
-    } catch (error) {
-      // Fallback to VLY if Claude fails
-      try {
-        const { vly } = await import('../lib/vly-integrations');
-        const result = await withTimeout(
-          vly.ai.completion({
-            model: "claude-haiku-4-5",
-            messages: [{ role: "user", content: systemPrompt + "\n\n" + fullPrompt }],
-            maxTokens: 4096,
-          }),
-          20_000,
-          { success: false, data: undefined, error: "Timeout" }
-        );
-        responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "No response") : "Failed to get response. Please try again.";
-      } catch {
-        responseContent = "Service temporarily unavailable. Please try again.";
-      }
+      const result = await callClaude(fullPrompt, systemPrompt, "claude-haiku-4-5");
+      responseContent = result.text;
+      inputTokens = result.inputTokens;
+      outputTokens = result.outputTokens;
+    } catch {
+      const { vly } = await import('../lib/vly-integrations');
+      const result = await vly.ai.completion({
+        model: "claude-haiku-4-5",
+        messages: [{ role: "user", content: systemPrompt + "\n\n" + fullPrompt }],
+        maxTokens: 4096,
+      });
+      responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "No response") : "Failed to get response";
     }
 
     const estimatedInput = inputTokens || Math.ceil(fullPrompt.length / 4);
@@ -605,7 +590,7 @@ Write answers that are 400-800 words minimum. Be thorough. Be the teacher every 
       conversationId: args.conversationId,
       userId,
       content: responseContent,
-      tokensUsed: inputTokens + outputTokens,
+      tokensUsed: estimatedInput + estimatedOutput,
       costCents,
       inputTokens: estimatedInput,
       outputTokens: estimatedOutput,
