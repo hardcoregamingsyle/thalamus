@@ -547,11 +547,19 @@ export async function callClaude(
     // ── Non-streaming invoke (primary path now) ───────────────────────────────
     console.log(`🔧 Calling Bedrock non-streaming: ${model} in ${region}`);
     const fallbackHeaders = await buildHeaders(fallbackUrl);
-    const response = await fetch(fallbackUrl, {
-      method: "POST",
-      headers: fallbackHeaders,
-      body: requestBody,
-    });
+    const bedrockCtrl = new AbortController();
+    const bedrockTimeout = setTimeout(() => bedrockCtrl.abort(), 22_000);
+    let response: Response;
+    try {
+      response = await fetch(fallbackUrl, {
+        method: "POST",
+        headers: fallbackHeaders,
+        body: requestBody,
+        signal: bedrockCtrl.signal,
+      });
+    } finally {
+      clearTimeout(bedrockTimeout);
+    }
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
