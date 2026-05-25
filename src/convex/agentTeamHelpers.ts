@@ -9,6 +9,12 @@ function generateCustomId(): string {
   return id;
 }
 
+// ── Per-task message limit constants ─────────────────────────────────────────
+// At 40 messages per task → activate Prime Mode (upgrade all models to more powerful tier)
+// At 80 messages per task → mark task as incomplete and move to next task
+export const TASK_PRIME_THRESHOLD = 40;
+export const TASK_INCOMPLETE_THRESHOLD = 80;
+
 export const saveAgentMessage = internalMutation({
   args: {
     sessionId: v.id("teamSessions"),
@@ -482,25 +488,138 @@ export const updateSessionFull = internalMutation({
     clearPlannerTasks: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) return;
+
+    // ── Per-task message limit enforcement ───────────────────────────────────
+    const newTaskMessageCount = args.taskMessageCount ?? session.taskMessageCount ?? 0;
+    let taskUpgradeActive = args.taskUpgradeActive ?? session.taskUpgradeActive ?? false;
+    let taskUpgradeMessagesLeft = args.taskUpgradeMessagesLeft ?? session.taskUpgradeMessagesLeft ?? 0;
+    let unfixableTasksJson = args.unfixableTasksJson ?? session.unfixableTasksJson;
+    let currentTaskIndex = args.currentTaskIndex ?? session.currentTaskIndex ?? 0;
+    let status = args.status;
+
+    // At 40 messages per task → activate Prime Mode
+    if (newTaskMessageCount >= TASK_PRIME_THRESHOLD && !taskUpgradeActive && !session.manualUpgradeEnabled) {
+      taskUpgradeActive = true;
+      taskUpgradeMessagesLeft = TASK_INCOMPLETE_THRESHOLD - newTaskMessageCount;
+      // Save a system message notifying about prime mode activation
+      await ctx.db.insert("agentMessages", {
+        sessionId: args.sessionId,
+        userId: session.userId,
+        agent: "System",
+        content: `⚡ PRIME MODE ACTIVATED — Task has used ${newTaskMessageCount} messages. Upgrading all agents to more powerful models for the remaining ${taskUpgradeMessagesLeft} messages.`,
+        round: session.round ?? 0,
+        messageIndex: (session.totalMessages ?? 0) + 1,
+      });
+    }
+
+    // At 80 messages per task → mark task as incomplete and move to next
+    if (newTaskMessageCount >= TASK_INCOMPLETE_THRESHOLD && status !== "completed") {
+      // Get current planner tasks
+      let plannerTasks: Array<{ title: string; description: string; status?: string; difficulty?: string }> = [];
+      try {
+        plannerTasks = JSON.parse(session.plannerTasksJson || "[]") as typeof plannerTasks;
+      } catch { /* ignore */ }
+
+      // Mark current task as incomplete
+      if (plannerTasks.length > 0 && currentTaskIndex < plannerTasks.length) {
+        plannerTasks[currentTaskIndex] = {
+          ...plannerTasks[currentTaskIndex],
+          status: "incomplete",
+        };
+      }
+
+      // Add to unfixable tasks list
+      const currentTask = plannerTasks[currentTaskIndex];
+      const unfixableTasks: Array<{ taskIndex: number; title: string; description: string }> = [];
+      try {
+        const parsed = JSON.parse(unfixableTasksJson || "[]") as typeof unfixableTasks;
+        unfixableTasks.push(...parsed);
+      } catch { /* ignore */ }
+      if (currentTask) {
+        unfixableTasks.push({
+          taskIndex: currentTaskIndex,
+          title: currentTask.title || `Task ${currentTaskIndex + 1}`,
+          description: currentTask.description || "",
+        });
+      }
+      unfixableTasksJson = JSON.stringify(unfixableTasks);
+
+      // Move to next task
+      const nextTaskIndex = currentTaskIndex + 1;
+      currentTaskIndex = nextTaskIndex;
+
+      // Reset task message count for next task
+      const isLastTask = nextTaskIndex >= plannerTasks.length;
+
+      // Save a system message notifying about task being marked incomplete
+      await ctx.db.insert("agentMessages", {
+        sessionId: args.sessionId,
+        userId: session.userId,
+        agent: "System",
+        content: `⚠️ TASK MARKED INCOMPLETE — Task "${currentTask?.title || `Task ${currentTaskIndex}`}" exceeded ${TASK_INCOMPLETE_THRESHOLD} messages without completion. Moving to next task. You can retry incomplete tasks manually after all tasks are done.`,
+        round: session.round ?? 0,
+        messageIndex: (session.totalMessages ?? 0) + 2,
+      });
+
+      // Update planner tasks with incomplete status
+      await ctx.db.patch(args.sessionId, {
+        plannerTasksJson: JSON.stringify(plannerTasks),
+      });
+
+      // If this was the last task, mark session as idle so user can review
+      if (isLastTask) {
+        status = "idle";
+      }
+
+      // Reset prime mode and task message count for next task
+      taskUpgradeActive = false;
+      taskUpgradeMessagesLeft = 0;
+    }
+
     await ctx.db.patch(args.sessionId, {
-      status: args.status,
+      status,
       currentAgent: args.currentAgent,
       loopCount: args.loopCount,
       phase: args.phase,
       totalMessages: args.totalMessages,
       executionPhase: args.executionPhase,
-      currentTaskIndex: args.currentTaskIndex,
+      currentTaskIndex,
       finalReviewCoderEnabled: args.finalReviewCoderEnabled,
-      taskMessageCount: args.taskMessageCount,
-      taskUpgradeActive: args.taskUpgradeActive,
-      taskUpgradeMessagesLeft: args.taskUpgradeMessagesLeft,
-      unfixableTasksJson: args.unfixableTasksJson,
+      taskMessageCount: newTaskMessageCount >= TASK_INCOMPLETE_THRESHOLD ? 0 : newTaskMessageCount,
+      taskUpgradeActive,
+      taskUpgradeMessagesLeft,
+      unfixableTasksJson,
       manualUpgradeEnabled: args.manualUpgradeEnabled,
       // Clear planner tasks when session completes so they don't show stale data
       ...(args.clearPlannerTasks ? { plannerTasksJson: undefined } : {}),
       // Track when we started running to detect stale states
-      runningAt: args.status === "running" ? Date.now() : undefined,
+      runningAt: status === "running" ? Date.now() : undefined,
     });
+  },
+});
+
+// Public query to get prime mode status and incomplete tasks for the frontend
+export const getSessionLimitStatus = query({
+  args: { sessionId: v.id("teamSessions") },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) return null;
+    const unfixableTasks: Array<{ taskIndex: number; title: string; description: string }> = [];
+    try {
+      const parsed = JSON.parse(session.unfixableTasksJson || "[]") as typeof unfixableTasks;
+      unfixableTasks.push(...parsed);
+    } catch { /* ignore */ }
+    return {
+      taskMessageCount: session.taskMessageCount ?? 0,
+      taskUpgradeActive: session.taskUpgradeActive ?? false,
+      taskUpgradeMessagesLeft: session.taskUpgradeMessagesLeft ?? 0,
+      primeThreshold: TASK_PRIME_THRESHOLD,
+      incompleteThreshold: TASK_INCOMPLETE_THRESHOLD,
+      incompleteTasks: unfixableTasks,
+      manualUpgradeEnabled: session.manualUpgradeEnabled ?? false,
+    };
   },
 });
 
