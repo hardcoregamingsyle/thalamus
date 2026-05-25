@@ -167,7 +167,7 @@ export default function Landing() {
             className="flex justify-center mb-8">
             <div className="inline-flex items-center gap-2 border border-primary/25 bg-primary/8 text-primary text-[11px] font-semibold px-4 py-2 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              GitHub sync recovery upgraded · World's First L4.5 Agent System
+              Study Mode replies fixed · World's First L4.5 Agent System
             </div>
           </motion.div>
 
