@@ -316,14 +316,15 @@ export const sendStudyMessage = action({
     ]);
     if (!userId) throw new Error("Not authenticated");
 
-    // Parallel: save user message + fetch all context
-    const [, history, resources, adminMaterials, userRecord] = await Promise.all([
-      ctx.runMutation(internal.aiHelpers.saveMessage, {
-        conversationId: args.conversationId,
-        userId,
-        role: "user",
-        content: args.content,
-      }),
+    // Save user message first, then fetch context in parallel
+    await ctx.runMutation(internal.aiHelpers.saveMessage, {
+      conversationId: args.conversationId,
+      userId,
+      role: "user",
+      content: args.content,
+    });
+
+    const [history, resources, adminMaterials, userRecord] = await Promise.all([
       ctx.runQuery(internal.aiHelpers.getConversationMessages, { conversationId: args.conversationId }) as Promise<Array<{ role: string; content: string }>>,
       ctx.runQuery(internal.studyHelpers.getResourcesForUser, { userId }),
       ctx.runQuery(internal.admin.getAdminStudyMaterials, {}) as Promise<Array<{ title: string; content: string; mode?: string }>>,
@@ -413,8 +414,8 @@ Respond in clean HTML only (no markdown). Use <h2>, <h3>, <p>, <ul>, <li>, <stro
     const estimatedOutput = outputTokens || Math.ceil(responseContent.length / 4);
     const costCents = (estimatedInput / 1_000_000) * 60 + (estimatedOutput / 1_000_000) * 240;
 
-    // Save response in background — don't await to return faster
-    ctx.scheduler.runAfter(0, internal.aiHelpers.saveAssistantMessage, {
+    // Save response to DB — must await so useQuery picks it up immediately
+    await ctx.runMutation(internal.aiHelpers.saveAssistantMessage, {
       conversationId: args.conversationId,
       userId,
       content: responseContent,
