@@ -152,7 +152,7 @@ export default function StudentSuite({
         studyLanguage: studyLanguage ?? undefined,
       });
       if (!test.sections || test.sections.length === 0) { toast.error("No test generated. Have a study conversation first."); return; }
-      setMockTest(test);
+      setMockTest(test as unknown as MockTest);
       setMockAnswers({});
       setMockPhase("test");
       setEvalResult(null);
