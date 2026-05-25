@@ -934,7 +934,7 @@ function PortalDesktop() {
   const params = useParams<{ mode?: string; sessionId?: string }>();
 
   // Compute these before hooks so they're stable
-  const activeMode: Mode = (params.mode && VALID_MODES.includes(params.mode as Mode) ? params.mode : "chat") as Mode;
+  const activeMode: Mode | null = (params.mode && VALID_MODES.includes(params.mode as Mode) ? params.mode as Mode : null);
   const urlSessionId = params.sessionId ?? null;
 
   const [activeConvId, setActiveConvId] = useState<Id<"conversations"> | null>(null);
@@ -1105,7 +1105,7 @@ function PortalDesktop() {
   const handleNewConversation = async () => {
     if (!token) return;
     try {
-      const result = await createConversation({ title: `${activeMode.toUpperCase()}_${Date.now().toString(36).toUpperCase()}`, mode: activeMode, token }) as { id: Id<"conversations">; customId: string } | Id<"conversations">;
+      const result = await createConversation({ title: `${(activeMode ?? "chat").toUpperCase()}_${Date.now().toString(36).toUpperCase()}`, mode: activeMode ?? "chat", token }) as { id: Id<"conversations">; customId: string } | Id<"conversations">;
       const id = typeof result === "object" && "id" in result ? result.id : result as Id<"conversations">;
       const customId = typeof result === "object" && "customId" in result ? result.customId : null;
       setActiveConvId(id);
@@ -1158,7 +1158,7 @@ function PortalDesktop() {
     let convId: Id<"conversations"> | null = activeConvId;
     if (!convId) {
       try {
-        const newConv = await createConversation({ token, mode: activeMode, title: msg.slice(0, 50) });
+        const newConv = await createConversation({ token, mode: activeMode ?? "chat", title: msg.slice(0, 50) });
         const newConvResult = newConv as { id: Id<"conversations">; customId: string } | Id<"conversations">;
         const id = typeof newConvResult === "object" && "id" in newConvResult ? newConvResult.id : newConvResult as Id<"conversations">;
         const customId = typeof newConvResult === "object" && "customId" in newConvResult ? newConvResult.customId : null;
@@ -1194,7 +1194,7 @@ function PortalDesktop() {
     };
 
     const historyMsgs = (messages ?? []).slice(-10).map((m: Message) => ({ role: m.role, content: m.content.slice(0, 1500) }));
-    const systemPrompt = SYSTEM_PROMPTS[activeMode] ?? SYSTEM_PROMPTS.chat;
+    const systemPrompt = SYSTEM_PROMPTS[activeMode ?? "chat"] ?? SYSTEM_PROMPTS.chat;
 
     setIsThinking(true);
     setThinkingContent("");
