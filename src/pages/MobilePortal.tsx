@@ -8,6 +8,7 @@ import { useNavigate, useParams } from "react-router";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
 import CreditModal from "@/components/CreditModal";
+import ThinkingPanel from "@/components/ThinkingPanel";
 import {
   MessageSquare, Search, BookOpen, Users, Plus, Send, Loader2,
   Trash2, Zap, LogOut, Cpu, ChevronRight,
@@ -56,6 +57,8 @@ async function streamChat(
   siteUrl: string,
   payload: object,
   onChunk: (text: string) => void,
+  onThinking: (text: string) => void,
+  onAnswerStart: () => void,
 ): Promise<string> {
   const response = await fetch(`${siteUrl}/stream-chat`, {
     method: "POST",
@@ -78,8 +81,10 @@ async function streamChat(
       const jsonStr = line.slice(6).trim();
       if (!jsonStr) continue;
       try {
-        const parsed = JSON.parse(jsonStr) as { chunk?: string; done?: boolean; fullText?: string };
-        if (parsed.chunk) { accumulated += parsed.chunk; onChunk(accumulated); }
+        const parsed = JSON.parse(jsonStr) as { type?: string; chunk?: string; done?: boolean; fullText?: string };
+        if (parsed.type === "thinking" && parsed.chunk) onThinking(parsed.chunk);
+        if (parsed.type === "answer_start") onAnswerStart();
+        if ((!parsed.type || parsed.type === "answer") && parsed.chunk) { accumulated += parsed.chunk; onChunk(accumulated); }
         if (parsed.done && parsed.fullText) accumulated = parsed.fullText;
       } catch { /* skip */ }
     }
@@ -109,6 +114,8 @@ function MobileChatView({
   const [activeConvId, setActiveConvId] = useState<Id<"conversations"> | null>(null);
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
+  const [thinkingContent, setThinkingContent] = useState("");
+  const [inFlightUserContent, setInFlightUserContent] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const [showConvList, setShowConvList] = useState(false);
   const [creditModalOpen, setCreditModalOpen] = useState(false);
@@ -162,6 +169,7 @@ function MobileChatView({
     if (!input.trim() || isThinking || !token) return;
     const msg = input.trim();
     setInput("");
+    setInFlightUserContent(msg);
 
     const userContext = {
       datetime: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }),
@@ -204,7 +212,9 @@ function MobileChatView({
     const historyMsgs = (messages ?? []).slice(-10).map((m: Message) => ({ role: m.role, content: m.content.slice(0, 1500) }));
     const systemPrompt = SYSTEM_PROMPTS[mode] ?? SYSTEM_PROMPTS.chat;
 
-    setStreamingContent("");
+    setIsThinking(true);
+    setThinkingContent("");
+    setStreamingContent(null);
 
     try {
       const accumulated = await streamChat(siteUrl, {
@@ -217,7 +227,15 @@ function MobileChatView({
         conversationId: convId,
         preferClaude: true,
         skipUserSave: userMessageSaved,
-      }, (text) => setStreamingContent(text));
+      }, (text) => {
+        setIsThinking(false);
+        setStreamingContent(text);
+      }, (text) => {
+        setThinkingContent(prev => prev + text);
+      }, () => {
+        setIsThinking(false);
+        setStreamingContent("");
+      });
       setStreamingContent(null);
       void accumulated; // response saved by server
     } catch {
@@ -237,6 +255,7 @@ function MobileChatView({
     generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
     setIsThinking(false);
     setStreamingContent(null);
+    setInFlightUserContent(null);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -264,6 +283,13 @@ function MobileChatView({
     : modeInfo.label;
 
   const allMessages = messages ?? [];
+  const visibleMessages = (() => {
+    if (!inFlightUserContent || (!isThinking && streamingContent === null)) return allMessages;
+    const currentTurnIndex = [...allMessages].reverse().findIndex(m => m.role === "user" && m.content === inFlightUserContent);
+    if (currentTurnIndex === -1) return allMessages;
+    const userIndex = allMessages.length - 1 - currentTurnIndex;
+    return allMessages.filter((m, index) => index <= userIndex || m.role !== "assistant");
+  })();
   const showMessages = activeConvId && allMessages.length > 0;
 
   return (
@@ -294,6 +320,16 @@ function MobileChatView({
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto min-h-0 px-3 py-3 space-y-3">
+        {(thinkingContent || isThinking) && (
+          <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-sm rounded-xl">
+            <ThinkingPanel
+              title={`${modeInfo.label} thinking`}
+              content={thinkingContent}
+              active={isThinking && streamingContent === null}
+              accentClassName={`${modeInfo.bg} ${modeInfo.color} border-border`}
+            />
+          </div>
+        )}
         {!activeConvId ? (
           // Empty state — prompt to start
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center h-full gap-6 pb-16">
@@ -338,7 +374,7 @@ function MobileChatView({
           </div>
         ) : (
           <>
-            {allMessages.map((msg: Message) => (
+            {visibleMessages.map((msg: Message) => (
               <motion.div key={msg._id}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}

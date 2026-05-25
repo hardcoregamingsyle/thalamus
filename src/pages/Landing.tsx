@@ -167,7 +167,7 @@ export default function Landing() {
             className="flex justify-center mb-8">
             <div className="inline-flex items-center gap-2 border border-primary/25 bg-primary/8 text-primary text-[11px] font-semibold px-4 py-2 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              Study Mode replies fixed · World's First L4.5 Agent System
+              New: collapsible thinking streams · Study Mode replies fixed
             </div>
           </motion.div>
 
@@ -182,7 +182,7 @@ export default function Landing() {
               Chat. Research. Study. Build software. One AI, four superpowers. Free to try — no sign-up required.
             </p>
             <p className="text-sm text-muted-foreground/60 mb-8 max-w-xl mx-auto">
-              Powered by Claude Haiku 4.5, Sonnet 4.6, Opus 4.6/4.7 via AWS Bedrock · Gemini 3.1 Flash-Lite · Daytona cloud sandboxes
+              Answers now separate thinking from final output across Chat, Research, Study, and Code agents.
             </p>
             <motion.button onClick={handleLaunch} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
               className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20">
