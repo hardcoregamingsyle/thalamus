@@ -581,15 +581,11 @@ export default function TeamPortal() {
     e.target.value = "";
   };
 
-  // TODO: Re-enable when agentTeam API is implemented
-  // Stub implementations to prevent TypeScript errors
-  const createSession = async (...args: any[]): Promise<any> => { throw new Error("agentTeam API not implemented"); };
-  const runAgentRound = async (...args: any[]): Promise<{ agent: string; fileOpsCount: number; done: boolean }> => {
-    throw new Error("agentTeam API not implemented");
-  };
-  const listSessionsAction = async (...args: any[]): Promise<any[]> => { throw new Error("agentTeam API not implemented"); };
-  const continueSessionAction = async (...args: any[]): Promise<any> => { throw new Error("agentTeam API not implemented"); };
-  const startBackgroundSession = async (...args: any[]): Promise<any> => { throw new Error("agentTeam API not implemented"); };
+  const createSession = useMutation(api.agentTeamHelpers.createSessionPublic);
+  const runAgentRound = useMutation(api.agentTeamHelpers.runAgentRoundPublic);
+  const listSessionsAction = useMutation(api.agentTeamHelpers.listSessionsPublic);
+  const continueSessionAction = useMutation(api.agentTeamHelpers.continueSessionPublic);
+  const startBackgroundSession = useMutation(api.agentTeamHelpers.startBackgroundSessionPublic);
   const createSandboxAction = useAction(api.sandbox.createSandbox);
   const executeCommandAction = useAction(api.sandbox.executeCommand);
   const stopSandboxAction = useAction(api.sandbox.stopSandbox);

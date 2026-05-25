@@ -983,8 +983,6 @@ function PortalDesktop() {
   const createConversation = useMutation(api.conversations.create);
   const deleteConversation = useMutation(api.conversations.remove);
   const sendMessage = useAction(api.ai.sendMessage);
-  // TODO: Re-enable when agentTeam API is available
-  const runResearchMode = async (...args: any[]): Promise<any> => ({ results: [], error: "agentTeam API not implemented" });
   const sendStudyMessage = useAction(api.study.sendStudyMessage);
   const generateTitle = useAction(api.ai.generateConversationTitle);
   const addTextResource = useMutation(api.studyHelpers.addTextResource);
@@ -1158,28 +1156,7 @@ function PortalDesktop() {
       return;
     }
 
-    // Research mode: use the Research Team pipeline (ResearchPlanner → DataTaker → ResearchOrganiser)
-    if (activeMode === "research") {
-      setIsThinking(true);
-      try {
-        const result = await runResearchMode({ conversationId: convId, topic: msg, token });
-        // Result is already saved to DB by the action — useQuery will pick it up
-        // Strip any stray
-      } catch (err) {
-        console.error("Research mode failed:", err);
-        toast.error(err instanceof Error ? err.message : "Failed to research");
-      } finally {
-        setIsThinking(false);
-      }
-      // Generate title if this is first message
-      if (!activeConvId) {
-        generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
-      }
-      setIsThinking(false);
-      return; // Exit early for research mode
-    }
-
-    // All other modes: use streaming HTTP endpoint
+    // Chat, research, and study use the streaming HTTP endpoint.
     const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
     const siteUrl = convexUrl.replace(".convex.cloud", ".convex.site");
 
@@ -1254,12 +1231,9 @@ function PortalDesktop() {
         }
       }
       console.log("Stream read complete. accumulated length:", accumulated.length);
-      // If nothing came back, clear the skeleton
-      if (!accumulated) {
-        setStreamingContent(null);
-      }
-      // Otherwise keep streamingContent visible — useEffect will clear it when
-      // Convex useQuery delivers the saved assistant message
+      // The stream endpoint saves the assistant response before streaming it
+      // back for UX, so clear the temporary bubble after the stream finishes.
+      setStreamingContent(null);
     } catch (streamError) {
       console.error("Streaming failed, falling back to action:", streamError);
       setStreamingContent(null);
@@ -1284,7 +1258,7 @@ function PortalDesktop() {
     }
 
     setIsThinking(false);
-    // Do NOT clear streamingContent here — let the useEffect handle it when messages update
+    setStreamingContent(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -1315,7 +1289,7 @@ function PortalDesktop() {
             content: text,
             size: file.size
           });
-        } catch (err) {
+        } catch {
           toast.error(`Failed to read ${file.name}`);
         }
       }

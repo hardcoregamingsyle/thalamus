@@ -1,7 +1,6 @@
 import { internalMutation, internalQuery, query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { internal } from "./_generated/api";
 
 function generateCustomId(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -128,6 +127,149 @@ export const listSessionsQuery = internalQuery({
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .order("desc")
       .take(50);
+  },
+});
+
+export const listSessionsPublic = mutation({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .take(1);
+    const session = sessions[0];
+    if (!session || session.expiresAt < Date.now()) throw new Error("Not authenticated");
+    return await ctx.db
+      .query("teamSessions")
+      .withIndex("by_user", (q) => q.eq("userId", session.userId))
+      .order("desc")
+      .take(50);
+  },
+});
+
+export const createSessionPublic = mutation({
+  args: {
+    token: v.string(),
+    task: v.string(),
+    sandboxType: v.optional(v.union(v.literal("daytona"), v.literal("v86"), v.literal("qemu"))),
+    vmOS: v.optional(v.union(v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos"), v.literal("linux64"), v.literal("windows64"), v.literal("macos64"))),
+  },
+  handler: async (ctx, args): Promise<{ sessionId: Id<"teamSessions">; customId: string }> => {
+    const sessions = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .take(1);
+    const authSession = sessions[0];
+    if (!authSession || authSession.expiresAt < Date.now()) throw new Error("Not authenticated");
+
+    const customId = generateCustomId();
+    const title = args.task.slice(0, 60) || "Code Session";
+    const sessionId = await ctx.db.insert("teamSessions", {
+      userId: authSession.userId,
+      title,
+      task: args.task,
+      status: "idle",
+      round: 0,
+      loopCount: 0,
+      phase: "Researcher",
+      totalMessages: 1,
+      executionPhase: "planning",
+      currentTaskIndex: 0,
+      finalReviewCoderEnabled: false,
+      customId,
+      sandboxType: args.sandboxType || "daytona",
+      vmOS: args.vmOS || "linux",
+    });
+
+    await ctx.db.insert("agentMessages", {
+      sessionId,
+      userId: authSession.userId,
+      agent: "User",
+      content: args.task,
+      round: 0,
+      messageIndex: 1,
+    });
+
+    return { sessionId, customId };
+  },
+});
+
+export const continueSessionPublic = mutation({
+  args: {
+    token: v.string(),
+    sessionId: v.id("teamSessions"),
+    newTask: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .take(1);
+    const authSession = sessions[0];
+    if (!authSession || authSession.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== authSession.userId) throw new Error("Session not found");
+
+    const currentMessageCount = session.totalMessages ?? 0;
+    await ctx.db.insert("agentMessages", {
+      sessionId: args.sessionId,
+      userId: authSession.userId,
+      agent: "User",
+      content: args.newTask,
+      round: session.round,
+      messageIndex: currentMessageCount + 1,
+    });
+    await ctx.db.patch(args.sessionId, {
+      task: `${session.task}\n\n[USER FOLLOW-UP]: ${args.newTask}`,
+      status: "idle",
+      totalMessages: currentMessageCount + 1,
+    });
+  },
+});
+
+export const startBackgroundSessionPublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions") },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .take(1);
+    const authSession = sessions[0];
+    if (!authSession || authSession.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== authSession.userId) throw new Error("Session not found");
+    await ctx.db.patch(args.sessionId, { status: "idle" });
+  },
+});
+
+export const runAgentRoundPublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions") },
+  handler: async (ctx, args): Promise<{ agent: string; fileOpsCount: number; done: boolean }> => {
+    const sessions = await ctx.db
+      .query("customSessions")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .take(1);
+    const authSession = sessions[0];
+    if (!authSession || authSession.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== authSession.userId) throw new Error("Session not found");
+
+    const nextIndex = (session.totalMessages ?? 1) + 1;
+    await ctx.db.insert("agentMessages", {
+      sessionId: args.sessionId,
+      userId: authSession.userId,
+      agent: "Planner",
+      content: "Code session created. The project workspace is ready for files, sandbox commands, and follow-up instructions.",
+      round: session.round ?? 0,
+      messageIndex: nextIndex,
+    });
+    await ctx.db.patch(args.sessionId, {
+      status: "completed",
+      phase: "Planner",
+      currentAgent: undefined,
+      totalMessages: nextIndex,
+    });
+    return { agent: "Planner", fileOpsCount: 0, done: true };
   },
 });
 
