@@ -53,63 +53,63 @@ const MODE_CARDS: Array<{
     label: "Chat",
     icon: MessageSquare,
     tone: "text-sky-300 border-sky-300/25 bg-sky-300/8",
-    metric: "instant reasoning",
-    headline: "Executive-grade answers on demand",
-    desc: "Direct, structured responses for decisions, writing, analysis, planning, and everyday work.",
-    examples: ["Explain anything", "Write and refine", "Plan complex work"],
+    metric: "quick answers",
+    headline: "Ask anything and feel understood",
+    desc: "Get clear help with everyday questions, writing, planning, decisions, and ideas.",
+    examples: ["Explain anything", "Write with confidence", "Plan your day"],
   },
   {
     id: "research",
     label: "Research",
     icon: Search,
     tone: "text-amber-300 border-amber-300/25 bg-amber-300/8",
-    metric: "live web synthesis",
-    headline: "Research that feels like an analyst team",
-    desc: "Live source gathering, synthesis, structured reports, and market-level reasoning in one flow.",
-    examples: ["Market maps", "Technical briefs", "Current events"],
+    metric: "fresh information",
+    headline: "Understand any topic faster",
+    desc: "Turn messy information into simple explanations, comparisons, summaries, and next steps.",
+    examples: ["Compare options", "Catch up quickly", "Learn what matters"],
   },
   {
     id: "study",
     label: "Study",
     icon: BookOpen,
     tone: "text-indigo-300 border-indigo-300/25 bg-indigo-300/8",
-    metric: "grounded learning",
-    headline: "A private tutor for any curriculum",
-    desc: "Upload notes, ask for exam-ready explanations, and get learning paths that adapt to the student.",
-    examples: ["NCERT and CBSE", "College courses", "Practice questions"],
+    metric: "study help",
+    headline: "A patient tutor for every learner",
+    desc: "Upload notes or ask a question and get explanations that are easy to follow and ready to revise.",
+    examples: ["School lessons", "College topics", "Practice questions"],
   },
   {
     id: "code",
-    label: "Code",
+    label: "Build",
     icon: Code2,
     tone: "text-emerald-300 border-emerald-300/25 bg-emerald-300/8",
-    metric: "multi-agent build system",
-    headline: "Software teams compressed into one prompt",
-    desc: "Researcher, planner, coder, tester, red team, critic, and deploy workflow working as one system.",
-    examples: ["Full products", "Production fixes", "Security passes"],
+    metric: "make things",
+    headline: "Bring apps and ideas to life",
+    desc: "Describe what you want to create, and Thalamus helps plan, build, check, and improve it.",
+    examples: ["Websites", "Apps", "Useful tools"],
   },
 ];
 
 const CAPABILITIES = [
-  { icon: Brain, label: "All-purpose intelligence", detail: "One interface for conversation, research, study, and software execution." },
-  { icon: Layers3, label: "Agent depth", detail: "Specialized flows for high-stakes tasks instead of a single generic chat window." },
-  { icon: ShieldCheck, label: "Enterprise posture", detail: "Built around modern model routing, private sessions, and production workflows." },
-  { icon: Zap, label: "Fast by design", detail: "Streaming UI, compact sessions, and mode-specific prompts keep the product moving." },
+  { icon: Brain, label: "Helpful for everything", detail: "Use one AI for questions, learning, research, writing, planning, and building." },
+  { icon: Layers3, label: "Made for real life", detail: "Switch between quick help, deeper learning, and bigger projects without changing tools." },
+  { icon: ShieldCheck, label: "Private by default", detail: "Your work stays in your session, so you can think, learn, and create with confidence." },
+  { icon: Zap, label: "Fast and easy", detail: "Responses appear as they are written, so the experience feels immediate and natural." },
 ];
 
 const SIGNALS = [
-  "L4.5 agent system",
-  "AWS Bedrock model routing",
-  "Live web research",
-  "Code execution sandboxes",
-  "Collapsible reasoning notes",
+  "Answers for everyday questions",
+  "Help with school and college",
+  "Fresh research when you need it",
+  "Tools for building apps and websites",
+  "Clear thinking notes you can open or close",
 ];
 
 const CONSOLE_LINES = [
-  { agent: "Router", text: "Classifying task intent across chat, research, study, and code." },
-  { agent: "Research", text: "Preparing source plan and synthesis outline." },
-  { agent: "Study", text: "Checking profile, resources, and exam-ready framing." },
-  { agent: "Code", text: "Assigning planner, coder, tester, red-team, and critic agents." },
+  { agent: "Ask", text: "Understanding what you need and choosing the best way to help." },
+  { agent: "Learn", text: "Breaking difficult ideas into clear steps and simple language." },
+  { agent: "Explore", text: "Finding the important points and turning them into a useful answer." },
+  { agent: "Create", text: "Helping turn plans, notes, and ideas into finished work." },
 ];
 
 function SuggestionModal({
@@ -250,7 +250,7 @@ function NavBar({
           </div>
           <div>
             <p className="text-sm font-bold tracking-[0.22em] text-foreground">THALAMUS</p>
-            <p className="hidden text-[10px] uppercase tracking-[0.18em] text-muted-foreground sm:block">All-purpose AI command system</p>
+            <p className="hidden text-[10px] uppercase tracking-[0.18em] text-muted-foreground sm:block">AI for everyday life, learning, and work</p>
           </div>
         </div>
 
@@ -280,7 +280,7 @@ function IntelligenceConsole({ onLaunch }: { onLaunch: () => void }) {
           <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
-              <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-foreground">Live Intelligence Core</span>
+              <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-foreground">How Thalamus Helps</span>
             </div>
             <span className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-2 py-0.5 text-[10px] font-bold text-emerald-300">Online</span>
           </div>
@@ -304,7 +304,7 @@ function IntelligenceConsole({ onLaunch }: { onLaunch: () => void }) {
           <div className="rounded-lg border border-white/10 bg-white/[0.035] p-4">
             <div className="mb-3 flex items-center gap-2">
               <Globe2 className="h-4 w-4 text-amber-300" />
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-foreground">Capability Matrix</p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-foreground">What You Can Do</p>
             </div>
             <div className="space-y-2">
               {SIGNALS.map(signal => (
@@ -320,8 +320,8 @@ function IntelligenceConsole({ onLaunch }: { onLaunch: () => void }) {
             className="group flex items-center justify-between rounded-lg border border-primary/30 bg-primary px-4 py-4 text-left text-primary-foreground shadow-xl shadow-primary/15 transition-all hover:bg-primary/90"
           >
             <span>
-              <span className="block text-xs font-bold uppercase tracking-[0.18em]">Start the system</span>
-              <span className="mt-1 block text-[11px] opacity-80">Enter Chat, Research, Study, or Code mode.</span>
+              <span className="block text-xs font-bold uppercase tracking-[0.18em]">Start now</span>
+              <span className="mt-1 block text-[11px] opacity-80">Choose Chat, Research, Study, or Build.</span>
             </span>
             <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
           </button>
@@ -347,7 +347,7 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur-xl"
           >
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-            Built for people who need the strongest answer, not another chatbot
+            Built for anyone who wants clearer answers and better work
           </motion.div>
 
           <motion.h1
@@ -365,7 +365,7 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             transition={{ delay: 0.12, duration: 0.55 }}
             className="mx-auto mt-6 max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg"
           >
-            Thalamus brings chat, live research, elite study support, and a multi-agent software team into one premium command center.
+            Thalamus helps you ask, learn, research, write, plan, and build from one beautiful place.
           </motion.p>
 
           <motion.div
@@ -379,7 +379,7 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </button>
             <button onClick={() => document.getElementById("modes")?.scrollIntoView({ behavior: "smooth" })} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.035] px-6 py-3 text-sm font-bold text-foreground backdrop-blur-xl transition-all hover:border-white/20 hover:bg-white/[0.06]">
-              See the system
+              See what it can do
               <Layers3 className="h-4 w-4" />
             </button>
           </motion.div>
@@ -404,11 +404,11 @@ function ModeGrid({ onSelect }: { onSelect: (mode: ModeId) => void }) {
       <div className="mx-auto max-w-7xl">
         <div className="mb-8 flex flex-col justify-between gap-4 border-b border-white/10 pb-6 md:flex-row md:items-end">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">Four modes. One command layer.</p>
-            <h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-normal text-foreground sm:text-5xl">A full AI operating system, not a chat tab.</h2>
+            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">Four ways to get help</p>
+            <h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-normal text-foreground sm:text-5xl">The right kind of help for whatever you are doing.</h2>
           </div>
           <p className="max-w-md text-sm leading-6 text-muted-foreground">
-            Every mode has a distinct role, tuned prompt architecture, and UI built for serious output.
+            Pick the mode that matches your goal. Thalamus handles the rest in clear, friendly language.
           </p>
         </div>
 
@@ -484,12 +484,12 @@ function FinalCta({ onLaunch, onSelect }: { onLaunch: () => void; onSelect: (mod
       <div className="mx-auto max-w-7xl">
         <div className="grid gap-8 border-y border-white/10 py-12 md:grid-cols-[1fr_auto] md:items-center">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">Enter the command center</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">Start with anything</p>
             <h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-normal text-foreground sm:text-5xl">
-              Built to look powerful because it is powerful.
+              Powerful enough for big work. Simple enough for everyone.
             </h2>
             <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Start with the mode you need. The system adapts from quick answers to deep research, study help, and agentic software execution.
+              Start with a question, a lesson, a topic, an idea, or a project. Thalamus will guide you from there.
             </p>
           </div>
           <button onClick={onLaunch} className="group flex items-center justify-center gap-2 rounded-lg bg-foreground px-6 py-3 text-sm font-bold text-background shadow-2xl shadow-black/30 transition-all hover:bg-foreground/90">
@@ -524,9 +524,9 @@ function Footer() {
         </div>
         <div className="flex flex-wrap items-center justify-center gap-3 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
           <span>All-purpose AI</span>
-          <span>Agentic code</span>
+          <span>Build help</span>
           <span>Live research</span>
-          <span>Study systems</span>
+          <span>Study help</span>
         </div>
       </div>
     </footer>
