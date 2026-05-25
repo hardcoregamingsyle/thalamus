@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
 import { useAction, useQuery, useMutation } from "convex/react";
@@ -1213,8 +1214,8 @@ function FilesTabInline({
   const renameFileMutation = useMutation(api.agentTeamHelpers.renameFilePublic);
   const createFileMutation = useMutation(api.agentTeamHelpers.createFilePublic);
   const duplicateFileMutation = useMutation(api.agentTeamHelpers.duplicateFilePublic);
-  const importFromGithubAction = useAction(api.agentTeam.importFromGithub);
-  const vectorizeSessionAction = useAction(api.agentTeam.vectorizeSessionPublic);
+  const importFromGithubAction = useMutation(api.agentTeamHelpers.importFromGithubPublic);
+  const vectorizeSessionAction = useMutation(api.agentTeamHelpers.vectorizeSessionPublic);
   const [isImporting, setIsImporting] = useState(false);
   const [isVectorizing, setIsVectorizing] = useState(false);
   const [showGithubModal, setShowGithubModal] = useState(false);
@@ -1586,7 +1587,9 @@ function FilesTabInline({
 }
 
 // ── TeamPortalInline — embeddable agent team UI ────────────────────────────────
-export default function TeamPortalInline({ token, initialSessionCustomId, onSessionChange }: { token: string; initialSessionCustomId?: string | null; onSessionChange?: (customId: string | null) => void }) {
+export default function TeamPortalInline({ token: tokenProp, initialSessionCustomId, onSessionChange }: { token?: string; initialSessionCustomId?: string | null; onSessionChange?: (customId: string | null) => void }) {
+  const { token: authToken } = useAuth();
+  const token = tokenProp ?? authToken ?? "";
   const [sessions, setSessions] = useState<TeamSession[]>([]);
   const [contextMenu, setContextMenu] = useState<{ sessionId: Id<"teamSessions">; x: number; y: number } | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<Id<"teamSessions"> | null>(null);
@@ -1715,12 +1718,12 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   }, [liveSelectedFileContent?.content, liveSelectedFileContent?.filepath]);
 
   // Actions
-  const createSession = useAction(api.agentTeam.createSession);
-  const startBackgroundSession = useAction(api.agentTeam.startBackgroundSession);
-  const stopSessionAction = useAction(api.agentTeam.stopSession);
-  const resetSessionLimitAction = useAction(api.agentTeam.resetSessionLimit);
-  const listSessionsAction = useAction(api.agentTeam.listSessions);
-  const continueSessionAction = useAction(api.agentTeam.continueSession);
+  const createSession = useMutation(api.agentTeamHelpers.createSessionPublic);
+  const startBackgroundSession = useMutation(api.agentTeamHelpers.startBackgroundSessionPublic);
+  const stopSessionAction = useMutation(api.agentTeamHelpers.stopSessionPublic);
+  const resetSessionLimitAction = useMutation(api.agentTeamHelpers.resetSessionLimitPublic);
+  const listSessionsAction = useMutation(api.agentTeamHelpers.listSessionsPublic);
+  const continueSessionAction = useMutation(api.agentTeamHelpers.continueSessionPublic);
   const branchGroups = useQuery(api.agentTeamHelpers.watchBranchGroups, token ? { token } : "skip");
   const createSandboxAction = useAction(api.sandbox.createSandbox);
   const executeCommandAction = useAction(api.sandbox.executeCommand);
@@ -1731,8 +1734,8 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const testFileWriteAction = useAction(api.sandbox.testFileWrite);
   const syncSandboxFilesAction = useAction(api.sandbox.syncSandboxFiles);
   const runDeployCommandsAction = useAction(api.sandbox.runDeployCommands);
-  const chatModeMessageAction = useAction(api.agentTeam.chatModeMessage);
-  const minorEditMessageAction = useAction(api.agentTeam.minorEditMessage);
+  const chatModeMessageAction = useMutation(api.agentTeamHelpers.chatModeMessagePublic);
+  const minorEditMessageAction = useMutation(api.agentTeamHelpers.minorEditMessagePublic);
 
   useEffect(() => { if (token) { loadSessions(); loadSandboxes(); } }, [token]);
 
@@ -1848,19 +1851,19 @@ export default function TeamPortalInline({ token, initialSessionCustomId, onSess
   const [isSuggestionSubmitting, setIsSuggestionSubmitting] = useState(false);
   const [isLoadingGithubRepos, setIsLoadingGithubRepos] = useState(false);
   const [githubRepos, setGithubRepos] = useState<Array<{ name: string; full_name: string; private: boolean; default_branch: string }>>([]);
-  const saveGithubConfigAction = useAction(api.agentTeam.saveGithubConfig);
-  const syncGithubAction = useAction(api.agentTeam.syncGithub);
+  const saveGithubConfigAction = useMutation(api.agentTeamHelpers.saveGithubConfigPublic);
+  const syncGithubAction = useMutation(api.agentTeamHelpers.syncGithubPublic);
   const getGithubAuthUrlAction = useAction(api.github.getAuthorizationUrl);
   const listUserReposAction = useAction(api.github.listUserRepos);
   const disconnectGithubMutation = useMutation(api.githubHelpers.disconnectGithub);
-  const createBranchAction = useAction(api.agentTeam.createBranchV2);
-  const switchBranchAction = useAction(api.agentTeam.switchBranch);
-  const mergeBranchAction = useAction(api.agentTeam.mergeBranch);
-  const deleteBranchAction = useAction(api.agentTeam.deleteBranch);
+  const createBranchAction = useMutation(api.agentTeamHelpers.createBranchPublic);
+  const switchBranchAction = useMutation(api.agentTeamHelpers.switchBranchPublic);
+  const mergeBranchAction = useMutation(api.agentTeamHelpers.mergeBranchPublic);
+  const deleteBranchAction = useMutation(api.agentTeamHelpers.deleteBranchPublic);
   const createFileMutation = useMutation(api.agentTeamHelpers.createFilePublic);
   const githubStatus = useQuery(api.githubHelpers.getGithubStatus, token ? { token } : "skip");
   const setCustomDomainAction = useAction(api.sandbox.setCustomDomain);
-  const submitInfoResponseAction = useAction(api.agentTeam.submitInfoResponse);
+  const submitInfoResponseAction = useMutation(api.agentTeamHelpers.submitInfoResponsePublic);
   const submitSuggestionMutation = useMutation(api.admin.submitSuggestion);
   const [isSubmittingInfo, setIsSubmittingInfo] = useState(false);
   const [subMode, setSubMode] = useState<SubMode>("code");

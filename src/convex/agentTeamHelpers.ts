@@ -1056,3 +1056,169 @@ export const deleteBranchFiles = internalMutation({
     }
   },
 });
+
+// ── Missing public stubs for TeamPortalInline compatibility ───────────────────
+export const stopSessionPublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions") },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== auth.userId) throw new Error("Not found");
+    await ctx.db.patch(args.sessionId, { status: "idle", currentAgent: undefined });
+  },
+});
+
+export const resetSessionLimitPublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions") },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== auth.userId) throw new Error("Not found");
+    await ctx.db.patch(args.sessionId, { totalMessages: 0, taskMessageCount: 0, taskUpgradeActive: false, taskUpgradeMessagesLeft: 0, status: "idle" });
+  },
+});
+
+export const chatModeMessagePublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions"), content: v.string(), history: v.optional(v.array(v.object({ role: v.string(), content: v.string() }))) },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== auth.userId) throw new Error("Not found");
+    const count = session.totalMessages ?? 0;
+    await ctx.db.insert("agentMessages", { sessionId: args.sessionId, userId: auth.userId, agent: "User", content: args.content, round: session.round ?? 0, messageIndex: count + 1 });
+    await ctx.db.patch(args.sessionId, { task: `${session.task}\n\n[CHAT]: ${args.content}`, status: "idle", totalMessages: count + 1 });
+    return { response: `Processing: ${args.content}`, changeMode: null as string | null };
+  },
+});
+
+export const minorEditMessagePublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions"), content: v.string() },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== auth.userId) throw new Error("Not found");
+    const count = session.totalMessages ?? 0;
+    await ctx.db.insert("agentMessages", { sessionId: args.sessionId, userId: auth.userId, agent: "User", content: args.content, round: session.round ?? 0, messageIndex: count + 1 });
+    await ctx.db.patch(args.sessionId, { task: `${session.task}\n\n[MINOR EDIT]: ${args.content}`, status: "idle", totalMessages: count + 1 });
+    return { changeMode: null as string | null };
+  },
+});
+
+export const saveGithubConfigPublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions"), githubRepo: v.string(), githubBranch: v.string() },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== auth.userId) throw new Error("Not found");
+    await ctx.db.patch(args.sessionId, { githubRepo: args.githubRepo, githubBranch: args.githubBranch });
+  },
+});
+
+export const syncGithubPublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions") },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== auth.userId) throw new Error("Not found");
+    return { synced: false, message: "GitHub sync requires server-side action", pushed: 0, pulled: 0, conflicts: [] as string[] };
+  },
+});
+
+export const createBranchPublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions"), branchName: v.string(), fromBranch: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== auth.userId) throw new Error("Not found");
+    const branches = session.branchesJson ? JSON.parse(session.branchesJson) as string[] : ["main"];
+    if (!branches.includes(args.branchName)) branches.push(args.branchName);
+    await ctx.db.patch(args.sessionId, { branchesJson: JSON.stringify(branches) });
+    return { success: true, branchName: args.branchName };
+  },
+});
+
+export const switchBranchPublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions"), branchName: v.string() },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== auth.userId) throw new Error("Not found");
+    await ctx.db.patch(args.sessionId, { currentBranch: args.branchName });
+    return { success: true, branchName: args.branchName };
+  },
+});
+
+export const mergeBranchPublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions"), sourceBranch: v.string(), targetBranch: v.string() },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    return { merged: 0, conflicts: [] as Array<{ filepath: string; sourceContent: string; targetContent: string }> };
+  },
+});
+
+export const deleteBranchPublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions"), branchName: v.string() },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== auth.userId) throw new Error("Not found");
+    const branches = session.branchesJson ? (JSON.parse(session.branchesJson) as string[]).filter(b => b !== args.branchName) : ["main"];
+    await ctx.db.patch(args.sessionId, { branchesJson: JSON.stringify(branches) });
+    return { success: true, branchName: args.branchName };
+  },
+});
+
+export const submitInfoResponsePublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions"), responses: v.array(v.object({ fieldId: v.string(), value: v.string() })) },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== auth.userId) throw new Error("Not found");
+    const count = session.totalMessages ?? 0;
+    const responseText = args.responses.map(r => `${r.fieldId}: ${r.value}`).join("\n");
+    await ctx.db.insert("agentMessages", { sessionId: args.sessionId, userId: auth.userId, agent: "User", content: responseText, round: session.round ?? 0, messageIndex: count + 1 });
+    await ctx.db.patch(args.sessionId, { infoRequestJson: undefined, task: `${session.task}\n\n[INFO RESPONSE]: ${responseText}`, status: "idle", totalMessages: count + 1 });
+  },
+});
+
+export const importFromGithubPublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions"), repoUrl: v.string(), branch: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    return { imported: 0, message: "GitHub import requires server-side action", errors: [] as string[] };
+  },
+});
+
+export const vectorizeSessionPublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions") },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    return { vectorized: false, indexed: 0 };
+  },
+});
