@@ -77,7 +77,17 @@ export const createSessionMutation = internalMutation({
     task: v.string(),
     title: v.string(),
     sandboxType: v.optional(v.union(v.literal("daytona"), v.literal("v86"), v.literal("qemu"))),
-    vmOS: v.optional(v.union(v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos"), v.literal("linux64"), v.literal("windows64"), v.literal("macos64"))),
+    vmOS: v.optional(v.union(
+      v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos"),
+      v.literal("linux64"), v.literal("windows64"), v.literal("macos64"),
+      v.literal("windows11_home"), v.literal("windows11_pro"),
+      v.literal("windows10_home"), v.literal("windows10_pro"),
+      v.literal("macos26"), v.literal("android16"),
+      v.literal("ios18"), v.literal("hyperos"), v.literal("miui")
+    )),
+    vmRam: v.optional(v.number()),
+    vmDisk: v.optional(v.number()),
+    vmCores: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<{ sessionId: Id<"teamSessions">; customId: string }> => {
     const customId = generateCustomId();
@@ -89,13 +99,16 @@ export const createSessionMutation = internalMutation({
       round: 0,
       loopCount: 0,
       phase: "Researcher",
-      totalMessages: 1, // Start at 1 because we're saving the initial user message
+      totalMessages: 1,
       executionPhase: "planning",
       currentTaskIndex: 0,
       finalReviewCoderEnabled: false,
       customId,
       sandboxType: args.sandboxType || "daytona",
       vmOS: args.vmOS || "linux",
+      vmRam: args.vmRam,
+      vmDisk: args.vmDisk,
+      vmCores: args.vmCores,
     });
 
     // Save the initial user message to agentMessages table
@@ -152,7 +165,17 @@ export const createSessionPublic = mutation({
     token: v.string(),
     task: v.string(),
     sandboxType: v.optional(v.union(v.literal("daytona"), v.literal("v86"), v.literal("qemu"))),
-    vmOS: v.optional(v.union(v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos"), v.literal("linux64"), v.literal("windows64"), v.literal("macos64"))),
+    vmOS: v.optional(v.union(
+      v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos"),
+      v.literal("linux64"), v.literal("windows64"), v.literal("macos64"),
+      v.literal("windows11_home"), v.literal("windows11_pro"),
+      v.literal("windows10_home"), v.literal("windows10_pro"),
+      v.literal("macos26"), v.literal("android16"),
+      v.literal("ios18"), v.literal("hyperos"), v.literal("miui")
+    )),
+    vmRam: v.optional(v.number()),
+    vmDisk: v.optional(v.number()),
+    vmCores: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<{ sessionId: Id<"teamSessions">; customId: string }> => {
     const sessions = await ctx.db
@@ -179,6 +202,9 @@ export const createSessionPublic = mutation({
       customId,
       sandboxType: args.sandboxType || "daytona",
       vmOS: args.vmOS || "linux",
+      vmRam: args.vmRam,
+      vmDisk: args.vmDisk,
+      vmCores: args.vmCores,
     });
 
     await ctx.db.insert("agentMessages", {

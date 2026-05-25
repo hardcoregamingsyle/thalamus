@@ -7,7 +7,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
   Loader2, Plus, CheckCircle, Terminal, Box, Globe, ExternalLink,
-  Play, Square, Send, FileCode, Monitor, ChevronRight, Activity,
+  Play, Square, Send, FileCode, Monitor, ChevronRight, ChevronLeft, Activity,
   MessageSquare, StopCircle, ListPlus, Cpu, Shield, Search, Code2,
   CheckSquare, AlertCircle, RefreshCw, Upload, Menu, X, PanelLeftClose, PanelLeftOpen,
   Github, Database, ClipboardList, GitBranch, Network, Lightbulb, FileText,
@@ -796,15 +796,89 @@ function GithubImportModal({
 }
 
 // ── Project Creation Modal ───────────────────────────────────────────────────
+type VMOSType = "linux" | "windows" | "macos" | "freedos" | "linux64" | "windows64" | "macos64" |
+  "windows11_home" | "windows11_pro" | "windows10_home" | "windows10_pro" |
+  "macos26" | "android16" | "ios18" | "hyperos" | "miui";
+
+interface VMConfig {
+  sandboxType: "daytona" | "v86" | "qemu";
+  vmOS: VMOSType;
+  vmRam: number;
+  vmDisk: number;
+  vmCores: number;
+}
+
+const OS_OPTIONS: Array<{
+  id: VMOSType;
+  label: string;
+  icon: string;
+  sandbox: "daytona" | "v86" | "qemu";
+  category: string;
+  defaultRam: number;
+  defaultDisk: number;
+  defaultCores: number;
+}> = [
+  // Development (Daytona)
+  { id: "linux", label: "Linux (Ubuntu)", icon: "🐧", sandbox: "daytona", category: "Development", defaultRam: 2048, defaultDisk: 20, defaultCores: 2 },
+  // 32-bit (v86)
+  { id: "windows", label: "Windows XP (32-bit)", icon: "🪟", sandbox: "v86", category: "32-bit (v86)", defaultRam: 512, defaultDisk: 8, defaultCores: 1 },
+  { id: "freedos", label: "FreeDOS (32-bit)", icon: "💾", sandbox: "v86", category: "32-bit (v86)", defaultRam: 256, defaultDisk: 4, defaultCores: 1 },
+  // 64-bit (QEMU)
+  { id: "windows11_home", label: "Windows 11 Home", icon: "🪟", sandbox: "qemu", category: "64-bit (QEMU)", defaultRam: 4096, defaultDisk: 64, defaultCores: 4 },
+  { id: "windows11_pro", label: "Windows 11 Pro", icon: "🪟", sandbox: "qemu", category: "64-bit (QEMU)", defaultRam: 4096, defaultDisk: 64, defaultCores: 4 },
+  { id: "windows10_home", label: "Windows 10 Home", icon: "🪟", sandbox: "qemu", category: "64-bit (QEMU)", defaultRam: 2048, defaultDisk: 40, defaultCores: 2 },
+  { id: "windows10_pro", label: "Windows 10 Pro", icon: "🪟", sandbox: "qemu", category: "64-bit (QEMU)", defaultRam: 2048, defaultDisk: 40, defaultCores: 2 },
+  { id: "macos26", label: "macOS 26 Tahoe", icon: "🍎", sandbox: "qemu", category: "64-bit (QEMU)", defaultRam: 8192, defaultDisk: 80, defaultCores: 4 },
+  { id: "android16", label: "Android 16", icon: "🤖", sandbox: "qemu", category: "64-bit (QEMU)", defaultRam: 2048, defaultDisk: 16, defaultCores: 2 },
+  { id: "ios18", label: "iOS 18", icon: "📱", sandbox: "qemu", category: "64-bit (QEMU)", defaultRam: 2048, defaultDisk: 16, defaultCores: 2 },
+  { id: "hyperos", label: "Xiaomi HyperOS 3.0", icon: "📱", sandbox: "qemu", category: "64-bit (QEMU)", defaultRam: 2048, defaultDisk: 16, defaultCores: 2 },
+  { id: "miui", label: "MIUI (Latest)", icon: "📱", sandbox: "qemu", category: "64-bit (QEMU)", defaultRam: 2048, defaultDisk: 16, defaultCores: 2 },
+  { id: "linux64", label: "Linux 64-bit", icon: "🐧", sandbox: "qemu", category: "64-bit (QEMU)", defaultRam: 2048, defaultDisk: 20, defaultCores: 2 },
+  { id: "windows64", label: "Windows 64-bit", icon: "🪟", sandbox: "qemu", category: "64-bit (QEMU)", defaultRam: 4096, defaultDisk: 64, defaultCores: 4 },
+  { id: "macos64", label: "macOS 64-bit", icon: "🍎", sandbox: "qemu", category: "64-bit (QEMU)", defaultRam: 8192, defaultDisk: 80, defaultCores: 4 },
+];
+
 function ProjectCreationModal({
   onClose,
   onImportFromGithub,
   onStartFromScratch,
 }: {
   onClose: () => void;
-  onImportFromGithub: () => void;
-  onStartFromScratch: () => void;
+  onImportFromGithub: (vmConfig: VMConfig) => void;
+  onStartFromScratch: (vmConfig: VMConfig) => void;
 }) {
+  const [step, setStep] = useState<"choose" | "vm_config">("choose");
+  const [startType, setStartType] = useState<"scratch" | "github" | null>(null);
+  const [selectedOS, setSelectedOS] = useState<VMOSType>("linux");
+  const [vmRam, setVmRam] = useState(2048);
+  const [vmDisk, setVmDisk] = useState(20);
+  const [vmCores, setVmCores] = useState(2);
+
+  const selectedOSInfo = OS_OPTIONS.find(o => o.id === selectedOS)!;
+  const categories = [...new Set(OS_OPTIONS.map(o => o.category))];
+
+  const handleOSSelect = (os: typeof OS_OPTIONS[0]) => {
+    setSelectedOS(os.id);
+    setVmRam(os.defaultRam);
+    setVmDisk(os.defaultDisk);
+    setVmCores(os.defaultCores);
+  };
+
+  const handleProceed = () => {
+    const vmConfig: VMConfig = {
+      sandboxType: selectedOSInfo.sandbox,
+      vmOS: selectedOS,
+      vmRam,
+      vmDisk,
+      vmCores,
+    };
+    if (startType === "github") {
+      onImportFromGithub(vmConfig);
+    } else {
+      onStartFromScratch(vmConfig);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
@@ -812,51 +886,132 @@ function ProjectCreationModal({
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="relative z-10 bg-card border border-border rounded-2xl p-6 max-w-lg w-full shadow-2xl"
+        className="relative z-10 bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
       >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-foreground">Create New Project</h3>
+        <div className="sticky top-0 bg-card border-b border-border px-6 py-4 flex items-center justify-between z-10">
+          <div className="flex items-center gap-3">
+            {step === "vm_config" && (
+              <button onClick={() => setStep("choose")} className="text-muted-foreground hover:text-foreground transition-colors mr-1">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            )}
+            <h3 className="text-lg font-bold text-foreground">
+              {step === "choose" ? "Create New Project" : "Configure VM"}
+            </h3>
+          </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <p className="text-sm text-muted-foreground mb-6">Choose how you want to start your new project</p>
+        <div className="p-6">
+          {step === "choose" ? (
+            <>
+              <p className="text-sm text-muted-foreground mb-6">Choose how you want to start your new project</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <motion.div whileHover={{ scale: 1.02 }} onClick={() => { setStartType("github"); setStep("vm_config"); }} className="cursor-pointer">
+                  <div className="h-48 rounded-xl border-2 border-border bg-card hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-3 p-6 text-center">
+                    <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                      <Github className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-foreground mb-1">Import from GitHub</h4>
+                      <p className="text-xs text-muted-foreground">Connect your GitHub account and select an existing repository</p>
+                    </div>
+                  </div>
+                </motion.div>
+                <motion.div whileHover={{ scale: 1.02 }} onClick={() => { setStartType("scratch"); setStep("vm_config"); }} className="cursor-pointer">
+                  <div className="h-48 rounded-xl border-2 border-border bg-card hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-3 p-6 text-center">
+                    <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                      <Plus className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-foreground mb-1">Start from Scratch</h4>
+                      <p className="text-xs text-muted-foreground">Create a new empty project and build from the ground up</p>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground mb-4">Select an operating system and configure your virtual machine</p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Import from GitHub */}
-          <motion.div
-            whileHover={{ scale: 1.02 }}
-            onClick={onImportFromGithub}
-            className="cursor-pointer"
-          >
-            <div className="h-48 rounded-xl border-2 border-border bg-card hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-3 p-6 text-center">
-              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-                <Github className="h-6 w-6 text-primary" />
+              {/* OS Selection */}
+              <div className="space-y-4 mb-6">
+                {categories.map(cat => (
+                  <div key={cat}>
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">{cat}</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {OS_OPTIONS.filter(o => o.category === cat).map(os => (
+                        <button
+                          key={os.id}
+                          onClick={() => handleOSSelect(os)}
+                          className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition-all ${selectedOS === os.id ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card hover:border-primary/40 text-muted-foreground hover:text-foreground"}`}
+                        >
+                          <span className="text-base">{os.icon}</span>
+                          <span className="text-[11px] font-medium leading-tight">{os.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div>
-                <h4 className="text-sm font-bold text-foreground mb-1">Import from GitHub</h4>
-                <p className="text-xs text-muted-foreground">Connect your GitHub account and select an existing repository</p>
-              </div>
-            </div>
-          </motion.div>
 
-          {/* Start from Scratch */}
-          <motion.div
-            whileHover={{ scale: 1.02 }}
-            onClick={onStartFromScratch}
-            className="cursor-pointer"
-          >
-            <div className="h-48 rounded-xl border-2 border-border bg-card hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-3 p-6 text-center">
-              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-                <Plus className="h-6 w-6 text-primary" />
+              {/* VM Config */}
+              <div className="bg-muted/30 border border-border rounded-xl p-4 mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <Cpu className="h-4 w-4 text-primary" />
+                  <p className="text-sm font-bold text-foreground">VM Configuration</p>
+                  <span className="text-[10px] text-muted-foreground ml-auto">Auto-detected recommendations</span>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest block mb-1">RAM (MB)</label>
+                    <input
+                      type="number"
+                      value={vmRam}
+                      onChange={e => setVmRam(Math.max(256, parseInt(e.target.value) || 256))}
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-primary/60 transition-colors"
+                    />
+                    <p className="text-[9px] text-muted-foreground mt-1">Recommended: {selectedOSInfo.defaultRam}MB</p>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest block mb-1">Disk (GB)</label>
+                    <input
+                      type="number"
+                      value={vmDisk}
+                      onChange={e => setVmDisk(Math.max(4, parseInt(e.target.value) || 4))}
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-primary/60 transition-colors"
+                    />
+                    <p className="text-[9px] text-muted-foreground mt-1">Recommended: {selectedOSInfo.defaultDisk}GB</p>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest block mb-1">CPU Cores</label>
+                    <input
+                      type="number"
+                      value={vmCores}
+                      onChange={e => setVmCores(Math.max(1, Math.min(16, parseInt(e.target.value) || 1)))}
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-primary/60 transition-colors"
+                    />
+                    <p className="text-[9px] text-muted-foreground mt-1">Recommended: {selectedOSInfo.defaultCores} cores</p>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <span className="px-2 py-0.5 bg-primary/10 text-primary rounded border border-primary/20 font-bold">{selectedOSInfo.sandbox.toUpperCase()}</span>
+                  <span>Sandbox engine · {selectedOSInfo.sandbox === "daytona" ? "Cloud development" : selectedOSInfo.sandbox === "v86" ? "32-bit emulation" : "64-bit QEMU virtualization"}</span>
+                </div>
               </div>
-              <div>
-                <h4 className="text-sm font-bold text-foreground mb-1">Start from Scratch</h4>
-                <p className="text-xs text-muted-foreground">Create a new empty project and build from the ground up</p>
-              </div>
-            </div>
-          </motion.div>
+
+              <button
+                onClick={handleProceed}
+                className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-bold text-sm hover:bg-primary/90 transition-all flex items-center justify-center gap-2"
+              >
+                {startType === "github" ? <Github className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                {startType === "github" ? "Continue to GitHub Import" : "Create Project"}
+              </button>
+            </>
+          )}
         </div>
       </motion.div>
     </div>
