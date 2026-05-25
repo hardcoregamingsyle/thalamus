@@ -136,7 +136,17 @@ const schema = defineSchema(
       githubLastCommitSha: v.optional(v.string()),
       // VM sandbox mode
       sandboxType: v.optional(v.union(v.literal("daytona"), v.literal("v86"), v.literal("qemu"))),  // Which sandbox to use
-      vmOS: v.optional(v.union(v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos"), v.literal("linux64"), v.literal("windows64"), v.literal("macos64"))),  // Selected OS for v86/qemu
+      vmOS: v.optional(v.union(
+        v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos"),
+        v.literal("linux64"), v.literal("windows64"), v.literal("macos64"),
+        v.literal("windows11_home"), v.literal("windows11_pro"),
+        v.literal("windows10_home"), v.literal("windows10_pro"),
+        v.literal("macos26"), v.literal("android16"),
+        v.literal("ios18"), v.literal("hyperos"), v.literal("miui")
+      )),  // Selected OS for v86/qemu
+      vmRam: v.optional(v.number()),   // RAM in MB
+      vmDisk: v.optional(v.number()),  // Disk in GB
+      vmCores: v.optional(v.number()), // CPU cores
       vmCommandQueueJson: v.optional(v.string()),  // Queue of commands waiting for VM execution
     })
       .index("by_user", ["userId"])
