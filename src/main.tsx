@@ -67,6 +67,8 @@ createRoot(document.getElementById("root")!).render(
             <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/auth" element={<AuthPage redirectAfterAuth="/portal/chat" />} />
+              <Route path="/portal/code" element={<TeamPortal />} />
+              <Route path="/portal/code/:sessionId" element={<TeamPortal />} />
               <Route path="/portal" element={<Portal />} />
               <Route path="/portal/:mode" element={<Portal />} />
               <Route path="/portal/:mode/:sessionId" element={<Portal />} />
