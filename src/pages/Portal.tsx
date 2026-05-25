@@ -1147,8 +1147,10 @@ function PortalDesktop() {
     }
 
     // Save user message to DB immediately (so refresh preserves it)
+    let userMessageSaved = false;
     try {
       await saveUserMessage({ conversationId: convId, content: msg, token });
+      userMessageSaved = true;
     } catch { /* non-critical */ }
 
     // Code mode: handled entirely by TeamPortalInline — do not send here
@@ -1160,7 +1162,7 @@ function PortalDesktop() {
     if (activeMode === "study") {
       setIsThinking(true);
       try {
-        await sendStudyMessage({ conversationId: convId, content: msg, token, userContext });
+        await sendStudyMessage({ conversationId: convId, content: msg, token, userContext, skipUserSave: userMessageSaved });
         // Result is saved to DB by the action — useQuery will pick it up
       } catch (err) {
         console.error("Study mode failed:", err);
@@ -1225,7 +1227,7 @@ function PortalDesktop() {
           token,
           conversationId: convId,
           preferClaude: true,
-          skipUserSave: true, // user message already saved above
+          skipUserSave: userMessageSaved,
         }),
       });
 
@@ -1283,7 +1285,7 @@ function PortalDesktop() {
       // Fallback to Convex action
       setIsThinking(true);
       try {
-        await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext });
+        await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext, skipUserSave: userMessageSaved });
       } catch (err) {
         console.error("Fallback action also failed:", err);
         toast.error(err instanceof Error ? err.message : "Failed to send message");

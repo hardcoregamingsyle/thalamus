@@ -228,6 +228,7 @@ export const sendMessage = action({
     mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code")),
     token: v.optional(v.string()),
     model: v.optional(v.string()),
+    skipUserSave: v.optional(v.boolean()),
     userContext: v.optional(v.object({
       datetime: v.string(),
       timezone: v.string(),
@@ -241,12 +242,14 @@ export const sendMessage = action({
     );
     if (!userId) throw new Error("Not authenticated");
 
-    await ctx.runMutation(internal.aiHelpers.saveMessage, {
-      conversationId: args.conversationId,
-      userId,
-      role: "user",
-      content: args.content,
-    });
+    if (!args.skipUserSave) {
+      await ctx.runMutation(internal.aiHelpers.saveMessage, {
+        conversationId: args.conversationId,
+        userId,
+        role: "user",
+        content: args.content,
+      });
+    }
 
     const history: Array<{ role: string; content: string }> = await ctx.runQuery(
       internal.aiHelpers.getConversationMessages,

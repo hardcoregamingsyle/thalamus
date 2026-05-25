@@ -186,8 +186,10 @@ function MobileChatView({
     }
 
     // Save user message immediately
+    let userMessageSaved = false;
     try {
       await saveUserMessage({ conversationId: convId, content: msg, token });
+      userMessageSaved = true;
     } catch { /* non-critical */ }
 
     const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
@@ -214,7 +216,7 @@ function MobileChatView({
         token,
         conversationId: convId,
         preferClaude: true,
-        skipUserSave: true,
+        skipUserSave: userMessageSaved,
       }, (text) => setStreamingContent(text));
       setStreamingContent(null);
       void accumulated; // response saved by server
@@ -222,7 +224,11 @@ function MobileChatView({
       setStreamingContent(null);
       setIsThinking(true);
       try {
-        await sendMessage({ conversationId: convId, content: msg, mode: mode as "chat" | "research" | "code", token, userContext });
+        if (mode === "study") {
+          await sendStudyMessage({ conversationId: convId, content: msg, token, userContext, skipUserSave: userMessageSaved });
+        } else {
+          await sendMessage({ conversationId: convId, content: msg, mode: mode as "chat" | "research" | "code", token, userContext, skipUserSave: userMessageSaved });
+        }
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to send");
       }

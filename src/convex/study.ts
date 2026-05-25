@@ -1,5 +1,5 @@
 "use node";
-import { action, internalMutation, internalQuery } from "./_generated/server";
+import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
@@ -302,6 +302,7 @@ export const sendStudyMessage = action({
     conversationId: v.id("conversations"),
     content: v.string(),
     token: v.string(),
+    skipUserSave: v.optional(v.boolean()),
     userContext: v.optional(v.object({
       datetime: v.string(),
       timezone: v.string(),
@@ -316,13 +317,16 @@ export const sendStudyMessage = action({
     ]);
     if (!userId) throw new Error("Not authenticated");
 
-    // Save user message first, then fetch context in parallel
-    await ctx.runMutation(internal.aiHelpers.saveMessage, {
-      conversationId: args.conversationId,
-      userId,
-      role: "user",
-      content: args.content,
-    });
+    // The web/mobile clients usually save the user turn immediately for a
+    // responsive UI. Avoid writing that same turn again from the action.
+    if (!args.skipUserSave) {
+      await ctx.runMutation(internal.aiHelpers.saveMessage, {
+        conversationId: args.conversationId,
+        userId,
+        role: "user",
+        content: args.content,
+      });
+    }
 
     const [history, resources, adminMaterials, userRecord] = await Promise.all([
       ctx.runQuery(internal.aiHelpers.getConversationMessages, { conversationId: args.conversationId }) as Promise<Array<{ role: string; content: string }>>,
@@ -363,8 +367,13 @@ Respond in clean HTML only (no markdown). Use <h2>, <h3>, <p>, <ul>, <li>, <stro
       `${m.role === "user" ? "Human" : "Assistant"}: ${m.content.replace(/<[^>]+>/g, "").slice(0, 400)}`
     ).join("\n\n");
 
+    const lastMessage = history[history.length - 1];
+    const historyAlreadyIncludesCurrentTurn =
+      lastMessage?.role === "user" && lastMessage.content === args.content;
     const fullPrompt = conversationContext
-      ? `${conversationContext}\n\nHuman: ${args.content}`
+      ? historyAlreadyIncludesCurrentTurn
+        ? conversationContext
+        : `${conversationContext}\n\nHuman: ${args.content}`
       : args.content;
 
     let responseContent = "";
