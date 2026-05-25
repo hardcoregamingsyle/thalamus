@@ -1758,6 +1758,7 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
   const [userMessages, setUserMessages] = useState<AgentMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoRunRef = useRef(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // Sandbox state
   const [sandboxes, setSandboxes] = useState<SandboxRow[]>([]);
@@ -2707,8 +2708,6 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
   try { if (sessionInfo?.plannerTasksJson) plannerTasks = JSON.parse(sessionInfo.plannerTasksJson); } catch { /* ignore */ }
   const execPhaseLabel = execPhase === "planning" ? "PLANNING" : execPhase === "final_review" ? "FINAL REVIEW" : `TASK ${taskIndex + 1}/${plannerTasks.length || "?"}`;
   const execPhaseColor = execPhase === "planning" ? "text-violet-400" : execPhase === "final_review" ? "text-amber-400" : "text-emerald-400";
-
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // Project Home Screen — show when no session is active
   if (!activeSessionId) {
