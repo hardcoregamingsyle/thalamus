@@ -227,6 +227,7 @@ http.route({
       token?: string;
       conversationId?: string;
       preferClaude?: boolean;
+      skipUserSave?: boolean;
     };
 
     try {
@@ -235,7 +236,7 @@ http.route({
       return new Response("Bad request", { status: 400, headers: corsHeaders() });
     }
 
-    const { content, mode, history, systemPrompt, userContext, token, conversationId, preferClaude } = body;
+    const { content, mode, history, systemPrompt, userContext, token, conversationId, preferClaude, skipUserSave } = body;
 
     const contextHeader = userContext
       ? `\n\nCurrent date/time: ${userContext.datetime} (${userContext.timezone})\n`
@@ -259,8 +260,6 @@ http.route({
     // ── Run all AI calls BEFORE creating the stream, so ctx is still valid ──
     let streamSuccess = false;
     let geminiStreamBody = "";
-    let geminiStreamKey = "";
-    let geminiStreamUrl = "";
 
     // Try Claude (non-streaming invoke first to get full text, then stream it)
     if (hasBedrock && bedrockCreds && preferClaude !== false) {
@@ -337,6 +336,7 @@ http.route({
           inputCostPerMillion,
           outputCostPerMillion,
           mode,
+          skipUserSave,
         });
       } catch (saveErr) {
         console.error("Failed to save streamed message:", saveErr);
@@ -382,8 +382,6 @@ http.route({
     const state = url.searchParams.get("state");
     const error = url.searchParams.get("error");
 
-    // Use CONVEX_SITE_URL env var if set, otherwise derive from request URL
-    const convexSiteUrl = process.env.CONVEX_SITE_URL ?? "";
     // The frontend origin is the app URL — stored in state as a suffix after the userId
     // Fall back to the known production domain
     const origin = process.env.FRONTEND_URL ?? "https://thalamus.aphantic.skinticals.com";

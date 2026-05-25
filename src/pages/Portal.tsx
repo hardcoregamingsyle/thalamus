@@ -1158,25 +1158,6 @@ function PortalDesktop() {
       return;
     }
 
-    // Study mode: use sendStudyMessage with web search + RAG
-    if (activeMode === "study") {
-      setIsThinking(true);
-      try {
-        await sendStudyMessage({ conversationId: convId, content: msg, token, userContext, skipUserSave: userMessageSaved });
-        // Result is saved to DB by the action — useQuery will pick it up
-      } catch (err) {
-        console.error("Study mode failed:", err);
-        toast.error(err instanceof Error ? err.message : "Failed to send study message");
-      } finally {
-        setIsThinking(false);
-      }
-      // Generate title if this is first message
-      if (!activeConvId) {
-        generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
-      }
-      return; // Exit early for study mode
-    }
-
     // Research mode: use the Research Team pipeline (ResearchPlanner → DataTaker → ResearchOrganiser)
     if (activeMode === "research") {
       setIsThinking(true);
@@ -1285,7 +1266,11 @@ function PortalDesktop() {
       // Fallback to Convex action
       setIsThinking(true);
       try {
-        await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext, skipUserSave: userMessageSaved });
+        if (activeMode === "study") {
+          await sendStudyMessage({ conversationId: convId, content: msg, token, userContext, skipUserSave: userMessageSaved });
+        } else {
+          await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext, skipUserSave: userMessageSaved });
+        }
       } catch (err) {
         console.error("Fallback action also failed:", err);
         toast.error(err instanceof Error ? err.message : "Failed to send message");
