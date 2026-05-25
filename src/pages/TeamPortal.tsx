@@ -360,6 +360,7 @@ export default function TeamPortal() {
   const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>([]);
   const [userMessages, setUserMessages] = useState<AgentMessage[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showProjectCreationModal, setShowProjectCreationModal] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoRunRef = useRef(false);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
@@ -1168,9 +1169,9 @@ export default function TeamPortal() {
           )}
         </AnimatePresence>
 
-        {/* ── Sidebar ───────────────────────────────────────────────────────────── */}
+        {/* ── Sidebar — only show when a session is active ─────────────────────── */}
         <AnimatePresence>
-          {(sidebarOpen || true) && (
+          {(activeSessionId && (sidebarOpen || true)) && (
             <motion.div
               initial={false}
               className={`
@@ -1333,29 +1334,130 @@ export default function TeamPortal() {
 
         {/* ── Main content ──────────────────────────────────────────────────────── */}
         {!activeSessionId ? (
-          <div className="flex-1 flex items-center justify-center">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-center px-4"
-            >
-              <motion.div
-                className="w-20 h-20 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4"
-                animate={{ boxShadow: ["0 0 0px rgba(0,0,0,0)", "0 0 30px rgba(var(--primary),0.2)", "0 0 0px rgba(0,0,0,0)"] }}
-                transition={{ duration: 3, repeat: Infinity }}
-              >
-                <Users className="h-10 w-10 text-primary/40" />
-              </motion.div>
-              <p className="text-sm font-bold text-foreground mb-1">No Session Selected</p>
-              <p className="text-xs text-muted-foreground mb-4">Create a new task or select an existing session</p>
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="md:hidden flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/30 text-primary text-xs rounded-lg hover:bg-primary/20 transition-all mx-auto"
-              >
-                <Menu className="h-3.5 w-3.5" />
-                OPEN SESSIONS
-              </button>
-            </motion.div>
+          <div className="flex-1 flex flex-col overflow-hidden bg-background">
+            {/* Header */}
+            <div className="shrink-0 px-6 py-4 border-b border-border bg-card/50">
+              <h1 className="text-2xl font-bold text-foreground">Code Mode Projects</h1>
+              <p className="text-sm text-muted-foreground mt-1">Your AI-powered software development workspace</p>
+            </div>
+            {/* Project grid */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="max-w-7xl mx-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* Create new project card */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    whileHover={{ scale: 1.02 }}
+                    className="relative group"
+                    onClick={() => setShowProjectCreationModal(true)}
+                  >
+                    <div className="h-48 rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 hover:border-primary/50 hover:bg-primary/10 transition-all cursor-pointer flex flex-col items-center justify-center gap-3 p-6">
+                      <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                        <Plus className="h-6 w-6 text-primary" />
+                      </div>
+                      <div className="text-center">
+                        <h3 className="text-sm font-bold text-foreground mb-1">Start New Project</h3>
+                        <p className="text-xs text-muted-foreground">Import from GitHub or start from scratch</p>
+                      </div>
+                      <div className="text-xs px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all font-medium">
+                        Get Started
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  {/* Existing sessions as project cards */}
+                  {sessions.map((session, i) => {
+                    const raw = session as unknown as Record<string, unknown>;
+                    const customId = raw.customId as string | undefined;
+                    const isCompleted = session.status === "completed" || raw.executionPhase === "completed";
+                    const isRunningSession = session.status === "running";
+                    const taskCount = (() => {
+                      try { return (JSON.parse(session.plannerTasksJson || "[]") as unknown[]).length; } catch { return 0; }
+                    })();
+                    return (
+                      <motion.div
+                        key={session._id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.05 }}
+                        whileHover={{ scale: 1.02 }}
+                        className="relative group"
+                      >
+                        <div
+                          onClick={() => { setActiveSessionId(session._id); setSidebarOpen(false); }}
+                          className="h-48 rounded-xl border border-border bg-card hover:border-primary/40 transition-all cursor-pointer overflow-hidden flex flex-col"
+                        >
+                          <div className="p-4 border-b border-border bg-card/50">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <h3 className="text-sm font-bold text-foreground line-clamp-2 flex-1">{session.title}</h3>
+                              {isRunningSession && <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" />}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-muted-foreground font-mono">{customId || "—"}</span>
+                              {isCompleted && <span className="text-[10px] px-2 py-0.5 bg-green-400/10 text-green-400 rounded border border-green-400/20 font-bold">COMPLETE</span>}
+                            </div>
+                          </div>
+                          <div className="flex-1 p-4 space-y-2">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Terminal className="h-3 w-3" />
+                              <span>{session.phase || "Initializing"}</span>
+                            </div>
+                            {taskCount > 0 && (
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <ListPlus className="h-3 w-3" />
+                                <span>{taskCount} tasks</span>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <MessageSquare className="h-3 w-3" />
+                              <span>{session.totalMessages || 0} messages</span>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            {/* Project Creation Modal */}
+            <AnimatePresence>
+              {showProjectCreationModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                  <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setShowProjectCreationModal(false)} />
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="relative z-10 bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md p-6"
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-bold text-foreground">Create New Project</h3>
+                      <button onClick={() => setShowProjectCreationModal(false)} className="text-muted-foreground hover:text-foreground transition-colors">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-4">Describe what you want to build</p>
+                    <textarea
+                      value={task}
+                      onChange={e => setTask(e.target.value)}
+                      placeholder="e.g. Build a React e-commerce app with Stripe payments..."
+                      rows={4}
+                      className="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors resize-none mb-4"
+                    />
+                    <button
+                      onClick={() => { setShowProjectCreationModal(false); handleCreateSession(); }}
+                      disabled={!task.trim() || isRunning}
+                      className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-bold text-sm hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                    >
+                      {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                      {isRunning ? "Creating..." : "Create Project"}
+                    </button>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
           </div>
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden min-w-0">
