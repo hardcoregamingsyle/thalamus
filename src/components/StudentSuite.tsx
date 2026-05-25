@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  X, Loader2, ChevronLeft, ChevronRight, RotateCcw,
+  X, Loader2, ChevronLeft, ChevronRight,
   CheckCircle, XCircle, Zap, Trophy, BookOpen, ClipboardList, Gamepad2,
   Star, Clock, Target, ArrowRight, RefreshCw,
+  CalendarDays, GitBranch, MessageCircleQuestion, Shuffle, TriangleAlert,
 } from "lucide-react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -64,9 +65,10 @@ interface EvalResult {
   overallFeedback: string;
 }
 
-type SuiteView = "menu" | "flashcards" | "mocktest" | "quiz";
+type SuiteView = "menu" | "flashcards" | "mocktest" | "quiz" | "spaced" | "interleave" | "teachback" | "conceptmap" | "errors";
 type MockPhase = "test" | "results";
 type QuizPhase = "quiz" | "results";
+type ReviewRating = "hard" | "okay" | "easy";
 
 interface StudentSuiteProps {
   token: string;
@@ -75,6 +77,71 @@ interface StudentSuiteProps {
   studyBoard?: string | null;
   studyLanguage?: string | null;
   onClose: () => void;
+}
+
+function cleanStudyText(text: string) {
+  return text
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getStudyTopics(chatHistory: Array<{ role: string; content: string }>) {
+  const userLines = chatHistory
+    .filter(message => message.role === "user")
+    .map(message => cleanStudyText(message.content))
+    .filter(Boolean);
+
+  const assistantLines = chatHistory
+    .filter(message => message.role !== "user")
+    .flatMap(message => cleanStudyText(message.content).split(/[.!?]/))
+    .map(line => line.trim())
+    .filter(line => line.length > 24);
+
+  const seeds = [...userLines, ...assistantLines]
+    .map(line => line.slice(0, 72))
+    .filter((line, index, arr) => arr.findIndex(item => item.toLowerCase() === line.toLowerCase()) === index)
+    .slice(0, 6);
+
+  return seeds.length > 0 ? seeds : [
+    "Main concept from your latest study chat",
+    "Key definition or formula",
+    "Common exam question",
+    "A confusing step to practice again",
+  ];
+}
+
+function ToolCard({
+  title,
+  description,
+  icon: Icon,
+  tone,
+  onClick,
+  disabled,
+}: {
+  title: string;
+  description: string;
+  icon: typeof BookOpen;
+  tone: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex items-center gap-4 p-4 border rounded-xl transition-all group text-left disabled:opacity-60 ${tone}`}
+    >
+      <div className="w-12 h-12 rounded-xl bg-background/40 border border-current/20 flex items-center justify-center shrink-0">
+        {disabled ? <Loader2 className="h-5 w-5 animate-spin" /> : <Icon className="h-5 w-5" />}
+      </div>
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-foreground transition-colors">{title}</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{description}</p>
+      </div>
+      <ArrowRight className="h-4 w-4 text-muted-foreground ml-auto transition-colors group-hover:text-current shrink-0" />
+    </button>
+  );
 }
 
 export default function StudentSuite({
@@ -111,8 +178,20 @@ export default function StudentSuite({
   const [quizScore, setQuizScore] = useState(0);
   const [quizStreak, setQuizStreak] = useState(0);
   const [quizMaxStreak, setQuizMaxStreak] = useState(0);
-  const [quizTimeLeft, setQuizTimeLeft] = useState(20);
-  const [quizTimerActive, setQuizTimerActive] = useState(false);
+  const [reviewRatings, setReviewRatings] = useState<Record<number, ReviewRating>>({});
+  const [teachBackInput, setTeachBackInput] = useState("");
+  const [selectedMisconception, setSelectedMisconception] = useState<number | null>(null);
+
+  const studyTopics = getStudyTopics(chatHistory);
+  const interleavedPrompts = studyTopics.flatMap((topic, index) => [
+    { topic, task: "Explain the idea in one sentence.", type: "Recall" },
+    { topic, task: index % 2 === 0 ? "Solve or describe one example where this idea is used." : "Compare it with a related idea from your notes.", type: index % 2 === 0 ? "Apply" : "Compare" },
+  ]).slice(0, 8);
+  const misconceptionItems = [
+    ...(evalResult?.feedback ?? []).filter(item => !item.correct).map(item => `Q${item.id}: ${item.feedback}`),
+    ...quizQuestions.filter(q => quizAnswers[q.id] !== undefined && quizAnswers[q.id] !== q.correctIndex).map(q => q.question),
+    ...studyTopics.map(topic => `What is the easiest mistake to make in: ${topic}?`),
+  ].slice(0, 6);
 
   const generateFlashcards = useAction(api.study.generateFlashcards);
   const generateMockTest = useAction(api.study.generateMockTest);
@@ -277,6 +356,11 @@ export default function StudentSuite({
               {view === "flashcards" && <BookOpen className="h-4 w-4 text-indigo-400" />}
               {view === "mocktest" && <ClipboardList className="h-4 w-4 text-purple-400" />}
               {view === "quiz" && <Gamepad2 className="h-4 w-4 text-emerald-400" />}
+              {view === "spaced" && <CalendarDays className="h-4 w-4 text-sky-400" />}
+              {view === "interleave" && <Shuffle className="h-4 w-4 text-amber-400" />}
+              {view === "teachback" && <MessageCircleQuestion className="h-4 w-4 text-pink-400" />}
+              {view === "conceptmap" && <GitBranch className="h-4 w-4 text-cyan-400" />}
+              {view === "errors" && <TriangleAlert className="h-4 w-4 text-red-400" />}
             </div>
             <div>
               <h3 className="text-sm font-bold text-foreground">
@@ -284,6 +368,11 @@ export default function StudentSuite({
                 {view === "flashcards" && `Flashcards (${flashcards.length})`}
                 {view === "mocktest" && (mockPhase === "results" ? "Test Results" : mockTest?.title ?? "Mock Test")}
                 {view === "quiz" && (quizPhase === "results" ? "Quiz Results" : `Quick Quiz — Q${quizIndex + 1}/${quizQuestions.length}`)}
+                {view === "spaced" && "Spaced Review"}
+                {view === "interleave" && "Mixed Practice"}
+                {view === "teachback" && "Teach-Back Coach"}
+                {view === "conceptmap" && "Concept Map"}
+                {view === "errors" && "Mistake Review"}
               </h3>
               {studyGrade && <p className="text-[10px] text-muted-foreground">{studyGrade}{studyBoard ? ` · ${studyBoard}` : ""}</p>}
             </div>
@@ -303,57 +392,250 @@ export default function StudentSuite({
                 <p className="text-xs text-muted-foreground mb-6 text-center">
                   AI-powered study tools based on your conversation. Last-minute revision made easy.
                 </p>
-                <div className="grid grid-cols-1 gap-3">
-                  <button
-                    onClick={handleGenerateFlashcards}
-                    disabled={isLoading}
-                    className="flex items-center gap-4 p-4 bg-indigo-400/8 border border-indigo-400/25 rounded-xl hover:bg-indigo-400/15 hover:border-indigo-400/40 transition-all group text-left"
-                  >
-                    <div className="w-12 h-12 rounded-xl bg-indigo-400/15 border border-indigo-400/30 flex items-center justify-center shrink-0">
-                      {isLoading ? <Loader2 className="h-5 w-5 text-indigo-400 animate-spin" /> : <BookOpen className="h-5 w-5 text-indigo-400" />}
+                <div className="space-y-5">
+                  <div>
+                    <p className="text-[10px] font-bold text-muted-foreground tracking-widest mb-2">GENERATE FROM YOUR CHAT</p>
+                    <div className="grid grid-cols-1 gap-3">
+                      <ToolCard
+                        title="Flashcards"
+                        description="AI generates revision cards from your chat. Flip to reveal answers."
+                        icon={BookOpen}
+                        tone="bg-indigo-400/8 border-indigo-400/25 text-indigo-400 hover:bg-indigo-400/15 hover:border-indigo-400/40"
+                        onClick={handleGenerateFlashcards}
+                        disabled={isLoading}
+                      />
+                      <ToolCard
+                        title="Mock Test"
+                        description="Full paper with MCQs, short answers, long answers, and board-style marking."
+                        icon={ClipboardList}
+                        tone="bg-purple-400/8 border-purple-400/25 text-purple-400 hover:bg-purple-400/15 hover:border-purple-400/40"
+                        onClick={handleGenerateMockTest}
+                        disabled={isLoading}
+                      />
+                      <ToolCard
+                        title="Quick Quiz"
+                        description="A short question challenge with streaks, scores, and instant feedback."
+                        icon={Gamepad2}
+                        tone="bg-emerald-400/8 border-emerald-400/25 text-emerald-400 hover:bg-emerald-400/15 hover:border-emerald-400/40"
+                        onClick={handleGenerateQuiz}
+                        disabled={isLoading}
+                      />
                     </div>
-                    <div>
-                      <p className="text-sm font-bold text-foreground group-hover:text-indigo-400 transition-colors">Flashcards</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">AI generates revision cards from your chat. Flip to reveal answers.</p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-indigo-400 ml-auto transition-colors" />
-                  </button>
+                  </div>
 
-                  <button
-                    onClick={handleGenerateMockTest}
-                    disabled={isLoading}
-                    className="flex items-center gap-4 p-4 bg-purple-400/8 border border-purple-400/25 rounded-xl hover:bg-purple-400/15 hover:border-purple-400/40 transition-all group text-left"
-                  >
-                    <div className="w-12 h-12 rounded-xl bg-purple-400/15 border border-purple-400/30 flex items-center justify-center shrink-0">
-                      {isLoading ? <Loader2 className="h-5 w-5 text-purple-400 animate-spin" /> : <ClipboardList className="h-5 w-5 text-purple-400" />}
+                  <div>
+                    <p className="text-[10px] font-bold text-muted-foreground tracking-widest mb-2">SCIENCE-BACKED STUDY METHODS</p>
+                    <div className="grid grid-cols-1 gap-3">
+                      <ToolCard
+                        title="Spaced Review"
+                        description="Plan what to review today, tomorrow, and later so you do not forget it."
+                        icon={CalendarDays}
+                        tone="bg-sky-400/8 border-sky-400/25 text-sky-400 hover:bg-sky-400/15 hover:border-sky-400/40"
+                        onClick={() => setView("spaced")}
+                      />
+                      <ToolCard
+                        title="Mixed Practice"
+                        description="Mix topics and question styles so your brain learns to choose the right method."
+                        icon={Shuffle}
+                        tone="bg-amber-400/8 border-amber-400/25 text-amber-400 hover:bg-amber-400/15 hover:border-amber-400/40"
+                        onClick={() => setView("interleave")}
+                      />
+                      <ToolCard
+                        title="Teach-Back Coach"
+                        description="Explain a topic in your own words and get a simple checklist for what is missing."
+                        icon={MessageCircleQuestion}
+                        tone="bg-pink-400/8 border-pink-400/25 text-pink-400 hover:bg-pink-400/15 hover:border-pink-400/40"
+                        onClick={() => setView("teachback")}
+                      />
+                      <ToolCard
+                        title="Concept Map"
+                        description="See how your latest study topics connect, then use the links for deeper revision."
+                        icon={GitBranch}
+                        tone="bg-cyan-400/8 border-cyan-400/25 text-cyan-400 hover:bg-cyan-400/15 hover:border-cyan-400/40"
+                        onClick={() => setView("conceptmap")}
+                      />
+                      <ToolCard
+                        title="Mistake Review"
+                        description="Find weak spots and turn them into targeted mini-practice."
+                        icon={TriangleAlert}
+                        tone="bg-red-400/8 border-red-400/25 text-red-400 hover:bg-red-400/15 hover:border-red-400/40"
+                        onClick={() => setView("errors")}
+                      />
                     </div>
-                    <div>
-                      <p className="text-sm font-bold text-foreground group-hover:text-purple-400 transition-colors">Mock Test</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">Full paper with MCQs, short/long answers, HOTS. Board-specific evaluation.</p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-purple-400 ml-auto transition-colors" />
-                  </button>
-
-                  <button
-                    onClick={handleGenerateQuiz}
-                    disabled={isLoading}
-                    className="flex items-center gap-4 p-4 bg-emerald-400/8 border border-emerald-400/25 rounded-xl hover:bg-emerald-400/15 hover:border-emerald-400/40 transition-all group text-left"
-                  >
-                    <div className="w-12 h-12 rounded-xl bg-emerald-400/15 border border-emerald-400/30 flex items-center justify-center shrink-0">
-                      {isLoading ? <Loader2 className="h-5 w-5 text-emerald-400 animate-spin" /> : <Gamepad2 className="h-5 w-5 text-emerald-400" />}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-foreground group-hover:text-emerald-400 transition-colors">Quick Quiz</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">15-question gamified MCQ challenge. Streaks, scores, instant feedback.</p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-emerald-400 ml-auto transition-colors" />
-                  </button>
+                  </div>
                 </div>
 
                 {chatHistory.length < 2 && (
                   <div className="mt-4 p-3 bg-amber-400/8 border border-amber-400/25 rounded-xl">
                     <p className="text-[11px] text-amber-400 text-center">💡 Have a study conversation first, then come back to generate tools from it.</p>
                   </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* ── SPACED REVIEW ── */}
+            {view === "spaced" && (
+              <motion.div key="spaced" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="p-5 space-y-4">
+                <div className="p-4 bg-sky-400/8 border border-sky-400/25 rounded-xl">
+                  <p className="text-sm font-bold text-foreground">Review before you forget</p>
+                  <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                    Rate each topic. Hard topics come back sooner, easy topics move further away.
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  {studyTopics.map((topic, index) => {
+                    const rating = reviewRatings[index];
+                    const nextReview = rating === "easy" ? "Review in 7 days" : rating === "okay" ? "Review in 3 days" : rating === "hard" ? "Review tomorrow" : "Review today";
+                    return (
+                      <div key={`${topic}-${index}`} className="p-3 bg-background border border-border rounded-xl">
+                        <div className="flex items-start gap-3">
+                          <CalendarDays className="h-4 w-4 text-sky-400 shrink-0 mt-0.5" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-foreground leading-relaxed">{topic}</p>
+                            <p className="text-[10px] text-sky-400 mt-1">{nextReview}</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 mt-3">
+                          {(["hard", "okay", "easy"] as ReviewRating[]).map(option => (
+                            <button
+                              key={option}
+                              onClick={() => setReviewRatings(prev => ({ ...prev, [index]: option }))}
+                              className={`py-1.5 rounded-lg border text-[10px] font-bold capitalize transition-all ${rating === option ? "bg-sky-400/15 border-sky-400/40 text-sky-300" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ── MIXED PRACTICE ── */}
+            {view === "interleave" && (
+              <motion.div key="interleave" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="p-5 space-y-4">
+                <div className="p-4 bg-amber-400/8 border border-amber-400/25 rounded-xl">
+                  <p className="text-sm font-bold text-foreground">Mixed practice</p>
+                  <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                    Do these in order. The mix is intentional: switching topics helps long-term learning.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {interleavedPrompts.map((prompt, index) => (
+                    <div key={`${prompt.topic}-${index}`} className="flex gap-3 p-3 bg-background border border-border rounded-xl">
+                      <div className="w-7 h-7 rounded-lg bg-amber-400/10 border border-amber-400/25 text-amber-400 flex items-center justify-center text-[10px] font-bold shrink-0">
+                        {index + 1}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold text-amber-400">{prompt.type}</p>
+                        <p className="text-xs text-foreground mt-0.5 leading-relaxed">{prompt.task}</p>
+                        <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{prompt.topic}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ── TEACH BACK ── */}
+            {view === "teachback" && (
+              <motion.div key="teachback" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="p-5 space-y-4">
+                <div className="p-4 bg-pink-400/8 border border-pink-400/25 rounded-xl">
+                  <p className="text-sm font-bold text-foreground">Teach it like you are explaining to a friend</p>
+                  <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                    This checks whether you really understand the idea, not just recognize it.
+                  </p>
+                </div>
+                <div className="p-3 bg-background border border-border rounded-xl">
+                  <p className="text-[10px] font-bold text-pink-400 mb-2">Try explaining</p>
+                  <p className="text-xs text-foreground leading-relaxed">{studyTopics[0]}</p>
+                </div>
+                <textarea
+                  value={teachBackInput}
+                  onChange={event => setTeachBackInput(event.target.value)}
+                  placeholder="Explain it in your own words..."
+                  rows={6}
+                  className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-pink-400/60 transition-colors"
+                />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {[
+                    { label: "Simple words", done: teachBackInput.length > 80 },
+                    { label: "Example included", done: /\b(example|for instance|like|such as)\b/i.test(teachBackInput) },
+                    { label: "Why it matters", done: /\b(because|therefore|so that|this means)\b/i.test(teachBackInput) },
+                  ].map(item => (
+                    <div key={item.label} className={`p-3 rounded-xl border ${item.done ? "bg-emerald-400/8 border-emerald-400/25" : "bg-card border-border"}`}>
+                      <div className="flex items-center gap-2">
+                        {item.done ? <CheckCircle className="h-3.5 w-3.5 text-emerald-400" /> : <Clock className="h-3.5 w-3.5 text-muted-foreground" />}
+                        <span className="text-[11px] text-foreground">{item.label}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ── CONCEPT MAP ── */}
+            {view === "conceptmap" && (
+              <motion.div key="conceptmap" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="p-5 space-y-4">
+                <div className="p-4 bg-cyan-400/8 border border-cyan-400/25 rounded-xl">
+                  <p className="text-sm font-bold text-foreground">Connect the ideas</p>
+                  <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                    Learning gets stronger when you know how ideas relate, not just what each one means.
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  {studyTopics.map((topic, index) => {
+                    const next = studyTopics[(index + 1) % studyTopics.length];
+                    return (
+                      <div key={`${topic}-${index}`} className="p-3 bg-background border border-border rounded-xl">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-cyan-400/10 border border-cyan-400/25 text-cyan-400 flex items-center justify-center text-[10px] font-bold shrink-0">
+                            {index + 1}
+                          </div>
+                          <p className="text-xs font-semibold text-foreground leading-relaxed min-w-0">{topic}</p>
+                        </div>
+                        {studyTopics.length > 1 && (
+                          <div className="ml-4 mt-3 pl-7 border-l border-cyan-400/25">
+                            <p className="text-[10px] text-muted-foreground">Connect this to:</p>
+                            <p className="text-[11px] text-cyan-300 mt-0.5 line-clamp-2">{next}</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ── MISTAKE REVIEW ── */}
+            {view === "errors" && (
+              <motion.div key="errors" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="p-5 space-y-4">
+                <div className="p-4 bg-red-400/8 border border-red-400/25 rounded-xl">
+                  <p className="text-sm font-bold text-foreground">Turn mistakes into practice</p>
+                  <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                    Pick a weak spot. Then answer the diagnostic prompt before returning to quizzes or flashcards.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {misconceptionItems.map((item, index) => (
+                    <button
+                      key={`${item}-${index}`}
+                      onClick={() => setSelectedMisconception(index)}
+                      className={`w-full text-left p-3 rounded-xl border transition-all ${selectedMisconception === index ? "bg-red-400/12 border-red-400/40" : "bg-background border-border hover:border-red-400/30"}`}
+                    >
+                      <p className="text-xs text-foreground leading-relaxed">{item}</p>
+                    </button>
+                  ))}
+                </div>
+                {selectedMisconception !== null && (
+                  <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="p-4 bg-card border border-border rounded-xl">
+                    <p className="text-[10px] font-bold text-red-400 mb-2">Diagnostic prompt</p>
+                    <p className="text-xs text-foreground leading-relaxed">
+                      Explain the correct idea, give one example, and write the mistake you will avoid next time.
+                    </p>
+                  </motion.div>
                 )}
               </motion.div>
             )}
@@ -641,7 +923,7 @@ export default function StudentSuite({
 
                 {/* Per-question review */}
                 <div className="space-y-1.5">
-                  {quizQuestions.map((q, i) => {
+                  {quizQuestions.map((q) => {
                     const answered = quizAnswers[q.id];
                     const correct = answered === q.correctIndex;
                     return (

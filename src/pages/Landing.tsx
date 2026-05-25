@@ -354,9 +354,12 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.65 }}
-            className="mx-auto max-w-5xl text-balance text-5xl font-semibold leading-[0.94] tracking-normal text-foreground sm:text-7xl lg:text-8xl"
+            className="mx-auto max-w-5xl text-balance text-5xl font-semibold leading-[0.94] tracking-normal text-foreground/80 sm:text-7xl lg:text-8xl"
           >
-            World's most powerful all-purpose AI.
+            <span className="block text-foreground/55">World's most powerful</span>
+            <span className="block bg-[linear-gradient(110deg,#f8fafc_0%,#93c5fd_32%,#fcd34d_66%,#d9f99d_100%)] bg-clip-text text-transparent drop-shadow-[0_0_28px_rgba(147,197,253,0.18)]">
+              all-purpose AI.
+            </span>
           </motion.h1>
 
           <motion.p
