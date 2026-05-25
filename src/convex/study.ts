@@ -1,13 +1,13 @@
 "use node";
 import { action, internalMutation, internalQuery } from "./_generated/server";
-// Public CRUD is in studyHelpers.ts (non-node file)
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { callClaude } from "./agentCore";
 
 // ── Gemini with Google Search Grounding ───────────────────────────────────────
 // Uses gemini-3.1-flash-lite-preview with built-in Google Search tool
-// This is MUCH faster than RAG + DuckDuckGo — single API call, no timeouts
+// Single API call — no separate search step, no RAG timeout, no WebSocket disconnect
 interface GeminiGroundedResponse {
   candidates?: Array<{
     content?: { parts?: Array<{ text?: string }> };
@@ -33,10 +33,7 @@ async function callGeminiWithSearch(
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: "user", parts: [{ text: userPrompt }] }],
         tools: [{ googleSearch: {} }],
-        generationConfig: {
-          maxOutputTokens,
-          temperature: 0.7,
-        },
+        generationConfig: { maxOutputTokens, temperature: 0.7 },
       }),
     }
   );
@@ -115,28 +112,12 @@ async function signPdfBedrockRequest(method: string, url: string, body: string, 
 async function extractPdfWithClaude(base64Data: string, fileName: string): Promise<string> {
   const creds = parsePdfBedrockCreds();
   if (!creds) throw new Error("No Bedrock credentials");
-
   const modelId = "us.anthropic.claude-sonnet-4-5-20251101-v1:0";
   const region = creds.region || "us-east-1";
   const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke`;
-
   const requestBody = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
-    system: `You are a comprehensive document extraction assistant. Extract ALL content from this PDF as structured JSON. Output ONLY valid JSON.
-
-OUTPUT SCHEMA:
-{
-  "title": "Document title or filename",
-  "sections": [
-    {
-      "type": "heading" | "paragraph" | "image" | "table" | "list" | "formula",
-      "content": "The actual content",
-      "level": 1-6,
-      "imageDescription": "Detailed visual analysis (for images only)",
-      "tableData": { "rows": [], "columns": [] }
-    }
-  ]
-}`,
+    system: `Extract ALL content from this PDF as structured JSON. Output ONLY valid JSON with schema: {"title": "...", "sections": [{"type": "heading|paragraph|image|table|list|formula", "content": "...", "level": 1, "imageDescription": "..."}]}`,
     messages: [{
       role: "user",
       content: [
@@ -147,7 +128,6 @@ OUTPUT SCHEMA:
     max_tokens: 16000,
     temperature: 0,
   });
-
   let reqHeaders: Record<string, string>;
   if (creds.isCustomKey) {
     const bearerToken = creds.secretAccessKey ? `${creds.accessKeyId}:${creds.secretAccessKey}` : creds.accessKeyId;
@@ -155,16 +135,13 @@ OUTPUT SCHEMA:
   } else {
     reqHeaders = await signPdfBedrockRequest("POST", url, requestBody, creds.accessKeyId, creds.secretAccessKey, region);
   }
-
   const response = await fetch(url, { method: "POST", headers: reqHeaders, body: requestBody });
   if (!response.ok) {
     const err = await response.text().catch(() => "");
     throw new Error(`Bedrock PDF extraction error ${response.status}: ${err.slice(0, 200)}`);
   }
-
   const data = await response.json() as { content?: Array<{ type: string; text?: string }> };
   const rawText = data.content?.[0]?.text ?? "";
-
   try {
     const cleaned = rawText.replace(/^<[^>]+>/, "");
-</edited_code>
+  }
