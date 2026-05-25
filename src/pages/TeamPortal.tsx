@@ -1397,7 +1397,7 @@ export default function TeamPortal() {
 
         {/* ── Sidebar — only show when a session is active ─────────────────────── */}
         <AnimatePresence>
-          {activeSessionId && (sidebarOpen || window.innerWidth >= 768) && (
+          {activeSessionId && (
             <motion.div
               initial={false}
               className={`
