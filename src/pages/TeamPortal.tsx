@@ -14,7 +14,7 @@ import {
   Monitor, Sun, Moon, ChevronRight, ChevronDown, Zap, Activity, Clock, Layers,
   MessageSquare, StopCircle, ListPlus, Sparkles, Cpu, Shield, Search,
   Code2, CheckSquare, AlertCircle, Menu, X, Coins, Folder, FolderOpen, Upload, Download,
-  Lightbulb, Paperclip,
+  Lightbulb, Paperclip, GitBranch, Trash2, Edit3,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -365,6 +365,17 @@ export default function TeamPortal() {
   const autoRunRef = useRef(false);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ sessionId: Id<"teamSessions">; x: number; y: number; isBranch: boolean } | null>(null);
+  const [renameModalOpen, setRenameModalOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<{ sessionId: Id<"teamSessions">; currentTitle: string; isBranch: boolean } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [createBranchModalOpen, setCreateBranchModalOpen] = useState(false);
+  const [branchPurpose, setBranchPurpose] = useState("");
+  const [branchSourceSessionId, setBranchSourceSessionId] = useState<Id<"teamSessions"> | null>(null);
+  const [isCreatingBranch, setIsCreatingBranch] = useState(false);
+  const [isDeletingSession, setIsDeletingSession] = useState(false);
+
   // Suggestion modal state
   const [showSuggestion, setShowSuggestion] = useState(false);
   const [suggestionTitle, setSuggestionTitle] = useState("");
@@ -386,6 +397,12 @@ export default function TeamPortal() {
   useEffect(() => {
     document.documentElement.classList.toggle("light", !isDark);
   }, [isDark]);
+
+  // Mutations
+  const renameSessionMutation = useMutation(api.agentTeamHelpers.renameSessionPublic);
+  const deleteSessionMutation = useMutation(api.agentTeamHelpers.deleteSessionPublic);
+  const createBranchSessionMutation = useMutation(api.agentTeamHelpers.createBranchSessionPublic);
+  const renameBranchMutation = useMutation(api.agentTeamHelpers.renameBranchPublic);
 
   // Reactive queries
   const liveSession = useQuery(api.agentTeamHelpers.watchSession, activeSessionId ? { sessionId: activeSessionId } : "skip");
@@ -595,6 +612,81 @@ export default function TeamPortal() {
   const getPreviewUrlAction = useAction(api.sandbox.getPreviewUrl);
   const autoDeployAndStartAction = useAction(api.sandbox.autoDeployAndStart);
   const testFileWriteAction = useAction(api.sandbox.testFileWrite);
+
+  // Context menu handlers
+  const handleContextMenu = (e: React.MouseEvent, session: TeamSession) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const raw = session as unknown as Record<string, unknown>;
+    const isBranch = !!(raw.branchGroupId && (raw.branchNumber as number) > 1);
+    setContextMenu({ sessionId: session._id, x: e.clientX, y: e.clientY, isBranch });
+  };
+
+  const handleRenameSession = (sessionId: Id<"teamSessions">, currentTitle: string, isBranch: boolean) => {
+    setRenameTarget({ sessionId, currentTitle, isBranch });
+    setRenameValue(currentTitle);
+    setRenameModalOpen(true);
+    setContextMenu(null);
+  };
+
+  const handleRenameSubmit = async () => {
+    if (!renameTarget || !renameValue.trim() || !token) return;
+    try {
+      if (renameTarget.isBranch) {
+        await renameBranchMutation({ token, sessionId: renameTarget.sessionId, newBranchName: renameValue.trim() });
+      } else {
+        await renameSessionMutation({ token, sessionId: renameTarget.sessionId, newTitle: renameValue.trim() });
+      }
+      toast.success("Renamed successfully");
+      setRenameModalOpen(false);
+      setRenameTarget(null);
+      await loadSessions();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Rename failed");
+    }
+  };
+
+  const handleDeleteSession = async (sessionId: Id<"teamSessions">) => {
+    if (!token) return;
+    setIsDeletingSession(true);
+    try {
+      await deleteSessionMutation({ token, sessionId });
+      if (activeSessionId === sessionId) setActiveSessionId(null);
+      toast.success("Session deleted");
+      await loadSessions();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setIsDeletingSession(false);
+      setContextMenu(null);
+    }
+  };
+
+  const handleCreateBranch = (sessionId: Id<"teamSessions">) => {
+    setBranchSourceSessionId(sessionId);
+    setBranchPurpose("");
+    setCreateBranchModalOpen(true);
+    setContextMenu(null);
+  };
+
+  const handleCreateBranchSubmit = async () => {
+    if (!branchSourceSessionId || !branchPurpose.trim() || !token) return;
+    setIsCreatingBranch(true);
+    try {
+      const result = await createBranchSessionMutation({ token, parentSessionId: branchSourceSessionId, branchPurpose: branchPurpose.trim() });
+      const { sessionId } = result as { sessionId: Id<"teamSessions">; customId: string };
+      toast.success("Branch created! Starting agents...");
+      setCreateBranchModalOpen(false);
+      setBranchPurpose("");
+      setBranchSourceSessionId(null);
+      await loadSessions();
+      setActiveSessionId(sessionId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create branch");
+    } finally {
+      setIsCreatingBranch(false);
+    }
+  };
 
   useEffect(() => { if (!isLoading && !isAuthenticated) navigate("/auth"); }, [isLoading, isAuthenticated, navigate]);
   useEffect(() => { if (token) { loadSessions(); loadSandboxes(); } }, [token]);
@@ -1155,6 +1247,140 @@ export default function TeamPortal() {
         )}
       </AnimatePresence>
 
+      {/* Context Menu */}
+      <AnimatePresence>
+        {contextMenu && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setContextMenu(null)} />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.1 }}
+              style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, zIndex: 50 }}
+              className="bg-card border border-border rounded-xl shadow-2xl py-1 min-w-[180px] overflow-hidden"
+            >
+              <button
+                onClick={() => {
+                  const session = sessions.find(s => s._id === contextMenu.sessionId);
+                  if (session) {
+                    const raw = session as unknown as Record<string, unknown>;
+                    const isBranch = !!(raw.branchGroupId && (raw.branchNumber as number) > 1);
+                    handleRenameSession(session._id, session.title, isBranch);
+                  }
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-foreground hover:bg-muted/50 transition-colors"
+              >
+                <Edit3 className="h-3.5 w-3.5 text-primary" />
+                {contextMenu.isBranch ? "Rename Branch" : "Rename Session"}
+              </button>
+              {!contextMenu.isBranch && (
+                <button
+                  onClick={() => handleCreateBranch(contextMenu.sessionId)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-foreground hover:bg-muted/50 transition-colors"
+                >
+                  <GitBranch className="h-3.5 w-3.5 text-violet-400" />
+                  Create Branch
+                </button>
+              )}
+              <div className="border-t border-border/50 my-1" />
+              <button
+                onClick={() => handleDeleteSession(contextMenu.sessionId)}
+                disabled={isDeletingSession}
+                className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-destructive hover:bg-destructive/10 transition-colors"
+              >
+                {isDeletingSession ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                {contextMenu.isBranch ? "Delete Branch" : "Delete Session"}
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Rename Modal */}
+      <AnimatePresence>
+        {renameModalOpen && renameTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setRenameModalOpen(false)} />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative z-10 bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md p-6"
+            >
+              <h3 className="text-sm font-bold text-foreground mb-4">
+                {renameTarget.isBranch ? "Rename Branch" : "Rename Session"}
+              </h3>
+              <input
+                type="text"
+                value={renameValue}
+                onChange={e => setRenameValue(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") handleRenameSubmit(); if (e.key === "Escape") setRenameModalOpen(false); }}
+                autoFocus
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-primary/60 transition-colors mb-4"
+                placeholder="Enter new name..."
+              />
+              <div className="flex gap-2">
+                <button onClick={() => setRenameModalOpen(false)} className="flex-1 py-2 border border-border text-muted-foreground text-xs rounded-xl hover:bg-muted/50 transition-all">Cancel</button>
+                <button onClick={handleRenameSubmit} disabled={!renameValue.trim()} className="flex-1 py-2 bg-primary text-primary-foreground text-xs rounded-xl hover:bg-primary/90 disabled:opacity-50 transition-all font-bold">Rename</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Create Branch Modal */}
+      <AnimatePresence>
+        {createBranchModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setCreateBranchModalOpen(false)} />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative z-10 bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md p-6"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 rounded-xl bg-violet-400/20 border border-violet-400/40 flex items-center justify-center">
+                  <GitBranch className="h-4 w-4 text-violet-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-foreground">Create Branch</h3>
+                  <p className="text-[10px] text-muted-foreground">New codebase with shared context from all branches</p>
+                </div>
+              </div>
+              <div className="bg-violet-400/5 border border-violet-400/20 rounded-xl p-3 mb-4">
+                <p className="text-[10px] text-violet-400 font-bold mb-1">BRANCH CONTEXT</p>
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  This branch will have its own completely new codebase. The AI will have context of all sibling branches and their codebases. Branch-1 (Main) has access to all other branch codebases.
+                </p>
+              </div>
+              <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-2">Branch Purpose</label>
+              <textarea
+                value={branchPurpose}
+                onChange={e => setBranchPurpose(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleCreateBranchSubmit(); } }}
+                autoFocus
+                rows={3}
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-violet-400/60 transition-colors mb-4 resize-none placeholder:text-muted-foreground"
+                placeholder="e.g. Build Android APK version, Create Windows installer, Add dark mode theme..."
+              />
+              <div className="flex gap-2">
+                <button onClick={() => setCreateBranchModalOpen(false)} className="flex-1 py-2 border border-border text-muted-foreground text-xs rounded-xl hover:bg-muted/50 transition-all">Cancel</button>
+                <button
+                  onClick={handleCreateBranchSubmit}
+                  disabled={!branchPurpose.trim() || isCreatingBranch}
+                  className="flex-1 py-2 bg-violet-400/15 border border-violet-400/40 text-violet-400 text-xs rounded-xl hover:bg-violet-400/25 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-2"
+                >
+                  {isCreatingBranch ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitBranch className="h-3 w-3" />}
+                  {isCreatingBranch ? "Creating..." : "Create Branch"}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <div className="flex flex-1 overflow-hidden relative">
         {/* ── Mobile overlay backdrop ────────────────────────────────────────── */}
         <AnimatePresence>
@@ -1171,7 +1397,7 @@ export default function TeamPortal() {
 
         {/* ── Sidebar — only show when a session is active ─────────────────────── */}
         <AnimatePresence>
-          {(activeSessionId && (sidebarOpen || true)) && (
+          {activeSessionId && (sidebarOpen || true) && (
             <motion.div
               initial={false}
               className={`
@@ -1279,31 +1505,40 @@ export default function TeamPortal() {
                 </div>
               )}
 
-              {/* Sessions list */}
+              {/* Sessions list — with right-click context menu */}
               <div className="flex-1 overflow-y-auto p-2 min-h-0">
                 <p className="text-xs text-muted-foreground mb-2 font-bold px-1 flex items-center gap-1.5">
                   <MessageSquare className="h-3 w-3" />
                   SESSIONS
                 </p>
                 <div className="space-y-1">
-                  {sessions.map((s) => (
-                    <motion.button
-                      key={s._id}
-                      onClick={() => { handleSelectSession(s._id); setSidebarOpen(false); }}
-                      whileHover={{ x: 2 }}
-                      className={`w-full text-left px-2 py-2 rounded-lg text-xs transition-all ${activeSessionId === s._id ? "bg-primary/15 text-primary border border-primary/20" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
-                    >
-                      <div className="truncate font-bold">{s.title}</div>
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <motion.div
-                          className={`w-1.5 h-1.5 rounded-full ${s.status === "completed" ? "bg-green-400" : s.status === "running" ? "bg-primary" : "bg-muted-foreground"}`}
-                          animate={s.status === "running" ? { scale: [1, 1.3, 1] } : {}}
-                          transition={{ duration: 1, repeat: Infinity }}
-                        />
-                        <span className="opacity-60 truncate">{s.phase}</span>
-                      </div>
-                    </motion.button>
-                  ))}
+                  {sessions.map((s) => {
+                    const raw = s as unknown as Record<string, unknown>;
+                    const isBranch = !!(raw.branchGroupId && (raw.branchNumber as number) > 1);
+                    const branchName = raw.branchName as string | undefined;
+                    return (
+                      <motion.button
+                        key={s._id}
+                        onClick={() => { handleSelectSession(s._id); setSidebarOpen(false); }}
+                        onContextMenu={(e) => handleContextMenu(e, s)}
+                        whileHover={{ x: 2 }}
+                        className={`w-full text-left px-2 py-2 rounded-lg text-xs transition-all ${activeSessionId === s._id ? "bg-primary/15 text-primary border border-primary/20" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          {isBranch && <GitBranch className="h-2.5 w-2.5 text-violet-400 shrink-0" />}
+                          <span className="truncate font-bold">{isBranch ? (branchName || s.title) : s.title}</span>
+                        </div>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <motion.div
+                            className={`w-1.5 h-1.5 rounded-full ${s.status === "completed" ? "bg-green-400" : s.status === "running" ? "bg-primary" : "bg-muted-foreground"}`}
+                            animate={s.status === "running" ? { scale: [1, 1.3, 1] } : {}}
+                            transition={{ duration: 1, repeat: Infinity }}
+                          />
+                          <span className="opacity-60 truncate">{s.phase}</span>
+                        </div>
+                      </motion.button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1332,7 +1567,7 @@ export default function TeamPortal() {
           )}
         </AnimatePresence>
 
-        {/* ── Main content ──────────────────────────────────────────────────────── */}
+        {/* �── Main content ──────────────────────────────────────────────────────── */}
         {!activeSessionId ? (
           <div className="flex-1 flex flex-col overflow-hidden bg-background">
             {/* Header */}
@@ -1372,6 +1607,8 @@ export default function TeamPortal() {
                     const customId = raw.customId as string | undefined;
                     const isCompleted = session.status === "completed" || raw.executionPhase === "completed";
                     const isRunningSession = session.status === "running";
+                    const isBranch = !!(raw.branchGroupId && (raw.branchNumber as number) > 1);
+                    const branchName = raw.branchName as string | undefined;
                     const taskCount = (() => {
                       try { return (JSON.parse(session.plannerTasksJson || "[]") as unknown[]).length; } catch { return 0; }
                     })();
@@ -1383,21 +1620,37 @@ export default function TeamPortal() {
                         transition={{ delay: i * 0.05 }}
                         whileHover={{ scale: 1.02 }}
                         className="relative group"
+                        onContextMenu={(e) => handleContextMenu(e, session)}
                       >
                         <div
-                          onClick={() => { setActiveSessionId(session._id); setSidebarOpen(false); }}
+                          onClick={() => setActiveSessionId(session._id)}
                           className="h-48 rounded-xl border border-border bg-card hover:border-primary/40 transition-all cursor-pointer overflow-hidden flex flex-col"
                         >
+                          {/* Project header */}
                           <div className="p-4 border-b border-border bg-card/50">
                             <div className="flex items-start justify-between gap-2 mb-2">
-                              <h3 className="text-sm font-bold text-foreground line-clamp-2 flex-1">{session.title}</h3>
-                              {isRunningSession && <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" />}
+                              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                {isBranch && <GitBranch className="h-3 w-3 text-violet-400 shrink-0" />}
+                                <h3 className="text-sm font-bold text-foreground line-clamp-2 flex-1">{isBranch ? (branchName || session.title) : session.title}</h3>
+                              </div>
+                              {isRunningSession && (
+                                <div className="shrink-0">
+                                  <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                                </div>
+                              )}
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="text-[10px] text-muted-foreground font-mono">{customId || "—"}</span>
-                              {isCompleted && <span className="text-[10px] px-2 py-0.5 bg-green-400/10 text-green-400 rounded border border-green-400/20 font-bold">COMPLETE</span>}
+                              <span className="text-[10px] text-muted-foreground font-mono">{customId || "ID not set"}</span>
+                              {isCompleted && (
+                                <span className="text-[10px] px-2 py-0.5 bg-green-400/10 text-green-400 rounded border border-green-400/20 font-bold">COMPLETE</span>
+                              )}
+                              {isBranch && (
+                                <span className="text-[10px] px-2 py-0.5 bg-violet-400/10 text-violet-400 rounded border border-violet-400/20 font-bold">BRANCH</span>
+                              )}
                             </div>
                           </div>
+
+                          {/* Project stats */}
                           <div className="flex-1 p-4 space-y-2">
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                               <Terminal className="h-3 w-3" />
@@ -1414,6 +1667,12 @@ export default function TeamPortal() {
                               <span>{session.totalMessages || 0} messages</span>
                             </div>
                           </div>
+
+                          {/* Footer */}
+                          <div className="px-4 py-2 border-t border-border bg-muted/20 flex items-center justify-between">
+                            <span className="text-[10px] text-muted-foreground">Click to open</span>
+                            <span className="text-[10px] text-muted-foreground">Right-click for options</span>
+                          </div>
                         </div>
                       </motion.div>
                     );
@@ -1421,6 +1680,7 @@ export default function TeamPortal() {
                 </div>
               </div>
             </div>
+
             {/* Project Creation Modal */}
             <AnimatePresence>
               {showProjectCreationModal && (
@@ -1432,28 +1692,28 @@ export default function TeamPortal() {
                     exit={{ opacity: 0, scale: 0.95 }}
                     className="relative z-10 bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md p-6"
                   >
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-bold text-foreground">Create New Project</h3>
-                      <button onClick={() => setShowProjectCreationModal(false)} className="text-muted-foreground hover:text-foreground transition-colors">
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
+                    <h3 className="text-lg font-bold text-foreground mb-2">New Project</h3>
                     <p className="text-sm text-muted-foreground mb-4">Describe what you want to build</p>
                     <textarea
                       value={task}
                       onChange={e => setTask(e.target.value)}
-                      placeholder="e.g. Build a React e-commerce app with Stripe payments..."
+                      onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleCreateSession(); setShowProjectCreationModal(false); } }}
+                      autoFocus
                       rows={4}
-                      className="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors resize-none mb-4"
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-primary/60 transition-colors mb-4 resize-none placeholder:text-muted-foreground"
+                      placeholder="e.g. Build a React e-commerce website with Stripe payments..."
                     />
-                    <button
-                      onClick={() => { setShowProjectCreationModal(false); handleCreateSession(); }}
-                      disabled={!task.trim() || isRunning}
-                      className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-bold text-sm hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-                    >
-                      {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                      {isRunning ? "Creating..." : "Create Project"}
-                    </button>
+                    <div className="flex gap-2">
+                      <button onClick={() => setShowProjectCreationModal(false)} className="flex-1 py-2 border border-border text-muted-foreground text-xs rounded-xl hover:bg-muted/50 transition-all">Cancel</button>
+                      <button
+                        onClick={() => { handleCreateSession(); setShowProjectCreationModal(false); }}
+                        disabled={!task.trim() || isRunning}
+                        className="flex-1 py-2 bg-primary text-primary-foreground text-xs rounded-xl hover:bg-primary/90 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-2"
+                      >
+                        {isRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                        Create Project
+                      </button>
+                    </div>
                   </motion.div>
                 </div>
               )}

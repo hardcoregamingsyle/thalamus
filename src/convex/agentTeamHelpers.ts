@@ -1367,3 +1367,149 @@ export const vectorizeSessionPublic = mutation({
     return { vectorized: false, indexed: 0 };
   },
 });
+
+export const renameSessionPublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions"), newTitle: v.string() },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== auth.userId) throw new Error("Not found");
+    await ctx.db.patch(args.sessionId, { title: args.newTitle.trim().slice(0, 100) });
+  },
+});
+
+export const deleteSessionPublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions") },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== auth.userId) throw new Error("Not found");
+    // Delete all messages for this session
+    const msgs = await ctx.db.query("agentMessages").withIndex("by_session", q => q.eq("sessionId", args.sessionId)).take(500);
+    await Promise.all(msgs.map(m => ctx.db.delete(m._id)));
+    // Delete all files for this session
+    const files = await ctx.db.query("projectFiles").withIndex("by_session", q => q.eq("sessionId", args.sessionId)).take(500);
+    await Promise.all(files.map(f => ctx.db.delete(f._id)));
+    // Delete the session itself
+    await ctx.db.delete(args.sessionId);
+  },
+});
+
+// Create a new branch session from an existing session
+// The branch gets its own codebase but AI has context of all sibling branches
+export const createBranchSessionPublic = mutation({
+  args: {
+    token: v.string(),
+    parentSessionId: v.id("teamSessions"),
+    branchPurpose: v.string(), // What this branch is for (user-provided)
+  },
+  handler: async (ctx, args): Promise<{ sessionId: Id<"teamSessions">; customId: string }> => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const parentSession = await ctx.db.get(args.parentSessionId);
+    if (!parentSession || parentSession.userId !== auth.userId) throw new Error("Not found");
+
+    // Generate custom ID
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let customId = "";
+    for (let i = 0; i < 10; i++) customId += chars[Math.floor(Math.random() * chars.length)];
+
+    // Determine branch group
+    let branchGroupId = (parentSession as Record<string, unknown>).branchGroupId as string | undefined;
+    let branchNumber = 2;
+
+    if (!branchGroupId) {
+      // Create a new branch group with the parent as main branch
+      const groupId = await ctx.db.insert("sessionBranchGroups", {
+        userId: auth.userId,
+        groupName: parentSession.title.slice(0, 60),
+        mainSessionId: args.parentSessionId,
+        branchSessionIds: [],
+        projectSummary: parentSession.task.slice(0, 500),
+        createdAt: Date.now(),
+      });
+      branchGroupId = groupId;
+      // Mark parent as branch 1
+      await ctx.db.patch(args.parentSessionId, {
+        branchGroupId: groupId,
+        branchNumber: 1,
+        branchName: "Main Branch",
+        branchPurpose: "The primary project",
+      });
+    } else {
+      // Find the highest branch number in this group
+      const siblings = await ctx.db
+        .query("teamSessions")
+        .withIndex("by_branch_group", q => q.eq("branchGroupId", branchGroupId!))
+        .take(50);
+      branchNumber = Math.max(...siblings.map(s => (s as Record<string, unknown>).branchNumber as number ?? 1)) + 1;
+    }
+
+    // Create the branch session with its own empty codebase
+    const branchTitle = `Branch ${branchNumber}: ${args.branchPurpose.slice(0, 50)}`;
+    const branchTask = `[BRANCH ${branchNumber}] ${args.branchPurpose}\n\n[PARENT CONTEXT]: ${parentSession.task.slice(0, 300)}\n\n[BRANCH GROUP]: ${branchGroupId}\n[PARENT SESSION]: ${args.parentSessionId}`;
+
+    const sessionId = await ctx.db.insert("teamSessions", {
+      userId: auth.userId,
+      title: branchTitle,
+      task: branchTask,
+      status: "idle",
+      round: 0,
+      loopCount: 0,
+      phase: "Researcher",
+      totalMessages: 1,
+      executionPhase: "planning",
+      currentTaskIndex: 0,
+      finalReviewCoderEnabled: false,
+      customId,
+      sandboxType: (parentSession as Record<string, unknown>).sandboxType as "daytona" | "v86" | "qemu" ?? "daytona",
+      vmOS: ((parentSession as Record<string, unknown>).vmOS as "linux" | "windows" | "macos" | "freedos" | "linux64" | "windows64" | "macos64" | "windows11_home" | "windows11_pro" | "windows10_home" | "windows10_pro" | "macos26" | "android16" | "ios18" | "hyperos" | "miui" | undefined) ?? "linux",
+      branchGroupId,
+      branchNumber,
+      branchName: `Branch ${branchNumber}`,
+      branchPurpose: args.branchPurpose,
+      parentSessionId: args.parentSessionId,
+    });
+
+    // Add to branch group
+    const group = await ctx.db.get(branchGroupId as Id<"sessionBranchGroups">);
+    if (group) {
+      await ctx.db.patch(branchGroupId as Id<"sessionBranchGroups">, {
+        branchSessionIds: [...group.branchSessionIds, sessionId],
+      });
+    }
+
+    // Save initial user message
+    await ctx.db.insert("agentMessages", {
+      sessionId,
+      userId: auth.userId,
+      agent: "User",
+      content: args.branchPurpose,
+      round: 0,
+      messageIndex: 1,
+    });
+
+    return { sessionId, customId };
+  },
+});
+
+export const renameBranchPublic = mutation({
+  args: { token: v.string(), sessionId: v.id("teamSessions"), newBranchName: v.string() },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).take(1);
+    const auth = sessions[0];
+    if (!auth || auth.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.userId !== auth.userId) throw new Error("Not found");
+    const newName = args.newBranchName.trim().slice(0, 60);
+    await ctx.db.patch(args.sessionId, {
+      branchName: newName,
+      title: `Branch ${(session as Record<string, unknown>).branchNumber ?? ""}: ${newName}`,
+    });
+  },
+});
