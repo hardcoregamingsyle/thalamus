@@ -1,115 +1,224 @@
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router";
 import { useAuth } from "@/hooks/use-auth";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
-import { useRef } from "react";
 import {
-  ChevronRight, CheckCircle, ArrowRight,
-  Lightbulb, X, Upload, FileText, Send, Loader2, Sun, Moon,
+  ArrowRight,
+  BookOpen,
+  Brain,
+  CheckCircle,
+  ChevronRight,
+  Code2,
+  FileText,
+  Globe2,
+  Layers3,
+  Lightbulb,
+  Loader2,
+  MessageSquare,
+  Moon,
+  Search,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  Sun,
+  Upload,
+  X,
+  Zap,
 } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 
-// ── 4 Modes — equally prominent ───────────────────────────────────────────────
-const FOUR_MODES = [
+type ModeId = "chat" | "research" | "study" | "code";
+
+interface SuggestionFile {
+  name: string;
+  content: string;
+  size: number;
+}
+
+const MODE_CARDS: Array<{
+  id: ModeId;
+  label: string;
+  icon: typeof MessageSquare;
+  tone: string;
+  metric: string;
+  headline: string;
+  desc: string;
+  examples: string[];
+}> = [
   {
-    id: "chat", emoji: "💬", label: "CHAT", color: "text-blue-400", border: "border-blue-400/30", bg: "bg-blue-400/8", glow: "shadow-blue-500/10",
-    headline: "Talk to the smartest AI alive",
-    desc: "Ask anything. Get answers that actually make sense. Claude Haiku 4.5 via AWS Bedrock — fast, accurate, context-aware. Streaming responses.",
-    examples: ["Explain quantum computing simply", "Write a cover letter for me", "What's the best diet for energy?", "Help me plan my week"],
-    badge: "INSTANT",
+    id: "chat",
+    label: "Chat",
+    icon: MessageSquare,
+    tone: "text-sky-300 border-sky-300/25 bg-sky-300/8",
+    metric: "instant reasoning",
+    headline: "Executive-grade answers on demand",
+    desc: "Direct, structured responses for decisions, writing, analysis, planning, and everyday work.",
+    examples: ["Explain anything", "Write and refine", "Plan complex work"],
   },
   {
-    id: "research", emoji: "🔬", label: "RESEARCH", color: "text-amber-400", border: "border-amber-400/30", bg: "bg-amber-400/8", glow: "shadow-amber-500/10",
-    headline: "Research anything with live web data",
-    desc: "Not just training data. Live web scraping, multi-source synthesis, structured reports. Like having a PhD researcher on demand.",
-    examples: ["Latest AI breakthroughs 2026", "Market analysis: EV industry", "CRISPR gene editing advances", "Geopolitical risk assessment"],
-    badge: "LIVE WEB",
+    id: "research",
+    label: "Research",
+    icon: Search,
+    tone: "text-amber-300 border-amber-300/25 bg-amber-300/8",
+    metric: "live web synthesis",
+    headline: "Research that feels like an analyst team",
+    desc: "Live source gathering, synthesis, structured reports, and market-level reasoning in one flow.",
+    examples: ["Market maps", "Technical briefs", "Current events"],
   },
   {
-    id: "study", emoji: "📚", label: "STUDY", color: "text-indigo-400", border: "border-indigo-400/30", bg: "bg-indigo-400/8", glow: "shadow-indigo-500/10",
-    headline: "Study smarter, not harder",
-    desc: "Upload your notes, textbooks, or any resource. Get notebook-ready explanations that teach you the concept while you read.",
-    examples: ["NCERT Class 10 Science", "Calculus derivatives explained", "World War I causes & effects", "Python OOP concepts"],
-    badge: "GROUNDED",
+    id: "study",
+    label: "Study",
+    icon: BookOpen,
+    tone: "text-indigo-300 border-indigo-300/25 bg-indigo-300/8",
+    metric: "grounded learning",
+    headline: "A private tutor for any curriculum",
+    desc: "Upload notes, ask for exam-ready explanations, and get learning paths that adapt to the student.",
+    examples: ["NCERT and CBSE", "College courses", "Practice questions"],
   },
   {
-    id: "code", emoji: "⚡", label: "CODE", color: "text-violet-400", border: "border-violet-400/30", bg: "bg-violet-400/8", glow: "shadow-violet-500/10",
-    headline: "Build entire software products",
-    desc: "9 specialized agents — Researcher, Analyser, Planner, Coder, Optimiser, Tester, Red Team, Critic. One prompt. Production-ready.",
-    examples: ["Full-stack SaaS app", "REST API with auth", "Mobile-first dashboard", "E-commerce platform"],
-    badge: "9 AGENTS",
+    id: "code",
+    label: "Code",
+    icon: Code2,
+    tone: "text-emerald-300 border-emerald-300/25 bg-emerald-300/8",
+    metric: "multi-agent build system",
+    headline: "Software teams compressed into one prompt",
+    desc: "Researcher, planner, coder, tester, red team, critic, and deploy workflow working as one system.",
+    examples: ["Full products", "Production fixes", "Security passes"],
   },
 ];
 
-// ── Suggestion Form Modal ─────────────────────────────────────────────────────
-interface SuggestionFile { name: string; content: string; size: number; }
-function SuggestionModal({ onClose, onSubmit, isSubmitting }: { onClose: () => void; onSubmit: (t: string, d: string, f: SuggestionFile[]) => Promise<void>; isSubmitting: boolean }) {
+const CAPABILITIES = [
+  { icon: Brain, label: "All-purpose intelligence", detail: "One interface for conversation, research, study, and software execution." },
+  { icon: Layers3, label: "Agent depth", detail: "Specialized flows for high-stakes tasks instead of a single generic chat window." },
+  { icon: ShieldCheck, label: "Enterprise posture", detail: "Built around modern model routing, private sessions, and production workflows." },
+  { icon: Zap, label: "Fast by design", detail: "Streaming UI, compact sessions, and mode-specific prompts keep the product moving." },
+];
+
+const SIGNALS = [
+  "L4.5 agent system",
+  "AWS Bedrock model routing",
+  "Live web research",
+  "Code execution sandboxes",
+  "Collapsible reasoning notes",
+];
+
+const CONSOLE_LINES = [
+  { agent: "Router", text: "Classifying task intent across chat, research, study, and code." },
+  { agent: "Research", text: "Preparing source plan and synthesis outline." },
+  { agent: "Study", text: "Checking profile, resources, and exam-ready framing." },
+  { agent: "Code", text: "Assigning planner, coder, tester, red-team, and critic agents." },
+];
+
+function SuggestionModal({
+  onClose,
+  onSubmit,
+  isSubmitting,
+}: {
+  onClose: () => void;
+  onSubmit: (title: string, description: string, files: SuggestionFile[]) => Promise<void>;
+  isSubmitting: boolean;
+}) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [files, setFiles] = useState<SuggestionFile[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
-  const handleFileAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(e.target.files ?? []);
+
+  const handleFileAdd = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.target.files ?? []);
     for (const file of selected) {
       const text = await file.text().catch(() => `[Binary: ${file.name}]`);
       setFiles(prev => [...prev, { name: file.name, content: text.slice(0, 50000), size: file.size }]);
     }
     if (fileRef.current) fileRef.current.value = "";
   };
+
+  const handleSubmit = async () => {
+    if (!title.trim() || !description.trim()) {
+      toast.error("Fill in title and description");
+      return;
+    }
+    await onSubmit(title.trim(), description.trim(), files);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
-      <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-        className="relative z-10 bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96 }}
+        className="relative z-10 w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg border border-border bg-card shadow-2xl"
+      >
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-accent/20 border border-accent/30 flex items-center justify-center">
-              <Lightbulb className="h-3.5 w-3.5 text-accent" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-accent/30 bg-accent/15">
+              <Lightbulb className="h-4 w-4 text-accent" />
             </div>
             <div>
-              <p className="text-xs font-bold text-foreground">SUBMIT FEEDBACK</p>
-              <p className="text-[9px] text-muted-foreground">Help us build better</p>
+              <p className="text-xs font-bold text-foreground">Submit Feedback</p>
+              <p className="text-[10px] text-muted-foreground">Help improve Thalamus AI</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors p-1"><X className="h-4 w-4" /></button>
+          <button onClick={onClose} className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
         </div>
-        <div className="p-5 space-y-4">
+
+        <div className="space-y-4 p-5">
           <div>
-            <label className="text-[10px] font-bold text-muted-foreground block mb-1.5">TITLE <span className="text-destructive">*</span></label>
-            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Brief title..." className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors" />
+            <label className="mb-1.5 block text-[10px] font-bold text-muted-foreground">TITLE</label>
+            <input
+              value={title}
+              onChange={event => setTitle(event.target.value)}
+              placeholder="Brief title"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/60"
+            />
           </div>
           <div>
-            <label className="text-[10px] font-bold text-muted-foreground block mb-1.5">DESCRIPTION <span className="text-destructive">*</span></label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Describe your suggestion or bug report..." rows={4} className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors resize-none" />
+            <label className="mb-1.5 block text-[10px] font-bold text-muted-foreground">DESCRIPTION</label>
+            <textarea
+              value={description}
+              onChange={event => setDescription(event.target.value)}
+              placeholder="Describe the suggestion or bug report"
+              rows={4}
+              className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/60"
+            />
           </div>
           <div>
-            <label className="text-[10px] font-bold text-muted-foreground block mb-1.5">ATTACHMENTS (optional)</label>
             <input ref={fileRef} type="file" multiple onChange={handleFileAdd} className="hidden" />
-            <button onClick={() => fileRef.current?.click()} className="w-full py-2 border border-dashed border-border rounded-lg text-[10px] text-muted-foreground hover:border-primary/40 hover:text-primary transition-all flex items-center justify-center gap-2">
-              <Upload className="h-3 w-3" />Attach files
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border py-2 text-[10px] text-muted-foreground transition-all hover:border-primary/40 hover:text-primary"
+            >
+              <Upload className="h-3 w-3" />
+              Attach files
             </button>
             {files.length > 0 && (
               <div className="mt-2 space-y-1">
-                {files.map((f, i) => (
-                  <div key={i} className="flex items-center justify-between px-2 py-1.5 bg-background border border-border rounded-lg">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
-                      <span className="text-[10px] text-foreground truncate">{f.name}</span>
+                {files.map((file, index) => (
+                  <div key={`${file.name}-${index}`} className="flex items-center justify-between rounded-lg border border-border bg-background px-2 py-1.5">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <FileText className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <span className="truncate text-[10px] text-foreground">{file.name}</span>
                     </div>
-                    <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 ml-2"><X className="h-3 w-3" /></button>
+                    <button onClick={() => setFiles(prev => prev.filter((_, i) => i !== index))} className="ml-2 shrink-0 text-muted-foreground transition-colors hover:text-destructive">
+                      <X className="h-3 w-3" />
+                    </button>
                   </div>
                 ))}
               </div>
             )}
           </div>
-          <button onClick={async () => { if (!title.trim() || !description.trim()) { toast.error("Fill in title and description"); return; } await onSubmit(title.trim(), description.trim(), files); }}
+          <button
+            onClick={handleSubmit}
             disabled={isSubmitting || !title.trim() || !description.trim()}
-            className="w-full py-2.5 bg-primary/15 border border-primary/30 text-primary text-xs rounded-xl hover:bg-primary/25 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-2">
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-primary/30 bg-primary text-primary-foreground py-2.5 text-xs font-bold transition-all hover:bg-primary/90 disabled:opacity-50"
+          >
             {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-            {isSubmitting ? "Submitting..." : "Submit Feedback"}
+            {isSubmitting ? "Submitting" : "Submit Feedback"}
           </button>
         </div>
       </motion.div>
@@ -117,7 +226,313 @@ function SuggestionModal({ onClose, onSubmit, isSubmitting }: { onClose: () => v
   );
 }
 
-// ── Main Landing ───────────────────────────────────────────────────────────────
+function NavBar({
+  isAuthenticated,
+  isLoading,
+  theme,
+  onLaunch,
+  onFeedback,
+  onToggleTheme,
+}: {
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  theme: string;
+  onLaunch: () => void;
+  onFeedback: () => void;
+  onToggleTheme: () => void;
+}) {
+  return (
+    <nav className="fixed left-0 right-0 top-0 z-50 border-b border-white/10 bg-background/75 backdrop-blur-2xl">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-8 overflow-hidden rounded-lg border border-white/15 bg-card shadow-sm">
+            <img src="/thalamus-logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
+          </div>
+          <div>
+            <p className="text-sm font-bold tracking-[0.22em] text-foreground">THALAMUS</p>
+            <p className="hidden text-[10px] uppercase tracking-[0.18em] text-muted-foreground sm:block">All-purpose AI command system</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button onClick={onFeedback} className="hidden items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-[11px] font-medium text-muted-foreground transition-all hover:border-accent/40 hover:text-accent sm:flex">
+            <Lightbulb className="h-3.5 w-3.5" />
+            Feedback
+          </button>
+          <button onClick={onToggleTheme} className="rounded-lg border border-white/10 p-2 text-muted-foreground transition-all hover:border-white/20 hover:text-foreground" title="Toggle theme">
+            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </button>
+          <button onClick={onLaunch} className="flex items-center gap-1.5 rounded-lg bg-foreground px-4 py-2 text-xs font-bold text-background shadow-lg shadow-black/20 transition-all hover:bg-foreground/90">
+            {isLoading ? "Loading" : isAuthenticated ? "Open Portal" : "Try Free"}
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+function IntelligenceConsole({ onLaunch }: { onLaunch: () => void }) {
+  return (
+    <div className="pointer-events-auto mx-auto w-full max-w-5xl">
+      <div className="grid gap-3 border-y border-white/10 bg-background/65 px-3 py-3 backdrop-blur-xl md:grid-cols-[1.15fr_0.85fr] md:rounded-lg md:border">
+        <div className="rounded-lg border border-white/10 bg-black/30 p-3">
+          <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-foreground">Live Intelligence Core</span>
+            </div>
+            <span className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-2 py-0.5 text-[10px] font-bold text-emerald-300">Online</span>
+          </div>
+          <div className="space-y-2">
+            {CONSOLE_LINES.map((line, index) => (
+              <motion.div
+                key={line.agent}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.12 * index }}
+                className="grid grid-cols-[88px_1fr] gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2"
+              >
+                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">{line.agent}</span>
+                <span className="text-[11px] leading-relaxed text-muted-foreground">{line.text}</span>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-3">
+          <div className="rounded-lg border border-white/10 bg-white/[0.035] p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <Globe2 className="h-4 w-4 text-amber-300" />
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-foreground">Capability Matrix</p>
+            </div>
+            <div className="space-y-2">
+              {SIGNALS.map(signal => (
+                <div key={signal} className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <CheckCircle className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+                  <span>{signal}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={onLaunch}
+            className="group flex items-center justify-between rounded-lg border border-primary/30 bg-primary px-4 py-4 text-left text-primary-foreground shadow-xl shadow-primary/15 transition-all hover:bg-primary/90"
+          >
+            <span>
+              <span className="block text-xs font-bold uppercase tracking-[0.18em]">Start the system</span>
+              <span className="mt-1 block text-[11px] opacity-80">Enter Chat, Research, Study, or Code mode.</span>
+            </span>
+            <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Hero({ onLaunch }: { onLaunch: () => void }) {
+  return (
+    <section className="relative min-h-[92vh] overflow-hidden px-4 pt-28 sm:px-6">
+      <div className="absolute inset-0 -z-10 opacity-80">
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.055)_1px,transparent_1px)] bg-[size:80px_80px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_10%,rgba(125,180,255,0.18),transparent_38%),radial-gradient(circle_at_85%_35%,rgba(245,190,90,0.10),transparent_30%),linear-gradient(180deg,transparent_0%,var(--background)_88%)]" />
+      </div>
+
+      <div className="mx-auto max-w-7xl">
+        <div className="mx-auto max-w-5xl text-center">
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur-xl"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+            Built for people who need the strongest answer, not another chatbot
+          </motion.div>
+
+          <motion.h1
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.65 }}
+            className="mx-auto max-w-5xl text-balance text-5xl font-semibold leading-[0.94] tracking-normal text-foreground sm:text-7xl lg:text-8xl"
+          >
+            World's most powerful all-purpose AI.
+          </motion.h1>
+
+          <motion.p
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.12, duration: 0.55 }}
+            className="mx-auto mt-6 max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg"
+          >
+            Thalamus brings chat, live research, elite study support, and a multi-agent software team into one premium command center.
+          </motion.p>
+
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row"
+          >
+            <button onClick={onLaunch} className="group flex items-center gap-2 rounded-lg bg-foreground px-6 py-3 text-sm font-bold text-background shadow-2xl shadow-black/30 transition-all hover:bg-foreground/90">
+              Launch Thalamus
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+            </button>
+            <button onClick={() => document.getElementById("modes")?.scrollIntoView({ behavior: "smooth" })} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.035] px-6 py-3 text-sm font-bold text-foreground backdrop-blur-xl transition-all hover:border-white/20 hover:bg-white/[0.06]">
+              See the system
+              <Layers3 className="h-4 w-4" />
+            </button>
+          </motion.div>
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 28 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.28, duration: 0.65 }}
+          className="mt-14"
+        >
+          <IntelligenceConsole onLaunch={onLaunch} />
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+function ModeGrid({ onSelect }: { onSelect: (mode: ModeId) => void }) {
+  return (
+    <section id="modes" className="px-4 py-18 sm:px-6">
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-8 flex flex-col justify-between gap-4 border-b border-white/10 pb-6 md:flex-row md:items-end">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">Four modes. One command layer.</p>
+            <h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-normal text-foreground sm:text-5xl">A full AI operating system, not a chat tab.</h2>
+          </div>
+          <p className="max-w-md text-sm leading-6 text-muted-foreground">
+            Every mode has a distinct role, tuned prompt architecture, and UI built for serious output.
+          </p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          {MODE_CARDS.map((mode, index) => (
+            <motion.button
+              key={mode.id}
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: index * 0.06 }}
+              onClick={() => onSelect(mode.id)}
+              className={`group rounded-lg border p-5 text-left transition-all hover:-translate-y-0.5 hover:bg-white/[0.045] ${mode.tone}`}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-current/20 bg-background/45">
+                    <mode.icon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-bold uppercase tracking-[0.2em]">{mode.label}</p>
+                      <span className="rounded-full border border-current/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] opacity-75">{mode.metric}</span>
+                    </div>
+                    <h3 className="mt-3 text-xl font-semibold text-foreground">{mode.headline}</h3>
+                  </div>
+                </div>
+                <ArrowRight className="mt-1 h-4 w-4 shrink-0 opacity-45 transition-transform group-hover:translate-x-1 group-hover:opacity-100" />
+              </div>
+              <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground">{mode.desc}</p>
+              <div className="mt-5 grid gap-2 sm:grid-cols-3">
+                {mode.examples.map(example => (
+                  <div key={example} className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <CheckCircle className="h-3.5 w-3.5 shrink-0 text-current" />
+                    <span>{example}</span>
+                  </div>
+                ))}
+              </div>
+            </motion.button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CapabilityBand() {
+  return (
+    <section className="border-y border-white/10 bg-white/[0.025] px-4 py-16 sm:px-6">
+      <div className="mx-auto grid max-w-7xl gap-3 md:grid-cols-4">
+        {CAPABILITIES.map((item, index) => (
+          <motion.div
+            key={item.label}
+            initial={{ opacity: 0, y: 14 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: index * 0.05 }}
+            className="rounded-lg border border-white/10 bg-background/55 p-5"
+          >
+            <item.icon className="h-5 w-5 text-primary" />
+            <p className="mt-5 text-sm font-bold text-foreground">{item.label}</p>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">{item.detail}</p>
+          </motion.div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function FinalCta({ onLaunch, onSelect }: { onLaunch: () => void; onSelect: (mode: ModeId) => void }) {
+  return (
+    <section className="px-4 py-20 sm:px-6">
+      <div className="mx-auto max-w-7xl">
+        <div className="grid gap-8 border-y border-white/10 py-12 md:grid-cols-[1fr_auto] md:items-center">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">Enter the command center</p>
+            <h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-normal text-foreground sm:text-5xl">
+              Built to look powerful because it is powerful.
+            </h2>
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Start with the mode you need. The system adapts from quick answers to deep research, study help, and agentic software execution.
+            </p>
+          </div>
+          <button onClick={onLaunch} className="group flex items-center justify-center gap-2 rounded-lg bg-foreground px-6 py-3 text-sm font-bold text-background shadow-2xl shadow-black/30 transition-all hover:bg-foreground/90">
+            Launch now
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+          </button>
+        </div>
+
+        <div className="mt-8 grid gap-2 sm:grid-cols-4">
+          {MODE_CARDS.map(mode => (
+            <button key={mode.id} onClick={() => onSelect(mode.id)} className={`flex items-center justify-between rounded-lg border px-3 py-3 text-xs font-bold transition-all hover:bg-white/[0.045] ${mode.tone}`}>
+              <span>{mode.label}</span>
+              <mode.icon className="h-4 w-4" />
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="border-t border-white/10 px-4 py-8 sm:px-6">
+      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 sm:flex-row">
+        <div className="flex items-center gap-3">
+          <div className="h-7 w-7 overflow-hidden rounded-lg border border-white/15 bg-card">
+            <img src="/thalamus-logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
+          </div>
+          <span className="text-xs font-bold tracking-[0.22em] text-foreground">THALAMUS</span>
+          <span className="text-[10px] text-muted-foreground">by Aphantic Corporations</span>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-3 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          <span>All-purpose AI</span>
+          <span>Agentic code</span>
+          <span>Live research</span>
+          <span>Study systems</span>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
 export default function Landing() {
   const navigate = useNavigate();
   const { isAuthenticated, isLoading } = useAuth();
@@ -125,205 +540,43 @@ export default function Landing() {
   const [isSuggestionSubmitting, setIsSuggestionSubmitting] = useState(false);
   const submitSuggestionMutation = useMutation(api.admin.submitSuggestion);
   const { theme, toggleTheme } = useTheme();
+
   const handleLaunch = () => navigate("/portal/chat");
+  const handleModeSelect = (mode: ModeId) => navigate(`/portal/${mode}`);
+
+  const handleSuggestionSubmit = async (title: string, description: string, files: SuggestionFile[]) => {
+    setIsSuggestionSubmitting(true);
+    try {
+      await submitSuggestionMutation({ title, description, files: files.length > 0 ? files : undefined });
+      toast.success("Feedback submitted");
+      setSuggestionsOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to submit");
+    } finally {
+      setIsSuggestionSubmitting(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen font-sans overflow-x-hidden">
-      {/* ── Nav ─────────────────────────────────────────────────────────────── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/60 backdrop-blur-xl bg-background/90">
-        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-lg border border-primary/30 overflow-hidden bg-card">
-              <img src="/thalamus-logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
-            </div>
-            <span className="text-primary font-bold text-sm tracking-widest">THALAMUS_AI</span>
-            <span className="hidden sm:block text-[10px] text-muted-foreground border border-border/60 px-2 py-0.5 rounded-full">
-              L4.5 Agent · by Aphantic
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setSuggestionsOpen(true)} className="hidden sm:flex items-center gap-1.5 text-[11px] border border-border/60 text-muted-foreground px-3 py-1.5 rounded-lg hover:border-accent/40 hover:text-accent transition-all font-medium">
-              <Lightbulb className="h-3 w-3" />Feedback
-            </button>
-            <button onClick={toggleTheme} className="p-2 rounded-lg border border-border/60 text-muted-foreground hover:text-foreground hover:border-border transition-all" title="Toggle theme">
-              {theme === "dark" ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-            </button>
-            <span className="hidden md:flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />LIVE
-            </span>
-            <button onClick={handleLaunch} className="flex items-center gap-1.5 text-xs bg-primary text-primary-foreground px-4 py-1.5 rounded-lg hover:bg-primary/90 transition-all font-semibold shadow-sm shadow-primary/20">
-              {isLoading ? "..." : isAuthenticated ? "Open Portal" : "Try Free — No Sign Up"}
-              <ChevronRight className="h-3 w-3" />
-            </button>
-          </div>
-        </div>
-      </nav>
+    <div className="min-h-screen overflow-x-hidden bg-background font-sans text-foreground">
+      <NavBar
+        isAuthenticated={isAuthenticated}
+        isLoading={isLoading}
+        theme={theme}
+        onLaunch={handleLaunch}
+        onFeedback={() => setSuggestionsOpen(true)}
+        onToggleTheme={toggleTheme}
+      />
+      <Hero onLaunch={handleLaunch} />
+      <ModeGrid onSelect={handleModeSelect} />
+      <CapabilityBand />
+      <FinalCta onLaunch={handleLaunch} onSelect={handleModeSelect} />
+      <Footer />
 
-      {/* ── Hero ────────────────────────────────────────────────────────────── */}
-      <section className="pt-32 pb-12 px-6 relative overflow-hidden">
-        <div className="max-w-5xl mx-auto text-center">
-          {/* Badge */}
-          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-            className="flex justify-center mb-8">
-            <div className="inline-flex items-center gap-2 border border-primary/25 bg-primary/8 text-primary text-[11px] font-semibold px-4 py-2 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              New: collapsible thinking streams · Study Mode replies fixed
-            </div>
-          </motion.div>
-
-          {/* Headline */}
-          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
-            <h1 className="text-5xl lg:text-7xl font-bold text-foreground leading-[1.05] tracking-tight mb-6">
-              The AI that does
-              <br />
-              <span className="text-primary">everything.</span>
-            </h1>
-            <p className="text-lg text-muted-foreground leading-relaxed mb-3 max-w-2xl mx-auto">
-              Chat. Research. Study. Build software. One AI, four superpowers. Free to try — no sign-up required.
-            </p>
-            <p className="text-sm text-muted-foreground/60 mb-8 max-w-xl mx-auto">
-              Answers now separate thinking from final output across Chat, Research, Study, and Code agents.
-            </p>
-            <motion.button onClick={handleLaunch} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-              className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20">
-              Launch Thalamus — Free
-              <ArrowRight className="h-4 w-4" />
-            </motion.button>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* ── 4 Mode Cards — equally prominent ────────────────────────────────── */}
-      <section className="px-6 pb-16">
-        <div className="max-w-7xl mx-auto">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2 }}
-            className="text-center mb-10">
-            <p className="text-[11px] font-bold text-muted-foreground tracking-widest mb-2">FOUR MODES. ONE AI.</p>
-            <h2 className="text-2xl font-bold text-foreground">Whatever you need, Thalamus has a mode for it</h2>
-          </motion.div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {FOUR_MODES.map((mode, i) => (
-              <motion.div key={mode.id}
-                initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.1 * i }}
-                whileHover={{ y: -2 }}
-                onClick={() => navigate(`/portal/${mode.id}`)}
-                className={`cursor-pointer border ${mode.border} ${mode.bg} rounded-2xl p-6 hover:shadow-lg ${mode.glow} transition-all group`}
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="text-3xl">{mode.emoji}</div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs font-bold ${mode.color}`}>{mode.label}</span>
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${mode.border} ${mode.color} opacity-70`}>{mode.badge}</span>
-                      </div>
-                      <p className="text-sm font-bold text-foreground mt-0.5">{mode.headline}</p>
-                    </div>
-                  </div>
-                  <ArrowRight className={`h-4 w-4 ${mode.color} opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-1`} />
-                </div>
-                <p className="text-xs text-muted-foreground leading-relaxed mb-4">{mode.desc}</p>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {mode.examples.map((ex, j) => (
-                    <div key={j} className="flex items-center gap-1.5">
-                      <CheckCircle className={`h-3 w-3 ${mode.color} shrink-0`} />
-                      <span className="text-[10px] text-muted-foreground truncate">{ex}</span>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Why Thalamus ─────────────────────────────────────────────────────── */}
-      <section className="px-6 pb-16">
-        <div className="max-w-5xl mx-auto">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-            className="border border-border bg-card/50 rounded-2xl p-8">
-            <div className="text-center mb-8">
-              <p className="text-[11px] font-bold text-muted-foreground tracking-widest mb-2">WHY THALAMUS</p>
-              <h2 className="text-2xl font-bold text-foreground">Not just another chatbot</h2>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-              {[
-                { icon: "🧠", title: "Streaming responses", desc: "First tokens appear in under 500ms. No waiting. No loading spinners. Just instant answers." },
-                { icon: "🌐", title: "Live web grounding", desc: "Research and Study modes search the live web before answering. Always up-to-date, never stale." },
-                { icon: "🔒", title: "Enterprise-grade AI", desc: "Claude Haiku 4.5 to Opus 4.7 via AWS Bedrock. The same models used by Fortune 500 companies." },
-              ].map((item, i) => (
-                <motion.div key={i} initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
-                  className="text-center">
-                  <div className="text-3xl mb-3">{item.icon}</div>
-                  <p className="text-sm font-bold text-foreground mb-2">{item.title}</p>
-                  <p className="text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* ── CTA ──────────────────────────────────────────────────────────────── */}
-      <section className="px-6 pb-20">
-        <div className="max-w-2xl mx-auto text-center">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
-            <h2 className="text-3xl font-bold text-foreground mb-4">Ready to try the best AI for everything?</h2>
-            <p className="text-sm text-muted-foreground mb-8">Free daily allocation. No credit card. No sign-up required to try.</p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              {FOUR_MODES.map(mode => (
-                <motion.button key={mode.id} onClick={() => navigate(`/portal/${mode.id}`)}
-                  whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                  className={`flex items-center gap-2 px-4 py-2.5 border ${mode.border} ${mode.bg} ${mode.color} text-xs font-bold rounded-xl hover:opacity-90 transition-all`}>
-                  <span>{mode.emoji}</span>
-                  {mode.label}
-                </motion.button>
-              ))}
-            </div>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* ── Footer ──────────────────────────────────────────────────────────── */}
-      <footer className="border-t border-border/50 py-8">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-6 h-6 rounded border border-primary/30 overflow-hidden bg-card">
-              <img src="/thalamus-logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
-            </div>
-            <span className="text-primary font-bold text-xs tracking-widest">THALAMUS_AI</span>
-            <span className="text-[10px] text-muted-foreground">by Aphantic Corporations</span>
-          </div>
-          <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
-            <span>L4.5 Agent System</span>
-            <span>·</span>
-            <span>AWS Bedrock</span>
-            <span>·</span>
-            <span>Convex</span>
-            <span>·</span>
-            <span>Daytona</span>
-          </div>
-        </div>
-      </footer>
-
-      {/* Suggestion Modal */}
       {suggestionsOpen && (
         <SuggestionModal
           onClose={() => setSuggestionsOpen(false)}
-          onSubmit={async (title, description, files) => {
-            setIsSuggestionSubmitting(true);
-            try {
-              await submitSuggestionMutation({ title, description, files: files.length > 0 ? files : undefined });
-              toast.success("Feedback submitted! Thank you.");
-              setSuggestionsOpen(false);
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : "Failed to submit");
-            } finally {
-              setIsSuggestionSubmitting(false);
-            }
-          }}
+          onSubmit={handleSuggestionSubmit}
           isSubmitting={isSuggestionSubmitting}
         />
       )}
