@@ -1411,6 +1411,11 @@ function PortalDesktop() {
     );
   }
 
+  // Show mode selection screen when no mode is in the URL (/portal)
+  if (!activeMode) {
+    return <ModeSelection user={user} signOut={signOut} theme={theme} toggleTheme={toggleTheme} />;
+  }
+
   return (
     <div className="h-screen flex flex-col bg-background font-mono overflow-hidden">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
