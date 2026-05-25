@@ -6,16 +6,9 @@ import { Id } from "./_generated/dataModel";
 import { callClaude } from "./agentCore";
 
 // ── Gemini with Google Search Grounding ───────────────────────────────────────
-// Uses gemini-3.1-flash-lite-preview with built-in Google Search tool
-// Single API call — no separate search step, no RAG timeout, no WebSocket disconnect
 interface GeminiGroundedResponse {
-  candidates?: Array<{
-    content?: { parts?: Array<{ text?: string }> };
-  }>;
-  usageMetadata?: {
-    promptTokenCount?: number;
-    candidatesTokenCount?: number;
-  };
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
 }
 
 async function callGeminiWithSearch(
@@ -37,16 +30,13 @@ async function callGeminiWithSearch(
       }),
     }
   );
-
   if (!response.ok) {
     const err = await response.text().catch(() => "");
     throw new Error(`Gemini API error ${response.status}: ${err.slice(0, 200)}`);
   }
-
   const data = await response.json() as GeminiGroundedResponse;
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
   if (!text) throw new Error("No response from Gemini");
-
   return {
     text,
     inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
@@ -117,7 +107,7 @@ async function extractPdfWithClaude(base64Data: string, fileName: string): Promi
   const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke`;
   const requestBody = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
-    system: `Extract ALL content from this PDF as structured JSON. Output ONLY valid JSON with schema: {"title": "...", "sections": [{"type": "heading|paragraph|image|table|list|formula", "content": "...", "level": 1, "imageDescription": "..."}]}`,
+    system: `Extract ALL content from this PDF as structured JSON. Output ONLY valid JSON.`,
     messages: [{
       role: "user",
       content: [
@@ -143,5 +133,547 @@ async function extractPdfWithClaude(base64Data: string, fileName: string): Promi
   const data = await response.json() as { content?: Array<{ type: string; text?: string }> };
   const rawText = data.content?.[0]?.text ?? "";
   try {
-    const cleaned = rawText.replace(/^<[^>]+>/, "");
+    const cleaned = rawText.replace(/^```json\s*/i, "").replace(/\s*```\s*$/, "");
+    JSON.parse(cleaned);
+    return cleaned;
+  } catch {
+    return JSON.stringify({ title: fileName, sections: [{ type: "paragraph", content: rawText }] });
   }
+}
+
+export const processFileResource = action({
+  args: {
+    token: v.string(),
+    fileName: v.string(),
+    fileType: v.string(),
+    fileDataBase64: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ resourceId: string; summary: string }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const isImage = args.fileType.startsWith("image/");
+    const isPdf = args.fileType === "application/pdf" || args.fileName.toLowerCase().endsWith(".pdf");
+    const isPlainText = args.fileType === "text/plain" || /\.(txt|md|json|csv|log)$/.test(args.fileName.toLowerCase());
+    let summary = "";
+
+    if (isPlainText) {
+      try { summary = Buffer.from(args.fileDataBase64, "base64").toString("utf-8"); }
+      catch { summary = `[Error decoding text file: ${args.fileName}]`; }
+    } else if (isPdf) {
+      try {
+        summary = await extractPdfWithClaude(args.fileDataBase64, args.fileName);
+        if (!summary || summary.length < 50) throw new Error("Empty extraction");
+      } catch {
+        try {
+          const { vly } = await import('../lib/vly-integrations');
+          const result = await vly.ai.completion({
+            model: "gpt-4o",
+            messages: [{ role: "user", content: `Extract ALL text content from this PDF document "${args.fileName}". Include every heading, paragraph, list, table, and formula.\n\nPDF base64 (first 100k chars): ${args.fileDataBase64.slice(0, 100000)}` }],
+            maxTokens: 4000,
+          });
+          summary = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "") : "";
+        } catch {
+          summary = `[PDF uploaded: ${args.fileName}. PDF text extraction requires Bedrock credentials.]`;
+        }
+      }
+    } else if (isImage) {
+      try {
+        const result = await callClaude(
+          `Please analyze this image and provide a comprehensive summary of all content, text, diagrams, charts, and visual information present.\n\nImage data (base64, ${args.fileType}): ${args.fileDataBase64.slice(0, 80000)}`,
+          "You are a study assistant that extracts and summarizes content from images and files.",
+          "claude-haiku-4-5",
+        );
+        summary = result.text;
+      } catch {
+        const { vly } = await import('../lib/vly-integrations');
+        const result = await vly.ai.completion({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: `Analyze this image and provide a comprehensive summary.\n\nImage data (base64, ${args.fileType}): ${args.fileDataBase64.slice(0, 80000)}` }],
+          maxTokens: 2000,
+        });
+        summary = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "Could not process image") : "Image uploaded (could not extract text)";
+      }
+    } else {
+      try {
+        const decoded = Buffer.from(args.fileDataBase64, "base64").toString("utf-8");
+        const printableRatio = decoded.split("").filter(c => c.charCodeAt(0) > 31 || c === "\n" || c === "\r" || c === "\t").length / decoded.length;
+        if (decoded.length > 50 && printableRatio > 0.75) {
+          summary = decoded;
+        } else {
+          throw new Error("Binary file");
+        }
+      } catch {
+        try {
+          const result = await callClaude(
+            `Please extract and summarize all content from this file for study purposes. File name: ${args.fileName}\n\nFile content (base64): ${args.fileDataBase64.slice(0, 50000)}`,
+            "You are a study assistant that extracts and summarizes content from files.",
+            "claude-haiku-4-5",
+          );
+          summary = result.text;
+        } catch {
+          summary = `[File uploaded: ${args.fileName}. Could not extract text content automatically.]`;
+        }
+      }
+    }
+
+    const resourceId = await ctx.runMutation(internal.studyHelpers.insertResource, {
+      userId,
+      title: args.fileName,
+      content: summary,
+      sourceType: isImage ? "image" : isPdf ? "pdf" : "file",
+      fileName: args.fileName,
+      fileType: args.fileType,
+    });
+
+    if (summary.length > 100) {
+      ctx.scheduler.runAfter(0, internal.rag.vectorizeResourceInternal, {
+        userId,
+        resourceId: resourceId as Id<"studyResources">,
+      });
+    }
+
+    return { resourceId: resourceId as string, summary: summary.slice(0, 200) };
+  },
+});
+
+export const searchAndAddResource = action({
+  args: { token: v.string(), query: v.string() },
+  handler: async (ctx, args): Promise<{ resourceId: string; title: string; summary: string }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const geminiKeys = (await ctx.runQuery(internal.admin.getGeminiKeysInternal, {})) as string[];
+    let text = "";
+
+    if (geminiKeys.length > 0) {
+      try {
+        const result = await callGeminiWithSearch(
+          "You are a research assistant. Search for information about the given topic and provide comprehensive, well-structured study notes. Include all key facts, definitions, and important details.",
+          `Research and provide comprehensive study notes about: ${args.query}`,
+          geminiKeys[0],
+          4096,
+        );
+        text = result.text;
+      } catch {
+        text = `Could not research topic: ${args.query}`;
+      }
+    } else {
+      try {
+        const result = await callClaude(
+          `Provide comprehensive study notes about: ${args.query}`,
+          "You are a research assistant. Provide comprehensive, well-structured study notes.",
+          "claude-haiku-4-5"
+        );
+        text = result.text;
+      } catch {
+        text = `Could not research topic: ${args.query}`;
+      }
+    }
+
+    const resourceId = await ctx.runMutation(internal.studyHelpers.insertResource, {
+      userId,
+      title: args.query,
+      content: text,
+      sourceType: "web",
+    });
+
+    if (text.length > 100) {
+      ctx.scheduler.runAfter(0, internal.rag.vectorizeResourceInternal, {
+        userId,
+        resourceId: resourceId as Id<"studyResources">,
+      });
+    }
+
+    return { resourceId: resourceId as string, title: args.query, summary: text.slice(0, 200) };
+  },
+});
+
+export const sendStudyMessage = action({
+  args: {
+    conversationId: v.id("conversations"),
+    content: v.string(),
+    token: v.string(),
+    userContext: v.optional(v.object({
+      datetime: v.string(),
+      timezone: v.string(),
+      location: v.optional(v.string()),
+    })),
+  },
+  handler: async (ctx, args): Promise<string> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    await ctx.runMutation(internal.aiHelpers.saveMessage, {
+      conversationId: args.conversationId,
+      userId,
+      role: "user",
+      content: args.content,
+    });
+
+    const [history, resources, adminMaterials, userRecord, geminiKeys] = await Promise.all([
+      ctx.runQuery(internal.aiHelpers.getConversationMessages, { conversationId: args.conversationId }) as Promise<Array<{ role: string; content: string }>>,
+      ctx.runQuery(internal.studyHelpers.getResourcesForUser, { userId }),
+      ctx.runQuery(internal.admin.getAdminStudyMaterials, {}) as Promise<Array<{ title: string; content: string; mode?: string }>>,
+      ctx.runQuery(internal.customAuthHelpers.getUserByTokenInternal, { token: args.token }) as Promise<{ studyGrade?: string; studyBoard?: string; studyLanguage?: string } | null>,
+      ctx.runQuery(internal.admin.getGeminiKeysInternal, {}) as Promise<string[]>,
+    ]);
+
+    const studyGrade = userRecord?.studyGrade ?? null;
+    const studyBoard = userRecord?.studyBoard ?? null;
+    const studyLanguage = userRecord?.studyLanguage ?? null;
+
+    const resourceContext = resources.length > 0
+      ? resources.slice(0, 4).map((r: { title: string; content: string }) => `[RESOURCE: ${r.title}]\n${r.content.slice(0, 1500)}`).join("\n\n---\n\n")
+      : "";
+
+    const adminContext = adminMaterials.length > 0
+      ? adminMaterials.slice(0, 3).map((m: { title: string; content: string }) => `[KNOWLEDGE: ${m.title}]\n${m.content.slice(0, 3000)}`).join("\n\n---\n\n")
+      : "";
+
+    const profileSection = studyGrade
+      ? `STUDENT PROFILE: Grade/Level: ${studyGrade}${studyBoard ? ` | Board: ${studyBoard}` : ""}${studyLanguage ? ` | Language: ${studyLanguage}` : ""}. Always tailor your answers to this exact grade and board. Reference the correct textbook chapters, exam patterns, and marking schemes for this board.\n\n`
+      : "";
+
+    const systemPrompt = `You are Aether — the world's most knowledgeable and effective study companion. You have COMPLETE knowledge of ALL school and college curricula worldwide, especially Indian education (NCERT, CBSE, ICSE, State Boards, JEE, NEET, UPSC). You know every textbook chapter, poem, story, lesson, and concept by name.
+
+${profileSection}CRITICAL RULE — NEVER ASK FOR CLARIFICATION:
+When a student mentions ANY topic — a chapter name, poem title, story name, concept, subject, or textbook — you IMMEDIATELY know what it is and explain it thoroughly WITHOUT asking for clarification.
+- If they say "Kaveri, CH2" → you know it's Chapter 2 from the relevant textbook for their grade/board
+- If they say "Reed ki Hadi" → you know it's a Hindi story/poem from NCERT
+- If they say "Beehive Chapter 2" → you know it's "The Sound of Music" from Class 9 CBSE English Beehive
+- NEVER say "Could you clarify?" or "Which book?" or "Which class?" — just answer comprehensively
+
+You have access to Google Search to find the most accurate and up-to-date information. Use it to verify facts, find textbook content, and provide accurate answers.
+
+${adminContext ? `\n## Primary Knowledge Base\n${adminContext}\n` : ""}
+${resourceContext ? `\n## Student's Study Resources\n${resourceContext}\n` : ""}
+
+CRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.
+Use: <h2>, <h3>, <h4>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <code>
+Headings: style="font-size:1.15em;font-weight:bold;margin:0.8em 0 0.4em;color:#e5e7eb;border-left:4px solid #6366f1;padding-left:0.7em"
+Sub-headings: style="font-size:1em;font-weight:bold;margin:0.7em 0 0.3em;color:#c4b5fd"
+Paragraphs: style="margin:0.4em 0;line-height:1.7;color:#d1d5db;font-size:0.92em"
+Lists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db;font-size:0.9em;line-height:1.6"
+Key facts box: style="border-left:4px solid #f59e0b;padding:0.6em 1em;color:#fcd34d;margin:0.6em 0;background:rgba(245,158,11,0.08);border-radius:0 8px 8px 0;font-size:0.88em"
+
+Write answers that are 400-800 words minimum. Be thorough. Be the teacher every student wishes they had.`;
+
+    const conversationContext = history.slice(-10).map((m: { role: string; content: string }) =>
+      `${m.role === "user" ? "Human" : "Assistant"}: ${m.content.slice(0, 800)}`
+    ).join("\n\n");
+
+    const fullPrompt = conversationContext
+      ? `${conversationContext}\n\nHuman: ${args.content}`
+      : args.content;
+
+    let responseContent = "";
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    // Use Gemini with Google Search grounding — fast, no RAG timeout
+    if (geminiKeys.length > 0) {
+      try {
+        const result = await callGeminiWithSearch(systemPrompt, fullPrompt, geminiKeys[0], 8192);
+        responseContent = result.text;
+        inputTokens = result.inputTokens;
+        outputTokens = result.outputTokens;
+      } catch {
+        // Fallback to Claude
+        try {
+          const result = await callClaude(fullPrompt, systemPrompt, "claude-haiku-4-5");
+          responseContent = result.text;
+          inputTokens = result.inputTokens;
+          outputTokens = result.outputTokens;
+        } catch {
+          const { vly } = await import('../lib/vly-integrations');
+          const result = await vly.ai.completion({
+            model: "claude-haiku-4-5",
+            messages: [{ role: "user", content: systemPrompt + "\n\n" + fullPrompt }],
+            maxTokens: 4096,
+          });
+          responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "No response") : "Failed to get response";
+        }
+      }
+    } else {
+      // No Gemini keys — use Claude directly
+      try {
+        const result = await callClaude(fullPrompt, systemPrompt, "claude-haiku-4-5");
+        responseContent = result.text;
+        inputTokens = result.inputTokens;
+        outputTokens = result.outputTokens;
+      } catch {
+        const { vly } = await import('../lib/vly-integrations');
+        const result = await vly.ai.completion({
+          model: "claude-haiku-4-5",
+          messages: [{ role: "user", content: systemPrompt + "\n\n" + fullPrompt }],
+          maxTokens: 4096,
+        });
+        responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "No response") : "Failed to get response";
+      }
+    }
+
+    const estimatedInput = inputTokens || Math.ceil(fullPrompt.length / 4);
+    const estimatedOutput = outputTokens || Math.ceil(responseContent.length / 4);
+    const costCents = (estimatedInput / 1_000_000) * 60 + (estimatedOutput / 1_000_000) * 240;
+
+    await ctx.runMutation(internal.aiHelpers.saveAssistantMessage, {
+      conversationId: args.conversationId,
+      userId,
+      content: responseContent,
+      tokensUsed: estimatedInput + estimatedOutput,
+      costCents,
+      inputTokens: estimatedInput,
+      outputTokens: estimatedOutput,
+      inputCostPerMillion: 0.60,
+      outputCostPerMillion: 2.40,
+    });
+
+    return responseContent;
+  },
+});
+
+export const generateFlashcards = action({
+  args: {
+    token: v.string(),
+    chatHistory: v.array(v.object({ role: v.string(), content: v.string() })),
+    studyGrade: v.optional(v.string()),
+    studyBoard: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<Array<{ front: string; back: string; topic: string }>> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const historyText = args.chatHistory.slice(-20).map(m => `${m.role === "user" ? "Student" : "AI"}: ${m.content.replace(/<[^>]+>/g, "").slice(0, 500)}`).join("\n\n");
+    const profileCtx = args.studyGrade ? `Student is in ${args.studyGrade}${args.studyBoard ? `, ${args.studyBoard}` : ""}.` : "";
+
+    const systemPrompt = `You are a flashcard generator. ${profileCtx} Based on the study conversation provided, generate 10-15 high-quality flashcards for exam revision.
+
+Output ONLY valid JSON array:
+[
+  {
+    "front": "Question or concept",
+    "back": "Answer or explanation",
+    "topic": "Chapter/Topic name"
+  }
+]`;
+
+    let responseContent = "";
+    try {
+      const result = await callClaude(historyText, systemPrompt, "claude-haiku-4-5");
+      responseContent = result.text;
+    } catch {
+      const { vly } = await import("../lib/vly-integrations");
+      const result = await vly.ai.completion({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: systemPrompt + "\n\n" + historyText }],
+        maxTokens: 3000,
+      });
+      responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "[]") : "[]";
+    }
+
+    try {
+      const jsonMatch = responseContent.match(/\[[\s\S]*\]/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    } catch { /* fall through */ }
+    return [];
+  },
+});
+
+export const generateMockTest = action({
+  args: {
+    token: v.string(),
+    chatHistory: v.array(v.object({ role: v.string(), content: v.string() })),
+    studyGrade: v.optional(v.string()),
+    studyBoard: v.optional(v.string()),
+    studyLanguage: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{
+    title: string;
+    totalMarks: number;
+    duration: string;
+    sections: Array<{
+      name: string;
+      instructions: string;
+      questions: Array<{
+        id: number;
+        type: string;
+        marks: number;
+        question: string;
+        options?: string[];
+        correctAnswer?: string;
+      }>;
+    }>;
+  }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const historyText = args.chatHistory.slice(-20).map(m => `${m.role === "user" ? "Student" : "AI"}: ${m.content.replace(/<[^>]+>/g, "").slice(0, 500)}`).join("\n\n");
+    const profileCtx = args.studyGrade ? `Student: ${args.studyGrade}${args.studyBoard ? `, ${args.studyBoard}` : ""}${args.studyLanguage ? `, prefers ${args.studyLanguage}` : ""}.` : "";
+
+    const systemPrompt = `You are an expert exam paper setter. ${profileCtx} Based on the study conversation, generate a comprehensive mock test paper matching this exact structure:
+{
+  "title": "Mock Test: [Topic]",
+  "totalMarks": 30,
+  "duration": "1 hour",
+  "sections": [
+    {
+      "name": "Section A - Multiple Choice Questions",
+      "instructions": "Choose the correct option. Each question carries 1 mark.",
+      "questions": [
+        {
+          "id": 1,
+          "type": "mcq",
+          "marks": 1,
+          "question": "...",
+          "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+          "correctAnswer": "A) ..."
+        }
+      ]
+    }
+  ]
+}`;
+
+    let responseContent = "";
+    try {
+      const result = await callClaude(historyText, systemPrompt, "claude-haiku-4-5");
+      responseContent = result.text;
+    } catch {
+      const { vly } = await import("../lib/vly-integrations");
+      const result = await vly.ai.completion({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: systemPrompt + "\n\n" + historyText }],
+        maxTokens: 4000,
+      });
+      responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "{}") : "{}";
+    }
+
+    try {
+      const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    } catch { /* fall through */ }
+    return { title: "Mock Test", totalMarks: 30, duration: "1 hour", sections: [] };
+  },
+});
+
+export const evaluateMockTest = action({
+  args: {
+    token: v.string(),
+    questions: v.array(v.object({
+      id: v.number(),
+      type: v.string(),
+      marks: v.number(),
+      question: v.string(),
+      correctAnswer: v.optional(v.string()),
+    })),
+    answers: v.array(v.object({ id: v.number(), answer: v.string() })),
+    studyGrade: v.optional(v.string()),
+    studyBoard: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{
+    totalMarks: number;
+    obtainedMarks: number;
+    percentage: number;
+    grade: string;
+    feedback: Array<{ id: number; marks: number; maxMarks: number; feedback: string; correct: boolean }>;
+    overallFeedback: string;
+  }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const profileCtx = args.studyGrade ? `Student: ${args.studyGrade}${args.studyBoard ? `, ${args.studyBoard}` : ""}.` : "";
+    const qaText = args.questions.map(q => {
+      const ans = args.answers.find(a => a.id === q.id);
+      return `Q${q.id} (${q.type}, ${q.marks} marks): ${q.question}\nCorrect Answer: ${q.correctAnswer ?? "N/A"}\nStudent Answer: ${ans?.answer ?? "(no answer)"}`;
+    }).join("\n\n");
+
+    const systemPrompt = `You are a strict but fair examiner. ${profileCtx} Evaluate the student's answers and provide detailed feedback.
+
+Output ONLY valid JSON:
+{
+  "totalMarks": <number>,
+  "obtainedMarks": <number>,
+  "percentage": <number>,
+  "grade": "A+/A/B/C/D/F",
+  "feedback": [{"id": 1, "marks": <awarded>, "maxMarks": <max>, "feedback": "...", "correct": true}],
+  "overallFeedback": "Brief overall assessment and improvement tips"
+}`;
+
+    let responseContent = "";
+    try {
+      const result = await callClaude(qaText, systemPrompt, "claude-haiku-4-5");
+      responseContent = result.text;
+    } catch {
+      const { vly } = await import("../lib/vly-integrations");
+      const result = await vly.ai.completion({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: systemPrompt + "\n\n" + qaText }],
+        maxTokens: 3000,
+      });
+      responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "{}") : "{}";
+    }
+
+    try {
+      const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    } catch { /* fall through */ }
+    return { totalMarks: 30, obtainedMarks: 0, percentage: 0, grade: "F", feedback: [], overallFeedback: "Evaluation failed." };
+  },
+});
+
+export const generateQuiz = action({
+  args: {
+    token: v.string(),
+    chatHistory: v.array(v.object({ role: v.string(), content: v.string() })),
+    studyGrade: v.optional(v.string()),
+    studyBoard: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<Array<{
+    id: number;
+    question: string;
+    options: string[];
+    correctIndex: number;
+    explanation: string;
+    topic: string;
+  }>> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const historyText = args.chatHistory.slice(-20).map(m => `${m.role === "user" ? "Student" : "AI"}: ${m.content.replace(/<[^>]+>/g, "").slice(0, 500)}`).join("\n\n");
+    const profileCtx = args.studyGrade ? `Student: ${args.studyGrade}${args.studyBoard ? `, ${args.studyBoard}` : ""}.` : "";
+
+    const systemPrompt = `You are a quiz generator. ${profileCtx} Based on the study conversation, generate exactly 15 MCQ questions for a gamified quiz.
+
+Output ONLY valid JSON array:
+[
+  {
+    "id": 1,
+    "question": "...",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "correctIndex": 0,
+    "explanation": "Brief explanation of why this is correct",
+    "topic": "Chapter/Topic name"
+  }
+]`;
+
+    let responseContent = "";
+    try {
+      const result = await callClaude(historyText, systemPrompt, "claude-haiku-4-5");
+      responseContent = result.text;
+    } catch {
+      const { vly } = await import("../lib/vly-integrations");
+      const result = await vly.ai.completion({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: systemPrompt + "\n\n" + historyText }],
+        maxTokens: 4000,
+      });
+      responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "[]") : "[]";
+    }
+
+    try {
+      const jsonMatch = responseContent.match(/\[[\s\S]*\]/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    } catch { /* fall through */ }
+    return [];
+  },
+});
