@@ -2000,6 +2000,7 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
 
   const [showProjectCreationModal, setShowProjectCreationModal] = useState(false);
   const [showGithubImportModal, setShowGithubImportModal] = useState(false);
+  const [pendingVmConfig, setPendingVmConfig] = useState<VMConfig>({ sandboxType: "daytona", vmOS: "linux", vmRam: 2048, vmDisk: 20, vmCores: 2 });
   const [showGithubModal, setShowGithubModal] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
@@ -2301,7 +2302,9 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
     }
   };
 
-  const handleImportFromGithub = async () => {
+  const handleImportFromGithub = async (vmConfig: VMConfig) => {
+    // Store VM config for use when repo is selected
+    setPendingVmConfig(vmConfig);
     // Close project creation modal and open GitHub import modal
     setShowProjectCreationModal(false);
     setShowGithubImportModal(true);
@@ -2327,7 +2330,12 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
       // Create a new session with the repo name as initial task
       const result = await createSession({
         task: `Import and work on repository: ${repoName}`,
-        token
+        token,
+        sandboxType: pendingVmConfig.sandboxType,
+        vmOS: pendingVmConfig.vmOS,
+        vmRam: pendingVmConfig.vmRam,
+        vmDisk: pendingVmConfig.vmDisk,
+        vmCores: pendingVmConfig.vmCores,
       });
       const { sessionId, customId } = result as { sessionId: Id<"teamSessions">; customId: string };
 
@@ -2378,7 +2386,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
     }
   };
 
-  const handleStartFromScratch = async () => {
+  const handleStartFromScratch = async (vmConfig: VMConfig) => {
     // Close project creation modal
     setShowProjectCreationModal(false);
 
@@ -2388,7 +2396,15 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
     const defaultTask = "New project - describe what you want to build";
 
     try {
-      const result = await createSession({ task: defaultTask, token });
+      const result = await createSession({
+        task: defaultTask,
+        token,
+        sandboxType: vmConfig.sandboxType,
+        vmOS: vmConfig.vmOS,
+        vmRam: vmConfig.vmRam,
+        vmDisk: vmConfig.vmDisk,
+        vmCores: vmConfig.vmCores,
+      });
       const { sessionId, customId } = result as { sessionId: Id<"teamSessions">; customId: string };
       setActiveSessionId(sessionId);
       onSessionChange?.(customId);
