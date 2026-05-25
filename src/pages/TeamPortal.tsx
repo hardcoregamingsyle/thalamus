@@ -740,10 +740,8 @@ export default function TeamPortal() {
       setUserMessages([]);
       setMessageQueue([]);
       await loadSessions();
-      toast.success("Session created! Starting agents...");
+      toast.success("Session created! Press ▶ Run to start agents.");
       playSound("send");
-      autoRunRef.current = true;
-      setAutoRun(true);
     } catch { toast.error("Failed to create session"); playSound("error"); }
     finally { setIsRunning(false); }
   };
@@ -1395,9 +1393,9 @@ export default function TeamPortal() {
           )}
         </AnimatePresence>
 
-        {/* ── Sidebar — only show when a session is active ─────────────────────── */}
+        {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
         <AnimatePresence>
-          {activeSessionId && (
+          {(sidebarOpen || typeof window !== "undefined" && window.innerWidth >= 768) && (
             <motion.div
               initial={false}
               className={`
