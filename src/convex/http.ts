@@ -343,19 +343,30 @@ http.route({
       }
     }
 
-    // ── Stream the response word-by-word for UX ──────────────────────────────
+    // ── Stream thinking notes first, then answer content for UX ──────────────
+    const thinkingNotes = [
+      `Mode: ${mode || "chat"}`,
+      "Reading conversation context",
+      token && conversationId ? "Preparing saved response" : "Preparing guest response",
+      "Answer stream ready",
+    ];
     const words = fullText.split(/(?<=\s)|(?=\s)/);
     const transformedStream = new ReadableStream({
       async start(controller) {
+        for (const note of thinkingNotes) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "thinking", chunk: `${note}\n` })}\n\n`));
+          await new Promise(r => setTimeout(r, 120));
+        }
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "answer_start" })}\n\n`));
         // Stream in chunks for smooth UX
         const chunkSize = 3;
         for (let i = 0; i < words.length; i += chunkSize) {
           const chunk = words.slice(i, i + chunkSize).join("");
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ chunk })}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "answer", chunk })}\n\n`));
           // Small delay for streaming effect
           await new Promise(r => setTimeout(r, 8));
         }
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, fullText })}\n\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done", done: true, fullText })}\n\n`));
         controller.close();
       },
     });

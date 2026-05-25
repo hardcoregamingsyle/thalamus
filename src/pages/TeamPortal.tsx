@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
 import { useAction, useQuery, useMutation } from "convex/react";
 import { FileTreeView, FileTreeFile } from "@/components/FileTree";
+import ThinkingPanel from "@/components/ThinkingPanel";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
@@ -895,6 +896,15 @@ export default function TeamPortal() {
   const loopCount = sessionInfo?.loopCount ?? 0;
   const streamingAgent = sessionInfo?.currentAgent ?? currentAgent;
   const streamingOutput = sessionInfo?.currentAgentOutput ?? "";
+  const agentThinkingContent = streamingAgent
+    ? [
+        `${streamingAgent} is active`,
+        sessionInfo?.executionPhase ? `Phase: ${sessionInfo.executionPhase}` : currentPhase ? `Phase: ${currentPhase}` : "",
+        streamingOutput && streamingOutput !== `[${streamingAgent} is thinking...]`
+          ? "Output stream started below"
+          : "Reading project context and preparing the next response",
+      ].filter(Boolean).join("\n")
+    : "";
   const execPhase = sessionInfo?.executionPhase ?? "planning";
   const taskIndex = sessionInfo?.currentTaskIndex ?? 0;
   let plannerTasks: Array<{ id: string; title: string; description: string; subpart: boolean }> = [];
@@ -1430,6 +1440,16 @@ export default function TeamPortal() {
                 <div className="h-full flex flex-col overflow-hidden">
                   {/* Messages */}
                   <div className="flex-1 overflow-y-auto min-h-0 p-3 space-y-4">
+                    {(sessionInfo?.status === "running" || agentThinkingContent) && streamingAgent && (
+                      <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-sm rounded-xl">
+                        <ThinkingPanel
+                          title={`${streamingAgent} thinking`}
+                          content={agentThinkingContent}
+                          active={sessionInfo?.status === "running" && (!streamingOutput || streamingOutput === `[${streamingAgent} is thinking...]`)}
+                          accentClassName={AGENT_BG[streamingAgent] || "bg-primary/10 border-primary/30 text-primary"}
+                        />
+                      </div>
+                    )}
                     {allMessages.length === 0 && !sessionInfo?.currentAgentOutput && (
                       <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
                         <motion.div

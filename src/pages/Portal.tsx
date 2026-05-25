@@ -5,6 +5,7 @@ import OnboardingModal from "@/components/OnboardingModal";
 import StudyProfileModal from "@/components/StudyProfileModal";
 import StudentSuite from "@/components/StudentSuite";
 import MathRenderer from "@/components/MathRenderer";
+import ThinkingPanel from "@/components/ThinkingPanel";
 import { useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
@@ -161,6 +162,7 @@ function GuestPortal() {
   const [session, setSession] = useState<GuestSession>(() => loadGuestSession(activeMode));
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
+  const [thinkingContent, setThinkingContent] = useState("");
   const [showSignUp, setShowSignUp] = useState<{ reason: "limit" | "mode"; pendingMessage?: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -210,6 +212,7 @@ function GuestPortal() {
     saveGuestSession(newSession);
 
     setIsThinking(true);
+    setThinkingContent("");
 
     // Add a streaming placeholder message
     const streamingMsg: GuestMessage = { role: "assistant", content: "", id: streamingId };
@@ -248,7 +251,6 @@ function GuestPortal() {
       const decoder = new TextDecoder();
       let buffer = "";
       let accumulated = "";
-      setIsThinking(false);
 
       while (true) {
         const { done, value } = await reader.read();
@@ -262,8 +264,15 @@ function GuestPortal() {
           const jsonStr = line.slice(6).trim();
           if (!jsonStr) continue;
           try {
-            const parsed = JSON.parse(jsonStr) as { chunk?: string; done?: boolean; fullText?: string };
-            if (parsed.chunk) {
+            const parsed = JSON.parse(jsonStr) as { type?: string; chunk?: string; done?: boolean; fullText?: string };
+            if (parsed.type === "thinking" && parsed.chunk) {
+              setThinkingContent(prev => prev + parsed.chunk);
+            }
+            if (parsed.type === "answer_start") {
+              setIsThinking(false);
+            }
+            if ((!parsed.type || parsed.type === "answer") && parsed.chunk) {
+              setIsThinking(false);
               accumulated += parsed.chunk;
               setSession(s => ({
                 ...s,
@@ -271,6 +280,7 @@ function GuestPortal() {
               }));
             }
             if (parsed.done) {
+              setIsThinking(false);
               const finalText = parsed.fullText ?? accumulated;
               const finalSession: GuestSession = {
                 ...newSession,
@@ -362,6 +372,16 @@ function GuestPortal() {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4 max-w-4xl mx-auto w-full">
+        {(thinkingContent || isThinking) && (
+          <div className="mb-3 sticky top-0 z-10 bg-background/90 backdrop-blur-sm rounded-xl">
+            <ThinkingPanel
+              title={`${currentMode.label} thinking`}
+              content={thinkingContent}
+              active={isThinking}
+              accentClassName={`${currentMode.accent} ${currentMode.color}`}
+            />
+          </div>
+        )}
         {session.messages.length === 0 ? (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center h-full gap-6 pb-20">
             <div className={`w-16 h-16 rounded-2xl ${currentMode.accent} border flex items-center justify-center`}>
@@ -920,6 +940,8 @@ function PortalDesktop() {
   const [activeConvId, setActiveConvId] = useState<Id<"conversations"> | null>(null);
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
+  const [thinkingContent, setThinkingContent] = useState("");
+  const [inFlightUserContent, setInFlightUserContent] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(typeof window !== "undefined" ? window.innerWidth >= 768 : true);
   const [creditModalOpen, setCreditModalOpen] = useState(false);
   const [spinNotifOpen, setSpinNotifOpen] = useState(false);
@@ -1070,6 +1092,8 @@ function PortalDesktop() {
   const setActiveMode = (mode: Mode) => {
     setActiveConvId(null);
     setStreamingContent(null);
+    setThinkingContent("");
+    setInFlightUserContent(null);
     prevMessageCountRef.current = 0;
     navigate(`/portal/${mode}`, { replace: false });
     // Show study profile setup if entering study mode without a profile
@@ -1091,6 +1115,8 @@ function PortalDesktop() {
 
   const handleSelectConversation = (conv: Conversation) => {
     setStreamingContent(null);
+    setThinkingContent("");
+    setInFlightUserContent(null);
     prevMessageCountRef.current = 0;
     setActiveConvId(conv._id);
     if (conv.customId) navigate(`/portal/${activeMode}/${conv.customId}`, { replace: false });
@@ -1121,6 +1147,7 @@ function PortalDesktop() {
     const msg = (input.trim() || "(See attached files)") + fileContext;
     setInput("");
     setAttachedFiles([]);
+    setInFlightUserContent(msg);
 
     const userContext = {
       datetime: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }),
@@ -1169,8 +1196,9 @@ function PortalDesktop() {
     const historyMsgs = (messages ?? []).slice(-10).map((m: Message) => ({ role: m.role, content: m.content.slice(0, 1500) }));
     const systemPrompt = SYSTEM_PROMPTS[activeMode] ?? SYSTEM_PROMPTS.chat;
 
-    // Show skeleton immediately while waiting for stream to start
-    setStreamingContent("");
+    setIsThinking(true);
+    setThinkingContent("");
+    setStreamingContent(null);
 
     try {
       const response = await fetch(`${siteUrl}/stream-chat`, {
@@ -1214,13 +1242,22 @@ function PortalDesktop() {
           const jsonStr = line.slice(6).trim();
           if (!jsonStr) continue;
           try {
-            const parsed = JSON.parse(jsonStr) as { chunk?: string; done?: boolean; fullText?: string };
-            if (parsed.chunk) {
+            const parsed = JSON.parse(jsonStr) as { type?: string; chunk?: string; done?: boolean; fullText?: string };
+            if (parsed.type === "thinking" && parsed.chunk) {
+              setThinkingContent(prev => prev + parsed.chunk);
+            }
+            if (parsed.type === "answer_start") {
+              setIsThinking(false);
+              setStreamingContent("");
+            }
+            if ((!parsed.type || parsed.type === "answer") && parsed.chunk) {
+              setIsThinking(false);
               accumulated += parsed.chunk;
               console.log("Chunk received:", parsed.chunk.substring(0, 50));
               setStreamingContent(accumulated);
             }
             if (parsed.done && parsed.fullText) {
+              setIsThinking(false);
               accumulated = parsed.fullText;
               console.log("Stream done signal received. Final text length:", accumulated.length);
               setStreamingContent(accumulated);
@@ -1259,6 +1296,7 @@ function PortalDesktop() {
 
     setIsThinking(false);
     setStreamingContent(null);
+    setInFlightUserContent(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -1353,6 +1391,14 @@ function PortalDesktop() {
 
   const filteredConvs = conversations?.filter((c: Conversation) => c.mode === activeMode) || [];
   const currentMode = MODES.find(m => m.id === activeMode)!;
+  const visibleMessages = (() => {
+    const list = messages ?? [];
+    if (!inFlightUserContent || (!isThinking && streamingContent === null)) return list;
+    const currentTurnIndex = [...list].reverse().findIndex(m => m.role === "user" && m.content === inFlightUserContent);
+    if (currentTurnIndex === -1) return list;
+    const userIndex = list.length - 1 - currentTurnIndex;
+    return list.filter((m, index) => index <= userIndex || m.role !== "assistant");
+  })();
 
   if (isLoading) {
     return (
@@ -1558,6 +1604,16 @@ function PortalDesktop() {
               {/* Messages */}
               <div className="flex-1 overflow-y-auto min-h-0">
                 <div className="p-4 space-y-4 max-w-4xl mx-auto">
+                  {(thinkingContent || isThinking) && (
+                    <div className="sticky top-2 z-10">
+                      <ThinkingPanel
+                        title={`${currentMode.label} thinking`}
+                        content={thinkingContent}
+                        active={isThinking && streamingContent === null}
+                        accentClassName={`${currentMode.accent} ${currentMode.color}`}
+                      />
+                    </div>
+                  )}
                   {!activeConvId ? (
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
                       className="flex flex-col items-center justify-center h-64 gap-4">
@@ -1589,12 +1645,12 @@ function PortalDesktop() {
                         </div>
                       ))}
                     </div>
-                  ) : messages.length === 0 ? (
+                  ) : visibleMessages.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-32 gap-2">
                       <p className="text-xs text-muted-foreground">Send a message to begin</p>
                     </div>
                   ) : (
-                    messages.map((msg: Message) => (
+                    visibleMessages.map((msg: Message) => (
                       <motion.div key={msg._id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                         className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                       >
