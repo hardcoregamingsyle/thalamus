@@ -108,6 +108,7 @@ export const saveStreamedMessage = internalMutation({
     inputCostPerMillion: v.number(),
     outputCostPerMillion: v.number(),
     mode: v.optional(v.string()),
+    skipUserSave: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     // Look up user by token using customSessions table
@@ -119,8 +120,14 @@ export const saveStreamedMessage = internalMutation({
     if (!session || session.expiresAt < Date.now()) return;
     const userId = session.userId;
 
-    // NOTE: User message is already saved by Portal via saveUserMessage before streaming.
-    // Only save the assistant response here.
+    if (!args.skipUserSave) {
+      await ctx.db.insert("messages", {
+        conversationId: args.conversationId,
+        userId,
+        role: "user",
+        content: args.content,
+      });
+    }
 
     // Estimate tokens (~4 chars per token)
     const inputTokens = Math.ceil(args.content.length / 4);
