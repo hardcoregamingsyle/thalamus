@@ -15,33 +15,41 @@ async function callGeminiWithSearch(
   systemPrompt: string,
   userPrompt: string,
   key: string,
-  maxOutputTokens = 8192,
+  maxOutputTokens = 2048,
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${key}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-        tools: [{ googleSearch: {} }],
-        generationConfig: { maxOutputTokens, temperature: 0.7 },
-      }),
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${key}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+          tools: [{ googleSearch: {} }],
+          generationConfig: { maxOutputTokens, temperature: 0.7 },
+        }),
+      }
+    );
+    clearTimeout(timeout);
+    if (!response.ok) {
+      const err = await response.text().catch(() => "");
+      throw new Error(`Gemini API error ${response.status}: ${err.slice(0, 200)}`);
     }
-  );
-  if (!response.ok) {
-    const err = await response.text().catch(() => "");
-    throw new Error(`Gemini API error ${response.status}: ${err.slice(0, 200)}`);
+    const data = await response.json() as GeminiGroundedResponse;
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    if (!text) throw new Error("No response from Gemini");
+    return {
+      text,
+      inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
+      outputTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
+    };
+  } finally {
+    clearTimeout(timeout);
   }
-  const data = await response.json() as GeminiGroundedResponse;
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  if (!text) throw new Error("No response from Gemini");
-  return {
-    text,
-    inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
-    outputTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
-  };
 }
 
 // ── PDF/Document extraction using Claude's native document support ─────────────
@@ -301,66 +309,57 @@ export const sendStudyMessage = action({
     })),
   },
   handler: async (ctx, args): Promise<string> => {
-    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    // Parallel: auth + all DB queries at once
+    const [userId, geminiKeys] = await Promise.all([
+      ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token }) as Promise<Id<"users"> | null>,
+      ctx.runQuery(internal.admin.getGeminiKeysInternal, {}) as Promise<string[]>,
+    ]);
     if (!userId) throw new Error("Not authenticated");
 
-    await ctx.runMutation(internal.aiHelpers.saveMessage, {
-      conversationId: args.conversationId,
-      userId,
-      role: "user",
-      content: args.content,
-    });
-
-    const [history, resources, adminMaterials, userRecord, geminiKeys] = await Promise.all([
+    // Parallel: save user message + fetch all context
+    const [, history, resources, adminMaterials, userRecord] = await Promise.all([
+      ctx.runMutation(internal.aiHelpers.saveMessage, {
+        conversationId: args.conversationId,
+        userId,
+        role: "user",
+        content: args.content,
+      }),
       ctx.runQuery(internal.aiHelpers.getConversationMessages, { conversationId: args.conversationId }) as Promise<Array<{ role: string; content: string }>>,
       ctx.runQuery(internal.studyHelpers.getResourcesForUser, { userId }),
       ctx.runQuery(internal.admin.getAdminStudyMaterials, {}) as Promise<Array<{ title: string; content: string; mode?: string }>>,
       ctx.runQuery(internal.customAuthHelpers.getUserByTokenInternal, { token: args.token }) as Promise<{ studyGrade?: string; studyBoard?: string; studyLanguage?: string } | null>,
-      ctx.runQuery(internal.admin.getGeminiKeysInternal, {}) as Promise<string[]>,
     ]);
 
     const studyGrade = userRecord?.studyGrade ?? null;
     const studyBoard = userRecord?.studyBoard ?? null;
     const studyLanguage = userRecord?.studyLanguage ?? null;
 
+    // Keep context small for speed — only titles for resources, brief admin context
     const resourceContext = resources.length > 0
-      ? resources.slice(0, 4).map((r: { title: string; content: string }) => `[RESOURCE: ${r.title}]\n${r.content.slice(0, 1500)}`).join("\n\n---\n\n")
+      ? "Student resources: " + resources.slice(0, 6).map((r: { title: string }) => r.title).join(", ")
       : "";
 
     const adminContext = adminMaterials.length > 0
-      ? adminMaterials.slice(0, 3).map((m: { title: string; content: string }) => `[KNOWLEDGE: ${m.title}]\n${m.content.slice(0, 3000)}`).join("\n\n---\n\n")
+      ? adminMaterials.slice(0, 2).map((m: { title: string; content: string }) => `[${m.title}]: ${m.content.slice(0, 800)}`).join("\n")
       : "";
 
     const profileSection = studyGrade
-      ? `STUDENT PROFILE: Grade/Level: ${studyGrade}${studyBoard ? ` | Board: ${studyBoard}` : ""}${studyLanguage ? ` | Language: ${studyLanguage}` : ""}. Always tailor your answers to this exact grade and board. Reference the correct textbook chapters, exam patterns, and marking schemes for this board.\n\n`
+      ? `Student: ${studyGrade}${studyBoard ? `, ${studyBoard}` : ""}${studyLanguage ? `, ${studyLanguage}` : ""}. `
       : "";
 
-    const systemPrompt = `You are Aether — the world's most knowledgeable and effective study companion. You have COMPLETE knowledge of ALL school and college curricula worldwide, especially Indian education (NCERT, CBSE, ICSE, State Boards, JEE, NEET, UPSC). You know every textbook chapter, poem, story, lesson, and concept by name.
+    const systemPrompt = `You are Aether, an expert study companion with complete knowledge of all curricula (NCERT, CBSE, ICSE, JEE, NEET, UPSC, and all global curricula). ${profileSection}
 
-${profileSection}CRITICAL RULE — NEVER ASK FOR CLARIFICATION:
-When a student mentions ANY topic — a chapter name, poem title, story name, concept, subject, or textbook — you IMMEDIATELY know what it is and explain it thoroughly WITHOUT asking for clarification.
-- If they say "Kaveri, CH2" → you know it's Chapter 2 from the relevant textbook for their grade/board
-- If they say "Reed ki Hadi" → you know it's a Hindi story/poem from NCERT
-- If they say "Beehive Chapter 2" → you know it's "The Sound of Music" from Class 9 CBSE English Beehive
-- NEVER say "Could you clarify?" or "Which book?" or "Which class?" — just answer comprehensively
+NEVER ask for clarification — always answer immediately based on context. If a student says "Kaveri CH2", you know it's their textbook chapter. If they say "Beehive Chapter 2", it's "The Sound of Music" from Class 9 CBSE.
 
-You have access to Google Search to find the most accurate and up-to-date information. Use it to verify facts, find textbook content, and provide accurate answers.
+You have Google Search access — use it for accurate, current information.
+${adminContext ? `\nKnowledge base: ${adminContext}` : ""}
+${resourceContext ? `\n${resourceContext}` : ""}
 
-${adminContext ? `\n## Primary Knowledge Base\n${adminContext}\n` : ""}
-${resourceContext ? `\n## Student's Study Resources\n${resourceContext}\n` : ""}
+Respond in clean HTML only (no markdown). Use <h2>, <h3>, <p>, <ul>, <li>, <strong>. Be thorough but concise (300-600 words).`;
 
-CRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.
-Use: <h2>, <h3>, <h4>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <code>
-Headings: style="font-size:1.15em;font-weight:bold;margin:0.8em 0 0.4em;color:#e5e7eb;border-left:4px solid #6366f1;padding-left:0.7em"
-Sub-headings: style="font-size:1em;font-weight:bold;margin:0.7em 0 0.3em;color:#c4b5fd"
-Paragraphs: style="margin:0.4em 0;line-height:1.7;color:#d1d5db;font-size:0.92em"
-Lists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db;font-size:0.9em;line-height:1.6"
-Key facts box: style="border-left:4px solid #f59e0b;padding:0.6em 1em;color:#fcd34d;margin:0.6em 0;background:rgba(245,158,11,0.08);border-radius:0 8px 8px 0;font-size:0.88em"
-
-Write answers that are 400-800 words minimum. Be thorough. Be the teacher every student wishes they had.`;
-
-    const conversationContext = history.slice(-10).map((m: { role: string; content: string }) =>
-      `${m.role === "user" ? "Human" : "Assistant"}: ${m.content.slice(0, 800)}`
+    // Only last 6 messages for context (keeps prompt small = faster)
+    const conversationContext = history.slice(-6).map((m: { role: string; content: string }) =>
+      `${m.role === "user" ? "Human" : "Assistant"}: ${m.content.replace(/<[^>]+>/g, "").slice(0, 400)}`
     ).join("\n\n");
 
     const fullPrompt = conversationContext
@@ -371,15 +370,13 @@ Write answers that are 400-800 words minimum. Be thorough. Be the teacher every 
     let inputTokens = 0;
     let outputTokens = 0;
 
-    // Use Gemini with Google Search grounding — fast, no RAG timeout
     if (geminiKeys.length > 0) {
       try {
-        const result = await callGeminiWithSearch(systemPrompt, fullPrompt, geminiKeys[0], 8192);
+        const result = await callGeminiWithSearch(systemPrompt, fullPrompt, geminiKeys[0], 2048);
         responseContent = result.text;
         inputTokens = result.inputTokens;
         outputTokens = result.outputTokens;
       } catch {
-        // Fallback to Claude
         try {
           const result = await callClaude(fullPrompt, systemPrompt, "claude-haiku-4-5");
           responseContent = result.text;
@@ -390,13 +387,12 @@ Write answers that are 400-800 words minimum. Be thorough. Be the teacher every 
           const result = await vly.ai.completion({
             model: "claude-haiku-4-5",
             messages: [{ role: "user", content: systemPrompt + "\n\n" + fullPrompt }],
-            maxTokens: 4096,
+            maxTokens: 2048,
           });
           responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "No response") : "Failed to get response";
         }
       }
     } else {
-      // No Gemini keys — use Claude directly
       try {
         const result = await callClaude(fullPrompt, systemPrompt, "claude-haiku-4-5");
         responseContent = result.text;
@@ -407,7 +403,7 @@ Write answers that are 400-800 words minimum. Be thorough. Be the teacher every 
         const result = await vly.ai.completion({
           model: "claude-haiku-4-5",
           messages: [{ role: "user", content: systemPrompt + "\n\n" + fullPrompt }],
-          maxTokens: 4096,
+          maxTokens: 2048,
         });
         responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "No response") : "Failed to get response";
       }
@@ -417,7 +413,8 @@ Write answers that are 400-800 words minimum. Be thorough. Be the teacher every 
     const estimatedOutput = outputTokens || Math.ceil(responseContent.length / 4);
     const costCents = (estimatedInput / 1_000_000) * 60 + (estimatedOutput / 1_000_000) * 240;
 
-    await ctx.runMutation(internal.aiHelpers.saveAssistantMessage, {
+    // Save response in background — don't await to return faster
+    ctx.scheduler.runAfter(0, internal.aiHelpers.saveAssistantMessage, {
       conversationId: args.conversationId,
       userId,
       content: responseContent,
