@@ -1160,9 +1160,8 @@ function PortalDesktop() {
     if (activeMode === "study") {
       setIsThinking(true);
       try {
-        const result = await sendStudyMessage({ conversationId: convId, content: msg, token, userContext });
-        // Result is HTML string that gets saved to DB
-        // useQuery will pick it up and display it
+        await sendStudyMessage({ conversationId: convId, content: msg, token, userContext });
+        // Result is saved to DB by the action — useQuery will pick it up
       } catch (err) {
         console.error("Study mode failed:", err);
         toast.error(err instanceof Error ? err.message : "Failed to send study message");
@@ -1173,7 +1172,6 @@ function PortalDesktop() {
       if (!activeConvId) {
         generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
       }
-      setIsThinking(false);
       return; // Exit early for study mode
     }
 
