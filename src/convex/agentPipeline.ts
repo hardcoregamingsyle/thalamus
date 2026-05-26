@@ -1,5 +1,5 @@
 "use node";
-import { action, internalAction } from "./_generated/server";
+import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
@@ -273,7 +273,7 @@ export const runPipelineAction = internalAction({
 
 // ── Research Team runner ──────────────────────────────────────────────────────
 async function runResearchTeam(
-  ctx: Parameters<typeof runPipelineAction["handler"]>[0],
+  ctx: ActionCtx,
   sessionId: Id<"teamSessions">,
   userId: Id<"users">,
   task: string,
@@ -306,7 +306,7 @@ async function runResearchTeam(
 
 // ── Security Team runner ──────────────────────────────────────────────────────
 async function runSecurityTeam(
-  ctx: Parameters<typeof runPipelineAction["handler"]>[0],
+  ctx: ActionCtx,
   sessionId: Id<"teamSessions">,
   userId: Id<"users">,
   task: string,
@@ -351,7 +351,7 @@ async function runSecurityTeam(
 
 // ── Coder agent runner (task-by-task) ─────────────────────────────────────────
 async function runCoderAgent(
-  ctx: Parameters<typeof runPipelineAction["handler"]>[0],
+  ctx: ActionCtx,
   sessionId: Id<"teamSessions">,
   userId: Id<"users">,
   task: string,
