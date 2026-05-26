@@ -96,7 +96,6 @@ const schema = defineSchema(
       title: v.string(),
       task: v.string(),
       status: v.union(v.literal("running"), v.literal("completed"), v.literal("idle")),
-      mode: v.optional(v.union(v.literal("full"), v.literal("code"), v.literal("quick"))),
       currentAgent: v.optional(v.string()),
       round: v.optional(v.number()),
       loopCount: v.optional(v.number()),
