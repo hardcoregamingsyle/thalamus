@@ -1,6 +1,7 @@
 import { internalMutation, internalQuery, query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
+import { api } from "./_generated/api";
 
 function generateCustomId(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -286,22 +287,18 @@ export const runAgentRoundPublic = mutation({
     const session = await ctx.db.get(args.sessionId);
     if (!session || session.userId !== authSession.userId) throw new Error("Session not found");
 
-    const nextIndex = (session.totalMessages ?? 1) + 1;
-    await ctx.db.insert("agentMessages", {
+    // Don't start if already running
+    if (session.status === "running") {
+      return { agent: session.currentAgent ?? "Running", fileOpsCount: 0, done: false };
+    }
+
+    // Schedule the pipeline to start
+    await ctx.scheduler.runAfter(0, api.agentPipeline.startPipelineAction, {
+      token: args.token,
       sessionId: args.sessionId,
-      userId: authSession.userId,
-      agent: "Planner",
-      content: "Code session created. The project workspace is ready for files, sandbox commands, and follow-up instructions.",
-      round: session.round ?? 0,
-      messageIndex: nextIndex,
     });
-    await ctx.db.patch(args.sessionId, {
-      status: "completed",
-      phase: "Planner",
-      currentAgent: undefined,
-      totalMessages: nextIndex,
-    });
-    return { agent: "Planner", fileOpsCount: 0, done: true };
+
+    return { agent: session.phase ?? "Researcher", fileOpsCount: 0, done: false };
   },
 });
 
