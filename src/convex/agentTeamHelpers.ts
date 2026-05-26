@@ -83,6 +83,7 @@ export const createSessionMutation = internalMutation({
     userId: v.id("users"),
     task: v.string(),
     title: v.string(),
+    mode: v.optional(v.union(v.literal("full"), v.literal("code"), v.literal("quick"))),
     sandboxType: v.optional(v.union(v.literal("daytona"), v.literal("v86"), v.literal("qemu"))),
     vmOS: v.optional(v.union(
       v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos"),
@@ -98,14 +99,18 @@ export const createSessionMutation = internalMutation({
   },
   handler: async (ctx, args): Promise<{ sessionId: Id<"teamSessions">; customId: string }> => {
     const customId = generateCustomId();
+    const mode = args.mode || "code";
+    const startingPhase = mode === "full" ? "Researcher" : "Planner";
+
     const sessionId = await ctx.db.insert("teamSessions", {
       userId: args.userId,
       title: args.title,
       task: args.task,
       status: "idle",
+      mode,
       round: 0,
       loopCount: 0,
-      phase: "Researcher",
+      phase: startingPhase,
       totalMessages: 1,
       executionPhase: "planning",
       currentTaskIndex: 0,
@@ -171,6 +176,7 @@ export const createSessionPublic = mutation({
   args: {
     token: v.string(),
     task: v.string(),
+    mode: v.optional(v.union(v.literal("full"), v.literal("code"), v.literal("quick"))),
     sandboxType: v.optional(v.union(v.literal("daytona"), v.literal("v86"), v.literal("qemu"))),
     vmOS: v.optional(v.union(
       v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos"),
@@ -194,14 +200,23 @@ export const createSessionPublic = mutation({
 
     const customId = generateCustomId();
     const title = args.task.slice(0, 60) || "Code Session";
+
+    // Determine starting phase based on mode
+    // code mode: skip research, go straight to Planner
+    // quick mode: skip research and analysis, go to Planner
+    // full mode (default): start from Researcher
+    const mode = args.mode || "code";
+    const startingPhase = mode === "full" ? "Researcher" : "Planner";
+
     const sessionId = await ctx.db.insert("teamSessions", {
       userId: authSession.userId,
       title,
       task: args.task,
       status: "idle",
+      mode,
       round: 0,
       loopCount: 0,
-      phase: "Researcher",
+      phase: startingPhase,
       totalMessages: 1,
       executionPhase: "planning",
       currentTaskIndex: 0,
@@ -626,6 +641,10 @@ export const resetSessionForNewTask = internalMutation({
     newTask: v.string(),
   },
   handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    const mode = session ? (session as Record<string, unknown>).mode as "full" | "code" | "quick" | undefined ?? "code" : "code";
+    const startingPhase = mode === "full" ? "Researcher" : "Planner";
+
     await ctx.db.patch(args.sessionId, {
       task: args.newTask,
       title: args.newTask.slice(0, 60),
@@ -633,7 +652,7 @@ export const resetSessionForNewTask = internalMutation({
       currentAgent: undefined,
       round: 0,
       loopCount: 0,
-      phase: "Researcher",
+      phase: startingPhase,
       totalMessages: 0,
       executionPhase: "planning",
       currentTaskIndex: 0,
@@ -1451,14 +1470,19 @@ export const createBranchSessionPublic = mutation({
     const branchTitle = `Branch ${branchNumber}: ${args.branchPurpose.slice(0, 50)}`;
     const branchTask = `[BRANCH ${branchNumber}] ${args.branchPurpose}\n\n[PARENT CONTEXT]: ${parentSession.task.slice(0, 300)}\n\n[BRANCH GROUP]: ${branchGroupId}\n[PARENT SESSION]: ${args.parentSessionId}`;
 
+    // Inherit mode from parent session, default to code
+    const mode = (parentSession as Record<string, unknown>).mode as "full" | "code" | "quick" | undefined ?? "code";
+    const startingPhase = mode === "full" ? "Researcher" : "Planner";
+
     const sessionId = await ctx.db.insert("teamSessions", {
       userId: auth.userId,
       title: branchTitle,
       task: branchTask,
       status: "idle",
+      mode,
       round: 0,
       loopCount: 0,
-      phase: "Researcher",
+      phase: startingPhase,
       totalMessages: 1,
       executionPhase: "planning",
       currentTaskIndex: 0,
