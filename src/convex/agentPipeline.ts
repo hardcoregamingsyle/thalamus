@@ -17,7 +17,11 @@ import {
 } from "./agentCore";
 
 // ── Pipeline definition ───────────────────────────────────────────────────────
-const PIPELINE = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
+// Planning phase (runs once at start)
+const PLANNING_PIPELINE = ["Researcher", "Analyser", "Planner"];
+
+// Per-task execution pipeline (runs for each task from Planner)
+const TASK_PIPELINE = ["Researcher", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
 
 // Research sub-agents that run under the "Researcher" slot
 const RESEARCH_SUB_AGENTS = ["ResearchPlanner", "DataTaker", "ResearchOrganiser"];
@@ -110,8 +114,11 @@ export const runPipelineAction = internalAction({
       const context = buildContext(messages);
       const fileContext = buildFileContext(files);
 
-      // ── Determine which agent to run ──────────────────────────────────────
-      const phaseIndex = PIPELINE.indexOf(currentPhase);
+      // ── Determine which pipeline we're in ─────────────────────────────────
+      const isPlanning = executionPhase === "planning";
+      const currentPipeline = isPlanning ? PLANNING_PIPELINE : TASK_PIPELINE;
+      const phaseIndex = currentPipeline.indexOf(currentPhase);
+
       if (phaseIndex === -1) {
         // Unknown phase — complete
         await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
@@ -128,11 +135,34 @@ export const runPipelineAction = internalAction({
 
       if (currentPhase === "Researcher") {
         // Run Research Team (3 sub-agents)
-        agentOutput = await runResearchTeam(ctx, sessionId, userId, task, context, geminiKeys, dbCreds);
+        // Build task-specific prompt if in execution phase
+        let researchTask = task;
+        if (executionPhase === "executing") {
+          let plannerTasks: Array<{ id: string; title: string; description: string }> = [];
+          try {
+            plannerTasks = JSON.parse((session as Record<string, unknown>).plannerTasksJson as string ?? "[]") as typeof plannerTasks;
+          } catch { /* ignore */ }
+          const currentTask = plannerTasks[currentTaskIndex];
+          if (currentTask) {
+            researchTask = `## Overall Project\n${task}\n\n## Current Task (${currentTaskIndex + 1}/${plannerTasks.length})\n**${currentTask.title}**\n${currentTask.description}\n\nResearch specifically for this task.`;
+          }
+        }
+        agentOutput = await runResearchTeam(ctx, sessionId, userId, researchTask, context, geminiKeys, dbCreds);
         agentName = "Researcher";
       } else if (currentPhase === "Hacker") {
         // Run Security Team
-        agentOutput = await runSecurityTeam(ctx, sessionId, userId, task, context, fileContext, geminiKeys, dbCreds, taskDifficulty);
+        let securityTask = task;
+        if (executionPhase === "executing") {
+          let plannerTasks: Array<{ id: string; title: string; description: string }> = [];
+          try {
+            plannerTasks = JSON.parse((session as Record<string, unknown>).plannerTasksJson as string ?? "[]") as typeof plannerTasks;
+          } catch { /* ignore */ }
+          const currentTask = plannerTasks[currentTaskIndex];
+          if (currentTask) {
+            securityTask = `## Overall Project\n${task}\n\n## Current Task (${currentTaskIndex + 1}/${plannerTasks.length})\n**${currentTask.title}**\n${currentTask.description}\n\nSecurity review specifically for this task's changes.`;
+          }
+        }
+        agentOutput = await runSecurityTeam(ctx, sessionId, userId, securityTask, context, fileContext, geminiKeys, dbCreds, taskDifficulty);
         agentName = "Hacker";
       } else if (currentPhase === "Planner") {
         // Run Planner — also parses tasks
@@ -164,12 +194,55 @@ export const runPipelineAction = internalAction({
           modelName: `planner-${tier}`, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
         });
       } else if (currentPhase === "Coder") {
-        // Run Coder — task-by-task execution
-        agentOutput = await runCoderAgent(ctx, sessionId, userId, task, context, fileContext, geminiKeys, dbCreds, taskDifficulty, currentTaskIndex);
+        // Run Coder for current task
+        let plannerTasks: Array<{ id: string; title: string; description: string }> = [];
+        try {
+          plannerTasks = JSON.parse((session as Record<string, unknown>).plannerTasksJson as string ?? "[]") as typeof plannerTasks;
+        } catch { /* ignore */ }
+
+        const currentTask = plannerTasks[currentTaskIndex];
+        const systemPrompt = AGENT_SYSTEM_PROMPTS["Coder"] ?? "";
+        let prompt = "";
+
+        if (currentTask) {
+          prompt = `## Overall Project Task\n${task}\n\n## Current Task (${currentTaskIndex + 1}/${plannerTasks.length})\n**${currentTask.title}**\n${currentTask.description}\n\n## Context from Previous Agents in THIS Task Loop\n${context}\n\n## Current Files\n${fileContext}`;
+        } else {
+          prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
+        }
+
+        const tier = DIFFICULTY_CODER_MODEL[taskDifficulty] as ModelTier ?? "opus46";
+        const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+        agentOutput = result.text;
+
+        const ab = calcAgentBucksForTier(tier, result.inputTokens, result.outputTokens);
+        await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId, agentBucksToDeduct: ab });
+        await ctx.runMutation(internal.admin.deductPlatformCost, {
+          modelName: `coder-${tier}`, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
+        });
       } else {
-        // Standard agent
+        // Standard agent (Analyser, Optimiser, Organizer, Tester, Critic)
         const systemPrompt = AGENT_SYSTEM_PROMPTS[currentPhase] ?? `You are the ${currentPhase} agent. Complete your role for this task.`;
-        const prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
+
+        // Build prompt with task context if we're in execution phase
+        let prompt = "";
+        if (executionPhase === "executing") {
+          // In task execution loop - include current task info
+          let plannerTasks: Array<{ id: string; title: string; description: string }> = [];
+          try {
+            plannerTasks = JSON.parse((session as Record<string, unknown>).plannerTasksJson as string ?? "[]") as typeof plannerTasks;
+          } catch { /* ignore */ }
+
+          const currentTask = plannerTasks[currentTaskIndex];
+          if (currentTask) {
+            prompt = `## Overall Project Task\n${task}\n\n## Current Task (${currentTaskIndex + 1}/${plannerTasks.length})\n**${currentTask.title}**\n${currentTask.description}\n\n## Context from Previous Agents in THIS Task Loop\n${context}\n\n## Current Files\n${fileContext}`;
+          } else {
+            prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
+          }
+        } else {
+          // In planning phase - no task context yet
+          prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
+        }
+
         const tier = AGENT_MODEL_MAP[currentPhase] as ModelTier ?? "haiku";
         const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
         agentOutput = result.text;
@@ -233,21 +306,78 @@ export const runPipelineAction = internalAction({
       const nextPhaseIndex = phaseIndex + 1;
       loopCount++;
 
-      if (nextPhaseIndex >= PIPELINE.length) {
-        // All agents done — complete
-        executionPhase = "completed";
-        await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
-          sessionId, status: "completed", currentAgent: undefined,
-          phase: "Critic", totalMessages, executionPhase: "completed",
-          currentTaskIndex, loopCount, clearPlannerTasks: false,
-        });
+      if (isPlanning && currentPhase === "Planner") {
+        // Planning phase complete! Load planner tasks and start task execution
+        let plannerTasks: Array<{ id: string; title: string; description: string }> = [];
+        try {
+          plannerTasks = JSON.parse((session as Record<string, unknown>).plannerTasksJson as string ?? "[]") as typeof plannerTasks;
+        } catch { /* ignore */ }
+
+        if (plannerTasks.length === 0) {
+          // No tasks - complete session
+          await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+            sessionId, status: "completed", currentAgent: undefined,
+            phase: "Planner", totalMessages, executionPhase: "completed",
+            currentTaskIndex: 0, loopCount, clearPlannerTasks: false,
+          });
+        } else {
+          // Start task execution loop - begin with first task, first agent (Researcher)
+          round++;
+          await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+            sessionId, status: "idle", currentAgent: "Researcher",
+            phase: "Researcher", totalMessages, executionPhase: "executing",
+            currentTaskIndex: 0, loopCount,
+          });
+          // Schedule first task execution
+          await ctx.scheduler.runAfter(0, internal.agentPipeline.runPipelineAction, {
+            sessionId, userId,
+          });
+        }
+      } else if (nextPhaseIndex >= currentPipeline.length) {
+        // Current pipeline complete
+        if (isPlanning) {
+          // This shouldn't happen (Planner is last in planning pipeline and handled above)
+          await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+            sessionId, status: "completed", currentAgent: undefined,
+            phase: currentPhase, totalMessages, executionPhase: "completed",
+            currentTaskIndex, loopCount, clearPlannerTasks: false,
+          });
+        } else {
+          // Task pipeline complete for current task - move to next task
+          let plannerTasks: Array<{ id: string; title: string; description: string }> = [];
+          try {
+            plannerTasks = JSON.parse((session as Record<string, unknown>).plannerTasksJson as string ?? "[]") as typeof plannerTasks;
+          } catch { /* ignore */ }
+
+          const nextTaskIndex = currentTaskIndex + 1;
+          if (nextTaskIndex < plannerTasks.length) {
+            // More tasks to process - restart task pipeline for next task
+            round++;
+            await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+              sessionId, status: "idle", currentAgent: "Researcher",
+              phase: "Researcher", totalMessages, executionPhase: "executing",
+              currentTaskIndex: nextTaskIndex, loopCount,
+            });
+            await ctx.scheduler.runAfter(0, internal.agentPipeline.runPipelineAction, {
+              sessionId, userId,
+            });
+          } else {
+            // All tasks complete!
+            executionPhase = "completed";
+            await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
+              sessionId, status: "completed", currentAgent: undefined,
+              phase: "Critic", totalMessages, executionPhase: "completed",
+              currentTaskIndex: nextTaskIndex, loopCount, clearPlannerTasks: false,
+            });
+          }
+        }
       } else {
-        // Move to next agent
-        const nextPhase = PIPELINE[nextPhaseIndex];
+        // Move to next agent in current pipeline
+        const nextPhase = currentPipeline[nextPhaseIndex];
         round++;
         await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
           sessionId, status: "idle", currentAgent: nextPhase,
-          phase: nextPhase, totalMessages, executionPhase: "executing",
+          phase: nextPhase, totalMessages, executionPhase,
           currentTaskIndex, loopCount,
         });
 
@@ -349,99 +479,6 @@ async function runSecurityTeam(
   return finalOutput;
 }
 
-// ── Coder agent runner (task-by-task) ─────────────────────────────────────────
-async function runCoderAgent(
-  ctx: ActionCtx,
-  sessionId: Id<"teamSessions">,
-  userId: Id<"users">,
-  task: string,
-  context: string,
-  fileContext: string,
-  geminiKeys: string[],
-  dbCreds: { accessKeyId: string; secretAccessKey: string; region: string } | null,
-  difficulty: TaskDifficulty,
-  currentTaskIndex: number,
-): Promise<string> {
-  const session = await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId });
-  if (!session) return "Session not found";
-
-  let plannerTasks: Array<{ id: string; title: string; description: string; subpart: boolean }> = [];
-  try {
-    plannerTasks = JSON.parse((session as Record<string, unknown>).plannerTasksJson as string ?? "[]") as typeof plannerTasks;
-  } catch { /* ignore */ }
-
-  if (plannerTasks.length === 0) {
-    // No tasks — run coder on the full task
-    const systemPrompt = AGENT_SYSTEM_PROMPTS["Coder"] ?? "";
-    const prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
-    const tier = DIFFICULTY_CODER_MODEL[difficulty] as ModelTier ?? "opus46";
-    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
-
-    const ab = calcAgentBucksForTier(tier, result.inputTokens, result.outputTokens);
-    await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId, agentBucksToDeduct: ab });
-    await ctx.runMutation(internal.admin.deductPlatformCost, {
-      modelName: `coder-${tier}`, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
-    });
-
-    const parsed = parseAgentOutput(result.text);
-    for (const op of parsed.fileOps) {
-      if (op.type === "create" || op.type === "edit") {
-        await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
-          sessionId, userId, filepath: op.filepath, content: op.content ?? "", agent: "Coder",
-        });
-      } else if (op.type === "delete") {
-        await ctx.runMutation(internal.agentTeamHelpers.deleteFile, { sessionId, filepath: op.filepath });
-      }
-    }
-
-    return result.text;
-  }
-
-  // Run the current task
-  const currentTask = plannerTasks[currentTaskIndex];
-  if (!currentTask) {
-    return `All ${plannerTasks.length} tasks completed.`;
-  }
-
-  const systemPrompt = AGENT_SYSTEM_PROMPTS["Coder"] ?? "";
-  const taskPrompt = `## Overall Project Task\n${task}\n\n## Current Task (${currentTaskIndex + 1}/${plannerTasks.length})\n**${currentTask.title}**\n${currentTask.description}\n\n## Context from Previous Agents\n${context}\n\n## Current Files\n${fileContext}`;
-  const tier = DIFFICULTY_CODER_MODEL[difficulty] as ModelTier ?? "opus46";
-  const result = await callModel(taskPrompt, systemPrompt, tier, geminiKeys, dbCreds);
-
-  const ab = calcAgentBucksForTier(tier, result.inputTokens, result.outputTokens);
-  await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId, agentBucksToDeduct: ab });
-  await ctx.runMutation(internal.admin.deductPlatformCost, {
-    modelName: `coder-${tier}`, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
-  });
-
-  const parsed = parseAgentOutput(result.text);
-  for (const op of parsed.fileOps) {
-    if (op.type === "create" || op.type === "edit") {
-      await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
-        sessionId, userId, filepath: op.filepath, content: op.content ?? "", agent: "Coder",
-      });
-    } else if (op.type === "delete") {
-      await ctx.runMutation(internal.agentTeamHelpers.deleteFile, { sessionId, filepath: op.filepath });
-    }
-  }
-
-  // Advance task index if there are more tasks
-  const nextTaskIndex = currentTaskIndex + 1;
-  if (nextTaskIndex < plannerTasks.length) {
-    await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
-      sessionId, status: "running", currentAgent: "Coder",
-      phase: "Coder", totalMessages: (session.totalMessages ?? 1) + 1,
-      executionPhase: "executing", currentTaskIndex: nextTaskIndex,
-    });
-    // Schedule next task
-    await ctx.scheduler.runAfter(0, internal.agentPipeline.runCoderTaskAction, {
-      sessionId, userId, taskIndex: nextTaskIndex,
-    });
-  }
-
-  return result.text;
-}
-
 // ── Public action: start pipeline ─────────────────────────────────────────────
 export const startPipelineAction = action({
   args: { token: v.string(), sessionId: v.id("teamSessions") },
@@ -464,98 +501,3 @@ export const startPipelineAction = action({
   },
 });
 
-// ── Internal action: run a specific coder task ────────────────────────────────
-export const runCoderTaskAction = internalAction({
-  args: {
-    sessionId: v.id("teamSessions"),
-    userId: v.id("users"),
-    taskIndex: v.number(),
-  },
-  handler: async (ctx, args): Promise<void> => {
-    const { sessionId, userId, taskIndex } = args;
-
-    const geminiKeys = await ctx.runQuery(internal.admin.getGeminiKeysInternal, {}) as string[];
-    const dbCreds = await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {}) as { accessKeyId: string; secretAccessKey: string; region: string } | null;
-
-    const session = await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId });
-    if (!session) return;
-
-    const messages = await ctx.runQuery(internal.agentTeamHelpers.getSessionMessages, { sessionId }) as Array<{ agent: string; content: string }>;
-    const files = await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId }) as Array<{ filepath: string; content: string }>;
-
-    const context = buildContext(messages);
-    const fileContext = buildFileContext(files);
-    const taskDifficulty: TaskDifficulty = (session as Record<string, unknown>).currentTaskDifficulty as TaskDifficulty ?? "normal";
-
-    let plannerTasks: Array<{ id: string; title: string; description: string; subpart: boolean }> = [];
-    try {
-      plannerTasks = JSON.parse((session as Record<string, unknown>).plannerTasksJson as string ?? "[]") as typeof plannerTasks;
-    } catch { /* ignore */ }
-
-    const currentTask = plannerTasks[taskIndex];
-    if (!currentTask) return;
-
-    const systemPrompt = AGENT_SYSTEM_PROMPTS["Coder"] ?? "";
-    const taskPrompt = `## Overall Project Task\n${session.task}\n\n## Current Task (${taskIndex + 1}/${plannerTasks.length})\n**${currentTask.title}**\n${currentTask.description}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
-    const tier = DIFFICULTY_CODER_MODEL[taskDifficulty] as ModelTier ?? "opus46";
-
-    try {
-      const result = await callModel(taskPrompt, systemPrompt, tier, geminiKeys, dbCreds);
-
-      const ab = calcAgentBucksForTier(tier, result.inputTokens, result.outputTokens);
-      await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId, agentBucksToDeduct: ab });
-      await ctx.runMutation(internal.admin.deductPlatformCost, {
-        modelName: `coder-task-${tier}`, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
-      });
-
-      const parsed = parseAgentOutput(result.text);
-      for (const op of parsed.fileOps) {
-        if (op.type === "create" || op.type === "edit") {
-          await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
-            sessionId, userId, filepath: op.filepath, content: op.content ?? "", agent: "Coder",
-          });
-        } else if (op.type === "delete") {
-          await ctx.runMutation(internal.agentTeamHelpers.deleteFile, { sessionId, filepath: op.filepath });
-        }
-      }
-
-      const totalMessages = (session.totalMessages ?? 1) + 1;
-      await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
-        sessionId, userId, agent: "Coder", content: parsed.cleanContent,
-        round: session.round ?? 0, messageIndex: totalMessages,
-      });
-
-      const nextTaskIndex = taskIndex + 1;
-      if (nextTaskIndex < plannerTasks.length) {
-        await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
-          sessionId, status: "running", currentAgent: "Coder",
-          phase: "Coder", totalMessages, executionPhase: "executing",
-          currentTaskIndex: nextTaskIndex,
-        });
-        await ctx.scheduler.runAfter(0, internal.agentPipeline.runCoderTaskAction, {
-          sessionId, userId, taskIndex: nextTaskIndex,
-        });
-      } else {
-        // All tasks done — move to Optimiser
-        const nextPhase = "Optimiser";
-        await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
-          sessionId, status: "idle", currentAgent: nextPhase,
-          phase: nextPhase, totalMessages, executionPhase: "executing",
-          currentTaskIndex: nextTaskIndex,
-        });
-        await ctx.scheduler.runAfter(0, internal.agentPipeline.runPipelineAction, {
-          sessionId, userId,
-        });
-      }
-    } catch (err) {
-      console.error("Coder task error:", err);
-      const errMsg = err instanceof Error ? err.message : String(err);
-      await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
-        sessionId, userId, agent: "System",
-        content: `⚠️ Coder task ${taskIndex + 1} error: ${errMsg}`,
-        round: 0, messageIndex: (session.totalMessages ?? 1) + 1,
-      });
-      await ctx.runMutation(internal.agentTeamHelpers.forceIdleSession, { sessionId });
-    }
-  },
-});
