@@ -3029,7 +3029,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
 
       {/* ── Right content area ─────────────────────────────────────────────── */}
       {!activeSessionId ? (
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0 bg-background">
           {/* Mobile top bar for empty state */}
           <div className="md:hidden shrink-0 flex items-center gap-2 px-3 py-2 border-b border-border bg-card/80">
             <button onClick={() => setMobileSidebarOpen(true)} className="text-muted-foreground hover:text-primary transition-colors p-1 rounded hover:bg-primary/10">
@@ -3037,29 +3037,110 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
             </button>
             <span className="text-xs font-bold text-muted-foreground">AGENT TEAMS</span>
           </div>
-          <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
-          <motion.div animate={{ scale: [1, 1.05, 1] }} transition={{ duration: 3, repeat: Infinity }}
-            className="w-20 h-20 rounded-2xl border border-primary/30 bg-primary/10 flex items-center justify-center">
-            <Cpu className="h-10 w-10 text-primary" />
-          </motion.div>
-          <div className="text-center">
-            <p className="text-sm font-bold text-foreground mb-2">Agent Teams</p>
-            <p className="text-xs text-muted-foreground mb-4">Create a new session or select an existing one to start the multi-agent pipeline</p>
+          {/* Header */}
+          <div className="shrink-0 px-6 py-4 border-b border-border bg-card/50">
+            <h1 className="text-2xl font-bold text-foreground">Agent Team Projects</h1>
+            <p className="text-sm text-muted-foreground mt-1">Your AI-powered multi-agent development workspace</p>
           </div>
-          <div className="flex flex-wrap gap-2 justify-center">
-            {PIPELINE.map(agent => {
-              const display = PIPELINE_DISPLAY[agent];
-              const displayName = display?.displayName ?? agent;
-              const subCount = display?.subAgents.length ?? 0;
-              return (
-                <div key={agent} className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] ${AGENT_BG[agent]} ${AGENT_COLORS[agent]}`}>
-                  <span>{AGENT_ICONS[agent]}</span>
-                  <span>{displayName}</span>
-                  {subCount > 0 && <span className="text-[8px] opacity-60">({subCount})</span>}
-                </div>
-              );
-            })}
-          </div>
+          {/* Project grid */}
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="max-w-7xl mx-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Create new project card */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  whileHover={{ scale: 1.02 }}
+                  className="relative group"
+                  onClick={() => setShowProjectCreationModal(true)}
+                >
+                  <div className="h-48 rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 hover:border-primary/50 hover:bg-primary/10 transition-all cursor-pointer flex flex-col items-center justify-center gap-3 p-6">
+                    <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                      <Plus className="h-6 w-6 text-primary" />
+                    </div>
+                    <div className="text-center">
+                      <h3 className="text-sm font-bold text-foreground mb-1">Start New Project</h3>
+                      <p className="text-xs text-muted-foreground">Import from GitHub or start from scratch</p>
+                    </div>
+                    <div className="text-xs px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all font-medium">
+                      Get Started
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* Existing sessions as project cards */}
+                {sessions.map((session, i) => {
+                  const raw = session as unknown as Record<string, unknown>;
+                  const customId = raw.customId as string | undefined;
+                  const isCompleted = session.status === "completed" || raw.executionPhase === "completed";
+                  const isRunningSession = session.status === "running";
+                  const isBranch = !!(raw.branchGroupId && (raw.branchNumber as number) > 1);
+                  const branchName = raw.branchName as string | undefined;
+                  const taskCount = (() => {
+                    try { return (JSON.parse(session.plannerTasksJson || "[]") as unknown[]).length; } catch { return 0; }
+                  })();
+                  return (
+                    <motion.div
+                      key={session._id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.05 }}
+                      whileHover={{ scale: 1.02 }}
+                      className="relative group"
+                      onContextMenu={(e) => { e.preventDefault(); setContextMenu({ sessionId: session._id, x: e.clientX, y: e.clientY }); }}
+                    >
+                      <div
+                        onClick={() => setActiveSessionId(session._id)}
+                        className="h-48 rounded-xl border border-border bg-card hover:border-primary/40 transition-all cursor-pointer overflow-hidden flex flex-col"
+                      >
+                        {/* Project header */}
+                        <div className="p-4 border-b border-border bg-card/50">
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                              {isBranch && <GitBranch className="h-3 w-3 text-violet-400 shrink-0" />}
+                              <h3 className="text-sm font-bold text-foreground line-clamp-2 flex-1">{isBranch ? (branchName || session.title) : session.title}</h3>
+                            </div>
+                            {isRunningSession && (
+                              <div className="shrink-0">
+                                <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-muted-foreground font-mono">{customId || "ID not set"}</span>
+                            {isCompleted && (
+                              <span className="text-[10px] px-2 py-0.5 bg-green-400/10 text-green-400 rounded border border-green-400/20 font-bold">COMPLETE</span>
+                            )}
+                            {isBranch && (
+                              <span className="text-[10px] px-2 py-0.5 bg-violet-400/10 text-violet-400 rounded border border-violet-400/20 font-bold">BRANCH</span>
+                            )}
+                          </div>
+                        </div>
+                        {/* Project body */}
+                        <div className="flex-1 p-4 flex flex-col justify-between">
+                          <p className="text-xs text-muted-foreground line-clamp-2">{session.task || "No task description"}</p>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-2">
+                              {taskCount > 0 && (
+                                <span className="text-[10px] text-muted-foreground">{taskCount} tasks</span>
+                              )}
+                              <span className="text-[10px] text-muted-foreground">{session.totalMessages || 0} msgs</span>
+                            </div>
+                            <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${
+                              isRunningSession ? "bg-green-400/10 text-green-400 border-green-400/20" :
+                              isCompleted ? "bg-blue-400/10 text-blue-400 border-blue-400/20" :
+                              "bg-muted/30 text-muted-foreground border-border"
+                            }`}>
+                              {isRunningSession ? "RUNNING" : isCompleted ? "DONE" : session.status?.toUpperCase() || "IDLE"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       ) : (
