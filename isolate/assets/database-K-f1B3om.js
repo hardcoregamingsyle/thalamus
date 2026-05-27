@@ -1,0 +1,1 @@
+import{c as e}from"./index-D_S1q-AS.js";const c=[["path",{d:"M20 6 9 17l-5-5",key:"1gmf2c"}]],s=e("check",c);const a=[["ellipse",{cx:"12",cy:"5",rx:"9",ry:"3",key:"msslwz"}],["path",{d:"M3 5V19A9 3 0 0 0 21 19V5",key:"1wlel7"}],["path",{d:"M3 12A9 3 0 0 0 21 12",key:"mv7ke4"}]],t=e("database",a);export{s as C,t as D};
