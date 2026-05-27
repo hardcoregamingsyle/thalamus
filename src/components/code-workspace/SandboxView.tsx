@@ -48,50 +48,50 @@ declare global {
 const OS_CONFIGS: Record<string, VMConfig> = {
   "windows-11": {
     os: "windows-11",
-    ram: 8192,
+    ram: 6144,
     cores: 4,
     name: "Windows 11 Pro",
-    description: "Modern Windows (8GB RAM, 4 cores, 3min boot)",
+    description: "Modern Windows (6GB RAM, 4 cores, 3min boot)",
     is64Bit: true,
   },
   "windows-10": {
     os: "windows-10",
-    ram: 4096,
+    ram: 6144,
     cores: 4,
     name: "Windows 10 Pro",
-    description: "Windows 10 (4GB RAM, 4 cores, 2min boot)",
+    description: "Windows 10 (6GB RAM, 4 cores, 2min boot)",
     is64Bit: true,
   },
   "macos-tahoe": {
     os: "macos-tahoe",
-    ram: 4096,
+    ram: 6144,
     cores: 4,
     name: "macOS 26 Tahoe",
-    description: "macOS 26 Tahoe (4GB RAM, 4 cores, 4min boot)",
+    description: "macOS 26 Tahoe (6GB RAM, 4 cores, 4min boot)",
     is64Bit: true,
   },
   "android-13": {
     os: "android-13",
-    ram: 2048,
+    ram: 4096,
     cores: 4,
     name: "Android 13",
-    description: "Android 13 x86_64 (2GB RAM, 4 cores, 90s boot)",
+    description: "Android 13 x86_64 (4GB RAM, 4 cores, 90s boot)",
     is64Bit: true,
   },
   "ubuntu-22": {
     os: "ubuntu-22",
-    ram: 2048,
+    ram: 6144,
     cores: 4,
     name: "Ubuntu 22.04 Desktop",
-    description: "Ubuntu 22.04 Desktop (2GB RAM, 4 cores, 1min boot)",
+    description: "Ubuntu 22.04 Desktop (6GB RAM, 4 cores, 1min boot)",
     is64Bit: true,
   },
   "ios-17": {
     os: "ios-17",
-    ram: 2048,
+    ram: 4096,
     cores: 2,
     name: "iOS 17 Simulator",
-    description: "iOS 17 (2GB RAM, 2 cores, experimental)",
+    description: "iOS 17 (4GB RAM, 2 cores, experimental)",
     is64Bit: true,
   },
   "windows-xp": {
@@ -158,7 +158,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [selectedOS, setSelectedOS] = useState("windows-11");
-  const [customRam, setCustomRam] = useState(8192);
+  const [customRam, setCustomRam] = useState(6144);
   const [customCores, setCustomCores] = useState(4);
   const [v86Loaded, setV86Loaded] = useState(false);
   const [vmMethod, setVmMethod] = useState<"v86" | "qemu">("qemu");
@@ -415,6 +415,14 @@ export function SandboxView({ branchId }: SandboxViewProps) {
 
   const currentConfig = OS_CONFIGS[selectedOS];
 
+  // Determine max RAM based on OS type
+  const getMaxRam = (osKey: string) => {
+    const isMobileOS = osKey === "ios-17" || osKey === "android-13";
+    return isMobileOS ? 8192 : 16384;
+  };
+
+  const maxRamForCurrentOS = getMaxRam(selectedOS);
+
   return (
     <div className="h-full flex flex-col">
       <div className={cn("border-b transition-all", isFullscreen ? "h-full" : "h-[60vh]")}>
@@ -469,7 +477,9 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                           onValueChange={(value) => {
                             setSelectedOS(value);
                             const config = OS_CONFIGS[value];
-                            setCustomRam(config.ram);
+                            // Ensure RAM doesn't exceed new OS max
+                            const maxRam = getMaxRam(value);
+                            setCustomRam(Math.min(config.ram, maxRam));
                             setCustomCores(config.cores);
                           }}
                         >
@@ -494,12 +504,19 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                           id="ram"
                           type="number"
                           value={customRam}
-                          onChange={(e) => setCustomRam(Math.max(64, Math.min(8192, parseInt(e.target.value) || 256)))}
+                          onChange={(e) => {
+                            const maxRam = getMaxRam(selectedOS);
+                            setCustomRam(Math.max(64, Math.min(maxRam, parseInt(e.target.value) || 256)));
+                          }}
                           min={64}
-                          max={8192}
+                          max={maxRamForCurrentOS}
                         />
                         <p className="text-xs text-muted-foreground">
-                          64MB - 8192MB (8GB) - 64-bit OS uses QEMU server
+                          {selectedOS === "ios-17" || selectedOS === "android-13"
+                            ? "64MB - 8GB (mobile OS limit)"
+                            : currentConfig.is64Bit
+                            ? "64MB - 16GB (desktop OS, QEMU server)"
+                            : "64MB - 2GB (browser v86 limit)"}
                         </p>
                       </div>
                       <div className="space-y-2">
