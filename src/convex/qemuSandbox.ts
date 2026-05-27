@@ -31,8 +31,8 @@ export const startQemuVM = action({
           diskSize: "40G",
           bootTime: 120000, // 2 minutes
         },
-        "macos-sonoma": {
-          iso: "macos-sonoma-14.iso",
+        "macos-tahoe": {
+          iso: "macos-26-tahoe.iso",
           diskSize: "60G",
           bootTime: 240000, // 4 minutes
         },
@@ -45,6 +45,11 @@ export const startQemuVM = action({
           iso: "android-x86_64-13.0.iso",
           diskSize: "20G",
           bootTime: 90000, // 1.5 minutes
+        },
+        "ios-17": {
+          iso: "ios-17-simulator.iso",
+          diskSize: "30G",
+          bootTime: 180000, // 3 minutes
         },
       };
 

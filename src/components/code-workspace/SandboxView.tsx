@@ -62,12 +62,12 @@ const OS_CONFIGS: Record<string, VMConfig> = {
     description: "Windows 10 (4GB RAM, 4 cores, 2min boot)",
     is64Bit: true,
   },
-  "macos-sonoma": {
-    os: "macos-sonoma",
+  "macos-tahoe": {
+    os: "macos-tahoe",
     ram: 4096,
     cores: 4,
-    name: "macOS Sonoma",
-    description: "macOS Sonoma 14 (4GB RAM, 4 cores, 4min boot)",
+    name: "macOS 26 Tahoe",
+    description: "macOS 26 Tahoe (4GB RAM, 4 cores, 4min boot)",
     is64Bit: true,
   },
   "android-13": {
