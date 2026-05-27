@@ -178,6 +178,18 @@ const schema = defineSchema(
       .index("by_branch", ["branchId"])
       .index("by_branch_and_status", ["branchId", "status"]),
 
+    githubConfigs: defineTable({
+      projectId: v.string(),
+      branchId: v.string(),
+      repoUrl: v.string(),
+      owner: v.string(),
+      repo: v.string(),
+      branch: v.string(),
+      lastSync: v.number(),
+    })
+      .index("by_project", ["projectId"])
+      .index("by_branch", ["branchId"]),
+
     messages: defineTable({
       conversationId: v.id("conversations"),
       userId: v.id("users"),

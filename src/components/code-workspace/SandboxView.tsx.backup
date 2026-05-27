@@ -22,106 +22,16 @@ interface CommandLog {
   isRunning?: boolean;
 }
 
-declare global {
-  interface Window {
-    V86?: any;
-  }
-}
-
 export function SandboxView({ branchId }: SandboxViewProps) {
   const [command, setCommand] = useState("");
   const [commandLogs, setCommandLogs] = useState<CommandLog[]>([]);
   const [isExecuting, setIsExecuting] = useState(false);
   const [vmStatus, setVmStatus] = useState<"booting" | "running" | "stopped">("stopped");
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const emulatorRef = useRef<any>(null);
-  const screenContainerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    // Load v86 script
-    const script = document.createElement('script');
-    script.src = 'https://copy.sh/v86/libv86.js';
-    script.async = true;
-    script.onload = () => {
-      console.log("v86 loaded successfully");
-    };
-    document.body.appendChild(script);
-
-    return () => {
-      if (emulatorRef.current) {
-        emulatorRef.current.stop();
-      }
-      if (document.body.contains(script)) {
-        document.body.removeChild(script);
-      }
-    };
-  }, []);
-
-  const handleBootVM = async () => {
-    if (!window.V86) {
-      toast.error("VM library loading... Please wait and try again.");
-      return;
-    }
-
-    setVmStatus("booting");
-    toast.info("Booting Linux VM...");
-
-    try {
-      const emulator = new window.V86({
-        wasm_path: "https://copy.sh/v86/v86.wasm",
-        memory_size: 256 * 1024 * 1024,
-        vga_memory_size: 8 * 1024 * 1024,
-        screen_container: screenContainerRef.current,
-        bios: {
-          url: "https://copy.sh/v86/bios/seabios.bin",
-        },
-        vga_bios: {
-          url: "https://copy.sh/v86/bios/vgabios.bin",
-        },
-        cdrom: {
-          url: "https://copy.sh/v86/images/linux4.iso",
-        },
-        autostart: true,
-      });
-
-      emulatorRef.current = emulator;
-
-      setTimeout(() => {
-        setVmStatus("running");
-        toast.success("VM is ready! Click in the display to interact.");
-      }, 5000);
-    } catch (err) {
-      console.error("VM boot error:", err);
-      toast.error("Failed to boot VM");
-      setVmStatus("stopped");
-    }
-  };
-
-  const handleStopVM = () => {
-    if (emulatorRef.current) {
-      emulatorRef.current.stop();
-      emulatorRef.current = null;
-    }
-    setVmStatus("stopped");
-    toast.info("VM stopped");
-  };
-
-  const handleResetVM = () => {
-    if (emulatorRef.current) {
-      emulatorRef.current.restart();
-      setVmStatus("booting");
-      toast.info("Resetting VM...");
-      setTimeout(() => {
-        setVmStatus("running");
-        toast.success("VM reset complete");
-      }, 3000);
-    } else {
-      handleBootVM();
-    }
-  };
+  const vmDisplayRef = useRef<HTMLDivElement>(null);
 
   const handleExecute = async () => {
-    if (!command.trim() || vmStatus !== "running") return;
+    if (!command.trim()) return;
 
     const logId = Date.now().toString();
     const newLog: CommandLog = {
@@ -132,45 +42,50 @@ export function SandboxView({ branchId }: SandboxViewProps) {
     };
 
     setCommandLogs((prev) => [...prev, newLog]);
-    const cmd = command.trim();
     setCommand("");
     setIsExecuting(true);
 
-    try {
-      if (emulatorRef.current) {
-        emulatorRef.current.serial0_send(cmd + "\n");
-
-        setTimeout(() => {
-          setCommandLogs((prev) =>
-            prev.map((log) =>
-              log.id === logId
-                ? {
-                    ...log,
-                    isRunning: false,
-                    output: "Command sent to VM. Check VM display for output.",
-                  }
-                : log
-            )
-          );
-          setIsExecuting(false);
-          toast.success("Command executed");
-        }, 500);
-      }
-    } catch (err) {
+    // Simulate command execution (in real impl, this would call VM)
+    setTimeout(() => {
       setCommandLogs((prev) =>
         prev.map((log) =>
           log.id === logId
             ? {
                 ...log,
                 isRunning: false,
-                error: "Failed to execute command",
+                output: "Command execution is not yet connected to VM.\nThis is a placeholder for future VM integration.",
               }
             : log
         )
       );
       setIsExecuting(false);
-      toast.error("Command failed");
-    }
+      toast.info("VM integration coming soon");
+    }, 1000);
+  };
+
+  const handleBootVM = () => {
+    setVmStatus("booting");
+    toast.info("Booting Windows 11 VM...");
+
+    // Simulate boot process
+    setTimeout(() => {
+      setVmStatus("running");
+      toast.success("VM is ready!");
+    }, 3000);
+  };
+
+  const handleStopVM = () => {
+    setVmStatus("stopped");
+    toast.info("VM stopped");
+  };
+
+  const handleResetVM = () => {
+    setVmStatus("booting");
+    toast.info("Resetting VM...");
+    setTimeout(() => {
+      setVmStatus("running");
+      toast.success("VM reset complete");
+    }, 2000);
   };
 
   const formatTimestamp = (ts: number) => {
@@ -179,11 +94,16 @@ export function SandboxView({ branchId }: SandboxViewProps) {
 
   return (
     <div className="h-full flex flex-col">
-      <div className={cn("border-b transition-all", isFullscreen ? "h-full" : "h-[60vh]")}>
+      {/* VM Display Area */}
+      <div className={cn(
+        "border-b transition-all",
+        isFullscreen ? "h-full" : "h-[60vh]"
+      )}>
+        {/* VM Controls */}
         <div className="border-b bg-muted/50 px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Monitor className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Linux VM (Alpine)</span>
+            <span className="text-sm font-medium">Windows 11 Pro</span>
             <Badge
               variant={vmStatus === "running" ? "default" : "secondary"}
               className={cn(
@@ -198,8 +118,8 @@ export function SandboxView({ branchId }: SandboxViewProps) {
           </div>
 
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-xs">256 MB RAM</Badge>
-            <Badge variant="outline" className="text-xs">1 vCPU</Badge>
+            <Badge variant="outline" className="text-xs">8 GB RAM</Badge>
+            <Badge variant="outline" className="text-xs">4 vCPU</Badge>
 
             {vmStatus === "stopped" && (
               <Button size="sm" onClick={handleBootVM} className="gap-2">
@@ -208,7 +128,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
               </Button>
             )}
 
-            {(vmStatus === "running" || vmStatus === "booting") && (
+            {vmStatus === "running" && (
               <>
                 <Button size="sm" variant="outline" onClick={handleResetVM} className="gap-2">
                   <RotateCcw className="h-3 w-3" />
@@ -221,57 +141,111 @@ export function SandboxView({ branchId }: SandboxViewProps) {
               </>
             )}
 
-            <Button size="sm" variant="ghost" onClick={() => setIsFullscreen(!isFullscreen)}>
-              {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setIsFullscreen(!isFullscreen)}
+            >
+              {isFullscreen ? (
+                <Minimize2 className="h-4 w-4" />
+              ) : (
+                <Maximize2 className="h-4 w-4" />
+              )}
             </Button>
           </div>
         </div>
 
-        <div className="w-full h-[calc(100%-3rem)] bg-black relative overflow-hidden">
+        {/* VM Display */}
+        <div
+          ref={vmDisplayRef}
+          className="w-full h-[calc(100%-3rem)] bg-black relative overflow-hidden cursor-crosshair"
+        >
           {vmStatus === "stopped" && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10">
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-white">
               <Power className="h-16 w-16 mb-4 opacity-50" />
               <p className="text-lg font-medium mb-2">VM is stopped</p>
-              <p className="text-sm text-white/60 mb-4">Click "Boot VM" to start real Linux</p>
-              <p className="text-xs text-white/40">Powered by v86 - full x86 emulation in browser</p>
+              <p className="text-sm text-white/60 mb-4">Click "Boot VM" to start</p>
             </div>
           )}
 
           {vmStatus === "booting" && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10">
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-white">
               <Loader2 className="h-16 w-16 mb-4 animate-spin" />
-              <p className="text-lg font-medium mb-2">Booting Linux...</p>
-              <p className="text-sm text-white/60">Loading Alpine Linux ISO (~8MB)</p>
+              <p className="text-lg font-medium mb-2">Booting Windows 11...</p>
+              <p className="text-sm text-white/60">This may take a few moments</p>
             </div>
           )}
 
-          <div ref={screenContainerRef} className="w-full h-full" />
+          {vmStatus === "running" && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-gradient-to-br from-blue-900 to-blue-600">
+              {/* Simulated Windows 11 Desktop */}
+              <div className="text-center">
+                <div className="w-24 h-24 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center mb-6">
+                  <Monitor className="h-12 w-12 text-white" />
+                </div>
+                <h2 className="text-2xl font-bold mb-2">Windows 11 Pro</h2>
+                <p className="text-white/80 mb-6">VM Display Ready</p>
+                <div className="bg-black/30 backdrop-blur-sm border border-white/20 rounded-lg p-6 max-w-md">
+                  <p className="text-sm text-white/90 mb-2">
+                    <strong>Note:</strong> VM display integration is in progress
+                  </p>
+                  <p className="text-xs text-white/70">
+                    This area will show the actual Windows 11 desktop with full mouse and keyboard interaction.
+                    The VM will be powered by v86 or QEMU for browser-based virtualization.
+                  </p>
+                </div>
+              </div>
+
+              {/* Simulated Windows Taskbar */}
+              <div className="absolute bottom-0 left-0 right-0 h-12 bg-black/40 backdrop-blur-md border-t border-white/10 flex items-center px-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded bg-blue-500 flex items-center justify-center">
+                    <span className="text-white text-xs font-bold">⊞</span>
+                  </div>
+                  <div className="w-8 h-8 rounded bg-white/10 hover:bg-white/20 transition-colors cursor-pointer"></div>
+                  <div className="w-8 h-8 rounded bg-white/10 hover:bg-white/20 transition-colors cursor-pointer"></div>
+                </div>
+                <div className="ml-auto text-xs text-white/90">
+                  {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Canvas for actual VM display (when integrated) */}
+          <canvas
+            id="vm-display"
+            className="w-full h-full hidden"
+            style={{ imageRendering: "pixelated" }}
+          />
         </div>
       </div>
 
+      {/* Terminal Section (collapsible when fullscreen) */}
       {!isFullscreen && (
         <div className="flex-1 flex flex-col min-h-0 p-6 space-y-4">
           <div>
             <h3 className="text-lg font-semibold flex items-center gap-2">
               <Terminal className="h-5 w-5" />
-              Send Commands to VM
+              Terminal
             </h3>
             <p className="text-sm text-muted-foreground">
-              Type commands to send directly to the VM serial terminal
+              Execute commands in the VM sandbox
             </p>
           </div>
 
+          {/* Command Input */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Execute Command</CardTitle>
               <CardDescription>
-                Send commands to the running Linux VM
+                Run commands directly in the VM environment
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex gap-2">
                 <Input
-                  placeholder="ls, pwd, uname -a, etc..."
+                  placeholder="npm install, git status, dir, etc..."
                   value={command}
                   onChange={(e) => setCommand(e.target.value)}
                   onKeyDown={(e) => {
@@ -288,28 +262,33 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                   disabled={!command.trim() || isExecuting || vmStatus !== "running"}
                   className="gap-2"
                 >
-                  {isExecuting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  Send
+                  {isExecuting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                  Run
                 </Button>
               </div>
               {vmStatus !== "running" && (
                 <p className="text-xs text-muted-foreground mt-2">
-                  Boot the VM to send commands
+                  Boot the VM to execute commands
                 </p>
               )}
             </CardContent>
           </Card>
 
+          {/* Command History */}
           <Card className="flex-1 min-h-0">
             <CardHeader>
               <CardTitle className="text-base">Command History</CardTitle>
-              <CardDescription>Commands sent to VM serial port</CardDescription>
+              <CardDescription>Recent commands and their outputs</CardDescription>
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[200px]">
                 {commandLogs.length === 0 ? (
                   <div className="text-center text-muted-foreground py-8">
-                    No commands sent yet
+                    No commands executed yet
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -328,7 +307,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                           {log.isRunning && (
                             <Badge className="bg-blue-500">
                               <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                              Sending
+                              Running
                             </Badge>
                           )}
                         </div>
@@ -337,12 +316,16 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                         </div>
                         {log.output && (
                           <div className="bg-background border rounded p-2">
-                            <pre className="text-xs font-mono whitespace-pre-wrap">{log.output}</pre>
+                            <pre className="text-xs font-mono whitespace-pre-wrap">
+                              {log.output}
+                            </pre>
                           </div>
                         )}
                         {log.error && (
                           <div className="bg-red-500/10 border border-red-500/20 rounded p-2">
-                            <pre className="text-xs font-mono text-red-500 whitespace-pre-wrap">{log.error}</pre>
+                            <pre className="text-xs font-mono text-red-500 whitespace-pre-wrap">
+                              {log.error}
+                            </pre>
                           </div>
                         )}
                       </motion.div>
