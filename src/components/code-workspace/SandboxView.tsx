@@ -2,9 +2,12 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Monitor, Terminal, Send, Loader2, Maximize2, Minimize2, Power, RotateCcw } from "lucide-react";
+import { Monitor, Terminal, Send, Loader2, Maximize2, Minimize2, Power, RotateCcw, Settings } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -22,11 +25,73 @@ interface CommandLog {
   isRunning?: boolean;
 }
 
+interface VMConfig {
+  os: string;
+  ram: number;
+  cores: number;
+  cdrom?: string;
+  hda?: { url: string; async?: boolean; size?: number };
+  fda?: { url: string; async?: boolean };
+  name: string;
+  description: string;
+}
+
 declare global {
   interface Window {
     V86?: any;
   }
 }
+
+const OS_CONFIGS: Record<string, VMConfig> = {
+  "linux-alpine": {
+    os: "Linux Alpine",
+    ram: 256,
+    cores: 1,
+    cdrom: "https://copy.sh/v86/images/linux4.iso",
+    name: "Alpine Linux",
+    description: "Lightweight Linux (8MB, boots in 5s)",
+  },
+  "linux-arch": {
+    os: "Linux Arch",
+    ram: 512,
+    cores: 2,
+    cdrom: "https://copy.sh/v86/images/archlinux.iso",
+    name: "Arch Linux",
+    description: "Full-featured Linux (60MB, boots in 30s)",
+  },
+  "kolibrios": {
+    os: "KolibriOS",
+    ram: 128,
+    cores: 1,
+    fda: { url: "https://copy.sh/v86/images/kolibri.img", async: false },
+    name: "KolibriOS",
+    description: "Tiny OS (1.4MB, boots instantly)",
+  },
+  "freedos": {
+    os: "FreeDOS",
+    ram: 128,
+    cores: 1,
+    fda: { url: "https://copy.sh/v86/images/freedos722.img", async: false },
+    name: "FreeDOS",
+    description: "DOS compatible (1MB, boots instantly)",
+  },
+  "windows-98": {
+    os: "Windows 98",
+    ram: 128,
+    cores: 1,
+    hda: { url: "https://copy.sh/v86/images/windows98.img", async: true, size: 300 * 1024 * 1024 },
+    name: "Windows 98",
+    description: "Classic Windows (300MB, boots in 2min)",
+  },
+  "linux-buildroot": {
+    os: "Linux Buildroot",
+    ram: 256,
+    cores: 1,
+    cdrom: "https://copy.sh/v86/images/buildroot-bzimage.bin",
+    name: "Linux (Buildroot)",
+    description: "Minimal Linux (8MB, boots in 10s)",
+  },
+};
 
 export function SandboxView({ branchId }: SandboxViewProps) {
   const [command, setCommand] = useState("");
@@ -34,42 +99,71 @@ export function SandboxView({ branchId }: SandboxViewProps) {
   const [isExecuting, setIsExecuting] = useState(false);
   const [vmStatus, setVmStatus] = useState<"booting" | "running" | "stopped">("stopped");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isConfigOpen, setIsConfigOpen] = useState(false);
+  const [selectedOS, setSelectedOS] = useState("linux-alpine");
+  const [customRam, setCustomRam] = useState(256);
+  const [customCores, setCustomCores] = useState(1);
+  const [v86Loaded, setV86Loaded] = useState(false);
   const emulatorRef = useRef<any>(null);
   const screenContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Load v86 script
-    const script = document.createElement('script');
-    script.src = 'https://copy.sh/v86/libv86.js';
-    script.async = true;
-    script.onload = () => {
-      console.log("v86 loaded successfully");
+    // Load v86 script with retry logic
+    const loadV86 = () => {
+      if (window.V86) {
+        setV86Loaded(true);
+        return;
+      }
+
+      const existingScript = document.querySelector('script[src*="libv86.js"]');
+      if (existingScript) {
+        existingScript.remove();
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://copy.sh/v86/libv86.js';
+      script.async = true;
+      script.onload = () => {
+        console.log("v86 loaded successfully");
+        setV86Loaded(true);
+        toast.success("VM library loaded");
+      };
+      script.onerror = () => {
+        console.error("Failed to load v86");
+        toast.error("Failed to load VM library");
+        // Retry after 2 seconds
+        setTimeout(loadV86, 2000);
+      };
+      document.body.appendChild(script);
     };
-    document.body.appendChild(script);
+
+    loadV86();
 
     return () => {
       if (emulatorRef.current) {
-        emulatorRef.current.stop();
-      }
-      if (document.body.contains(script)) {
-        document.body.removeChild(script);
+        try {
+          emulatorRef.current.stop();
+        } catch (err) {
+          console.error("Error stopping emulator:", err);
+        }
       }
     };
   }, []);
 
   const handleBootVM = async () => {
     if (!window.V86) {
-      toast.error("VM library loading... Please wait and try again.");
+      toast.error("VM library still loading... Please wait a moment.");
       return;
     }
 
     setVmStatus("booting");
-    toast.info("Booting Linux VM...");
+    const config = OS_CONFIGS[selectedOS];
+    toast.info(`Booting ${config.name}...`);
 
     try {
-      const emulator = new window.V86({
+      const vmConfig: any = {
         wasm_path: "https://copy.sh/v86/v86.wasm",
-        memory_size: 256 * 1024 * 1024,
+        memory_size: customRam * 1024 * 1024,
         vga_memory_size: 8 * 1024 * 1024,
         screen_container: screenContainerRef.current,
         bios: {
@@ -78,29 +172,42 @@ export function SandboxView({ branchId }: SandboxViewProps) {
         vga_bios: {
           url: "https://copy.sh/v86/bios/vgabios.bin",
         },
-        cdrom: {
-          url: "https://copy.sh/v86/images/linux4.iso",
-        },
         autostart: true,
-      });
+      };
 
+      if (config.cdrom) {
+        vmConfig.cdrom = { url: config.cdrom };
+      }
+      if (config.hda) {
+        vmConfig.hda = config.hda;
+      }
+      if (config.fda) {
+        vmConfig.fda = config.fda;
+      }
+
+      const emulator = new window.V86(vmConfig);
       emulatorRef.current = emulator;
 
+      // Auto-detect when VM is ready
       setTimeout(() => {
         setVmStatus("running");
-        toast.success("VM is ready! Click in the display to interact.");
-      }, 5000);
+        toast.success(`${config.name} is ready! Click in display to interact.`);
+      }, config.os === "KolibriOS" || config.os === "FreeDOS" ? 2000 : 5000);
     } catch (err) {
       console.error("VM boot error:", err);
-      toast.error("Failed to boot VM");
+      toast.error("Failed to boot VM: " + (err instanceof Error ? err.message : "Unknown error"));
       setVmStatus("stopped");
     }
   };
 
   const handleStopVM = () => {
     if (emulatorRef.current) {
-      emulatorRef.current.stop();
-      emulatorRef.current = null;
+      try {
+        emulatorRef.current.stop();
+        emulatorRef.current = null;
+      } catch (err) {
+        console.error("Error stopping VM:", err);
+      }
     }
     setVmStatus("stopped");
     toast.info("VM stopped");
@@ -108,13 +215,18 @@ export function SandboxView({ branchId }: SandboxViewProps) {
 
   const handleResetVM = () => {
     if (emulatorRef.current) {
-      emulatorRef.current.restart();
-      setVmStatus("booting");
-      toast.info("Resetting VM...");
-      setTimeout(() => {
-        setVmStatus("running");
-        toast.success("VM reset complete");
-      }, 3000);
+      try {
+        emulatorRef.current.restart();
+        setVmStatus("booting");
+        toast.info("Resetting VM...");
+        setTimeout(() => {
+          setVmStatus("running");
+          toast.success("VM reset complete");
+        }, 3000);
+      } catch (err) {
+        console.error("Error resetting VM:", err);
+        toast.error("Failed to reset VM");
+      }
     } else {
       handleBootVM();
     }
@@ -177,13 +289,15 @@ export function SandboxView({ branchId }: SandboxViewProps) {
     return new Date(ts).toLocaleTimeString();
   };
 
+  const currentConfig = OS_CONFIGS[selectedOS];
+
   return (
     <div className="h-full flex flex-col">
       <div className={cn("border-b transition-all", isFullscreen ? "h-full" : "h-[60vh]")}>
         <div className="border-b bg-muted/50 px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Monitor className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Linux VM (Alpine)</span>
+            <span className="text-sm font-medium">{currentConfig.name}</span>
             <Badge
               variant={vmStatus === "running" ? "default" : "secondary"}
               className={cn(
@@ -195,17 +309,89 @@ export function SandboxView({ branchId }: SandboxViewProps) {
               {vmStatus === "booting" && "Booting..."}
               {vmStatus === "stopped" && "Stopped"}
             </Badge>
+            {!v86Loaded && (
+              <Badge variant="outline" className="bg-orange-500/10 text-orange-600">
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                Loading VM Library...
+              </Badge>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-xs">256 MB RAM</Badge>
-            <Badge variant="outline" className="text-xs">1 vCPU</Badge>
+            <Badge variant="outline" className="text-xs">{customRam} MB RAM</Badge>
+            <Badge variant="outline" className="text-xs">{customCores} vCPU</Badge>
 
             {vmStatus === "stopped" && (
-              <Button size="sm" onClick={handleBootVM} className="gap-2">
-                <Power className="h-3 w-3" />
-                Boot VM
-              </Button>
+              <>
+                <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline" className="gap-2">
+                      <Settings className="h-3 w-3" />
+                      Configure
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>VM Configuration</DialogTitle>
+                      <DialogDescription>
+                        Choose operating system and hardware specs
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label>Operating System</Label>
+                        <Select value={selectedOS} onValueChange={setSelectedOS}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(OS_CONFIGS).map(([key, config]) => (
+                              <SelectItem key={key} value={key}>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{config.name}</span>
+                                  <span className="text-xs text-muted-foreground">{config.description}</span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="ram">RAM (MB)</Label>
+                        <Input
+                          id="ram"
+                          type="number"
+                          value={customRam}
+                          onChange={(e) => setCustomRam(Math.max(64, Math.min(2048, parseInt(e.target.value) || 256)))}
+                          min={64}
+                          max={2048}
+                        />
+                        <p className="text-xs text-muted-foreground">64MB - 2048MB (browser limit)</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="cores">CPU Cores</Label>
+                        <Input
+                          id="cores"
+                          type="number"
+                          value={customCores}
+                          onChange={(e) => setCustomCores(Math.max(1, Math.min(4, parseInt(e.target.value) || 1)))}
+                          min={1}
+                          max={4}
+                        />
+                        <p className="text-xs text-muted-foreground">1-4 cores (emulation limit)</p>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button onClick={() => setIsConfigOpen(false)}>Done</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+
+                <Button size="sm" onClick={handleBootVM} className="gap-2" disabled={!v86Loaded}>
+                  <Power className="h-3 w-3" />
+                  Boot VM
+                </Button>
+              </>
             )}
 
             {(vmStatus === "running" || vmStatus === "booting") && (
@@ -232,16 +418,16 @@ export function SandboxView({ branchId }: SandboxViewProps) {
             <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10">
               <Power className="h-16 w-16 mb-4 opacity-50" />
               <p className="text-lg font-medium mb-2">VM is stopped</p>
-              <p className="text-sm text-white/60 mb-4">Click "Boot VM" to start real Linux</p>
-              <p className="text-xs text-white/40">Powered by v86 - full x86 emulation in browser</p>
+              <p className="text-sm text-white/60 mb-4">Click "Configure" to select OS, then "Boot VM"</p>
+              <p className="text-xs text-white/40">Multiple OS available: Linux, Windows 98, FreeDOS, KolibriOS</p>
             </div>
           )}
 
           {vmStatus === "booting" && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10">
               <Loader2 className="h-16 w-16 mb-4 animate-spin" />
-              <p className="text-lg font-medium mb-2">Booting Linux...</p>
-              <p className="text-sm text-white/60">Loading Alpine Linux ISO (~8MB)</p>
+              <p className="text-lg font-medium mb-2">Booting {currentConfig.name}...</p>
+              <p className="text-sm text-white/60">{currentConfig.description}</p>
             </div>
           )}
 
@@ -265,7 +451,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
             <CardHeader>
               <CardTitle className="text-base">Execute Command</CardTitle>
               <CardDescription>
-                Send commands to the running Linux VM
+                Send commands to the running {currentConfig.name}
               </CardDescription>
             </CardHeader>
             <CardContent>
