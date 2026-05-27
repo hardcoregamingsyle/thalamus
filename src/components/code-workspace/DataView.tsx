@@ -49,7 +49,7 @@ export function DataView({ branchId }: DataViewProps) {
               <div className="text-center text-muted-foreground py-8">No files yet</div>
             ) : (
               <div className="space-y-2">
-                {files.map((file, idx) => (
+                {files.map((file: any, idx: number) => (
                   <motion.div
                     key={file._id}
                     initial={{ opacity: 0, x: -20 }}
@@ -101,7 +101,7 @@ export function DataView({ branchId }: DataViewProps) {
               <div className="text-center text-muted-foreground py-8">No messages yet</div>
             ) : (
               <div className="space-y-2">
-                {messages.map((msg, idx) => (
+                {messages.map((msg: any, idx: number) => (
                   <motion.div
                     key={msg._id}
                     initial={{ opacity: 0, x: -20 }}

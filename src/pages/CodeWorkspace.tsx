@@ -155,7 +155,7 @@ export default function CodeWorkspace() {
                   </p>
                 </div>
               ) : (
-                messages.map((msg, idx) => (
+                messages.map((msg: any, idx: number) => (
                   <motion.div
                     key={idx}
                     initial={{ opacity: 0, y: 10 }}

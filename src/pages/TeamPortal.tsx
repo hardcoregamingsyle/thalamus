@@ -426,7 +426,7 @@ export default function TeamPortal() {
     finalReviewCoderEnabled: (liveSession as Record<string, unknown>).finalReviewCoderEnabled as boolean | undefined,
   } as TeamSession : null;
 
-  const agentMessages: AgentMessage[] = (liveMessages ?? []).map((m) => ({
+  const agentMessages: AgentMessage[] = (liveMessages ?? []).map((m: any) => ({
     _id: m._id as string, agent: m.agent, content: m.content, round: m.round, messageIndex: m.messageIndex,
     modelUsed: (m as Record<string, unknown>).modelUsed as string | undefined,
     agentBucksDeducted: (m as Record<string, unknown>).agentBucksDeducted as number | undefined,
@@ -439,7 +439,7 @@ export default function TeamPortal() {
     return ai - bi;
   });
 
-  const projectFiles: ProjectFile[] = (liveFiles ?? []).map((f) => ({
+  const projectFiles: ProjectFile[] = (liveFiles ?? []).map((f: any) => ({
     filepath: f.filepath, content: f.content, lastModifiedBy: f.lastModifiedBy,
   }));
 

@@ -16,7 +16,7 @@ export function UsageView({ branchId }: UsageViewProps) {
   const totalFiles = files?.length || 0;
   const totalMessages = messages?.length || 0;
   const totalCommands = commands?.length || 0;
-  const totalChars = files?.reduce((sum, f) => sum + f.content.length, 0) || 0;
+  const totalChars = files?.reduce((sum: number, f: any) => sum + f.content.length, 0) || 0;
   const storageKB = (totalChars / 1024).toFixed(1);
 
   const stats = [
@@ -95,7 +95,7 @@ export function UsageView({ branchId }: UsageViewProps) {
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Message Content</span>
                 <span className="text-sm text-muted-foreground">
-                  {((messages?.reduce((sum, m) => sum + m.content.length, 0) || 0) / 1024).toFixed(1)} KB
+                  {((messages?.reduce((sum: number, m: any) => sum + m.content.length, 0) || 0) / 1024).toFixed(1)} KB
                 </span>
               </div>
             </div>

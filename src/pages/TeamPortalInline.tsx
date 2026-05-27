@@ -1830,7 +1830,7 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
     }
   }, [liveSession]);
 
-  const agentMessages: AgentMessage[] = useMemo(() => (liveMessages ?? []).map((m) => ({
+  const agentMessages: AgentMessage[] = useMemo(() => (liveMessages ?? []).map((m: any) => ({
     _id: m._id as string, agent: m.agent, content: m.content, round: m.round, messageIndex: m.messageIndex,
     modelUsed: (m as Record<string, unknown>).modelUsed as string | undefined,
     agentBucksDeducted: (m as Record<string, unknown>).agentBucksDeducted as number | undefined,
@@ -1858,7 +1858,7 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
   }, [agentMessages, userMessages]);
 
   // File tree uses metadata only (no content) for performance — memoized
-  const projectFiles: ProjectFile[] = useMemo(() => (liveFilesMetadata ?? []).map((f) => ({
+  const projectFiles: ProjectFile[] = useMemo(() => (liveFilesMetadata ?? []).map((f: any) => ({
     filepath: f.filepath, content: "", lastModifiedBy: f.lastModifiedBy,
   })), [liveFilesMetadata]);
 
@@ -2682,7 +2682,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
     try {
       const result = await runDeployCommandsAction({ token, sandboxDbId: activeSandboxId, commands: deployCommands });
       setDeployLog(result.results);
-      const failed = result.results.find(r => r.exitCode !== 0);
+      const failed = result.results.find((r: any) => r.exitCode !== 0);
       if (failed) {
         toast.error(`Deploy failed at: ${failed.cmd}`);
       } else {
