@@ -1,0 +1,82 @@
+Testing 34 Gemini API keys...
+
+❌ Key 1: API key expired. Please renew the API key.
+❌ Key 2: API key expired. Please renew the API key.
+❌ Key 3: API key expired. Please renew the API key.
+❌ Key 4: API key expired. Please renew the API key.
+❌ Key 5: API key expired. Please renew the API key.
+❌ Key 6: API key expired. Please renew the API key.
+❌ Key 7: API key expired. Please renew the API key.
+❌ Key 8: API key expired. Please renew the API key.
+❌ Key 9: API key expired. Please renew the API key.
+❌ Key 10: API key expired. Please renew the API key.
+❌ Key 11: Quota exceeded for quota metric 'Generate Content API requests per minute' and limit 'GenerateContent request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:801101518895'.
+❌ Key 12: Quota exceeded for quota metric 'API requests' and limit 'Request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:689695889285'.
+❌ Key 13: Quota exceeded for quota metric 'API requests' and limit 'Request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:936416095287'.
+❌ Key 14: Quota exceeded for quota metric 'API requests' and limit 'Request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:526262915467'.
+❌ Key 15: Quota exceeded for quota metric 'API requests' and limit 'Request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:645797250202'.
+❌ Key 16: Quota exceeded for quota metric 'Generate Content API requests per minute' and limit 'GenerateContent request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:278697793347'.
+❌ Key 17: Quota exceeded for quota metric 'API requests' and limit 'Request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:919985854771'.
+❌ Key 18: Quota exceeded for quota metric 'Generate Content API requests per minute' and limit 'GenerateContent request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:518782802566'.
+❌ Key 19: Quota exceeded for quota metric 'Generate Content API requests per minute' and limit 'GenerateContent request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:950912612731'.
+❌ Key 20: models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+❌ Key 21: models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+❌ Key 22: models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+❌ Key 23: models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+❌ Key 24: models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+❌ Key 25: models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+❌ Key 26: models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+❌ Key 27: models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+❌ Key 28: models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+❌ Key 29: models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+❌ Key 30: models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+❌ Key 31: models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+❌ Key 32: models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+❌ Key 33: models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+❌ Key 34: models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+
+============================================================
+SUMMARY
+============================================================
+
+✅ Working keys: 0
+❌ Broken keys: 34
+
+📝 Working keys array (copy this):
+[]
+
+🗑️  Broken keys (delete these):
+1. AIzaSyAWDql58ThRWb3T... - API key expired. Please renew the API key.
+2. AIzaSyD-tnHV5rSfNqLJ... - API key expired. Please renew the API key.
+3. AIzaSyD8P8SWdk7J0ZWe... - API key expired. Please renew the API key.
+4. AIzaSyA1Gfk1Cjo5ysKZ... - API key expired. Please renew the API key.
+5. AIzaSyBm5KQKAhVZKpzm... - API key expired. Please renew the API key.
+6. AIzaSyAPGQ8H19FpikoT... - API key expired. Please renew the API key.
+7. AIzaSyD6T1nkFf6Nx7bR... - API key expired. Please renew the API key.
+8. AIzaSyBq4kR4kHKLf16j... - API key expired. Please renew the API key.
+9. AIzaSyD7gMGsWkp8pRkm... - API key expired. Please renew the API key.
+10. AIzaSyBFAZsgIQNM3b62... - API key expired. Please renew the API key.
+11. AIzaSyD8Hrh0MyaDhdkK... - Quota exceeded for quota metric 'Generate Content API requests per minute' and limit 'GenerateContent request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:801101518895'.
+12. AIzaSyC4o9Di93elAGN1... - Quota exceeded for quota metric 'API requests' and limit 'Request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:689695889285'.
+13. AIzaSyA8RE4BYh2MZOZH... - Quota exceeded for quota metric 'API requests' and limit 'Request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:936416095287'.
+14. AIzaSyBBNB7X9gWMFgrX... - Quota exceeded for quota metric 'API requests' and limit 'Request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:526262915467'.
+15. AIzaSyAdGKI6DWJ6UNZc... - Quota exceeded for quota metric 'API requests' and limit 'Request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:645797250202'.
+16. AIzaSyAVp2-loHawh6ss... - Quota exceeded for quota metric 'Generate Content API requests per minute' and limit 'GenerateContent request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:278697793347'.
+17. AIzaSyB_6pAxLV9DdXBo... - Quota exceeded for quota metric 'API requests' and limit 'Request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:919985854771'.
+18. AIzaSyBkPFKv1ROoGwQ5... - Quota exceeded for quota metric 'Generate Content API requests per minute' and limit 'GenerateContent request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:518782802566'.
+19. AIzaSyCo3CylHBwfk24s... - Quota exceeded for quota metric 'Generate Content API requests per minute' and limit 'GenerateContent request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:950912612731'.
+20. AIzaSyB3iS1jRnpN1D4I... - models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+21. AIzaSyBIY7irSVDcSInj... - models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+22. AIzaSyB3Gi2DBWt-YIAk... - models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+23. AIzaSyBEPXm3mvNBKxjI... - models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+24. AIzaSyCqQXOebkboQgme... - models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+25. AIzaSyC9ZsXEhaM7kIVX... - models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+26. AIzaSyADBx6JDe3qjCKz... - models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+27. AIzaSyBzDjtZwJjvjorb... - models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+28. AIzaSyCUAjbtm27yNZxR... - models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+29. AIzaSyBJpqhrPyid8qtA... - models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+30. AIzaSyBk8PMAu9DTKoWg... - models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+31. AIzaSyA6JkWpVHBYOU4X... - models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+32. AIzaSyBYxrmMqPQ-xAWb... - models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+33. AIzaSyBeOmoC1u3uM1Cy... - models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
+34. AIzaSyA8kjAlYbzBUuAJ... - models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.
