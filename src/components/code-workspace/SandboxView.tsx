@@ -231,7 +231,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
       // Use QEMU for 64-bit systems or high RAM requirements
       if (config.is64Bit || customRam > 2048) {
         setVmMethod("qemu");
-        const token = localStorage.getItem("authToken") || "";
+        const token = localStorage.getItem("agentai_session_token") || "";
 
         const result = await startQemuVM({
           token,
@@ -306,7 +306,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
   const handleStopVM = async () => {
     try {
       if (vmMethod === "qemu" && qemuVmId) {
-        const token = localStorage.getItem("authToken") || "";
+        const token = localStorage.getItem("agentai_session_token") || "";
         await stopQemuVM({ token, vmId: qemuVmId });
         setQemuVmId(null);
         setQemuDisplayUrl(null);
@@ -359,7 +359,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
 
     try {
       if (vmMethod === "qemu" && qemuVmId) {
-        const token = localStorage.getItem("authToken") || "";
+        const token = localStorage.getItem("agentai_session_token") || "";
         const result = await executeQemuCommand({
           token,
           vmId: qemuVmId,
