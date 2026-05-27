@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Code Mode - Real User Test</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #0a0a0a; color: #00ff00; }
+        .log { margin: 10px 0; padding: 10px; background: #1a1a1a; border-left: 3px solid #00ff00; }
+        .error { border-left-color: #ff0000; color: #ff0000; }
+        .success { border-left-color: #00ff00; }
+        button { background: #00ff00; color: #0a0a0a; padding: 10px 20px; border: none; cursor: pointer; margin: 5px; }
+        button:hover { background: #00cc00; }
+        input { background: #1a1a1a; color: #00ff00; border: 1px solid #00ff00; padding: 10px; width: 300px; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Code Mode - Real User Test Simulator</h1>
+
+    <div id="status">
+        <h2>Test Status:</h2>
+        <div class="log">Ready to test...</div>
+    </div>
+
+    <div>
+        <h3>Step 1: Set Test Token</h3>
+        <input type="text" id="token" value="test-token-1779861296661" placeholder="Enter token">
+        <button onclick="setToken()">Set Token in LocalStorage</button>
+    </div>
+
+    <div>
+        <h3>Step 2: Test API Calls</h3>
+        <button onclick="testListProjects()">List Projects</button>
+        <button onclick="testCreateProject()">Create Project</button>
+        <button onclick="testCreateBranch()">Create Branch</button>
+        <button onclick="testStartPipeline()">Start Pipeline</button>
+    </div>
+
+    <div>
+        <h3>Step 3: Open Code Mode UI</h3>
+        <button onclick="openCodeMode()">Open /portal/code</button>
+        <button onclick="openTestBranch()">Open Test Branch</button>
+    </div>
+
+    <div id="logs"></div>
+
+    <script>
+        const CONVEX_URL = "https://flamboyant-llama-998.convex.cloud";
+        let currentProjectId = "GELV8YWCDI";
+        let currentBranchId = "4KSGCCLY71";
+
+        function log(message, type = 'log') {
+            const logs = document.getElementById('logs');
+            const entry = document.createElement('div');
+            entry.className = `log ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logs.appendChild(entry);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function setToken() {
+            const token = document.getElementById('token').value;
+            localStorage.setItem('agentai_session_token', token);
+            log(`✅ Token set in localStorage: ${token.slice(0, 20)}...`, 'success');
+            log(`✅ You can now use the Code Mode UI!`, 'success');
+        }
+
+        async function testListProjects() {
+            const token = localStorage.getItem('agentai_session_token');
+            if (!token) {
+                log('❌ No token found. Please set token first!', 'error');
+                return;
+            }
+
+            log('📡 Fetching projects...');
+            try {
+                const response = await fetch(`${CONVEX_URL}/api/query`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        path: 'codeProjects:listProjects',
+                        args: { token }
+                    })
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    log(`✅ Found ${data.value.length} projects`, 'success');
+                    if (data.value.length > 0) {
+                        currentProjectId = data.value[0].projectId;
+                        log(`   Latest project: ${data.value[0].name} (${currentProjectId})`, 'success');
+                    }
+                } else {
+                    log(`❌ Error: ${data.error}`, 'error');
+                }
+            } catch (err) {
+                log(`❌ Request failed: ${err.message}`, 'error');
+            }
+        }
+
+        async function testCreateProject() {
+            const token = localStorage.getItem('agentai_session_token');
+            if (!token) {
+                log('❌ No token found. Please set token first!', 'error');
+                return;
+            }
+
+            log('📡 Creating new project...');
+            try {
+                const response = await fetch(`${CONVEX_URL}/api/mutation`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        path: 'codeProjects:createProject',
+                        args: {
+                            token,
+                            name: `Test Project ${Date.now()}`,
+                            description: 'Created by real user test'
+                        }
+                    })
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    currentProjectId = data.value.projectId;
+                    currentBranchId = data.value.branchId;
+                    log(`✅ Project created: ${currentProjectId}`, 'success');
+                    log(`✅ Main branch created: ${currentBranchId}`, 'success');
+                } else {
+                    log(`❌ Error: ${data.error}`, 'error');
+                }
+            } catch (err) {
+                log(`❌ Request failed: ${err.message}`, 'error');
+            }
+        }
+
+        async function testCreateBranch() {
+            const token = localStorage.getItem('agentai_session_token');
+            if (!token) {
+                log('❌ No token found. Please set token first!', 'error');
+                return;
+            }
+
+            log(`📡 Creating branch in project ${currentProjectId}...`);
+            try {
+                const response = await fetch(`${CONVEX_URL}/api/mutation`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        path: 'codeBranches:createBranch',
+                        args: {
+                            token,
+                            projectId: currentProjectId,
+                            name: `test-${Date.now()}`,
+                            description: 'Test branch from simulator'
+                        }
+                    })
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    currentBranchId = data.value.branchId;
+                    log(`✅ Branch created: ${currentBranchId}`, 'success');
+                } else {
+                    log(`❌ Error: ${data.error}`, 'error');
+                }
+            } catch (err) {
+                log(`❌ Request failed: ${err.message}`, 'error');
+            }
+        }
+
+        async function testStartPipeline() {
+            const token = localStorage.getItem('agentai_session_token');
+            if (!token) {
+                log('❌ No token found. Please set token first!', 'error');
+                return;
+            }
+
+            log(`📡 Starting pipeline on branch ${currentBranchId}...`);
+            try {
+                const response = await fetch(`${CONVEX_URL}/api/action`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        path: 'codePipeline:startPipeline',
+                        args: {
+                            token,
+                            branchId: currentBranchId,
+                            userPrompt: 'Create a simple todo list app with HTML, CSS and JavaScript'
+                        }
+                    })
+                });
+
+                const data = await response.json();
+                if (data.status === 'success' || data.status === undefined) {
+                    log(`✅ Pipeline started successfully!`, 'success');
+                    log(`   Check status at: /portal/code/${currentProjectId}/${currentBranchId}`, 'success');
+                } else {
+                    log(`❌ Error: ${data.error}`, 'error');
+                }
+            } catch (err) {
+                log(`❌ Request failed: ${err.message}`, 'error');
+            }
+        }
+
+        function openCodeMode() {
+            window.open(`http://localhost:5173/portal/code`, '_blank');
+            log('✅ Opened /portal/code in new tab', 'success');
+        }
+
+        function openTestBranch() {
+            window.open(`http://localhost:5173/portal/code/${currentProjectId}/${currentBranchId}`, '_blank');
+            log(`✅ Opened test branch in new tab`, 'success');
+        }
+
+        // Auto-check token on load
+        window.onload = function() {
+            const token = localStorage.getItem('agentai_session_token');
+            if (token) {
+                log(`ℹ️ Found existing token: ${token.slice(0, 20)}...`);
+            } else {
+                log(`ℹ️ No token found. Please set one to continue.`);
+            }
+        };
+    </script>
+</body>
+</html>

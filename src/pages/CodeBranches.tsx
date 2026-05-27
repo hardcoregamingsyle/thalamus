@@ -16,7 +16,7 @@ import { motion } from "framer-motion";
 export default function CodeBranches() {
   const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
-  const token = localStorage.getItem("customToken") || "";
+  const token = localStorage.getItem("agentai_session_token") || "";
 
   const project = useQuery(api.codeProjects.getProject, token && projectId ? { token, projectId } : "skip");
   const branches = useQuery(api.codeBranches.listBranches, token && projectId ? { token, projectId } : "skip");
