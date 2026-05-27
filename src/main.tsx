@@ -18,6 +18,9 @@ const SyncPage = lazy(() => import("./pages/Sync"));
 const TeamPortal = lazy(() => import("./pages/TeamPortal"));
 const ReferPage = lazy(() => import("./pages/Refer"));
 const AdminPage = lazy(() => import("./pages/Admin"));
+const CodeProjects = lazy(() => import("./pages/CodeProjects"));
+const CodeBranches = lazy(() => import("./pages/CodeBranches"));
+const CodeWorkspace = lazy(() => import("./pages/CodeWorkspace"));
 
 // Simple loading fallback for route transitions
 function RouteLoading() {
@@ -67,8 +70,12 @@ createRoot(document.getElementById("root")!).render(
             <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/auth" element={<AuthPage redirectAfterAuth="/portal/chat" />} />
-              <Route path="/portal/code" element={<TeamPortal />} />
-              <Route path="/portal/code/:sessionId" element={<TeamPortal />} />
+              {/* New Code Mode Routes */}
+              <Route path="/portal/code" element={<CodeProjects />} />
+              <Route path="/portal/code/:projectId" element={<CodeBranches />} />
+              <Route path="/portal/code/:projectId/:branchId" element={<CodeWorkspace />} />
+              <Route path="/portal/code/:projectId/:branchId/:subpage" element={<CodeWorkspace />} />
+              {/* Old Routes */}
               <Route path="/portal" element={<Portal />} />
               <Route path="/portal/:mode" element={<Portal />} />
               <Route path="/portal/:mode/:sessionId" element={<Portal />} />
