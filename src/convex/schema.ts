@@ -80,6 +80,104 @@ const schema = defineSchema(
       .index("by_user_and_mode", ["userId", "mode"])
       .index("by_custom_id", ["customId"]),
 
+    // ── NEW CODE MODE SYSTEM ──────────────────────────────────────────────────────
+    codeProjects: defineTable({
+      userId: v.id("users"),
+      projectId: v.string(), // 10 character ID, all caps, letters and numbers
+      name: v.string(),
+      description: v.optional(v.string()),
+      convexProjectId: v.optional(v.string()), // User's Convex project ID
+      convexDeploymentUrl: v.optional(v.string()),
+      createdAt: v.number(),
+      lastActivityAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_project_id", ["projectId"])
+      .index("by_user_and_project", ["userId", "projectId"]),
+
+    codeBranches: defineTable({
+      projectId: v.string(),
+      branchId: v.string(), // 10 character ID, all caps
+      name: v.string(),
+      description: v.optional(v.string()),
+      createdAt: v.number(),
+      lastActivityAt: v.number(),
+      // Agent pipeline state
+      status: v.union(v.literal("running"), v.literal("completed"), v.literal("idle"), v.literal("paused")),
+      currentAgent: v.optional(v.string()),
+      phase: v.optional(v.string()),
+      executionPhase: v.optional(v.string()), // "planning" or "executing"
+      currentTaskIndex: v.optional(v.number()),
+      totalMessages: v.optional(v.number()),
+      round: v.optional(v.number()),
+      plannerTasksJson: v.optional(v.string()),
+      currentTaskDifficulty: v.optional(v.string()),
+      // VM configuration
+      vmRam: v.optional(v.number()),
+      vmCores: v.optional(v.number()),
+      vmOs: v.optional(v.string()),
+    })
+      .index("by_project", ["projectId"])
+      .index("by_branch_id", ["branchId"])
+      .index("by_project_and_branch", ["projectId", "branchId"]),
+
+    codeMessages: defineTable({
+      branchId: v.string(),
+      agent: v.string(),
+      content: v.string(),
+      round: v.optional(v.number()),
+      messageIndex: v.optional(v.number()),
+      createdAt: v.number(),
+    })
+      .index("by_branch", ["branchId"])
+      .index("by_branch_and_index", ["branchId", "messageIndex"]),
+
+    codeFiles: defineTable({
+      branchId: v.string(),
+      filepath: v.string(),
+      content: v.string(),
+      lastModifiedBy: v.string(),
+      lastModifiedAt: v.number(),
+    })
+      .index("by_branch", ["branchId"])
+      .index("by_branch_and_path", ["branchId", "filepath"]),
+
+    codeCommands: defineTable({
+      branchId: v.string(),
+      agent: v.string(),
+      command: v.string(),
+      status: v.union(v.literal("pending"), v.literal("running"), v.literal("completed"), v.literal("failed")),
+      output: v.optional(v.string()),
+      exitCode: v.optional(v.number()),
+      createdAt: v.number(),
+      completedAt: v.optional(v.number()),
+    })
+      .index("by_branch", ["branchId"])
+      .index("by_branch_and_status", ["branchId", "status"]),
+
+    codeApiKeys: defineTable({
+      projectId: v.string(), // Keys are per-project, shared across branches
+      variableName: v.string(),
+      value: v.string(), // Encrypted
+      description: v.optional(v.string()),
+      howToGet: v.optional(v.string()),
+      createdAt: v.number(),
+    })
+      .index("by_project", ["projectId"])
+      .index("by_project_and_name", ["projectId", "variableName"]),
+
+    codeApiKeyRequests: defineTable({
+      branchId: v.string(),
+      agent: v.string(),
+      variableName: v.string(),
+      description: v.string(),
+      howToGet: v.string(),
+      status: v.union(v.literal("pending"), v.literal("fulfilled"), v.literal("cancelled")),
+      createdAt: v.number(),
+    })
+      .index("by_branch", ["branchId"])
+      .index("by_branch_and_status", ["branchId", "status"]),
+
     messages: defineTable({
       conversationId: v.id("conversations"),
       userId: v.id("users"),
