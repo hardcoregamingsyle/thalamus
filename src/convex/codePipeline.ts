@@ -425,6 +425,17 @@ export const startPipeline = action({
     const sessions = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token }) as any;
     if (!sessions) throw new Error("Not authenticated");
 
+    // Save user message if provided
+    if (args.userPrompt) {
+      await ctx.runMutation(internal.codeBranches.saveMessage, {
+        branchId: args.branchId,
+        agent: "User",
+        content: args.userPrompt,
+        round: 0,
+        messageIndex: 0,
+      });
+    }
+
     await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, {
       branchId: args.branchId,
       userPrompt: args.userPrompt,

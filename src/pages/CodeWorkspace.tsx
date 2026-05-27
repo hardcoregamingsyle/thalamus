@@ -30,7 +30,7 @@ const sidebarItems = [
 export default function CodeWorkspace() {
   const navigate = useNavigate();
   const { projectId, branchId, subpage } = useParams<{ projectId: string; branchId: string; subpage?: string }>();
-  const token = localStorage.getItem("customToken") || "";
+  const token = localStorage.getItem("agentai_session_token") || "";
 
   const branch = useQuery(api.codeBranches.watchBranch, branchId ? { branchId } : "skip");
   const messages = useQuery(api.codeBranches.watchMessages, branchId ? { branchId } : "skip");

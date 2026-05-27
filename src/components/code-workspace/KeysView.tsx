@@ -18,7 +18,7 @@ interface KeysViewProps {
 }
 
 export function KeysView({ projectId, branchId }: KeysViewProps) {
-  const token = localStorage.getItem("customToken") || "";
+  const token = localStorage.getItem("agentai_session_token") || "";
   const keys = useQuery(api.codeApiKeys.listApiKeys, { token, projectId });
   const pendingRequests = useQuery(api.codeApiKeys.watchApiKeyRequests, { branchId });
   const fulfillRequest = useMutation(api.codeApiKeys.fulfillApiKeyRequest);
