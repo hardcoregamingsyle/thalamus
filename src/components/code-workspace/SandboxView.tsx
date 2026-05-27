@@ -172,8 +172,16 @@ export function SandboxView({ branchId }: SandboxViewProps) {
   const stopQemuVM = useAction(api.qemuSandbox.stopQemuVM);
 
   useEffect(() => {
-    // Load v86 script with retry logic
-    const loadV86 = () => {
+    // Only load v86 if we're using a 32-bit OS
+    const loadV86IfNeeded = () => {
+      const config = OS_CONFIGS[selectedOS];
+
+      // Skip v86 loading for 64-bit systems (they use QEMU)
+      if (config.is64Bit) {
+        setV86Loaded(true); // Mark as loaded so UI isn't blocked
+        return;
+      }
+
       if (window.V86) {
         setV86Loaded(true);
         return;
@@ -181,7 +189,8 @@ export function SandboxView({ branchId }: SandboxViewProps) {
 
       const existingScript = document.querySelector('script[src*="libv86.js"]');
       if (existingScript) {
-        existingScript.remove();
+        // Already loading/loaded
+        return;
       }
 
       const script = document.createElement('script');
@@ -190,18 +199,17 @@ export function SandboxView({ branchId }: SandboxViewProps) {
       script.onload = () => {
         console.log("v86 loaded successfully");
         setV86Loaded(true);
-        toast.success("VM library loaded");
+        toast.success("v86 library loaded for 32-bit systems");
       };
       script.onerror = () => {
         console.error("Failed to load v86");
-        toast.error("Failed to load VM library");
-        // Retry after 2 seconds
-        setTimeout(loadV86, 2000);
+        setV86Loaded(false);
+        toast.error("Failed to load v86 library. 32-bit OS may not work.");
       };
       document.body.appendChild(script);
     };
 
-    loadV86();
+    loadV86IfNeeded();
 
     return () => {
       if (emulatorRef.current) {
@@ -212,7 +220,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
         }
       }
     };
-  }, []);
+  }, [selectedOS]);
 
   const handleBootVM = async () => {
     const config = OS_CONFIGS[selectedOS];
@@ -237,13 +245,10 @@ export function SandboxView({ branchId }: SandboxViewProps) {
           setQemuVmId(result.vmId);
           setQemuDisplayUrl(result.displayUrl);
 
-          // Show loading message for server-side VM
-          toast.info(`${config.name} starting on server...`);
-
           // Wait for boot time
           setTimeout(() => {
             setVmStatus("running");
-            toast.success(`${config.name} is ready! Display streaming via noVNC.`);
+            toast.success(`${config.name} is running on server (QEMU)`);
           }, result.bootTime);
         } else {
           throw new Error("Failed to start QEMU VM");
@@ -251,7 +256,8 @@ export function SandboxView({ branchId }: SandboxViewProps) {
       } else {
         // Use v86 for 32-bit systems
         if (!window.V86) {
-          toast.error("VM library still loading... Please wait a moment.");
+          toast.error("v86 library not loaded. Please wait or select a 64-bit OS.");
+          setVmStatus("stopped");
           return;
         }
 
@@ -441,10 +447,10 @@ export function SandboxView({ branchId }: SandboxViewProps) {
               {vmStatus === "booting" && "Booting..."}
               {vmStatus === "stopped" && "Stopped"}
             </Badge>
-            {!v86Loaded && (
+            {!v86Loaded && !currentConfig.is64Bit && (
               <Badge variant="outline" className="bg-orange-500/10 text-orange-600">
                 <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                Loading VM Library...
+                Loading v86 for 32-bit OS...
               </Badge>
             )}
           </div>
@@ -538,7 +544,12 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                   </DialogContent>
                 </Dialog>
 
-                <Button size="sm" onClick={handleBootVM} className="gap-2" disabled={!v86Loaded}>
+                <Button
+                  size="sm"
+                  onClick={handleBootVM}
+                  className="gap-2"
+                  disabled={!currentConfig.is64Bit && !v86Loaded}
+                >
                   <Power className="h-3 w-3" />
                   Boot VM
                 </Button>
