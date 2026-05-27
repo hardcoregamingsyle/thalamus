@@ -14,7 +14,7 @@ export function VersionView({ branchId }: VersionViewProps) {
   const files = useQuery(api.codeBranches.watchFiles, { branchId });
 
   // Group files by last modified time to simulate snapshots
-  const snapshots = files?.reduce((acc: any[], file) => {
+  const snapshots = files?.reduce((acc: any[], file: any) => {
     const existing = acc.find(s => Math.abs(s.timestamp - file.lastModifiedAt) < 60000); // Within 1 minute
     if (existing) {
       existing.files.push(file);
@@ -26,7 +26,7 @@ export function VersionView({ branchId }: VersionViewProps) {
       });
     }
     return acc;
-  }, []).sort((a, b) => b.timestamp - a.timestamp) || [];
+  }, []).sort((a: any, b: any) => b.timestamp - a.timestamp) || [];
 
   return (
     <div className="h-full flex flex-col p-6 space-y-6">
@@ -64,7 +64,7 @@ export function VersionView({ branchId }: VersionViewProps) {
               </div>
             ) : (
               <div className="space-y-4">
-                {snapshots.map((snapshot, idx) => (
+                {snapshots.map((snapshot: any, idx: number) => (
                   <motion.div
                     key={snapshot.timestamp}
                     initial={{ opacity: 0, y: 20 }}

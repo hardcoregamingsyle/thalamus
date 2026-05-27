@@ -129,7 +129,7 @@ export function LogsView({ branchId }: LogsViewProps) {
               <div className="text-center text-muted-foreground py-8">No activity yet</div>
             ) : (
               <div className="space-y-2">
-                {messages.slice(-10).reverse().map((msg, idx) => (
+                {messages.slice(-10).reverse().map((msg: any, idx: number) => (
                   <motion.div
                     key={msg._id}
                     initial={{ opacity: 0, x: -20 }}

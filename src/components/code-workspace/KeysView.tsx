@@ -182,7 +182,7 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
               </div>
             ) : (
               <div className="space-y-3">
-                {keys.map((key, idx) => (
+                {keys.map((key: any, idx: number) => (
                   <motion.div
                     key={key._id}
                     initial={{ opacity: 0, y: 10 }}
