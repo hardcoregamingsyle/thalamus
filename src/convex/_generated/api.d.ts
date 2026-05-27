@@ -36,6 +36,7 @@ import type * as githubSync from "../githubSync.js";
 import type * as githubSyncHelpers from "../githubSyncHelpers.js";
 import type * as hfRagSpace from "../hfRagSpace.js";
 import type * as http from "../http.js";
+import type * as qemuSandbox from "../qemuSandbox.js";
 import type * as rag from "../rag.js";
 import type * as ragHelpers from "../ragHelpers.js";
 import type * as sandbox from "../sandbox.js";
@@ -81,6 +82,7 @@ declare const fullApi: ApiFromModules<{
   githubSyncHelpers: typeof githubSyncHelpers;
   hfRagSpace: typeof hfRagSpace;
   http: typeof http;
+  qemuSandbox: typeof qemuSandbox;
   rag: typeof rag;
   ragHelpers: typeof ragHelpers;
   sandbox: typeof sandbox;
