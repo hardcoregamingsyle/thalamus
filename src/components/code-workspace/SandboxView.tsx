@@ -11,8 +11,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { useAction } from "convex/react";
-import { api } from "@/convex/_generated/api";
 
 interface SandboxViewProps {
   branchId: string;
@@ -46,79 +44,13 @@ declare global {
 }
 
 const OS_CONFIGS: Record<string, VMConfig> = {
-  "windows-11": {
-    os: "windows-11",
-    ram: 6144,
-    cores: 4,
-    name: "Windows 11 Pro",
-    description: "Modern Windows (6GB RAM, 4 cores, 3min boot)",
-    is64Bit: true,
-  },
-  "windows-10": {
-    os: "windows-10",
-    ram: 6144,
-    cores: 4,
-    name: "Windows 10 Pro",
-    description: "Windows 10 (6GB RAM, 4 cores, 2min boot)",
-    is64Bit: true,
-  },
-  "macos-tahoe": {
-    os: "macos-tahoe",
-    ram: 6144,
-    cores: 4,
-    name: "macOS 26 Tahoe",
-    description: "macOS 26 Tahoe (6GB RAM, 4 cores, 4min boot)",
-    is64Bit: true,
-  },
-  "android-13": {
-    os: "android-13",
-    ram: 4096,
-    cores: 4,
-    name: "Android 13",
-    description: "Android 13 x86_64 (4GB RAM, 4 cores, 90s boot)",
-    is64Bit: true,
-  },
-  "ubuntu-22": {
-    os: "ubuntu-22",
-    ram: 6144,
-    cores: 4,
-    name: "Ubuntu 22.04 Desktop",
-    description: "Ubuntu 22.04 Desktop (6GB RAM, 4 cores, 1min boot)",
-    is64Bit: true,
-  },
-  "ios-17": {
-    os: "ios-17",
-    ram: 4096,
-    cores: 2,
-    name: "iOS 17 Simulator",
-    description: "iOS 17 (4GB RAM, 2 cores, experimental)",
-    is64Bit: true,
-  },
-  "windows-xp": {
-    os: "Windows XP",
-    ram: 512,
-    cores: 2,
-    hda: { url: "https://copy.sh/v86/images/windows2k.img", async: true, size: 512 * 1024 * 1024 },
-    name: "Windows XP",
-    description: "Windows XP (512MB, 2 cores, browser-based)",
-    is64Bit: false,
-  },
-  "windows-98": {
-    os: "Windows 98",
-    ram: 256,
-    cores: 1,
-    hda: { url: "https://copy.sh/v86/images/windows98.img", async: true, size: 300 * 1024 * 1024 },
-    name: "Windows 98",
-    description: "Classic Windows (256MB, browser-based)",
-    is64Bit: false,
-  },
   "linux-alpine": {
     os: "Linux Alpine",
     ram: 256,
     cores: 1,
     cdrom: "https://copy.sh/v86/images/linux4.iso",
     name: "Alpine Linux",
-    description: "Lightweight Linux (256MB, boots in 5s, browser-based)",
+    description: "Lightweight Linux (256MB, boots in 5s)",
     is64Bit: false,
   },
   "linux-arch": {
@@ -127,7 +59,25 @@ const OS_CONFIGS: Record<string, VMConfig> = {
     cores: 2,
     cdrom: "https://copy.sh/v86/images/archlinux.iso",
     name: "Arch Linux",
-    description: "Full-featured Linux (512MB, browser-based)",
+    description: "Full Linux distro (512MB, boots in 30s)",
+    is64Bit: false,
+  },
+  "windows-98": {
+    os: "Windows 98",
+    ram: 256,
+    cores: 1,
+    hda: { url: "https://copy.sh/v86/images/windows98.img", async: true, size: 300 * 1024 * 1024 },
+    name: "Windows 98",
+    description: "Classic Windows with GUI (256MB, boots in 90s)",
+    is64Bit: false,
+  },
+  "windows-xp": {
+    os: "Windows XP",
+    ram: 512,
+    cores: 2,
+    hda: { url: "https://copy.sh/v86/images/windows2k.img", async: true, size: 512 * 1024 * 1024 },
+    name: "Windows 2000/XP",
+    description: "Windows 2000 (512MB, 2 cores, boots in 2min)",
     is64Bit: false,
   },
   "kolibrios": {
@@ -136,7 +86,7 @@ const OS_CONFIGS: Record<string, VMConfig> = {
     cores: 1,
     fda: { url: "https://copy.sh/v86/images/kolibri.img", async: false },
     name: "KolibriOS",
-    description: "Tiny OS (64MB, boots instantly, browser-based)",
+    description: "Ultra-fast tiny OS (64MB, boots instantly)",
     is64Bit: false,
   },
   "freedos": {
@@ -145,7 +95,7 @@ const OS_CONFIGS: Record<string, VMConfig> = {
     cores: 1,
     fda: { url: "https://copy.sh/v86/images/freedos722.img", async: false },
     name: "FreeDOS",
-    description: "DOS compatible (64MB, browser-based)",
+    description: "DOS compatible OS (64MB, boots instantly)",
     is64Bit: false,
   },
 };
@@ -157,31 +107,15 @@ export function SandboxView({ branchId }: SandboxViewProps) {
   const [vmStatus, setVmStatus] = useState<"booting" | "running" | "stopped">("stopped");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
-  const [selectedOS, setSelectedOS] = useState("windows-11");
-  const [customRam, setCustomRam] = useState(6144);
-  const [customCores, setCustomCores] = useState(4);
+  const [selectedOS, setSelectedOS] = useState("linux-alpine");
+  const [customRam, setCustomRam] = useState(256);
+  const [customCores, setCustomCores] = useState(1);
   const [v86Loaded, setV86Loaded] = useState(false);
-  const [vmMethod, setVmMethod] = useState<"v86" | "qemu">("qemu");
-  const [qemuVmId, setQemuVmId] = useState<string | null>(null);
-  const [qemuDisplayUrl, setQemuDisplayUrl] = useState<string | null>(null);
   const emulatorRef = useRef<any>(null);
   const screenContainerRef = useRef<HTMLDivElement>(null);
 
-  const startQemuVM = useAction(api.qemuSandbox.startQemuVM);
-  const executeQemuCommand = useAction(api.qemuSandbox.executeQemuCommand);
-  const stopQemuVM = useAction(api.qemuSandbox.stopQemuVM);
-
   useEffect(() => {
-    // Only load v86 if we're using a 32-bit OS
-    const loadV86IfNeeded = () => {
-      const config = OS_CONFIGS[selectedOS];
-
-      // Skip v86 loading for 64-bit systems (they use QEMU)
-      if (config.is64Bit) {
-        setV86Loaded(true); // Mark as loaded so UI isn't blocked
-        return;
-      }
-
+    const loadV86 = () => {
       if (window.V86) {
         setV86Loaded(true);
         return;
@@ -189,7 +123,6 @@ export function SandboxView({ branchId }: SandboxViewProps) {
 
       const existingScript = document.querySelector('script[src*="libv86.js"]');
       if (existingScript) {
-        // Already loading/loaded
         return;
       }
 
@@ -199,17 +132,17 @@ export function SandboxView({ branchId }: SandboxViewProps) {
       script.onload = () => {
         console.log("v86 loaded successfully");
         setV86Loaded(true);
-        toast.success("v86 library loaded for 32-bit systems");
+        toast.success("v86 emulator ready");
       };
       script.onerror = () => {
         console.error("Failed to load v86");
         setV86Loaded(false);
-        toast.error("Failed to load v86 library. 32-bit OS may not work.");
+        toast.error("Failed to load v86 emulator");
       };
       document.body.appendChild(script);
     };
 
-    loadV86IfNeeded();
+    loadV86();
 
     return () => {
       if (emulatorRef.current) {
@@ -220,82 +153,58 @@ export function SandboxView({ branchId }: SandboxViewProps) {
         }
       }
     };
-  }, [selectedOS]);
+  }, []);
 
   const handleBootVM = async () => {
     const config = OS_CONFIGS[selectedOS];
+
+    // Check v86 is loaded
+    if (!window.V86) {
+      toast.error("v86 library not loaded yet. Please wait a moment.");
+      return;
+    }
+
     setVmStatus("booting");
     toast.info(`Booting ${config.name}...`);
 
     try {
-      // Use QEMU for 64-bit systems or high RAM requirements
-      if (config.is64Bit || customRam > 2048) {
-        setVmMethod("qemu");
-        const token = localStorage.getItem("agentai_session_token") || "";
+      const vmConfig: any = {
+        wasm_path: "https://copy.sh/v86/v86.wasm",
+        memory_size: customRam * 1024 * 1024,
+        vga_memory_size: 8 * 1024 * 1024,
+        screen_container: screenContainerRef.current,
+        bios: {
+          url: "https://copy.sh/v86/bios/seabios.bin",
+        },
+        vga_bios: {
+          url: "https://copy.sh/v86/bios/vgabios.bin",
+        },
+        autostart: true,
+      };
 
-        const result = await startQemuVM({
-          token,
-          branchId,
-          os: config.os,
-          ram: customRam,
-          cores: customCores,
-        });
-
-        if (result.success) {
-          setQemuVmId(result.vmId);
-          setQemuDisplayUrl(result.displayUrl);
-
-          // Wait for boot time
-          setTimeout(() => {
-            setVmStatus("running");
-            toast.success(`${config.name} is running on server (QEMU)`);
-          }, result.bootTime);
-        } else {
-          throw new Error("Failed to start QEMU VM");
-        }
-      } else {
-        // Use v86 for 32-bit systems
-        if (!window.V86) {
-          toast.error("v86 library not loaded. Please wait or select a 64-bit OS.");
-          setVmStatus("stopped");
-          return;
-        }
-
-        setVmMethod("v86");
-
-        const vmConfig: any = {
-          wasm_path: "https://copy.sh/v86/v86.wasm",
-          memory_size: customRam * 1024 * 1024,
-          vga_memory_size: 8 * 1024 * 1024,
-          screen_container: screenContainerRef.current,
-          bios: {
-            url: "https://copy.sh/v86/bios/seabios.bin",
-          },
-          vga_bios: {
-            url: "https://copy.sh/v86/bios/vgabios.bin",
-          },
-          autostart: true,
-        };
-
-        if (config.cdrom) {
-          vmConfig.cdrom = { url: config.cdrom };
-        }
-        if (config.hda) {
-          vmConfig.hda = config.hda;
-        }
-        if (config.fda) {
-          vmConfig.fda = config.fda;
-        }
-
-        const emulator = new window.V86(vmConfig);
-        emulatorRef.current = emulator;
-
-        // Auto-detect when VM is ready
-        setTimeout(() => {
-          setVmStatus("running");
-          toast.success(`${config.name} is ready! Click in display to interact.`);
-        }, config.os === "KolibriOS" || config.os === "FreeDOS" ? 2000 : 5000);
+      if (config.cdrom) {
+        vmConfig.cdrom = { url: config.cdrom };
       }
+      if (config.hda) {
+        vmConfig.hda = config.hda;
+      }
+      if (config.fda) {
+        vmConfig.fda = config.fda;
+      }
+
+      const emulator = new window.V86(vmConfig);
+      emulatorRef.current = emulator;
+
+      // Auto-detect when VM is ready
+      const bootDelay = config.os === "KolibriOS" || config.os === "FreeDOS" ? 2000 :
+                        config.os === "Linux Alpine" ? 5000 :
+                        config.os === "Linux Arch" ? 30000 :
+                        90000; // Windows 98/XP
+
+      setTimeout(() => {
+        setVmStatus("running");
+        toast.success(`${config.name} is ready! Click display to interact.`);
+      }, bootDelay);
     } catch (err) {
       console.error("VM boot error:", err);
       toast.error("Failed to boot VM: " + (err instanceof Error ? err.message : "Unknown error"));
@@ -303,23 +212,17 @@ export function SandboxView({ branchId }: SandboxViewProps) {
     }
   };
 
-  const handleStopVM = async () => {
-    try {
-      if (vmMethod === "qemu" && qemuVmId) {
-        const token = localStorage.getItem("agentai_session_token") || "";
-        await stopQemuVM({ token, vmId: qemuVmId });
-        setQemuVmId(null);
-        setQemuDisplayUrl(null);
-      } else if (emulatorRef.current) {
+  const handleStopVM = () => {
+    if (emulatorRef.current) {
+      try {
         emulatorRef.current.stop();
         emulatorRef.current = null;
+      } catch (err) {
+        console.error("Error stopping VM:", err);
       }
-      setVmStatus("stopped");
-      toast.info("VM stopped");
-    } catch (err) {
-      console.error("Error stopping VM:", err);
-      toast.error("Failed to stop VM");
     }
+    setVmStatus("stopped");
+    toast.info("VM stopped");
   };
 
   const handleResetVM = () => {
@@ -358,28 +261,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
     setIsExecuting(true);
 
     try {
-      if (vmMethod === "qemu" && qemuVmId) {
-        const token = localStorage.getItem("agentai_session_token") || "";
-        const result = await executeQemuCommand({
-          token,
-          vmId: qemuVmId,
-          command: cmd,
-        });
-
-        setCommandLogs((prev) =>
-          prev.map((log) =>
-            log.id === logId
-              ? {
-                  ...log,
-                  isRunning: false,
-                  output: result.output || "Command queued for QEMU VM",
-                }
-              : log
-          )
-        );
-        setIsExecuting(false);
-        toast.success("Command sent to QEMU VM");
-      } else if (emulatorRef.current) {
+      if (emulatorRef.current) {
         emulatorRef.current.serial0_send(cmd + "\n");
 
         setTimeout(() => {
@@ -395,7 +277,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
             )
           );
           setIsExecuting(false);
-          toast.success("Command executed");
+          toast.success("Command sent");
         }, 500);
       }
     } catch (err) {
@@ -421,13 +303,8 @@ export function SandboxView({ branchId }: SandboxViewProps) {
 
   const currentConfig = OS_CONFIGS[selectedOS];
 
-  // Determine max RAM based on OS type
-  const getMaxRam = (osKey: string) => {
-    const isMobileOS = osKey === "ios-17" || osKey === "android-13";
-    return isMobileOS ? 8192 : 16384;
-  };
-
-  const maxRamForCurrentOS = getMaxRam(selectedOS);
+  // All systems use v86 now, max 2GB
+  const maxRamForCurrentOS = 2048;
 
   return (
     <div className="h-full flex flex-col">
@@ -447,10 +324,10 @@ export function SandboxView({ branchId }: SandboxViewProps) {
               {vmStatus === "booting" && "Booting..."}
               {vmStatus === "stopped" && "Stopped"}
             </Badge>
-            {!v86Loaded && !currentConfig.is64Bit && (
+            {!v86Loaded && (
               <Badge variant="outline" className="bg-orange-500/10 text-orange-600">
                 <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                Loading v86 for 32-bit OS...
+                Loading v86...
               </Badge>
             )}
           </div>
@@ -483,9 +360,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                           onValueChange={(value) => {
                             setSelectedOS(value);
                             const config = OS_CONFIGS[value];
-                            // Ensure RAM doesn't exceed new OS max
-                            const maxRam = getMaxRam(value);
-                            setCustomRam(Math.min(config.ram, maxRam));
+                            setCustomRam(config.ram);
                             setCustomCores(config.cores);
                           }}
                         >
@@ -510,19 +385,12 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                           id="ram"
                           type="number"
                           value={customRam}
-                          onChange={(e) => {
-                            const maxRam = getMaxRam(selectedOS);
-                            setCustomRam(Math.max(64, Math.min(maxRam, parseInt(e.target.value) || 256)));
-                          }}
+                          onChange={(e) => setCustomRam(Math.max(64, Math.min(2048, parseInt(e.target.value) || 256)))}
                           min={64}
-                          max={maxRamForCurrentOS}
+                          max={2048}
                         />
                         <p className="text-xs text-muted-foreground">
-                          {selectedOS === "ios-17" || selectedOS === "android-13"
-                            ? "64MB - 8GB (mobile OS limit)"
-                            : currentConfig.is64Bit
-                            ? "64MB - 16GB (desktop OS, QEMU server)"
-                            : "64MB - 2GB (browser v86 limit)"}
+                          64MB - 2GB (browser v86 limit)
                         </p>
                       </div>
                       <div className="space-y-2">
@@ -548,7 +416,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                   size="sm"
                   onClick={handleBootVM}
                   className="gap-2"
-                  disabled={!currentConfig.is64Bit && !v86Loaded}
+                  disabled={!v86Loaded}
                 >
                   <Power className="h-3 w-3" />
                   Boot VM
@@ -582,10 +450,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
               <p className="text-lg font-medium mb-2">VM is stopped</p>
               <p className="text-sm text-white/60 mb-4">Click "Configure" to select OS, then "Boot VM"</p>
               <p className="text-xs text-white/40">
-                64-bit OS (Windows 11/10, macOS, Android, iOS, Ubuntu) use server QEMU
-              </p>
-              <p className="text-xs text-white/40">
-                32-bit OS (Windows 98/XP, Linux, FreeDOS) use browser v86
+                All systems run in your browser using v86 emulator
               </p>
             </div>
           )}
@@ -596,23 +461,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
               <p className="text-lg font-medium mb-2">Booting {currentConfig.name}...</p>
               <p className="text-sm text-white/60">{currentConfig.description}</p>
               <p className="text-xs text-white/40 mt-2">
-                {currentConfig.is64Bit ? "Server-side QEMU (64-bit)" : "Browser-based v86 (32-bit)"}
-              </p>
-            </div>
-          )}
-
-          {vmStatus === "running" && vmMethod === "qemu" && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10">
-              <Monitor className="h-16 w-16 mb-4 opacity-50" />
-              <p className="text-lg font-medium mb-2">{currentConfig.name} Running</p>
-              <p className="text-sm text-white/60 mb-4">
-                VM ID: {qemuVmId}
-              </p>
-              <p className="text-xs text-white/40">
-                Server-side QEMU VM with {customRam}MB RAM, {customCores} cores
-              </p>
-              <p className="text-xs text-white/40 mt-2">
-                Display streaming via noVNC (integration in progress)
+                Running in browser with v86 emulator
               </p>
             </div>
           )}
