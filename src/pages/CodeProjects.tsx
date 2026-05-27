@@ -14,7 +14,7 @@ import { motion } from "framer-motion";
 
 export default function CodeProjects() {
   const navigate = useNavigate();
-  const token = localStorage.getItem("customToken") || "";
+  const token = localStorage.getItem("agentai_session_token") || "";
   const projects = useQuery(api.codeProjects.listProjects, token ? { token } : "skip");
   const createProject = useMutation(api.codeProjects.createProject);
   const deleteProject = useMutation(api.codeProjects.deleteProject);
