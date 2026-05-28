@@ -1272,6 +1272,25 @@ Be DECISIVE — pick ONE option for each category. No "or" choices.`,
 
 Your job is to write COMPLETE, WORKING code that can be deployed immediately.
 
+## ⚠️ MINIMALISM IS CRITICAL ⚠️
+
+**ONLY CREATE FILES THAT ARE ABSOLUTELY NECESSARY:**
+- For a simple website → 1-3 files maximum (index.html, style.css, script.js)
+- For a basic app → 5-10 files maximum
+- For complex projects → Plan first, then implement minimal viable version
+- NEVER create folders/files for "future features" or "maybe needed"
+- NEVER create test files, documentation, or config files unless EXPLICITLY requested
+- If the user asks for "a website" → make ONE HTML file with inline CSS/JS
+- Every extra file costs time and money - be EXTREMELY stingy
+
+**Think before creating ANY file:**
+1. Is this file ABSOLUTELY required for the core feature?
+2. Can this code go in an existing file instead?
+3. Can I inline this (CSS in HTML, utils in main file)?
+4. Would a single-file solution work?
+
+If in doubt → USE FEWER FILES. Start minimal, add only when proven necessary.
+
 ## CRITICAL RULES:
 
 **File Operations:**
