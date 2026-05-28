@@ -1,16 +1,13 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Plus, FolderGit2, Clock, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+import { NewProjectDialog } from "@/components/code/NewProjectDialog";
 
 export default function CodeProjects() {
   const navigate = useNavigate();
@@ -18,36 +15,48 @@ export default function CodeProjects() {
   const projects = useQuery(api.codeProjects.listProjects, token ? { token } : "skip");
   const createProject = useMutation(api.codeProjects.createProject);
   const deleteProject = useMutation(api.codeProjects.deleteProject);
+  const cloneRepository = useAction(api.githubSync.cloneRepository);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [newProjectName, setNewProjectName] = useState("");
-  const [newProjectDesc, setNewProjectDesc] = useState("");
-  const [isCreating, setIsCreating] = useState(false);
 
-  const handleCreateProject = async () => {
-    if (!newProjectName.trim()) {
-      toast.error("Project name is required");
-      return;
+  const handleCreateScratch = async (name: string, description?: string) => {
+    const result = await createProject({
+      token,
+      name,
+      description,
+    });
+    toast.success("Project created!");
+    navigate(`/portal/code/${result.projectId}`);
+  };
+
+  const handleImportGitHub = async (githubToken: string, repo: string, branches: string[]) => {
+    // Create project first
+    const projectName = repo.split("/")[1] || repo;
+    const result = await createProject({
+      token,
+      name: projectName,
+      description: `Imported from GitHub: ${repo}`,
+    });
+
+    const projectId = result.projectId;
+
+    // Import each branch
+    for (const branch of branches) {
+      try {
+        await cloneRepository({
+          token,
+          projectId,
+          branchId: result.mainBranchId, // Will create branches dynamically
+          repoUrl: `https://github.com/${repo}`,
+          githubToken,
+        });
+        toast.success(`Imported branch: ${branch}`);
+      } catch (err) {
+        toast.error(`Failed to import ${branch}: ${err instanceof Error ? err.message : "Unknown error"}`);
+      }
     }
 
-    setIsCreating(true);
-    try {
-      const result = await createProject({
-        token,
-        name: newProjectName.trim(),
-        description: newProjectDesc.trim() || undefined,
-      });
-      toast.success("Project created!");
-      setIsCreateOpen(false);
-      setNewProjectName("");
-      setNewProjectDesc("");
-      // Navigate to the new project
-      navigate(`/portal/code/${result.projectId}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create project");
-    } finally {
-      setIsCreating(false);
-    }
+    navigate(`/portal/code/${projectId}`);
   };
 
   const handleDeleteProject = async (projectId: string) => {
@@ -86,52 +95,17 @@ export default function CodeProjects() {
               <h1 className="text-3xl font-bold tracking-tight">Thalamus Code</h1>
               <p className="text-muted-foreground mt-1">Build anything with AI-powered development</p>
             </div>
-            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-              <DialogTrigger asChild>
-                <Button size="lg" className="gap-2">
-                  <Plus className="h-5 w-5" />
-                  New Project
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create New Project</DialogTitle>
-                  <DialogDescription>
-                    Start a new AI-powered development project
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Project Name</Label>
-                    <Input
-                      id="name"
-                      placeholder="My Awesome Project"
-                      value={newProjectName}
-                      onChange={(e) => setNewProjectName(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleCreateProject()}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="description">Description (Optional)</Label>
-                    <Textarea
-                      id="description"
-                      placeholder="What are you building?"
-                      value={newProjectDesc}
-                      onChange={(e) => setNewProjectDesc(e.target.value)}
-                      rows={3}
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleCreateProject} disabled={isCreating}>
-                    {isCreating ? "Creating..." : "Create Project"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            <Button size="lg" className="gap-2" onClick={() => setIsCreateOpen(true)}>
+              <Plus className="h-5 w-5" />
+              New Project
+            </Button>
+
+            <NewProjectDialog
+              open={isCreateOpen}
+              onOpenChange={setIsCreateOpen}
+              onCreateScratch={handleCreateScratch}
+              onImportGitHub={handleImportGitHub}
+            />
           </div>
         </div>
       </div>

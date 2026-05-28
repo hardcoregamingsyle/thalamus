@@ -1,17 +1,14 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Plus, GitBranch, Clock, Play, Pause, CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+import { NewBranchDialog } from "@/components/code/NewBranchDialog";
 
 export default function CodeBranches() {
   const navigate = useNavigate();
@@ -21,35 +18,54 @@ export default function CodeBranches() {
   const project = useQuery(api.codeProjects.getProject, token && projectId ? { token, projectId } : "skip");
   const branches = useQuery(api.codeBranches.listBranches, token && projectId ? { token, projectId } : "skip");
   const createBranch = useMutation(api.codeBranches.createBranch);
+  const cloneRepository = useAction(api.githubSync.cloneRepository);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [newBranchName, setNewBranchName] = useState("");
-  const [newBranchDesc, setNewBranchDesc] = useState("");
-  const [isCreating, setIsCreating] = useState(false);
 
-  const handleCreateBranch = async () => {
-    if (!newBranchName.trim() || !projectId) {
-      toast.error("Branch name is required");
-      return;
-    }
+  const handleCreateScratch = async (name: string, description?: string) => {
+    if (!projectId) return;
 
-    setIsCreating(true);
-    try {
+    const result = await createBranch({
+      token,
+      projectId,
+      name,
+      description,
+    });
+    toast.success("Branch created!");
+    navigate(`/portal/code/${projectId}/${result.branchId}`);
+  };
+
+  const handleImportGitHub = async (githubToken: string, repo: string, branches: string[]) => {
+    if (!projectId) return;
+
+    // Import each selected branch
+    for (const branchName of branches) {
       const result = await createBranch({
         token,
         projectId,
-        name: newBranchName.trim(),
-        description: newBranchDesc.trim() || undefined,
+        name: branchName,
+        description: `Imported from GitHub: ${repo}/${branchName}`,
       });
-      toast.success("Branch created!");
-      setIsCreateOpen(false);
-      setNewBranchName("");
-      setNewBranchDesc("");
-      navigate(`/portal/code/${projectId}/${result.branchId}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create branch");
-    } finally {
-      setIsCreating(false);
+
+      try {
+        await cloneRepository({
+          token,
+          projectId,
+          branchId: result.branchId,
+          repoUrl: `https://github.com/${repo}`,
+          githubToken,
+        });
+        toast.success(`Imported branch: ${branchName}`);
+      } catch (err) {
+        toast.error(`Failed to import ${branchName}: ${err instanceof Error ? err.message : "Unknown error"}`);
+      }
+    }
+
+    // Navigate to first imported branch
+    if (branches.length > 0) {
+      const firstBranch = branches[0];
+      const matchingBranch = await branches.find((b: any) => b.name === firstBranch);
+      navigate(`/portal/code/${projectId}`);
     }
   };
 
@@ -100,52 +116,18 @@ export default function CodeBranches() {
                 {project?.description || "Manage your project branches"}
               </p>
             </div>
-            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-              <DialogTrigger asChild>
-                <Button size="lg" className="gap-2">
-                  <Plus className="h-5 w-5" />
-                  New Branch
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create New Branch</DialogTitle>
-                  <DialogDescription>
-                    Create a new development branch with its own codebase
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Branch Name</Label>
-                    <Input
-                      id="name"
-                      placeholder="feature-xyz"
-                      value={newBranchName}
-                      onChange={(e) => setNewBranchName(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleCreateBranch()}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="description">Description (Optional)</Label>
-                    <Textarea
-                      id="description"
-                      placeholder="What will you build in this branch?"
-                      value={newBranchDesc}
-                      onChange={(e) => setNewBranchDesc(e.target.value)}
-                      rows={3}
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleCreateBranch} disabled={isCreating}>
-                    {isCreating ? "Creating..." : "Create Branch"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            <Button size="lg" className="gap-2" onClick={() => setIsCreateOpen(true)}>
+              <Plus className="h-5 w-5" />
+              New Branch
+            </Button>
+
+            <NewBranchDialog
+              open={isCreateOpen}
+              onOpenChange={setIsCreateOpen}
+              projectId={projectId}
+              onCreateScratch={handleCreateScratch}
+              onImportGitHub={handleImportGitHub}
+            />
           </div>
           <div className="font-mono text-sm text-muted-foreground">
             Project ID: {projectId}
