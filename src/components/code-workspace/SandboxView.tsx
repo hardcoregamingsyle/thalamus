@@ -44,13 +44,53 @@ declare global {
 }
 
 const OS_CONFIGS: Record<string, VMConfig> = {
+  "windows-11": {
+    os: "windows-11",
+    ram: 6144,
+    cores: 4,
+    name: "Windows 11 Pro",
+    description: "Modern Windows (6GB RAM, requires bridge)",
+    is64Bit: true,
+  },
+  "windows-10": {
+    os: "windows-10",
+    ram: 6144,
+    cores: 4,
+    name: "Windows 10 Pro",
+    description: "Windows 10 (6GB RAM, requires bridge)",
+    is64Bit: true,
+  },
+  "ubuntu-24": {
+    os: "ubuntu-24",
+    ram: 4096,
+    cores: 4,
+    name: "Ubuntu 24.04 LTS",
+    description: "Ubuntu Desktop (4GB RAM, requires bridge)",
+    is64Bit: true,
+  },
+  "macos-sequoia": {
+    os: "macos-sequoia",
+    ram: 6144,
+    cores: 4,
+    name: "macOS Sequoia",
+    description: "Latest macOS (6GB RAM, requires bridge)",
+    is64Bit: true,
+  },
+  "android-14": {
+    os: "android-14",
+    ram: 4096,
+    cores: 4,
+    name: "Android 14",
+    description: "Android x86_64 (4GB RAM, requires bridge)",
+    is64Bit: true,
+  },
   "linux-alpine": {
     os: "Linux Alpine",
     ram: 256,
     cores: 1,
     cdrom: "https://copy.sh/v86/images/linux4.iso",
     name: "Alpine Linux",
-    description: "Lightweight Linux (256MB, boots in 5s)",
+    description: "Lightweight Linux (256MB, instant, browser)",
     is64Bit: false,
   },
   "linux-arch": {
@@ -59,7 +99,7 @@ const OS_CONFIGS: Record<string, VMConfig> = {
     cores: 2,
     cdrom: "https://copy.sh/v86/images/archlinux.iso",
     name: "Arch Linux",
-    description: "Full Linux distro (512MB, boots in 30s)",
+    description: "Full Linux (512MB, browser)",
     is64Bit: false,
   },
   "windows-98": {
@@ -68,7 +108,7 @@ const OS_CONFIGS: Record<string, VMConfig> = {
     cores: 1,
     hda: { url: "https://copy.sh/v86/images/windows98.img", async: true, size: 300 * 1024 * 1024 },
     name: "Windows 98",
-    description: "Classic Windows with GUI (256MB)",
+    description: "Classic Windows (256MB, browser)",
     is64Bit: false,
   },
   "kolibrios": {
@@ -77,7 +117,7 @@ const OS_CONFIGS: Record<string, VMConfig> = {
     cores: 1,
     fda: { url: "https://copy.sh/v86/images/kolibri.img", async: false },
     name: "KolibriOS",
-    description: "Ultra-fast tiny OS (64MB, instant boot)",
+    description: "Tiny OS (64MB, instant, browser)",
     is64Bit: false,
   },
 };
@@ -89,10 +129,13 @@ export function SandboxView({ branchId }: SandboxViewProps) {
   const [vmStatus, setVmStatus] = useState<"booting" | "running" | "stopped">("stopped");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
-  const [selectedOS, setSelectedOS] = useState("linux-alpine");
-  const [customRam, setCustomRam] = useState(256);
-  const [customCores, setCustomCores] = useState(1);
+  const [selectedOS, setSelectedOS] = useState("windows-11");
+  const [customRam, setCustomRam] = useState(6144);
+  const [customCores, setCustomCores] = useState(4);
   const [v86Loaded, setV86Loaded] = useState(false);
+  const [bridgeConnected, setBridgeConnected] = useState(false);
+  const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
+  const [currentVmId, setCurrentVmId] = useState<string | null>(null);
   const emulatorRef = useRef<any>(null);
   const screenContainerRef = useRef<HTMLDivElement>(null);
 
@@ -137,9 +180,70 @@ export function SandboxView({ branchId }: SandboxViewProps) {
     };
   }, []);
 
+  const testBridgeConnection = async () => {
+    try {
+      const ws = new WebSocket('ws://localhost:5900');
+
+      await new Promise((resolve, reject) => {
+        ws.onopen = () => {
+          setBridgeConnected(true);
+          setWsConnection(ws);
+          toast.success("Bridge connected!");
+          resolve(true);
+        };
+        ws.onerror = () => {
+          setBridgeConnected(false);
+          toast.error("Bridge not running. Start: cd qemu-bridge && npm start");
+          reject();
+        };
+        setTimeout(() => reject(new Error("Timeout")), 3000);
+      });
+    } catch (err) {
+      setBridgeConnected(false);
+    }
+  };
+
   const handleBootVM = async () => {
     const config = OS_CONFIGS[selectedOS];
 
+    // 64-bit systems need bridge
+    if (config.is64Bit) {
+      if (!bridgeConnected || !wsConnection) {
+        toast.error("Bridge not connected. Testing connection...");
+        await testBridgeConnection();
+        return;
+      }
+
+      setVmStatus("booting");
+      toast.info(`Booting ${config.name} via QEMU...`);
+
+      wsConnection.send(JSON.stringify({
+        action: 'boot',
+        os: config.os,
+        ram: customRam,
+        cores: customCores,
+      }));
+
+      wsConnection.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.status === 'ready') {
+          setVmStatus("running");
+          setCurrentVmId(data.vmId);
+          toast.success(`${config.name} ready! VNC: localhost:${data.vncPort}`);
+          toast.info(`Connect VNC viewer to localhost:${data.vncPort}`);
+        } else if (data.status === 'booting' || data.status === 'checking-image' || data.status === 'creating-disk') {
+          toast.info(data.status.replace(/-/g, ' '));
+        } else if (data.error) {
+          toast.error(data.error);
+          setVmStatus("stopped");
+        }
+      };
+
+      return;
+    }
+
+    // 32-bit systems use v86
     if (!window.V86) {
       toast.error("v86 library not loaded yet. Please wait a moment.");
       return;
@@ -194,7 +298,15 @@ export function SandboxView({ branchId }: SandboxViewProps) {
   };
 
   const handleStopVM = () => {
-    if (emulatorRef.current) {
+    const config = OS_CONFIGS[selectedOS];
+
+    if (config.is64Bit && wsConnection && currentVmId) {
+      wsConnection.send(JSON.stringify({
+        action: 'stop',
+        vmId: currentVmId,
+      }));
+      setCurrentVmId(null);
+    } else if (emulatorRef.current) {
       try {
         emulatorRef.current.stop();
         emulatorRef.current = null;
@@ -284,7 +396,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
 
   const currentConfig = OS_CONFIGS[selectedOS];
 
-  const maxRamForCurrentOS = 2048; // v86 browser limit
+  const maxRamForCurrentOS = currentConfig.is64Bit ? 16384 : 2048;
 
   return (
     <div className="h-full flex flex-col">
@@ -304,10 +416,19 @@ export function SandboxView({ branchId }: SandboxViewProps) {
               {vmStatus === "booting" && "Booting..."}
               {vmStatus === "stopped" && "Stopped"}
             </Badge>
-            {!v86Loaded && (
+            {!v86Loaded && !currentConfig.is64Bit && (
               <Badge variant="outline" className="bg-orange-500/10 text-orange-600">
                 <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                 Loading v86...
+              </Badge>
+            )}
+
+            {currentConfig.is64Bit && (
+              <Badge
+                variant="outline"
+                className={bridgeConnected ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}
+              >
+                Bridge: {bridgeConnected ? "Connected" : "Disconnected"}
               </Badge>
             )}
           </div>
@@ -318,6 +439,17 @@ export function SandboxView({ branchId }: SandboxViewProps) {
 
             {vmStatus === "stopped" && (
               <>
+                {currentConfig.is64Bit && !bridgeConnected && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-2 border-orange-500 text-orange-600"
+                    onClick={testBridgeConnection}
+                  >
+                    Connect Bridge
+                  </Button>
+                )}
+
                 <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
                   <DialogTrigger asChild>
                     <Button size="sm" variant="outline" className="gap-2">
@@ -365,12 +497,12 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                           id="ram"
                           type="number"
                           value={customRam}
-                          onChange={(e) => setCustomRam(Math.max(64, Math.min(2048, parseInt(e.target.value) || 256)))}
+                          onChange={(e) => setCustomRam(Math.max(64, Math.min(maxRamForCurrentOS, parseInt(e.target.value) || 256)))}
                           min={64}
-                          max={2048}
+                          max={maxRamForCurrentOS}
                         />
                         <p className="text-xs text-muted-foreground">
-                          64MB - 2GB (browser v86 limit)
+                          {currentConfig.is64Bit ? "64MB - 16GB (QEMU via bridge)" : "64MB - 2GB (browser v86)"}
                         </p>
                       </div>
                       <div className="space-y-2">
@@ -396,7 +528,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                   size="sm"
                   onClick={handleBootVM}
                   className="gap-2"
-                  disabled={!v86Loaded}
+                  disabled={currentConfig.is64Bit ? !bridgeConnected : !v86Loaded}
                 >
                   <Power className="h-3 w-3" />
                   Boot VM
@@ -428,10 +560,21 @@ export function SandboxView({ branchId }: SandboxViewProps) {
             <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10">
               <Power className="h-16 w-16 mb-4 opacity-50" />
               <p className="text-lg font-medium mb-2">VM is stopped</p>
-              <p className="text-sm text-white/60 mb-4">Click "Configure" to select OS, then "Boot VM"</p>
-              <p className="text-xs text-white/40">
-                All systems run in browser via v86 emulator
+              <p className="text-sm text-white/60 mb-4">
+                {currentConfig.is64Bit && !bridgeConnected
+                  ? 'Click "Connect Bridge" then "Boot VM"'
+                  : 'Click "Configure" to select OS, then "Boot VM"'}
               </p>
+              <p className="text-xs text-white/40">
+                {currentConfig.is64Bit
+                  ? "64-bit systems run via QEMU bridge (requires setup)"
+                  : "32-bit systems run in browser (instant)"}
+              </p>
+              {currentConfig.is64Bit && !bridgeConnected && (
+                <p className="text-xs text-orange-400 mt-2">
+                  Start bridge: cd qemu-bridge && npm start
+                </p>
+              )}
             </div>
           )}
 
@@ -441,7 +584,28 @@ export function SandboxView({ branchId }: SandboxViewProps) {
               <p className="text-lg font-medium mb-2">Booting {currentConfig.name}...</p>
               <p className="text-sm text-white/60">{currentConfig.description}</p>
               <p className="text-xs text-white/40 mt-2">
-                Running in browser via v86 emulator
+                {currentConfig.is64Bit
+                  ? "QEMU launching with native performance..."
+                  : "v86 emulator in browser..."}
+              </p>
+            </div>
+          )}
+
+          {vmStatus === "running" && currentConfig.is64Bit && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10 bg-black/80">
+              <Monitor className="h-16 w-16 mb-4" />
+              <p className="text-lg font-medium mb-2">{currentConfig.name} Running</p>
+              <p className="text-sm text-white/60 mb-4">
+                VM running with {customRam}MB RAM, {customCores} cores
+              </p>
+              <p className="text-xs text-white/40 mb-2">
+                Connect VNC viewer to see display:
+              </p>
+              <code className="bg-black/50 px-4 py-2 rounded text-sm">
+                localhost:5901
+              </code>
+              <p className="text-xs text-white/40 mt-4">
+                VNC Clients: RealVNC, TigerVNC, or Screen Sharing
               </p>
             </div>
           )}
