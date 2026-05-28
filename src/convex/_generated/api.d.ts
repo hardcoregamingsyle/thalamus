@@ -34,6 +34,7 @@ import type * as github from "../github.js";
 import type * as githubHelpers from "../githubHelpers.js";
 import type * as githubSync from "../githubSync.js";
 import type * as githubSyncHelpers from "../githubSyncHelpers.js";
+import type * as githubWebhooks from "../githubWebhooks.js";
 import type * as hfRagSpace from "../hfRagSpace.js";
 import type * as http from "../http.js";
 import type * as qemuSandbox from "../qemuSandbox.js";
@@ -80,6 +81,7 @@ declare const fullApi: ApiFromModules<{
   githubHelpers: typeof githubHelpers;
   githubSync: typeof githubSync;
   githubSyncHelpers: typeof githubSyncHelpers;
+  githubWebhooks: typeof githubWebhooks;
   hfRagSpace: typeof hfRagSpace;
   http: typeof http;
   qemuSandbox: typeof qemuSandbox;

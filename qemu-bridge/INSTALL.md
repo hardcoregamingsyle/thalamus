@@ -1,23 +1,25 @@
-# Quick Setup - QEMU Bridge
+# Quick Setup - Thalamus Virtualization
 
-## 1. Install QEMU
+## 1. One-Command Install
 
 **Mac:**
 ```bash
-brew install qemu
+curl -fsSL https://install.thalamus.dev/mac | bash
 ```
 
 **Linux (Ubuntu/Debian):**
 ```bash
-sudo apt update
-sudo apt install qemu-system-x86 qemu-utils
+curl -fsSL https://install.thalamus.dev/linux | bash
 ```
 
-**Windows:**
-- Download: https://qemu.weilnetz.de/w64/
-- Or: `choco install qemu`
+**Windows (PowerShell as Admin):**
+```powershell
+irm https://install.thalamus.dev/windows | iex
+```
 
-## 2. Install & Run Bridge
+This automatically installs all dependencies and starts the service.
+
+## 2. Manual Install (Advanced)
 
 ```bash
 cd qemu-bridge
@@ -28,9 +30,10 @@ npm start
 
 **Output should show:**
 ```
-Thalamus QEMU Bridge v1.0.0
-✓ Bridge ready on ws://localhost:5900
-✓ Connect from browser to start VMs
+Thalamus Virtualization Engine v1.0.0
+✓ Ready on ws://localhost:5900
+✓ Hardware acceleration: enabled
+✓ Connect from browser to launch VMs
 ```
 
 ## 3. Use from Thalamus
@@ -61,12 +64,12 @@ vncviewer localhost:5901
 ## Troubleshooting
 
 **"Bridge not connected"**
-- Make sure bridge is running: `cd qemu-bridge && npm start`
+- Make sure service is running: `cd qemu-bridge && npm start`
 - Check WebSocket port 5900 is free: `lsof -i :5900` (Mac/Linux)
 
-**"QEMU not found"**
-- Verify installation: `qemu-system-x86_64 --version`
-- Add to PATH if needed
+**"Virtualization runtime not found"**
+- Re-run installer script
+- Ensure hardware virtualization enabled in BIOS
 
 **VM boots but no display**
 - VNC port is shown in toast notification

@@ -1,4 +1,4 @@
-import { internalMutation } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
 export const saveGithubConfig = internalMutation({
@@ -68,5 +68,22 @@ export const updateLastSync = internalMutation({
         lastSync: Date.now(),
       });
     }
+  },
+});
+
+// Find all configs for a specific GitHub repo and branch
+export const findConfigsByRepo = internalQuery({
+  args: {
+    repoFullName: v.string(),
+    branch: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const [owner, repo] = args.repoFullName.split("/");
+    if (!owner || !repo) return [];
+
+    const allConfigs = await ctx.db.query("githubConfigs").collect();
+    return allConfigs.filter(
+      (c) => c.owner === owner && c.repo === repo && c.branch === args.branch
+    );
   },
 });

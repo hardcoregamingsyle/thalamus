@@ -3,6 +3,7 @@ import { auth } from "./auth";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { handlePushWebhook } from "./githubWebhooks";
 
 const http = httpRouter();
 
@@ -381,6 +382,13 @@ http.route({
       },
     });
   }),
+});
+
+// ── GitHub webhook for push events ────────────────────────────────────────────
+http.route({
+  path: "/github/webhook",
+  method: "POST",
+  handler: handlePushWebhook,
 });
 
 // ── GitHub OAuth callback ─────────────────────────────────────────────────────

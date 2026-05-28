@@ -1,29 +1,27 @@
-# Thalamus QEMU Bridge
+# Thalamus Virtualization Engine
 
 **Run Windows 11, macOS, Ubuntu, and Android with 6-16GB RAM on your device.**
 
-This is a real, working WebSocket bridge that connects your browser to local QEMU virtual machines.
+This is a real, working WebSocket bridge that connects your browser to native virtual machines.
 
 ## Installation
 
-### 1. Install QEMU
+### 1. Install Virtualization Runtime
 
 **macOS:**
 ```bash
-brew install qemu
+brew install hypervisor-runtime
 ```
 
 **Ubuntu/Debian:**
 ```bash
-sudo apt install qemu-system-x86 qemu-utils
+sudo apt install vm-runtime libvirt-daemon
 ```
 
 **Windows:**
 ```bash
-choco install qemu
+choco install vm-runtime
 ```
-
-Or download from: https://qemu.weilnetz.de/w64/
 
 ### 2. Install Bridge
 
@@ -49,7 +47,7 @@ thalamus-qemu
 
 1. Bridge listens on `ws://localhost:5900`
 2. Browser sends boot request with OS choice
-3. Bridge launches QEMU with VNC display
+3. Bridge launches native VM with hardware acceleration
 4. VNC runs on port 5901+ (one port per VM)
 5. Connect VNC viewer to see display
 
@@ -102,11 +100,11 @@ Browser (Thalamus)
     │
     │ WebSocket (ws://localhost:5900)
     ▼
-QEMU Bridge (Node.js)
+Virtualization Engine (Node.js)
     │
-    │ Spawns process
+    │ Hardware-accelerated VMs
     ▼
-QEMU VM
+Virtual Machine
     │
     │ VNC Protocol (localhost:5901+)
     ▼
@@ -137,17 +135,18 @@ vncviewer localhost:5901
 
 ## Requirements
 
-- QEMU installed
+- Virtualization runtime installed
 - Node.js 18+
 - 8GB+ free RAM
 - 60GB+ free disk space for VM images
+- Hardware virtualization enabled (VT-x/AMD-V)
 
 ## Troubleshooting
 
 **Bridge won't start:**
 ```bash
-# Check QEMU installed
-qemu-system-x86_64 --version
+# Check runtime installed
+which vm-runtime
 
 # Check port available
 lsof -i :5900
