@@ -309,6 +309,14 @@ export const runPipelineAction = internalAction({
         messageIndex: totalMessages,
       });
 
+      // Auto-push to GitHub after every AI output
+      if (parsed.fileOps.length > 0) {
+        await ctx.scheduler.runAfter(0, internal.githubSync.autoPushToGithub, {
+          branchId,
+          commitMessage: `${agentName}: ${parsed.cleanContent.slice(0, 100)}...`,
+        });
+      }
+
       // ── Advance pipeline ──────────────────────────────────────────────────
       const nextPhaseIndex = phaseIndex + 1;
 

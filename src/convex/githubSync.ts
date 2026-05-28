@@ -1,9 +1,29 @@
 // @ts-nocheck
 "use node";
-import { action } from "./_generated/server";
+import { action, internalAction, query } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Octokit } from "@octokit/rest";
+
+// Get GitHub config for a branch (public query)
+export const getGithubConfig = query({
+  args: {
+    token: v.string(),
+    projectId: v.string(),
+    branchId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, {
+      token: args.token,
+    });
+    if (!userId) return null;
+
+    return await ctx.db
+      .query("githubConfigs")
+      .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
+      .first();
+  },
+});
 
 // Clone repository and sync files to branch
 export const cloneRepository = action({
@@ -186,6 +206,102 @@ export const pushToGithub = action({
     } catch (err) {
       console.error("Push error:", err);
       throw new Error(err instanceof Error ? err.message : "Failed to push to GitHub");
+    }
+  },
+});
+
+// Auto-push to GitHub (internal, no auth check)
+export const autoPushToGithub = internalAction({
+  args: {
+    branchId: v.string(),
+    commitMessage: v.string(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, {
+        branchId: args.branchId,
+      });
+
+      if (!branch) return;
+
+      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfig, {
+        projectId: branch.projectId,
+        branchId: args.branchId,
+      });
+
+      if (!config) return; // No GitHub repo connected, skip push
+
+      const files = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
+        branchId: args.branchId,
+      });
+
+      const octokit = new Octokit({
+        auth: config.githubToken || process.env.GITHUB_TOKEN,
+      });
+
+      const { data: refData } = await octokit.git.getRef({
+        owner: config.owner,
+        repo: config.repo,
+        ref: `heads/${config.branch}`,
+      });
+
+      const latestCommitSha = refData.object.sha;
+
+      const { data: commitData } = await octokit.git.getCommit({
+        owner: config.owner,
+        repo: config.repo,
+        commit_sha: latestCommitSha,
+      });
+
+      const baseTreeSha = commitData.tree.sha;
+
+      const tree = await Promise.all(
+        files.map(async (file) => {
+          const { data: blob } = await octokit.git.createBlob({
+            owner: config.owner,
+            repo: config.repo,
+            content: Buffer.from(file.content).toString("base64"),
+            encoding: "base64",
+          });
+
+          return {
+            path: file.filepath,
+            mode: "100644" as const,
+            type: "blob" as const,
+            sha: blob.sha,
+          };
+        })
+      );
+
+      const { data: newTree } = await octokit.git.createTree({
+        owner: config.owner,
+        repo: config.repo,
+        tree,
+        base_tree: baseTreeSha,
+      });
+
+      const { data: newCommit } = await octokit.git.createCommit({
+        owner: config.owner,
+        repo: config.repo,
+        message: args.commitMessage || "Update from Thalamus AI",
+        tree: newTree.sha,
+        parents: [latestCommitSha],
+      });
+
+      await octokit.git.updateRef({
+        owner: config.owner,
+        repo: config.repo,
+        ref: `heads/${config.branch}`,
+        sha: newCommit.sha,
+      });
+
+      await ctx.runMutation(internal.githubSyncHelpers.updateLastSync, {
+        projectId: branch.projectId,
+        branchId: args.branchId,
+      });
+    } catch (err) {
+      console.error("Auto-push error:", err);
+      // Silent fail - don't block pipeline
     }
   },
 });
