@@ -50,6 +50,7 @@ export default function CodeWorkspace() {
   const messages = useQuery(api.codeBranches.watchMessages, branchId ? { branchId } : "skip");
   const files = useQuery(api.codeBranches.watchFiles, branchId ? { branchId } : "skip");
   const startPipeline = useAction(api.codePipeline.startPipeline);
+  const stopPipeline = useAction(api.codePipeline.stopPipeline);
 
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -74,6 +75,17 @@ export default function CodeWorkspace() {
       setInput(userPrompt);
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const handleStop = async () => {
+    if (!branchId) return;
+
+    try {
+      await stopPipeline({ token, branchId });
+      toast.success("Pipeline stopped");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to stop pipeline");
     }
   };
 
@@ -215,18 +227,29 @@ export default function CodeWorkspace() {
                     className="min-h-[60px] resize-none"
                     disabled={isSending || branch?.status === "running"}
                   />
-                  <Button
-                    size="lg"
-                    onClick={handleSend}
-                    disabled={!input.trim() || isSending || branch?.status === "running"}
-                    className="px-8"
-                  >
-                    {isSending ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <Send className="h-5 w-5" />
-                    )}
-                  </Button>
+                  {branch?.status === "running" ? (
+                    <Button
+                      size="lg"
+                      onClick={handleStop}
+                      variant="destructive"
+                      className="px-8"
+                    >
+                      <Pause className="h-5 w-5" />
+                    </Button>
+                  ) : (
+                    <Button
+                      size="lg"
+                      onClick={handleSend}
+                      disabled={!input.trim() || isSending}
+                      className="px-8"
+                    >
+                      {isSending ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <Send className="h-5 w-5" />
+                      )}
+                    </Button>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground mt-2 text-center">
                   The AI team will run commands in your VM and may request API keys

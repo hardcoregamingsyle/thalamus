@@ -544,8 +544,8 @@ export default function Landing() {
   const submitSuggestionMutation = useMutation(api.admin.submitSuggestion);
   const { theme, toggleTheme } = useTheme();
 
-  const handleLaunch = () => navigate("/portal/chat");
-  const handleModeSelect = (mode: ModeId) => navigate(`/portal/${mode}`);
+  const handleLaunch = () => navigate("/portal");
+  const handleModeSelect = (mode: ModeId) => navigate(`/portal`);
 
   const handleSuggestionSubmit = async (title: string, description: string, files: SuggestionFile[]) => {
     setIsSuggestionSubmitting(true);
