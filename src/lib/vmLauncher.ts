@@ -208,16 +208,23 @@ export class VMLauncher {
 
   /**
    * Get download URL for current platform
+   * Update these URLs after building and hosting the executables
    */
   getDownloadUrl(): string {
     const platform = navigator.platform.toLowerCase();
 
+    // Option 1: GitHub Releases (recommended)
+    const githubBase = "https://github.com/YOUR_USERNAME/thalamus-vm/releases/latest/download";
+
+    // Option 2: Your own CDN/server
+    // const cdnBase = "https://downloads.thalamus.dev";
+
     if (platform.includes("win")) {
-      return "https://github.com/thalamus-ai/vm-launcher/releases/latest/download/thalamus-vm-windows.exe";
+      return `${githubBase}/thalamus-vm-windows.exe`;
     } else if (platform.includes("mac")) {
-      return "https://github.com/thalamus-ai/vm-launcher/releases/latest/download/thalamus-vm-macos";
+      return `${githubBase}/thalamus-vm-macos`;
     } else {
-      return "https://github.com/thalamus-ai/vm-launcher/releases/latest/download/thalamus-vm-linux";
+      return `${githubBase}/thalamus-vm-linux`;
     }
   }
 

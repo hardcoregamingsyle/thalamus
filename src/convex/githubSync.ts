@@ -1,29 +1,9 @@
 // @ts-nocheck
 "use node";
-import { action, internalAction, query } from "./_generated/server";
+import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Octokit } from "@octokit/rest";
-
-// Get GitHub config for a branch (public query)
-export const getGithubConfig = query({
-  args: {
-    token: v.string(),
-    projectId: v.string(),
-    branchId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, {
-      token: args.token,
-    });
-    if (!userId) return null;
-
-    return await ctx.db
-      .query("githubConfigs")
-      .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
-      .first();
-  },
-});
 
 // Clone repository and sync files to branch
 export const cloneRepository = action({
@@ -122,7 +102,7 @@ export const pushToGithub = action({
     if (!userId) throw new Error("Not authenticated");
 
     try {
-      const config = await ctx.runMutation(internal.githubSyncHelpers.getGithubConfig, {
+      const config = await ctx.runMutation(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: args.projectId,
         branchId: args.branchId,
       });
@@ -224,7 +204,7 @@ export const autoPushToGithub = internalAction({
 
       if (!branch) return;
 
-      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfig, {
+      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: branch.projectId,
         branchId: args.branchId,
       });
@@ -319,7 +299,7 @@ export const pullFromGithub = action({
     if (!userId) throw new Error("Not authenticated");
 
     try {
-      const config = await ctx.runMutation(internal.githubSyncHelpers.getGithubConfig, {
+      const config = await ctx.runMutation(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: args.projectId,
         branchId: args.branchId,
       });

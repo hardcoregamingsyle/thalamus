@@ -1,6 +1,6 @@
 // @ts-nocheck
 "use node";
-import { internalAction, internalQuery } from "./_generated/server";
+import { internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Octokit } from "@octokit/rest";
@@ -25,7 +25,7 @@ export const getFileFromGithub = internalAction({
 
       if (!branch) return null;
 
-      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfig, {
+      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: branch.projectId,
         branchId: args.branchId,
       });
@@ -55,11 +55,19 @@ export const getFileFromGithub = internalAction({
           return { filepath: args.filepath, content, source: "github" };
         }
       } catch (err) {
-        // File not found on GitHub, check Convex
-        return await ctx.runQuery(internal.githubStorage.getFileFromConvex, {
+        // File not found on GitHub, check Convex as fallback
+        const file = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
           branchId: args.branchId,
-          filepath: args.filepath,
         });
+
+        const matchingFile = file.find((f: any) => f.filepath === args.filepath);
+        if (matchingFile) {
+          return {
+            filepath: matchingFile.filepath,
+            content: matchingFile.content,
+            source: "convex",
+          };
+        }
       }
 
       return null;
@@ -70,29 +78,6 @@ export const getFileFromGithub = internalAction({
   },
 });
 
-// Get file from Convex (fallback)
-export const getFileFromConvex = internalQuery({
-  args: {
-    branchId: v.string(),
-    filepath: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const file = await ctx.db
-      .query("codeFiles")
-      .withIndex("by_branch_and_filepath", (q) =>
-        q.eq("branchId", args.branchId).eq("filepath", args.filepath)
-      )
-      .first();
-
-    if (!file) return null;
-
-    return {
-      filepath: file.filepath,
-      content: file.content,
-      source: "convex",
-    };
-  },
-});
 
 // List all files (from GitHub first, Convex as fallback)
 export const listFilesFromGithub = internalAction({
@@ -107,7 +92,7 @@ export const listFilesFromGithub = internalAction({
 
       if (!branch) return [];
 
-      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfig, {
+      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: branch.projectId,
         branchId: args.branchId,
       });
@@ -166,11 +151,12 @@ export const cleanupConvexFiles = internalAction({
       });
 
       // Keep only the most recent N files in Convex
-      const sorted = files.sort((a, b) => b._creationTime - a._creationTime);
+      const sorted = files.sort((a: any, b: any) => b._creationTime - a._creationTime);
       const toDelete = sorted.slice(args.keepRecent);
 
+      // Delete via internal mutation in codeBranches
       for (const file of toDelete) {
-        await ctx.runMutation(internal.githubStorage.deleteFileFromConvex, {
+        await ctx.runMutation(internal.codeBranches.deleteFile, {
           fileId: file._id,
         });
       }
@@ -180,15 +166,5 @@ export const cleanupConvexFiles = internalAction({
       console.error("Cleanup Convex files error:", err);
       return { deleted: 0, kept: 0 };
     }
-  },
-});
-
-// Delete file from Convex
-export const deleteFileFromConvex = internalMutation({
-  args: {
-    fileId: v.id("codeFiles"),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.delete(args.fileId);
   },
 });

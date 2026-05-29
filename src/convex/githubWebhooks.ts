@@ -67,7 +67,7 @@ export const processPushInternal = internalAction({
   handler: async (ctx, args) => {
     try {
       // Pull latest changes from GitHub
-      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfig, {
+      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: args.projectId,
         branchId: args.branchId,
       });
