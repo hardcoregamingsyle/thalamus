@@ -39,6 +39,47 @@ export const saveGithubConfig = internalMutation({
   },
 });
 
+export const saveGithubConfigWithToken = internalMutation({
+  args: {
+    projectId: v.string(),
+    branchId: v.string(),
+    repoUrl: v.string(),
+    owner: v.string(),
+    repo: v.string(),
+    branch: v.string(),
+    lastSync: v.number(),
+    githubToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("githubConfigs")
+      .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        repoUrl: args.repoUrl,
+        owner: args.owner,
+        repo: args.repo,
+        branch: args.branch,
+        lastSync: args.lastSync,
+        githubToken: args.githubToken,
+      });
+    } else {
+      await ctx.db.insert("githubConfigs", {
+        projectId: args.projectId,
+        branchId: args.branchId,
+        repoUrl: args.repoUrl,
+        owner: args.owner,
+        repo: args.repo,
+        branch: args.branch,
+        lastSync: args.lastSync,
+        githubToken: args.githubToken,
+      });
+    }
+  },
+});
+
 export const getGithubConfig = internalMutation({
   args: {
     projectId: v.string(),

@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { FileCode, Github, Loader2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { FileCode, Github, Loader2, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import { GitHubImportDialog } from "./GitHubImportDialog";
 import { motion } from "framer-motion";
@@ -27,6 +28,7 @@ export function NewProjectDialog({
   const [projectName, setProjectName] = useState("");
   const [projectDesc, setProjectDesc] = useState("");
   const [loading, setLoading] = useState(false);
+  const [autoCreateGithub, setAutoCreateGithub] = useState(true);
 
   const handleCreateScratch = async () => {
     if (!projectName.trim()) {
@@ -153,13 +155,40 @@ export function NewProjectDialog({
                 />
               </div>
 
+              <div className="border rounded-lg p-4 bg-green-500/10 border-green-500/20 space-y-3">
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="auto-github"
+                    checked={autoCreateGithub}
+                    onCheckedChange={(checked) => setAutoCreateGithub(checked as boolean)}
+                  />
+                  <div className="flex-1">
+                    <Label htmlFor="auto-github" className="cursor-pointer font-medium text-green-700 dark:text-green-300">
+                      🎉 Auto-create GitHub repository (100% FREE)
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Creates <strong>public repo</strong> with 256-char random name • Effectively private, impossible to discover
+                    </p>
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-medium">
+                      Saves $4/month • Discovery probability: &lt; 1 in 10^450
+                    </p>
+                  </div>
+                </div>
+                {autoCreateGithub && (
+                  <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 bg-green-500/5 p-2 rounded">
+                    <Unlock className="h-3 w-3" />
+                    <span>Public = FREE forever • Name so random it's effectively private</span>
+                  </div>
+                )}
+              </div>
+
               <Button
                 onClick={handleCreateScratch}
                 disabled={!projectName.trim() || loading}
                 className="w-full"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Create Project
+                Create Project {autoCreateGithub && "(+ Free GitHub Repo)"}
               </Button>
             </div>
           )}

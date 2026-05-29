@@ -90,3 +90,16 @@ export const consumeOAuthState = internalMutation({
     return row.userId;
   },
 });
+
+// Get GitHub token for user (internal)
+export const getGithubToken = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user || !user.githubAccessToken) return null;
+    return {
+      accessToken: user.githubAccessToken,
+      username: user.githubUsername ?? "unknown",
+    };
+  },
+});
