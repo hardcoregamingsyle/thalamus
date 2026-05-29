@@ -455,7 +455,7 @@ export const startPipeline = action({
 export const stopPipeline = action({
   args: { token: v.string(), branchId: v.string() },
   handler: async (ctx, args): Promise<void> => {
-    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token }) as any;
+    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
     if (!userId) throw new Error("Not authenticated");
 
     await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
@@ -467,7 +467,7 @@ export const stopPipeline = action({
     await ctx.runMutation(internal.codeBranches.saveMessage, {
       branchId: args.branchId,
       agent: "System",
-      content: "⏹️ Pipeline stopped by user.",
+      content: "⏹️ Pipeline stopped by user",
     });
   },
 });
