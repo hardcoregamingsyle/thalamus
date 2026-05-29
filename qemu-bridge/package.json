@@ -16,19 +16,23 @@
     "assets": [],
     "outputPath": "builds"
   },
-  "keywords": ["qemu", "vm", "websocket", "vnc"],
+  "keywords": [
+    "qemu",
+    "vm",
+    "websocket",
+    "vnc"
+  ],
   "author": "Thalamus AI",
   "license": "MIT",
   "dependencies": {
-    "ws": "^8.16.0",
-    "node-vnc": "^0.0.5",
-    "express": "^4.18.2"
+    "ws": "^8.16.0"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/node": "^20.11.0",
     "@types/ws": "^8.5.10",
-    "@types/express": "^4.17.21",
-    "typescript": "^5.3.3",
-    "tsx": "^4.7.0"
+    "pkg": "^5.8.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
   }
 }
