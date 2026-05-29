@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { vmLauncher } from "@/lib/vmLauncher";
+import { VMSetupDialog } from "./VMSetupDialog";
 
 interface SandboxViewProps {
   branchId: string;
@@ -136,6 +138,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
   const [bridgeConnected, setBridgeConnected] = useState(false);
   const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
   const [currentVmId, setCurrentVmId] = useState<string | null>(null);
+  const [showSetupDialog, setShowSetupDialog] = useState(false);
   const emulatorRef = useRef<any>(null);
   const screenContainerRef = useRef<HTMLDivElement>(null);
 
@@ -206,39 +209,38 @@ export function SandboxView({ branchId }: SandboxViewProps) {
   const handleBootVM = async () => {
     const config = OS_CONFIGS[selectedOS];
 
-    // 64-bit systems need bridge
+    // 64-bit systems need VM launcher
     if (config.is64Bit) {
-      if (!bridgeConnected || !wsConnection) {
-        toast.error("Bridge not connected. Testing connection...");
-        await testBridgeConnection();
+      setVmStatus("booting");
+      toast.info(`Booting ${config.name}...`);
+
+      const result = await vmLauncher.bootVM(config.os, customRam, customCores);
+
+      if (!result.success) {
+        if (result.error?.includes("not running")) {
+          // Show setup dialog
+          setShowSetupDialog(true);
+          setVmStatus("stopped");
+          return;
+        }
+        toast.error(result.error || "Failed to boot VM");
+        setVmStatus("stopped");
         return;
       }
 
-      setVmStatus("booting");
-      toast.info(`Booting ${config.name} via QEMU...`);
-
-      wsConnection.send(JSON.stringify({
-        action: 'boot',
-        os: config.os,
-        ram: customRam,
-        cores: customCores,
-      }));
-
-      wsConnection.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-
-        if (data.status === 'ready') {
-          setVmStatus("running");
-          setCurrentVmId(data.vmId);
-          toast.success(`${config.name} ready! VNC: localhost:${data.vncPort}`);
-          toast.info(`Connect VNC viewer to localhost:${data.vncPort}`);
-        } else if (data.status === 'booting' || data.status === 'checking-image' || data.status === 'creating-disk') {
-          toast.info(data.status.replace(/-/g, ' '));
-        } else if (data.error) {
-          toast.error(data.error);
-          setVmStatus("stopped");
-        }
-      };
+      setVmStatus("running");
+      setCurrentVmId(result.vmId || null);
+      toast.success(`${config.name} ready! VNC: localhost:${result.vncPort}`);
+      toast.info(`Connect VNC viewer to localhost:${result.vncPort}`, {
+        duration: 10000,
+        action: {
+          label: "Copy",
+          onClick: () => {
+            navigator.clipboard.writeText(`localhost:${result.vncPort}`);
+            toast.success("VNC address copied!");
+          },
+        },
+      });
 
       return;
     }
@@ -719,6 +721,16 @@ export function SandboxView({ branchId }: SandboxViewProps) {
           </Card>
         </div>
       )}
+
+      {/* VM Setup Dialog */}
+      <VMSetupDialog
+        open={showSetupDialog}
+        onOpenChange={setShowSetupDialog}
+        onComplete={() => {
+          toast.success("VM bridge ready! You can now boot VMs.");
+          handleBootVM(); // Retry booting
+        }}
+      />
     </div>
   );
 }

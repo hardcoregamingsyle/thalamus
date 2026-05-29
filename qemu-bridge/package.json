@@ -1,15 +1,20 @@
 {
-  "name": "thalamus-qemu-bridge",
+  "name": "thalamus-vm",
   "version": "1.0.0",
-  "description": "WebSocket bridge to run QEMU VMs in browser",
-  "main": "dist/index.js",
+  "description": "Single-file virtualization engine for Thalamus Code",
+  "main": "dist/launcher.js",
   "bin": {
-    "thalamus-qemu": "dist/index.js"
+    "thalamus-vm": "dist/launcher.js"
   },
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts"
+    "start": "node dist/launcher.js",
+    "dev": "tsx src/launcher.ts",
+    "package": "npm run build && pkg . --targets node18-win-x64,node18-macos-x64,node18-linux-x64 --output-path builds"
+  },
+  "pkg": {
+    "assets": [],
+    "outputPath": "builds"
   },
   "keywords": ["qemu", "vm", "websocket", "vnc"],
   "author": "Thalamus AI",
