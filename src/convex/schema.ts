@@ -186,6 +186,7 @@ const schema = defineSchema(
       repo: v.string(),
       branch: v.string(),
       lastSync: v.number(),
+      githubToken: v.optional(v.string()),
     })
       .index("by_project", ["projectId"])
       .index("by_branch", ["branchId"]),

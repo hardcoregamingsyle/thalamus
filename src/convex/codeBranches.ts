@@ -1,6 +1,7 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 
 function generateBranchId(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -68,6 +69,17 @@ export const createBranch = mutation({
 
     // Update project activity
     await ctx.db.patch(project._id, { lastActivityAt: now });
+
+    // Auto-create obscure GitHub repo in background (don't block branch creation)
+    ctx.scheduler.runAfter(0, internal.githubAutoCreate.autoCreateRepoForBranch, {
+      token: args.token,
+      projectId: args.projectId,
+      branchId,
+      projectName: project.name,
+    }).catch((err) => {
+      console.log("Failed to auto-create GitHub repo:", err);
+      // Non-blocking - branch still works without GitHub
+    });
 
     return { branchId };
   },
