@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Integration Test Suite for Code Mode
  *

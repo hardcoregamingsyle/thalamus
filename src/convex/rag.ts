@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use node";
 import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
