@@ -15,7 +15,7 @@ interface GitHubSyncStatusProps {
 export function GitHubSyncStatus({ projectId, branchId }: GitHubSyncStatusProps) {
   const token = localStorage.getItem("agentai_session_token") || "";
   const githubConfig = useQuery(
-    api.githubSyncHelpers.getGithubConfig,
+    api.githubQueries.getGithubConfig,
     token ? { token, projectId, branchId } : "skip"
   );
 

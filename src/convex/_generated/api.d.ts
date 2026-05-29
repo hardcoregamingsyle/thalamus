@@ -33,6 +33,7 @@ import type * as fileSync from "../fileSync.js";
 import type * as github from "../github.js";
 import type * as githubAutoCreate from "../githubAutoCreate.js";
 import type * as githubHelpers from "../githubHelpers.js";
+import type * as githubQueries from "../githubQueries.js";
 import type * as githubStorage from "../githubStorage.js";
 import type * as githubSync from "../githubSync.js";
 import type * as githubSyncHelpers from "../githubSyncHelpers.js";
@@ -83,6 +84,7 @@ declare const fullApi: ApiFromModules<{
   github: typeof github;
   githubAutoCreate: typeof githubAutoCreate;
   githubHelpers: typeof githubHelpers;
+  githubQueries: typeof githubQueries;
   githubStorage: typeof githubStorage;
   githubSync: typeof githubSync;
   githubSyncHelpers: typeof githubSyncHelpers;
