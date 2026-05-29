@@ -404,3 +404,13 @@ export const updatePlannerTasks = internalMutation({
     }
   },
 });
+
+// ── Delete file (for cleanup) ─────────────────────────────────────────────────
+export const deleteFile = internalMutation({
+  args: {
+    fileId: v.id("codeFiles"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.fileId);
+  },
+});
