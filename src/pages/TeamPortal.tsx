@@ -605,6 +605,7 @@ export default function TeamPortal() {
   const listSessionsAction = useMutation(api.agentTeamHelpers.listSessionsPublic);
   const continueSessionAction = useMutation(api.agentTeamHelpers.continueSessionPublic);
   const startBackgroundSession = useMutation(api.agentTeamHelpers.startBackgroundSessionPublic);
+  const stopSessionMutation = useMutation(api.agentTeamHelpers.stopSessionPublic);
   const createSandboxAction = useAction(api.sandbox.createSandbox);
   const executeCommandAction = useAction(api.sandbox.executeCommand);
   const stopSandboxAction = useAction(api.sandbox.stopSandbox);
@@ -825,6 +826,20 @@ export default function TeamPortal() {
 
   const handleAutoRun = () => { if (!activeSessionId || !token) return; autoRunRef.current = true; setAutoRun(true); handleRunNextAgent(); };
   const handleStopAutoRun = () => { autoRunRef.current = false; setAutoRun(false); toast.info("Stopped after current agent completes"); };
+
+  const handleForceRestart = async () => {
+    if (!activeSessionId || !token) return;
+    try {
+      await stopSessionMutation({ token, sessionId: activeSessionId });
+      autoRunRef.current = false;
+      setAutoRun(false);
+      setIsRunning(false);
+      setCurrentAgent(null);
+      toast.success("Session reset — click RUN to restart");
+    } catch (err) {
+      toast.error("Failed to reset session");
+    }
+  };
 
   // Message input handlers
   const handleSendMessage = async () => {
@@ -1784,9 +1799,22 @@ export default function TeamPortal() {
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         className="flex items-center gap-1 px-2 py-1.5 bg-muted border border-border text-muted-foreground text-xs rounded-lg hover:bg-muted/80 disabled:opacity-50 transition-all"
+                        title="Step once"
                       >
                         <RefreshCw className="h-3 w-3" />
                       </motion.button>
+                      {sessionInfo?.status === "running" && (
+                        <motion.button
+                          onClick={handleForceRestart}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          className="flex items-center gap-1 px-2 py-1.5 bg-orange-400/10 border border-orange-400/30 text-orange-400 text-xs rounded-lg hover:bg-orange-400/20 transition-all font-bold"
+                          title="Force reset stuck agent"
+                        >
+                          <AlertCircle className="h-3 w-3" />
+                          <span className="hidden sm:block">RESET</span>
+                        </motion.button>
+                      )}
                     </>
                   )}
                 </div>
@@ -2142,27 +2170,81 @@ export default function TeamPortal() {
                       </div>
                     </>
                   ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
-                      <motion.div
-                        animate={{ scale: [1, 1.05, 1] }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                      >
-                        <Box className="h-12 w-12 text-amber-400/20" />
-                      </motion.div>
-                      <div className="text-center">
-                        <p className="text-sm font-bold text-foreground mb-1">No Active Sandbox</p>
-                        <p className="text-xs text-muted-foreground">Create a sandbox to execute commands</p>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                      <div className="flex flex-col items-center gap-4">
+                        <motion.div
+                          animate={{ scale: [1, 1.05, 1] }}
+                          transition={{ duration: 2, repeat: Infinity }}
+                        >
+                          <Box className="h-12 w-12 text-amber-400/20" />
+                        </motion.div>
+                        <div className="text-center">
+                          <p className="text-sm font-bold text-foreground mb-1">No Active Sandbox</p>
+                          <p className="text-xs text-muted-foreground">Create a cloud sandbox to execute commands</p>
+                        </div>
+                        <motion.button
+                          onClick={handleCreateSandbox}
+                          disabled={isSandboxLoading}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          className="flex items-center gap-2 px-4 py-2 bg-amber-400/10 border border-amber-400/30 text-amber-400 text-sm rounded-xl hover:bg-amber-400/20 disabled:opacity-50 transition-all font-bold"
+                        >
+                          {isSandboxLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                          CREATE CLOUD SANDBOX ($0.075/hr)
+                        </motion.button>
                       </div>
-                      <motion.button
-                        onClick={handleCreateSandbox}
-                        disabled={isSandboxLoading}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        className="flex items-center gap-2 px-4 py-2 bg-amber-400/10 border border-amber-400/30 text-amber-400 text-sm rounded-xl hover:bg-amber-400/20 disabled:opacity-50 transition-all font-bold"
-                      >
-                        {isSandboxLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                        CREATE SANDBOX ($0.075/hr)
-                      </motion.button>
+
+                      {/* QEMU Local Downloads */}
+                      <div className="border border-border rounded-xl p-4 space-y-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Monitor className="h-4 w-4 text-primary" />
+                          <p className="text-xs font-bold text-foreground">Run Locally with QEMU</p>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground leading-relaxed">
+                          Download QEMU to run virtual machines locally on your computer. Free and open-source.
+                        </p>
+                        <div className="space-y-2">
+                          <a
+                            href="https://qemu.weilnetz.de/w64/qemu-w64-setup-20240813.exe"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between w-full px-3 py-2 bg-blue-400/10 border border-blue-400/20 rounded-lg hover:bg-blue-400/20 transition-all group"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold text-blue-400">🪟 Windows</span>
+                              <span className="text-[9px] text-muted-foreground">QEMU 9.1 (64-bit installer)</span>
+                            </div>
+                            <Download className="h-3 w-3 text-blue-400 group-hover:scale-110 transition-transform" />
+                          </a>
+                          <a
+                            href="https://www.qemu.org/download/#macos"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between w-full px-3 py-2 bg-gray-400/10 border border-gray-400/20 rounded-lg hover:bg-gray-400/20 transition-all group"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold text-foreground">🍎 macOS</span>
+                              <span className="text-[9px] text-muted-foreground">via Homebrew: brew install qemu</span>
+                            </div>
+                            <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:scale-110 transition-transform" />
+                          </a>
+                          <a
+                            href="https://www.qemu.org/download/#linux"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between w-full px-3 py-2 bg-orange-400/10 border border-orange-400/20 rounded-lg hover:bg-orange-400/20 transition-all group"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold text-orange-400">🐧 Linux</span>
+                              <span className="text-[9px] text-muted-foreground">apt install qemu-system / dnf install qemu</span>
+                            </div>
+                            <ExternalLink className="h-3 w-3 text-orange-400 group-hover:scale-110 transition-transform" />
+                          </a>
+                        </div>
+                        <p className="text-[9px] text-muted-foreground/60 mt-2">
+                          After installing QEMU, you can run the generated project files locally using the VM configuration provided by the agents.
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>
