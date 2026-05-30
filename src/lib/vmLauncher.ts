@@ -176,9 +176,9 @@ export class VMLauncher {
 
   /** Returns platform-specific download URL */
   getDownloadUrl(): string {
-    if (typeof navigator === "undefined") return "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.1.0/thalamus-vm-bridge.exe";
+    if (typeof navigator === "undefined") return "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.2.0/thalamus-vm-bridge.exe";
     const p = navigator.platform.toLowerCase();
-    if (p.includes("win")) return "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.1.0/thalamus-vm-bridge.exe";
+    if (p.includes("win")) return "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.2.0/thalamus-vm-bridge.exe";
     if (p.includes("mac")) return "/downloads/setup-macos.sh";
     return "/downloads/setup-linux.sh";
   }

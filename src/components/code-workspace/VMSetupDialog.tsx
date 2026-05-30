@@ -24,7 +24,7 @@ const PLATFORMS = [
     name: "Windows",
     icon: Monitor,
     file: "thalamus-vm-bridge.exe",
-    url: "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.1.0/thalamus-vm-bridge.exe",
+    url: "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.2.0/thalamus-vm-bridge.exe",
     hint: "Professional installer — double-click to run. Auto-installs QEMU.",
     isExe: true,
   },
