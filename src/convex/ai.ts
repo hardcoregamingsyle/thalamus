@@ -27,14 +27,10 @@ interface GeminiResponse {
 // Strip markdown code fences from AI output (Gemini sometimes wraps HTML in code fences)
 function stripCodeFences(text: string): string {
   let result = text.trim();
-  result = result.replace(/^```[a-zA-Z]*
-/, "");
-  result = result.replace(/
-```$/, "");
-  result = result.replace(/^```
-?/, "");
-  result = result.replace(/
-?```$/, "");
+  result = result.replace(/^```[a-zA-Z]*\n/, "");
+  result = result.replace(/\n```$/, "");
+  result = result.replace(/^```\n?/, "");
+  result = result.replace(/\n?```$/, "");
   return result.trim();
 }
 
