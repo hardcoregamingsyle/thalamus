@@ -20,10 +20,10 @@ export const CLAUDE_PRICING = {
     outputCentsPerMillion: 4200,
     label: "Claude Opus 4.6",
   },
-  "claude-opus-4-7": {
+  "claude-opus-4-8": {
     inputCentsPerMillion: 1200,
     outputCentsPerMillion: 6000,
-    label: "Claude Opus 4.7",
+    label: "Claude Opus 4.8",
   },
 } as const;
 
@@ -57,7 +57,7 @@ export function calcClaudeAgentBucks(model: ClaudeModel, inputTokens: number, ou
 }
 
 // ── Model routing — which model each agent uses ───────────────────────────────
-export type ModelTier = "gemini" | "haiku" | "sonnet" | "opus46" | "opus47";
+export type ModelTier = "gemini" | "haiku" | "sonnet" | "opus46" | "opus48";
 
 // Default model per agent (Code Mode) — updated per user spec
 export const AGENT_MODEL_MAP: Record<string, ModelTier> = {
@@ -75,14 +75,14 @@ export const AGENT_MODEL_MAP: Record<string, ModelTier> = {
   // Security Team sub-agents (spotters)
   VulnerabilitySpotter: "sonnet",
   DataCorruptor: "sonnet",
-  ZeroDayExploiter: "opus47",    // claude-opus-4.7
+  ZeroDayExploiter: "opus48",    // claude-opus-4.8
   FrameworkAuditor: "sonnet",
   RedTeamOrchestrator: "gemini",
   // Security Team fixers
   VulnerabilityFixer: "sonnet",  // claude-sonnet-4.6
   DataFixer: "sonnet",           // claude-sonnet-4.6
   FrameworkRefiner: "sonnet",    // claude-sonnet-4.6
-  ZeroDayRemover: "opus47",      // claude-opus-4.7
+  ZeroDayRemover: "opus48",      // claude-opus-4.8
   // Final review
   Critic: "haiku",
   // Research mode — all gemini
@@ -95,14 +95,14 @@ export const AGENT_MODEL_MAP: Record<string, ModelTier> = {
 export const DIFFICULTY_CODER_MODEL: Record<string, ModelTier> = {
   normal: "opus46",      // opus-4.6 for all tasks now
   hard: "opus46",
-  extreme: "opus47",
+  extreme: "opus48",
 };
 
 // Difficulty → FrameworkAuditor model override
 export const DIFFICULTY_FRAMEWORK_AUDITOR_MODEL: Record<string, ModelTier> = {
   normal: "sonnet",
   hard: "opus46",
-  extreme: "opus47",
+  extreme: "opus48",
 };
 
 // Difficulty → Red Team sonnet agents override (extreme only)
@@ -180,7 +180,7 @@ const BEDROCK_MODEL_IDS: Record<ClaudeModel, string> = {
   "claude-haiku-4-5":  "us.anthropic.claude-haiku-4-5-20251001-v1:0",
   "claude-sonnet-4-6": "us.anthropic.claude-sonnet-4-5-20251101-v1:0",
   "claude-opus-4-6":   "us.anthropic.claude-opus-4-5-20251101-v1:0",
-  "claude-opus-4-7":   "us.anthropic.claude-opus-4-5-20251101-v1:0",
+  "claude-opus-4-8":   "us.anthropic.claude-opus-4-8-20260101-v1:0",
 };
 
 // Max output tokens per model tier — maximized for ultra-long reports
@@ -188,7 +188,7 @@ const MAX_OUTPUT_TOKENS: Record<ClaudeModel, number> = {
   "claude-haiku-4-5": 8192,
   "claude-sonnet-4-6": 32000,
   "claude-opus-4-6": 32000,
-  "claude-opus-4-7": 32000,
+  "claude-opus-4-8": 32000,
 };
 
 // Parse Bedrock credentials from env var
@@ -350,7 +350,7 @@ export async function callModel(
     haiku: "claude-haiku-4-5",
     sonnet: "claude-sonnet-4-6",
     opus46: "claude-opus-4-6",
-    opus47: "claude-opus-4-7",
+    opus48: "claude-opus-4-8",
   };
   const claudeModel = TIER_TO_CLAUDE[tier];
   if (claudeModel) {
@@ -375,7 +375,7 @@ export function calcAgentBucksForTier(
     haiku: { input: 1.80, output: 7.20 },
     sonnet: { input: 5.40, output: 26.50 },
     opus46: { input: 7.44, output: 42.00 },
-    opus47: { input: 12.00, output: 60.00 },
+    opus48: { input: 12.00, output: 60.00 },
   };
   const p = TIER_PRICING[tier];
   return calcAgentBucksFromTokens(inputTokens, outputTokens, p.input, p.output);
