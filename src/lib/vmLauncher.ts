@@ -12,30 +12,42 @@
 
 interface VMStatus {
   running: boolean;
+  functional: boolean;
   version?: string;
   platform?: string;
   activeVMs?: number;
+  error?: string;
 }
 
 export class VMLauncher {
   private ws: WebSocket | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 3;
+  private readonly bridgeUrl = "ws://localhost:5900";
+  private readonly windowsDownloadUrl = "/downloads/thalamus-vm-windows.exe";
 
   /**
    * Check if VM bridge is running
    */
   async checkStatus(): Promise<VMStatus> {
+    if (typeof WebSocket === "undefined") {
+      return { running: false, functional: false, error: "WebSocket is not available" };
+    }
+
     return new Promise((resolve) => {
-      const ws = new WebSocket("ws://localhost:5900");
+      const ws = new WebSocket(this.bridgeUrl);
 
       const timeout = setTimeout(() => {
         ws.close();
-        resolve({ running: false });
+        resolve({ running: false, functional: false, error: "Timed out waiting for VM bridge" });
       }, 2000);
 
       ws.onopen = () => {
         clearTimeout(timeout);
+        const responseTimeout = setTimeout(() => {
+          ws.close();
+          resolve({ running: false, functional: false, error: "VM bridge did not answer the health check" });
+        }, 2000);
 
         // Send ping to get version info
         ws.send(JSON.stringify({ action: "ping" }));
@@ -43,16 +55,21 @@ export class VMLauncher {
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
+            clearTimeout(responseTimeout);
             ws.close();
+            const functional = data.status === "success" && Boolean(data.version);
             resolve({
-              running: true,
+              running: functional,
+              functional,
               version: data.version,
               platform: data.platform,
               activeVMs: data.activeVMs,
+              error: functional ? undefined : "VM bridge response was not functional",
             });
           } catch {
+            clearTimeout(responseTimeout);
             ws.close();
-            resolve({ running: false });
+            resolve({ running: false, functional: false, error: "VM bridge returned an invalid response" });
           }
         };
       };
@@ -60,7 +77,7 @@ export class VMLauncher {
       ws.onerror = () => {
         clearTimeout(timeout);
         ws.close();
-        resolve({ running: false });
+        resolve({ running: false, functional: false, error: "VM bridge is not reachable" });
       };
     });
   }
@@ -75,7 +92,7 @@ export class VMLauncher {
         return;
       }
 
-      this.ws = new WebSocket("ws://localhost:5900");
+      this.ws = new WebSocket(this.bridgeUrl);
 
       this.ws.onopen = () => {
         console.log("✅ Connected to Thalamus VM Bridge");
@@ -211,52 +228,49 @@ export class VMLauncher {
    * Update these URLs after building and hosting the executables
    */
   getDownloadUrl(): string {
+    if (typeof navigator === "undefined") {
+      return this.windowsDownloadUrl;
+    }
+
     const platform = navigator.platform.toLowerCase();
 
-    // Option 1: GitHub Releases (recommended)
-    const githubBase = "https://github.com/YOUR_USERNAME/thalamus-vm/releases/latest/download";
-
-    // Option 2: Your own CDN/server
-    // const cdnBase = "https://downloads.thalamus.dev";
-
     if (platform.includes("win")) {
-      return `${githubBase}/thalamus-vm-windows.exe`;
-    } else if (platform.includes("mac")) {
-      return `${githubBase}/thalamus-vm-macos`;
-    } else {
-      return `${githubBase}/thalamus-vm-linux`;
+      return this.windowsDownloadUrl;
     }
+
+    return this.windowsDownloadUrl;
   }
 
   /**
    * Get platform-specific instructions
    */
   getInstructions(): string[] {
+    if (typeof navigator === "undefined") {
+      return [
+        "1. Download thalamus-vm-windows.exe on a Windows 11 PC",
+        "2. Double-click to run the executable",
+        "3. Return to Thalamus after the bridge window opens",
+        "4. The Boot OS button will enable automatically",
+      ];
+    }
+
     const platform = navigator.platform.toLowerCase();
 
     if (platform.includes("win")) {
       return [
         "1. Download thalamus-vm-windows.exe",
         "2. Double-click to run",
-        "3. Windows may show security warning - click 'More info' → 'Run anyway'",
-        "4. That's it! VM bridge is now running",
-      ];
-    } else if (platform.includes("mac")) {
-      return [
-        "1. Download thalamus-vm-macos",
-        "2. Open Terminal and run: chmod +x ~/Downloads/thalamus-vm-macos",
-        "3. Run: ~/Downloads/thalamus-vm-macos",
-        "4. macOS may ask for permissions - allow them",
-        "5. That's it! VM bridge is now running",
-      ];
-    } else {
-      return [
-        "1. Download thalamus-vm-linux",
-        "2. Open terminal and run: chmod +x ~/Downloads/thalamus-vm-linux",
-        "3. Run: ~/Downloads/thalamus-vm-linux",
+        "3. Windows may show a security warning - click 'More info' then 'Run anyway'",
         "4. That's it! VM bridge is now running",
       ];
     }
+
+    return [
+      "1. Download thalamus-vm-windows.exe on a Windows 11 PC",
+      "2. Double-click to run the executable",
+      "3. Return to Thalamus after the bridge window opens",
+      "4. The Boot OS button will enable automatically",
+    ];
   }
 
   /**

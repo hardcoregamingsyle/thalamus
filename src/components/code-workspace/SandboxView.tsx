@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Monitor, Terminal, Send, Loader2, Maximize2, Minimize2, Power, RotateCcw, Settings } from "lucide-react";
+import { Download, Monitor, Terminal, Send, Loader2, Maximize2, Minimize2, Power, RotateCcw, Settings } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -136,7 +136,8 @@ export function SandboxView({ branchId }: SandboxViewProps) {
   const [customCores, setCustomCores] = useState(4);
   const [v86Loaded, setV86Loaded] = useState(false);
   const [bridgeConnected, setBridgeConnected] = useState(false);
-  const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
+  const [bridgeChecking, setBridgeChecking] = useState(true);
+  const [bridgeVersion, setBridgeVersion] = useState<string>();
   const [currentVmId, setCurrentVmId] = useState<string | null>(null);
   const [showSetupDialog, setShowSetupDialog] = useState(false);
   const emulatorRef = useRef<any>(null);
@@ -183,28 +184,32 @@ export function SandboxView({ branchId }: SandboxViewProps) {
     };
   }, []);
 
-  const testBridgeConnection = async () => {
-    try {
-      const ws = new WebSocket('ws://localhost:5900');
+  const refreshBridgeStatus = async (showToast = false) => {
+    setBridgeChecking(true);
+    const status = await vmLauncher.checkStatus();
+    setBridgeConnected(status.functional);
+    setBridgeVersion(status.version);
+    setBridgeChecking(false);
 
-      await new Promise((resolve, reject) => {
-        ws.onopen = () => {
-          setBridgeConnected(true);
-          setWsConnection(ws);
-          toast.success("Bridge connected!");
-          resolve(true);
-        };
-        ws.onerror = () => {
-          setBridgeConnected(false);
-          toast.error("Bridge not running. Start: cd qemu-bridge && npm start");
-          reject();
-        };
-        setTimeout(() => reject(new Error("Timeout")), 3000);
-      });
-    } catch (err) {
-      setBridgeConnected(false);
+    if (showToast) {
+      if (status.functional) {
+        toast.success("Local VM executable is ready.");
+      } else {
+        toast.info("Download and run the required files to enable Boot OS.");
+      }
     }
   };
+
+  useEffect(() => {
+    const initialCheck = setTimeout(() => void refreshBridgeStatus(), 0);
+    const interval = setInterval(() => refreshBridgeStatus(), 5000);
+    return () => {
+      clearTimeout(initialCheck);
+      clearInterval(interval);
+    };
+  }, []);
+
+  const downloadUrl = vmLauncher.getDownloadUrl();
 
   const handleBootVM = async () => {
     const config = OS_CONFIGS[selectedOS];
@@ -299,14 +304,11 @@ export function SandboxView({ branchId }: SandboxViewProps) {
     }
   };
 
-  const handleStopVM = () => {
+  const handleStopVM = async () => {
     const config = OS_CONFIGS[selectedOS];
 
-    if (config.is64Bit && wsConnection && currentVmId) {
-      wsConnection.send(JSON.stringify({
-        action: 'stop',
-        vmId: currentVmId,
-      }));
+    if (config.is64Bit && currentVmId) {
+      await vmLauncher.stopVM(currentVmId);
       setCurrentVmId(null);
     } else if (emulatorRef.current) {
       try {
@@ -428,9 +430,9 @@ export function SandboxView({ branchId }: SandboxViewProps) {
             {currentConfig.is64Bit && (
               <Badge
                 variant="outline"
-                className={bridgeConnected ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}
+                className={bridgeConnected ? "bg-green-500/10 text-green-600" : "bg-orange-500/10 text-orange-600"}
               >
-                Bridge: {bridgeConnected ? "Connected" : "Disconnected"}
+                {bridgeChecking ? "Checking VM files" : bridgeConnected ? `Ready${bridgeVersion ? ` v${bridgeVersion}` : ""}` : "Required files needed"}
               </Badge>
             )}
           </div>
@@ -441,14 +443,17 @@ export function SandboxView({ branchId }: SandboxViewProps) {
 
             {vmStatus === "stopped" && (
               <>
-                {currentConfig.is64Bit && !bridgeConnected && (
+                {currentConfig.is64Bit && !bridgeConnected && !bridgeChecking && (
                   <Button
                     size="sm"
                     variant="outline"
-                    className="gap-2 border-orange-500 text-orange-600"
-                    onClick={testBridgeConnection}
+                    className="gap-2 border-primary/40 text-primary"
+                    asChild
                   >
-                    Connect Bridge
+                    <a href={downloadUrl} download>
+                      <Download className="h-3 w-3" />
+                      Download Required Files
+                    </a>
                   </Button>
                 )}
 
@@ -533,7 +538,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                   disabled={currentConfig.is64Bit ? !bridgeConnected : !v86Loaded}
                 >
                   <Power className="h-3 w-3" />
-                  Boot VM
+                  Boot OS
                 </Button>
               </>
             )}
@@ -564,18 +569,23 @@ export function SandboxView({ branchId }: SandboxViewProps) {
               <p className="text-lg font-medium mb-2">VM is stopped</p>
               <p className="text-sm text-white/60 mb-4">
                 {currentConfig.is64Bit && !bridgeConnected
-                  ? 'Click "Connect Bridge" then "Boot VM"'
-                  : 'Click "Configure" to select OS, then "Boot VM"'}
+                  ? 'Download and run the required files. Boot OS enables automatically.'
+                  : 'Click "Configure" to select OS, then "Boot OS"'}
               </p>
               <p className="text-xs text-white/40">
                 {currentConfig.is64Bit
-                  ? "64-bit systems run via QEMU bridge (requires setup)"
+                  ? "64-bit systems run through the local executable"
                   : "32-bit systems run in browser (instant)"}
               </p>
               {currentConfig.is64Bit && !bridgeConnected && (
-                <p className="text-xs text-orange-400 mt-2">
-                  Start bridge: cd qemu-bridge && npm start
-                </p>
+                <a
+                  href={downloadUrl}
+                  download
+                  className="mt-4 inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary/15 px-4 py-2 text-xs font-bold text-primary transition-colors hover:bg-primary/25"
+                >
+                  <Download className="h-3 w-3" />
+                  Download Required Files
+                </a>
               )}
             </div>
           )}
