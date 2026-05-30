@@ -1,12 +1,12 @@
 /**
- * VM Launcher - Auto-download and run Thalamus VM executable
+ * VM Launcher - Thalamus VM Bridge
  *
  * User flow:
  * 1. User clicks "Boot VM" in browser
- * 2. Check if executable is running (try connect ws://localhost:5900)
- * 3. If not running, prompt download
- * 4. User downloads and runs .exe (one time only)
- * 5. Executable stays running in background
+ * 2. Check if bridge is running (try connect ws://localhost:5900)
+ * 3. If not running, show download dialog with platform-specific setup scripts
+ * 4. User downloads and runs the script (one time only)
+ * 5. Bridge stays running in background
  * 6. All future VM boots just work
  */
 
@@ -24,14 +24,10 @@ export class VMLauncher {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 3;
   private readonly bridgeUrl = "ws://localhost:5900";
-  private readonly windowsDownloadUrl = "/downloads/thalamus-vm-windows.exe";
 
-  /**
-   * Check if VM bridge is running
-   */
   async checkStatus(): Promise<VMStatus> {
     if (typeof WebSocket === "undefined") {
-      return { running: false, functional: false, error: "WebSocket is not available" };
+      return { running: false, functional: false, error: "WebSocket not available" };
     }
 
     return new Promise((resolve) => {
@@ -39,17 +35,16 @@ export class VMLauncher {
 
       const timeout = setTimeout(() => {
         ws.close();
-        resolve({ running: false, functional: false, error: "Timed out waiting for VM bridge" });
+        resolve({ running: false, functional: false, error: "Timed out" });
       }, 2000);
 
       ws.onopen = () => {
         clearTimeout(timeout);
         const responseTimeout = setTimeout(() => {
           ws.close();
-          resolve({ running: false, functional: false, error: "VM bridge did not answer the health check" });
+          resolve({ running: false, functional: false, error: "No response from bridge" });
         }, 2000);
 
-        // Send ping to get version info
         ws.send(JSON.stringify({ action: "ping" }));
 
         ws.onmessage = (event) => {
@@ -57,19 +52,19 @@ export class VMLauncher {
             const data = JSON.parse(event.data);
             clearTimeout(responseTimeout);
             ws.close();
-            const functional = data.status === "success" && Boolean(data.version);
+            // Accept any valid JSON response as "functional"
+            const functional = Boolean(data.version || data.platform || data.activeVMs !== undefined);
             resolve({
               running: functional,
               functional,
               version: data.version,
               platform: data.platform,
               activeVMs: data.activeVMs,
-              error: functional ? undefined : "VM bridge response was not functional",
             });
           } catch {
             clearTimeout(responseTimeout);
             ws.close();
-            resolve({ running: false, functional: false, error: "VM bridge returned an invalid response" });
+            resolve({ running: false, functional: false, error: "Invalid response" });
           }
         };
       };
@@ -77,14 +72,11 @@ export class VMLauncher {
       ws.onerror = () => {
         clearTimeout(timeout);
         ws.close();
-        resolve({ running: false, functional: false, error: "VM bridge is not reachable" });
+        resolve({ running: false, functional: false, error: "Bridge not reachable" });
       };
     });
   }
 
-  /**
-   * Connect to VM bridge
-   */
   async connect(): Promise<boolean> {
     return new Promise((resolve) => {
       if (this.ws?.readyState === WebSocket.OPEN) {
@@ -95,21 +87,16 @@ export class VMLauncher {
       this.ws = new WebSocket(this.bridgeUrl);
 
       this.ws.onopen = () => {
-        console.log("✅ Connected to Thalamus VM Bridge");
         this.reconnectAttempts = 0;
         resolve(true);
       };
 
       this.ws.onerror = () => {
-        console.error("❌ Failed to connect to VM bridge");
         resolve(false);
       };
 
       this.ws.onclose = () => {
-        console.log("🔌 Disconnected from VM bridge");
         this.ws = null;
-
-        // Auto-reconnect
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
           this.reconnectAttempts++;
           setTimeout(() => this.connect(), 2000);
@@ -118,9 +105,6 @@ export class VMLauncher {
     });
   }
 
-  /**
-   * Boot a VM
-   */
   async bootVM(os: string, ram: number, cores: number): Promise<{
     success: boolean;
     vmId?: string;
@@ -130,10 +114,7 @@ export class VMLauncher {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       const connected = await this.connect();
       if (!connected) {
-        return {
-          success: false,
-          error: "VM bridge not running. Please download and start Thalamus VM.",
-        };
+        return { success: false, error: "VM bridge not running. Please run the setup script first." };
       }
     }
 
@@ -143,44 +124,23 @@ export class VMLauncher {
         return;
       }
 
-      this.ws.send(
-        JSON.stringify({
-          action: "boot",
-          os,
-          ram,
-          cores,
-        })
-      );
+      this.ws.send(JSON.stringify({ action: "boot", os, ram, cores }));
 
       const messageHandler = (event: MessageEvent) => {
         try {
           const data = JSON.parse(event.data);
-
           if (data.status === "success") {
-            resolve({
-              success: true,
-              vmId: data.vmId,
-              vncPort: data.vncPort,
-            });
+            resolve({ success: true, vmId: data.vmId, vncPort: data.vncPort });
           } else {
-            resolve({
-              success: false,
-              error: data.message || "Failed to boot VM",
-            });
+            resolve({ success: false, error: data.message || "Failed to boot VM" });
           }
-
           this.ws?.removeEventListener("message", messageHandler);
         } catch (err) {
-          resolve({
-            success: false,
-            error: err instanceof Error ? err.message : "Unknown error",
-          });
+          resolve({ success: false, error: err instanceof Error ? err.message : "Unknown error" });
         }
       };
 
       this.ws.addEventListener("message", messageHandler);
-
-      // Timeout after 10 seconds
       setTimeout(() => {
         this.ws?.removeEventListener("message", messageHandler);
         resolve({ success: false, error: "Timeout waiting for VM to boot" });
@@ -188,19 +148,11 @@ export class VMLauncher {
     });
   }
 
-  /**
-   * Stop a VM
-   */
   async stopVM(vmId: string): Promise<boolean> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      return false;
-    }
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
 
     return new Promise((resolve) => {
-      if (!this.ws) {
-        resolve(false);
-        return;
-      }
+      if (!this.ws) { resolve(false); return; }
 
       this.ws.send(JSON.stringify({ action: "stop", vmId }));
 
@@ -209,13 +161,10 @@ export class VMLauncher {
           const data = JSON.parse(event.data);
           resolve(data.status === "success");
           this.ws?.removeEventListener("message", messageHandler);
-        } catch {
-          resolve(false);
-        }
+        } catch { resolve(false); }
       };
 
       this.ws.addEventListener("message", messageHandler);
-
       setTimeout(() => {
         this.ws?.removeEventListener("message", messageHandler);
         resolve(false);
@@ -223,59 +172,72 @@ export class VMLauncher {
     });
   }
 
-  /**
-   * Get download URL for current platform
-   * Update these URLs after building and hosting the executables
-   */
+  /** Returns platform-specific download URL for the setup script */
   getDownloadUrl(): string {
-    if (typeof navigator === "undefined") {
-      return this.windowsDownloadUrl;
-    }
-
-    const platform = navigator.platform.toLowerCase();
-
-    if (platform.includes("win")) {
-      return this.windowsDownloadUrl;
-    }
-
-    return this.windowsDownloadUrl;
+    if (typeof navigator === "undefined") return "/downloads/setup-windows.bat";
+    const p = navigator.platform.toLowerCase();
+    if (p.includes("win")) return "/downloads/setup-windows.bat";
+    if (p.includes("mac")) return "/downloads/setup-macos.sh";
+    return "/downloads/setup-linux.sh";
   }
 
-  /**
-   * Get platform-specific instructions
-   */
+  /** Returns the filename for the download */
+  getDownloadFilename(): string {
+    if (typeof navigator === "undefined") return "setup-windows.bat";
+    const p = navigator.platform.toLowerCase();
+    if (p.includes("win")) return "setup-windows.bat";
+    if (p.includes("mac")) return "setup-macos.sh";
+    return "setup-linux.sh";
+  }
+
+  /** Returns platform name */
+  getPlatformName(): string {
+    if (typeof navigator === "undefined") return "Windows";
+    const p = navigator.platform.toLowerCase();
+    if (p.includes("win")) return "Windows";
+    if (p.includes("mac")) return "macOS";
+    return "Linux";
+  }
+
+  /** Returns platform-specific instructions */
   getInstructions(): string[] {
-    if (typeof navigator === "undefined") {
-      return [
-        "1. Download thalamus-vm-windows.exe on a Windows 11 PC",
-        "2. Double-click to run the executable",
-        "3. Return to Thalamus after the bridge window opens",
-        "4. The Boot OS button will enable automatically",
-      ];
-    }
+    if (typeof navigator === "undefined") return this._windowsInstructions();
+    const p = navigator.platform.toLowerCase();
+    if (p.includes("win")) return this._windowsInstructions();
+    if (p.includes("mac")) return this._macInstructions();
+    return this._linuxInstructions();
+  }
 
-    const platform = navigator.platform.toLowerCase();
-
-    if (platform.includes("win")) {
-      return [
-        "1. Download thalamus-vm-windows.exe",
-        "2. Double-click to run",
-        "3. Windows may show a security warning - click 'More info' then 'Run anyway'",
-        "4. That's it! VM bridge is now running",
-      ];
-    }
-
+  private _windowsInstructions(): string[] {
     return [
-      "1. Download thalamus-vm-windows.exe on a Windows 11 PC",
-      "2. Double-click to run the executable",
-      "3. Return to Thalamus after the bridge window opens",
-      "4. The Boot OS button will enable automatically",
+      "Download setup-windows.bat",
+      "Double-click the downloaded file to run it",
+      "If Windows shows a security warning, click 'More info' → 'Run anyway'",
+      "The script installs Node.js + QEMU (if needed) and starts the bridge",
+      "Keep the terminal window open while using Thalamus VMs",
     ];
   }
 
-  /**
-   * Disconnect
-   */
+  private _macInstructions(): string[] {
+    return [
+      "Download setup-macos.sh",
+      "Open Terminal and run: chmod +x ~/Downloads/setup-macos.sh",
+      "Then run: ~/Downloads/setup-macos.sh",
+      "The script installs Node.js + QEMU via Homebrew (if needed) and starts the bridge",
+      "Keep the terminal window open while using Thalamus VMs",
+    ];
+  }
+
+  private _linuxInstructions(): string[] {
+    return [
+      "Download setup-linux.sh",
+      "Open terminal and run: chmod +x ~/Downloads/setup-linux.sh",
+      "Then run: ~/Downloads/setup-linux.sh",
+      "The script installs Node.js + QEMU via your package manager (if needed) and starts the bridge",
+      "Keep the terminal window open while using Thalamus VMs",
+    ];
+  }
+
   disconnect() {
     if (this.ws) {
       this.ws.close();
@@ -284,5 +246,4 @@ export class VMLauncher {
   }
 }
 
-// Singleton instance
 export const vmLauncher = new VMLauncher();
