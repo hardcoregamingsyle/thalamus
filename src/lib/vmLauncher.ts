@@ -109,6 +109,8 @@ export class VMLauncher {
     success: boolean;
     vmId?: string;
     vncPort?: number;
+    isoNeeded?: string;
+    hasIso?: boolean;
     error?: string;
   }> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
@@ -130,7 +132,7 @@ export class VMLauncher {
         try {
           const data = JSON.parse(event.data);
           if (data.status === "success") {
-            resolve({ success: true, vmId: data.vmId, vncPort: data.vncPort });
+            resolve({ success: true, vmId: data.vmId, vncPort: data.vncPort, isoNeeded: data.isoNeeded, hasIso: data.hasIso });
           } else {
             resolve({ success: false, error: data.message || "Failed to boot VM" });
           }
@@ -174,9 +176,9 @@ export class VMLauncher {
 
   /** Returns platform-specific download URL */
   getDownloadUrl(): string {
-    if (typeof navigator === "undefined") return "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.0.1/thalamus-vm-bridge.exe";
+    if (typeof navigator === "undefined") return "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.1.0/thalamus-vm-bridge.exe";
     const p = navigator.platform.toLowerCase();
-    if (p.includes("win")) return "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.0.1/thalamus-vm-bridge.exe";
+    if (p.includes("win")) return "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.1.0/thalamus-vm-bridge.exe";
     if (p.includes("mac")) return "/downloads/setup-macos.sh";
     return "/downloads/setup-linux.sh";
   }
