@@ -4,8 +4,8 @@
  * User flow:
  * 1. User clicks "Boot VM" in browser
  * 2. Check if bridge is running (try connect ws://localhost:5900)
- * 3. If not running, show download dialog with platform-specific setup scripts
- * 4. User downloads and runs the script (one time only)
+ * 3. If not running, show download dialog
+ * 4. User downloads and runs the exe/script (one time only)
  * 5. Bridge stays running in background
  * 6. All future VM boots just work
  */
@@ -172,20 +172,20 @@ export class VMLauncher {
     });
   }
 
-  /** Returns platform-specific download URL for the setup script */
+  /** Returns platform-specific download URL */
   getDownloadUrl(): string {
-    if (typeof navigator === "undefined") return "/downloads/setup-windows.bat";
+    if (typeof navigator === "undefined") return "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.0.0/thalamus-vm-bridge.exe";
     const p = navigator.platform.toLowerCase();
-    if (p.includes("win")) return "/downloads/setup-windows.bat";
+    if (p.includes("win")) return "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.0.0/thalamus-vm-bridge.exe";
     if (p.includes("mac")) return "/downloads/setup-macos.sh";
     return "/downloads/setup-linux.sh";
   }
 
   /** Returns the filename for the download */
   getDownloadFilename(): string {
-    if (typeof navigator === "undefined") return "setup-windows.bat";
+    if (typeof navigator === "undefined") return "thalamus-vm-bridge.exe";
     const p = navigator.platform.toLowerCase();
-    if (p.includes("win")) return "setup-windows.bat";
+    if (p.includes("win")) return "thalamus-vm-bridge.exe";
     if (p.includes("mac")) return "setup-macos.sh";
     return "setup-linux.sh";
   }
@@ -210,11 +210,11 @@ export class VMLauncher {
 
   private _windowsInstructions(): string[] {
     return [
-      "Download setup-windows.bat",
-      "Double-click the downloaded file to run it",
-      "If Windows shows a security warning, click 'More info' → 'Run anyway'",
-      "The script installs Node.js + QEMU (if needed) and starts the bridge",
-      "Keep the terminal window open while using Thalamus VMs",
+      "Download thalamus-vm-bridge.exe",
+      "Double-click to run it",
+      "If Windows Defender shows a warning, click 'More info' → 'Run anyway'",
+      "The app installs QEMU automatically and starts the bridge",
+      "Keep the window open while using Thalamus VMs",
     ];
   }
 
