@@ -371,15 +371,6 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             Thalamus helps you ask, learn, research, write, plan, and build from one beautiful place.
           </motion.p>
 
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.16, duration: 0.5 }}
-            className="mx-auto mt-5 flex max-w-2xl items-center justify-center gap-2 rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-4 py-3 text-xs font-bold text-emerald-200 shadow-lg shadow-emerald-950/10"
-          >
-            <CheckCircle className="h-4 w-4 shrink-0" />
-            <span>New: Windows 11 sandbox setup now uses one downloadable executable.</span>
-          </motion.div>
 
           <motion.div
             initial={{ opacity: 0, y: 14 }}
