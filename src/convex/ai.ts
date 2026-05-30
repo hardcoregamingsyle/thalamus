@@ -103,14 +103,14 @@ const BEDROCK_MODEL_IDS: Record<string, string> = {
   "claude-haiku-4-5":  "us.anthropic.claude-haiku-4-5-20251001-v1:0",
   "claude-sonnet-4-6": "us.anthropic.claude-sonnet-4-6-20251101-v1:0",
   "claude-opus-4-6":   "us.anthropic.claude-opus-4-6-20251101-v1:0",
-  "claude-opus-4-7":   "us.anthropic.claude-opus-4-7-20260101-v1:0",
+  "claude-opus-4-8":   "us.anthropic.claude-opus-4-8-20260101-v1:0",
 };
 
 const BEDROCK_MAX_TOKENS: Record<string, number> = {
   "claude-haiku-4-5":  8192,
   "claude-sonnet-4-6": 16000,
   "claude-opus-4-6":   16000,
-  "claude-opus-4-7":   16000,
+  "claude-opus-4-8":   16000,
 };
 
 // Bedrock Claude call

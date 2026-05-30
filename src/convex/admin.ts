@@ -217,7 +217,7 @@ const PLATFORM_PRICING: Record<string, { input: number; output: number }> = {
   "claude-haiku-4-5":  { input: 1.80,  output: 7.20 },
   "claude-sonnet-4-6": { input: 5.40,  output: 26.50 },
   "claude-opus-4-6":   { input: 7.44,  output: 42.00 },
-  "claude-opus-4-7":   { input: 12.00, output: 60.00 },
+  "claude-opus-4-8":   { input: 12.00, output: 60.00 },
 };
 
 const BUDGET_THRESHOLD = 5.0; // disable at $5 remaining

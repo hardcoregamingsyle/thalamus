@@ -22,7 +22,7 @@ const DEFAULT_MODELS = [
   { modelId: "claude-haiku-4-5", displayName: "Claude Haiku 4.5", inputCentsPerMillion: 180, outputCentsPerMillion: 720, abMultiplier: 15000, isActive: true },
   { modelId: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6", inputCentsPerMillion: 540, outputCentsPerMillion: 2650, abMultiplier: 15000, isActive: true },
   { modelId: "claude-opus-4-6", displayName: "Claude Opus 4.6", inputCentsPerMillion: 744, outputCentsPerMillion: 4200, abMultiplier: 15000, isActive: true },
-  { modelId: "claude-opus-4-7", displayName: "Claude Opus 4.7", inputCentsPerMillion: 1200, outputCentsPerMillion: 6000, abMultiplier: 15000, isActive: true },
+  { modelId: "claude-opus-4-8", displayName: "Claude Opus 4.8", inputCentsPerMillion: 1200, outputCentsPerMillion: 6000, abMultiplier: 15000, isActive: true },
 ];
 
 type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex" | "study-materials" | "dau" | "aws" | "gemini";
@@ -499,7 +499,7 @@ const PLATFORM_PRICING = [
   { modelId: "claude-haiku-4-5",  displayName: "Claude Haiku 4.5",  input: 1.80,  output: 7.20  },
   { modelId: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6", input: 5.40,  output: 26.50 },
   { modelId: "claude-opus-4-6",   displayName: "Claude Opus 4.6",   input: 7.44,  output: 42.00 },
-  { modelId: "claude-opus-4-7",   displayName: "Claude Opus 4.7",   input: 12.00, output: 60.00 },
+  { modelId: "claude-opus-4-8",   displayName: "Claude Opus 4.8",   input: 12.00, output: 60.00 },
 ];
 
 // ── Credits Tab ───────────────────────────────────────────────────────────────
