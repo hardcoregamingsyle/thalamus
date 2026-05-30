@@ -8,6 +8,7 @@ import { FileTreeView, FileTreeFile } from "@/components/FileTree";
 import ThinkingPanel from "@/components/ThinkingPanel";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
+import { vmLauncher } from "@/lib/vmLauncher";
 import {
   Loader2, LogOut, Plus, Users, ArrowLeft, RefreshCw, CheckCircle,
   Terminal, Box, Globe, ExternalLink, Play, Square, Send, FileCode,
@@ -402,16 +403,14 @@ export default function TeamPortal() {
     document.documentElement.classList.toggle("light", !isDark);
   }, [isDark]);
 
-  // Bridge health check — polls localhost:3847/health every 5s
+  const bridgeDownloadUrl = vmLauncher.getDownloadUrl();
+
+  // Bridge health check - asks the local executable for a functional ping every 5s.
   useEffect(() => {
     let cancelled = false;
     const check = async () => {
-      try {
-        const res = await fetch("http://localhost:3847/health", { signal: AbortSignal.timeout(2000) });
-        if (!cancelled) setBridgeStatus(res.ok ? "online" : "offline");
-      } catch {
-        if (!cancelled) setBridgeStatus("offline");
-      }
+      const status = await vmLauncher.checkStatus();
+      if (!cancelled) setBridgeStatus(status.functional ? "online" : "offline");
     };
     check();
     const interval = setInterval(check, 5000);
@@ -422,14 +421,14 @@ export default function TeamPortal() {
     if (bridgeStatus !== "online") return;
     setIsBootingOs(true);
     try {
-      const res = await fetch("http://localhost:3847/boot", { method: "POST", signal: AbortSignal.timeout(10000) });
-      if (res.ok) {
-        toast.success("OS is booting — check the QEMU window on your desktop");
+      const result = await vmLauncher.bootVM("windows-11", 6144, 4);
+      if (result.success) {
+        toast.success("OS is booting. Check the VM window on your desktop.");
       } else {
-        toast.error("Bridge responded but boot failed. Check the bridge logs.");
+        toast.error(result.error || "The local executable responded but boot failed.");
       }
     } catch {
-      toast.error("Could not reach the bridge. Make sure it is running.");
+      toast.error("Could not reach the local VM executable.");
     } finally {
       setIsBootingOs(false);
     }
@@ -2241,13 +2240,13 @@ export default function TeamPortal() {
                           {/* Bridge status indicator */}
                           <div className="flex items-center gap-1.5">
                             {bridgeStatus === "checking" && (
-                              <><Loader2 className="h-3 w-3 animate-spin text-muted-foreground" /><span className="text-[9px] text-muted-foreground">Checking…</span></>
+                              <><Loader2 className="h-3 w-3 animate-spin text-muted-foreground" /><span className="text-[9px] text-muted-foreground">Checking...</span></>
                             )}
                             {bridgeStatus === "online" && (
-                              <><span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" /><span className="text-[9px] text-green-400 font-bold">BRIDGE ONLINE</span></>
+                              <><span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" /><span className="text-[9px] text-green-400 font-bold">SANDBOX READY</span></>
                             )}
                             {bridgeStatus === "offline" && (
-                              <><span className="w-2 h-2 rounded-full bg-red-400" /><span className="text-[9px] text-red-400 font-bold">BRIDGE OFFLINE</span></>
+                              <><span className="w-2 h-2 rounded-full bg-orange-400" /><span className="text-[9px] text-orange-400 font-bold">FILES REQUIRED</span></>
                             )}
                           </div>
                         </div>
@@ -2269,10 +2268,10 @@ export default function TeamPortal() {
                             BOOT OS
                           </motion.button>
                         ) : (
-                          /* Bridge not running — show Download Required Files */
+                          /* Local executable not ready - show Download Required Files */
                           <div className="space-y-2">
                             <a
-                              href="https://github.com/aphantic/thalamus-bridge/releases/latest/download/ThalamusBridge-Setup.exe"
+                              href={bridgeDownloadUrl}
                               download
                               className="flex items-center justify-center gap-2 w-full px-4 py-3 bg-primary/10 border border-primary/30 text-primary text-sm rounded-xl hover:bg-primary/20 transition-all font-bold group"
                             >
@@ -2281,7 +2280,7 @@ export default function TeamPortal() {
                             </a>
                             <p className="text-[9px] text-muted-foreground/70 text-center leading-relaxed">
                               Includes QEMU, the Thalamus Bridge, and all required files.<br />
-                              Run the installer, then return here — the button will change to <span className="text-green-400 font-bold">Boot OS</span>.
+                              Run the executable, then return here. The button will change to <span className="text-green-400 font-bold">Boot OS</span>.
                             </p>
                           </div>
                         )}

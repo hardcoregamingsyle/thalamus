@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Download, CheckCircle2, Loader2, Play, ExternalLink } from "lucide-react";
+import { Download, CheckCircle2, Loader2, Play } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { vmLauncher } from "@/lib/vmLauncher";
 
@@ -24,36 +24,37 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
   const [isRunning, setIsRunning] = useState(false);
   const [version, setVersion] = useState<string>();
 
-  useEffect(() => {
-    if (open) {
-      checkStatus();
-      // Check every 3 seconds
-      const interval = setInterval(checkStatus, 3000);
-      return () => clearInterval(interval);
-    }
-  }, [open]);
-
-  const checkStatus = async () => {
+  const checkStatus = useCallback(async () => {
     setChecking(true);
     const status = await vmLauncher.checkStatus();
-    setIsRunning(status.running);
+    setIsRunning(status.functional);
     setVersion(status.version);
     setChecking(false);
 
-    if (status.running) {
+    if (status.functional) {
       // Auto-close after 2 seconds if running
       setTimeout(() => {
         onComplete();
         onOpenChange(false);
       }, 2000);
     }
-  };
+  }, [onComplete, onOpenChange]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const initialCheck = setTimeout(() => void checkStatus(), 0);
+    const interval = setInterval(checkStatus, 3000);
+    return () => {
+      clearTimeout(initialCheck);
+      clearInterval(interval);
+    };
+  }, [checkStatus, open]);
 
   const downloadUrl = vmLauncher.getDownloadUrl();
   const instructions = vmLauncher.getInstructions();
   const platform = navigator.platform.toLowerCase();
   const isWindows = platform.includes("win");
-  const isMac = platform.includes("mac");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -64,7 +65,7 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
             VM Setup - One Time Only
           </DialogTitle>
           <DialogDescription>
-            Download and run the Thalamus VM launcher to boot virtual machines
+            Download one Windows executable that includes the VM system, bridge, and required files.
           </DialogDescription>
         </DialogHeader>
 
@@ -114,29 +115,24 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                     <Download className="h-6 w-6 text-primary" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-semibold mb-2">Download VM Launcher</h3>
+                    <h3 className="font-semibold mb-2">Download Required Files</h3>
                     <p className="text-sm text-muted-foreground mb-4">
-                      Single executable file (~50MB) that includes everything. No Node.js or complex
-                      setup required.
+                      Single executable file that includes the VM system, bridge, and required files.
+                      No Node.js, command line setup, or separate installs required.
                     </p>
                     <div className="flex gap-3">
                       <Button asChild className="gap-2">
                         <a href={downloadUrl} download>
                           <Download className="h-4 w-4" />
-                          Download for {isWindows ? "Windows" : isMac ? "macOS" : "Linux"}
-                        </a>
-                      </Button>
-                      <Button variant="outline" asChild className="gap-2">
-                        <a
-                          href="https://github.com/thalamus-ai/vm-launcher/releases"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                          All Versions
+                          Download Required Files
                         </a>
                       </Button>
                     </div>
+                    {!isWindows && (
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        This installer is built for Windows 11 PCs.
+                      </p>
+                    )}
                   </div>
                 </div>
               </Card>
