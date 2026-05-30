@@ -393,10 +393,47 @@ export default function TeamPortal() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const sandboxOutputEndRef = useRef<HTMLDivElement>(null);
 
+  // Bridge status: checks if local QEMU bridge is running
+  const [bridgeStatus, setBridgeStatus] = useState<"checking" | "online" | "offline">("checking");
+  const [isBootingOs, setIsBootingOs] = useState(false);
+
   // Theme
   useEffect(() => {
     document.documentElement.classList.toggle("light", !isDark);
   }, [isDark]);
+
+  // Bridge health check — polls localhost:3847/health every 5s
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const res = await fetch("http://localhost:3847/health", { signal: AbortSignal.timeout(2000) });
+        if (!cancelled) setBridgeStatus(res.ok ? "online" : "offline");
+      } catch {
+        if (!cancelled) setBridgeStatus("offline");
+      }
+    };
+    check();
+    const interval = setInterval(check, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  const handleBootOs = async () => {
+    if (bridgeStatus !== "online") return;
+    setIsBootingOs(true);
+    try {
+      const res = await fetch("http://localhost:3847/boot", { method: "POST", signal: AbortSignal.timeout(10000) });
+      if (res.ok) {
+        toast.success("OS is booting — check the QEMU window on your desktop");
+      } else {
+        toast.error("Bridge responded but boot failed. Check the bridge logs.");
+      }
+    } catch {
+      toast.error("Could not reach the bridge. Make sure it is running.");
+    } finally {
+      setIsBootingOs(false);
+    }
+  };
 
   // Mutations
   const renameSessionMutation = useMutation(api.agentTeamHelpers.renameSessionPublic);
@@ -2194,56 +2231,60 @@ export default function TeamPortal() {
                         </motion.button>
                       </div>
 
-                      {/* QEMU Local Downloads */}
+                      {/* Local OS Sandbox — bridge-aware */}
                       <div className="border border-border rounded-xl p-4 space-y-3">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Monitor className="h-4 w-4 text-primary" />
-                          <p className="text-xs font-bold text-foreground">Run Locally with QEMU</p>
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <Monitor className="h-4 w-4 text-primary" />
+                            <p className="text-xs font-bold text-foreground">Local OS Sandbox</p>
+                          </div>
+                          {/* Bridge status indicator */}
+                          <div className="flex items-center gap-1.5">
+                            {bridgeStatus === "checking" && (
+                              <><Loader2 className="h-3 w-3 animate-spin text-muted-foreground" /><span className="text-[9px] text-muted-foreground">Checking…</span></>
+                            )}
+                            {bridgeStatus === "online" && (
+                              <><span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" /><span className="text-[9px] text-green-400 font-bold">BRIDGE ONLINE</span></>
+                            )}
+                            {bridgeStatus === "offline" && (
+                              <><span className="w-2 h-2 rounded-full bg-red-400" /><span className="text-[9px] text-red-400 font-bold">BRIDGE OFFLINE</span></>
+                            )}
+                          </div>
                         </div>
+
                         <p className="text-[10px] text-muted-foreground leading-relaxed">
-                          Download QEMU to run virtual machines locally on your computer. Free and open-source.
+                          Run a full OS sandbox directly on your machine — no cloud costs, no setup. One click gets you everything.
                         </p>
-                        <div className="space-y-2">
-                          <a
-                            href="https://qemu.weilnetz.de/w64/qemu-w64-setup-20240813.exe"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center justify-between w-full px-3 py-2 bg-blue-400/10 border border-blue-400/20 rounded-lg hover:bg-blue-400/20 transition-all group"
+
+                        {bridgeStatus === "online" ? (
+                          /* Bridge is running — show Boot OS */
+                          <motion.button
+                            onClick={handleBootOs}
+                            disabled={isBootingOs}
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            className="flex items-center justify-center gap-2 w-full px-4 py-3 bg-green-400/10 border border-green-400/30 text-green-400 text-sm rounded-xl hover:bg-green-400/20 disabled:opacity-50 transition-all font-bold"
                           >
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-bold text-blue-400">🪟 Windows</span>
-                              <span className="text-[9px] text-muted-foreground">QEMU 9.1 (64-bit installer)</span>
-                            </div>
-                            <Download className="h-3 w-3 text-blue-400 group-hover:scale-110 transition-transform" />
-                          </a>
-                          <a
-                            href="https://www.qemu.org/download/#macos"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center justify-between w-full px-3 py-2 bg-gray-400/10 border border-gray-400/20 rounded-lg hover:bg-gray-400/20 transition-all group"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-bold text-foreground">🍎 macOS</span>
-                              <span className="text-[9px] text-muted-foreground">via Homebrew: brew install qemu</span>
-                            </div>
-                            <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:scale-110 transition-transform" />
-                          </a>
-                          <a
-                            href="https://www.qemu.org/download/#linux"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center justify-between w-full px-3 py-2 bg-orange-400/10 border border-orange-400/20 rounded-lg hover:bg-orange-400/20 transition-all group"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-bold text-orange-400">🐧 Linux</span>
-                              <span className="text-[9px] text-muted-foreground">apt install qemu-system / dnf install qemu</span>
-                            </div>
-                            <ExternalLink className="h-3 w-3 text-orange-400 group-hover:scale-110 transition-transform" />
-                          </a>
-                        </div>
-                        <p className="text-[9px] text-muted-foreground/60 mt-2">
-                          After installing QEMU, you can run the generated project files locally using the VM configuration provided by the agents.
-                        </p>
+                            {isBootingOs ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                            BOOT OS
+                          </motion.button>
+                        ) : (
+                          /* Bridge not running — show Download Required Files */
+                          <div className="space-y-2">
+                            <a
+                              href="https://github.com/aphantic/thalamus-bridge/releases/latest/download/ThalamusBridge-Setup.exe"
+                              download
+                              className="flex items-center justify-center gap-2 w-full px-4 py-3 bg-primary/10 border border-primary/30 text-primary text-sm rounded-xl hover:bg-primary/20 transition-all font-bold group"
+                            >
+                              <Download className="h-4 w-4 group-hover:scale-110 transition-transform" />
+                              DOWNLOAD REQUIRED FILES
+                            </a>
+                            <p className="text-[9px] text-muted-foreground/70 text-center leading-relaxed">
+                              Includes QEMU, the Thalamus Bridge, and all required files.<br />
+                              Run the installer, then return here — the button will change to <span className="text-green-400 font-bold">Boot OS</span>.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
