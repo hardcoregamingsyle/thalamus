@@ -139,6 +139,8 @@ export function SandboxView({ branchId }: SandboxViewProps) {
   const [bridgeChecking, setBridgeChecking] = useState(true);
   const [bridgeVersion, setBridgeVersion] = useState<string>();
   const [currentVmId, setCurrentVmId] = useState<string | null>(null);
+  const [currentVncPort, setCurrentVncPort] = useState<number>(5901);
+  const [isoNeededPath, setIsoNeededPath] = useState<string | null>(null);
   const [showSetupDialog, setShowSetupDialog] = useState(false);
   const emulatorRef = useRef<any>(null);
   const screenContainerRef = useRef<HTMLDivElement>(null);
@@ -235,7 +237,14 @@ export function SandboxView({ branchId }: SandboxViewProps) {
 
       setVmStatus("running");
       setCurrentVmId(result.vmId || null);
-      toast.success(`${config.name} ready! VNC: localhost:${result.vncPort}`);
+      setCurrentVncPort(result.vncPort || 5901);
+      setIsoNeededPath(result.isoNeeded || null);
+
+      if (result.isoNeeded) {
+        toast.warning(`No ISO found. VM shows BIOS only. Place ISO at: ${result.isoNeeded}`, { duration: 15000 });
+      } else {
+        toast.success(`${config.name} booting! VNC: localhost:${result.vncPort}`);
+      }
       toast.info(`Connect VNC viewer to localhost:${result.vncPort}`, {
         duration: 10000,
         action: {
@@ -608,17 +617,28 @@ export function SandboxView({ branchId }: SandboxViewProps) {
               <Monitor className="h-16 w-16 mb-4" />
               <p className="text-lg font-medium mb-2">{currentConfig.name} Running</p>
               <p className="text-sm text-white/60 mb-4">
-                VM running with {customRam}MB RAM, {customCores} cores
+                {customRam}MB RAM · {customCores} vCPU
               </p>
-              <p className="text-xs text-white/40 mb-2">
-                Connect VNC viewer to see display:
-              </p>
-              <code className="bg-black/50 px-4 py-2 rounded text-sm">
-                localhost:5901
-              </code>
-              <p className="text-xs text-white/40 mt-4">
-                VNC Clients: RealVNC, TigerVNC, or Screen Sharing
-              </p>
+              {isoNeededPath ? (
+                <div className="text-center max-w-sm">
+                  <p className="text-xs text-yellow-400 mb-2 font-medium">⚠ No OS ISO found — VM shows BIOS only</p>
+                  <p className="text-xs text-white/50 mb-1">To install {currentConfig.name}, place the ISO at:</p>
+                  <code className="bg-black/60 px-3 py-1.5 rounded text-xs break-all block mb-3">
+                    {isoNeededPath}
+                  </code>
+                  <p className="text-xs text-white/40">Then restart the VM</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-white/40 mb-2">Connect VNC viewer to see display:</p>
+                  <code className="bg-black/50 px-4 py-2 rounded text-sm">
+                    localhost:{currentVncPort}
+                  </code>
+                  <p className="text-xs text-white/40 mt-4">
+                    VNC Clients: RealVNC, TigerVNC, or Screen Sharing
+                  </p>
+                </>
+              )}
             </div>
           )}
 
