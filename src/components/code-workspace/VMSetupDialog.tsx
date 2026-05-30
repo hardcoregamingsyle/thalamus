@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Download, CheckCircle2, Loader2, Play, Terminal, Monitor, Apple } from "lucide-react";
+import { Download, CheckCircle2, Loader2, Play, Terminal, Monitor, Apple, ExternalLink } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { vmLauncher } from "@/lib/vmLauncher";
 
@@ -23,9 +23,10 @@ const PLATFORMS = [
   {
     name: "Windows",
     icon: Monitor,
-    file: "setup-windows.bat",
-    url: "/downloads/setup-windows.bat",
-    hint: "Double-click to run. Allow if Windows Defender prompts.",
+    file: "thalamus-vm-bridge.exe",
+    url: "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.0.0/thalamus-vm-bridge.exe",
+    hint: "Professional installer — double-click to run. Auto-installs QEMU.",
+    isExe: true,
   },
   {
     name: "macOS",
@@ -33,6 +34,7 @@ const PLATFORMS = [
     file: "setup-macos.sh",
     url: "/downloads/setup-macos.sh",
     hint: "chmod +x ~/Downloads/setup-macos.sh && ~/Downloads/setup-macos.sh",
+    isExe: false,
   },
   {
     name: "Linux",
@@ -40,6 +42,7 @@ const PLATFORMS = [
     file: "setup-linux.sh",
     url: "/downloads/setup-linux.sh",
     hint: "chmod +x ~/Downloads/setup-linux.sh && ~/Downloads/setup-linux.sh",
+    isExe: false,
   },
 ];
 
@@ -73,7 +76,6 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
     };
   }, [checkStatus, open]);
 
-  // Detect current platform
   const currentPlatform = typeof navigator !== "undefined"
     ? navigator.platform.toLowerCase().includes("win") ? "Windows"
       : navigator.platform.toLowerCase().includes("mac") ? "macOS"
@@ -89,7 +91,7 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
             VM Bridge Setup
           </DialogTitle>
           <DialogDescription>
-            Run a one-time setup script to enable VM booting. Works on Windows, macOS, and Linux.
+            One-time setup to enable VM booting. Everything installs automatically.
           </DialogDescription>
         </DialogHeader>
 
@@ -131,12 +133,12 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="space-y-6"
+              className="space-y-5"
             >
               {/* Platform download cards */}
               <div className="space-y-3">
                 <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-                  Download Setup Script for Your OS
+                  Download for Your OS
                 </h4>
                 {PLATFORMS.map((p) => {
                   const Icon = p.icon;
@@ -147,21 +149,36 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                       className={`p-4 transition-colors ${isCurrent ? "border-primary/50 bg-primary/5" : ""}`}
                     >
                       <div className="flex items-center gap-4">
-                        <div className={`rounded-lg p-2 ${isCurrent ? "bg-primary/10" : "bg-muted"}`}>
+                        <div className={`rounded-lg p-2.5 ${isCurrent ? "bg-primary/10" : "bg-muted"}`}>
                           <Icon className={`h-5 w-5 ${isCurrent ? "text-primary" : "text-muted-foreground"}`} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="font-medium text-sm">{p.name}</span>
+                            <span className="font-semibold text-sm">{p.name}</span>
                             {isCurrent && (
                               <Badge variant="secondary" className="text-xs">Your OS</Badge>
                             )}
+                            {p.isExe && (
+                              <Badge className="text-xs bg-blue-500/10 text-blue-600 border-blue-500/20">
+                                .exe
+                              </Badge>
+                            )}
                           </div>
-                          <p className="text-xs text-muted-foreground font-mono truncate">{p.hint}</p>
+                          <p className="text-xs text-muted-foreground truncate">{p.hint}</p>
                         </div>
-                        <Button asChild size="sm" variant={isCurrent ? "default" : "outline"} className="gap-2 shrink-0">
-                          <a href={p.url} download={p.file}>
-                            <Download className="h-3 w-3" />
+                        <Button
+                          asChild
+                          size="sm"
+                          variant={isCurrent ? "default" : "outline"}
+                          className="gap-2 shrink-0"
+                        >
+                          <a
+                            href={p.url}
+                            download={p.file}
+                            target={p.isExe ? "_blank" : undefined}
+                            rel={p.isExe ? "noopener noreferrer" : undefined}
+                          >
+                            {p.isExe ? <ExternalLink className="h-3 w-3" /> : <Download className="h-3 w-3" />}
                             {p.file}
                           </a>
                         </Button>
@@ -171,12 +188,12 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                 })}
               </div>
 
-              {/* What the script does */}
+              {/* What it does */}
               <Card className="p-4 bg-muted/30">
-                <h4 className="font-medium text-sm mb-2">What the script does:</h4>
+                <h4 className="font-medium text-sm mb-2">What happens when you run it:</h4>
                 <ul className="space-y-1 text-xs text-muted-foreground">
-                  <li>• Checks for Node.js and QEMU (installs if missing)</li>
-                  <li>• Creates a local WebSocket bridge on port 5900</li>
+                  <li>• Automatically downloads and installs QEMU (if not present)</li>
+                  <li>• Starts a local WebSocket bridge on port 5900</li>
                   <li>• Enables booting Windows, macOS, Linux, and Android VMs</li>
                   <li>• Runs entirely on your machine — no data sent to servers</li>
                 </ul>
@@ -190,7 +207,7 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                       Waiting for VM bridge to start...
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      This dialog will automatically close once the bridge is detected on localhost:5900.
+                      This dialog closes automatically once the bridge is detected on localhost:5900.
                     </p>
                   </div>
                 </div>
