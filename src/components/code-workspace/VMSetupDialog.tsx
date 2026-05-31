@@ -11,9 +11,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Download, CheckCircle2, Loader2, Play, Terminal, Monitor, Apple, ExternalLink, Package, Zap, HardDrive, Trash2, RefreshCw } from "lucide-react";
+import { Download, CheckCircle2, Loader2, Terminal, Monitor, Apple, ExternalLink, Package, Zap, HardDrive, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { toast } from "sonner";
 import { vmLauncher, VMLauncher } from "@/lib/vmLauncher";
 
 interface VMSetupDialogProps {
@@ -28,29 +27,127 @@ interface ISOOption {
   version: string;
   size: string;
   free: boolean;
+  downloadUrl?: string;
   note?: string;
   category: "windows" | "macos" | "linux" | "android";
 }
 
 const ISO_OPTIONS: ISOOption[] = [
-  // Windows
-  { key: "windows-11", name: "Windows 11 Pro", version: "23H2", size: "~5.8GB", free: false, note: "Download from Microsoft", category: "windows" },
-  { key: "windows-10", name: "Windows 10 Pro", version: "22H2", size: "~5.2GB", free: false, note: "Download from Microsoft", category: "windows" },
-  // macOS
-  { key: "macos-26", name: "macOS 26 Tahoe", version: "26.0", size: "~14GB", free: false, note: "Requires Apple hardware", category: "macos" },
-  { key: "macos-18", name: "macOS 18 Sequoia", version: "18.0", size: "~14GB", free: false, note: "Requires Apple hardware", category: "macos" },
-  { key: "macos-17", name: "macOS 17 Sonoma", version: "17.0", size: "~13GB", free: false, note: "Requires Apple hardware", category: "macos" },
-  { key: "macos-16", name: "macOS 16 Ventura", version: "16.0", size: "~12GB", free: false, note: "Requires Apple hardware", category: "macos" },
+  // Windows — Microsoft Evaluation Center (free, 90-day eval, fully functional)
+  {
+    key: "windows-11",
+    name: "Windows 11 Pro",
+    version: "23H2",
+    size: "~5.8GB",
+    free: true,
+    downloadUrl: "https://www.microsoft.com/en-us/evalcenter/evaluate-windows-11-enterprise",
+    note: "Free 90-day eval from Microsoft",
+    category: "windows",
+  },
+  {
+    key: "windows-10",
+    name: "Windows 10 Pro",
+    version: "22H2",
+    size: "~5.2GB",
+    free: true,
+    downloadUrl: "https://www.microsoft.com/en-us/evalcenter/evaluate-windows-10-enterprise",
+    note: "Free 90-day eval from Microsoft",
+    category: "windows",
+  },
+  // macOS — OpenCore + macOS Recovery (legal for Apple hardware owners)
+  {
+    key: "macos-26",
+    name: "macOS 26 Tahoe",
+    version: "26.0",
+    size: "~14GB",
+    free: false,
+    note: "Requires Apple hardware (legal restriction)",
+    category: "macos",
+  },
+  {
+    key: "macos-sequoia",
+    name: "macOS 15 Sequoia",
+    version: "15.0",
+    size: "~14GB",
+    free: false,
+    note: "Requires Apple hardware (legal restriction)",
+    category: "macos",
+  },
+  {
+    key: "macos-sonoma",
+    name: "macOS 14 Sonoma",
+    version: "14.0",
+    size: "~13GB",
+    free: false,
+    note: "Requires Apple hardware (legal restriction)",
+    category: "macos",
+  },
   // Linux (free, auto-downloadable)
-  { key: "ubuntu-24", name: "Ubuntu 24.04 LTS", version: "24.04", size: "~5.7GB", free: true, category: "linux" },
-  { key: "ubuntu-22", name: "Ubuntu 22.04 LTS", version: "22.04", size: "~4.7GB", free: true, category: "linux" },
-  { key: "debian-12", name: "Debian 12 Bookworm", version: "12.0", size: "~3.7GB", free: true, category: "linux" },
-  { key: "fedora-40", name: "Fedora 40", version: "40", size: "~2.1GB", free: true, category: "linux" },
-  { key: "linux-alpine", name: "Alpine Linux", version: "3.21", size: "~200MB", free: true, category: "linux" },
-  { key: "linux-arch", name: "Arch Linux", version: "2024.01", size: "~1.1GB", free: true, category: "linux" },
+  {
+    key: "ubuntu-24",
+    name: "Ubuntu 24.04 LTS",
+    version: "24.04",
+    size: "~5.7GB",
+    free: true,
+    downloadUrl: "https://releases.ubuntu.com/24.04/ubuntu-24.04.2-desktop-amd64.iso",
+    category: "linux",
+  },
+  {
+    key: "ubuntu-22",
+    name: "Ubuntu 22.04 LTS",
+    version: "22.04",
+    size: "~4.7GB",
+    free: true,
+    downloadUrl: "https://releases.ubuntu.com/22.04/ubuntu-22.04.5-desktop-amd64.iso",
+    category: "linux",
+  },
+  {
+    key: "debian-12",
+    name: "Debian 12 Bookworm",
+    version: "12.0",
+    size: "~3.7GB",
+    free: true,
+    downloadUrl: "https://cdimage.debian.org/debian-cd/current/amd64/iso-dvd/debian-12.9.0-amd64-DVD-1.iso",
+    category: "linux",
+  },
+  {
+    key: "fedora-41",
+    name: "Fedora 41",
+    version: "41",
+    size: "~2.1GB",
+    free: true,
+    downloadUrl: "https://download.fedoraproject.org/pub/fedora/linux/releases/41/Workstation/x86_64/iso/Fedora-Workstation-Live-x86_64-41-1.4.iso",
+    category: "linux",
+  },
+  {
+    key: "linux-alpine",
+    name: "Alpine Linux 3.21",
+    version: "3.21",
+    size: "~200MB",
+    free: true,
+    downloadUrl: "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-standard-3.21.0-x86_64.iso",
+    category: "linux",
+  },
+  {
+    key: "kali-linux",
+    name: "Kali Linux 2024",
+    version: "2024.4",
+    size: "~4.1GB",
+    free: true,
+    downloadUrl: "https://cdimage.kali.org/kali-2024.4/kali-linux-2024.4-installer-amd64.iso",
+    category: "linux",
+  },
   // Android
-  { key: "android-14", name: "Android 14 x86_64", version: "14", size: "~1.1GB", free: true, category: "android" },
-  { key: "android-13", name: "Android 13 x86_64", version: "13", size: "~1.0GB", free: true, category: "android" },
+  {
+    key: "android-14",
+    name: "Android 14 x86_64",
+    version: "14",
+    size: "~1.1GB",
+    free: true,
+    downloadUrl: "https://sourceforge.net/projects/android-x86/files/Release%209.0/android-x86_64-9.0-r2.iso",
+    note: "Android-x86 project",
+    category: "android",
+  },
 ];
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -61,36 +158,32 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogProps) {
-  const [checking, setChecking] = useState(true);
-  const [isRunning, setIsRunning] = useState(false);
-  const [version, setVersion] = useState<string>();
+  const [bridgeRunning, setBridgeRunning] = useState(false);
+  const [bridgeVersion, setBridgeVersion] = useState<string>();
+  const [checking, setChecking] = useState(false);
   const [selectedISOs, setSelectedISOs] = useState<Set<string>>(new Set(["ubuntu-24", "linux-alpine"]));
   const [activeTab, setActiveTab] = useState("install");
 
   const checkStatus = useCallback(async () => {
     setChecking(true);
     const status = await vmLauncher.checkStatus();
-    setIsRunning(status.functional);
-    setVersion(status.version);
+    setBridgeRunning(status.functional);
+    setBridgeVersion(status.version);
     setChecking(false);
 
     if (status.functional) {
       setTimeout(() => {
         onComplete();
         onOpenChange(false);
-      }, 2000);
+      }, 1500);
     }
   }, [onComplete, onOpenChange]);
 
+  // Only check once when dialog opens — don't block UI with constant polling
   useEffect(() => {
     if (!open) return;
-    const initialCheck = setTimeout(() => void checkStatus(), 0);
-    const interval = setInterval(checkStatus, 3000);
-    return () => {
-      clearTimeout(initialCheck);
-      clearInterval(interval);
-    };
-  }, [checkStatus, open]);
+    void checkStatus();
+  }, [open, checkStatus]);
 
   const currentPlatform = typeof navigator !== "undefined"
     ? navigator.platform.toLowerCase().includes("win") ? "Windows"
@@ -107,13 +200,6 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
     });
   };
 
-  const buildInstallerUrl = () => {
-    // Build URL with selected ISOs as query params
-    const freeSelected = Array.from(selectedISOs).filter(k => ISO_OPTIONS.find(o => o.key === k)?.free);
-    const params = freeSelected.length > 0 ? `?isos=${freeSelected.join(",")}` : "";
-    return VMLauncher.INSTALLER_URL + params;
-  };
-
   const groupedISOs = ISO_OPTIONS.reduce((acc, iso) => {
     if (!acc[iso.category]) acc[iso.category] = [];
     acc[iso.category].push(iso);
@@ -125,7 +211,7 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Play className="h-5 w-5" />
+            <Package className="h-5 w-5" />
             Thalamus VM Setup
           </DialogTitle>
           <DialogDescription>
@@ -134,18 +220,7 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
         </DialogHeader>
 
         <AnimatePresence mode="wait">
-          {checking ? (
-            <motion.div
-              key="checking"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex items-center justify-center py-12"
-            >
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="ml-3 text-muted-foreground">Checking if VM bridge is running...</p>
-            </motion.div>
-          ) : isRunning ? (
+          {bridgeRunning ? (
             <motion.div
               key="running"
               initial={{ opacity: 0, scale: 0.95 }}
@@ -160,7 +235,7 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                 <div className="text-center">
                   <h3 className="text-xl font-semibold">VM Bridge Ready!</h3>
                   <p className="text-muted-foreground mt-1">
-                    {version ? `Version ${version} • ` : ""}Launching your VM...
+                    {bridgeVersion ? `Version ${bridgeVersion} • ` : ""}Launching your VM...
                   </p>
                 </div>
               </div>
@@ -175,12 +250,11 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
             >
               <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="w-full">
-                  <TabsTrigger value="install" className="flex-1">Install</TabsTrigger>
+                  <TabsTrigger value="install" className="flex-1">Install Bridge</TabsTrigger>
                   <TabsTrigger value="isos" className="flex-1">OS Images</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="install" className="space-y-4 mt-4">
-                  {/* Primary installer card */}
                   {currentPlatform === "Windows" && (
                     <Card className="p-5 border-primary/40 bg-primary/5">
                       <div className="flex items-start gap-4">
@@ -193,22 +267,18 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                             <Badge className="text-xs bg-primary/10 text-primary border-primary/20">Recommended</Badge>
                           </div>
                           <p className="text-xs text-muted-foreground mb-3">
-                            Installs QEMU, downloads selected free ISOs, registers the
-                            <code className="mx-1 bg-muted px-1 rounded text-[10px]">thalamus://</code>
+                            Installs QEMU, downloads selected free ISOs, registers the{" "}
+                            <code className="bg-muted px-1 rounded text-[10px]">thalamus://</code>{" "}
                             protocol, and adds the bridge to Windows startup. Zero legwork.
                           </p>
                           <div className="text-xs text-muted-foreground mb-3">
-                            <span className="font-medium text-foreground">Selected free ISOs: </span>
-                            {Array.from(selectedISOs).filter(k => ISO_OPTIONS.find(o => o.key === k)?.free).map(k => ISO_OPTIONS.find(o => o.key === k)?.name).join(", ") || "None"}
+                            <span className="font-medium text-foreground">Selected ISOs: </span>
+                            {Array.from(selectedISOs).map(k => ISO_OPTIONS.find(o => o.key === k)?.name).filter(Boolean).join(", ") || "None"}
                             {" — "}
                             <button className="text-primary underline" onClick={() => setActiveTab("isos")}>change</button>
                           </div>
                           <Button asChild size="sm" className="gap-2 w-full">
-                            <a
-                              href={VMLauncher.INSTALLER_URL}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
+                            <a href={VMLauncher.INSTALLER_URL} target="_blank" rel="noopener noreferrer">
                               <Download className="h-3.5 w-3.5" />
                               Download thalamus-installer.exe
                               <ExternalLink className="h-3 w-3 ml-auto opacity-60" />
@@ -219,7 +289,6 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                     </Card>
                   )}
 
-                  {/* Steps */}
                   <Card className="p-4 bg-muted/30">
                     <div className="flex items-center gap-2 mb-3">
                       <Zap className="h-4 w-4 text-primary" />
@@ -241,7 +310,6 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                     </ol>
                   </Card>
 
-                  {/* macOS/Linux */}
                   {currentPlatform !== "Windows" && (
                     <Card className="p-4">
                       <div className="flex items-center gap-3">
@@ -264,31 +332,20 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                     </Card>
                   )}
 
-                  {/* Waiting indicator */}
-                  <Card className="p-3 bg-blue-500/5 border-blue-500/20">
-                    <div className="flex gap-2.5 items-center">
-                      <Loader2 className="h-4 w-4 text-blue-500 animate-spin shrink-0" />
-                      <p className="text-xs text-muted-foreground">
-                        Waiting for bridge on localhost:5900 — dialog closes automatically once detected.
-                      </p>
-                    </div>
-                  </Card>
-
                   <div className="flex justify-between pt-1 border-t">
                     <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
                       Cancel
                     </Button>
-                    <Button onClick={checkStatus} variant="secondary" size="sm" className="gap-2">
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      Check Again
+                    <Button onClick={checkStatus} variant="secondary" size="sm" className="gap-2" disabled={checking}>
+                      {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                      Check Bridge
                     </Button>
                   </div>
                 </TabsContent>
 
                 <TabsContent value="isos" className="space-y-4 mt-4">
                   <p className="text-xs text-muted-foreground">
-                    Select which OS images to download. Free images are downloaded automatically by the installer.
-                    Licensed images (Windows, macOS) require a separate download from the vendor.
+                    Select which OS images to include. Free images download automatically. Windows evaluation ISOs are free from Microsoft (90-day trial, fully functional).
                   </p>
 
                   {Object.entries(groupedISOs).map(([category, isos]) => (
@@ -300,7 +357,7 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                         {isos.map((iso) => (
                           <Card
                             key={iso.key}
-                            className={`p-3 cursor-pointer transition-colors ${selectedISOs.has(iso.key) ? "border-primary/40 bg-primary/5" : ""}`}
+                            className={`p-3 transition-colors ${!iso.free ? "opacity-60" : "cursor-pointer"} ${selectedISOs.has(iso.key) ? "border-primary/40 bg-primary/5" : ""}`}
                             onClick={() => iso.free && toggleISO(iso.key)}
                           >
                             <div className="flex items-center gap-3">
@@ -311,24 +368,29 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                                   onClick={(e) => e.stopPropagation()}
                                 />
                               ) : (
-                                <div className="w-4 h-4 rounded border border-border flex items-center justify-center">
-                                  <span className="text-[8px] text-muted-foreground">—</span>
+                                <div className="w-4 h-4 rounded border border-border flex items-center justify-center shrink-0">
+                                  <span className="text-[8px] text-muted-foreground">✕</span>
                                 </div>
                               )}
                               <HardDrive className="h-4 w-4 text-muted-foreground shrink-0" />
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <span className="text-sm font-medium">{iso.name}</span>
                                   <span className="text-xs text-muted-foreground">{iso.version}</span>
                                   {iso.free ? (
                                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-green-500/10 text-green-600 border-green-500/20">Free</Badge>
                                   ) : (
-                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-orange-500/10 text-orange-600 border-orange-500/20">Licensed</Badge>
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-orange-500/10 text-orange-600 border-orange-500/20">Not available</Badge>
                                   )}
                                 </div>
-                                <div className="flex items-center gap-2 mt-0.5">
+                                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                   <span className="text-xs text-muted-foreground">{iso.size}</span>
                                   {iso.note && <span className="text-xs text-muted-foreground">• {iso.note}</span>}
+                                  {iso.downloadUrl && !iso.free && (
+                                    <a href={iso.downloadUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+                                      Download <ExternalLink className="h-2.5 w-2.5" />
+                                    </a>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -340,17 +402,16 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
 
                   <Card className="p-3 bg-amber-500/5 border-amber-500/20">
                     <p className="text-xs text-muted-foreground">
-                      <span className="font-medium text-amber-600">Licensed ISOs</span> (Windows, macOS) cannot be auto-downloaded due to licensing.
-                      After installing, place them manually at: <code className="bg-muted px-1 rounded">%APPDATA%\Thalamus\isos\windows-11.iso</code>
+                      <span className="font-medium text-amber-600">macOS</span> cannot be legally run on non-Apple hardware. Windows evaluation ISOs are free and fully functional for 90 days.
                     </p>
                   </Card>
 
                   <div className="flex justify-between pt-1 border-t">
                     <Button variant="outline" size="sm" onClick={() => setActiveTab("install")}>
-                      ← Back to Install
+                      ← Back
                     </Button>
                     <div className="text-xs text-muted-foreground self-center">
-                      {Array.from(selectedISOs).filter(k => ISO_OPTIONS.find(o => o.key === k)?.free).length} free ISOs selected
+                      {Array.from(selectedISOs).length} ISOs selected
                     </div>
                   </div>
                 </TabsContent>
