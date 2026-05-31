@@ -301,7 +301,7 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                             <button className="text-primary underline" onClick={() => setActiveTab("isos")}>change</button>
                           </div>
                           <Button asChild size="sm" className="gap-2 w-full">
-                            <a href={VMLauncher.INSTALLER_URL} target="_blank" rel="noopener noreferrer">
+                            <a href="https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v2.0.0/thalamus-installer.exe" target="_blank" rel="noopener noreferrer">
                               <Download className="h-3.5 w-3.5" />
                               Download thalamus-installer.exe
                               <ExternalLink className="h-3 w-3 ml-auto opacity-60" />

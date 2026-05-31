@@ -28,7 +28,7 @@ export class VMLauncher {
   /** Installer URL — one-time setup that installs everything */
   static readonly INSTALLER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v2.0.0/thalamus-installer.exe";
   /** Bridge URL — the bridge exe itself (for manual install) */
-  static readonly BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v2.0.0/thalamus-vm-bridge.exe";
+  static readonly BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v2.1.0/thalamus-vm-bridge.exe";
 
   async checkStatus(): Promise<VMStatus> {
     if (typeof WebSocket === "undefined") {
