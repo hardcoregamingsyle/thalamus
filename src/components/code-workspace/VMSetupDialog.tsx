@@ -33,35 +33,36 @@ interface ISOOption {
 }
 
 const ISO_OPTIONS: ISOOption[] = [
-  // Windows — Microsoft Evaluation Center (free, 90-day eval, fully functional)
+  // Windows — ISO is free to download; needs a license key to activate
   {
     key: "windows-11",
-    name: "Windows 11 Pro",
+    name: "Windows 11",
     version: "23H2",
     size: "~5.8GB",
     free: true,
-    downloadUrl: "https://www.microsoft.com/en-us/evalcenter/evaluate-windows-11-enterprise",
-    note: "Free 90-day eval from Microsoft",
+    downloadUrl: "https://www.microsoft.com/software-download/windows11",
+    note: "Free ISO from Microsoft — needs license key to activate",
     category: "windows",
   },
   {
     key: "windows-10",
-    name: "Windows 10 Pro",
+    name: "Windows 10",
     version: "22H2",
     size: "~5.2GB",
     free: true,
-    downloadUrl: "https://www.microsoft.com/en-us/evalcenter/evaluate-windows-10-enterprise",
-    note: "Free 90-day eval from Microsoft",
+    downloadUrl: "https://www.microsoft.com/software-download/windows10",
+    note: "Free ISO from Microsoft — needs license key to activate",
     category: "windows",
   },
-  // macOS — OpenCore + macOS Recovery (legal for Apple hardware owners)
+  // macOS — download from archive.org or create from Mac App Store
   {
     key: "macos-26",
     name: "macOS 26 Tahoe",
     version: "26.0",
     size: "~14GB",
-    free: false,
-    note: "Requires Apple hardware (legal restriction)",
+    free: true,
+    downloadUrl: "https://archive.org/search?query=macos+tahoe+iso",
+    note: "Download from archive.org or create from Mac App Store",
     category: "macos",
   },
   {
@@ -69,8 +70,9 @@ const ISO_OPTIONS: ISOOption[] = [
     name: "macOS 15 Sequoia",
     version: "15.0",
     size: "~14GB",
-    free: false,
-    note: "Requires Apple hardware (legal restriction)",
+    free: true,
+    downloadUrl: "https://archive.org/search?query=macos+sequoia+iso",
+    note: "Download from archive.org or create from Mac App Store",
     category: "macos",
   },
   {
@@ -78,8 +80,29 @@ const ISO_OPTIONS: ISOOption[] = [
     name: "macOS 14 Sonoma",
     version: "14.0",
     size: "~13GB",
-    free: false,
-    note: "Requires Apple hardware (legal restriction)",
+    free: true,
+    downloadUrl: "https://archive.org/search?query=macos+sonoma+iso",
+    note: "Download from archive.org or create from Mac App Store",
+    category: "macos",
+  },
+  {
+    key: "macos-ventura",
+    name: "macOS 13 Ventura",
+    version: "13.0",
+    size: "~12GB",
+    free: true,
+    downloadUrl: "https://archive.org/search?query=macos+ventura+iso",
+    note: "Download from archive.org or create from Mac App Store",
+    category: "macos",
+  },
+  {
+    key: "macos-monterey",
+    name: "macOS 12 Monterey",
+    version: "12.0",
+    size: "~12GB",
+    free: true,
+    downloadUrl: "https://archive.org/search?query=macos+monterey+iso",
+    note: "Download from archive.org or create from Mac App Store",
     category: "macos",
   },
   // Linux (free, auto-downloadable)
@@ -357,38 +380,28 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                         {isos.map((iso) => (
                           <Card
                             key={iso.key}
-                            className={`p-3 transition-colors ${!iso.free ? "opacity-60" : "cursor-pointer"} ${selectedISOs.has(iso.key) ? "border-primary/40 bg-primary/5" : ""}`}
-                            onClick={() => iso.free && toggleISO(iso.key)}
+                            className={`p-3 transition-colors cursor-pointer ${selectedISOs.has(iso.key) ? "border-primary/40 bg-primary/5" : ""}`}
+                            onClick={() => toggleISO(iso.key)}
                           >
                             <div className="flex items-center gap-3">
-                              {iso.free ? (
                                 <Checkbox
-                                  checked={selectedISOs.has(iso.key)}
-                                  onCheckedChange={() => toggleISO(iso.key)}
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                              ) : (
-                                <div className="w-4 h-4 rounded border border-border flex items-center justify-center shrink-0">
-                                  <span className="text-[8px] text-muted-foreground">✕</span>
-                                </div>
-                              )}
+                                checked={selectedISOs.has(iso.key)}
+                                onCheckedChange={() => toggleISO(iso.key)}
+                                onClick={(e) => e.stopPropagation()}
+                              />
                               <HardDrive className="h-4 w-4 text-muted-foreground shrink-0" />
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="text-sm font-medium">{iso.name}</span>
                                   <span className="text-xs text-muted-foreground">{iso.version}</span>
-                                  {iso.free ? (
-                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-green-500/10 text-green-600 border-green-500/20">Free</Badge>
-                                  ) : (
-                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-orange-500/10 text-orange-600 border-orange-500/20">Not available</Badge>
-                                  )}
+                                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-green-500/10 text-green-600 border-green-500/20">Free</Badge>
                                 </div>
                                 <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                   <span className="text-xs text-muted-foreground">{iso.size}</span>
                                   {iso.note && <span className="text-xs text-muted-foreground">• {iso.note}</span>}
-                                  {iso.downloadUrl && !iso.free && (
+                                  {iso.downloadUrl && (
                                     <a href={iso.downloadUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
-                                      Download <ExternalLink className="h-2.5 w-2.5" />
+                                      Get ISO <ExternalLink className="h-2.5 w-2.5" />
                                     </a>
                                   )}
                                 </div>
@@ -400,9 +413,10 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                     </div>
                   ))}
 
-                  <Card className="p-3 bg-amber-500/5 border-amber-500/20">
+                  <Card className="p-3 bg-blue-500/5 border-blue-500/20">
                     <p className="text-xs text-muted-foreground">
-                      <span className="font-medium text-amber-600">macOS</span> cannot be legally run on non-Apple hardware. Windows evaluation ISOs are free and fully functional for 90 days.
+                      <span className="font-medium text-blue-600">Windows ISOs</span> are free to download from Microsoft — you just need a license key to activate after install (or use the 90-day evaluation period).{" "}
+                      <span className="font-medium text-blue-600">macOS ISOs</span> can be downloaded from archive.org or created using the official macOS installer from the Mac App Store. Always verify sources for safety.
                     </p>
                   </Card>
 
