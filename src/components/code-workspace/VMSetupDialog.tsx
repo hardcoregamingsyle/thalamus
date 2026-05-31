@@ -9,42 +9,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Download, CheckCircle2, Loader2, Play, Terminal, Monitor, Apple, ExternalLink } from "lucide-react";
+import { Download, CheckCircle2, Loader2, Play, Terminal, Monitor, Apple, ExternalLink, Package, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { vmLauncher } from "@/lib/vmLauncher";
+import { vmLauncher, VMLauncher } from "@/lib/vmLauncher";
 
 interface VMSetupDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onComplete: () => void;
 }
-
-const PLATFORMS = [
-  {
-    name: "Windows",
-    icon: Monitor,
-    file: "thalamus-vm-bridge.exe",
-    url: "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.2.0/thalamus-vm-bridge.exe",
-    hint: "Professional installer — double-click to run. Auto-installs QEMU.",
-    isExe: true,
-  },
-  {
-    name: "macOS",
-    icon: Apple,
-    file: "setup-macos.sh",
-    url: "/downloads/setup-macos.sh",
-    hint: "chmod +x ~/Downloads/setup-macos.sh && ~/Downloads/setup-macos.sh",
-    isExe: false,
-  },
-  {
-    name: "Linux",
-    icon: Terminal,
-    file: "setup-linux.sh",
-    url: "/downloads/setup-linux.sh",
-    hint: "chmod +x ~/Downloads/setup-linux.sh && ~/Downloads/setup-linux.sh",
-    isExe: false,
-  },
-];
 
 export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogProps) {
   const [checking, setChecking] = useState(true);
@@ -62,7 +35,7 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
       setTimeout(() => {
         onComplete();
         onOpenChange(false);
-      }, 2000);
+      }, 1500);
     }
   }, [onComplete, onOpenChange]);
 
@@ -84,14 +57,14 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Play className="h-5 w-5" />
-            VM Bridge Setup
+            Thalamus VM Setup
           </DialogTitle>
           <DialogDescription>
-            One-time setup to enable VM booting. Everything installs automatically.
+            One-time install — then VMs launch with a single click, like Roblox.
           </DialogDescription>
         </DialogHeader>
 
@@ -105,7 +78,7 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
               className="flex items-center justify-center py-12"
             >
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="ml-3 text-muted-foreground">Checking if VM bridge is running...</p>
+              <p className="ml-3 text-muted-foreground">Checking for VM bridge...</p>
             </motion.div>
           ) : isRunning ? (
             <motion.div
@@ -120,9 +93,9 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                   <CheckCircle2 className="h-12 w-12 text-green-500" />
                 </div>
                 <div className="text-center">
-                  <h3 className="text-xl font-semibold">VM Bridge Running!</h3>
+                  <h3 className="text-xl font-semibold">VM Bridge Ready!</h3>
                   <p className="text-muted-foreground mt-1">
-                    {version ? `Version ${version} • ` : ""}Ready to boot VMs
+                    {version ? `Version ${version} • ` : ""}Launching your VM...
                   </p>
                 </div>
               </div>
@@ -133,92 +106,102 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="space-y-5"
+              className="space-y-4"
             >
-              {/* Platform download cards */}
-              <div className="space-y-3">
-                <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-                  Download for Your OS
-                </h4>
-                {PLATFORMS.map((p) => {
-                  const Icon = p.icon;
-                  const isCurrent = p.name === currentPlatform;
-                  return (
-                    <Card
-                      key={p.name}
-                      className={`p-4 transition-colors ${isCurrent ? "border-primary/50 bg-primary/5" : ""}`}
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className={`rounded-lg p-2.5 ${isCurrent ? "bg-primary/10" : "bg-muted"}`}>
-                          <Icon className={`h-5 w-5 ${isCurrent ? "text-primary" : "text-muted-foreground"}`} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold text-sm">{p.name}</span>
-                            {isCurrent && (
-                              <Badge variant="secondary" className="text-xs">Your OS</Badge>
-                            )}
-                            {p.isExe && (
-                              <Badge className="text-xs bg-blue-500/10 text-blue-600 border-blue-500/20">
-                                .exe
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-xs text-muted-foreground truncate">{p.hint}</p>
-                        </div>
-                        <Button
-                          asChild
-                          size="sm"
-                          variant={isCurrent ? "default" : "outline"}
-                          className="gap-2 shrink-0"
-                        >
-                          <a
-                            href={p.url}
-                            download={p.file}
-                            target={p.isExe ? "_blank" : undefined}
-                            rel={p.isExe ? "noopener noreferrer" : undefined}
-                          >
-                            {p.isExe ? <ExternalLink className="h-3 w-3" /> : <Download className="h-3 w-3" />}
-                            {p.file}
-                          </a>
-                        </Button>
+              {/* Primary installer card */}
+              {currentPlatform === "Windows" && (
+                <Card className="p-5 border-primary/40 bg-primary/5">
+                  <div className="flex items-start gap-4">
+                    <div className="rounded-xl bg-primary/10 p-3 shrink-0">
+                      <Package className="h-6 w-6 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-bold text-sm">Thalamus Installer</span>
+                        <Badge className="text-xs bg-primary/10 text-primary border-primary/20">Recommended</Badge>
                       </div>
-                    </Card>
-                  );
-                })}
-              </div>
+                      <p className="text-xs text-muted-foreground mb-3">
+                        Installs QEMU, downloads Ubuntu &amp; Alpine Linux ISOs, registers the
+                        <code className="mx-1 bg-muted px-1 rounded text-[10px]">thalamus://</code>
+                        protocol, and adds the bridge to Windows startup. Zero legwork.
+                      </p>
+                      <Button asChild size="sm" className="gap-2 w-full">
+                        <a
+                          href={VMLauncher.INSTALLER_URL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          Download thalamus-installer.exe
+                          <ExternalLink className="h-3 w-3 ml-auto opacity-60" />
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              )}
 
-              {/* What it does */}
+              {/* Steps */}
               <Card className="p-4 bg-muted/30">
-                <h4 className="font-medium text-sm mb-2">What happens when you run it:</h4>
-                <ul className="space-y-1 text-xs text-muted-foreground">
-                  <li>• Automatically downloads and installs QEMU (if not present)</li>
-                  <li>• Starts a local WebSocket bridge on port 5900</li>
-                  <li>• Enables booting Windows, macOS, Linux, and Android VMs</li>
-                  <li>• Runs entirely on your machine — no data sent to servers</li>
-                </ul>
+                <div className="flex items-center gap-2 mb-3">
+                  <Zap className="h-4 w-4 text-primary" />
+                  <h4 className="font-semibold text-sm">After installing:</h4>
+                </div>
+                <ol className="space-y-1.5 text-xs text-muted-foreground list-none">
+                  {[
+                    "Run thalamus-installer.exe (one time only)",
+                    "QEMU installs automatically — no manual steps",
+                    "Ubuntu 24.04 & Alpine Linux ISOs download automatically",
+                    "Bridge registers as thalamus:// protocol handler",
+                    "Return here — clicking Boot OS launches VMs instantly",
+                  ].map((step, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className="shrink-0 w-4 h-4 rounded-full bg-primary/10 text-primary text-[10px] flex items-center justify-center font-bold mt-0.5">{i + 1}</span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
               </Card>
 
-              <Card className="p-4 bg-blue-500/5 border-blue-500/20">
-                <div className="flex gap-3">
-                  <Loader2 className="h-5 w-5 text-blue-500 animate-spin shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium text-blue-700 dark:text-blue-300">
-                      Waiting for VM bridge to start...
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      This dialog closes automatically once the bridge is detected on localhost:5900.
-                    </p>
+              {/* macOS/Linux */}
+              {currentPlatform !== "Windows" && (
+                <Card className="p-4">
+                  <div className="flex items-center gap-3">
+                    {currentPlatform === "macOS" ? <Apple className="h-5 w-5" /> : <Terminal className="h-5 w-5" />}
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{currentPlatform}</p>
+                      <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                        {currentPlatform === "macOS"
+                          ? "chmod +x ~/Downloads/setup-macos.sh && ~/Downloads/setup-macos.sh"
+                          : "chmod +x ~/Downloads/setup-linux.sh && ~/Downloads/setup-linux.sh"}
+                      </p>
+                    </div>
+                    <Button asChild size="sm" variant="outline" className="gap-2 shrink-0">
+                      <a href={currentPlatform === "macOS" ? "/downloads/setup-macos.sh" : "/downloads/setup-linux.sh"} download>
+                        <Download className="h-3 w-3" />
+                        Download
+                      </a>
+                    </Button>
                   </div>
+                </Card>
+              )}
+
+              {/* Waiting indicator */}
+              <Card className="p-3 bg-blue-500/5 border-blue-500/20">
+                <div className="flex gap-2.5 items-center">
+                  <Loader2 className="h-4 w-4 text-blue-500 animate-spin shrink-0" />
+                  <p className="text-xs text-muted-foreground">
+                    Waiting for bridge on localhost:5900 — dialog closes automatically once detected.
+                  </p>
                 </div>
               </Card>
 
-              <div className="flex justify-between pt-2 border-t">
-                <Button variant="outline" onClick={() => onOpenChange(false)}>
+              <div className="flex justify-between pt-1 border-t">
+                <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
                   Cancel
                 </Button>
-                <Button onClick={checkStatus} variant="secondary" className="gap-2">
-                  <Loader2 className="h-4 w-4" />
+                <Button onClick={checkStatus} variant="secondary" size="sm" className="gap-2">
+                  <Loader2 className="h-3.5 w-3.5" />
                   Check Again
                 </Button>
               </div>
