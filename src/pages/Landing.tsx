@@ -347,7 +347,7 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur-xl"
           >
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-            Built for anyone who wants clearer answers and better work
+            VM installer bridge fixed: auto OS downloads and hidden logs
           </motion.div>
 
           <motion.h1

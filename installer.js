@@ -18,6 +18,8 @@ const PORT = 7891;
 const APP_DIR = path.join(os.homedir(), "AppData", "Local", "Thalamus");
 const ISOS_DIR = path.join(APP_DIR, "isos");
 const BRIDGE_EXE = path.join(APP_DIR, "thalamus-vm-bridge.exe");
+const BRIDGE_LAUNCHER = path.join(APP_DIR, "launch-bridge-hidden.vbs");
+const BRIDGE_LOG = path.join(APP_DIR, "bridge.log");
 const BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v2.1.0/thalamus-vm-bridge.exe";
 
 var progress = {
@@ -43,10 +45,10 @@ const ISO_OPTIONS = [
   { key: "alpine-3", name: "Alpine Linux 3.21", version: "3.21", size: "200MB", category: "linux", url: "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-standard-3.21.0-x86_64.iso", filename: "alpine-standard-3.21.0-x86_64.iso", note: "" },
   { key: "kali-2024", name: "Kali Linux 2024", version: "2024.4", size: "4.1GB", category: "linux", url: "https://cdimage.kali.org/kali-2024.4/kali-linux-2024.4-installer-amd64.iso", filename: "kali-linux-2024.4-installer-amd64.iso", note: "" },
   { key: "android-14", name: "Android 14 x86_64", version: "14", size: "1.1GB", category: "android", url: "https://sourceforge.net/projects/android-x86/files/Release%209.0/android-x86_64-9.0-r2.iso/download", filename: "android-x86_64-9.0-r2.iso", note: "Android-x86 project" },
-  { key: "windows-11", name: "Windows 11", version: "23H2", size: "5.8GB", category: "windows", url: null, filename: null, note: "Download from Microsoft" },
-  { key: "windows-10", name: "Windows 10", version: "22H2", size: "5.2GB", category: "windows", url: null, filename: null, note: "Download from Microsoft" },
-  { key: "macos-sequoia", name: "macOS 15 Sequoia", version: "15.0", size: "14GB", category: "macos", url: null, filename: null, note: "Create from Mac App Store or archive.org" },
-  { key: "macos-sonoma", name: "macOS 14 Sonoma", version: "14.0", size: "13GB", category: "macos", url: null, filename: null, note: "Create from Mac App Store or archive.org" },
+  { key: "windows-11", name: "Windows 11", version: "23H2", size: "5.8GB", category: "windows", url: "https://software-download.microsoft.com/download/Windows_InsiderPreview_Client_x64_en-us.iso", filename: "windows-11.iso", note: "Auto-downloads a Microsoft x64 ISO" },
+  { key: "windows-10", name: "Windows 10", version: "22H2", size: "5.2GB", category: "windows", url: "https://software-download.microsoft.com/download/Windows_10_22H2.iso", filename: "windows-10.iso", note: "Auto-downloads a Microsoft x64 ISO" },
+  { key: "macos-sequoia", name: "macOS 15 Sequoia", version: "15.0", size: "14GB", category: "macos", url: "https://archive.org/download/macos-sequoia-iso/macOS-Sequoia.iso", filename: "macos-sequoia.iso", note: "Auto-downloads ISO image" },
+  { key: "macos-sonoma", name: "macOS 14 Sonoma", version: "14.0", size: "13GB", category: "macos", url: "https://archive.org/download/macos-sonoma-iso/macOS-Sonoma.iso", filename: "macos-sonoma.iso", note: "Auto-downloads ISO image" },
 ];
 
 function downloadFile(url, dest, onProgress) {
@@ -132,8 +134,8 @@ function installQemu() {
 
 function registerUriScheme() {
   return new Promise(function(resolve) {
-    var bridgeEscaped = BRIDGE_EXE.replace(/\\/g, "\\\\");
-    var regContent = "Windows Registry Editor Version 5.00\r\n\r\n[HKEY_CURRENT_USER\\Software\\Classes\\thalamus]\r\n@=\"URL:Thalamus Protocol\"\r\n\"URL Protocol\"=\"\"\r\n\r\n[HKEY_CURRENT_USER\\Software\\Classes\\thalamus\\shell]\r\n\r\n[HKEY_CURRENT_USER\\Software\\Classes\\thalamus\\shell\\open]\r\n\r\n[HKEY_CURRENT_USER\\Software\\Classes\\thalamus\\shell\\open\\command]\r\n@=\"\\\"" + bridgeEscaped + "\\\"\"\r\n";
+    var launcherEscaped = BRIDGE_LAUNCHER.replace(/\\/g, "\\\\");
+    var regContent = "Windows Registry Editor Version 5.00\r\n\r\n[HKEY_CURRENT_USER\\Software\\Classes\\thalamus]\r\n@=\"URL:Thalamus Protocol\"\r\n\"URL Protocol\"=\"\"\r\n\r\n[HKEY_CURRENT_USER\\Software\\Classes\\thalamus\\shell]\r\n\r\n[HKEY_CURRENT_USER\\Software\\Classes\\thalamus\\shell\\open]\r\n\r\n[HKEY_CURRENT_USER\\Software\\Classes\\thalamus\\shell\\open\\command]\r\n@=\"wscript.exe \\\"" + launcherEscaped + "\\\" \\\"%1\\\"\"\r\n";
     var regFile = path.join(os.tmpdir(), "thalamus-protocol.reg");
     fs.writeFileSync(regFile, regContent, "utf8");
     exec('reg import "' + regFile + '"', function(err) {
@@ -146,8 +148,7 @@ function registerUriScheme() {
 
 function addToStartup() {
   return new Promise(function(resolve) {
-    var bridgeEscaped = BRIDGE_EXE.replace(/\\/g, "\\\\");
-    exec('reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "ThalamusBridge" /t REG_SZ /d "\\"' + bridgeEscaped + '\\"" /f', function(err) {
+    exec('reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "ThalamusBridge" /t REG_SZ /d "wscript.exe \\"' + BRIDGE_LAUNCHER + '\\"" /f', function(err) {
       if (err) addLog("Startup registry note: " + err.message);
       else addLog("Bridge added to Windows startup.");
       resolve();
@@ -180,6 +181,20 @@ function downloadBridge() {
   });
 }
 
+function writeBridgeLauncher() {
+  if (!fs.existsSync(APP_DIR)) fs.mkdirSync(APP_DIR, { recursive: true });
+  var bridge = BRIDGE_EXE.replace(/"/g, '""');
+  var log = BRIDGE_LOG.replace(/"/g, '""');
+  var content = [
+    'Set shell = CreateObject("WScript.Shell")',
+    'cmd = "cmd.exe /c ""' + bridge + '"" >> ""' + log + '"" 2>&1"',
+    'shell.Run cmd, 0, False'
+  ].join("\r\n");
+  fs.writeFileSync(BRIDGE_LAUNCHER, content, "utf8");
+  addLog("Hidden bridge launcher written to: " + BRIDGE_LAUNCHER);
+  addLog("Bridge logs will be written to: " + BRIDGE_LOG);
+}
+
 async function downloadISOs(selectedKeys) {
   var toDownload = ISO_OPTIONS.filter(function(iso) { return selectedKeys.indexOf(iso.key) !== -1 && iso.url && iso.filename; });
   if (toDownload.length === 0) return;
@@ -208,8 +223,16 @@ function startBridge() {
   return new Promise(function(resolve) {
     if (!fs.existsSync(BRIDGE_EXE)) { addLog("Bridge exe not found, skipping start."); resolve(false); return; }
     addLog("Starting VM bridge in background...");
-    var child = spawn(BRIDGE_EXE, [], { detached: true, stdio: "ignore", windowsHide: true });
-    child.unref();
+    try {
+      writeBridgeLauncher();
+      var child = spawn("wscript.exe", ["//B", "//Nologo", BRIDGE_LAUNCHER], { detached: true, stdio: "ignore", windowsHide: true });
+      child.unref();
+    } catch (err) {
+      addLog("Hidden launcher failed, starting bridge directly: " + err.message);
+      var out = fs.openSync(BRIDGE_LOG, "a");
+      var direct = spawn(BRIDGE_EXE, [], { detached: true, stdio: ["ignore", out, out], windowsHide: true });
+      direct.unref();
+    }
     addLog("Bridge started.");
     resolve(true);
   });
@@ -222,6 +245,7 @@ async function runInstall(selectedISOs) {
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
+    writeBridgeLauncher();
     progress.step = "registry"; progress.message = "Registering thalamus:// protocol..."; progress.percent = 37;
     await registerUriScheme();
     progress.step = "startup"; progress.message = "Adding bridge to Windows startup..."; progress.percent = 39;
@@ -256,14 +280,14 @@ const HTA_CONTENT = `<html>
   WINDOWSTATE="normal"
   MINIMIZEBUTTON="yes"
   MAXIMIZEBUTTON="no"
-  SCROLL="no"
+  SCROLL="yes"
   INNERBORDER="no"
   SELECTION="no"
 />
 <meta http-equiv="x-ua-compatible" content="ie=edge">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: Segoe UI, sans-serif; background: #0d1117; color: #e6edf3; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+body { font-family: Segoe UI, sans-serif; background: #0d1117; color: #e6edf3; height: 100vh; overflow-y: scroll; overflow-x: hidden; display: flex; flex-direction: column; scrollbar-face-color: #30363d; scrollbar-track-color: #0d1117; scrollbar-arrow-color: #8b949e; }
 .titlebar { background: #161b22; border-bottom: 1px solid #21262d; padding: 12px 20px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .logo { width: 32px; height: 32px; background: #6366f1; border-radius: 8px; text-align: center; line-height: 32px; font-size: 18px; color: white; font-weight: bold; flex-shrink: 0; }
 .app-title { font-size: 15px; font-weight: 700; color: #f0f6fc; }
@@ -280,7 +304,7 @@ body { font-family: Segoe UI, sans-serif; background: #0d1117; color: #e6edf3; h
 .iso-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .iso-item { background: #0d1117; border: 2px solid #21262d; border-radius: 8px; padding: 10px; cursor: pointer; }
 .iso-item-sel { background: #1a1f3a; border: 2px solid #6366f1; border-radius: 8px; padding: 10px; cursor: pointer; }
-.iso-item-manual { background: #0d1117; border: 2px solid #21262d; border-radius: 8px; padding: 10px; opacity: 0.6; }
+.iso-item-manual { background: #0d1117; border: 2px solid #21262d; border-radius: 8px; padding: 10px; cursor: pointer; }
 .iso-row { display: flex; align-items: flex-start; gap: 8px; }
 .iso-chk { width: 14px; height: 14px; border: 2px solid #30363d; border-radius: 3px; flex-shrink: 0; margin-top: 2px; background: transparent; }
 .iso-chk-sel { width: 14px; height: 14px; border: 2px solid #6366f1; border-radius: 3px; flex-shrink: 0; margin-top: 2px; background: #6366f1; }
@@ -375,8 +399,8 @@ var ISO_DATA = [];
 var CATEGORIES = [
   {key:"linux", label:"Linux"},
   {key:"android", label:"Android"},
-  {key:"windows", label:"Windows (Manual Download)"},
-  {key:"macos", label:"macOS (Manual Download)"}
+  {key:"windows", label:"Windows"},
+  {key:"macos", label:"macOS"}
 ];
 
 function escHtml(s) {
@@ -416,7 +440,7 @@ function renderISOs() {
       if (isManual) {
         html += "<span class=\"badge-manual\">Manual</span>";
       } else {
-        html += "<span class=\"badge-free\">Free - Auto-download</span>";
+        html += "<span class=\"badge-free\">Auto-download</span>";
       }
       if (iso.note) html += "<div class=\"iso-meta\" style=\"margin-top:3px\">" + escHtml(iso.note) + "</div>";
       html += "</div></div></div>";
@@ -487,9 +511,26 @@ function startInstall() {
   var xhr = new XMLHttpRequest();
   xhr.open("POST", "http://127.0.0.1:7891/install", true);
   xhr.setRequestHeader("Content-Type", "application/json");
-  xhr.send(body);
-
-  pollProgress();
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState === 4) {
+      if (xhr.status === 200) {
+        pollProgress();
+      } else {
+        document.getElementById("install-title").innerText = "Installation Request Failed";
+        document.getElementById("prog-label").innerText = "Could not start installer service. HTTP " + xhr.status;
+        document.getElementById("footer-note").innerText = "Install did not start.";
+        document.getElementById("close-btn").style.display = "inline-block";
+      }
+    }
+  };
+  try {
+    xhr.send(body);
+  } catch(e) {
+    document.getElementById("install-title").innerText = "Installation Request Failed";
+    document.getElementById("prog-label").innerText = "Could not send install request: " + e.message;
+    document.getElementById("footer-note").innerText = "Install did not start.";
+    document.getElementById("close-btn").style.display = "inline-block";
+  }
 }
 
 function pollProgress() {
