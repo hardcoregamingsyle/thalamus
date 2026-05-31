@@ -107,20 +107,17 @@ export const runPipelineAction = internalAction({
     });
 
     try {
-      // Load messages and files
       const messages = await ctx.runQuery(internal.agentTeamHelpers.getSessionMessages, { sessionId }) as Array<{ agent: string; content: string; round?: number; messageIndex?: number }>;
       const files = await ctx.runQuery(internal.agentTeamHelpers.getFiles, { sessionId }) as Array<{ filepath: string; content: string }>;
 
       const context = buildContext(messages);
       const fileContext = buildFileContext(files);
 
-      // ── Determine which pipeline we're in ─────────────────────────────────
       const isPlanning = executionPhase === "planning";
       const currentPipeline = isPlanning ? PLANNING_PIPELINE : TASK_PIPELINE;
       const phaseIndex = currentPipeline.indexOf(currentPhase);
 
       if (phaseIndex === -1) {
-        // Unknown phase — complete
         await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
           sessionId, status: "completed", currentAgent: undefined,
           phase: "Critic", totalMessages, executionPhase: "completed",
@@ -129,13 +126,10 @@ export const runPipelineAction = internalAction({
         return;
       }
 
-      // ── Run the current agent ─────────────────────────────────────────────
       let agentOutput = "";
       let agentName = currentPhase;
 
       if (currentPhase === "Researcher") {
-        // Run Research Team (3 sub-agents)
-        // Build task-specific prompt if in execution phase
         let researchTask = task;
         if (executionPhase === "executing") {
           let plannerTasks: Array<{ id: string; title: string; description: string }> = [];
@@ -150,7 +144,6 @@ export const runPipelineAction = internalAction({
         agentOutput = await runResearchTeam(ctx, sessionId, userId, researchTask, context, geminiKeys, dbCreds);
         agentName = "Researcher";
       } else if (currentPhase === "Hacker") {
-        // Run Security Team
         let securityTask = task;
         if (executionPhase === "executing") {
           let plannerTasks: Array<{ id: string; title: string; description: string }> = [];
@@ -165,21 +158,18 @@ export const runPipelineAction = internalAction({
         agentOutput = await runSecurityTeam(ctx, sessionId, userId, securityTask, context, fileContext, geminiKeys, dbCreds, taskDifficulty);
         agentName = "Hacker";
       } else if (currentPhase === "Planner") {
-        // Run Planner — also parses tasks
         const systemPrompt = AGENT_SYSTEM_PROMPTS["Planner"] ?? "";
         const prompt = `## Task\n${task}\n\n## Research Context\n${context}\n\n## Current Files\n${fileContext}`;
         const tier = AGENT_MODEL_MAP["Planner"] as ModelTier ?? "haiku";
         const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
         agentOutput = result.text;
 
-        // Parse planner output for tasks
         const plannerOutput = parsePlannerOutput(agentOutput);
         if (plannerOutput && plannerOutput.tasks.length > 0) {
           await ctx.runMutation(internal.agentTeamHelpers.updatePlannerTasks, {
             sessionId,
             plannerTasksJson: JSON.stringify(plannerOutput.tasks),
           });
-          // Parse difficulty
           const difficulty = parseDifficultyFromPlannerOutput(agentOutput);
           taskDifficulty = difficulty;
           await ctx.runMutation(internal.agentTeamHelpers.updateTaskDifficulty, {
@@ -187,14 +177,12 @@ export const runPipelineAction = internalAction({
           });
         }
 
-        // Deduct credits
         const ab = calcAgentBucksForTier(tier, result.inputTokens, result.outputTokens);
         await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId, agentBucksToDeduct: ab });
         await ctx.runMutation(internal.admin.deductPlatformCost, {
           modelName: `planner-${tier}`, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
         });
       } else if (currentPhase === "Coder") {
-        // Run Coder for current task
         let plannerTasks: Array<{ id: string; title: string; description: string }> = [];
         try {
           plannerTasks = JSON.parse((session as Record<string, unknown>).plannerTasksJson as string ?? "[]") as typeof plannerTasks;
@@ -220,13 +208,10 @@ export const runPipelineAction = internalAction({
           modelName: `coder-${tier}`, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
         });
       } else {
-        // Standard agent (Analyser, Optimiser, Organizer, Tester, Critic)
         const systemPrompt = AGENT_SYSTEM_PROMPTS[currentPhase] ?? `You are the ${currentPhase} agent. Complete your role for this task.`;
 
-        // Build prompt with task context if we're in execution phase
         let prompt = "";
         if (executionPhase === "executing") {
-          // In task execution loop - include current task info
           let plannerTasks: Array<{ id: string; title: string; description: string }> = [];
           try {
             plannerTasks = JSON.parse((session as Record<string, unknown>).plannerTasksJson as string ?? "[]") as typeof plannerTasks;
@@ -239,7 +224,6 @@ export const runPipelineAction = internalAction({
             prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
           }
         } else {
-          // In planning phase - no task context yet
           prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
         }
 
@@ -247,7 +231,6 @@ export const runPipelineAction = internalAction({
         const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
         agentOutput = result.text;
 
-        // Deduct credits
         const ab = calcAgentBucksForTier(tier, result.inputTokens, result.outputTokens);
         await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId, agentBucksToDeduct: ab });
         await ctx.runMutation(internal.admin.deductPlatformCost, {
@@ -255,10 +238,8 @@ export const runPipelineAction = internalAction({
         });
       }
 
-      // ── Parse agent output for file operations ────────────────────────────
       const parsed = parseAgentOutput(agentOutput);
 
-      // Apply file operations
       for (const op of parsed.fileOps) {
         if (op.type === "create" || op.type === "edit") {
           await ctx.runMutation(internal.agentTeamHelpers.upsertFile, {
@@ -271,19 +252,16 @@ export const runPipelineAction = internalAction({
         }
       }
 
-      // Handle deploy commands
       if (parsed.deployCommands && parsed.deployCommands.length > 0) {
         await ctx.runMutation(internal.agentTeamHelpers.updateDeployCommands, {
           sessionId, deployCommandsJson: JSON.stringify(parsed.deployCommands),
         });
       }
 
-      // Handle info requests
       if (parsed.infoRequest) {
         await ctx.runMutation(internal.agentTeamHelpers.setInfoRequest, {
           sessionId, infoRequestJson: JSON.stringify(parsed.infoRequest),
         });
-        // Save agent message and pause
         totalMessages++;
         await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
           sessionId, userId, agent: agentName, content: parsed.cleanContent,
@@ -295,55 +273,49 @@ export const runPipelineAction = internalAction({
         return;
       }
 
-      // Save agent message
       totalMessages++;
       await ctx.runMutation(internal.agentTeamHelpers.saveAgentMessage, {
         sessionId, userId, agent: agentName, content: parsed.cleanContent,
         round, messageIndex: totalMessages,
       });
 
-      // ── Advance to next agent ─────────────────────────────────────────────
       const nextPhaseIndex = phaseIndex + 1;
       loopCount++;
 
       if (isPlanning && currentPhase === "Planner") {
-        // Planning phase complete! Load planner tasks and start task execution
+        // Reload tasks from DB (they were just saved by updatePlannerTasks)
+        const freshSession = await ctx.runQuery(internal.agentTeamHelpers.getSession, { sessionId });
         let plannerTasks: Array<{ id: string; title: string; description: string }> = [];
         try {
-          plannerTasks = JSON.parse((session as Record<string, unknown>).plannerTasksJson as string ?? "[]") as typeof plannerTasks;
+          plannerTasks = JSON.parse((freshSession as Record<string, unknown>)?.plannerTasksJson as string ?? "[]") as typeof plannerTasks;
         } catch { /* ignore */ }
 
         if (plannerTasks.length === 0) {
-          // No tasks - complete session
           await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
             sessionId, status: "completed", currentAgent: undefined,
             phase: "Planner", totalMessages, executionPhase: "completed",
             currentTaskIndex: 0, loopCount, clearPlannerTasks: false,
           });
         } else {
-          // Start task execution loop - begin with first task, first agent (Researcher)
           round++;
           await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
             sessionId, status: "idle", currentAgent: "Researcher",
             phase: "Researcher", totalMessages, executionPhase: "executing",
             currentTaskIndex: 0, loopCount,
           });
-          // Schedule first task execution
+          // Self-chain to next agent
           await ctx.scheduler.runAfter(0, internal.agentPipeline.runPipelineAction, {
             sessionId, userId,
           });
         }
       } else if (nextPhaseIndex >= currentPipeline.length) {
-        // Current pipeline complete
         if (isPlanning) {
-          // This shouldn't happen (Planner is last in planning pipeline and handled above)
           await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
             sessionId, status: "completed", currentAgent: undefined,
             phase: currentPhase, totalMessages, executionPhase: "completed",
             currentTaskIndex, loopCount, clearPlannerTasks: false,
           });
         } else {
-          // Task pipeline complete for current task - move to next task
           let plannerTasks: Array<{ id: string; title: string; description: string }> = [];
           try {
             plannerTasks = JSON.parse((session as Record<string, unknown>).plannerTasksJson as string ?? "[]") as typeof plannerTasks;
@@ -351,7 +323,6 @@ export const runPipelineAction = internalAction({
 
           const nextTaskIndex = currentTaskIndex + 1;
           if (nextTaskIndex < plannerTasks.length) {
-            // More tasks to process - restart task pipeline for next task
             round++;
             await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
               sessionId, status: "idle", currentAgent: "Researcher",
@@ -362,7 +333,6 @@ export const runPipelineAction = internalAction({
               sessionId, userId,
             });
           } else {
-            // All tasks complete!
             executionPhase = "completed";
             await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
               sessionId, status: "completed", currentAgent: undefined,
@@ -372,7 +342,6 @@ export const runPipelineAction = internalAction({
           }
         }
       } else {
-        // Move to next agent in current pipeline
         const nextPhase = currentPipeline[nextPhaseIndex];
         round++;
         await ctx.runMutation(internal.agentTeamHelpers.updateSessionFull, {
@@ -381,7 +350,7 @@ export const runPipelineAction = internalAction({
           currentTaskIndex, loopCount,
         });
 
-        // Schedule next agent round
+        // Self-chain to next agent
         await ctx.scheduler.runAfter(0, internal.agentPipeline.runPipelineAction, {
           sessionId, userId,
         });
@@ -500,4 +469,3 @@ export const startPipelineAction = action({
     });
   },
 });
-
