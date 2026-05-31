@@ -224,10 +224,44 @@ export function SandboxView({ branchId }: SandboxViewProps) {
       const result = await vmLauncher.bootVM(config.os, customRam, customCores);
 
       if (!result.success) {
-        if (result.error?.includes("not running")) {
-          // Show setup dialog
-          setShowSetupDialog(true);
-          setVmStatus("stopped");
+        if (result.error?.includes("not running") || result.error?.includes("bridge")) {
+          // Try thalamus:// URI scheme first (if installer was run)
+          toast.info("Trying to launch VM bridge...", { duration: 3000 });
+          vmLauncher.launchViaUriScheme(config.os, customRam, customCores);
+          // Poll for bridge to come up
+          let bridgeUp = false;
+          for (let i = 0; i < 8; i++) {
+            await new Promise(r => setTimeout(r, 1500));
+            const status = await vmLauncher.checkStatus();
+            if (status.functional) {
+              bridgeUp = true;
+              setBridgeConnected(true);
+              setBridgeVersion(status.version);
+              break;
+            }
+          }
+          if (!bridgeUp) {
+            // URI scheme didn't work — show installer dialog
+            setShowSetupDialog(true);
+            setVmStatus("stopped");
+            return;
+          }
+          // Bridge is now up — retry boot
+          const retry = await vmLauncher.bootVM(config.os, customRam, customCores);
+          if (!retry.success) {
+            toast.error(retry.error || "Failed to boot VM");
+            setVmStatus("stopped");
+            return;
+          }
+          setVmStatus("running");
+          setCurrentVmId(retry.vmId || null);
+          setCurrentVncPort(retry.vncPort || 5901);
+          setIsoNeededPath(retry.isoNeeded || null);
+          if (retry.isoNeeded) {
+            toast.warning(`No ISO found. VM shows BIOS only.`, { duration: 10000 });
+          } else {
+            toast.success(`${config.name} booting! VNC: localhost:${retry.vncPort}`);
+          }
           return;
         }
         toast.error(result.error || "Failed to boot VM");

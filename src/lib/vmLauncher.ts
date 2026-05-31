@@ -1,13 +1,13 @@
 /**
  * VM Launcher - Thalamus VM Bridge
  *
- * User flow:
+ * User flow (v2.0.0 - Roblox-style):
  * 1. User clicks "Boot VM" in browser
  * 2. Check if bridge is running (try connect ws://localhost:5900)
- * 3. If not running, show download dialog
- * 4. User downloads and runs the exe/script (one time only)
- * 5. Bridge stays running in background
- * 6. All future VM boots just work
+ * 3a. If running: send boot command via WebSocket
+ * 3b. If not running: try thalamus:// URI scheme (launches bridge if installed)
+ * 4. If URI scheme fails (not installed): show installer download dialog
+ * 5. After install, bridge starts automatically and future boots just work
  */
 
 interface VMStatus {
@@ -24,6 +24,11 @@ export class VMLauncher {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 3;
   private readonly bridgeUrl = "ws://localhost:5900";
+
+  /** Installer URL — one-time setup that installs everything */
+  static readonly INSTALLER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v2.0.0/thalamus-installer.exe";
+  /** Bridge URL — the bridge exe itself (for manual install) */
+  static readonly BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v2.0.0/thalamus-vm-bridge.exe";
 
   async checkStatus(): Promise<VMStatus> {
     if (typeof WebSocket === "undefined") {
@@ -52,7 +57,6 @@ export class VMLauncher {
             const data = JSON.parse(event.data);
             clearTimeout(responseTimeout);
             ws.close();
-            // Accept any valid JSON response as "functional"
             const functional = Boolean(data.version || data.platform || data.activeVMs !== undefined);
             resolve({
               running: functional,
@@ -75,6 +79,36 @@ export class VMLauncher {
         resolve({ running: false, functional: false, error: "Bridge not reachable" });
       };
     });
+  }
+
+  /**
+   * Launch the bridge via thalamus:// URI scheme (like Roblox).
+   * If the installer has been run, this will launch the bridge automatically.
+   * Returns true if the URI was dispatched (doesn't guarantee bridge started).
+   */
+  launchViaUriScheme(os: string, ram: number, cores: number): boolean {
+    try {
+      const uri = `thalamus://boot?os=${encodeURIComponent(os)}&ram=${ram}&cores=${cores}`;
+      window.location.href = uri;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Try to launch bridge via URI scheme, then poll for it to come up.
+   * Returns true if bridge came up within timeout.
+   */
+  async launchAndWait(os: string, ram: number, cores: number, timeoutMs = 15000): Promise<boolean> {
+    this.launchViaUriScheme(os, ram, cores);
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      await new Promise(r => setTimeout(r, 1000));
+      const status = await this.checkStatus();
+      if (status.functional) return true;
+    }
+    return false;
   }
 
   async connect(): Promise<boolean> {
@@ -146,7 +180,7 @@ export class VMLauncher {
       setTimeout(() => {
         this.ws?.removeEventListener("message", messageHandler);
         resolve({ success: false, error: "Timeout waiting for VM to boot" });
-      }, 10000);
+      }, 15000);
     });
   }
 
@@ -174,20 +208,25 @@ export class VMLauncher {
     });
   }
 
+  /** Returns the installer download URL (primary) */
+  getInstallerUrl(): string {
+    return VMLauncher.INSTALLER_URL;
+  }
+
   /** Returns platform-specific download URL */
   getDownloadUrl(): string {
-    if (typeof navigator === "undefined") return "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.2.0/thalamus-vm-bridge.exe";
+    if (typeof navigator === "undefined") return VMLauncher.INSTALLER_URL;
     const p = navigator.platform.toLowerCase();
-    if (p.includes("win")) return "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v1.2.0/thalamus-vm-bridge.exe";
+    if (p.includes("win")) return VMLauncher.INSTALLER_URL;
     if (p.includes("mac")) return "/downloads/setup-macos.sh";
     return "/downloads/setup-linux.sh";
   }
 
   /** Returns the filename for the download */
   getDownloadFilename(): string {
-    if (typeof navigator === "undefined") return "thalamus-vm-bridge.exe";
+    if (typeof navigator === "undefined") return "thalamus-installer.exe";
     const p = navigator.platform.toLowerCase();
-    if (p.includes("win")) return "thalamus-vm-bridge.exe";
+    if (p.includes("win")) return "thalamus-installer.exe";
     if (p.includes("mac")) return "setup-macos.sh";
     return "setup-linux.sh";
   }
@@ -212,11 +251,11 @@ export class VMLauncher {
 
   private _windowsInstructions(): string[] {
     return [
-      "Download thalamus-vm-bridge.exe",
+      "Download thalamus-installer.exe",
       "Double-click to run it",
       "If Windows Defender shows a warning, click 'More info' → 'Run anyway'",
-      "The app installs QEMU automatically and starts the bridge",
-      "Keep the window open while using Thalamus VMs",
+      "The installer sets up QEMU, downloads Ubuntu/Alpine ISOs, and registers the thalamus:// protocol",
+      "After install, clicking 'Boot OS' will launch VMs automatically — no extra steps",
     ];
   }
 
