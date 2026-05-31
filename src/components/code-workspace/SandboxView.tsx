@@ -62,6 +62,38 @@ const OS_CONFIGS: Record<string, VMConfig> = {
     description: "Windows 10 (6GB RAM, requires bridge)",
     is64Bit: true,
   },
+  "macos-26": {
+    os: "macos-26",
+    ram: 8192,
+    cores: 4,
+    name: "macOS 26 Tahoe",
+    description: "macOS 26 Tahoe (8GB RAM, requires bridge)",
+    is64Bit: true,
+  },
+  "macos-18": {
+    os: "macos-18",
+    ram: 8192,
+    cores: 4,
+    name: "macOS 18 Sequoia",
+    description: "macOS 18 Sequoia (8GB RAM, requires bridge)",
+    is64Bit: true,
+  },
+  "macos-17": {
+    os: "macos-17",
+    ram: 8192,
+    cores: 4,
+    name: "macOS 17 Sonoma",
+    description: "macOS 17 Sonoma (8GB RAM, requires bridge)",
+    is64Bit: true,
+  },
+  "macos-16": {
+    os: "macos-16",
+    ram: 8192,
+    cores: 4,
+    name: "macOS 16 Ventura",
+    description: "macOS 16 Ventura (8GB RAM, requires bridge)",
+    is64Bit: true,
+  },
   "ubuntu-24": {
     os: "ubuntu-24",
     ram: 4096,
@@ -70,12 +102,28 @@ const OS_CONFIGS: Record<string, VMConfig> = {
     description: "Ubuntu Desktop (4GB RAM, requires bridge)",
     is64Bit: true,
   },
-  "macos-sequoia": {
-    os: "macos-sequoia",
-    ram: 6144,
+  "ubuntu-22": {
+    os: "ubuntu-22",
+    ram: 4096,
     cores: 4,
-    name: "macOS Sequoia",
-    description: "Latest macOS (6GB RAM, requires bridge)",
+    name: "Ubuntu 22.04 LTS",
+    description: "Ubuntu 22.04 (4GB RAM, requires bridge)",
+    is64Bit: true,
+  },
+  "debian-12": {
+    os: "debian-12",
+    ram: 2048,
+    cores: 2,
+    name: "Debian 12 Bookworm",
+    description: "Debian stable (2GB RAM, requires bridge)",
+    is64Bit: true,
+  },
+  "fedora-40": {
+    os: "fedora-40",
+    ram: 4096,
+    cores: 4,
+    name: "Fedora 40",
+    description: "Fedora Workstation (4GB RAM, requires bridge)",
     is64Bit: true,
   },
   "android-14": {
@@ -83,6 +131,14 @@ const OS_CONFIGS: Record<string, VMConfig> = {
     ram: 4096,
     cores: 4,
     name: "Android 14",
+    description: "Android x86_64 (4GB RAM, requires bridge)",
+    is64Bit: true,
+  },
+  "android-13": {
+    os: "android-13",
+    ram: 4096,
+    cores: 4,
+    name: "Android 13",
     description: "Android x86_64 (4GB RAM, requires bridge)",
     is64Bit: true,
   },
@@ -221,51 +277,50 @@ export function SandboxView({ branchId }: SandboxViewProps) {
       setVmStatus("booting");
       toast.info(`Booting ${config.name}...`);
 
+      // Try WebSocket first (bridge already running)
       const result = await vmLauncher.bootVM(config.os, customRam, customCores);
 
       if (!result.success) {
-        if (result.error?.includes("not running") || result.error?.includes("bridge")) {
-          // Try thalamus:// URI scheme first (if installer was run)
-          toast.info("Trying to launch VM bridge...", { duration: 3000 });
-          vmLauncher.launchViaUriScheme(config.os, customRam, customCores);
-          // Poll for bridge to come up
-          let bridgeUp = false;
-          for (let i = 0; i < 8; i++) {
-            await new Promise(r => setTimeout(r, 1500));
-            const status = await vmLauncher.checkStatus();
-            if (status.functional) {
-              bridgeUp = true;
-              setBridgeConnected(true);
-              setBridgeVersion(status.version);
-              break;
-            }
+        // Bridge not running — try thalamus:// URI scheme (if installer was run)
+        toast.info("Launching VM bridge via thalamus:// protocol...", { duration: 4000 });
+        vmLauncher.launchViaUriScheme(config.os, customRam, customCores);
+
+        // Poll for bridge to come up (up to 15 seconds)
+        let bridgeUp = false;
+        for (let i = 0; i < 10; i++) {
+          await new Promise(r => setTimeout(r, 1500));
+          const status = await vmLauncher.checkStatus();
+          if (status.functional) {
+            bridgeUp = true;
+            setBridgeConnected(true);
+            setBridgeVersion(status.version);
+            break;
           }
-          if (!bridgeUp) {
-            // URI scheme didn't work — show installer dialog
-            setShowSetupDialog(true);
-            setVmStatus("stopped");
-            return;
-          }
-          // Bridge is now up — retry boot
-          const retry = await vmLauncher.bootVM(config.os, customRam, customCores);
-          if (!retry.success) {
-            toast.error(retry.error || "Failed to boot VM");
-            setVmStatus("stopped");
-            return;
-          }
-          setVmStatus("running");
-          setCurrentVmId(retry.vmId || null);
-          setCurrentVncPort(retry.vncPort || 5901);
-          setIsoNeededPath(retry.isoNeeded || null);
-          if (retry.isoNeeded) {
-            toast.warning(`No ISO found. VM shows BIOS only.`, { duration: 10000 });
-          } else {
-            toast.success(`${config.name} booting! VNC: localhost:${retry.vncPort}`);
-          }
+        }
+
+        if (!bridgeUp) {
+          // URI scheme didn't work — show installer dialog
+          setShowSetupDialog(true);
+          setVmStatus("stopped");
           return;
         }
-        toast.error(result.error || "Failed to boot VM");
-        setVmStatus("stopped");
+
+        // Bridge is now up — retry boot
+        const retry = await vmLauncher.bootVM(config.os, customRam, customCores);
+        if (!retry.success) {
+          toast.error(retry.error || "Failed to boot VM");
+          setVmStatus("stopped");
+          return;
+        }
+        setVmStatus("running");
+        setCurrentVmId(retry.vmId || null);
+        setCurrentVncPort(retry.vncPort || 5901);
+        setIsoNeededPath(retry.isoNeeded || null);
+        if (retry.isoNeeded) {
+          toast.warning(`No ISO found. VM shows BIOS only.`, { duration: 10000 });
+        } else {
+          toast.success(`${config.name} booting! VNC: localhost:${retry.vncPort}`);
+        }
         return;
       }
 
@@ -442,7 +497,6 @@ export function SandboxView({ branchId }: SandboxViewProps) {
   };
 
   const currentConfig = OS_CONFIGS[selectedOS];
-
   const maxRamForCurrentOS = currentConfig.is64Bit ? 16384 : 2048;
 
   return (
@@ -469,13 +523,12 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                 Loading v86...
               </Badge>
             )}
-
             {currentConfig.is64Bit && (
               <Badge
                 variant="outline"
                 className={bridgeConnected ? "bg-green-500/10 text-green-600" : "bg-orange-500/10 text-orange-600"}
               >
-                {bridgeChecking ? "Checking VM files" : bridgeConnected ? `Ready${bridgeVersion ? ` v${bridgeVersion}` : ""}` : "Required files needed"}
+                {bridgeChecking ? "Checking..." : bridgeConnected ? `Bridge Ready${bridgeVersion ? ` v${bridgeVersion}` : ""}` : "Bridge Offline"}
               </Badge>
             )}
           </div>
@@ -486,20 +539,6 @@ export function SandboxView({ branchId }: SandboxViewProps) {
 
             {vmStatus === "stopped" && (
               <>
-                {currentConfig.is64Bit && !bridgeConnected && !bridgeChecking && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-2 border-primary/40 text-primary"
-                    asChild
-                  >
-                    <a href={downloadUrl} download>
-                      <Download className="h-3 w-3" />
-                      Download Required Files
-                    </a>
-                  </Button>
-                )}
-
                 <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
                   <DialogTrigger asChild>
                     <Button size="sm" variant="outline" className="gap-2">
@@ -574,11 +613,12 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                   </DialogContent>
                 </Dialog>
 
+                {/* Boot OS button — always enabled, handles bridge launch on click */}
                 <Button
                   size="sm"
                   onClick={handleBootVM}
                   className="gap-2"
-                  disabled={currentConfig.is64Bit ? !bridgeConnected : !v86Loaded}
+                  disabled={!currentConfig.is64Bit && !v86Loaded}
                 >
                   <Power className="h-3 w-3" />
                   Boot OS
