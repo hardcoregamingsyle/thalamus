@@ -33,25 +33,25 @@ interface ISOOption {
 }
 
 const ISO_OPTIONS: ISOOption[] = [
-  // Windows — ISO is free to download; needs a license key to activate
+  // Windows — ISO is free; runs without activation (watermark only)
   {
     key: "windows-11",
     name: "Windows 11",
     version: "23H2",
-    size: "~5.8GB",
+    size: "~5.8GB ISO",
     free: true,
     downloadUrl: "https://www.microsoft.com/software-download/windows11",
-    note: "Free ISO from Microsoft — needs license key to activate",
+    note: "Free from Microsoft — runs without activation (watermark only)",
     category: "windows",
   },
   {
     key: "windows-10",
     name: "Windows 10",
     version: "22H2",
-    size: "~5.2GB",
+    size: "~5.2GB ISO",
     free: true,
     downloadUrl: "https://www.microsoft.com/software-download/windows10",
-    note: "Free ISO from Microsoft — needs license key to activate",
+    note: "Free from Microsoft — runs without activation (watermark only)",
     category: "windows",
   },
   // macOS — download from archive.org or create from Mac App Store
@@ -59,9 +59,9 @@ const ISO_OPTIONS: ISOOption[] = [
     key: "macos-26",
     name: "macOS 26 Tahoe",
     version: "26.0",
-    size: "~14GB",
+    size: "~14GB ISO",
     free: true,
-    downloadUrl: "https://archive.org/search?query=macos+tahoe+iso",
+    downloadUrl: "https://archive.org/search?query=macos+26+tahoe+iso",
     note: "Download from archive.org or create from Mac App Store",
     category: "macos",
   },
@@ -69,7 +69,7 @@ const ISO_OPTIONS: ISOOption[] = [
     key: "macos-sequoia",
     name: "macOS 15 Sequoia",
     version: "15.0",
-    size: "~14GB",
+    size: "~14GB ISO",
     free: true,
     downloadUrl: "https://archive.org/search?query=macos+sequoia+iso",
     note: "Download from archive.org or create from Mac App Store",
@@ -79,7 +79,7 @@ const ISO_OPTIONS: ISOOption[] = [
     key: "macos-sonoma",
     name: "macOS 14 Sonoma",
     version: "14.0",
-    size: "~13GB",
+    size: "~13GB ISO",
     free: true,
     downloadUrl: "https://archive.org/search?query=macos+sonoma+iso",
     note: "Download from archive.org or create from Mac App Store",
@@ -89,7 +89,7 @@ const ISO_OPTIONS: ISOOption[] = [
     key: "macos-ventura",
     name: "macOS 13 Ventura",
     version: "13.0",
-    size: "~12GB",
+    size: "~12GB ISO",
     free: true,
     downloadUrl: "https://archive.org/search?query=macos+ventura+iso",
     note: "Download from archive.org or create from Mac App Store",
@@ -99,7 +99,7 @@ const ISO_OPTIONS: ISOOption[] = [
     key: "macos-monterey",
     name: "macOS 12 Monterey",
     version: "12.0",
-    size: "~12GB",
+    size: "~12GB ISO",
     free: true,
     downloadUrl: "https://archive.org/search?query=macos+monterey+iso",
     note: "Download from archive.org or create from Mac App Store",
@@ -319,11 +319,12 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                     </div>
                     <ol className="space-y-1.5 text-xs text-muted-foreground list-none">
                       {[
-                        "Installs QEMU (VM engine) silently",
-                        "Downloads selected free OS ISOs automatically",
-                        "Registers thalamus:// protocol — enables one-click VM launch",
-                        "Adds bridge to Windows startup — always ready",
-                        "Return here and click Boot OS — VMs launch instantly",
+                        "Installs QEMU (VM engine) silently — no manual steps",
+                        "Downloads selected OS ISOs automatically",
+                        "Each OS runs in its own isolated QCOW2 container — never touches your real drive",
+                        "Containers are thin-provisioned: a 60GB Windows VM only uses ~10GB until filled",
+                        "Registers thalamus:// protocol — one-click VM launch from browser",
+                        "Adds bridge to Windows startup — always ready in background",
                       ].map((step, i) => (
                         <li key={i} className="flex items-start gap-2">
                           <span className="shrink-0 w-4 h-4 rounded-full bg-primary/10 text-primary text-[10px] flex items-center justify-center font-bold mt-0.5">{i + 1}</span>
@@ -415,8 +416,9 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
 
                   <Card className="p-3 bg-blue-500/5 border-blue-500/20">
                     <p className="text-xs text-muted-foreground">
-                      <span className="font-medium text-blue-600">Windows ISOs</span> are free to download from Microsoft — you just need a license key to activate after install (or use the 90-day evaluation period).{" "}
-                      <span className="font-medium text-blue-600">macOS ISOs</span> can be downloaded from archive.org or created using the official macOS installer from the Mac App Store. Always verify sources for safety.
+                      <span className="font-medium text-blue-600">All VMs run in isolated containers</span> — each OS gets its own QCOW2 virtual disk that never touches your real drive. Thin-provisioned: only uses space as data is written.{" "}
+                      <span className="font-medium text-blue-600">Windows</span> runs without activation (small watermark only).{" "}
+                      <span className="font-medium text-blue-600">macOS ISOs</span> can be downloaded from archive.org or created from the Mac App Store installer. Always verify sources.
                     </p>
                   </Card>
 
