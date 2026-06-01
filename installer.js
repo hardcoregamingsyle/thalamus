@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v5.3.0
+ * Thalamus Installer v5.4.0
  * Redesigned UI matching Thalamus website aesthetic
  * - Full dark theme matching website colors
  * - Scrollable OS grid with categories
@@ -14,6 +14,35 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const https = require("https");
+
+// ── Self-hide: relaunch via wscript to suppress console window ────────────────
+// When pkg compiles this as an exe, it shows a console window.
+// We detect this and relaunch via a VBS script that hides the window.
+(function selfHide() {
+  if (process.env.THALAMUS_HIDDEN === "1") return; // already hidden
+  if (process.platform !== "win32") return;
+  try {
+    var exePath = process.execPath;
+    var vbsPath = path.join(os.tmpdir(), "thalamus-launch.vbs");
+    var vbsContent = [
+      'Set shell = CreateObject("WScript.Shell")',
+      'Set env = CreateObject("WScript.Shell").Environment("Process")',
+      'env("THALAMUS_HIDDEN") = "1"',
+      'shell.Run Chr(34) & "' + exePath.replace(/"/g, '') + '" & Chr(34), 0, False'
+    ].join("
+");
+    fs.writeFileSync(vbsPath, vbsContent, "utf8");
+    var child = spawn("wscript.exe", ["//B", "//Nologo", vbsPath], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: false
+    });
+    child.unref();
+    setTimeout(function() { process.exit(0); }, 500);
+  } catch(e) {
+    // If self-hide fails, continue normally
+  }
+})();
 
 const PORT = 7891;
 const APP_DIR = path.join(os.homedir(), "AppData", "Local", "Thalamus");
@@ -249,7 +278,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v5.3.0 ===");
+    addLog("=== Thalamus Installer v5.4.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -461,7 +490,7 @@ body {
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge-version">v5.3.0</div>
+  <div class="badge-version">v5.4.0</div>
 </div>
 <div class="body-wrap">
 
@@ -753,8 +782,13 @@ renderISOs();
 </html>`;
 
 function buildHtaContent() {
-  var isoJson = JSON.stringify(ISO_OPTIONS);
-  return HTA_CONTENT_TEMPLATE.replace("ISO_DATA_PLACEHOLDER", isoJson);
+  // Inject ISO data as individual per-item assignments to avoid IE JScript line length limit
+  var lines = [];
+  for (var i = 0; i < ISO_OPTIONS.length; i++) {
+    lines.push("ISO_DATA[" + i + "]=" + JSON.stringify(ISO_OPTIONS[i]) + ";");
+  }
+  var isoInit = "ISO_DATA=[];\n" + lines.join("\n");
+  return HTA_CONTENT_TEMPLATE.replace("var ISO_DATA = ISO_DATA_PLACEHOLDER;", isoInit);
 }
 
 
@@ -796,7 +830,7 @@ server.listen(PORT, "127.0.0.1", function() {
   var htaProc = spawn("mshta.exe", [htaPath], {
     detached: false,
     stdio: "ignore",
-    windowsHide: true,
+    windowsHide: false,
   });
 
   htaProc.on("close", function() {
