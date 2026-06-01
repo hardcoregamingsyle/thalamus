@@ -2272,7 +2272,8 @@ export default function TeamPortal() {
                           <div className="space-y-2">
                             <a
                               href={bridgeDownloadUrl}
-                              download
+                              target="_blank"
+                              rel="noopener noreferrer"
                               className="flex items-center justify-center gap-2 w-full px-4 py-3 bg-primary/10 border border-primary/30 text-primary text-sm rounded-xl hover:bg-primary/20 transition-all font-bold group"
                             >
                               <Download className="h-4 w-4 group-hover:scale-110 transition-transform" />

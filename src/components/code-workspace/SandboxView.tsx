@@ -663,7 +663,8 @@ export function SandboxView({ branchId }: SandboxViewProps) {
               {currentConfig.is64Bit && !bridgeConnected && (
                 <a
                   href={downloadUrl}
-                  download
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="mt-4 inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary/15 px-4 py-2 text-xs font-bold text-primary transition-colors hover:bg-primary/25"
                 >
                   <Download className="h-3 w-3" />
