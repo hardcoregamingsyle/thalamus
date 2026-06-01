@@ -667,7 +667,7 @@ body {
   </div>
   <div style="display:flex;gap:8px;align-items:center;">
     <button class="btn-close" id="close-btn" onclick="window.close()">Close</button>
-    <button class="btn-install" id="install-btn" onclick="startInstall()">&#9889; Install Now</button>
+    <button class="btn-install" id="install-btn" onclick="startInstall()">Install Now</button>
   </div>
 </div>
 
@@ -691,7 +691,7 @@ function getCatBadge(cat, note) {
   if (cat === "windows") return '<span class="os-badge badge-eval">Evaluation</span>';
   if (cat === "macos") return '<span class="os-badge badge-community">Community ISO</span>';
   if (cat === "android") return '<span class="os-badge badge-free">Free</span>';
-  return '<span class="os-badge badge-free">Free &amp; Open Source</span>';
+  return '<span class="os-badge badge-free">Free + Open Source</span>';
 }
 
 function renderISOs() {
@@ -720,11 +720,11 @@ function renderISOs() {
     items = catMap[cats[c]];
     for (j = 0; j < items.length; j++) {
       iso = items[j];
-      html += '<div class="os-item" id="item-' + iso.key + '" onclick="toggleISO(\'' + iso.key + '\')">';
-      html += '<div class="os-checkbox" id="chk-' + iso.key + '"><span class="os-check-mark">&#10003;</span></div>';
+      html += '<div class="os-item" id="item-' + iso.key + '" onclick="toggleISO(this.id)">' ;
+      html += '<div class="os-checkbox" id="chk-' + iso.key + '"><span class="os-check-mark">v</span></div>';
       html += '<div class="os-info">';
       html += '<div class="os-name">' + escHtml(iso.name) + '</div>';
-      html += '<div class="os-meta">' + escHtml(iso.version) + ' &bull; ' + escHtml(iso.size) + '</div>';
+      html += '<div class="os-meta">' + escHtml(iso.version) + ' - ' + escHtml(iso.size) + '</div>';
       html += getCatBadge(iso.category, iso.note);
       if (iso.note) html += ' <span style="font-size:9px;color:#52525b;">' + escHtml(iso.note) + '</span>';
       html += '</div></div>';
@@ -733,7 +733,9 @@ function renderISOs() {
   container.innerHTML = html;
 }
 
-function toggleISO(key) {
+
+function toggleISO(elId) {
+  var key = (typeof elId === "string" && elId.indexOf("item-") === 0) ? elId.replace("item-", "") : elId;
   if (selected[key]) {
     delete selected[key];
   } else {
