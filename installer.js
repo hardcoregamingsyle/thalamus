@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v5.2.0
+ * Thalamus Installer v5.3.0
  * Redesigned UI matching Thalamus website aesthetic
  * - Full dark theme matching website colors
  * - Scrollable OS grid with categories
@@ -124,7 +124,7 @@ function installQemu() {
       progress.step = "qemu-install";
       progress.message = "Installing QEMU...";
       progress.percent = 20;
-      exec('"' + qemuInstaller + '" /S', { timeout: 180000 }, function(err) {
+      exec('"' + qemuInstaller + '" /S', { timeout: 180000, windowsHide: true }, function(err) {
         if (err) addLog("QEMU install note: " + err.message);
         else addLog("✓ QEMU installed.");
         progress.percent = 22;
@@ -144,7 +144,7 @@ function registerUriScheme() {
     var regContent = "Windows Registry Editor Version 5.00\r\n\r\n[HKEY_CURRENT_USER\\Software\\Classes\\thalamus]\r\n@=\"URL:Thalamus Protocol\"\r\n\"URL Protocol\"=\"\"\r\n\r\n[HKEY_CURRENT_USER\\Software\\Classes\\thalamus\\shell]\r\n\r\n[HKEY_CURRENT_USER\\Software\\Classes\\thalamus\\shell\\open]\r\n\r\n[HKEY_CURRENT_USER\\Software\\Classes\\thalamus\\shell\\open\\command]\r\n@=\"wscript.exe \\\"" + launcherEscaped + "\\\" \\\"%1\\\"\"\r\n";
     var regFile = path.join(os.tmpdir(), "thalamus-protocol.reg");
     fs.writeFileSync(regFile, regContent, "utf8");
-    exec('reg import "' + regFile + '"', function(err) {
+    exec('reg import "' + regFile + '"', { windowsHide: true }, function(err) {
       if (err) addLog("Registry note: " + err.message);
       else addLog("✓ thalamus:// protocol registered.");
       resolve();
@@ -154,7 +154,7 @@ function registerUriScheme() {
 
 function addToStartup() {
   return new Promise(function(resolve) {
-    exec('reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "ThalamusBridge" /t REG_SZ /d "wscript.exe \\"' + BRIDGE_LAUNCHER + '\\"" /f', function(err) {
+    exec('reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "ThalamusBridge" /t REG_SZ /d "wscript.exe \\"' + BRIDGE_LAUNCHER + '\\"" /f', { windowsHide: true }, function(err) {
       if (err) addLog("Startup registry note: " + err.message);
       else addLog("✓ Bridge added to Windows startup.");
       resolve();
@@ -249,7 +249,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v5.2.0 ===");
+    addLog("=== Thalamus Installer v5.3.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -395,6 +395,9 @@ body {
 .badge-free { background: rgba(34,197,94,0.1); color: #4ade80; border: 1px solid rgba(34,197,94,0.2); }
 .badge-eval { background: rgba(234,179,8,0.1); color: #facc15; border: 1px solid rgba(234,179,8,0.2); }
 .badge-community { background: rgba(99,102,241,0.1); color: #818cf8; border: 1px solid rgba(99,102,241,0.2); }
+.os-note { font-size: 9px; color: #52525b; margin-left: 4px; }
+.os-empty { color: #52525b; font-size: 12px; padding: 20px 0; }
+.os-note { font-size: 9px; color: #52525b; }
 .footer {
   padding: 12px 20px; border-top: 1px solid #18181b;
   display: flex; justify-content: space-between; align-items: center;
@@ -458,7 +461,7 @@ body {
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge-version">v5.2.0</div>
+  <div class="badge-version">v5.3.0</div>
 </div>
 <div class="body-wrap">
 
@@ -538,17 +541,32 @@ function getCatLabel(cat) {
   return cat;
 }
 
-function getCatBadge(cat) {
-  if (cat === "windows") return "<span class=\"os-badge badge-eval\">Evaluation</span>";
-  if (cat === "macos") return "<span class=\"os-badge badge-community\">Community ISO</span>";
-  if (cat === "android") return "<span class=\"os-badge badge-free\">Free</span>";
-  return "<span class=\"os-badge badge-free\">Free + Open Source</span>";
+function getBadgeClass(cat) {
+  if (cat === "windows") return "os-badge badge-eval";
+  if (cat === "macos") return "os-badge badge-community";
+  return "os-badge badge-free";
+}
+
+function getBadgeLabel(cat) {
+  if (cat === "windows") return "Evaluation";
+  if (cat === "macos") return "Community ISO";
+  if (cat === "android") return "Free";
+  return "Free + Open Source";
+}
+
+function makeEl(tag, cls, txt) {
+  var el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (txt) el.appendChild(document.createTextNode(txt));
+  return el;
 }
 
 function renderISOs() {
   var container = document.getElementById("iso-list");
+  while (container.firstChild) container.removeChild(container.firstChild);
+
   if (!ISO_DATA || ISO_DATA.length === 0) {
-    container.innerHTML = "<div style=\"color:#52525b;font-size:12px;padding:20px 0;\">No OS images available.</div>";
+    container.appendChild(makeEl("div", "os-empty", "No OS images available."));
     return;
   }
 
@@ -564,34 +582,51 @@ function renderISOs() {
     catMap[iso.category].push(iso);
   }
 
-  var html = "";
   var c, items, j;
   for (c = 0; c < cats.length; c++) {
-    html += "<div class=\"cat-header\">" + getCatLabel(cats[c]) + "</div>";
+    container.appendChild(makeEl("div", "cat-header", getCatLabel(cats[c])));
     items = catMap[cats[c]];
     for (j = 0; j < items.length; j++) {
       iso = items[j];
-      html += "<div class=\"os-item\" id=\"item-" + iso.key + "\" onclick=\"doToggle(this)\">";
-      html += "<div class=\"os-checkbox\" id=\"chk-" + iso.key + "\"><span class=\"os-check-mark\">v</span></div>";
-      html += "<div class=\"os-info\">";
-      html += "<div class=\"os-name\">" + escHtml(iso.name) + "</div>";
-      html += "<div class=\"os-meta\">" + escHtml(iso.version) + " - " + escHtml(iso.size) + "</div>";
-      html += getCatBadge(iso.category);
-      if (iso.note) html += " <span style=\"font-size:9px;color:#52525b;\">" + escHtml(iso.note) + "</span>";
-      html += "</div></div>";
+      var row = makeEl("div", "os-item");
+      row.id = "item-" + iso.key;
+      (function(isoKey, rowEl) {
+        rowEl.onclick = function() { doToggle(isoKey); };
+      })(iso.key, row);
+
+      var chk = makeEl("div", "os-checkbox");
+      chk.id = "chk-" + iso.key;
+      var mark = makeEl("span", "os-check-mark", "v");
+      chk.appendChild(mark);
+      row.appendChild(chk);
+
+      var info = makeEl("div", "os-info");
+      info.appendChild(makeEl("div", "os-name", iso.name));
+      info.appendChild(makeEl("div", "os-meta", iso.version + " - " + iso.size));
+
+      var badge = makeEl("span", getBadgeClass(iso.category), getBadgeLabel(iso.category));
+      info.appendChild(badge);
+
+      if (iso.note) {
+        var note = makeEl("span", "os-note", " " + iso.note);
+        info.appendChild(note);
+      }
+
+      row.appendChild(info);
+      container.appendChild(row);
     }
   }
-  container.innerHTML = html;
 }
 
-function doToggle(el) {
-  var key = el.id.replace("item-", "");
+function doToggle(key) {
   if (selected[key]) {
     delete selected[key];
-    el.className = "os-item";
+    var el = document.getElementById("item-" + key);
+    if (el) el.className = "os-item";
   } else {
     selected[key] = true;
-    el.className = "os-item selected";
+    var el2 = document.getElementById("item-" + key);
+    if (el2) el2.className = "os-item selected";
   }
   updateSelCount();
 }
@@ -624,9 +659,10 @@ function startInstall() {
     if (selected.hasOwnProperty(k)) keys.push(k);
   }
 
-  var body = "{\"isos\":[";
+  var q = String.fromCharCode(34);
+  var body = "{" + q + "isos" + q + ":[";
   for (var i = 0; i < keys.length; i++) {
-    body += "\"" + keys[i] + "\"";
+    body += q + keys[i] + q;
     if (i < keys.length - 1) body += ",";
   }
   body += "]}";
@@ -672,13 +708,13 @@ function pollProgress() {
         document.getElementById("prog-label").innerText = data.message || "";
 
         var logBox = document.getElementById("log-box");
-        var html = "";
-        var i, line;
+        while (logBox.firstChild) logBox.removeChild(logBox.firstChild);
+        var i, line, div;
         for (i = 0; i < data.log.length; i++) {
           line = data.log[i];
-          html += "<div class=\"" + getLogClass(line) + "\">" + escHtml(line) + "</div>";
+          div = makeEl("div", getLogClass(line), line);
+          logBox.appendChild(div);
         }
-        logBox.innerHTML = html;
         logBox.scrollTop = logBox.scrollHeight;
 
         if (data.done) {
