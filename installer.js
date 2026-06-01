@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v5.0.0
+ * Thalamus Installer v5.2.0
  * Redesigned UI matching Thalamus website aesthetic
  * - Full dark theme matching website colors
  * - Scrollable OS grid with categories
@@ -249,7 +249,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v5.0.0 ===");
+    addLog("=== Thalamus Installer v5.2.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -276,9 +276,9 @@ async function runInstall(selectedISOs) {
 }
 
 // ── HTA UI — Thalamus design language ────────────────────────────────────────
-const HTA_CONTENT = `<html>
+const HTA_CONTENT_TEMPLATE = `<html>
 <head>
-<title>Thalamus — VM Setup</title>
+<title>Thalamus VM Setup</title>
 <HTA:APPLICATION
   ID="ThalamusInstaller"
   APPLICATIONNAME="Thalamus VM Setup"
@@ -304,15 +304,9 @@ body {
   display: flex;
   flex-direction: column;
 }
-
-/* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #6366f1; }
-* { scrollbar-width: thin; scrollbar-color: #3f3f46 transparent; }
-
-/* ── Titlebar ── */
 .titlebar {
   background: #09090b;
   border-bottom: 1px solid #18181b;
@@ -324,15 +318,14 @@ body {
 }
 .logo {
   width: 34px; height: 34px;
-  background: linear-gradient(135deg, #6366f1, #818cf8);
+  background: #6366f1;
   border-radius: 9px;
   display: flex; align-items: center; justify-content: center;
   font-size: 16px; font-weight: 900; color: white;
   flex-shrink: 0;
-  box-shadow: 0 0 16px rgba(99,102,241,0.35);
 }
 .title-text { flex: 1; }
-.title-main { font-size: 14px; font-weight: 700; color: #f4f4f5; letter-spacing: 0.01em; }
+.title-main { font-size: 14px; font-weight: 700; color: #f4f4f5; }
 .title-sub { font-size: 11px; color: #71717a; margin-top: 1px; }
 .badge-version {
   font-size: 10px; font-weight: 700;
@@ -341,253 +334,120 @@ body {
   border: 1px solid rgba(99,102,241,0.25);
   border-radius: 5px;
   padding: 2px 8px;
-  letter-spacing: 0.04em;
 }
-
-/* ── Layout ── */
-.body-wrap {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
+.body-wrap { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
 .page { display: none; flex: 1; overflow: hidden; flex-direction: column; }
 .page.active { display: flex; }
-
-/* ── Select page ── */
-.select-layout {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-  gap: 0;
-}
+.select-layout { display: flex; flex: 1; overflow: hidden; }
 .left-panel {
-  width: 220px;
-  flex-shrink: 0;
+  width: 220px; flex-shrink: 0;
   border-right: 1px solid #18181b;
-  padding: 16px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  padding: 16px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 8px;
 }
-.right-panel {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-}
-
-/* ── Steps card ── */
+.right-panel { flex: 1; overflow-y: auto; padding: 16px; }
 .steps-card {
-  background: #18181b;
-  border: 1px solid #27272a;
-  border-radius: 10px;
-  padding: 14px;
-  margin-bottom: 8px;
+  background: #18181b; border: 1px solid #27272a;
+  border-radius: 10px; padding: 14px; margin-bottom: 8px;
 }
 .steps-title {
-  font-size: 10px; font-weight: 700;
-  color: #71717a;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 10px;
+  font-size: 10px; font-weight: 700; color: #71717a;
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px;
 }
 .step-row {
   display: flex; align-items: flex-start; gap: 8px;
-  padding: 5px 0;
-  border-bottom: 1px solid #27272a;
+  padding: 5px 0; border-bottom: 1px solid #27272a;
 }
 .step-row:last-child { border-bottom: none; }
 .step-num {
-  width: 18px; height: 18px;
-  border-radius: 50%;
-  background: rgba(99,102,241,0.12);
-  color: #818cf8;
-  font-size: 9px; font-weight: 800;
-  text-align: center; line-height: 18px;
-  flex-shrink: 0;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: rgba(99,102,241,0.12); color: #818cf8;
+  font-size: 9px; font-weight: 800; text-align: center; line-height: 18px; flex-shrink: 0;
 }
 .step-text { font-size: 11px; color: #a1a1aa; line-height: 1.4; }
-
-/* ── OS categories ── */
 .cat-header {
-  font-size: 10px; font-weight: 700;
-  color: #52525b;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin: 12px 0 6px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid #18181b;
+  font-size: 10px; font-weight: 700; color: #52525b;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  margin: 12px 0 6px; padding-bottom: 4px; border-bottom: 1px solid #18181b;
 }
 .cat-header:first-child { margin-top: 0; }
-
-/* ── OS item ── */
 .os-item {
-  background: #18181b;
-  border: 1.5px solid #27272a;
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 6px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  background: #18181b; border: 1.5px solid #27272a;
+  border-radius: 8px; padding: 10px 12px; margin-bottom: 6px;
+  cursor: pointer; display: flex; align-items: flex-start; gap: 10px;
 }
-.os-item:hover { border-color: #3f3f46; background: #1c1c1f; }
 .os-item.selected { border-color: #6366f1; background: rgba(99,102,241,0.08); }
 .os-checkbox {
-  width: 15px; height: 15px;
-  border: 1.5px solid #3f3f46;
-  border-radius: 4px;
-  flex-shrink: 0;
-  margin-top: 1px;
-  background: transparent;
-  display: flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; border: 1.5px solid #3f3f46;
+  border-radius: 4px; flex-shrink: 0; margin-top: 1px;
+  background: transparent; display: flex; align-items: center; justify-content: center;
 }
-.os-item.selected .os-checkbox {
-  background: #6366f1;
-  border-color: #6366f1;
-}
+.os-item.selected .os-checkbox { background: #6366f1; border-color: #6366f1; }
 .os-check-mark { color: white; font-size: 10px; font-weight: 900; display: none; }
 .os-item.selected .os-check-mark { display: block; }
 .os-info { flex: 1; min-width: 0; }
 .os-name { font-size: 12px; font-weight: 600; color: #e4e4e7; }
 .os-meta { font-size: 10px; color: #71717a; margin-top: 2px; }
 .os-badge {
-  display: inline-block;
-  font-size: 9px; font-weight: 700;
-  padding: 1px 6px;
-  border-radius: 4px;
-  margin-top: 4px;
+  display: inline-block; font-size: 9px; font-weight: 700;
+  padding: 1px 6px; border-radius: 4px; margin-top: 4px;
 }
 .badge-free { background: rgba(34,197,94,0.1); color: #4ade80; border: 1px solid rgba(34,197,94,0.2); }
 .badge-eval { background: rgba(234,179,8,0.1); color: #facc15; border: 1px solid rgba(234,179,8,0.2); }
 .badge-community { background: rgba(99,102,241,0.1); color: #818cf8; border: 1px solid rgba(99,102,241,0.2); }
-
-/* ── Footer ── */
 .footer {
-  padding: 12px 20px;
-  border-top: 1px solid #18181b;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-shrink: 0;
-  background: #09090b;
+  padding: 12px 20px; border-top: 1px solid #18181b;
+  display: flex; justify-content: space-between; align-items: center;
+  flex-shrink: 0; background: #09090b;
 }
+.footer-left { display: flex; align-items: center; gap: 8px; }
 .footer-note { font-size: 11px; color: #52525b; }
-.selected-count { font-size: 11px; color: #818cf8; font-weight: 600; }
-
-/* ── Buttons ── */
-.btn-install {
-  background: #6366f1;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  padding: 9px 22px;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  font-family: "Segoe UI", sans-serif;
-  letter-spacing: 0.01em;
-  transition: background 0.15s;
-  box-shadow: 0 0 16px rgba(99,102,241,0.3);
-}
-.btn-install:hover { background: #4f46e5; }
-.btn-install:disabled { background: #27272a; color: #52525b; cursor: default; box-shadow: none; }
+.selected-count { font-size: 11px; color: #818cf8; }
 .btn-close {
-  background: #18181b;
-  color: #a1a1aa;
-  border: 1px solid #27272a;
-  border-radius: 8px;
-  padding: 9px 18px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  font-family: "Segoe UI", sans-serif;
+  font-size: 12px; font-weight: 600; padding: 7px 16px;
+  background: #18181b; color: #a1a1aa;
+  border: 1px solid #27272a; border-radius: 7px; cursor: pointer;
   display: none;
 }
-.btn-close:hover { background: #27272a; color: #e4e4e7; }
-
-/* ── Install page ── */
-.install-wrap {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  padding: 20px;
-  gap: 14px;
+.btn-install {
+  font-size: 12px; font-weight: 700; padding: 7px 20px;
+  background: #6366f1; color: white;
+  border: none; border-radius: 7px; cursor: pointer;
 }
-.install-header { }
-.install-title { font-size: 16px; font-weight: 700; color: #f4f4f5; }
-.install-sub { font-size: 12px; color: #71717a; margin-top: 3px; }
-
-.progress-track {
-  background: #18181b;
-  border-radius: 6px;
-  height: 6px;
-  overflow: hidden;
-  border: 1px solid #27272a;
+.install-wrap { flex: 1; display: flex; flex-direction: column; padding: 20px; gap: 12px; overflow: hidden; }
+.install-title { font-size: 15px; font-weight: 700; color: #f4f4f5; }
+.progress-bar {
+  height: 6px; background: #18181b; border-radius: 3px; overflow: hidden;
 }
 .progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #6366f1, #818cf8);
-  border-radius: 6px;
-  transition: width 0.4s ease;
-  box-shadow: 0 0 8px rgba(99,102,241,0.5);
+  height: 100%; background: #6366f1; border-radius: 3px;
+  width: 0%; transition: width 0.3s;
 }
-.progress-label { font-size: 11px; color: #71717a; margin-top: 6px; }
-
+.progress-label { font-size: 11px; color: #71717a; margin-top: 4px; }
 .log-box {
-  flex: 1;
-  background: #0c0c0e;
-  border: 1px solid #18181b;
-  border-radius: 8px;
-  padding: 12px;
-  overflow-y: auto;
-  font-family: "Cascadia Code", "Consolas", monospace;
-  font-size: 11px;
-  color: #71717a;
-  line-height: 1.6;
+  flex: 1; overflow-y: auto; background: #0a0a0c;
+  border: 1px solid #18181b; border-radius: 8px;
+  padding: 10px; font-family: "Consolas", monospace; font-size: 11px;
 }
-.log-line { padding: 1px 0; }
+.log-line { padding: 1px 0; color: #71717a; }
 .log-line.success { color: #4ade80; }
-.log-line.warn { color: #facc15; }
 .log-line.error { color: #f87171; }
+.log-line.warn { color: #facc15; }
 .log-line.header { color: #818cf8; font-weight: 700; }
-
-/* ── Done page ── */
 .done-wrap {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 32px 24px;
-  text-align: center;
-  gap: 12px;
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px; padding: 40px;
 }
 .done-icon {
-  width: 64px; height: 64px;
-  background: rgba(34,197,94,0.1);
-  border: 1px solid rgba(34,197,94,0.25);
-  border-radius: 50%;
+  width: 56px; height: 56px; border-radius: 50%;
+  background: rgba(34,197,94,0.1); border: 2px solid rgba(34,197,94,0.3);
   display: flex; align-items: center; justify-content: center;
-  font-size: 28px;
-  margin-bottom: 4px;
+  font-size: 24px; color: #4ade80;
 }
-.done-title { font-size: 22px; font-weight: 800; color: #4ade80; }
-.done-sub { font-size: 13px; color: #71717a; line-height: 1.7; max-width: 340px; }
-.done-steps {
-  background: #18181b;
-  border: 1px solid #27272a;
-  border-radius: 10px;
-  padding: 14px 18px;
-  text-align: left;
-  width: 100%;
-  max-width: 360px;
-}
-.done-step { font-size: 12px; color: #a1a1aa; padding: 4px 0; display: flex; align-items: center; gap: 8px; }
+.done-title { font-size: 18px; font-weight: 700; color: #f4f4f5; }
+.done-sub { font-size: 12px; color: #71717a; text-align: center; max-width: 400px; }
+.done-steps { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.done-step { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #a1a1aa; }
 .done-step-dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; flex-shrink: 0; }
 </style>
 </head>
@@ -596,11 +456,10 @@ body {
   <div class="logo">T</div>
   <div class="title-text">
     <div class="title-main">Thalamus VM Setup</div>
-    <div class="title-sub">One-time setup to enable VM booting</div>
+    <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge-version">v5.0.0</div>
+  <div class="badge-version">v5.2.0</div>
 </div>
-
 <div class="body-wrap">
 
   <!-- SELECT PAGE -->
@@ -609,19 +468,15 @@ body {
       <div class="left-panel">
         <div class="steps-card">
           <div class="steps-title">What gets installed</div>
-          <div class="step-row"><div class="step-num">1</div><div class="step-text">QEMU VM engine — silent install</div></div>
-          <div class="step-row"><div class="step-num">2</div><div class="step-text">Thalamus VM Bridge — runs in background</div></div>
-          <div class="step-row"><div class="step-num">3</div><div class="step-text">thalamus:// protocol — one-click launch</div></div>
-          <div class="step-row"><div class="step-num">4</div><div class="step-text">Bridge added to Windows startup</div></div>
-          <div class="step-row"><div class="step-num">5</div><div class="step-text">Selected OS images downloaded</div></div>
-        </div>
-        <div style="font-size:10px;color:#52525b;line-height:1.5;padding:4px 2px;">
-          OS images are stored in<br>
-          <span style="color:#71717a;font-family:Consolas,monospace;font-size:9px;">%LOCALAPPDATA%\\Thalamus\\isos</span>
+          <div class="step-row"><div class="step-num">1</div><div class="step-text">QEMU VM engine</div></div>
+          <div class="step-row"><div class="step-num">2</div><div class="step-text">VM Bridge service</div></div>
+          <div class="step-row"><div class="step-num">3</div><div class="step-text">thalamus:// protocol</div></div>
+          <div class="step-row"><div class="step-num">4</div><div class="step-text">Auto-start on login</div></div>
+          <div class="step-row"><div class="step-num">5</div><div class="step-text">Selected OS images</div></div>
         </div>
       </div>
-      <div class="right-panel" id="iso-list">
-        <div style="color:#52525b;font-size:12px;padding:20px 0;">Loading OS list...</div>
+      <div class="right-panel">
+        <div id="iso-list"></div>
       </div>
     </div>
   </div>
@@ -629,16 +484,9 @@ body {
   <!-- INSTALL PAGE -->
   <div class="page" id="page-install">
     <div class="install-wrap">
-      <div class="install-header">
-        <div class="install-title" id="install-title">Installing Thalamus VM Bridge</div>
-        <div class="install-sub" id="install-sub">This may take a few minutes depending on your connection.</div>
-      </div>
-      <div>
-        <div class="progress-track">
-          <div class="progress-fill" id="prog-fill" style="width:0%"></div>
-        </div>
-        <div class="progress-label" id="prog-label">Starting...</div>
-      </div>
+      <div class="install-title" id="install-title">Installing Thalamus VM Bridge...</div>
+      <div class="progress-bar"><div class="progress-fill" id="prog-fill"></div></div>
+      <div class="progress-label" id="prog-label">Starting...</div>
       <div class="log-box" id="log-box"></div>
     </div>
   </div>
@@ -646,7 +494,7 @@ body {
   <!-- DONE PAGE -->
   <div class="page" id="page-done">
     <div class="done-wrap">
-      <div class="done-icon">&#10003;</div>
+      <div class="done-icon">OK</div>
       <div class="done-title">Setup Complete!</div>
       <div class="done-sub">The Thalamus VM Bridge is running in the background and will start automatically with Windows.</div>
       <div class="done-steps">
@@ -659,9 +507,8 @@ body {
   </div>
 
 </div>
-
 <div class="footer">
-  <div>
+  <div class="footer-left">
     <span class="footer-note" id="footer-note">Select OS images to download (optional)</span>
     <span class="selected-count" id="sel-count"></span>
   </div>
@@ -672,11 +519,15 @@ body {
 </div>
 
 <script language="JScript">
-var ISO_DATA = [];
+var ISO_DATA = ISO_DATA_PLACEHOLDER;
 var selected = {};
 
 function escHtml(s) {
-  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  var str = String(s);
+  str = str.replace(/&/g, "&amp;");
+  str = str.replace(/</g, "&lt;");
+  str = str.replace(/>/g, "&gt;");
+  return str;
 }
 
 function getCatLabel(cat) {
@@ -687,17 +538,17 @@ function getCatLabel(cat) {
   return cat;
 }
 
-function getCatBadge(cat, note) {
-  if (cat === "windows") return '<span class="os-badge badge-eval">Evaluation</span>';
-  if (cat === "macos") return '<span class="os-badge badge-community">Community ISO</span>';
-  if (cat === "android") return '<span class="os-badge badge-free">Free</span>';
-  return '<span class="os-badge badge-free">Free + Open Source</span>';
+function getCatBadge(cat) {
+  if (cat === "windows") return "<span class=\"os-badge badge-eval\">Evaluation</span>";
+  if (cat === "macos") return "<span class=\"os-badge badge-community\">Community ISO</span>";
+  if (cat === "android") return "<span class=\"os-badge badge-free\">Free</span>";
+  return "<span class=\"os-badge badge-free\">Free + Open Source</span>";
 }
 
 function renderISOs() {
   var container = document.getElementById("iso-list");
   if (!ISO_DATA || ISO_DATA.length === 0) {
-    container.innerHTML = '<div style="color:#52525b;font-size:12px;padding:20px 0;">No OS images available.</div>';
+    container.innerHTML = "<div style=\"color:#52525b;font-size:12px;padding:20px 0;\">No OS images available.</div>";
     return;
   }
 
@@ -716,38 +567,31 @@ function renderISOs() {
   var html = "";
   var c, items, j;
   for (c = 0; c < cats.length; c++) {
-    html += '<div class="cat-header">' + getCatLabel(cats[c]) + '</div>';
+    html += "<div class=\"cat-header\">" + getCatLabel(cats[c]) + "</div>";
     items = catMap[cats[c]];
     for (j = 0; j < items.length; j++) {
       iso = items[j];
-      html += '<div class="os-item" id="item-' + iso.key + '" onclick="toggleISO(this.id)">' ;
-      html += '<div class="os-checkbox" id="chk-' + iso.key + '"><span class="os-check-mark">v</span></div>';
-      html += '<div class="os-info">';
-      html += '<div class="os-name">' + escHtml(iso.name) + '</div>';
-      html += '<div class="os-meta">' + escHtml(iso.version) + ' - ' + escHtml(iso.size) + '</div>';
-      html += getCatBadge(iso.category, iso.note);
-      if (iso.note) html += ' <span style="font-size:9px;color:#52525b;">' + escHtml(iso.note) + '</span>';
-      html += '</div></div>';
+      html += "<div class=\"os-item\" id=\"item-" + iso.key + "\" onclick=\"doToggle(this)\">";
+      html += "<div class=\"os-checkbox\" id=\"chk-" + iso.key + "\"><span class=\"os-check-mark\">v</span></div>";
+      html += "<div class=\"os-info\">";
+      html += "<div class=\"os-name\">" + escHtml(iso.name) + "</div>";
+      html += "<div class=\"os-meta\">" + escHtml(iso.version) + " - " + escHtml(iso.size) + "</div>";
+      html += getCatBadge(iso.category);
+      if (iso.note) html += " <span style=\"font-size:9px;color:#52525b;\">" + escHtml(iso.note) + "</span>";
+      html += "</div></div>";
     }
   }
   container.innerHTML = html;
 }
 
-
-function toggleISO(elId) {
-  var key = (typeof elId === "string" && elId.indexOf("item-") === 0) ? elId.replace("item-", "") : elId;
+function doToggle(el) {
+  var key = el.id.replace("item-", "");
   if (selected[key]) {
     delete selected[key];
+    el.className = "os-item";
   } else {
     selected[key] = true;
-  }
-  var el = document.getElementById("item-" + key);
-  if (el) {
-    if (selected[key]) {
-      el.className = "os-item selected";
-    } else {
-      el.className = "os-item";
-    }
+    el.className = "os-item selected";
   }
   updateSelCount();
 }
@@ -761,31 +605,11 @@ function updateSelCount() {
   var el = document.getElementById("sel-count");
   if (el) {
     if (keys.length > 0) {
-      el.innerText = " \u2014 " + keys.length + " OS" + (keys.length > 1 ? "es" : "") + " selected";
+      el.innerText = " - " + keys.length + " OS" + (keys.length > 1 ? "es" : "") + " selected";
     } else {
       el.innerText = "";
     }
   }
-}
-
-function loadISOs() {
-  var xhr = new XMLHttpRequest();
-  xhr.open("GET", "http://127.0.0.1:7891/isos", true);
-  xhr.onreadystatechange = function() {
-    if (xhr.readyState === 4) {
-      if (xhr.status === 200) {
-        try {
-          ISO_DATA = JSON.parse(xhr.responseText);
-          renderISOs();
-        } catch(e) {
-          document.getElementById("iso-list").innerHTML = '<div style="color:#f87171;font-size:12px;padding:20px 0;">Failed to load OS list: ' + escHtml(e.message) + '</div>';
-        }
-      } else {
-        setTimeout(loadISOs, 600);
-      }
-    }
-  };
-  try { xhr.send(); } catch(e) { setTimeout(loadISOs, 600); }
 }
 
 function startInstall() {
@@ -800,12 +624,12 @@ function startInstall() {
     if (selected.hasOwnProperty(k)) keys.push(k);
   }
 
-  var body = '{"isos":[';
+  var body = "{\"isos\":[";
   for (var i = 0; i < keys.length; i++) {
-    body += '"' + keys[i] + '"';
-    if (i < keys.length - 1) body += ',';
+    body += "\"" + keys[i] + "\"";
+    if (i < keys.length - 1) body += ",";
   }
-  body += ']}';
+  body += "]}";
 
   var xhr = new XMLHttpRequest();
   xhr.open("POST", "http://127.0.0.1:7891/install", true);
@@ -832,8 +656,8 @@ function startInstall() {
 function getLogClass(line) {
   if (line.indexOf("===") !== -1) return "log-line header";
   if (line.indexOf("ERROR") !== -1 || line.indexOf("failed") !== -1) return "log-line error";
-  if (line.indexOf("Warning") !== -1 || line.indexOf("warning") !== -1 || line.indexOf("\u26a0") !== -1) return "log-line warn";
-  if (line.indexOf("\u2713") !== -1 || line.indexOf("complete") !== -1 || line.indexOf("installed") !== -1) return "log-line success";
+  if (line.indexOf("Warning") !== -1 || line.indexOf("warning") !== -1) return "log-line warn";
+  if (line.indexOf("complete") !== -1 || line.indexOf("installed") !== -1 || line.indexOf("downloaded") !== -1) return "log-line success";
   return "log-line";
 }
 
@@ -852,7 +676,7 @@ function pollProgress() {
         var i, line;
         for (i = 0; i < data.log.length; i++) {
           line = data.log[i];
-          html += '<div class="' + getLogClass(line) + '">' + escHtml(line) + '</div>';
+          html += "<div class=\"" + getLogClass(line) + "\">" + escHtml(line) + "</div>";
         }
         logBox.innerHTML = html;
         logBox.scrollTop = logBox.scrollHeight;
@@ -887,10 +711,16 @@ try {
   window.moveTo(Math.floor((screen.width - 820) / 2), Math.floor((screen.height - 580) / 2));
 } catch(e) {}
 
-loadISOs();
+renderISOs();
 </script>
 </body>
 </html>`;
+
+function buildHtaContent() {
+  var isoJson = JSON.stringify(ISO_OPTIONS);
+  return HTA_CONTENT_TEMPLATE.replace("ISO_DATA_PLACEHOLDER", isoJson);
+}
+
 
 // ── HTTP server ───────────────────────────────────────────────────────────────
 const server = http.createServer(function(req, res) {
@@ -925,12 +755,12 @@ const server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var htaPath = path.join(os.tmpdir(), "thalamus-installer.hta");
-  fs.writeFileSync(htaPath, HTA_CONTENT, "utf8");
+  fs.writeFileSync(htaPath, buildHtaContent(), "utf8");
 
   var htaProc = spawn("mshta.exe", [htaPath], {
     detached: false,
     stdio: "ignore",
-    windowsHide: false,
+    windowsHide: true,
   });
 
   htaProc.on("close", function() {
