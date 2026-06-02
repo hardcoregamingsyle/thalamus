@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.4.0
+ * Thalamus Installer v6.5.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -343,7 +343,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.4.0 ===");
+    addLog("=== Thalamus Installer v6.5.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -465,7 +465,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.4.0</div>
+  <div class="badge">v6.5.0</div>
 </div>
 
 <div class="main">
@@ -687,15 +687,23 @@ var server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var url = "http://127.0.0.1:" + PORT;
-  // Open in default browser
+  console.log("\x1b[32mThalamus Installer v6.5.0 running at " + url + "\x1b[0m");
+  console.log("\x1b[33mOpening browser... If it does not open, visit: " + url + "\x1b[0m");
+  // Open in default browser - NO windowsHide so browser actually opens
   if (process.platform === "win32") {
-    exec('start "" "' + url + '"', { windowsHide: true });
+    var child = spawn("cmd.exe", ["/c", "start", "", url], {
+      detached: true, stdio: "ignore", windowsHide: false
+    });
+    child.unref();
   } else if (process.platform === "darwin") {
     exec('open "' + url + '"');
   } else {
     exec('xdg-open "' + url + '"');
   }
 });
+
+// Keep the process alive - the server should run until the user closes it
+process.stdin.resume();
 
 process.on("SIGINT", function() { server.close(); process.exit(0); });
 process.on("SIGTERM", function() { server.close(); process.exit(0); });
