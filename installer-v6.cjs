@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.7.0
+ * Thalamus Installer v6.8.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -37,12 +37,12 @@ function addLog(msg) {
 }
 
 // ── OS definitions ────────────────────────────────────────────────────────────
-// Keys MUST match OS_CONFIGS keys in SandboxView.tsx
+// Keys MUST match OS_CONFIGS keys in SandboxView.tsx and ISO_MAP in bridge-v3.cjs
 var ISO_OPTIONS = [
-  // Windows — use official Microsoft Media Creation Tool redirect
-  { key: "windows-11", name: "Windows 11", version: "23H2", size: "5.8 GB", category: "windows", url: "https://go.microsoft.com/fwlink/?LinkId=2156292", filename: "windows-11.iso", note: "Official Microsoft ISO" },
-  { key: "windows-10", name: "Windows 10", version: "22H2", size: "5.2 GB", category: "windows", url: "https://go.microsoft.com/fwlink/?LinkId=799445", filename: "windows-10.iso", note: "Official Microsoft ISO" },
-  // macOS — keys match SandboxView: macos-18=Sequoia, macos-17=Sonoma, macos-16=Ventura, macos-26=Tahoe
+  // Windows — archive.org direct mirrors (no auth required)
+  { key: "windows-11", name: "Windows 11 Pro", version: "24H2", size: "5.8 GB", category: "windows", url: "https://archive.org/download/win-11_english_x64v2/Win11_English_x64v2.iso", filename: "windows-11.iso", note: "Internet Archive mirror — no auth required" },
+  { key: "windows-10", name: "Windows 10 Pro", version: "22H2", size: "5.2 GB", category: "windows", url: "https://archive.org/download/win-10_english_x64/Win10_22H2_English_x64.iso", filename: "windows-10.iso", note: "Internet Archive mirror — no auth required" },
+  // macOS — community ISOs from archive.org
   { key: "macos-18", name: "macOS 15 Sequoia", version: "15.0", size: "14 GB", category: "macos", url: "https://archive.org/download/macos-sequoia-iso/macOS-Sequoia.iso", filename: "macos-18.iso", note: "Community archive ISO" },
   { key: "macos-17", name: "macOS 14 Sonoma", version: "14.0", size: "13 GB", category: "macos", url: "https://archive.org/download/macos-sonoma-iso/macOS-Sonoma.iso", filename: "macos-17.iso", note: "Community archive ISO" },
   { key: "macos-16", name: "macOS 13 Ventura", version: "13.0", size: "12 GB", category: "macos", url: "https://archive.org/download/macos-ventura-iso/macOS-Ventura.iso", filename: "macos-16.iso", note: "Community archive ISO" },
@@ -311,9 +311,26 @@ async function downloadISOs(selectedKeys) {
         progress.message = "Downloading " + iso.name + ": " + Math.round(dl / 1024 / 1024) + " MB / " + Math.round(tot / 1024 / 1024) + " MB";
       });
       addLog(iso.name + " downloaded.");
+      // Inject ei.cfg for Windows ISOs to force Pro edition (no user prompt)
+      if (iso.key === "windows-11" || iso.key === "windows-10") {
+        injectWindowsProConfig(dest, iso.name);
+      }
     } catch (err) {
       addLog("Warning: Failed to download " + iso.name + ": " + err.message);
     }
+  }
+}
+
+function injectWindowsProConfig(isoPath, osName) {
+  // Write ei.cfg alongside the ISO so the bridge can inject it at boot
+  // The bridge will mount the ISO and inject ei.cfg into \sources\ directory
+  var eiCfgPath = isoPath.replace(/\.iso$/i, ".ei.cfg");
+  var eiCfgContent = "[EditionID]\r\nProfessional\r\n[Channel]\r\nRetail\r\n";
+  try {
+    fs.writeFileSync(eiCfgPath, eiCfgContent, "utf8");
+    addLog(osName + ": ei.cfg written — will auto-select Pro edition during install.");
+  } catch(e) {
+    addLog(osName + ": ei.cfg write failed (non-critical): " + e.message);
   }
 }
 
@@ -344,7 +361,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.7.0 ===");
+    addLog("=== Thalamus Installer v6.8.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -466,7 +483,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.7.0</div>
+  <div class="badge">v6.8.0</div>
 </div>
 
 <div class="main">
@@ -688,7 +705,7 @@ var server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var url = "http://127.0.0.1:" + PORT;
-  console.log("\x1b[32mThalamus Installer v6.7.0 running at " + url + "\x1b[0m");
+  console.log("\x1b[32mThalamus Installer v6.8.0 running at " + url + "\x1b[0m");
   console.log("\x1b[33mOpening browser... If it does not open, visit: " + url + "\x1b[0m");
   // Open in default browser - NO windowsHide so browser actually opens
   if (process.platform === "win32") {
