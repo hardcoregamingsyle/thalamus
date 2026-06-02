@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.3.0
+ * Thalamus Installer v6.4.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -57,43 +57,133 @@ var ISO_OPTIONS = [
   { key: "kali-2024", name: "Kali Linux 2024", version: "2024.4", size: "4.1 GB", category: "linux", url: "https://cdimage.kali.org/kali-2024.4/kali-linux-2024.4-installer-amd64.iso", filename: "kali-linux-2024.4-installer-amd64.iso", note: "" }
 ];
 
-// ── Download helper ───────────────────────────────────────────────────────────
+// ── Download helper (parallel chunks for speed) ──────────────────────────────
 function downloadFile(url, dest, onProgress) {
   return new Promise(function(resolve, reject) {
-    var file = fs.createWriteStream(dest + ".tmp");
-    var downloaded = 0;
-    var total = 0;
     var redirectCount = 0;
 
-    function doRequest(reqUrl) {
+    function resolveUrl(reqUrl, cb) {
       if (redirectCount > 15) { reject(new Error("Too many redirects")); return; }
       var mod = reqUrl.startsWith("https") ? https : http;
-      mod.get(reqUrl, function(res) {
+      var req = mod.request(reqUrl, { method: "HEAD" }, function(res) {
         if (res.statusCode >= 301 && res.statusCode <= 308 && res.headers.location) {
           redirectCount++;
-          doRequest(res.headers.location);
+          resolveUrl(res.headers.location, cb);
           return;
         }
-        if (res.statusCode !== 200) {
-          reject(new Error("HTTP " + res.statusCode + " for " + reqUrl));
-          return;
-        }
-        total = parseInt(res.headers["content-length"] || "0", 10);
-        res.on("data", function(chunk) {
-          downloaded += chunk.length;
-          file.write(chunk);
-          if (total > 0 && onProgress) onProgress(downloaded, total);
-        });
-        res.on("end", function() {
-          file.close(function() {
-            try { fs.renameSync(dest + ".tmp", dest); } catch(e) {}
-            resolve();
-          });
-        });
-        res.on("error", reject);
-      }).on("error", reject);
+        cb(reqUrl, parseInt(res.headers["content-length"] || "0", 10));
+      });
+      req.on("error", function() { cb(reqUrl, 0); });
+      req.end();
     }
-    doRequest(url);
+
+    function downloadChunk(finalUrl, start, end, retries) {
+      return new Promise(function(res2, rej2) {
+        var mod = finalUrl.startsWith("https") ? https : http;
+        var opts = { headers: { "Range": "bytes=" + start + "-" + end } };
+        mod.get(finalUrl, opts, function(r) {
+          var chunks = [];
+          r.on("data", function(c) { chunks.push(c); });
+          r.on("end", function() { res2(Buffer.concat(chunks)); });
+          r.on("error", function(e) {
+            if (retries > 0) { setTimeout(function() { downloadChunk(finalUrl, start, end, retries - 1).then(res2).catch(rej2); }, 1000); }
+            else rej2(e);
+          });
+        }).on("error", function(e) {
+          if (retries > 0) { setTimeout(function() { downloadChunk(finalUrl, start, end, retries - 1).then(res2).catch(rej2); }, 1000); }
+          else rej2(e);
+        });
+      });
+    }
+
+    function simpleFetch(reqUrl) {
+      var file = fs.createWriteStream(dest + ".tmp");
+      var downloaded = 0;
+      var total = 0;
+      var rCount = 0;
+      function doReq(u) {
+        if (rCount > 15) { reject(new Error("Too many redirects")); return; }
+        var mod = u.startsWith("https") ? https : http;
+        mod.get(u, function(res) {
+          if (res.statusCode >= 301 && res.statusCode <= 308 && res.headers.location) {
+            rCount++; doReq(res.headers.location); return;
+          }
+          if (res.statusCode !== 200) { reject(new Error("HTTP " + res.statusCode)); return; }
+          total = parseInt(res.headers["content-length"] || "0", 10);
+          res.on("data", function(chunk) {
+            downloaded += chunk.length;
+            file.write(chunk);
+            if (total > 0 && onProgress) onProgress(downloaded, total);
+          });
+          res.on("end", function() {
+            file.close(function() {
+              try { fs.renameSync(dest + ".tmp", dest); } catch(e) {}
+              resolve();
+            });
+          });
+          res.on("error", reject);
+        }).on("error", reject);
+      }
+      doReq(reqUrl);
+    }
+
+    // Try parallel chunked download first, fall back to simple
+    resolveUrl(url, function(finalUrl, totalSize) {
+      if (totalSize < 10 * 1024 * 1024) {
+        // Small file — simple download
+        simpleFetch(finalUrl);
+        return;
+      }
+
+      // Large file — 8 parallel chunks
+      var CHUNKS = 8;
+      var chunkSize = Math.ceil(totalSize / CHUNKS);
+      var downloaded = new Array(CHUNKS).fill(0);
+      var tmpFiles = [];
+      var i;
+      for (i = 0; i < CHUNKS; i++) {
+        tmpFiles.push(dest + ".part" + i);
+      }
+
+      var promises = [];
+      for (i = 0; i < CHUNKS; i++) {
+        (function(idx) {
+          var start = idx * chunkSize;
+          var end = Math.min(start + chunkSize - 1, totalSize - 1);
+          promises.push(
+            downloadChunk(finalUrl, start, end, 3).then(function(buf) {
+              fs.writeFileSync(tmpFiles[idx], buf);
+              downloaded[idx] = buf.length;
+              var total2 = downloaded.reduce(function(a, b) { return a + b; }, 0);
+              if (onProgress) onProgress(total2, totalSize);
+            })
+          );
+        })(i);
+      }
+
+      Promise.all(promises).then(function() {
+        // Merge chunks
+        var out = fs.createWriteStream(dest);
+        var j = 0;
+        function writeNext() {
+          if (j >= CHUNKS) {
+            out.close(function() {
+              tmpFiles.forEach(function(f) { try { fs.unlinkSync(f); } catch(e) {} });
+              resolve();
+            });
+            return;
+          }
+          var chunk = fs.readFileSync(tmpFiles[j]);
+          j++;
+          out.write(chunk, writeNext);
+        }
+        writeNext();
+      }).catch(function(err) {
+        // Fall back to simple download
+        addLog("Parallel download failed, falling back to simple: " + err.message);
+        simpleFetch(finalUrl);
+      });
+    });
   });
 }
 
@@ -253,7 +343,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.3.0 ===");
+    addLog("=== Thalamus Installer v6.4.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -375,7 +465,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.3.0</div>
+  <div class="badge">v6.4.0</div>
 </div>
 
 <div class="main">
