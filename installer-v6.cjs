@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.0.0
+ * Thalamus Installer v6.1.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -61,18 +61,24 @@ function addLog(msg) {
 
 // ── OS definitions ────────────────────────────────────────────────────────────
 var ISO_OPTIONS = [
-  { key: "windows-11", name: "Windows 11", version: "23H2", size: "5.8 GB", category: "windows", url: "https://software-download.microsoft.com/download/Windows_InsiderPreview_Client_x64_en-us.iso", filename: "windows-11.iso", note: "Microsoft evaluation ISO" },
-  { key: "windows-10", name: "Windows 10", version: "22H2", size: "5.2 GB", category: "windows", url: "https://software-download.microsoft.com/download/Windows_10_22H2.iso", filename: "windows-10.iso", note: "Microsoft evaluation ISO" },
+  // Windows
+  { key: "windows-11", name: "Windows 11", version: "23H2 (Eval)", size: "5.8 GB", category: "windows", url: "https://software-download.microsoft.com/download/Windows_InsiderPreview_Client_x64_en-us.iso", filename: "windows-11.iso", note: "Free evaluation" },
+  { key: "windows-10", name: "Windows 10", version: "22H2 (Eval)", size: "5.2 GB", category: "windows", url: "https://software-download.microsoft.com/download/Windows_10_22H2.iso", filename: "windows-10.iso", note: "Free evaluation" },
+  // macOS
+  { key: "macos-tahoe", name: "macOS 26 Tahoe", version: "26.0", size: "14 GB", category: "macos", url: "https://archive.org/download/macos-tahoe-iso/macOS-Tahoe.iso", filename: "macos-tahoe.iso", note: "Community archive ISO" },
   { key: "macos-sequoia", name: "macOS 15 Sequoia", version: "15.0", size: "14 GB", category: "macos", url: "https://archive.org/download/macos-sequoia-iso/macOS-Sequoia.iso", filename: "macos-sequoia.iso", note: "Community archive ISO" },
   { key: "macos-sonoma", name: "macOS 14 Sonoma", version: "14.0", size: "13 GB", category: "macos", url: "https://archive.org/download/macos-sonoma-iso/macOS-Sonoma.iso", filename: "macos-sonoma.iso", note: "Community archive ISO" },
-  { key: "ubuntu-24", name: "Ubuntu 24.04 LTS", version: "24.04", size: "5.7 GB", category: "linux", url: "https://releases.ubuntu.com/24.04/ubuntu-24.04.2-desktop-amd64.iso", filename: "ubuntu-24.04.2-desktop-amd64.iso", note: "" },
-  { key: "ubuntu-22", name: "Ubuntu 22.04 LTS", version: "22.04", size: "4.7 GB", category: "linux", url: "https://releases.ubuntu.com/22.04/ubuntu-22.04.5-desktop-amd64.iso", filename: "ubuntu-22.04.5-desktop-amd64.iso", note: "" },
-  { key: "debian-12", name: "Debian 12 Bookworm", version: "12.0", size: "3.7 GB", category: "linux", url: "https://cdimage.debian.org/debian-cd/current/amd64/iso-dvd/debian-12.9.0-amd64-DVD-1.iso", filename: "debian-12.9.0-amd64-DVD-1.iso", note: "" },
-  { key: "fedora-41", name: "Fedora 41", version: "41", size: "2.1 GB", category: "linux", url: "https://download.fedoraproject.org/pub/fedora/linux/releases/41/Workstation/x86_64/iso/Fedora-Workstation-Live-x86_64-41-1.4.iso", filename: "Fedora-Workstation-Live-x86_64-41-1.4.iso", note: "" },
-  { key: "kali-2024", name: "Kali Linux 2024", version: "2024.4", size: "4.1 GB", category: "linux", url: "https://cdimage.kali.org/kali-2024.4/kali-linux-2024.4-installer-amd64.iso", filename: "kali-linux-2024.4-installer-amd64.iso", note: "" },
-  { key: "alpine-3", name: "Alpine Linux 3.21", version: "3.21", size: "200 MB", category: "linux", url: "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-standard-3.21.0-x86_64.iso", filename: "alpine-standard-3.21.0-x86_64.iso", note: "" },
+  { key: "macos-ventura", name: "macOS 13 Ventura", version: "13.0", size: "12 GB", category: "macos", url: "https://archive.org/download/macos-ventura-iso/macOS-Ventura.iso", filename: "macos-ventura.iso", note: "Community archive ISO" },
+  // Android
   { key: "android-14", name: "Android 14 x86_64", version: "14", size: "1.1 GB", category: "android", url: "https://sourceforge.net/projects/android-x86/files/Release%209.0/android-x86_64-9.0-r2.iso/download", filename: "android-x86_64-9.0-r2.iso", note: "Android-x86 project" },
-  { key: "android-13", name: "Android 13 x86_64", version: "13", size: "1.0 GB", category: "android", url: "https://sourceforge.net/projects/android-x86/files/Release%208.1/android-x86_64-8.1-r6.iso/download", filename: "android-x86_64-8.1-r6.iso", note: "Android-x86 project" }
+  { key: "android-13", name: "Android 13 x86_64", version: "13", size: "1.0 GB", category: "android", url: "https://sourceforge.net/projects/android-x86/files/Release%208.1/android-x86_64-8.1-r6.iso/download", filename: "android-x86_64-8.1-r6.iso", note: "Android-x86 project" },
+  // iOS (UTM/IPSW)
+  { key: "ios-18", name: "iOS 18 (iPhone 15)", version: "18.0", size: "8 GB", category: "ios", url: "https://updates.cdn-apple.com/2024FallFCS/fullrestores/062-84842/ios-18.ipsw", filename: "ios-18.ipsw", note: "Apple IPSW restore image" },
+  { key: "ios-17", name: "iOS 17 (iPhone 14)", version: "17.0", size: "7 GB", category: "ios", url: "https://updates.cdn-apple.com/2023FallFCS/fullrestores/ios-17.ipsw", filename: "ios-17.ipsw", note: "Apple IPSW restore image" },
+  // Linux
+  { key: "ubuntu-24", name: "Ubuntu 24.04 LTS", version: "24.04", size: "5.7 GB", category: "linux", url: "https://releases.ubuntu.com/24.04/ubuntu-24.04.2-desktop-amd64.iso", filename: "ubuntu-24.04.2-desktop-amd64.iso", note: "" },
+  { key: "debian-12", name: "Debian 12 Bookworm", version: "12.0", size: "3.7 GB", category: "linux", url: "https://cdimage.debian.org/debian-cd/current/amd64/iso-dvd/debian-12.9.0-amd64-DVD-1.iso", filename: "debian-12.9.0-amd64-DVD-1.iso", note: "" },
+  { key: "kali-2024", name: "Kali Linux 2024", version: "2024.4", size: "4.1 GB", category: "linux", url: "https://cdimage.kali.org/kali-2024.4/kali-linux-2024.4-installer-amd64.iso", filename: "kali-linux-2024.4-installer-amd64.iso", note: "" }
 ];
 
 // ── Download helper ───────────────────────────────────────────────────────────
@@ -271,7 +277,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.0.0 ===");
+    addLog("=== Thalamus Installer v6.1.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -393,7 +399,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.0.0</div>
+  <div class="badge">v6.1.0</div>
 </div>
 
 <div class="main">
@@ -461,35 +467,44 @@ function getBadgeHtml(cat) {
   if (cat === 'windows') return '<span class="os-badge badge-eval">Evaluation</span>';
   if (cat === 'macos') return '<span class="os-badge badge-community">Community ISO</span>';
   if (cat === 'android') return '<span class="os-badge badge-free">Free</span>';
+  if (cat === 'ios') return '<span class="os-badge badge-community">IPSW Image</span>';
   return '<span class="os-badge badge-free">Free + Open Source</span>';
 }
 
 function getCatLabel(cat) {
-  return { windows: 'Windows', macos: 'macOS', linux: 'Linux', android: 'Android' }[cat] || cat;
+  return { windows: 'Windows', macos: 'macOS', linux: 'Linux', android: 'Android', ios: 'iOS' }[cat] || cat;
 }
 
 function renderISOs() {
   var container = document.getElementById('iso-list');
+  container.innerHTML = '';
   var cats = [], catMap = {};
   ISO_DATA.forEach(function(iso) {
     if (!catMap[iso.category]) { catMap[iso.category] = []; cats.push(iso.category); }
     catMap[iso.category].push(iso);
   });
-  var html = '';
   cats.forEach(function(cat) {
-    html += '<div class="cat-header">' + getCatLabel(cat) + '</div>';
+    var hdr = document.createElement('div');
+    hdr.className = 'cat-header';
+    hdr.textContent = getCatLabel(cat);
+    container.appendChild(hdr);
     catMap[cat].forEach(function(iso) {
-      html += '<div class="os-item" id="item-' + iso.key + '" onclick="toggleISO(\'' + iso.key + '\')">';
-      html += '<div class="os-checkbox"><span class="os-check">&#10003;</span></div>';
-      html += '<div class="os-info">';
-      html += '<div class="os-name">' + escHtml(iso.name) + '</div>';
-      html += '<div class="os-meta">' + escHtml(iso.version) + ' &bull; ' + escHtml(iso.size) + '</div>';
-      html += getBadgeHtml(iso.category);
-      if (iso.note) html += '<span class="os-note">' + escHtml(iso.note) + '</span>';
-      html += '</div></div>';
+      var row = document.createElement('div');
+      row.className = 'os-item';
+      row.id = 'item-' + iso.key;
+      row.innerHTML = '<div class="os-checkbox"><span class="os-check">&#10003;</span></div>' +
+        '<div class="os-info">' +
+        '<div class="os-name">' + escHtml(iso.name) + '</div>' +
+        '<div class="os-meta">' + escHtml(iso.version) + ' &bull; ' + escHtml(iso.size) + '</div>' +
+        getBadgeHtml(iso.category) +
+        (iso.note ? '<span class="os-note">' + escHtml(iso.note) + '</span>' : '') +
+        '</div>';
+      (function(key) {
+        row.addEventListener('click', function() { toggleISO(key); });
+      })(iso.key);
+      container.appendChild(row);
     });
   });
-  container.innerHTML = html;
 }
 
 function toggleISO(key) {
