@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.5.0
+ * Thalamus Installer v6.6.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -37,24 +37,25 @@ function addLog(msg) {
 }
 
 // ── OS definitions ────────────────────────────────────────────────────────────
+// Keys MUST match OS_CONFIGS keys in SandboxView.tsx
 var ISO_OPTIONS = [
-  // Windows — use UUP dump direct links (these work without auth)
-  { key: "windows-11", name: "Windows 11", version: "23H2", size: "5.8 GB", category: "windows", url: "https://software.download.prss.microsoft.com/dbazure/Windows11_23H2_EnglishInternational_x64v2.iso?t=1&P1=1&P2=1&P3=1", filename: "windows-11.iso", note: "Microsoft ISO" },
-  { key: "windows-10", name: "Windows 10", version: "22H2", size: "5.2 GB", category: "windows", url: "https://software.download.prss.microsoft.com/dbazure/Win10_22H2_EnglishInternational_x64v1.iso?t=1&P1=1&P2=1&P3=1", filename: "windows-10.iso", note: "Microsoft ISO" },
-  // macOS — community ISOs from archive.org (Tahoe not yet released, use Sequoia as latest)
-  { key: "macos-sequoia", name: "macOS 15 Sequoia", version: "15.0 (Latest)", size: "14 GB", category: "macos", url: "https://archive.org/download/macos-sequoia-iso/macOS-Sequoia.iso", filename: "macos-sequoia.iso", note: "Community archive ISO" },
-  { key: "macos-sonoma", name: "macOS 14 Sonoma", version: "14.0", size: "13 GB", category: "macos", url: "https://archive.org/download/macos-sonoma-iso/macOS-Sonoma.iso", filename: "macos-sonoma.iso", note: "Community archive ISO" },
-  { key: "macos-ventura", name: "macOS 13 Ventura", version: "13.0", size: "12 GB", category: "macos", url: "https://archive.org/download/macos-ventura-iso/macOS-Ventura.iso", filename: "macos-ventura.iso", note: "Community archive ISO" },
-  // Android — direct CDN links (faster than SourceForge)
-  { key: "android-14", name: "Android 14 x86_64", version: "9.0-r2", size: "921 MB", category: "android", url: "https://osdn.net/projects/android-x86/downloads/71931/android-x86_64-9.0-r2.iso/", filename: "android-x86_64-9.0-r2.iso", note: "Android-x86 project" },
-  { key: "android-13", name: "Android 13 x86_64", version: "8.1-r6", size: "900 MB", category: "android", url: "https://osdn.net/projects/android-x86/downloads/71931/android-x86_64-8.1-r6.iso/", filename: "android-x86_64-8.1-r6.iso", note: "Android-x86 project" },
-  // iOS — IPSW files (for UTM/QEMU iOS emulation)
-  { key: "ios-18", name: "iOS 18 (iPhone 15)", version: "18.0", size: "8 GB", category: "ios", url: "https://updates.cdn-apple.com/2024FallFCS/fullrestores/062-84842/ios-18.ipsw", filename: "ios-18.ipsw", note: "Apple IPSW restore image" },
-  { key: "ios-17", name: "iOS 17 (iPhone 14)", version: "17.0", size: "7 GB", category: "ios", url: "https://updates.cdn-apple.com/2023FallFCS/fullrestores/ios-17.ipsw", filename: "ios-17.ipsw", note: "Apple IPSW restore image" },
+  // Windows — use official Microsoft Media Creation Tool redirect
+  { key: "windows-11", name: "Windows 11", version: "23H2", size: "5.8 GB", category: "windows", url: "https://go.microsoft.com/fwlink/?LinkId=2156292", filename: "windows-11.iso", note: "Official Microsoft ISO" },
+  { key: "windows-10", name: "Windows 10", version: "22H2", size: "5.2 GB", category: "windows", url: "https://go.microsoft.com/fwlink/?LinkId=799445", filename: "windows-10.iso", note: "Official Microsoft ISO" },
+  // macOS — keys match SandboxView: macos-18=Sequoia, macos-17=Sonoma, macos-16=Ventura, macos-26=Tahoe
+  { key: "macos-18", name: "macOS 15 Sequoia", version: "15.0", size: "14 GB", category: "macos", url: "https://archive.org/download/macos-sequoia-iso/macOS-Sequoia.iso", filename: "macos-18.iso", note: "Community archive ISO" },
+  { key: "macos-17", name: "macOS 14 Sonoma", version: "14.0", size: "13 GB", category: "macos", url: "https://archive.org/download/macos-sonoma-iso/macOS-Sonoma.iso", filename: "macos-17.iso", note: "Community archive ISO" },
+  { key: "macos-16", name: "macOS 13 Ventura", version: "13.0", size: "12 GB", category: "macos", url: "https://archive.org/download/macos-ventura-iso/macOS-Ventura.iso", filename: "macos-16.iso", note: "Community archive ISO" },
+  // Android
+  { key: "android-14", name: "Android 14 x86_64", version: "9.0-r2", size: "921 MB", category: "android", url: "https://sourceforge.net/projects/android-x86/files/Release%209.0/android-x86_64-9.0-r2.iso/download", filename: "android-14.iso", note: "Android-x86 project" },
+  { key: "android-13", name: "Android 13 x86_64", version: "8.1-r6", size: "900 MB", category: "android", url: "https://sourceforge.net/projects/android-x86/files/Release%208.1/android-x86_64-8.1-r6.iso/download", filename: "android-13.iso", note: "Android-x86 project" },
+  // iOS
+  { key: "ios-18", name: "iOS 18", version: "18.0", size: "8 GB", category: "ios", url: "https://updates.cdn-apple.com/2024FallFCS/fullrestores/062-84842/ios-18.ipsw", filename: "ios-18.ipsw", note: "Apple IPSW restore image" },
+  { key: "ios-17", name: "iOS 17", version: "17.0", size: "7 GB", category: "ios", url: "https://updates.cdn-apple.com/2023FallFCS/fullrestores/ios-17.ipsw", filename: "ios-17.ipsw", note: "Apple IPSW restore image" },
   // Linux
-  { key: "ubuntu-24", name: "Ubuntu 24.04 LTS", version: "24.04", size: "5.7 GB", category: "linux", url: "https://releases.ubuntu.com/24.04/ubuntu-24.04.2-desktop-amd64.iso", filename: "ubuntu-24.04.2-desktop-amd64.iso", note: "" },
-  { key: "debian-12", name: "Debian 12 Bookworm", version: "12.0", size: "3.7 GB", category: "linux", url: "https://cdimage.debian.org/debian-cd/current/amd64/iso-dvd/debian-12.9.0-amd64-DVD-1.iso", filename: "debian-12.9.0-amd64-DVD-1.iso", note: "" },
-  { key: "kali-2024", name: "Kali Linux 2024", version: "2024.4", size: "4.1 GB", category: "linux", url: "https://cdimage.kali.org/kali-2024.4/kali-linux-2024.4-installer-amd64.iso", filename: "kali-linux-2024.4-installer-amd64.iso", note: "" }
+  { key: "ubuntu-24", name: "Ubuntu 24.04 LTS", version: "24.04", size: "5.7 GB", category: "linux", url: "https://releases.ubuntu.com/24.04/ubuntu-24.04.2-desktop-amd64.iso", filename: "ubuntu-24.iso", note: "" },
+  { key: "debian-12", name: "Debian 12 Bookworm", version: "12.0", size: "3.7 GB", category: "linux", url: "https://cdimage.debian.org/debian-cd/current/amd64/iso-dvd/debian-12.9.0-amd64-DVD-1.iso", filename: "debian-12.iso", note: "" },
+  { key: "kali-2024", name: "Kali Linux 2024", version: "2024.4", size: "4.1 GB", category: "linux", url: "https://cdimage.kali.org/kali-2024.4/kali-linux-2024.4-installer-amd64.iso", filename: "kali-2024.iso", note: "" }
 ];
 
 // ── Download helper (parallel chunks for speed) ──────────────────────────────
@@ -343,7 +344,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.5.0 ===");
+    addLog("=== Thalamus Installer v6.6.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -465,7 +466,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.5.0</div>
+  <div class="badge">v6.6.0</div>
 </div>
 
 <div class="main">
@@ -687,7 +688,7 @@ var server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var url = "http://127.0.0.1:" + PORT;
-  console.log("\x1b[32mThalamus Installer v6.5.0 running at " + url + "\x1b[0m");
+  console.log("\x1b[32mThalamus Installer v6.6.0 running at " + url + "\x1b[0m");
   console.log("\x1b[33mOpening browser... If it does not open, visit: " + url + "\x1b[0m");
   // Open in default browser - NO windowsHide so browser actually opens
   if (process.platform === "win32") {
