@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.1.0
+ * Thalamus Installer v6.2.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -20,30 +20,7 @@ const BRIDGE_LAUNCHER = path.join(APP_DIR, "launch-bridge-hidden.vbs");
 const BRIDGE_LOG = path.join(APP_DIR, "bridge.log");
 const BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v2.1.0/thalamus-vm-bridge.exe";
 
-// ── Self-hide console window ──────────────────────────────────────────────────
-// When pkg compiles this as an exe, it shows a console window.
-// We relaunch via wscript.exe to hide it.
-if (process.platform === "win32" && process.env.THALAMUS_HIDDEN !== "1") {
-  try {
-    var exePath = process.execPath;
-    var vbsLines = [
-      'Set shell = CreateObject("WScript.Shell")',
-      'Set env = shell.Environment("Process")',
-      'env("THALAMUS_HIDDEN") = "1"',
-      'shell.Run Chr(34) & "' + exePath.replace(/"/g, "") + '" & Chr(34), 0, False'
-    ];
-    var vbsPath = path.join(os.tmpdir(), "thalamus-launch.vbs");
-    fs.writeFileSync(vbsPath, vbsLines.join("\r\n"), "utf8");
-    var child = spawn("wscript.exe", ["//B", "//Nologo", vbsPath], {
-      detached: true, stdio: "ignore", windowsHide: false
-    });
-    child.unref();
-    setTimeout(function() { process.exit(0); }, 300);
-  } catch(e) {
-    // continue if self-hide fails
-  }
-}
-
+// ── No console self-hide needed — browser UI is the real UI
 // ── State ─────────────────────────────────────────────────────────────────────
 var progress = {
   step: "idle",
@@ -277,7 +254,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.1.0 ===");
+    addLog("=== Thalamus Installer v6.2.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -399,7 +376,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.1.0</div>
+  <div class="badge">v6.2.0</div>
 </div>
 
 <div class="main">
