@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.6.0
+ * Thalamus Installer v6.7.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -18,7 +18,7 @@ const ISOS_DIR = path.join(APP_DIR, "isos");
 const BRIDGE_EXE = path.join(APP_DIR, "thalamus-vm-bridge.exe");
 const BRIDGE_LAUNCHER = path.join(APP_DIR, "launch-bridge-hidden.vbs");
 const BRIDGE_LOG = path.join(APP_DIR, "bridge.log");
-const BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v2.1.0/thalamus-vm-bridge.exe";
+const BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v3.0.0/thalamus-vm-bridge-v3.0.0.exe";
 
 // ── No console self-hide needed — browser UI is the real UI
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -344,7 +344,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.6.0 ===");
+    addLog("=== Thalamus Installer v6.7.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -466,7 +466,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.6.0</div>
+  <div class="badge">v6.7.0</div>
 </div>
 
 <div class="main">
@@ -688,7 +688,7 @@ var server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var url = "http://127.0.0.1:" + PORT;
-  console.log("\x1b[32mThalamus Installer v6.6.0 running at " + url + "\x1b[0m");
+  console.log("\x1b[32mThalamus Installer v6.7.0 running at " + url + "\x1b[0m");
   console.log("\x1b[33mOpening browser... If it does not open, visit: " + url + "\x1b[0m");
   // Open in default browser - NO windowsHide so browser actually opens
   if (process.platform === "win32") {
