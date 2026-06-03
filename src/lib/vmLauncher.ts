@@ -25,8 +25,8 @@ export class VMLauncher {
   private maxReconnectAttempts = 3;
   private readonly bridgeUrl = "ws://localhost:5900";
 
-  /** Installer URL — one-time setup that installs everything (v6.10.0) */
-  static readonly INSTALLER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-installer-v6.10.0/thalamus-installer-v6.10.0.exe";
+  /** Installer URL — one-time setup that installs everything (v6.11.0) */
+  static readonly INSTALLER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-installer-v6.11.0/thalamus-installer-v6.11.0.exe";
   /** Bridge URL — the bridge exe itself (for manual install) */
   static readonly BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v3.0.0/thalamus-vm-bridge-v3.0.0.exe";
 
