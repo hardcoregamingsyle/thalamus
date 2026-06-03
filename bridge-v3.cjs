@@ -1,5 +1,5 @@
 /**
- * Thalamus VM Bridge v3.0.0
+ * Thalamus VM Bridge v3.1.0
  * WebSocket bridge for VM management via QEMU
  * ISO filenames match installer-v6.6.0 key-based naming
  */
@@ -15,7 +15,7 @@ const WS_PORT = 5900;
 const APP_DIR = path.join(os.homedir(), "AppData", "Local", "Thalamus");
 const ISOS_DIR = path.join(APP_DIR, "isos");
 const BRIDGE_LOG = path.join(APP_DIR, "bridge.log");
-const VERSION = "3.0.0";
+const VERSION = "3.1.0";
 
 // OS key → ISO filename mapping (matches installer-v6.6.0)
 const ISO_MAP = {
@@ -27,8 +27,7 @@ const ISO_MAP = {
   "macos-16":    "macos-16.iso",
   "android-14":  "android-14.iso",
   "android-13":  "android-13.iso",
-  "ios-18":      "ios-18.ipsw",
-  "ios-17":      "ios-17.ipsw",
+  // iOS removed — IPSW format cannot be emulated with QEMU
   "ubuntu-24":   "ubuntu-24.iso",
   "ubuntu-22":   "ubuntu-22.iso",
   "debian-12":   "debian-12.iso",
