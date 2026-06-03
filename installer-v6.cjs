@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.17.0
+ * Thalamus Installer v6.18.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -410,7 +410,7 @@ function downloadFromGDrive(iso, aria2Ready) {
     addLog("Downloading " + iso.name + " via aria2 (Google Drive)...");
     progress.message = "Downloading " + iso.name + "...";
     var url = "https://drive.usercontent.google.com/download?id=" + iso.gdriveId + "&export=download&confirm=t";
-    var cmd = '"' + ARIA2_EXE + '" --dir="' + ISOS_DIR + '" --out="' + iso.filename + '" --max-connection-per-server=16 --split=16 --header="Cookie: download_warning_' + iso.gdriveId + '=t" "' + url + '"';
+    var cmd = '"' + ARIA2_EXE + '" --dir="' + ISOS_DIR + '" --out="' + iso.filename + '" --max-connection-per-server=4 --split=4 --max-overall-download-limit=50M --header="Cookie: download_warning_' + iso.gdriveId + '=t" "' + url + '"';
     exec(cmd, { windowsHide: true, timeout: 7200000 }, function(err) {
       if (err) {
         addLog("aria2 GDrive failed for " + iso.name + ": " + err.message + " — trying HTTP fallback");
@@ -455,7 +455,7 @@ function downloadViaTorrent(iso, aria2Ready) {
     var torrentFile = path.join(APP_DIR, iso.filename.replace(/\.iso$/, ".torrent"));
     downloadFile(iso.torrentUrl, torrentFile, null).then(function() {
       // Run aria2c to download the torrent to ISOS_DIR
-      var cmd = '"' + ARIA2_EXE + '" --dir="' + ISOS_DIR + '" --seed-time=0 --max-connection-per-server=16 --split=16 "' + torrentFile + '"';
+      var cmd = '"' + ARIA2_EXE + '" --dir="' + ISOS_DIR + '" --seed-time=0 --max-connection-per-server=4 --split=4 --max-overall-download-limit=50M "' + torrentFile + '"';
       exec(cmd, { windowsHide: true, timeout: 7200000 }, function(err, stdout, stderr) {
         if (err) {
           addLog("Warning: aria2 torrent download failed for " + iso.name + ": " + err.message);
@@ -481,7 +481,8 @@ function downloadViaTorrent(iso, aria2Ready) {
         resolve();
       });
     }).catch(function(e) {
-      addLog("Torrent file download failed for " + iso.name + ": " + e.message);
+      addLog("Warning: Torrent file download failed for " + iso.name + ": " + e.message);
+      addLog("  Skipping " + iso.name + " — torrent source unavailable");
       resolve();
     });
   });
@@ -592,8 +593,13 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.17.0 ===");
+    addLog("=== Thalamus Installer v6.18.0 ===");
     addLog("Install directory: " + APP_DIR);
+    // Scan for existing ISOs immediately
+    if (fs.existsSync(ISOS_DIR)) {
+      addLog("Scanning for existing OS images...");
+      scanAndRenameExistingISOs();
+    }
     await installQemu();
     await downloadBridge();
     writeBridgeLauncher();
@@ -714,7 +720,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.17.0</div>
+  <div class="badge">v6.18.0</div>
 </div>
 
 <div class="main">
@@ -937,7 +943,7 @@ var server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var url = "http://127.0.0.1:" + PORT;
-  console.log("\x1b[32mThalamus Installer v6.17.0 running at " + url + "\x1b[0m");
+  console.log("\x1b[32mThalamus Installer v6.18.0 running at " + url + "\x1b[0m");
   console.log("\x1b[33mOpening browser... If it does not open, visit: " + url + "\x1b[0m");
   // Open in default browser - NO windowsHide so browser actually opens
   if (process.platform === "win32") {
