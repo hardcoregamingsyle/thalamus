@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.16.0
+ * Thalamus Installer v6.17.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -307,6 +307,54 @@ function writeBridgeLauncher() {
 var ARIA2_EXE = path.join(APP_DIR, "aria2c.exe");
 var ARIA2_URL = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip";
 
+// Scan isos folder for existing ISOs and rename them to expected filenames
+function scanAndRenameExistingISOs() {
+  if (!fs.existsSync(ISOS_DIR)) return;
+  var files = fs.readdirSync(ISOS_DIR);
+  var isoFiles = files.filter(function(f) { return f.toLowerCase().endsWith('.iso'); });
+  
+  // Map of name patterns to expected filenames
+  var patterns = [
+    { pattern: /windows.?11/i, filename: "windows-11.iso" },
+    { pattern: /windows.?10/i, filename: "windows-10.iso" },
+    { pattern: /sequoia|macos.?15/i, filename: "macos-18.iso" },
+    { pattern: /sonoma|macos.?14/i, filename: "macos-17.iso" },
+    { pattern: /ventura|macos.?13/i, filename: "macos-16.iso" },
+    { pattern: /monterey|macos.?12/i, filename: "macos-15.iso" },
+    { pattern: /big.?sur|macos.?11/i, filename: "macos-14.iso" },
+    { pattern: /android.?14|android.?x86.?9/i, filename: "android-14.iso" },
+    { pattern: /android.?13|android.?x86.?8/i, filename: "android-13.iso" },
+    { pattern: /ubuntu.?24/i, filename: "ubuntu-24.iso" },
+    { pattern: /debian.?12/i, filename: "debian-12.iso" },
+    { pattern: /kali.?2024/i, filename: "kali-2024.iso" },
+  ];
+  
+  isoFiles.forEach(function(f) {
+    var fullPath = path.join(ISOS_DIR, f);
+    for (var i = 0; i < patterns.length; i++) {
+      var p = patterns[i];
+      if (p.pattern.test(f)) {
+        var expectedPath = path.join(ISOS_DIR, p.filename);
+        if (f !== p.filename && !fs.existsSync(expectedPath)) {
+          try {
+            fs.renameSync(fullPath, expectedPath);
+            addLog("Renamed existing ISO: " + f + " → " + p.filename);
+          } catch(e) {
+            // If rename fails, try copy
+            try {
+              fs.copyFileSync(fullPath, expectedPath);
+              addLog("Copied existing ISO: " + f + " → " + p.filename);
+            } catch(e2) {}
+          }
+        } else if (f !== p.filename && fs.existsSync(expectedPath)) {
+          addLog("Found existing ISO: " + f + " (already have " + p.filename + ")");
+        }
+        break;
+      }
+    }
+  });
+}
+
 function ensureAria2() {
   return new Promise(function(resolve) {
     if (fs.existsSync(ARIA2_EXE)) { resolve(true); return; }
@@ -395,7 +443,11 @@ function downloadViaTorrent(iso, aria2Ready) {
       return;
     }
     var dest = path.join(ISOS_DIR, iso.filename);
-    if (fs.existsSync(dest)) { addLog(iso.name + " already downloaded."); resolve(); return; }
+    if (fs.existsSync(dest)) {
+      var stat = fs.statSync(dest);
+      addLog(iso.name + " already installed (" + Math.round(stat.size / 1024 / 1024) + " MB). Skipping.");
+      resolve(); return;
+    }
     addLog("Downloading " + iso.name + " via aria2 (torrent)...");
     addLog("  This may take a while depending on seeders.");
     progress.message = "Downloading " + iso.name + " via torrent...";
@@ -409,16 +461,22 @@ function downloadViaTorrent(iso, aria2Ready) {
           addLog("Warning: aria2 torrent download failed for " + iso.name + ": " + err.message);
           addLog("  You can download manually: " + iso.torrentUrl);
         } else {
-          // Rename the downloaded file to the expected filename
-          var files = fs.readdirSync(ISOS_DIR).filter(function(f) { return f.endsWith(".iso") && f.toLowerCase().includes("macos"); });
-          if (files.length > 0) {
-            var latest = files[files.length - 1];
-            var latestPath = path.join(ISOS_DIR, latest);
-            if (latest !== iso.filename) {
-              try { fs.renameSync(latestPath, dest); } catch(e) {}
+          // Find the downloaded file (aria2 uses the torrent's internal filename)
+          // Scan and rename to expected filename
+          scanAndRenameExistingISOs();
+          if (fs.existsSync(dest)) {
+            addLog(iso.name + " downloaded and renamed successfully.");
+          } else {
+            // Try to find any new ISO that appeared
+            var allFiles = fs.readdirSync(ISOS_DIR).filter(function(f) { return f.endsWith(".iso"); });
+            var newFile = allFiles.find(function(f) { return f !== iso.filename; });
+            if (newFile) {
+              try { fs.renameSync(path.join(ISOS_DIR, newFile), dest); } catch(e) {}
+              addLog(iso.name + " downloaded successfully.");
+            } else {
+              addLog(iso.name + " download completed.");
             }
           }
-          addLog(iso.name + " downloaded successfully.");
         }
         resolve();
       });
@@ -430,6 +488,10 @@ function downloadViaTorrent(iso, aria2Ready) {
 }
 
 async function downloadISOs(selectedKeys) {
+  // First, scan and rename any existing ISOs to expected filenames
+  addLog("Scanning for existing OS images...");
+  scanAndRenameExistingISOs();
+  
   // Handle manual entries
   var manualItems = ISO_OPTIONS.filter(function(iso) {
     return selectedKeys.indexOf(iso.key) !== -1 && iso.manual;
@@ -530,7 +592,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.16.0 ===");
+    addLog("=== Thalamus Installer v6.17.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -652,7 +714,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.16.0</div>
+  <div class="badge">v6.17.0</div>
 </div>
 
 <div class="main">
@@ -875,7 +937,7 @@ var server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var url = "http://127.0.0.1:" + PORT;
-  console.log("\x1b[32mThalamus Installer v6.16.0 running at " + url + "\x1b[0m");
+  console.log("\x1b[32mThalamus Installer v6.17.0 running at " + url + "\x1b[0m");
   console.log("\x1b[33mOpening browser... If it does not open, visit: " + url + "\x1b[0m");
   // Open in default browser - NO windowsHide so browser actually opens
   if (process.platform === "win32") {
