@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.15.0
+ * Thalamus Installer v6.16.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -282,8 +282,8 @@ function downloadBridge() {
       progress.percent = 24 + Math.floor((dl / tot) * 10);
       progress.message = "Downloading bridge: " + Math.round(dl / 1024 / 1024) + " MB / " + Math.round(tot / 1024 / 1024) + " MB";
     }).then(function() {
-      addLog("Bridge v3.0.0 downloaded.");
-      try { fs.writeFileSync(path.join(APP_DIR, "bridge.version"), "3.0.0", "utf8"); } catch(e) {}
+      addLog("Bridge v3.1.0 downloaded.");
+      try { fs.writeFileSync(path.join(APP_DIR, "bridge.version"), "3.1.0", "utf8"); } catch(e) {}
       progress.percent = 36;
       resolve();
     }).catch(reject);
@@ -336,7 +336,11 @@ function ensureAria2() {
 function downloadFromGDrive(iso, aria2Ready) {
   return new Promise(function(resolve) {
     var dest = path.join(ISOS_DIR, iso.filename);
-    if (fs.existsSync(dest)) { addLog(iso.name + " already downloaded."); resolve(); return; }
+    if (fs.existsSync(dest)) {
+      var stat = fs.statSync(dest);
+      addLog(iso.name + " already installed (" + Math.round(stat.size / 1024 / 1024) + " MB). Skipping download.");
+      resolve(); return;
+    }
     if (!aria2Ready || !fs.existsSync(ARIA2_EXE)) {
       // Fallback: simple HTTP download with confirm cookie
       addLog("Downloading " + iso.name + " via HTTP (Google Drive)...");
@@ -472,7 +476,11 @@ async function downloadISOs(selectedKeys) {
   for (var i = 0; i < toDownload.length; i++) {
     var iso = toDownload[i];
     var dest = path.join(ISOS_DIR, iso.filename);
-    if (fs.existsSync(dest)) { addLog(iso.name + " already downloaded."); continue; }
+    if (fs.existsSync(dest)) {
+      var stat = fs.statSync(dest);
+      addLog(iso.name + " already installed (" + Math.round(stat.size / 1024 / 1024) + " MB). Skipping.");
+      continue;
+    }
     addLog("Downloading " + iso.name + " (" + iso.size + ")...");
     progress.step = "iso-download";
     var basePercent = 42 + Math.floor((i / toDownload.length) * 50);
@@ -522,7 +530,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.15.0 ===");
+    addLog("=== Thalamus Installer v6.16.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -644,7 +652,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.15.0</div>
+  <div class="badge">v6.16.0</div>
 </div>
 
 <div class="main">
@@ -867,7 +875,7 @@ var server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var url = "http://127.0.0.1:" + PORT;
-  console.log("\x1b[32mThalamus Installer v6.15.0 running at " + url + "\x1b[0m");
+  console.log("\x1b[32mThalamus Installer v6.16.0 running at " + url + "\x1b[0m");
   console.log("\x1b[33mOpening browser... If it does not open, visit: " + url + "\x1b[0m");
   // Open in default browser - NO windowsHide so browser actually opens
   if (process.platform === "win32") {
