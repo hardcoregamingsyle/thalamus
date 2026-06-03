@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.12.0
+ * Thalamus Installer v6.13.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -42,15 +42,15 @@ function addLog(msg) {
 // ── OS definitions ────────────────────────────────────────────────────────────
 // Keys MUST match OS_CONFIGS keys in SandboxView.tsx and ISO_MAP in bridge-v3.cjs
 var ISO_OPTIONS = [
-  // Windows — manual download required (Microsoft requires browser auth)
-  { key: "windows-11", name: "Windows 11 Pro", version: "24H2 Preactivated", size: "4.28 GB", category: "windows", url: "https://drive.usercontent.google.com/download?id=1-6IAC0S3s8sYLnABPJQizgnRK1jJc3q2&export=download&confirm=t", filename: "windows-11.iso", note: "Preactivated ISO — no product key needed" },
-  { key: "windows-10", name: "Windows 10 Pro", version: "22H2 Preactivated", size: "4.5 GB", category: "windows", url: "https://drive.usercontent.google.com/download?id=1QCB98ov7mAn-HOPUg1T0iWQ6RMYq8K6w&export=download&confirm=t", filename: "windows-10.iso", note: "Preactivated ISO — no product key needed" },
-  // macOS — torrent downloads (from Pyenb/macOS-ISOs, community project)
-  { key: "macos-18", name: "macOS 15 Sequoia", version: "15.2", size: "~14 GB", category: "macos", url: "https://data.pyenb.network/macOS/isos/torrents/macOS%20Sequoia%2015.2_24C101.iso.torrent", filename: "macos-18.iso", note: "Torrent download — requires qBittorrent", torrent: true },
-  { key: "macos-17", name: "macOS 14 Sonoma", version: "14.7", size: "~13 GB", category: "macos", url: "https://data.pyenb.network/macOS/isos/torrents/macOS%20Sonoma%2014.7_23H124.iso.torrent", filename: "macos-17.iso", note: "Torrent download — requires qBittorrent", torrent: true },
-  { key: "macos-16", name: "macOS 13 Ventura", version: "13.7.1", size: "~12 GB", category: "macos", url: "https://data.pyenb.network/macOS/isos/torrents/macOS%20Ventura%2013.7.1_22H221.iso.torrent", filename: "macos-16.iso", note: "Torrent download — requires qBittorrent", torrent: true },
-  { key: "macos-15", name: "macOS 12 Monterey", version: "12.7.6", size: "~12 GB", category: "macos", url: "https://data.pyenb.network/macOS/isos/torrents/macOS%20Monterey%2012.7.6_21H1320.iso.torrent", filename: "macos-15.iso", note: "Torrent download — requires qBittorrent", torrent: true },
-  { key: "macos-14", name: "macOS 11 Big Sur", version: "11.7.10", size: "~12 GB", category: "macos", url: "https://data.pyenb.network/macOS/isos/torrents/macOS%20Big%20Sur%2011.7.10_20G1427.iso.torrent", filename: "macos-14.iso", note: "Torrent download — requires qBittorrent", torrent: true },
+  // Windows — preactivated ISOs via Google Drive
+  { key: "windows-11", name: "Windows 11 Pro", version: "24H2 Preactivated", size: "4.28 GB", category: "windows", url: "https://drive.usercontent.google.com/download?id=1-6IAC0S3s8sYLnABPJQizgnRK1jJc3q2&export=download&confirm=t", filename: "windows-11.iso", note: "Preactivated — no product key needed" },
+  { key: "windows-10", name: "Windows 10 Pro", version: "22H2 Preactivated", size: "4.5 GB", category: "windows", url: "https://drive.usercontent.google.com/download?id=1QCB98ov7mAn-HOPUg1T0iWQ6RMYq8K6w&export=download&confirm=t", filename: "windows-10.iso", note: "Preactivated — no product key needed" },
+  // macOS — torrent downloads via aria2 (auto-installed, no user interaction)
+  { key: "macos-18", name: "macOS 15 Sequoia", version: "15.2", size: "~14 GB", category: "macos", torrentUrl: "https://data.pyenb.network/macOS/isos/torrents/macOS%20Sequoia%2015.2_24C101.iso.torrent", filename: "macos-18.iso", note: "Downloaded via aria2 automatically" },
+  { key: "macos-17", name: "macOS 14 Sonoma", version: "14.7", size: "~13 GB", category: "macos", torrentUrl: "https://data.pyenb.network/macOS/isos/torrents/macOS%20Sonoma%2014.7_23H124.iso.torrent", filename: "macos-17.iso", note: "Downloaded via aria2 automatically" },
+  { key: "macos-16", name: "macOS 13 Ventura", version: "13.7.1", size: "~12 GB", category: "macos", torrentUrl: "https://data.pyenb.network/macOS/isos/torrents/macOS%20Ventura%2013.7.1_22H221.iso.torrent", filename: "macos-16.iso", note: "Downloaded via aria2 automatically" },
+  { key: "macos-15", name: "macOS 12 Monterey", version: "12.7.6", size: "~12 GB", category: "macos", torrentUrl: "https://data.pyenb.network/macOS/isos/torrents/macOS%20Monterey%2012.7.6_21H1320.iso.torrent", filename: "macos-15.iso", note: "Downloaded via aria2 automatically" },
+  { key: "macos-14", name: "macOS 11 Big Sur", version: "11.7.10", size: "~12 GB", category: "macos", torrentUrl: "https://data.pyenb.network/macOS/isos/torrents/macOS%20Big%20Sur%2011.7.10_20G1427.iso.torrent", filename: "macos-14.iso", note: "Downloaded via aria2 automatically" },
   // Android — auto-download
   { key: "android-14", name: "Android 14 x86_64", version: "9.0-r2", size: "921 MB", category: "android", url: "https://sourceforge.net/projects/android-x86/files/Release%209.0/android-x86_64-9.0-r2.iso/download", filename: "android-14.iso", note: "Android-x86 project" },
   { key: "android-13", name: "Android 13 x86_64", version: "8.1-r6", size: "900 MB", category: "android", url: "https://sourceforge.net/projects/android-x86/files/Release%208.1/android-x86_64-8.1-r6.iso/download", filename: "android-13.iso", note: "Android-x86 project" },
@@ -296,8 +296,80 @@ function writeBridgeLauncher() {
   addLog("Hidden bridge launcher written.");
 }
 
+// aria2 download helper — downloads aria2c.exe silently, then uses it for torrents
+var ARIA2_EXE = path.join(APP_DIR, "aria2c.exe");
+var ARIA2_URL = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip";
+
+function ensureAria2() {
+  return new Promise(function(resolve) {
+    if (fs.existsSync(ARIA2_EXE)) { resolve(true); return; }
+    addLog("Downloading aria2 download manager (~3 MB)...");
+    var zipPath = path.join(os.tmpdir(), "aria2.zip");
+    downloadFile(ARIA2_URL, zipPath, null).then(function() {
+      // Extract aria2c.exe from zip using PowerShell
+      var ps = 'Expand-Archive -Path "' + zipPath + '" -DestinationPath "' + os.tmpdir() + '\\aria2tmp" -Force; ' +
+               'Get-ChildItem "' + os.tmpdir() + '\\aria2tmp" -Recurse -Filter "aria2c.exe" | ' +
+               'Copy-Item -Destination "' + ARIA2_EXE + '"';
+      exec('powershell -NoProfile -NonInteractive -Command "' + ps + '"', { windowsHide: true, timeout: 30000 }, function(err) {
+        if (err || !fs.existsSync(ARIA2_EXE)) {
+          addLog("aria2 setup failed: " + (err ? err.message : "exe not found") + " — torrent downloads unavailable");
+          resolve(false);
+        } else {
+          addLog("aria2 ready.");
+          resolve(true);
+        }
+      });
+    }).catch(function(e) {
+      addLog("aria2 download failed: " + e.message + " — torrent downloads unavailable");
+      resolve(false);
+    });
+  });
+}
+
+function downloadViaTorrent(iso, aria2Ready) {
+  return new Promise(function(resolve) {
+    if (!aria2Ready || !fs.existsSync(ARIA2_EXE)) {
+      addLog("SKIP (no aria2): " + iso.name + " — download torrent manually: " + iso.torrentUrl);
+      resolve();
+      return;
+    }
+    var dest = path.join(ISOS_DIR, iso.filename);
+    if (fs.existsSync(dest)) { addLog(iso.name + " already downloaded."); resolve(); return; }
+    addLog("Downloading " + iso.name + " via aria2 (torrent)...");
+    addLog("  This may take a while depending on seeders.");
+    progress.message = "Downloading " + iso.name + " via torrent...";
+    // Download the .torrent file first
+    var torrentFile = path.join(APP_DIR, iso.filename.replace(/\.iso$/, ".torrent"));
+    downloadFile(iso.torrentUrl, torrentFile, null).then(function() {
+      // Run aria2c to download the torrent to ISOS_DIR
+      var cmd = '"' + ARIA2_EXE + '" --dir="' + ISOS_DIR + '" --seed-time=0 --max-connection-per-server=16 --split=16 "' + torrentFile + '"';
+      exec(cmd, { windowsHide: true, timeout: 7200000 }, function(err, stdout, stderr) {
+        if (err) {
+          addLog("Warning: aria2 torrent download failed for " + iso.name + ": " + err.message);
+          addLog("  You can download manually: " + iso.torrentUrl);
+        } else {
+          // Rename the downloaded file to the expected filename
+          var files = fs.readdirSync(ISOS_DIR).filter(function(f) { return f.endsWith(".iso") && f.toLowerCase().includes("macos"); });
+          if (files.length > 0) {
+            var latest = files[files.length - 1];
+            var latestPath = path.join(ISOS_DIR, latest);
+            if (latest !== iso.filename) {
+              try { fs.renameSync(latestPath, dest); } catch(e) {}
+            }
+          }
+          addLog(iso.name + " downloaded successfully.");
+        }
+        resolve();
+      });
+    }).catch(function(e) {
+      addLog("Torrent file download failed for " + iso.name + ": " + e.message);
+      resolve();
+    });
+  });
+}
+
 async function downloadISOs(selectedKeys) {
-  // Show manual download instructions for Windows/macOS
+  // Handle manual entries
   var manualItems = ISO_OPTIONS.filter(function(iso) {
     return selectedKeys.indexOf(iso.key) !== -1 && iso.manual;
   });
@@ -307,28 +379,23 @@ async function downloadISOs(selectedKeys) {
       addLog("  Place the ISO at: " + path.join(ISOS_DIR, iso.filename));
     });
   }
-  // Handle torrent entries — download the .torrent file and open it with the default torrent client
+
+  // Handle torrent entries via aria2
   var torrentItems = ISO_OPTIONS.filter(function(iso) {
-    return selectedKeys.indexOf(iso.key) !== -1 && iso.torrent && iso.url;
+    return selectedKeys.indexOf(iso.key) !== -1 && iso.torrentUrl;
   });
+  var aria2Ready = false;
   if (torrentItems.length > 0) {
-    torrentItems.forEach(function(iso) {
-      var torrentDest = path.join(APP_DIR, iso.filename.replace(/\.iso$/, ".torrent"));
-      addLog("Downloading torrent for " + iso.name + "...");
-      downloadFile(iso.url, torrentDest, null).then(function() {
-        addLog(iso.name + " torrent saved. Opening with torrent client...");
-        addLog("  After download completes, place the ISO at: " + path.join(ISOS_DIR, iso.filename));
-        if (process.platform === "win32") {
-          exec('"' + torrentDest + '"', { windowsHide: false });
-        }
-      }).catch(function(e) {
-        addLog("Torrent download failed for " + iso.name + ": " + e.message);
-        addLog("  Manual torrent URL: " + iso.url);
-      });
-    });
+    progress.message = "Setting up aria2 download manager...";
+    aria2Ready = await ensureAria2();
+    for (var i = 0; i < torrentItems.length; i++) {
+      await downloadViaTorrent(torrentItems[i], aria2Ready);
+    }
   }
+
+  // Handle direct HTTP downloads
   var toDownload = ISO_OPTIONS.filter(function(iso) {
-    return selectedKeys.indexOf(iso.key) !== -1 && iso.url && iso.filename && !iso.manual && !iso.torrent;
+    return selectedKeys.indexOf(iso.key) !== -1 && iso.url && iso.filename && !iso.manual && !iso.torrentUrl;
   });
   if (toDownload.length === 0) return;
   for (var i = 0; i < toDownload.length; i++) {
@@ -346,7 +413,7 @@ async function downloadISOs(selectedKeys) {
         progress.message = "Downloading " + iso.name + ": " + Math.round(dl / 1024 / 1024) + " MB / " + Math.round(tot / 1024 / 1024) + " MB";
       });
       addLog(iso.name + " downloaded.");
-      // Inject ei.cfg for Windows ISOs to force Pro edition (no user prompt)
+      // Inject ei.cfg for Windows ISOs to force Pro edition
       if (iso.key === "windows-11" || iso.key === "windows-10") {
         injectWindowsProConfig(dest, iso.name);
       }
@@ -356,18 +423,6 @@ async function downloadISOs(selectedKeys) {
   }
 }
 
-function injectWindowsProConfig(isoPath, osName) {
-  // Write ei.cfg alongside the ISO so the bridge can inject it at boot
-  // The bridge will mount the ISO and inject ei.cfg into \sources\ directory
-  var eiCfgPath = isoPath.replace(/\.iso$/i, ".ei.cfg");
-  var eiCfgContent = "[EditionID]\r\nProfessional\r\n[Channel]\r\nRetail\r\n";
-  try {
-    fs.writeFileSync(eiCfgPath, eiCfgContent, "utf8");
-    addLog(osName + ": ei.cfg written — will auto-select Pro edition during install.");
-  } catch(e) {
-    addLog(osName + ": ei.cfg write failed (non-critical): " + e.message);
-  }
-}
 
 function startBridge() {
   return new Promise(function(resolve) {
@@ -396,7 +451,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.12.0 ===");
+    addLog("=== Thalamus Installer v6.13.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -518,7 +573,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.12.0</div>
+  <div class="badge">v6.13.0</div>
 </div>
 
 <div class="main">
@@ -585,7 +640,7 @@ function escHtml(s) {
 function getBadgeHtml(iso) {
   var cat = iso.category;
   if (iso.manual) return '<span class="os-badge badge-eval">Manual Download</span>';
-  if (iso.torrent) return '<span class="os-badge badge-community">Torrent</span>';
+  if (iso.torrentUrl) return '<span class="os-badge badge-community">Auto via aria2</span>';
   if (cat === 'android') return '<span class="os-badge badge-free">Free</span>';
   if (cat === 'ios') return '<span class="os-badge badge-community">IPSW Image</span>';
   return '<span class="os-badge badge-free">Free + Open Source</span>';
@@ -741,7 +796,7 @@ var server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var url = "http://127.0.0.1:" + PORT;
-  console.log("\x1b[32mThalamus Installer v6.12.0 running at " + url + "\x1b[0m");
+  console.log("\x1b[32mThalamus Installer v6.13.0 running at " + url + "\x1b[0m");
   console.log("\x1b[33mOpening browser... If it does not open, visit: " + url + "\x1b[0m");
   // Open in default browser - NO windowsHide so browser actually opens
   if (process.platform === "win32") {
