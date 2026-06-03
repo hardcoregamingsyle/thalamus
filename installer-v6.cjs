@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.8.0
+ * Thalamus Installer v6.9.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -39,20 +39,20 @@ function addLog(msg) {
 // ── OS definitions ────────────────────────────────────────────────────────────
 // Keys MUST match OS_CONFIGS keys in SandboxView.tsx and ISO_MAP in bridge-v3.cjs
 var ISO_OPTIONS = [
-  // Windows — archive.org direct mirrors (no auth required)
-  { key: "windows-11", name: "Windows 11 Pro", version: "24H2", size: "5.8 GB", category: "windows", url: "https://archive.org/download/win-11_english_x64v2/Win11_English_x64v2.iso", filename: "windows-11.iso", note: "Internet Archive mirror — no auth required" },
-  { key: "windows-10", name: "Windows 10 Pro", version: "22H2", size: "5.2 GB", category: "windows", url: "https://archive.org/download/win-10_english_x64/Win10_22H2_English_x64.iso", filename: "windows-10.iso", note: "Internet Archive mirror — no auth required" },
-  // macOS — community ISOs from archive.org
-  { key: "macos-18", name: "macOS 15 Sequoia", version: "15.0", size: "14 GB", category: "macos", url: "https://archive.org/download/macos-sequoia-iso/macOS-Sequoia.iso", filename: "macos-18.iso", note: "Community archive ISO" },
-  { key: "macos-17", name: "macOS 14 Sonoma", version: "14.0", size: "13 GB", category: "macos", url: "https://archive.org/download/macos-sonoma-iso/macOS-Sonoma.iso", filename: "macos-17.iso", note: "Community archive ISO" },
-  { key: "macos-16", name: "macOS 13 Ventura", version: "13.0", size: "12 GB", category: "macos", url: "https://archive.org/download/macos-ventura-iso/macOS-Ventura.iso", filename: "macos-16.iso", note: "Community archive ISO" },
-  // Android
+  // Windows — manual download required (Microsoft requires browser auth)
+  { key: "windows-11", name: "Windows 11 Pro", version: "24H2", size: "5.8 GB", category: "windows", url: null, filename: "windows-11.iso", note: "Download from microsoft.com/software-download/windows11", manual: true, manualUrl: "https://www.microsoft.com/software-download/windows11" },
+  { key: "windows-10", name: "Windows 10 Pro", version: "22H2", size: "5.2 GB", category: "windows", url: null, filename: "windows-10.iso", note: "Download from microsoft.com/software-download/windows10", manual: true, manualUrl: "https://www.microsoft.com/software-download/windows10" },
+  // macOS — manual download required (Apple requires Mac hardware)
+  { key: "macos-18", name: "macOS 15 Sequoia", version: "15.0", size: "14 GB", category: "macos", url: null, filename: "macos-18.iso", note: "Requires a Mac to download from App Store", manual: true, manualUrl: "https://apps.apple.com/app/macos-sequoia/id6596773750" },
+  { key: "macos-17", name: "macOS 14 Sonoma", version: "14.0", size: "13 GB", category: "macos", url: null, filename: "macos-17.iso", note: "Requires a Mac to download from App Store", manual: true, manualUrl: "https://apps.apple.com/app/macos-sonoma/id6450717509" },
+  { key: "macos-16", name: "macOS 13 Ventura", version: "13.0", size: "12 GB", category: "macos", url: null, filename: "macos-16.iso", note: "Requires a Mac to download from App Store", manual: true, manualUrl: "https://apps.apple.com/app/macos-ventura/id1638787999" },
+  // Android — auto-download
   { key: "android-14", name: "Android 14 x86_64", version: "9.0-r2", size: "921 MB", category: "android", url: "https://sourceforge.net/projects/android-x86/files/Release%209.0/android-x86_64-9.0-r2.iso/download", filename: "android-14.iso", note: "Android-x86 project" },
   { key: "android-13", name: "Android 13 x86_64", version: "8.1-r6", size: "900 MB", category: "android", url: "https://sourceforge.net/projects/android-x86/files/Release%208.1/android-x86_64-8.1-r6.iso/download", filename: "android-13.iso", note: "Android-x86 project" },
   // iOS
   { key: "ios-18", name: "iOS 18", version: "18.0", size: "8 GB", category: "ios", url: "https://updates.cdn-apple.com/2024FallFCS/fullrestores/062-84842/ios-18.ipsw", filename: "ios-18.ipsw", note: "Apple IPSW restore image" },
   { key: "ios-17", name: "iOS 17", version: "17.0", size: "7 GB", category: "ios", url: "https://updates.cdn-apple.com/2023FallFCS/fullrestores/ios-17.ipsw", filename: "ios-17.ipsw", note: "Apple IPSW restore image" },
-  // Linux
+  // Linux — auto-download
   { key: "ubuntu-24", name: "Ubuntu 24.04 LTS", version: "24.04", size: "5.7 GB", category: "linux", url: "https://releases.ubuntu.com/24.04/ubuntu-24.04.2-desktop-amd64.iso", filename: "ubuntu-24.iso", note: "" },
   { key: "debian-12", name: "Debian 12 Bookworm", version: "12.0", size: "3.7 GB", category: "linux", url: "https://cdimage.debian.org/debian-cd/current/amd64/iso-dvd/debian-12.9.0-amd64-DVD-1.iso", filename: "debian-12.iso", note: "" },
   { key: "kali-2024", name: "Kali Linux 2024", version: "2024.4", size: "4.1 GB", category: "linux", url: "https://cdimage.kali.org/kali-2024.4/kali-linux-2024.4-installer-amd64.iso", filename: "kali-2024.iso", note: "" }
@@ -292,8 +292,18 @@ function writeBridgeLauncher() {
 }
 
 async function downloadISOs(selectedKeys) {
+  // Show manual download instructions for Windows/macOS
+  var manualItems = ISO_OPTIONS.filter(function(iso) {
+    return selectedKeys.indexOf(iso.key) !== -1 && iso.manual;
+  });
+  if (manualItems.length > 0) {
+    manualItems.forEach(function(iso) {
+      addLog("MANUAL REQUIRED: " + iso.name + " — download from: " + iso.manualUrl);
+      addLog("  Place the ISO at: " + path.join(ISOS_DIR, iso.filename));
+    });
+  }
   var toDownload = ISO_OPTIONS.filter(function(iso) {
-    return selectedKeys.indexOf(iso.key) !== -1 && iso.url && iso.filename;
+    return selectedKeys.indexOf(iso.key) !== -1 && iso.url && iso.filename && !iso.manual;
   });
   if (toDownload.length === 0) return;
   for (var i = 0; i < toDownload.length; i++) {
@@ -361,7 +371,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.8.0 ===");
+    addLog("=== Thalamus Installer v6.9.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -483,7 +493,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.8.0</div>
+  <div class="badge">v6.9.0</div>
 </div>
 
 <div class="main">
@@ -547,9 +557,9 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-function getBadgeHtml(cat) {
-  if (cat === 'windows') return '<span class="os-badge badge-eval">Evaluation</span>';
-  if (cat === 'macos') return '<span class="os-badge badge-community">Community ISO</span>';
+function getBadgeHtml(iso) {
+  var cat = iso.category;
+  if (iso.manual) return '<span class="os-badge badge-eval">Manual Download</span>';
   if (cat === 'android') return '<span class="os-badge badge-free">Free</span>';
   if (cat === 'ios') return '<span class="os-badge badge-community">IPSW Image</span>';
   return '<span class="os-badge badge-free">Free + Open Source</span>';
@@ -580,7 +590,7 @@ function renderISOs() {
         '<div class="os-info">' +
         '<div class="os-name">' + escHtml(iso.name) + '</div>' +
         '<div class="os-meta">' + escHtml(iso.version) + ' &bull; ' + escHtml(iso.size) + '</div>' +
-        getBadgeHtml(iso.category) +
+        getBadgeHtml(iso) +
         (iso.note ? '<span class="os-note">' + escHtml(iso.note) + '</span>' : '') +
         '</div>';
       (function(key) {
@@ -705,7 +715,7 @@ var server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var url = "http://127.0.0.1:" + PORT;
-  console.log("\x1b[32mThalamus Installer v6.8.0 running at " + url + "\x1b[0m");
+  console.log("\x1b[32mThalamus Installer v6.9.0 running at " + url + "\x1b[0m");
   console.log("\x1b[33mOpening browser... If it does not open, visit: " + url + "\x1b[0m");
   // Open in default browser - NO windowsHide so browser actually opens
   if (process.platform === "win32") {
