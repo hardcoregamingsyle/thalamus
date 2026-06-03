@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.18.0
+ * Thalamus Installer v6.19.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -570,7 +570,7 @@ function startBridge() {
   return new Promise(function(resolve) {
     if (process.platform !== "win32") { addLog("Not Windows, skipping bridge start."); resolve(false); return; }
     if (!fs.existsSync(BRIDGE_EXE)) { addLog("Bridge exe not found, skipping start."); resolve(false); return; }
-    addLog("Starting VM bridge in background...");
+    addLog("Starting VM bridge...");
     try {
       writeBridgeLauncher();
       var child = spawn("wscript.exe", ["//B", "//Nologo", BRIDGE_LAUNCHER], {
@@ -585,15 +585,47 @@ function startBridge() {
       });
       direct.unref();
     }
-    addLog("Bridge started in background.");
-    resolve(true);
+    // Wait for bridge to be ready (poll WebSocket)
+    addLog("Waiting for bridge to start...");
+    var attempts = 0;
+    var maxAttempts = 20; // 20 * 1s = 20 seconds
+    function checkBridge() {
+      attempts++;
+      var net = require("net");
+      var client = new net.Socket();
+      client.setTimeout(800);
+      client.connect(5900, "127.0.0.1", function() {
+        client.destroy();
+        addLog("VM bridge is ready! (took " + attempts + "s)");
+        resolve(true);
+      });
+      client.on("error", function() {
+        client.destroy();
+        if (attempts < maxAttempts) {
+          setTimeout(checkBridge, 1000);
+        } else {
+          addLog("Bridge started (may take a moment to connect from website).");
+          resolve(false);
+        }
+      });
+      client.on("timeout", function() {
+        client.destroy();
+        if (attempts < maxAttempts) {
+          setTimeout(checkBridge, 1000);
+        } else {
+          addLog("Bridge started (may take a moment to connect from website).");
+          resolve(false);
+        }
+      });
+    }
+    setTimeout(checkBridge, 1500); // Give bridge 1.5s to start before first check
   });
 }
 
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.18.0 ===");
+    addLog("=== Thalamus Installer v6.19.0 ===");
     addLog("Install directory: " + APP_DIR);
     // Scan for existing ISOs immediately
     if (fs.existsSync(ISOS_DIR)) {
@@ -720,7 +752,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.18.0</div>
+  <div class="badge">v6.19.0</div>
 </div>
 
 <div class="main">
@@ -943,7 +975,7 @@ var server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var url = "http://127.0.0.1:" + PORT;
-  console.log("\x1b[32mThalamus Installer v6.18.0 running at " + url + "\x1b[0m");
+  console.log("\x1b[32mThalamus Installer v6.19.0 running at " + url + "\x1b[0m");
   console.log("\x1b[33mOpening browser... If it does not open, visit: " + url + "\x1b[0m");
   // Open in default browser - NO windowsHide so browser actually opens
   if (process.platform === "win32") {
