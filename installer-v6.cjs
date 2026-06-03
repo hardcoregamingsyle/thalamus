@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.11.0
+ * Thalamus Installer v6.12.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -13,7 +13,10 @@ const os = require("os");
 const https = require("https");
 
 const PORT = 7891;
-const APP_DIR = path.join(os.homedir(), "AppData", "Local", "Thalamus");
+// Use LOCALAPPDATA env var (works even when AppData folder is hidden)
+const APP_DIR = process.env.LOCALAPPDATA
+  ? path.join(process.env.LOCALAPPDATA, "Thalamus")
+  : path.join(os.homedir(), "AppData", "Local", "Thalamus");
 const ISOS_DIR = path.join(APP_DIR, "isos");
 const BRIDGE_EXE = path.join(APP_DIR, "thalamus-vm-bridge.exe");
 const BRIDGE_LAUNCHER = path.join(APP_DIR, "launch-bridge-hidden.vbs");
@@ -42,10 +45,12 @@ var ISO_OPTIONS = [
   // Windows — manual download required (Microsoft requires browser auth)
   { key: "windows-11", name: "Windows 11 Pro", version: "24H2 Preactivated", size: "4.28 GB", category: "windows", url: "https://drive.usercontent.google.com/download?id=1-6IAC0S3s8sYLnABPJQizgnRK1jJc3q2&export=download&confirm=t", filename: "windows-11.iso", note: "Preactivated ISO — no product key needed" },
   { key: "windows-10", name: "Windows 10 Pro", version: "22H2 Preactivated", size: "4.5 GB", category: "windows", url: "https://drive.usercontent.google.com/download?id=1QCB98ov7mAn-HOPUg1T0iWQ6RMYq8K6w&export=download&confirm=t", filename: "windows-10.iso", note: "Preactivated ISO — no product key needed" },
-  // macOS — manual download required (Apple requires Mac hardware)
-  { key: "macos-18", name: "macOS 15 Sequoia", version: "15.0", size: "14 GB", category: "macos", url: null, filename: "macos-18.iso", note: "Requires a Mac to download from App Store", manual: true, manualUrl: "https://apps.apple.com/app/macos-sequoia/id6596773750" },
-  { key: "macos-17", name: "macOS 14 Sonoma", version: "14.0", size: "13 GB", category: "macos", url: null, filename: "macos-17.iso", note: "Requires a Mac to download from App Store", manual: true, manualUrl: "https://apps.apple.com/app/macos-sonoma/id6450717509" },
-  { key: "macos-16", name: "macOS 13 Ventura", version: "13.0", size: "12 GB", category: "macos", url: null, filename: "macos-16.iso", note: "Requires a Mac to download from App Store", manual: true, manualUrl: "https://apps.apple.com/app/macos-ventura/id1638787999" },
+  // macOS — torrent downloads (from Pyenb/macOS-ISOs, community project)
+  { key: "macos-18", name: "macOS 15 Sequoia", version: "15.2", size: "~14 GB", category: "macos", url: "https://data.pyenb.network/macOS/isos/torrents/macOS%20Sequoia%2015.2_24C101.iso.torrent", filename: "macos-18.iso", note: "Torrent download — requires qBittorrent", torrent: true },
+  { key: "macos-17", name: "macOS 14 Sonoma", version: "14.7", size: "~13 GB", category: "macos", url: "https://data.pyenb.network/macOS/isos/torrents/macOS%20Sonoma%2014.7_23H124.iso.torrent", filename: "macos-17.iso", note: "Torrent download — requires qBittorrent", torrent: true },
+  { key: "macos-16", name: "macOS 13 Ventura", version: "13.7.1", size: "~12 GB", category: "macos", url: "https://data.pyenb.network/macOS/isos/torrents/macOS%20Ventura%2013.7.1_22H221.iso.torrent", filename: "macos-16.iso", note: "Torrent download — requires qBittorrent", torrent: true },
+  { key: "macos-15", name: "macOS 12 Monterey", version: "12.7.6", size: "~12 GB", category: "macos", url: "https://data.pyenb.network/macOS/isos/torrents/macOS%20Monterey%2012.7.6_21H1320.iso.torrent", filename: "macos-15.iso", note: "Torrent download — requires qBittorrent", torrent: true },
+  { key: "macos-14", name: "macOS 11 Big Sur", version: "11.7.10", size: "~12 GB", category: "macos", url: "https://data.pyenb.network/macOS/isos/torrents/macOS%20Big%20Sur%2011.7.10_20G1427.iso.torrent", filename: "macos-14.iso", note: "Torrent download — requires qBittorrent", torrent: true },
   // Android — auto-download
   { key: "android-14", name: "Android 14 x86_64", version: "9.0-r2", size: "921 MB", category: "android", url: "https://sourceforge.net/projects/android-x86/files/Release%209.0/android-x86_64-9.0-r2.iso/download", filename: "android-14.iso", note: "Android-x86 project" },
   { key: "android-13", name: "Android 13 x86_64", version: "8.1-r6", size: "900 MB", category: "android", url: "https://sourceforge.net/projects/android-x86/files/Release%208.1/android-x86_64-8.1-r6.iso/download", filename: "android-13.iso", note: "Android-x86 project" },
@@ -302,8 +307,28 @@ async function downloadISOs(selectedKeys) {
       addLog("  Place the ISO at: " + path.join(ISOS_DIR, iso.filename));
     });
   }
+  // Handle torrent entries — download the .torrent file and open it with the default torrent client
+  var torrentItems = ISO_OPTIONS.filter(function(iso) {
+    return selectedKeys.indexOf(iso.key) !== -1 && iso.torrent && iso.url;
+  });
+  if (torrentItems.length > 0) {
+    torrentItems.forEach(function(iso) {
+      var torrentDest = path.join(APP_DIR, iso.filename.replace(/\.iso$/, ".torrent"));
+      addLog("Downloading torrent for " + iso.name + "...");
+      downloadFile(iso.url, torrentDest, null).then(function() {
+        addLog(iso.name + " torrent saved. Opening with torrent client...");
+        addLog("  After download completes, place the ISO at: " + path.join(ISOS_DIR, iso.filename));
+        if (process.platform === "win32") {
+          exec('"' + torrentDest + '"', { windowsHide: false });
+        }
+      }).catch(function(e) {
+        addLog("Torrent download failed for " + iso.name + ": " + e.message);
+        addLog("  Manual torrent URL: " + iso.url);
+      });
+    });
+  }
   var toDownload = ISO_OPTIONS.filter(function(iso) {
-    return selectedKeys.indexOf(iso.key) !== -1 && iso.url && iso.filename && !iso.manual;
+    return selectedKeys.indexOf(iso.key) !== -1 && iso.url && iso.filename && !iso.manual && !iso.torrent;
   });
   if (toDownload.length === 0) return;
   for (var i = 0; i < toDownload.length; i++) {
@@ -371,7 +396,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.11.0 ===");
+    addLog("=== Thalamus Installer v6.12.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -493,7 +518,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.11.0</div>
+  <div class="badge">v6.12.0</div>
 </div>
 
 <div class="main">
@@ -560,6 +585,7 @@ function escHtml(s) {
 function getBadgeHtml(iso) {
   var cat = iso.category;
   if (iso.manual) return '<span class="os-badge badge-eval">Manual Download</span>';
+  if (iso.torrent) return '<span class="os-badge badge-community">Torrent</span>';
   if (cat === 'android') return '<span class="os-badge badge-free">Free</span>';
   if (cat === 'ios') return '<span class="os-badge badge-community">IPSW Image</span>';
   return '<span class="os-badge badge-free">Free + Open Source</span>';
@@ -715,7 +741,7 @@ var server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var url = "http://127.0.0.1:" + PORT;
-  console.log("\x1b[32mThalamus Installer v6.11.0 running at " + url + "\x1b[0m");
+  console.log("\x1b[32mThalamus Installer v6.12.0 running at " + url + "\x1b[0m");
   console.log("\x1b[33mOpening browser... If it does not open, visit: " + url + "\x1b[0m");
   // Open in default browser - NO windowsHide so browser actually opens
   if (process.platform === "win32") {
