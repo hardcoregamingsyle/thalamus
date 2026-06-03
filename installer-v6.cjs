@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.9.0
+ * Thalamus Installer v6.10.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -40,7 +40,7 @@ function addLog(msg) {
 // Keys MUST match OS_CONFIGS keys in SandboxView.tsx and ISO_MAP in bridge-v3.cjs
 var ISO_OPTIONS = [
   // Windows — manual download required (Microsoft requires browser auth)
-  { key: "windows-11", name: "Windows 11 Pro", version: "24H2", size: "5.8 GB", category: "windows", url: null, filename: "windows-11.iso", note: "Download from microsoft.com/software-download/windows11", manual: true, manualUrl: "https://www.microsoft.com/software-download/windows11" },
+  { key: "windows-11", name: "Windows 11 Pro", version: "24H2 Preactivated", size: "4.28 GB", category: "windows", url: "https://drive.usercontent.google.com/download?id=1-6IAC0S3s8sYLnABPJQizgnRK1jJc3q2&export=download&confirm=t", filename: "windows-11.iso", note: "Preactivated ISO — no product key needed" },
   { key: "windows-10", name: "Windows 10 Pro", version: "22H2", size: "5.2 GB", category: "windows", url: null, filename: "windows-10.iso", note: "Download from microsoft.com/software-download/windows10", manual: true, manualUrl: "https://www.microsoft.com/software-download/windows10" },
   // macOS — manual download required (Apple requires Mac hardware)
   { key: "macos-18", name: "macOS 15 Sequoia", version: "15.0", size: "14 GB", category: "macos", url: null, filename: "macos-18.iso", note: "Requires a Mac to download from App Store", manual: true, manualUrl: "https://apps.apple.com/app/macos-sequoia/id6596773750" },
@@ -371,7 +371,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.9.0 ===");
+    addLog("=== Thalamus Installer v6.10.0 ===");
     addLog("Install directory: " + APP_DIR);
     await installQemu();
     await downloadBridge();
@@ -493,7 +493,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.9.0</div>
+  <div class="badge">v6.10.0</div>
 </div>
 
 <div class="main">
@@ -715,7 +715,7 @@ var server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var url = "http://127.0.0.1:" + PORT;
-  console.log("\x1b[32mThalamus Installer v6.9.0 running at " + url + "\x1b[0m");
+  console.log("\x1b[32mThalamus Installer v6.10.0 running at " + url + "\x1b[0m");
   console.log("\x1b[33mOpening browser... If it does not open, visit: " + url + "\x1b[0m");
   // Open in default browser - NO windowsHide so browser actually opens
   if (process.platform === "win32") {
