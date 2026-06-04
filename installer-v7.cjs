@@ -1033,7 +1033,7 @@ function renderOSList() {
       var isSelected = selected.has(iso.key) || isInstalled;
       var cls = isInstalled ? 'os-item installed' : (isSelected ? 'os-item selected' : 'os-item');
       var badge = (cat.key === 'windows' || cat.key === 'macos') ? '<span class="os-badge licensed">Licensed</span>' : '<span class="os-badge free">Free</span>';
-      html += '<div class="' + cls + '" onclick="toggleISO(\'' + iso.key + '\')" data-key="' + iso.key + '">';
+      html += '<div class="' + cls + '" onclick="toggleISO(&apos;' + iso.key + '&apos;)" data-key="' + iso.key + '">';
       html += '<div class="os-check"><svg viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>';
       html += '<div class="os-info">';
       html += '<div class="os-name">' + iso.name + '</div>';
