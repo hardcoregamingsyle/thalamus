@@ -45,7 +45,7 @@
         "@tailwindcss/vite": "^4.1.17",
         "@types/three": "^0.181.0",
         "@vercel/sdk": "^1.21.8",
-        "@vly-ai/integrations": "^0.6.6",
+        "@vly-ai/integrations": "^0.6.9",
         "@zumer/snapdom": "^2.0.1",
         "axios": "^1.13.2",
         "class-variance-authority": "^0.7.1",
@@ -1097,7 +1097,7 @@
 
     "@vitejs/plugin-react": ["@vitejs/plugin-react@5.2.0", "", { "dependencies": { "@babel/core": "^7.29.0", "@babel/plugin-transform-react-jsx-self": "^7.27.1", "@babel/plugin-transform-react-jsx-source": "^7.27.1", "@rolldown/pluginutils": "1.0.0-rc.3", "@types/babel__core": "^7.20.5", "react-refresh": "^0.18.0" }, "peerDependencies": { "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0" } }, "sha512-YmKkfhOAi3wsB1PhJq5Scj3GXMn3WvtQ/JC0xoopuHoXSdmtdStOpFrYaT1kie2YgFBcIe64ROzMYRjCrYOdYw=="],
 
-    "@vly-ai/integrations": ["@vly-ai/integrations@0.6.6", "", { "dependencies": { "@ai-sdk/openai-compatible": "^1.0.0", "ai": "^5.0.0", "html2canvas": "^1.4.1", "zod": "^3.22.4" } }, "sha512-W8UMoiDVOkE4pPDKHuJTTXxu7PbFdxwZQAqFiS7BOFKEwPDxxs2aJI4oxIiiRdz8jhrJYoo8PFwRcCKVRpr2gg=="],
+    "@vly-ai/integrations": ["@vly-ai/integrations@0.6.9", "", { "dependencies": { "@ai-sdk/openai-compatible": "^1.0.0", "ai": "^5.0.0", "html2canvas": "^1.4.1", "zod": "^3.22.4" } }, "sha512-FbOLEXH3Lznt9di8lb6KOSCOsOje/0UxgFBd0hSfXOcaMi63RzSUyR+IgDNBprUeYhLx3Qd1C85QFbUBpJwaig=="],
 
     "@vue/compiler-core": ["@vue/compiler-core@3.5.35", "", { "dependencies": { "@babel/parser": "^7.29.3", "@vue/shared": "3.5.35", "entities": "^7.0.1", "estree-walker": "^2.0.2", "source-map-js": "^1.2.1" } }, "sha512-BUmHaR1J+O+CKZ9uJucdVTEr1LHsdyvv7vG3eNRhK3CczEHeMd/LtsHAuD7PbrxvI2envCY2v7HI1vC1aBRzKw=="],
 
