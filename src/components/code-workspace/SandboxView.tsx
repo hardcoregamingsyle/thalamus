@@ -527,8 +527,14 @@ export function SandboxView({ branchId }: SandboxViewProps) {
               <Badge
                 variant="outline"
                 className={bridgeConnected ? "bg-green-500/10 text-green-600" : "bg-orange-500/10 text-orange-600"}
+                style={{ cursor: bridgeConnected ? "default" : "pointer" }}
+                onClick={!bridgeConnected ? () => {
+                  window.location.href = "thalamus://start";
+                  toast.info("Launching bridge... wait 5 seconds then click 'Check Bridge'", { duration: 6000 });
+                  setTimeout(() => void refreshBridgeStatus(), 5000);
+                } : undefined}
               >
-                {bridgeChecking ? "Checking..." : bridgeConnected ? `Bridge Ready${bridgeVersion ? ` v${bridgeVersion}` : ""}` : "Bridge Offline"}
+                {bridgeChecking ? "Checking..." : bridgeConnected ? `Bridge Ready${bridgeVersion ? ` v${bridgeVersion}` : ""}` : "⚡ Click to Start Bridge"}
               </Badge>
             )}
           </div>
