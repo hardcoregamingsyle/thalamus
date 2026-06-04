@@ -269,6 +269,20 @@ export function SandboxView({ branchId }: SandboxViewProps) {
 
   const downloadUrl = vmLauncher.getDownloadUrl();
 
+  const handleLaunchVNC = () => {
+    // Try to open VNC viewer via installer's HTTP endpoint (localhost:7891)
+    fetch(`http://localhost:7891/api/launch-vnc?port=${currentVncPort}`)
+      .then(() => toast.success(`VNC viewer launched for localhost:${currentVncPort}`))
+      .catch(() => {
+        // Installer not running — copy address and show instructions
+        navigator.clipboard.writeText(`localhost:${currentVncPort}`).catch(() => {});
+        toast.info(
+          `VNC address copied: localhost:${currentVncPort}\n\nOpen tvnviewer.exe from C:\\Users\\[you]\\AppData\\Local\\Thalamus\\`,
+          { duration: 15000 }
+        );
+      });
+  };
+
   const handleBootVM = async () => {
     const config = OS_CONFIGS[selectedOS];
 
@@ -543,6 +557,13 @@ export function SandboxView({ branchId }: SandboxViewProps) {
             <Badge variant="outline" className="text-xs">{customRam} MB RAM</Badge>
             <Badge variant="outline" className="text-xs">{customCores} vCPU</Badge>
 
+            {vmStatus === "running" && currentConfig.is64Bit && (
+              <Button size="sm" variant="default" className="gap-2 bg-blue-600 hover:bg-blue-700" onClick={handleLaunchVNC}>
+                <Monitor className="h-3 w-3" />
+                Launch VNC Viewer
+              </Button>
+            )}
+
             {vmStatus === "stopped" && (
               <>
                 <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
@@ -596,9 +617,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                           min={64}
                           max={maxRamForCurrentOS}
                         />
-                        <p className="text-xs text-muted-foreground">
-                          {currentConfig.is64Bit ? "64MB - 16GB (QEMU via bridge)" : "64MB - 2GB (browser v86)"}
-                        </p>
+                        <p className="text-xs text-muted-foreground">Max: {maxRamForCurrentOS} MB</p>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="cores">CPU Cores</Label>
@@ -606,33 +625,26 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                           id="cores"
                           type="number"
                           value={customCores}
-                          onChange={(e) => setCustomCores(Math.max(1, Math.min(4, parseInt(e.target.value) || 1)))}
+                          onChange={(e) => setCustomCores(Math.max(1, Math.min(currentConfig.is64Bit ? 16 : 4, parseInt(e.target.value) || 1)))}
                           min={1}
-                          max={4}
+                          max={currentConfig.is64Bit ? 16 : 4}
                         />
-                        <p className="text-xs text-muted-foreground">1-4 cores (emulation limit)</p>
                       </div>
                     </div>
                     <DialogFooter>
-                      <Button onClick={() => setIsConfigOpen(false)}>Done</Button>
+                      <Button onClick={() => setIsConfigOpen(false)}>Save Configuration</Button>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
 
-                {/* Boot OS button — always enabled, handles bridge launch on click */}
-                <Button
-                  size="sm"
-                  onClick={handleBootVM}
-                  className="gap-2"
-                  disabled={!currentConfig.is64Bit && !v86Loaded}
-                >
+                <Button size="sm" onClick={handleBootVM} className="gap-2">
                   <Power className="h-3 w-3" />
                   Boot OS
                 </Button>
               </>
             )}
 
-            {(vmStatus === "running" || vmStatus === "booting") && (
+            {vmStatus === "running" && (
               <>
                 <Button size="sm" variant="outline" onClick={handleResetVM} className="gap-2">
                   <RotateCcw className="h-3 w-3" />
@@ -645,51 +657,55 @@ export function SandboxView({ branchId }: SandboxViewProps) {
               </>
             )}
 
-            <Button size="sm" variant="ghost" onClick={() => setIsFullscreen(!isFullscreen)}>
-              {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            {vmStatus === "booting" && (
+              <Button size="sm" variant="outline" disabled className="gap-2">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Booting...
+              </Button>
+            )}
+
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              className="gap-2"
+            >
+              {isFullscreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
             </Button>
           </div>
         </div>
 
-        <div className="w-full h-[calc(100%-3rem)] bg-black relative overflow-hidden">
+        <div className="relative h-full bg-black">
           {vmStatus === "stopped" && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10">
-              <Power className="h-16 w-16 mb-4 opacity-50" />
-              <p className="text-lg font-medium mb-2">VM is stopped</p>
-              <p className="text-sm text-white/60 mb-4">
-                {currentConfig.is64Bit && !bridgeConnected
-                  ? 'Download and run the required files. Boot OS enables automatically.'
-                  : 'Click "Configure" to select OS, then "Boot OS"'}
-              </p>
-              <p className="text-xs text-white/40">
-                {currentConfig.is64Bit
-                  ? "64-bit systems run through the local executable"
-                  : "32-bit systems run in browser (instant)"}
-              </p>
-              {currentConfig.is64Bit && !bridgeConnected && (
-                <a
-                  href={downloadUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-4 inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary/15 px-4 py-2 text-xs font-bold text-primary transition-colors hover:bg-primary/25"
-                >
-                  <Download className="h-3 w-3" />
-                  Download Required Files
-                </a>
+              <Monitor className="h-16 w-16 mb-4 opacity-20" />
+              <p className="text-lg font-medium mb-2 opacity-60">VM Stopped</p>
+              <p className="text-sm text-white/40 mb-6">Select an OS and click Boot OS to start</p>
+              {!bridgeConnected && currentConfig.is64Bit && (
+                <div className="text-center max-w-sm">
+                  <p className="text-xs text-orange-400 mb-3">Bridge not running — click below to start it</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-orange-400/50 text-orange-400 hover:bg-orange-400/10"
+                    onClick={() => {
+                      window.location.href = "thalamus://start";
+                      toast.info("Starting bridge... checking in 5 seconds", { duration: 6000 });
+                      setTimeout(() => void refreshBridgeStatus(), 5000);
+                    }}
+                  >
+                    ⚡ Start Bridge
+                  </Button>
+                </div>
               )}
             </div>
           )}
 
           {vmStatus === "booting" && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10">
-              <Loader2 className="h-16 w-16 mb-4 animate-spin" />
+              <Loader2 className="h-12 w-12 mb-4 animate-spin opacity-60" />
               <p className="text-lg font-medium mb-2">Booting {currentConfig.name}...</p>
-              <p className="text-sm text-white/60">{currentConfig.description}</p>
-              <p className="text-xs text-white/40 mt-2">
-                {currentConfig.is64Bit
-                  ? "QEMU launching with native performance..."
-                  : "v86 emulator in browser..."}
-              </p>
+              <p className="text-sm text-white/40">QEMU is starting the virtual machine</p>
             </div>
           )}
 
@@ -710,15 +726,23 @@ export function SandboxView({ branchId }: SandboxViewProps) {
                   <p className="text-xs text-white/40">Then restart the VM</p>
                 </div>
               ) : (
-                <>
-                  <p className="text-xs text-white/40 mb-2">Connect VNC viewer to see display:</p>
-                  <code className="bg-black/50 px-4 py-2 rounded text-sm">
+                <div className="text-center">
+                  <p className="text-xs text-green-400 mb-3 font-medium">✓ VM is running — click below to view it</p>
+                  <Button
+                    onClick={handleLaunchVNC}
+                    className="bg-blue-600 hover:bg-blue-700 text-white gap-2 mb-4"
+                  >
+                    <Monitor className="h-4 w-4" />
+                    Launch VNC Viewer
+                  </Button>
+                  <p className="text-xs text-white/40 mb-1">Or connect manually:</p>
+                  <code className="bg-black/50 px-4 py-2 rounded text-sm block">
                     localhost:{currentVncPort}
                   </code>
-                  <p className="text-xs text-white/40 mt-4">
-                    VNC Clients: RealVNC, TigerVNC, or Screen Sharing
+                  <p className="text-xs text-white/30 mt-2">
+                    VNC viewer is at: AppData\Local\Thalamus\tvnviewer.exe
                   </p>
-                </>
+                </div>
               )}
             </div>
           )}
