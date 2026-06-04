@@ -11,12 +11,20 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <title>Thalamus AI, Worlds  First L4.5 Agent | By Aphantic Coorporations</title>
+  <title>Thalamus AI | By Aphantic Corporations</title>
 </head>
-
 
 <body>
   <div id="root"></div>
+  <!-- Neutralinojs client — only active when running as desktop app -->
+  <script>
+    // Only load Neutralino if running as desktop app (NL_PORT is set)
+    if (window.NL_PORT) {
+      var s = document.createElement('script');
+      s.src = '/neutralino.js';
+      document.head.appendChild(s);
+    }
+  </script>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 
