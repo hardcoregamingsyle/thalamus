@@ -25,10 +25,10 @@ export class VMLauncher {
   private maxReconnectAttempts = 3;
   private readonly bridgeUrl = "ws://localhost:5900";
 
-  /** Installer URL — one-time setup that installs everything (v6.25.0) */
-  static readonly INSTALLER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-installer-v6.25.0/thalamus-installer-v6.25.0.exe";
+  /** Installer URL — one-time setup that installs everything (v6.24.0) */
+  static readonly INSTALLER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-installer-v6.24.0/thalamus-installer-v6.24.0.exe";
   /** Bridge URL — the bridge exe itself (for manual install) */
-  static readonly BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v3.5.0/thalamus-vm-bridge-v3.5.0.exe";
+  static readonly BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v3.4.0/thalamus-vm-bridge-v3.4.0.exe";
 
   async checkStatus(): Promise<VMStatus> {
     if (typeof WebSocket === "undefined") {
@@ -165,14 +165,20 @@ export class VMLauncher {
       const messageHandler = (event: MessageEvent) => {
         try {
           const data = JSON.parse(event.data);
+          // Ignore "booting" ack — wait for the actual success/error result
+          if (data.status === "booting") return;
           if (data.status === "success") {
             resolve({ success: true, vmId: data.vmId, vncPort: data.vncPort, isoNeeded: data.isoNeeded, hasIso: data.hasIso });
-          } else {
+          } else if (data.status === "error") {
             resolve({ success: false, error: data.message || "Failed to boot VM" });
+          } else {
+            // Unknown status — ignore and keep waiting
+            return;
           }
           this.ws?.removeEventListener("message", messageHandler);
         } catch (err) {
           resolve({ success: false, error: err instanceof Error ? err.message : "Unknown error" });
+          this.ws?.removeEventListener("message", messageHandler);
         }
       };
 
@@ -180,7 +186,7 @@ export class VMLauncher {
       setTimeout(() => {
         this.ws?.removeEventListener("message", messageHandler);
         resolve({ success: false, error: "Timeout waiting for VM to boot" });
-      }, 15000);
+      }, 30000); // 30s timeout (disk creation can take time)
     });
   }
 
