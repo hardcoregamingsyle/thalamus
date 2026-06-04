@@ -1,5 +1,5 @@
 /**
- * Thalamus VM Bridge v3.4.0
+ * Thalamus VM Bridge v3.5.0
  * WebSocket bridge for VM management via QEMU
  * ISO filenames match installer-v6.6.0 key-based naming
  */
@@ -18,7 +18,7 @@ const APP_DIR = process.env.LOCALAPPDATA
   : path.join(os.homedir(), "AppData", "Local", "Thalamus");
 const ISOS_DIR = path.join(APP_DIR, "isos");
 const BRIDGE_LOG = path.join(APP_DIR, "bridge.log");
-const VERSION = "3.4.0";
+const VERSION = "3.5.0";
 
 // OS key → ISO filename mapping (matches installer-v6.6.0)
 const ISO_MAP = {
@@ -204,6 +204,16 @@ wss.on("connection", function(ws) {
       var osKey = msg.os || "ubuntu-24";
       var ram = Math.max(512, Math.min(32768, parseInt(msg.ram) || 4096));
       var cores = Math.max(1, Math.min(16, parseInt(msg.cores) || 2));
+      // Check if this OS is already running — return existing VM instead of spawning a new one
+      var existingVm = null;
+      Object.keys(activeVMs).forEach(function(id) {
+        if (activeVMs[id].os === osKey) existingVm = { vmId: id, vncPort: activeVMs[id].vncPort };
+      });
+      if (existingVm) {
+        log("VM already running for " + osKey + " on port " + existingVm.vncPort + " — returning existing");
+        try { ws.send(JSON.stringify({ status: "success", vmId: existingVm.vmId, vncPort: existingVm.vncPort, hasIso: true, alreadyRunning: true })); } catch(e) {}
+        return;
+      }
       // Send immediate ack to keep connection alive
       try { ws.send(JSON.stringify({ status: "booting", message: "Starting " + osKey + "..." })); } catch(e) {}
       bootVM(osKey, ram, cores, function(result) {

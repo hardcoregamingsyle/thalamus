@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.24.0
+ * Thalamus Installer v6.25.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -21,7 +21,7 @@ const ISOS_DIR = path.join(APP_DIR, "isos");
 const BRIDGE_EXE = path.join(APP_DIR, "thalamus-vm-bridge.exe");
 const BRIDGE_LAUNCHER = path.join(APP_DIR, "launch-bridge-hidden.vbs");
 const BRIDGE_LOG = path.join(APP_DIR, "bridge.log");
-const BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v3.4.0/thalamus-vm-bridge-v3.4.0.exe";
+const BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v3.5.0/thalamus-vm-bridge-v3.5.0.exe";
 
 // ── No console self-hide needed — browser UI is the real UI
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -272,7 +272,7 @@ function downloadBridge() {
     if (!fs.existsSync(ISOS_DIR)) fs.mkdirSync(ISOS_DIR, { recursive: true });
     // Check bridge version — force re-download if old version
     var bridgeVersionFile = path.join(APP_DIR, "bridge.version");
-    var expectedVersion = "3.4.0";
+    var expectedVersion = "3.5.0";
     var currentVersion = fs.existsSync(bridgeVersionFile) ? fs.readFileSync(bridgeVersionFile, "utf8").trim() : "0";
     if (fs.existsSync(BRIDGE_EXE) && currentVersion === expectedVersion) {
       addLog("Bridge v" + expectedVersion + " already downloaded.");
@@ -292,7 +292,7 @@ function downloadBridge() {
       progress.percent = 24 + Math.floor((dl / tot) * 10);
       progress.message = "Downloading bridge: " + Math.round(dl / 1024 / 1024) + " MB / " + Math.round(tot / 1024 / 1024) + " MB";
     }).then(function() {
-      addLog("Bridge v3.4.0 downloaded.");
+      addLog("Bridge v3.5.0 downloaded.");
       try { fs.writeFileSync(path.join(APP_DIR, "bridge.version"), "3.4.0", "utf8"); } catch(e) {}
       progress.percent = 36;
       resolve();
@@ -664,7 +664,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.24.0 ===");
+    addLog("=== Thalamus Installer v6.25.0 ===");
     addLog("Install directory: " + APP_DIR);
     // Scan for existing ISOs immediately
     if (fs.existsSync(ISOS_DIR)) {
@@ -797,7 +797,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.24.0</div>
+  <div class="badge">v6.25.0</div>
 </div>
 
 <div class="main">
@@ -1031,7 +1031,7 @@ var server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var url = "http://127.0.0.1:" + PORT;
-  console.log("\x1b[32mThalamus Installer v6.24.0 running at " + url + "\x1b[0m");
+  console.log("\x1b[32mThalamus Installer v6.25.0 running at " + url + "\x1b[0m");
   console.log("\x1b[33mOpening browser... If it does not open, visit: " + url + "\x1b[0m");
   // Open in default browser - NO windowsHide so browser actually opens
   if (process.platform === "win32") {
