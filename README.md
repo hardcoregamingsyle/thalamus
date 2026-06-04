@@ -87,7 +87,7 @@ Thalamus has four distinct operating modes, each optimized for a different type 
 - Summarize long documents or articles
 
 **How it works:**
-- Powered by Claude (Anthropic) and Gemini (Google) models
+- Powered by Claude (Anthropic via AWS Bedrock) and Gemini (Google) models
 - Uses the most capable model available for your subscription tier
 - Maintains full conversation history within a session
 - Supports file uploads — paste text, upload documents, share images
