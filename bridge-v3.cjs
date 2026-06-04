@@ -1,5 +1,5 @@
 /**
- * Thalamus VM Bridge v3.2.0
+ * Thalamus VM Bridge v3.3.0
  * WebSocket bridge for VM management via QEMU
  * ISO filenames match installer-v6.6.0 key-based naming
  */
@@ -12,10 +12,13 @@ const os = require("os");
 const http = require("http");
 
 const WS_PORT = 5900;
-const APP_DIR = path.join(os.homedir(), "AppData", "Local", "Thalamus");
+// Use LOCALAPPDATA env var (works even when AppData folder is hidden)
+const APP_DIR = process.env.LOCALAPPDATA
+  ? path.join(process.env.LOCALAPPDATA, "Thalamus")
+  : path.join(os.homedir(), "AppData", "Local", "Thalamus");
 const ISOS_DIR = path.join(APP_DIR, "isos");
 const BRIDGE_LOG = path.join(APP_DIR, "bridge.log");
-const VERSION = "3.2.0";
+const VERSION = "3.3.0";
 
 // OS key → ISO filename mapping (matches installer-v6.6.0)
 const ISO_MAP = {
