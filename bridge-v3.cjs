@@ -1,5 +1,5 @@
 /**
- * Thalamus VM Bridge v3.3.0
+ * Thalamus VM Bridge v3.4.0
  * WebSocket bridge for VM management via QEMU
  * ISO filenames match installer-v6.6.0 key-based naming
  */
@@ -18,7 +18,7 @@ const APP_DIR = process.env.LOCALAPPDATA
   : path.join(os.homedir(), "AppData", "Local", "Thalamus");
 const ISOS_DIR = path.join(APP_DIR, "isos");
 const BRIDGE_LOG = path.join(APP_DIR, "bridge.log");
-const VERSION = "3.3.0";
+const VERSION = "3.4.0";
 
 // OS key → ISO filename mapping (matches installer-v6.6.0)
 const ISO_MAP = {
@@ -88,15 +88,16 @@ function bootVM(osKey, ram, cores, callback) {
   var vncDisplay = vncPort - 5900; // VNC display number
 
   function startVM() {
+    // Try WHPX first, fall back to TCG if it fails
+    // WHPX requires Windows Hypervisor Platform to be enabled
     var args = [
       "-m", String(ram),
       "-smp", String(cores),
       "-drive", "file=" + diskPath + ",format=qcow2,if=virtio",
       "-vnc", ":" + vncDisplay,
-      "-enable-kvm",
-      "-cpu", "host",
-      "-machine", "type=q35,accel=whpx,kernel-irqchip=off",
-      "-net", "nic,model=virtio",
+      "-machine", "type=q35",
+      "-cpu", "qemu64",
+      "-net", "nic,model=e1000",
       "-net", "user",
       "-rtc", "base=localtime",
       "-usb",
@@ -121,23 +122,8 @@ function bootVM(osKey, ram, cores, callback) {
         windowsHide: true,
       });
     } catch(e) {
-      // Try without KVM/WHPX
-      var args2 = args.filter(function(a) {
-        return a !== "-enable-kvm" && a !== "type=q35,accel=whpx,kernel-irqchip=off";
-      });
-      // Replace machine type
-      var machIdx = args2.indexOf("-machine");
-      if (machIdx >= 0) args2[machIdx + 1] = "type=q35";
-      try {
-        proc = spawn(qemu, args2, {
-          detached: false,
-          stdio: ["ignore", "pipe", "pipe"],
-          windowsHide: true,
-        });
-      } catch(e2) {
-        callback({ status: "error", message: "Failed to start QEMU: " + e2.message });
-        return;
-      }
+      callback({ status: "error", message: "Failed to start QEMU: " + e.message });
+      return;
     }
 
     var vmId = osKey + "-" + Date.now();
@@ -218,8 +204,10 @@ wss.on("connection", function(ws) {
       var osKey = msg.os || "ubuntu-24";
       var ram = Math.max(512, Math.min(32768, parseInt(msg.ram) || 4096));
       var cores = Math.max(1, Math.min(16, parseInt(msg.cores) || 2));
+      // Send immediate ack to keep connection alive
+      try { ws.send(JSON.stringify({ status: "booting", message: "Starting " + osKey + "..." })); } catch(e) {}
       bootVM(osKey, ram, cores, function(result) {
-        ws.send(JSON.stringify(result));
+        try { ws.send(JSON.stringify(result)); } catch(e) { log("Failed to send boot result: " + e.message); }
       });
     } else if (msg.action === "stop") {
       stopVM(msg.vmId, function(result) {
