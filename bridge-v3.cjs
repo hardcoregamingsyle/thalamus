@@ -1,5 +1,5 @@
 /**
- * Thalamus VM Bridge v3.1.0
+ * Thalamus VM Bridge v3.2.0
  * WebSocket bridge for VM management via QEMU
  * ISO filenames match installer-v6.6.0 key-based naming
  */
@@ -15,7 +15,7 @@ const WS_PORT = 5900;
 const APP_DIR = path.join(os.homedir(), "AppData", "Local", "Thalamus");
 const ISOS_DIR = path.join(APP_DIR, "isos");
 const BRIDGE_LOG = path.join(APP_DIR, "bridge.log");
-const VERSION = "3.1.0";
+const VERSION = "3.2.0";
 
 // OS key → ISO filename mapping (matches installer-v6.6.0)
 const ISO_MAP = {
@@ -274,6 +274,10 @@ if (args.length > 0 && args[0].startsWith("thalamus://")) {
         log("Auto-boot result: " + JSON.stringify(result));
       });
     }, 1000);
+  }
+  // thalamus://start — just start the bridge (no VM boot)
+  if (uri.startsWith("thalamus://start")) {
+    log("Bridge started via thalamus://start URI");
   }
 }
 
