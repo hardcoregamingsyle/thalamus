@@ -13,10 +13,10 @@ const os = require("os");
 const https = require("https");
 
 const PORT = 7891;
-const INSTALLER_VERSION = "7.0.1";
+const INSTALLER_VERSION = "7.0.3";
 
 // ── URLs ──────────────────────────────────────────────────────────────────────
-const DESKTOP_APP_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/desktop-v1.0.0/Thalamus-Desktop-v1.0.0-win64.zip";
+const DESKTOP_APP_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/desktop-v1.0.2/Thalamus-Desktop-v1.0.2-win64.zip";
 const BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v3.5.0/thalamus-vm-bridge-v3.5.0.exe";
 const BRIDGE_VERSION = "3.5.0";
 const QEMU_URL = "https://qemu.weilnetz.de/w64/2024/qemu-w64-setup-20241119.exe";
