@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.23.0
+ * Thalamus Installer v6.24.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -292,8 +292,8 @@ function downloadBridge() {
       progress.percent = 24 + Math.floor((dl / tot) * 10);
       progress.message = "Downloading bridge: " + Math.round(dl / 1024 / 1024) + " MB / " + Math.round(tot / 1024 / 1024) + " MB";
     }).then(function() {
-      addLog("Bridge v3.1.0 downloaded.");
-      try { fs.writeFileSync(path.join(APP_DIR, "bridge.version"), "3.1.0", "utf8"); } catch(e) {}
+      addLog("Bridge v3.4.0 downloaded.");
+      try { fs.writeFileSync(path.join(APP_DIR, "bridge.version"), "3.4.0", "utf8"); } catch(e) {}
       progress.percent = 36;
       resolve();
     }).catch(reject);
@@ -316,6 +316,35 @@ function writeBridgeLauncher() {
 // aria2 download helper — downloads aria2c.exe silently, then uses it for torrents
 var ARIA2_EXE = path.join(APP_DIR, "aria2c.exe");
 var ARIA2_URL = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip";
+
+// VNC viewer — TightVNC portable viewer (single exe, no install)
+var VNC_EXE = path.join(APP_DIR, "tvnviewer.exe");
+var VNC_URL = "https://www.tightvnc.com/download/2.8.85/tightvnc-2.8.85-gpl-setup-64bit.msi";
+// Use a direct portable viewer instead
+var VNC_PORTABLE_URL = "https://github.com/nicowillis/tightvnc-portable/releases/download/v2.8.85/tvnviewer.exe";
+
+function downloadVNC() {
+  return new Promise(function(resolve) {
+    if (fs.existsSync(VNC_EXE)) { addLog("VNC viewer already installed."); resolve(); return; }
+    addLog("Downloading VNC viewer (portable, ~1 MB)...");
+    progress.message = "Downloading VNC viewer...";
+    downloadFile(VNC_PORTABLE_URL, VNC_EXE, null).then(function() {
+      addLog("VNC viewer ready. Use it to connect to running VMs.");
+      resolve();
+    }).catch(function(e) {
+      addLog("VNC download note: " + e.message + " (non-critical)");
+      resolve();
+    });
+  });
+}
+
+function launchVNC(port) {
+  if (!fs.existsSync(VNC_EXE)) { addLog("VNC viewer not found."); return; }
+  var cmd = '"' + VNC_EXE + '" localhost::' + (port || 5901);
+  exec(cmd, { windowsHide: false }, function(err) {
+    if (err) addLog("VNC launch note: " + err.message);
+  });
+}
 
 // Scan isos folder for existing ISOs and rename them to expected filenames
 function scanAndRenameExistingISOs() {
@@ -635,7 +664,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.23.0 ===");
+    addLog("=== Thalamus Installer v6.24.0 ===");
     addLog("Install directory: " + APP_DIR);
     // Scan for existing ISOs immediately
     if (fs.existsSync(ISOS_DIR)) {
@@ -649,6 +678,8 @@ async function runInstall(selectedISOs) {
     await registerUriScheme();
     progress.step = "startup"; progress.message = "Adding bridge to Windows startup..."; progress.percent = 39;
     await addToStartup();
+    progress.step = "vnc"; progress.message = "Downloading VNC viewer..."; progress.percent = 40;
+    await downloadVNC();
     if (selectedISOs && selectedISOs.length > 0) {
       progress.step = "isos"; progress.message = "Downloading OS images..."; progress.percent = 42;
       await downloadISOs(selectedISOs);
@@ -766,7 +797,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.23.0</div>
+  <div class="badge">v6.24.0</div>
 </div>
 
 <div class="main">
@@ -967,6 +998,17 @@ var server = http.createServer(function(req, res) {
   } else if (req.method === "GET" && req.url === "/isos") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(ISO_OPTIONS));
+  } else if (req.method === "GET" && req.url.startsWith("/api/launch-vnc")) {
+    var urlParts = req.url.split("?");
+    var port = 5901;
+    if (urlParts[1]) {
+      var params = {};
+      urlParts[1].split("&").forEach(function(p) { var kv = p.split("="); params[kv[0]] = kv[1]; });
+      port = parseInt(params.port || "5901");
+    }
+    launchVNC(port);
+    res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+    res.end(JSON.stringify({ ok: true, port: port }));
   } else if (req.method === "GET" && req.url === "/progress") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(progress));
@@ -989,7 +1031,7 @@ var server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var url = "http://127.0.0.1:" + PORT;
-  console.log("\x1b[32mThalamus Installer v6.23.0 running at " + url + "\x1b[0m");
+  console.log("\x1b[32mThalamus Installer v6.24.0 running at " + url + "\x1b[0m");
   console.log("\x1b[33mOpening browser... If it does not open, visit: " + url + "\x1b[0m");
   // Open in default browser - NO windowsHide so browser actually opens
   if (process.platform === "win32") {
