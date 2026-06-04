@@ -4,8 +4,9 @@ import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
 import { StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router";
+import { BrowserRouter, Route, Routes, useLocation, Navigate } from "react-router";
 import { DauTracker } from "@/components/DauTracker";
+import { DesktopTitlebar } from "@/components/DesktopTitlebar";
 import "./index.css";
 import "./types/global.d.ts";
 
@@ -33,7 +34,8 @@ function RouteLoading() {
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
 
-
+// Detect if running as Neutralinojs desktop app
+const isDesktopApp = typeof window !== "undefined" && !!(window as any).NL_PORT;
 
 function RouteSyncer() {
   const location = useLocation();
@@ -58,7 +60,6 @@ function RouteSyncer() {
   return null;
 }
 
-
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <InstrumentationProvider>
@@ -66,26 +67,33 @@ createRoot(document.getElementById("root")!).render(
         <BrowserRouter>
           <RouteSyncer />
           <DauTracker />
-          <Suspense fallback={<RouteLoading />}>
-            <Routes>
-              <Route path="/" element={<Landing />} />
-              <Route path="/auth" element={<AuthPage redirectAfterAuth="/portal/chat" />} />
-              {/* New Code Mode Routes */}
-              <Route path="/portal/code" element={<CodeProjects />} />
-              <Route path="/portal/code/:projectId" element={<CodeBranches />} />
-              <Route path="/portal/code/:projectId/:branchId" element={<CodeWorkspace />} />
-              <Route path="/portal/code/:projectId/:branchId/:subpage" element={<CodeWorkspace />} />
-              {/* Old Routes */}
-              <Route path="/portal" element={<Portal />} />
-              <Route path="/portal/:mode" element={<Portal />} />
-              <Route path="/portal/:mode/:sessionId" element={<Portal />} />
-              <Route path="/team" element={<TeamPortal />} />
-              <Route path="/sync" element={<SyncPage />} />
-              <Route path="/refer" element={<ReferPage />} />
-              <Route path="/admin" element={<AdminPage />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
+          {/* Custom frameless titlebar — only shown in desktop app */}
+          <DesktopTitlebar />
+          {/* Add top padding when titlebar is shown */}
+          <div className={isDesktopApp ? "pt-10" : ""}>
+            <Suspense fallback={<RouteLoading />}>
+              <Routes>
+                {/* In desktop mode, skip landing page — go straight to auth */}
+                <Route path="/" element={isDesktopApp ? <Navigate to="/auth" replace /> : <Landing />} />
+                <Route path="/auth" element={<AuthPage redirectAfterAuth="/portal/chat" />} />
+                {/* New Code Mode Routes */}
+                <Route path="/portal/code" element={<CodeProjects />} />
+                <Route path="/portal/code/:projectId" element={<CodeBranches />} />
+                <Route path="/portal/code/:projectId/:branchId" element={<CodeWorkspace />} />
+                <Route path="/portal/code/:projectId/:branchId/:subpage" element={<CodeWorkspace />} />
+                {/* Portal Routes */}
+                <Route path="/portal" element={<Portal />} />
+                <Route path="/portal/:mode" element={<Portal />} />
+                <Route path="/portal/:mode/:sessionId" element={<Portal />} />
+                <Route path="/team" element={<TeamPortal />} />
+                <Route path="/sync" element={<SyncPage />} />
+                <Route path="/refer" element={<ReferPage />} />
+                {/* Admin hidden in desktop mode */}
+                {!isDesktopApp && <Route path="/admin" element={<AdminPage />} />}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
+          </div>
         </BrowserRouter>
         <Toaster />
       </ConvexAuthProvider>
