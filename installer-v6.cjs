@@ -1,5 +1,5 @@
 /**
- * Thalamus Installer v6.19.0
+ * Thalamus Installer v6.20.0
  * Browser-based UI — no HTA, no IE JScript, no console window
  * Opens a real browser window with modern HTML/JS UI
  */
@@ -248,10 +248,20 @@ function registerUriScheme() {
 
 function addToStartup() {
   return new Promise(function(resolve) {
-    exec('reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "ThalamusBridge" /t REG_SZ /d "wscript.exe \\"' + BRIDGE_LAUNCHER + '\\"" /f', { windowsHide: true }, function(err) {
-      if (err) addLog("Startup registry note: " + err.message);
-      else addLog("Bridge added to Windows startup.");
-      resolve();
+    // Use Task Scheduler for reliable startup (more reliable than registry Run key)
+    var taskCmd = 'schtasks /create /tn "ThalamusBridge" /tr "wscript.exe \"' + BRIDGE_LAUNCHER + '\"" /sc onlogon /rl limited /f';
+    exec(taskCmd, { windowsHide: true }, function(err) {
+      if (err) {
+        // Fallback to registry Run key
+        exec('reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "ThalamusBridge" /t REG_SZ /d "wscript.exe \"' + BRIDGE_LAUNCHER + '\"" /f', { windowsHide: true }, function(err2) {
+          if (err2) addLog("Startup note: " + err2.message);
+          else addLog("Bridge added to Windows startup (registry).");
+          resolve();
+        });
+      } else {
+        addLog("Bridge added to Windows startup (Task Scheduler).");
+        resolve();
+      }
     });
   });
 }
@@ -625,7 +635,7 @@ function startBridge() {
 async function runInstall(selectedISOs) {
   try {
     progress = { step: "starting", message: "Starting installation...", percent: 2, log: [], done: false, error: null };
-    addLog("=== Thalamus Installer v6.19.0 ===");
+    addLog("=== Thalamus Installer v6.20.0 ===");
     addLog("Install directory: " + APP_DIR);
     // Scan for existing ISOs immediately
     if (fs.existsSync(ISOS_DIR)) {
@@ -649,6 +659,10 @@ async function runInstall(selectedISOs) {
     addLog("=== Installation complete! ===");
     addLog("VM bridge is running in the background.");
     addLog("Return to Thalamus and click Boot OS.");
+    // Kill aria2 to free up resources
+    if (process.platform === "win32") {
+      exec("taskkill /f /im aria2c.exe", { windowsHide: true }, function() {});
+    }
   } catch (err) {
     progress.error = err.message;
     progress.message = "Installation failed: " + err.message;
@@ -752,7 +766,7 @@ var HTML_UI = `<!DOCTYPE html>
     <div class="title-main">Thalamus VM Setup</div>
     <div class="title-sub">Aphantic Corporations</div>
   </div>
-  <div class="badge">v6.19.0</div>
+  <div class="badge">v6.20.0</div>
 </div>
 
 <div class="main">
@@ -975,7 +989,7 @@ var server = http.createServer(function(req, res) {
 
 server.listen(PORT, "127.0.0.1", function() {
   var url = "http://127.0.0.1:" + PORT;
-  console.log("\x1b[32mThalamus Installer v6.19.0 running at " + url + "\x1b[0m");
+  console.log("\x1b[32mThalamus Installer v6.20.0 running at " + url + "\x1b[0m");
   console.log("\x1b[33mOpening browser... If it does not open, visit: " + url + "\x1b[0m");
   // Open in default browser - NO windowsHide so browser actually opens
   if (process.platform === "win32") {
@@ -993,5 +1007,13 @@ server.listen(PORT, "127.0.0.1", function() {
 // Keep the process alive - the server should run until the user closes it
 process.stdin.resume();
 
-process.on("SIGINT", function() { server.close(); process.exit(0); });
-process.on("SIGTERM", function() { server.close(); process.exit(0); });
+function cleanup() {
+  // Kill any running aria2 processes to prevent laptop slowdown
+  if (process.platform === "win32") {
+    exec("taskkill /f /im aria2c.exe", { windowsHide: true }, function() {});
+  }
+  server.close();
+  process.exit(0);
+}
+process.on("SIGINT", cleanup);
+process.on("SIGTERM", cleanup);
