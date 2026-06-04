@@ -62,7 +62,7 @@ export type ModelTier = "gemini" | "haiku" | "sonnet" | "opus46" | "opus48";
 // Default model per agent (Code Mode) — updated per user spec
 export const AGENT_MODEL_MAP: Record<string, ModelTier> = {
   // Planning phase
-  Researcher: "gemini",
+  Researcher: "haiku",           // haiku — fast, reliable, no Gemini key needed
   Analyser: "haiku",
   Planner: "haiku",
   Architect: "haiku",            // claude-haiku-4.5 — runs once after Planner
@@ -71,13 +71,13 @@ export const AGENT_MODEL_MAP: Record<string, ModelTier> = {
   Optimiser: "sonnet",
   Organizer: "haiku",
   Tester: "sonnet",
-  Summarizer: "gemini",
+  Summarizer: "haiku",           // haiku — fast summary
   // Security Team sub-agents (spotters)
   VulnerabilitySpotter: "sonnet",
   DataCorruptor: "sonnet",
   ZeroDayExploiter: "opus48",    // claude-opus-4.8
   FrameworkAuditor: "sonnet",
-  RedTeamOrchestrator: "gemini",
+  RedTeamOrchestrator: "haiku",
   // Security Team fixers
   VulnerabilityFixer: "sonnet",  // claude-sonnet-4.6
   DataFixer: "sonnet",           // claude-sonnet-4.6
@@ -85,10 +85,10 @@ export const AGENT_MODEL_MAP: Record<string, ModelTier> = {
   ZeroDayRemover: "opus48",      // claude-opus-4.8
   // Final review
   Critic: "haiku",
-  // Research mode — all gemini
-  ResearchPlanner: "gemini",
-  DataTaker: "gemini",
-  ResearchOrganiser: "gemini",
+  // Research mode — use haiku as fallback (gemini may not be configured)
+  ResearchPlanner: "haiku",
+  DataTaker: "haiku",
+  ResearchOrganiser: "haiku",
 };
 
 // Difficulty → Coder model override
