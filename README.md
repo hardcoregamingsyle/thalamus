@@ -23,7 +23,7 @@
 
 1. [What is Thalamus?](#-what-is-thalamus)
 2. [The Four Modes](#-the-four-modes)
-3. [The AI Agent System](#-the-ai-agent-system)
+3. [The AI Agent System (Code Mode)](#-the-ai-agent-system-code-mode)
 4. [The Sandbox & OS Emulator](#-the-sandbox--os-emulator)
 5. [The VM Bridge](#-the-vm-bridge)
 6. [The Installer](#-the-installer)
@@ -69,7 +69,7 @@ Think of it as having a brilliant friend who is simultaneously a doctor, lawyer,
 
 ## 🎯 The Four Modes
 
-Thalamus has four distinct operating modes, each optimized for a different type of task. You can switch between them at any time.
+Thalamus has four distinct operating modes, each optimized for a different type of task. You can switch between them at any time from the portal.
 
 ---
 
@@ -93,4 +93,100 @@ Thalamus has four distinct operating modes, each optimized for a different type 
 - Supports file uploads — paste text, upload documents, share images
 
 **Example prompts:**
+- "Explain quantum computing like I'm 10 years old"
+- "Write a professional email declining a job offer politely"
+- "What are the pros and cons of moving to Canada?"
+- "Help me plan a 7-day trip to Japan on a $2000 budget"
 
+---
+
+### 🔍 Research Mode
+
+**What it is:** A deep research assistant that searches the web, synthesizes information, and gives you structured, accurate summaries.
+
+**What you can do:**
+- Get up-to-date information on any topic (not limited to training data)
+- Compare products, services, companies, or ideas
+- Understand complex topics quickly with clear explanations
+- Get summaries of news, scientific papers, or market trends
+- Research competitors, industries, or technologies
+
+**How it works:**
+- Uses web search to find current information
+- Synthesizes multiple sources into a single coherent answer
+- Cites sources so you can verify the information
+- Uses Gemini and Claude models for analysis
+
+**Example prompts:**
+- "What are the latest developments in fusion energy as of 2025?"
+- "Compare the top 5 electric vehicles under $40,000"
+- "Summarize the current state of the AI industry"
+- "What does the science say about intermittent fasting?"
+
+---
+
+### 📚 Study Mode
+
+**What it is:** A patient, adaptive tutor that explains anything at your level and helps you prepare for exams.
+
+**What you can do:**
+- Upload your notes, textbooks, or study materials
+- Get explanations tailored to your level (beginner, intermediate, advanced)
+- Generate practice questions and quizzes
+- Get step-by-step solutions to problems
+- Create flashcards and revision summaries
+- Ask follow-up questions until you truly understand
+
+**How it works:**
+- Analyzes your uploaded materials using RAG (Retrieval-Augmented Generation)
+- Stores your study profile (subjects, level, goals)
+- Generates questions based on your materials
+- Tracks what you've studied in your session
+
+**Example prompts:**
+- "I have an exam on thermodynamics tomorrow. Quiz me on the key concepts."
+- "Explain the French Revolution like I'm a high school student"
+- "Here are my chemistry notes [upload]. Create 20 practice questions."
+- "Walk me through solving this integral step by step: ∫x²sin(x)dx"
+
+---
+
+### 🛠️ Build Mode (Code Mode)
+
+**What it is:** A fully autonomous software development system powered by 9 specialized AI agents working in sequence.
+
+**What you can do:**
+- Describe any software project in plain English
+- Get a complete, working application built automatically
+- Build websites, APIs, mobile apps, scripts, tools, and more
+- Debug existing code by pasting it in
+- Add features to existing projects
+- Get security audits of your code
+
+**How it works — The 9-Agent Pipeline:**
+
+1. **Project Understanding Agent** - Takes your plain English description and creates a detailed technical specification
+2. **Architecture Design Agent** - Designs the system architecture, database schema, and technology stack
+3. **Component Specification Agent** - Breaks down the application into modular components with detailed requirements
+4. **API Design Agent** - Creates comprehensive API specifications and documentation
+5. **Frontend Development Agent** - Builds responsive, accessible user interfaces
+6. **Backend Development Agent** - Implements server-side logic, databases, and authentication
+7. **Integration Agent** - Connects all components and ensures seamless communication
+8. **Testing Agent** - Creates comprehensive test suites and performs automated testing
+9. **Deployment Agent** - Packages and deploys the complete application to your environment
+
+**Example prompts:**
+- "Build a full-stack e-commerce platform with user authentication, product catalog, shopping cart, and payment processing"
+- "Create a weather application that shows current conditions, forecasts, and radar maps"
+- "Develop a personal finance manager with budget tracking, expense categorization, and financial goal setting"
+- "Build a mobile app for a local restaurant that allows customers to order food and track delivery status"
+
+**Key Features:**
+- Fully autonomous development from concept to deployment
+- No need to write code or understand technical details
+- Complete applications with working APIs and databases
+- Built-in security features and error handling
+- Continuous integration and testing
+- Version control and deployment history
+
+**Note:** The Build Mode is the most powerful feature of Thalamus, allowing you to create complex software applications without writing a single line of code. Simply describe your vision in plain English, and Thalamus will handle the entire development process.
