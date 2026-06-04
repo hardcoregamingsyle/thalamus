@@ -12,6 +12,7 @@ import {
   CheckCircle,
   ChevronRight,
   Code2,
+  Download,
   FileText,
   Globe2,
   Layers3,
@@ -331,7 +332,18 @@ function IntelligenceConsole({ onLaunch }: { onLaunch: () => void }) {
   );
 }
 
+const INSTALLER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/thalamus-installer-v7.0.1/thalamus-installer-v7.0.1.exe";
+
+function isWindows(): boolean {
+  if (typeof navigator === "undefined") return false;
+  // Check if running inside Neutralino desktop app
+  if (typeof window !== "undefined" && (window as any).Neutralino) return false;
+  return navigator.userAgent.toLowerCase().includes("windows") ||
+    navigator.platform.toLowerCase().includes("win");
+}
+
 function Hero({ onLaunch }: { onLaunch: () => void }) {
+  const onWindows = isWindows();
   return (
     <section className="relative min-h-[92vh] overflow-hidden px-4 pt-28 sm:px-6">
       <div className="absolute inset-0 -z-10 opacity-80">
@@ -382,6 +394,16 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
               Launch Thalamus
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </button>
+            {onWindows && (
+              <a
+                href={INSTALLER_URL}
+                download
+                className="group flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-6 py-3 text-sm font-bold text-primary backdrop-blur-xl transition-all hover:bg-primary/20 hover:border-primary/60"
+              >
+                <Download className="h-4 w-4" />
+                Download for Windows
+              </a>
+            )}
             <button onClick={() => document.getElementById("modes")?.scrollIntoView({ behavior: "smooth" })} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.035] px-6 py-3 text-sm font-bold text-foreground backdrop-blur-xl transition-all hover:border-white/20 hover:bg-white/[0.06]">
               See what it can do
               <Layers3 className="h-4 w-4" />
