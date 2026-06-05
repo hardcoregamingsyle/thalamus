@@ -13,12 +13,11 @@ const os = require("os");
 const https = require("https");
 
 const PORT = 7891;
-const INSTALLER_VERSION = "7.1.1";
+const INSTALLER_VERSION = "7.2.0";
 
 // ── URLs ──────────────────────────────────────────────────────────────────────
-const ELECTRON_RUNTIME_URL = "https://github.com/electron/electron/releases/download/v28.3.3/electron-v28.3.3-win32-x64.zip";
-const THALAMUS_APP_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/thalamus-app-v1.0.0/thalamus-app-v1.0.0.zip";
-const THALAMUS_LAUNCHER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/thalamus-app-v1.0.0/Thalamus-Launcher.exe";
+// Native C# WPF app (compiled from Linux using .NET 8 cross-compilation)
+const THALAMUS_NATIVE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/thalamus-native-v1.0.0/Thalamus.exe";
 const BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v3.5.0/thalamus-vm-bridge-v3.5.0.exe";
 const BRIDGE_VERSION = "3.5.0";
 const QEMU_URL = "https://qemu.weilnetz.de/w64/2024/qemu-w64-setup-20241119.exe";
@@ -372,67 +371,24 @@ function downloadBridge(paths) {
 }
 
 // ── Download Electron runtime ─────────────────────────────────────────────────
-function downloadElectronRuntime(paths) {
-  return new Promise(function(resolve, reject) {
-    if (fs.existsSync(paths.electronExe)) {
-      addLog("Electron runtime already installed.");
-      resolve(); return;
-    }
-    if (!fs.existsSync(paths.electronDir)) fs.mkdirSync(paths.electronDir, { recursive: true });
-    var zipPath = path.join(os.tmpdir(), "electron-runtime.zip");
-    addLog("Downloading Electron runtime (~108 MB)...");
-    progress.message = "Downloading Electron runtime...";
-    downloadFile(ELECTRON_RUNTIME_URL, zipPath, function(dl, tot) {
-      progress.message = "Downloading Electron: " + Math.round(dl / 1024 / 1024) + " MB / " + Math.round(tot / 1024 / 1024) + " MB";
-    }).then(function() {
-      addLog("Extracting Electron runtime...");
-      progress.message = "Extracting Electron...";
-      var psCmd = 'Expand-Archive -Path "' + zipPath + '" -DestinationPath "' + paths.electronDir + '" -Force';
-      exec('powershell -Command "' + psCmd + '"', { windowsHide: true, timeout: 120000 }, function(err) {
-        if (err) addLog("Electron extract note: " + err.message);
-        else addLog("Electron runtime installed.");
-        resolve();
-      });
-    }).catch(reject);
-  });
-}
-
-// ── Download Thalamus app files ───────────────────────────────────────────────
+// ── Download native C# WPF app ────────────────────────────────────────────────
 function downloadDesktopApp(paths) {
-  return new Promise(function(resolve, reject) {
-    var appMainJs = path.join(paths.appFilesDir, "main.js");
-    if (fs.existsSync(paths.desktopExe) && fs.existsSync(appMainJs)) {
+  return new Promise(function(resolve) {
+    if (fs.existsSync(paths.desktopExe)) {
       addLog("Thalamus app already installed.");
       resolve(); return;
     }
-    if (!fs.existsSync(paths.appFilesDir)) fs.mkdirSync(paths.appFilesDir, { recursive: true });
-
-    // Step 1: Download app files zip
-    var appZipPath = path.join(os.tmpdir(), "thalamus-app.zip");
-    addLog("Downloading Thalamus app files...");
-    progress.message = "Downloading Thalamus app...";
-    downloadFile(THALAMUS_APP_URL, appZipPath, function(dl, tot) {
-      progress.message = "Downloading app: " + Math.round(dl / 1024 / 1024) + " MB / " + Math.round(tot / 1024 / 1024) + " MB";
+    addLog("Downloading Thalamus native app (~156 MB)...");
+    progress.message = "Downloading Thalamus native app...";
+    downloadFile(THALAMUS_NATIVE_URL, paths.desktopExe, function(dl, tot) {
+      progress.message = "Downloading Thalamus: " + Math.round(dl / 1024 / 1024) + " MB / " + Math.round(tot / 1024 / 1024) + " MB";
     }).then(function() {
-      addLog("Extracting app files...");
-      progress.message = "Extracting app...";
-      var psCmd = 'Expand-Archive -Path "' + appZipPath + '" -DestinationPath "' + paths.appFilesDir + '" -Force';
-      exec('powershell -Command "' + psCmd + '"', { windowsHide: true, timeout: 60000 }, function(err) {
-        if (err) addLog("App extract note: " + err.message);
-        else addLog("App files extracted.");
-
-        // Step 2: Download launcher (Thalamus.exe)
-        addLog("Downloading Thalamus launcher...");
-        progress.message = "Downloading launcher...";
-        downloadFile(THALAMUS_LAUNCHER_URL, paths.desktopExe, null).then(function() {
-          addLog("Thalamus launcher installed.");
-          resolve();
-        }).catch(function(e) {
-          addLog("Launcher download note: " + e.message);
-          resolve();
-        });
-      });
-    }).catch(reject);
+      addLog("Thalamus native app installed.");
+      resolve();
+    }).catch(function(e) {
+      addLog("App download note: " + e.message);
+      resolve();
+    });
   });
 }
 
@@ -692,12 +648,8 @@ async function runInstall(selectedISOs, installDir) {
     progress.step = "startup"; progress.message = "Adding to Windows startup..."; progress.percent = 38;
     await addToStartup(paths);
 
-    // Step 6: Download Electron runtime
-    progress.step = "electron"; progress.message = "Downloading Electron runtime (~108 MB)..."; progress.percent = 40;
-    await downloadElectronRuntime(paths);
-
-    // Step 6b: Download Thalamus app files
-    progress.step = "app"; progress.message = "Downloading Thalamus app files..."; progress.percent = 55;
+    // Step 6: Download native C# WPF app
+    progress.step = "app"; progress.message = "Downloading Thalamus native app (~156 MB)..."; progress.percent = 40;
     await downloadDesktopApp(paths);
 
     // Step 7: Download VNC viewer
