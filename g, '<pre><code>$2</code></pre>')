@@ -1,0 +1,424 @@
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/\n/g, '<br>');
+}
+
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.style.height = 'auto';
+  document.getElementById('send-btn').disabled = true;
+  
+  addMessage('chat-messages', 'user', text);
+  chatHistory.push({ role: 'user', content: text });
+  addTyping('chat-messages');
+  
+  try {
+    const result = await convexAction('ai:sendMessage', {
+      message: text,
+      mode: 'chat',
+      history: chatHistory.slice(-10)
+    });
+    removeTyping();
+    const reply = result?.reply || result?.message || result || 'I received your message.';
+    addMessage('chat-messages', 'ai', reply);
+    chatHistory.push({ role: 'assistant', content: reply });
+  } catch(e) {
+    removeTyping();
+    addMessage('chat-messages', 'ai', 'Sorry, I encountered an error: ' + e.message + '. Please check your connection and try again.');
+  }
+  
+  document.getElementById('send-btn').disabled = false;
+}
+
+async function sendResearch() {
+  const input = document.getElementById('research-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.style.height = 'auto';
+  document.getElementById('research-send-btn').disabled = true;
+  
+  addMessage('research-messages', 'user', text);
+  researchHistory.push({ role: 'user', content: text });
+  addTyping('research-messages');
+  
+  try {
+    const result = await convexAction('ai:sendMessage', {
+      message: text,
+      mode: 'research',
+      history: researchHistory.slice(-10)
+    });
+    removeTyping();
+    const reply = result?.reply || result?.message || result || 'Research complete.';
+    addMessage('research-messages', 'ai', reply);
+    researchHistory.push({ role: 'assistant', content: reply });
+  } catch(e) {
+    removeTyping();
+    addMessage('research-messages', 'ai', 'Research error: ' + e.message);
+  }
+  
+  document.getElementById('research-send-btn').disabled = false;
+}
+
+async function sendStudy() {
+  const input = document.getElementById('study-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.style.height = 'auto';
+  document.getElementById('study-send-btn').disabled = true;
+  
+  addMessage('study-messages', 'user', text);
+  studyHistory.push({ role: 'user', content: text });
+  addTyping('study-messages');
+  
+  try {
+    const result = await convexAction('ai:sendMessage', {
+      message: text,
+      mode: 'study',
+      history: studyHistory.slice(-10)
+    });
+    removeTyping();
+    const reply = result?.reply || result?.message || result || 'Study response.';
+    addMessage('study-messages', 'ai', reply);
+    studyHistory.push({ role: 'assistant', content: reply });
+  } catch(e) {
+    removeTyping();
+    addMessage('study-messages', 'ai', 'Study error: ' + e.message);
+  }
+  
+  document.getElementById('study-send-btn').disabled = false;
+}
+
+async function sendBuild() {
+  const input = document.getElementById('build-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.style.height = 'auto';
+  document.getElementById('build-send-btn').disabled = true;
+  
+  addMessage('build-messages', 'user', text);
+  buildHistory.push({ role: 'user', content: text });
+  addTyping('build-messages');
+  
+  try {
+    const result = await convexAction('ai:sendMessage', {
+      message: text,
+      mode: 'build',
+      history: buildHistory.slice(-10)
+    });
+    removeTyping();
+    const reply = result?.reply || result?.message || result || 'Build pipeline started.';
+    addMessage('build-messages', 'ai', reply);
+    buildHistory.push({ role: 'assistant', content: reply });
+  } catch(e) {
+    removeTyping();
+    addMessage('build-messages', 'ai', 'Build error: ' + e.message);
+  }
+  
+  document.getElementById('build-send-btn').disabled = false;
+}
+
+// ── VM Bridge ─────────────────────────────────────────────────────────────────
+function vmLog(msg, type = '') {
+  const box = document.getElementById('vm-log-box');
+  const line = document.createElement('div');
+  line.className = 'vm-log-line ' + type;
+  line.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+function checkBridge() {
+  const ws = new WebSocket(BRIDGE_URL);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ action: 'ping' }));
+  };
+  ws.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.version) {
+        document.getElementById('bridge-status').textContent = 'v' + data.version;
+        document.getElementById('bridge-status').className = 'vm-stat-value online';
+        vmLog('Bridge connected: v' + data.version, 'success');
+      }
+    } catch(err) {}
+    ws.close();
+  };
+  ws.onerror = () => {
+    document.getElementById('bridge-status').textContent = 'Not running';
+    document.getElementById('bridge-status').className = 'vm-stat-value offline';
+  };
+  ws.onclose = () => {};
+}
+
+function bootVM() {
+  const os = document.getElementById('os-select').value;
+  const ram = parseInt(document.getElementById('ram-select').value);
+  const btn = document.getElementById('boot-btn');
+  
+  if (activeVmId) {
+    // Stop VM
+    stopVM();
+    return;
+  }
+  
+  btn.disabled = true;
+  btn.textContent = 'Booting...';
+  vmLog('Connecting to bridge...', 'info');
+  
+  bridgeWs = new WebSocket(BRIDGE_URL);
+  
+  bridgeWs.onopen = () => {
+    vmLog('Bridge connected. Booting ' + os + '...', 'info');
+    bridgeWs.send(JSON.stringify({ action: 'boot', os, ram, cores: 4 }));
+  };
+  
+  bridgeWs.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      vmLog(JSON.stringify(data));
+      
+      if (data.status === 'success' || data.status === 'booting') {
+        activeVmId = data.vmId;
+        const vncPort = data.vncPort || 5901;
+        
+        document.getElementById('vm-status').textContent = 'Running';
+        document.getElementById('vm-status').className = 'vm-stat-value online';
+        document.getElementById('vm-os').textContent = os;
+        document.getElementById('vm-vnc-port').textContent = ':' + vncPort;
+        document.getElementById('vm-ram').textContent = (ram / 1024) + ' GB';
+        
+        btn.disabled = false;
+        btn.textContent = '■ Stop VM';
+        btn.className = 'boot-btn stop';
+        
+        vmLog('VM booted! VNC port: ' + vncPort, 'success');
+        
+        // Connect VNC
+        connectVNC(vncPort);
+      } else if (data.status === 'error') {
+        vmLog('Boot error: ' + (data.message || data.error), 'error');
+        btn.disabled = false;
+        btn.textContent = '▶ Boot VM';
+        btn.className = 'boot-btn';
+        activeVmId = null;
+      }
+    } catch(err) {
+      vmLog('Parse error: ' + err.message, 'error');
+    }
+  };
+  
+  bridgeWs.onerror = () => {
+    vmLog('Bridge not running. Please start the VM bridge first.', 'error');
+    btn.disabled = false;
+    btn.textContent = '▶ Boot VM';
+    btn.className = 'boot-btn';
+    showToast('VM Bridge not running. Start thalamus-vm-bridge.exe first.', 'error');
+  };
+  
+  bridgeWs.onclose = () => {
+    vmLog('Bridge disconnected.', '');
+  };
+}
+
+function stopVM() {
+  if (!activeVmId || !bridgeWs) return;
+  const btn = document.getElementById('boot-btn');
+  btn.disabled = true;
+  btn.textContent = 'Stopping...';
+  
+  bridgeWs.send(JSON.stringify({ action: 'stop', vmId: activeVmId }));
+  
+  setTimeout(() => {
+    activeVmId = null;
+    document.getElementById('vm-status').textContent = 'Offline';
+    document.getElementById('vm-status').className = 'vm-stat-value offline';
+    document.getElementById('vm-os').textContent = '—';
+    document.getElementById('vm-vnc-port').textContent = '—';
+    document.getElementById('vm-ram').textContent = '—';
+    btn.disabled = false;
+    btn.textContent = '▶ Boot VM';
+    btn.className = 'boot-btn';
+    
+    // Disconnect VNC
+    if (vncWs) { vncWs.close(); vncWs = null; }
+    document.getElementById('vnc-canvas').style.display = 'none';
+    document.getElementById('vnc-placeholder').style.display = 'block';
+    
+    vmLog('VM stopped.', '');
+  }, 1000);
+}
+
+// ── VNC (noVNC-style basic implementation) ────────────────────────────────────
+function connectVNC(port) {
+  vmLog('Connecting to VNC on port ' + port + '...', 'info');
+  
+  const canvas = document.getElementById('vnc-canvas');
+  const placeholder = document.getElementById('vnc-placeholder');
+  
+  // Show canvas
+  canvas.style.display = 'block';
+  placeholder.style.display = 'none';
+  
+  vncCanvas = canvas;
+  vncCtx = canvas.getContext('2d');
+  
+  // Set canvas size
+  canvas.width = 1024;
+  canvas.height = 768;
+  
+  // Draw connecting screen
+  vncCtx.fillStyle = '#1a1a2e';
+  vncCtx.fillRect(0, 0, canvas.width, canvas.height);
+  vncCtx.fillStyle = '#3b82f6';
+  vncCtx.font = '24px Segoe UI';
+  vncCtx.textAlign = 'center';
+  vncCtx.fillText('Connecting to VM...', canvas.width / 2, canvas.height / 2 - 20);
+  vncCtx.fillStyle = '#64748b';
+  vncCtx.font = '14px Segoe UI';
+  vncCtx.fillText('VNC port: ' + port + ' | The VM is booting, please wait...', canvas.width / 2, canvas.height / 2 + 20);
+  
+  // Try to connect via WebSocket VNC proxy
+  // The bridge exposes VNC via WebSocket on port 5900+display
+  const wsVncPort = 5900 + (port - 5901 + 1);
+  
+  try {
+    vncWs = new WebSocket('ws://localhost:' + port);
+    vncWs.binaryType = 'arraybuffer';
+    
+    vncWs.onopen = () => {
+      vmLog('VNC WebSocket connected on port ' + port, 'success');
+      // Send RFB protocol init
+      // RFB 3.8 handshake
+    };
+    
+    vncWs.onmessage = (e) => {
+      // Handle RFB protocol messages
+      handleVNCMessage(e.data);
+    };
+    
+    vncWs.onerror = () => {
+      vmLog('VNC WebSocket not available on port ' + port + '. Use tvnviewer.exe to connect manually.', '');
+      // Show manual connection info
+      vncCtx.fillStyle = '#1a1a2e';
+      vncCtx.fillRect(0, 0, canvas.width, canvas.height);
+      vncCtx.fillStyle = '#22c55e';
+      vncCtx.font = '20px Segoe UI';
+      vncCtx.textAlign = 'center';
+      vncCtx.fillText('VM is running!', canvas.width / 2, canvas.height / 2 - 60);
+      vncCtx.fillStyle = '#e2e8f0';
+      vncCtx.font = '16px Segoe UI';
+      vncCtx.fillText('Connect with VNC viewer:', canvas.width / 2, canvas.height / 2 - 20);
+      vncCtx.fillStyle = '#3b82f6';
+      vncCtx.font = '18px Consolas';
+      vncCtx.fillText('localhost::' + port, canvas.width / 2, canvas.height / 2 + 20);
+      vncCtx.fillStyle = '#64748b';
+      vncCtx.font = '13px Segoe UI';
+      vncCtx.fillText('tvnviewer.exe is installed in your Thalamus folder', canvas.width / 2, canvas.height / 2 + 60);
+    };
+    
+    vncWs.onclose = () => {
+      vmLog('VNC connection closed.', '');
+    };
+  } catch(e) {
+    vmLog('VNC connection error: ' + e.message, 'error');
+  }
+}
+
+let vncState = 'handshake';
+let vncServerName = '';
+
+function handleVNCMessage(data) {
+  if (typeof data === 'string') {
+    // Text message (RFB version)
+    if (data.startsWith('RFB')) {
+      vmLog('RFB version: ' + data.trim(), 'info');
+      vncWs.send('RFB 003.008\n');
+      vncState = 'security';
+    }
+  } else if (data instanceof ArrayBuffer) {
+    const view = new DataView(data);
+    if (vncState === 'security') {
+      // Security types
+      const numTypes = view.getUint8(0);
+      if (numTypes > 0) {
+        const secType = view.getUint8(1);
+        // Send security type (1 = None)
+        const resp = new Uint8Array([1]);
+        vncWs.send(resp.buffer);
+        vncState = 'init';
+      }
+    } else if (vncState === 'init') {
+      // Server init
+      const width = view.getUint16(0);
+      const height = view.getUint16(2);
+      if (width > 0 && height > 0) {
+        vncCanvas.width = width;
+        vncCanvas.height = height;
+        vmLog('VNC display: ' + width + 'x' + height, 'success');
+        vncState = 'running';
+        // Request framebuffer update
+        requestFramebufferUpdate();
+      }
+    } else if (vncState === 'running') {
+      // Handle framebuffer updates
+      handleFramebufferUpdate(data);
+    }
+  }
+}
+
+function requestFramebufferUpdate() {
+  if (!vncWs || vncWs.readyState !== WebSocket.OPEN) return;
+  const buf = new ArrayBuffer(10);
+  const view = new DataView(buf);
+  view.setUint8(0, 3); // FramebufferUpdateRequest
+  view.setUint8(1, 0); // incremental = false
+  view.setUint16(2, 0); // x
+  view.setUint16(4, 0); // y
+  view.setUint16(6, vncCanvas.width);
+  view.setUint16(8, vncCanvas.height);
+  vncWs.send(buf);
+}
+
+function handleFramebufferUpdate(data) {
+  // Basic RFB framebuffer update handling
+  const view = new DataView(data);
+  const msgType = view.getUint8(0);
+  if (msgType === 0) {
+    // FramebufferUpdate
+    const numRects = view.getUint16(2);
+    let offset = 4;
+    for (let i = 0; i < numRects; i++) {
+      if (offset + 12 > data.byteLength) break;
+      const x = view.getUint16(offset);
+      const y = view.getUint16(offset + 2);
+      const w = view.getUint16(offset + 4);
+      const h = view.getUint16(offset + 6);
+      const encoding = view.getInt32(offset + 8);
+      offset += 12;
+      
+      if (encoding === 0) {
+        // Raw encoding
+        const pixelData = new Uint8ClampedArray(data, offset, w * h * 4);
+        const imageData = new ImageData(pixelData, w, h);
+        vncCtx.putImageData(imageData, x, y);
+        offset += w * h * 4;
+      }
+    }
+    // Request next update
+    setTimeout(requestFramebufferUpdate, 50);
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+// Check bridge status periodically
+setInterval(checkBridge, 30000);
+</script>
+</body>
+</html>
