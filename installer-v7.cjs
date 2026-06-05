@@ -13,10 +13,12 @@ const os = require("os");
 const https = require("https");
 
 const PORT = 7891;
-const INSTALLER_VERSION = "7.0.7";
+const INSTALLER_VERSION = "7.1.1";
 
 // ── URLs ──────────────────────────────────────────────────────────────────────
-const DESKTOP_APP_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/desktop-v3.1.0/Thalamus-Desktop-v3.1.0-win64.zip";
+const ELECTRON_RUNTIME_URL = "https://github.com/electron/electron/releases/download/v28.3.3/electron-v28.3.3-win32-x64.zip";
+const THALAMUS_APP_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/thalamus-app-v1.0.0/thalamus-app-v1.0.0.zip";
+const THALAMUS_LAUNCHER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/thalamus-app-v1.0.0/Thalamus-Launcher.exe";
 const BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v3.5.0/thalamus-vm-bridge-v3.5.0.exe";
 const BRIDGE_VERSION = "3.5.0";
 const QEMU_URL = "https://qemu.weilnetz.de/w64/2024/qemu-w64-setup-20241119.exe";
@@ -32,6 +34,8 @@ var INSTALL_DIR = process.env.LOCALAPPDATA
 function getPaths(installDir) {
   return {
     appDir: installDir,
+    electronDir: path.join(installDir, "electron"),
+    appFilesDir: path.join(installDir, "app"),
     isoDir: path.join(installDir, "isos"),
     diskDir: path.join(installDir, "disks"),
     bridgeExe: path.join(installDir, "thalamus-vm-bridge.exe"),
@@ -39,7 +43,7 @@ function getPaths(installDir) {
     bridgeLog: path.join(installDir, "bridge.log"),
     bridgeVersion: path.join(installDir, "bridge.version"),
     desktopExe: path.join(installDir, "Thalamus.exe"),
-    desktopResources: path.join(installDir, "resources.neu"),
+    electronExe: path.join(installDir, "electron", "electron.exe"),
     aria2Exe: path.join(installDir, "aria2c.exe"),
     vncExe: path.join(installDir, "tvnviewer.exe"),
     qemuExe: "C:\\Program Files\\qemu\\qemu-system-x86_64.exe",
@@ -172,7 +176,6 @@ function createDesktopShortcut(installDir) {
       'sLinkFile = "' + desktopPath.replace(/\\/g, "\\\\") + '"',
       'Set oLink = oWS.CreateShortcut(sLinkFile)',
       'oLink.TargetPath = "' + desktopExe.replace(/\\/g, "\\\\") + '"',
-      'oLink.Arguments = "--url=https://thalamus.aphantic.skinticals.com"',
       'oLink.WorkingDirectory = "' + installDir.replace(/\\/g, "\\\\") + '"',
       'oLink.Description = "Thalamus AI — World\'s First L4.5 Agent"',
       'oLink.IconLocation = "' + desktopExe.replace(/\\/g, "\\\\") + ',0"',
@@ -200,7 +203,6 @@ function createStartMenuShortcut(installDir) {
       'sLinkFile = "' + shortcutPath.replace(/\\/g, "\\\\") + '"',
       'Set oLink = oWS.CreateShortcut(sLinkFile)',
       'oLink.TargetPath = "' + desktopExe.replace(/\\/g, "\\\\") + '"',
-      'oLink.Arguments = "--url=https://thalamus.aphantic.skinticals.com"',
       'oLink.WorkingDirectory = "' + installDir.replace(/\\/g, "\\\\") + '"',
       'oLink.Description = "Thalamus AI — World\'s First L4.5 Agent"',
       'oLink.IconLocation = "' + desktopExe.replace(/\\/g, "\\\\") + ',0"',
@@ -369,37 +371,66 @@ function downloadBridge(paths) {
   });
 }
 
-// ── Download desktop app ──────────────────────────────────────────────────────
-function downloadDesktopApp(paths) {
+// ── Download Electron runtime ─────────────────────────────────────────────────
+function downloadElectronRuntime(paths) {
   return new Promise(function(resolve, reject) {
-    // Check if already installed
-    if (fs.existsSync(paths.desktopExe) && fs.existsSync(paths.desktopResources)) {
-      addLog("Thalamus desktop app already installed.");
+    if (fs.existsSync(paths.electronExe)) {
+      addLog("Electron runtime already installed.");
       resolve(); return;
     }
-    var zipPath = path.join(os.tmpdir(), "thalamus-desktop.zip");
-    addLog("Downloading Thalamus desktop app...");
+    if (!fs.existsSync(paths.electronDir)) fs.mkdirSync(paths.electronDir, { recursive: true });
+    var zipPath = path.join(os.tmpdir(), "electron-runtime.zip");
+    addLog("Downloading Electron runtime (~108 MB)...");
+    progress.message = "Downloading Electron runtime...";
+    downloadFile(ELECTRON_RUNTIME_URL, zipPath, function(dl, tot) {
+      progress.message = "Downloading Electron: " + Math.round(dl / 1024 / 1024) + " MB / " + Math.round(tot / 1024 / 1024) + " MB";
+    }).then(function() {
+      addLog("Extracting Electron runtime...");
+      progress.message = "Extracting Electron...";
+      var psCmd = 'Expand-Archive -Path "' + zipPath + '" -DestinationPath "' + paths.electronDir + '" -Force';
+      exec('powershell -Command "' + psCmd + '"', { windowsHide: true, timeout: 120000 }, function(err) {
+        if (err) addLog("Electron extract note: " + err.message);
+        else addLog("Electron runtime installed.");
+        resolve();
+      });
+    }).catch(reject);
+  });
+}
+
+// ── Download Thalamus app files ───────────────────────────────────────────────
+function downloadDesktopApp(paths) {
+  return new Promise(function(resolve, reject) {
+    var appMainJs = path.join(paths.appFilesDir, "main.js");
+    if (fs.existsSync(paths.desktopExe) && fs.existsSync(appMainJs)) {
+      addLog("Thalamus app already installed.");
+      resolve(); return;
+    }
+    if (!fs.existsSync(paths.appFilesDir)) fs.mkdirSync(paths.appFilesDir, { recursive: true });
+
+    // Step 1: Download app files zip
+    var appZipPath = path.join(os.tmpdir(), "thalamus-app.zip");
+    addLog("Downloading Thalamus app files...");
     progress.message = "Downloading Thalamus app...";
-    downloadFile(DESKTOP_APP_URL, zipPath, function(dl, tot) {
+    downloadFile(THALAMUS_APP_URL, appZipPath, function(dl, tot) {
       progress.message = "Downloading app: " + Math.round(dl / 1024 / 1024) + " MB / " + Math.round(tot / 1024 / 1024) + " MB";
     }).then(function() {
-      addLog("Extracting Thalamus app...");
+      addLog("Extracting app files...");
       progress.message = "Extracting app...";
-      // Extract zip using PowerShell
-      var psCmd = 'Expand-Archive -Path "' + zipPath + '" -DestinationPath "' + paths.appDir + '" -Force';
+      var psCmd = 'Expand-Archive -Path "' + appZipPath + '" -DestinationPath "' + paths.appFilesDir + '" -Force';
       exec('powershell -Command "' + psCmd + '"', { windowsHide: true, timeout: 60000 }, function(err) {
-        if (err) {
-          addLog("PowerShell extract failed: " + err.message + " — trying alternative");
-          // Try using built-in Windows zip extraction
-          exec('powershell -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory(\'' + zipPath + '\', \'' + paths.appDir + '\')"', { windowsHide: true, timeout: 60000 }, function(err2) {
-            if (err2) addLog("Extract note: " + err2.message);
-            else addLog("Thalamus app extracted.");
-            resolve();
-          });
-        } else {
-          addLog("Thalamus app extracted.");
+        if (err) addLog("App extract note: " + err.message);
+        else addLog("App files extracted.");
+
+        // Step 2: Download launcher (Thalamus.exe)
+        addLog("Downloading Thalamus launcher...");
+        progress.message = "Downloading launcher...";
+        downloadFile(THALAMUS_LAUNCHER_URL, paths.desktopExe, null).then(function() {
+          addLog("Thalamus launcher installed.");
           resolve();
-        }
+        }).catch(function(e) {
+          addLog("Launcher download note: " + e.message);
+          resolve();
+        });
       });
     }).catch(reject);
   });
@@ -661,8 +692,12 @@ async function runInstall(selectedISOs, installDir) {
     progress.step = "startup"; progress.message = "Adding to Windows startup..."; progress.percent = 38;
     await addToStartup(paths);
 
-    // Step 6: Download desktop app
-    progress.step = "app"; progress.message = "Downloading Thalamus desktop app..."; progress.percent = 40;
+    // Step 6: Download Electron runtime
+    progress.step = "electron"; progress.message = "Downloading Electron runtime (~108 MB)..."; progress.percent = 40;
+    await downloadElectronRuntime(paths);
+
+    // Step 6b: Download Thalamus app files
+    progress.step = "app"; progress.message = "Downloading Thalamus app files..."; progress.percent = 55;
     await downloadDesktopApp(paths);
 
     // Step 7: Download VNC viewer
@@ -754,8 +789,13 @@ var server = http.createServer(function(req, res) {
   if (req.method === "GET" && req.url === "/api/launch-app") {
     var paths3 = getPaths(INSTALL_DIR);
     if (fs.existsSync(paths3.desktopExe)) {
-      spawn(paths3.desktopExe, ['--url=https://thalamus.aphantic.skinticals.com'], { detached: true, stdio: "ignore", cwd: paths3.appDir }).unref();
+      // Thalamus.exe is the launcher that starts electron.exe with the app
+      spawn(paths3.desktopExe, [], { detached: true, stdio: "ignore", cwd: paths3.appDir }).unref();
       addLog("Thalamus app launched.");
+    } else if (fs.existsSync(paths3.electronExe)) {
+      // Fallback: launch electron directly with app folder
+      spawn(paths3.electronExe, [paths3.appFilesDir], { detached: true, stdio: "ignore", cwd: paths3.appDir }).unref();
+      addLog("Thalamus app launched via Electron.");
     }
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true }));

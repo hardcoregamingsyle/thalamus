@@ -1,0 +1,31 @@
+{
+  "name": "thalamus-desktop",
+  "version": "1.0.0",
+  "description": "Thalamus AI Desktop App",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.aphantic.thalamus",
+    "productName": "Thalamus",
+    "win": {
+      "target": "portable",
+      "icon": "assets/icon.ico"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "assets/**/*"
+    ]
+  },
+  "devDependencies": {
+    "electron": "28",
+    "electron-builder": "24"
+  }
+}
