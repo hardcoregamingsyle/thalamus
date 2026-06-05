@@ -4,7 +4,6 @@
 
 1. **Visual Studio 2022 Community** (free) — https://visualstudio.microsoft.com/
    - Install workload: ".NET desktop development"
-   - Install workload: "Desktop development with C++"
 
 2. **Inno Setup 6.x** (free) — https://jrsoftware.org/isinfo.php
 
@@ -13,4 +12,5 @@
 ## Build Steps
 
 ### 1. Build the C# app
+
 
