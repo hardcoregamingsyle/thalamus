@@ -1,0 +1,185 @@
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n/g, '<br>');
+}
+
+function handleChatKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+// ── Research ──
+async function startResearch() {
+  const input = document.getElementById('research-input');
+  const query = input.value.trim();
+  if (!query) return;
+
+  const results = document.getElementById('research-results');
+  results.innerHTML = `
+    <div class="research-card">
+      <div class="typing-indicator" style="padding: 0;">
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+      </div>
+      <div style="font-size: 13px; color: var(--muted); margin-top: 8px;">Researching: ${query}</div>
+    </div>
+  `;
+
+  try {
+    const res = await fetch(`${CONVEX_URL}/api/action`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`,
+      },
+      body: JSON.stringify({
+        path: 'ai:research',
+        args: { query },
+        format: 'json',
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const result = data.value || data;
+      results.innerHTML = `
+        <div class="research-card">
+          <div class="research-card-title">Research Results: ${query}</div>
+          <div class="research-card-content">${formatMessage(typeof result === 'string' ? result : JSON.stringify(result, null, 2))}</div>
+        </div>
+      `;
+    } else {
+      results.innerHTML = `<div class="research-card"><div class="research-card-content" style="color: var(--error);">Research failed. Please try again.</div></div>`;
+    }
+  } catch (e) {
+    results.innerHTML = `<div class="research-card"><div class="research-card-content" style="color: var(--error);">Network error: ${e.message}</div></div>`;
+  }
+}
+
+// ── VM Sandbox ──
+function vmLog(msg, type = 'info') {
+  const log = document.getElementById('vm-log');
+  const entry = document.createElement('div');
+  entry.className = `vm-log-entry ${type}`;
+  const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  entry.textContent = `[${time}] ${msg}`;
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+}
+
+function setVMStatus(status) {
+  state.vmStatus = status;
+  const dot = document.getElementById('vm-dot');
+  const text = document.getElementById('vm-status-text');
+  const display = document.getElementById('vm-status-display');
+  dot.className = `vm-dot ${status}`;
+  const labels = { running: 'Running', stopped: 'Stopped', starting: 'Starting...' };
+  text.textContent = labels[status] || status;
+  display.textContent = labels[status] || status;
+}
+
+async function startVM() {
+  const os = document.getElementById('os-select').value;
+  document.getElementById('vm-os-display').textContent = os;
+  setVMStatus('starting');
+  document.getElementById('vm-start-btn').style.display = 'none';
+  document.getElementById('vm-stop-btn').style.display = '';
+  vmLog(`Starting ${os} VM...`, 'info');
+
+  try {
+    // Check bridge status
+    const bridgeOk = await window.thalamus?.bridgeStatus();
+    if (!bridgeOk?.ok) {
+      vmLog('VM Bridge not running. Please ensure the bridge is installed.', 'error');
+      setVMStatus('stopped');
+      document.getElementById('vm-start-btn').style.display = '';
+      document.getElementById('vm-stop-btn').style.display = 'none';
+      return;
+    }
+
+    vmLog('Bridge connected. Booting VM...', 'success');
+
+    // Start VM via bridge
+    const result = await window.thalamus?.bridgeCommand('boot', { os });
+    if (result?.ok) {
+      const port = result.data?.vncPort || 5901;
+      state.vmPort = port;
+      document.getElementById('vm-vnc-port').textContent = port;
+      document.getElementById('vm-port-display').textContent = `VNC: localhost:${port}`;
+      setVMStatus('running');
+      document.getElementById('vm-vnc-btn').style.display = '';
+      vmLog(`VM started. VNC port: ${port}`, 'success');
+      vmLog('Click "Open VNC" to connect to the VM.', 'info');
+    } else {
+      vmLog(result?.error || 'Failed to start VM', 'error');
+      setVMStatus('stopped');
+      document.getElementById('vm-start-btn').style.display = '';
+      document.getElementById('vm-stop-btn').style.display = 'none';
+    }
+  } catch (e) {
+    vmLog(`Error: ${e.message}`, 'error');
+    setVMStatus('stopped');
+    document.getElementById('vm-start-btn').style.display = '';
+    document.getElementById('vm-stop-btn').style.display = 'none';
+  }
+}
+
+async function stopVM() {
+  vmLog('Stopping VM...', 'warn');
+  try {
+    await window.thalamus?.bridgeCommand('stop', {});
+  } catch (e) {}
+  setVMStatus('stopped');
+  state.vmPort = null;
+  document.getElementById('vm-start-btn').style.display = '';
+  document.getElementById('vm-stop-btn').style.display = 'none';
+  document.getElementById('vm-vnc-btn').style.display = 'none';
+  document.getElementById('vm-vnc-port').textContent = '—';
+  document.getElementById('vm-port-display').textContent = '';
+  document.getElementById('vnc-iframe').style.display = 'none';
+  document.getElementById('vnc-placeholder').style.display = '';
+  vmLog('VM stopped.', 'info');
+}
+
+async function openVNC() {
+  if (!state.vmPort) return;
+  // Try to open VNC viewer app
+  const result = await window.thalamus?.launchVnc(state.vmPort);
+  if (result?.ok) {
+    vmLog(`VNC viewer launched for port ${state.vmPort}`, 'success');
+  } else {
+    // Fallback: try noVNC in iframe
+    vmLog('VNC viewer not found. Trying web VNC...', 'warn');
+    const iframe = document.getElementById('vnc-iframe');
+    iframe.src = `http://localhost:6080/vnc.html?host=localhost&port=${state.vmPort}&autoconnect=true`;
+    iframe.style.display = 'block';
+    document.getElementById('vnc-placeholder').style.display = 'none';
+  }
+}
+
+// ── Build ──
+function startBuildProject() {
+  document.getElementById('build-empty').classList.add('hidden');
+  document.getElementById('build-editor').classList.remove('hidden');
+  document.getElementById('build-editor').textContent = '// New project\n// Start coding here...\n';
+  document.getElementById('build-file-tree').innerHTML = `
+    <div class="build-file active">📄 main.js</div>
+    <div class="build-file">📄 index.html</div>
+    <div class="build-file">📄 styles.css</div>
+  `;
+}
+
+function openBuildProject() {
+  // Would use Electron dialog in real implementation
+  startBuildProject();
+}
+</script>
+</body>
+</html>
