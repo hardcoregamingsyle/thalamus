@@ -332,7 +332,7 @@ function IntelligenceConsole({ onLaunch }: { onLaunch: () => void }) {
   );
 }
 
-const INSTALLER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/thalamus-installer-v7.0.7/thalamus-installer-v7.0.7.exe";
+const INSTALLER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/thalamus-installer-v7.1.1/thalamus-installer-v7.1.1.exe";
 
 function isWindows(): boolean {
   if (typeof navigator === "undefined") return false;
