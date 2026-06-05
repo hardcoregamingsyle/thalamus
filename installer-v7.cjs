@@ -13,7 +13,7 @@ const os = require("os");
 const https = require("https");
 
 const PORT = 7891;
-const INSTALLER_VERSION = "7.0.6";
+const INSTALLER_VERSION = "7.0.7";
 
 // ── URLs ──────────────────────────────────────────────────────────────────────
 const DESKTOP_APP_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/desktop-v3.1.0/Thalamus-Desktop-v3.1.0-win64.zip";
@@ -172,6 +172,7 @@ function createDesktopShortcut(installDir) {
       'sLinkFile = "' + desktopPath.replace(/\\/g, "\\\\") + '"',
       'Set oLink = oWS.CreateShortcut(sLinkFile)',
       'oLink.TargetPath = "' + desktopExe.replace(/\\/g, "\\\\") + '"',
+      'oLink.Arguments = "--url=https://thalamus.aphantic.skinticals.com"',
       'oLink.WorkingDirectory = "' + installDir.replace(/\\/g, "\\\\") + '"',
       'oLink.Description = "Thalamus AI — World\'s First L4.5 Agent"',
       'oLink.IconLocation = "' + desktopExe.replace(/\\/g, "\\\\") + ',0"',
@@ -199,6 +200,7 @@ function createStartMenuShortcut(installDir) {
       'sLinkFile = "' + shortcutPath.replace(/\\/g, "\\\\") + '"',
       'Set oLink = oWS.CreateShortcut(sLinkFile)',
       'oLink.TargetPath = "' + desktopExe.replace(/\\/g, "\\\\") + '"',
+      'oLink.Arguments = "--url=https://thalamus.aphantic.skinticals.com"',
       'oLink.WorkingDirectory = "' + installDir.replace(/\\/g, "\\\\") + '"',
       'oLink.Description = "Thalamus AI — World\'s First L4.5 Agent"',
       'oLink.IconLocation = "' + desktopExe.replace(/\\/g, "\\\\") + ',0"',
@@ -752,7 +754,7 @@ var server = http.createServer(function(req, res) {
   if (req.method === "GET" && req.url === "/api/launch-app") {
     var paths3 = getPaths(INSTALL_DIR);
     if (fs.existsSync(paths3.desktopExe)) {
-      spawn(paths3.desktopExe, [], { detached: true, stdio: "ignore", cwd: paths3.appDir }).unref();
+      spawn(paths3.desktopExe, ['--url=https://thalamus.aphantic.skinticals.com'], { detached: true, stdio: "ignore", cwd: paths3.appDir }).unref();
       addLog("Thalamus app launched.");
     }
     res.writeHead(200, { "Content-Type": "application/json" });
