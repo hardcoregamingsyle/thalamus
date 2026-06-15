@@ -16,7 +16,9 @@ namespace ThalamusApp
     {
         private const string CONVEX_URL = "https://glad-ermine-937.convex.cloud";
         private const string APP_URL = "https://thalamus.aphantic.skinticals.com";
-        private const string BRIDGE_PORT = "3001";
+        // The QEMU bridge is a local WebSocket server on port 5900. The web app
+        // connects to it directly (ws://localhost:5900) from inside WebView2.
+        private const string BRIDGE_WS_PORT = "5900";
 
         private readonly string _installDir;
         private readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
@@ -85,6 +87,21 @@ namespace ThalamusApp
             catch { /* Non-critical */ }
         }
 
+        private void LaunchVncViewer(string port)
+        {
+            try
+            {
+                var vncExe = Path.Combine(_installDir, "tvnviewer.exe");
+                if (!File.Exists(vncExe)) return;
+                Process.Start(new ProcessStartInfo(vncExe, $"localhost::{port}")
+                {
+                    UseShellExecute = false,
+                    WorkingDirectory = _installDir,
+                });
+            }
+            catch { /* Non-critical */ }
+        }
+
         private async Task InitWebView()
         {
             try
@@ -139,32 +156,30 @@ namespace ThalamusApp
                 Process.Start(new ProcessStartInfo(args.Uri) { UseShellExecute = true });
             };
 
-            // Inject bridge communication script
+            // Inject the native bridge object. This advertises the native runtime
+            // to the web app and exposes window-control + VNC helpers. VM control
+            // itself happens over a direct WebSocket to ws://localhost:5900, which
+            // the web app opens on its own.
             WebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(@"
                 window.ThalamusNative = {
-                    bridgePort: " + BRIDGE_PORT + @",
+                    bridgeWsUrl: 'ws://localhost:" + BRIDGE_WS_PORT + @"',
                     installDir: '" + _installDir.Replace("\\", "\\\\") + @"',
                     version: '1.0.0',
+                    runtime: 'csharp-dotnet8-wpf',
                     platform: 'windows',
                     isNative: true,
-                    
-                    async bridgeRequest(path, method, body) {
-                        try {
-                            const res = await fetch('http://localhost:' + this.bridgePort + path, {
-                                method: method || 'GET',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: body ? JSON.stringify(body) : undefined,
-                            });
-                            return await res.json();
-                        } catch (e) {
-                            return { error: e.message };
-                        }
+                    isElectron: false,
+
+                    // Convenience WebSocket factory for the VM bridge.
+                    connectBridge() {
+                        return new WebSocket(this.bridgeWsUrl);
                     },
-                    
+
                     minimize() { window.chrome.webview.postMessage({ type: 'minimize' }); },
                     maximize() { window.chrome.webview.postMessage({ type: 'maximize' }); },
                     close() { window.chrome.webview.postMessage({ type: 'close' }); },
                     openExternal(url) { window.chrome.webview.postMessage({ type: 'openExternal', url }); },
+                    launchVnc(port) { window.chrome.webview.postMessage({ type: 'launchVnc', port: port }); },
                 };
             ");
 
@@ -184,6 +199,10 @@ namespace ThalamusApp
                             var url = msg.GetProperty("url").GetString();
                             if (url != null)
                                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+                            break;
+                        case "launchVnc":
+                            var port = msg.TryGetProperty("port", out var p) ? p.ToString() : "5901";
+                            LaunchVncViewer(port);
                             break;
                     }
                 }

@@ -122,49 +122,67 @@ What the installer does:
 1. Opens a browser-based UI (no console window)
 2. Lets you choose the install drive and folder
 3. Downloads and installs QEMU (the VM engine, ~130 MB)
-4. Downloads the Thalamus Desktop app (Neutralinojs, 2.2 MB)
-5. Downloads the VM Bridge (31 MB)
-6. Downloads the VNC Viewer (TightVNC portable, ~1 MB)
-7. Downloads aria2 (download manager for torrents, ~3 MB)
-8. Downloads selected OS ISOs (optional, can be done later)
-9. Creates a desktop shortcut (Thalamus AI)
-10. Registers with Windows Add/Remove Programs (with uninstaller)
-11. Registers the thalamus:// URI scheme
-12. Adds bridge to Windows startup via Task Scheduler
-13. Starts the bridge immediately
+4. Installs the WebView2 Runtime if missing (native app dependency)
+5. Downloads the native Thalamus app (`Thalamus.exe`, C#/.NET 8 — NOT Electron)
+6. Downloads the VM Bridge (the QEMU bridge)
+7. Downloads the VNC Viewer (TightVNC portable, ~1 MB)
+8. Downloads aria2 (download manager for torrents, ~3 MB)
+9. Downloads selected OS ISOs (optional, can be done later)
+10. Creates a desktop shortcut (Thalamus AI)
+11. Registers with Windows Add/Remove Programs (with uninstaller)
+12. Registers the thalamus:// URI scheme
+13. Adds bridge to Windows startup via Task Scheduler
+14. Starts the bridge immediately
+
+There are two installer flavors, both producing the **same native app**:
+- `installer-v8.cjs` — lightweight "Roblox-style" installer that downloads the
+  native components at install time.
+- `thalamus-native/installer.iss` — Inno Setup installer that **bundles
+  everything offline** (native app, bridge, QEMU, VNC, aria2, WebView2).
 
 Smart ISO detection: if you already have ISOs with different names (e.g., "macOS Big Sur 11.7.10_20G1427.iso"), the installer automatically renames them to the expected filenames.
 
 Files installed:
-- [Install Dir]\Thalamus.exe — Desktop app
-- [Install Dir]\resources.neu — App resources
+- [Install Dir]\Thalamus.exe — Native C#/.NET 8 desktop app (self-contained)
 - [Install Dir]\thalamus-vm-bridge.exe — VM bridge
 - [Install Dir]\tvnviewer.exe — VNC viewer
 - [Install Dir]\aria2c.exe — Download manager
 - [Install Dir]\launch-bridge-hidden.vbs — Hidden bridge launcher
-- [Install Dir]\install.json — Installation metadata
+- [Install Dir]\install.json — Installation metadata (records `appType: native-csharp-wpf`)
 - [Install Dir]\isos\ — OS ISO files
 - [Install Dir]\disks\ — QCOW2 disk images (created on first boot)
 
-Download: https://github.com/hardcoregamingsyle/thalamus/releases/tag/thalamus-installer-v7.0.1
+> Note: there is no `resources.neu` / `electron` folder — the app is a single
+> native executable, not a Neutralino or Electron wrapper.
+
+Download: https://github.com/hardcoregamingsyle/thalamus/releases/tag/thalamus-installer-v8.0.0
 
 ---
 
-## The Desktop App
+## The Desktop App (Native — C#/.NET 8)
 
-The desktop app is built with Neutralinojs — a lightweight framework that uses Windows native Edge WebView2 (already on every Windows 10/11 machine). No Electron, no bundled browser.
+The desktop app is a **native C#/.NET 8 (WPF)** application. It renders the
+Thalamus UI through the **OS-native Edge WebView2** control (already present on
+every Windows 10/11 machine).
 
-Size: 2.2 MB total (1.6 MB exe + 0.6 MB resources)
+> **No Electron. No Neutralino. No bundled browser or Node runtime.**
+> `Thalamus.exe` is a single self-contained native executable.
+
+Source: `thalamus-native/ThalamusApp/` (WPF, `Microsoft.Web.WebView2`).
 
 Features:
-- Custom frameless window with native-style titlebar
+- Custom frameless window with native-style titlebar (real WPF chrome)
 - Minimize, maximize, close buttons
+- Single-instance enforcement via a named mutex
 - Starts directly at the login screen (no landing page)
 - All AI modes: Chat, Research, Study, Build, Code
-- VM Sandbox with QEMU bridge support
-- Automatic bridge startup detection
+- VM Sandbox with QEMU bridge support (WebSocket `ws://localhost:5900`)
+- Starts the VM bridge automatically in the background
+- Launches the bundled VNC viewer for VM displays
+- Exposes `window.ThalamusNative` to the web app (`isNative: true`, `isElectron: false`)
 
-The desktop app connects to the same Thalamus AI backend (Convex) as the website. It is the same application, just wrapped in a native window.
+The desktop app connects to the same Thalamus AI backend (Convex) as the
+website — it is the same application, rendered inside a native WPF window.
 
 ---
 
@@ -299,9 +317,11 @@ Backend:
 - Google Gemini (AI fallback)
 - VLY Integrations (AI gateway)
 
-Desktop:
-- Neutralinojs (native window, Edge WebView2)
-- Node.js compiled to exe via pkg (bridge and installer)
+Desktop (native — NOT Electron):
+- C#/.NET 8 WPF app with native Edge WebView2 control (`thalamus-native/`)
+- Self-contained single-file `Thalamus.exe` (no bundled browser/Node runtime)
+- Node.js compiled to exe via pkg (VM bridge and web-bootstrap installer only)
+- Inno Setup (offline native installer)
 - QEMU (VM engine)
 - TightVNC (VNC viewer)
 - aria2 (download manager)
@@ -361,12 +381,14 @@ thalamus/
 │   │   └── NotFound.tsx           # 404 page
 │   ├── index.css                  # Global styles + theme variables
 │   └── main.tsx                   # App entry point + routing
-├── bridge-v3.cjs                  # VM Bridge source (Node.js)
-├── installer-v7.cjs               # Installer source (Node.js)
-├── neutralino.config.json         # Desktop app config
-├── dist-desktop/
-│   ├── Thalamus.exe               # Desktop app binary (1.6 MB)
-│   └── resources.neu              # App resources (0.6 MB)
+├── bridge-v3.cjs                  # VM Bridge source (Node.js, QEMU bridge)
+├── installer-v8.cjs               # Native installer (Node.js, web-bootstrap)
+├── thalamus-native/               # NATIVE desktop app (C#/.NET 8 WPF + WebView2)
+│   ├── ThalamusApp/               #   WPF project (App.xaml, MainWindow.xaml[.cs])
+│   ├── installer.iss              #   Inno Setup offline installer (bundles all)
+│   ├── build.sh / build.ps1       #   Native build scripts
+│   ├── fetch-deps.sh              #   Download bundled tools (QEMU/VNC/aria2/WebView2)
+│   └── BUILD.md                   #   Native build + packaging guide
 ├── public/
 │   ├── assets/
 │   │   └── Untitled_design.png    # Thalamus logo
@@ -437,34 +459,33 @@ AWS Bedrock credentials are also stored in the Convex database via the admin pan
 
 ---
 
-## Building the Desktop App
+## Building the Native Desktop App (C#/.NET 8)
 
 ```bash
-# 1. Build the Vite app
-bun run build
+# Requires the .NET 8 SDK (cross-compiles to win-x64 from Linux/macOS too)
+cd thalamus-native
+./build.sh           # or ./build.ps1 on Windows
 
-# 2. Copy Neutralino client library
-cp thalamus-desktop/resources/js/neutralino.js dist/neutralino.js
-
-# 3. Package the desktop app
-python3 -c "
-import os, shutil, zipfile
-os.makedirs('dist-desktop', exist_ok=True)
-shutil.copy('thalamus-desktop/bin/neutralino-win_x64.exe', 'dist-desktop/Thalamus.exe')
-with zipfile.ZipFile('dist-desktop/resources.neu', 'w', zipfile.ZIP_DEFLATED) as zf:
-    for root, dirs, files in os.walk('dist'):
-        for file in files:
-            if not file.endswith('.map'):
-                filepath = os.path.join(root, file)
-                zf.write(filepath, filepath)
-"
+# Output: ThalamusApp/bin/Release/net8.0-windows/win-x64/publish/Thalamus.exe
 ```
+
+See `thalamus-native/BUILD.md` for the full native build + bundling guide.
 
 ## Building the Installer
 
+Web-bootstrap installer (downloads native components at install time):
 ```bash
 # Requires pkg
-npx pkg installer-v7.cjs --targets node14-win-x64 --output dist/thalamus-installer-v7.0.1.exe
+npx pkg installer-v8.cjs --targets node18-win-x64 --output dist/thalamus-installer-v8.0.0.exe
+```
+
+Offline installer that bundles everything (native app + bridge + QEMU + VNC + aria2 + WebView2):
+```bash
+cd thalamus-native
+./fetch-deps.sh      # download QEMU / WebView2 / VNC / aria2 into redist/ + tools/
+# (build Thalamus.exe and place thalamus-vm-bridge.exe in bridge/, then:)
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+# Output: dist/Thalamus-Setup-Native-v1.0.0.exe
 ```
 
 ## Building the VM Bridge
@@ -503,7 +524,7 @@ GH_TOKEN=your_token ~/gh release create thalamus-installer-v7.0.1 \
 ## Frequently Asked Questions
 
 **Q: Why does Windows Defender warn about the installer?**
-A: The installer is an unsigned executable. Click "More info" then "Run anyway". The installer is open source — you can review the code in installer-v7.cjs.
+A: The installer is an unsigned executable. Click "More info" then "Run anyway". The installer is open source — you can review the code in installer-v8.cjs (or thalamus-native/installer.iss for the offline Inno Setup build).
 
 **Q: Why does the bridge need to run locally?**
 A: QEMU runs on your machine. The bridge is a local WebSocket server that controls QEMU. The website cannot run QEMU directly — it communicates with the bridge via WebSocket.
@@ -529,11 +550,12 @@ A: Go to Windows Settings > Apps > Thalamus AI > Uninstall. The installer regist
 
 | Version | Date | What Changed |
 |---------|------|-------------|
+| Installer v8.0.0 | 2026-06-15 | **Native edition** — installs the C#/.NET 8 (WPF + WebView2) app instead of any Electron/Neutralino wrapper. Removed all Electron paths/fallbacks, added WebView2 Runtime bootstrap, bundles AI app + bridge + QEMU + VNC + aria2. Added offline Inno Setup installer + build scripts. |
 | Installer v7.0.1 | 2026-06-04 | Roblox-style installer, choose drive, desktop shortcut, Windows registration, .aria2 cleanup |
 | Bridge v3.5.0 | 2026-06-04 | Prevent duplicate VMs, return existing VM if already running |
 | Bridge v3.4.0 | 2026-06-04 | Fixed WHPX crash, TCG software emulation, no Hyper-V conflicts |
 | Bridge v3.3.0 | 2026-06-04 | Fixed LOCALAPPDATA path |
-| Desktop v1.0.0 | 2026-06-04 | Neutralinojs desktop app, 2.2 MB, custom frameless window |
+| Desktop v1.0.0 (native) | 2026-06-15 | Native C#/.NET 8 (WPF + WebView2) desktop app — replaces the Neutralino/Electron wrapper. Single self-contained Thalamus.exe. |
 | Installer v6.25.0 | 2026-06-04 | Bridge v3.5.0, Task Scheduler startup, aria2 cleanup |
 
 ---

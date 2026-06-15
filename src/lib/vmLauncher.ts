@@ -25,8 +25,8 @@ export class VMLauncher {
   private maxReconnectAttempts = 3;
   private readonly bridgeUrl = "ws://localhost:5900";
 
-  /** Installer URL — one-time setup that installs everything (v7.0.1) */
-  static readonly INSTALLER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/thalamus-installer-v7.0.1/thalamus-installer-v7.0.1.exe";
+  /** Installer URL — one-time setup that installs everything (v8.0.0, native C#/.NET 8 app, no Electron) */
+  static readonly INSTALLER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/thalamus-installer-v8.0.0/thalamus-installer-v8.0.0.exe";
   /** Bridge URL — the bridge exe itself (for manual install) */
   static readonly BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v3.4.0/thalamus-vm-bridge-v3.4.0.exe";
 
