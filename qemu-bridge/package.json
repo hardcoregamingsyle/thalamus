@@ -1,0 +1,38 @@
+{
+  "name": "thalamus-vm",
+  "version": "1.0.0",
+  "description": "Single-file virtualization engine for Thalamus Code",
+  "main": "dist/launcher.js",
+  "bin": {
+    "thalamus-vm": "dist/launcher.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/launcher.js",
+    "dev": "tsx src/launcher.ts",
+    "package": "npm run build && pkg . --targets node18-win-x64,node18-macos-x64,node18-linux-x64 --output-path builds"
+  },
+  "pkg": {
+    "assets": [],
+    "outputPath": "builds"
+  },
+  "keywords": [
+    "qemu",
+    "vm",
+    "websocket",
+    "vnc"
+  ],
+  "author": "Thalamus AI",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.5.10",
+    "pkg": "^5.8.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
