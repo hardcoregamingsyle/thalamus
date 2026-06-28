@@ -52,6 +52,13 @@ jobs:
           dotnet tool install --global wix --version 4.0.5
           wix --version
 
+      # ── Set up MSVC developer environment ─────────────────────────────────
+      - name: Set up MSVC developer command prompt
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+          toolset: 14.4
+
       # ── Configure CMake (dynamic libs for CI) ─────────────────────────────
       - name: Configure CMake
         shell: pwsh
