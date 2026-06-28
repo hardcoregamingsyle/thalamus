@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Thalamus AI — CI-Optimized Burn Bundle
+Built by GitHub Actions with WiX Toolset v4.
+
+Wraps the ThalamusApp.msi with VC++ 2022 Redistributable auto-install,
+producing the self-contained Thalamus-Setup-v1.0.0.exe that the web app's
+"Download for Windows" button links to.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+
+    <Bundle
+        Name="Thalamus AI"
+        Version="$(var.Version)"
+        Manufacturer="Aphantic Corporations"
+        UpgradeCode="F1A2B3C4-D5E6-7890-ABCD-EF1234567890"
+        DisableModify="yes">
+
+        <bal:Condition
+            Message="Thalamus AI requires Windows 10 64-bit or later.">
+            <![CDATA[VersionNT64 >= 1000]]>
+        </bal:Condition>
+
+        <Chain>
+            <!-- VC++ Redistributable 2022 x64 -->
+            <ExePackage
+                Id="VCRedist"
+                Name="vc_redist.x64.exe"
+                Cache="no"
+                Compressed="no"
+                Perpetual="yes"
+                Permanent="yes"
+                Vital="yes"
+                DisplayName="Microsoft Visual C++ 2022 Redistributable (x64)"
+                DownloadUrl="https://aka.ms/vs/17/release/vc_redist.x64.exe"
+                InstallCommand="/install /quiet /norestart"
+                UninstallCommand="/uninstall /quiet /norestart"
+                DetectCondition="VCRedistInstalled">
+                <ExitCode Behavior="forceReboot" />
+            </ExePackage>
+
+            <!-- Main MSI -->
+            <MsiPackage
+                Id="ThalamusApp"
+                SourceFile="$(var.MsiPath)"
+                Vital="yes"
+                DisplayName="Thalamus AI"
+                ForcePerMachine="yes" />
+        </Chain>
+
+        <bal:WixStandardBootstrapperApplication
+            Theme="hyperlinkLarge"
+            LicenseUrl="https://thalamus.aphantic.skinticals.com" />
+
+    </Bundle>
+</Wix>
