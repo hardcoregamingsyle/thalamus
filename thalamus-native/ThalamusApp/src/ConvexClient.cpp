@@ -328,7 +328,7 @@ void ConvexClient::generateUploadUrl()
 void ConvexClient::uploadFile(const QString &url, const QByteArray &data, const QString &contentType)
 {
     QNetworkRequest req(QUrl(url));
-    req.setHeader(QNetworkRequest::ContentTypeHeader, contentType.toUtf8());
+    req.setRawHeader("Content-Type", contentType.toUtf8());
 
     QNetworkReply *reply = m_network->put(req, data);
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
