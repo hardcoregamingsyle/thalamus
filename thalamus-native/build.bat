@@ -125,22 +125,43 @@ if "%BUILD_INSTALLER%"=="1" (
     ) else (
         cd /d "%INSTALLER_DIR%"
 
-        REM Compile WiX source to .wixobj
+        REM Compile Product.wxs → .wixobj
         candle Product.wxs -out "%BUILD_DIR%\Product.wixobj" ^
             -dVersion=%VERSION% ^
             -arch x64
         if %ERRORLEVEL% NEQ 0 (
-            echo   WARNING: WiX compilation failed.
+            echo   WARNING: WiX Product compilation failed.
         ) else (
             REM Link to .msi
-            light "%BUILD_DIR%\Product.wixobj" -out "%DIST_DIR%\Thalamus-Setup-v%VERSION%.msi" ^
+            light "%BUILD_DIR%\Product.wixobj" -out "%BUILD_DIR%\ThalamusApp.msi" ^
                 -ext WixUIExtension ^
                 -cultures:en-US
             if %ERRORLEVEL% NEQ 0 (
-                echo   WARNING: WiX linking failed.
+                echo   WARNING: WiX MSI linking failed.
             ) else (
-                for %%I in ("%DIST_DIR%\Thalamus-Setup-v%VERSION%.msi") do echo   ✓ Installer: Thalamus-Setup-v%VERSION%.msi (%%~zI bytes)
+                for %%I in ("%BUILD_DIR%\ThalamusApp.msi") do echo   ✓ MSI: ThalamusApp.msi (%%~zI bytes)
             )
+        )
+
+        REM Compile Bundle.wxs → setup.exe (Burn bootstrapper with VC++ redist)
+        if exist "%BUILD_DIR%\ThalamusApp.msi" (
+            candle Bundle.wxs -out "%BUILD_DIR%\Bundle.wixobj" ^
+                -dVersion=%VERSION% ^
+                -arch x64
+            if %ERRORLEVEL% EQU 0 (
+                light "%BUILD_DIR%\Bundle.wixobj" -out "%DIST_DIR%\Thalamus-Setup-v%VERSION%.exe" ^
+                    -ext WixBalExtension ^
+                    -cultures:en-US
+                if %ERRORLEVEL% EQU 0 (
+                    for %%I in ("%DIST_DIR%\Thalamus-Setup-v%VERSION%.exe") do echo   ✓ Installer: Thalamus-Setup-v%VERSION%.exe (%%~zI bytes)
+                ) else (
+                    echo   WARNING: Burn bundle linking failed.
+                )
+            ) else (
+                echo   WARNING: Bundle compilation failed.
+            )
+        ) else (
+            echo   SKIP: Bundle requires MSI to be built first.
         )
     )
 ) else (
@@ -154,7 +175,8 @@ echo ╚════════════════════════
 echo.
 echo Outputs:
 if exist "%DIST_DIR%\Thalamus.exe" echo   - %DIST_DIR%\Thalamus.exe
-if exist "%DIST_DIR%\Thalamus-Setup-v%VERSION%.msi" echo   - %DIST_DIR%\Thalamus-Setup-v%VERSION%.msi
+if exist "%DIST_DIR%\Thalamus-Setup-v%VERSION%.exe" echo   - %DIST_DIR%\Thalamus-Setup-v%VERSION%.exe (Burn bundle — recommended for distribution)
+if exist "%BUILD_DIR%\ThalamusApp.msi" echo   - %BUILD_DIR%\ThalamusApp.msi (standalone MSI — for enterprise deployment)
 echo.
 echo To sign the executable:
 echo   signtool sign /f certificate.pfx /p password /t http://timestamp.digicert.com ^
