@@ -1,0 +1,14 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/">
+        <!-- Stylesheet -->
+        <file alias="style.qss">style.qss</file>
+
+        <!-- Icons -->
+        <file alias="icons/app.ico">icons/app.ico</file>
+        <file alias="icons/app.png">icons/app.ico</file>
+
+        <!-- Version info -->
+        <file alias="version.rc">../resources/version.rc</file>
+    </qresource>
+</RCC>
