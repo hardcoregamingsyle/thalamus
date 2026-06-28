@@ -59,7 +59,7 @@
     "@tailwindcss/vite": "^4.1.17",
     "@types/three": "^0.181.0",
     "@vercel/sdk": "^1.21.8",
-    "@vly-ai/integrations": "^0.6.9",
+    "@vly-ai/integrations": "^0.6.12",
     "@zumer/snapdom": "^2.0.1",
     "axios": "^1.13.2",
     "class-variance-authority": "^0.7.1",

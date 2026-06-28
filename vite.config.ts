@@ -71,6 +71,6 @@ export default defineConfig({
     exclude: ['three', '@react-three/fiber', '@react-three/drei', 'v86'],
   },
   server: {
-    hmr: true,
+    hmr: false,
   },
 });
