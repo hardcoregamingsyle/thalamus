@@ -147,10 +147,11 @@ void ResearchView::onStartResearch()
     m_progressBar->setVisible(true);
     m_statusLabel->setText("Researching...");
 
-    // Clear previous results
+    // Clear previous results and store query for callback
+    m_researchQuery = query;
+    m_currentResearchResponse.clear();
     onClearResearch();
 
-    int depth = m_depthCombo->currentIndex() + 1;
     QString depthLabel = m_depthCombo->currentText();
 
     QString systemPrompt = QString(
@@ -163,7 +164,6 @@ void ResearchView::onStartResearch()
 
     // Send via streaming chat with "research" mode
     QJsonArray history;
-    QString fullResponse;
 
     m_client->streamChat(
         query,
@@ -172,18 +172,18 @@ void ResearchView::onStartResearch()
         systemPrompt,
         "",
         m_client->authToken(),
-        [this, &fullResponse](const QString &chunk) {
+        [this](const QString &chunk) {
             if (!chunk.isEmpty()) {
-                fullResponse += chunk;
+                m_currentResearchResponse += chunk;
             }
         },
-        [this, &fullResponse, query](const QString &text, bool success) {
+        [this](const QString &text, bool success) {
             m_isResearching = false;
             m_researchBtn->setEnabled(true);
             m_progressBar->setVisible(false);
 
             if (success && !text.isEmpty()) {
-                appendResult("Research Report: " + query, text);
+                appendResult("Research Report: " + m_researchQuery, text);
                 m_statusLabel->setText("Research complete");
             } else {
                 m_statusLabel->setText("Research failed. Please try again.");
