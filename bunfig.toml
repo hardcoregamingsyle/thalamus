@@ -1,0 +1,50 @@
+# Bun configuration for Vite template
+# See: https://bun.sh/docs/runtime/bunfig
+
+# Enable smol mode for reduced memory usage (ideal for 2GB RAM environments)
+# Trades slight performance for significant memory savings
+smol = true
+
+[install]
+# Install all dependencies including devDependencies
+# Note: production=true would skip devDependencies (vite, typescript, etc.)
+production = false
+
+# Use caret ranges for version flexibility (Bun default behavior)
+# exact=true would require exact version matches, which can cause issues
+exact = false
+
+# Frozen lockfile for reproducible builds - disabled for runtime flexibility
+# Enable this in CI/CD with --frozen-lockfile flag instead
+# Setting to false allows node_modules cleanup/reinstall operations
+frozenLockfile = false
+
+# Enable peer dependency auto-install
+auto = true
+
+# Enable concurrent script execution for faster installs
+concurrent = true
+
+# Cache directory (optional, defaults to ~/.bun/install/cache)
+cache = "node_modules/.cache/bun"
+
+# Registry configuration
+[install.registry]
+url = "https://registry.npmjs.org/"
+# token = "" # Add if using private registry
+
+[install.scopes]
+# Configure scoped registries if needed
+# "@myorg" = { url = "https://registry.myorg.com", token = "" }
+
+# Test configuration
+[test]
+# Coverage reporting
+coverage = false
+# Preload scripts before running tests
+# preload = ["./test/setup.ts"]
+
+# Development server settings (for bun --hot)
+[dev]
+# Port for dev server
+# port = 3000

@@ -1,0 +1,258 @@
+<Window x:Class="ThalamusApp.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:ThalamusApp"
+        xmlns:modes="clr-namespace:ThalamusApp.Modes"
+        Title="Thalamus AI"
+        Width="1600" Height="1000"
+        MinWidth="1000" MinHeight="700"
+        WindowStyle="None"
+        AllowsTransparency="False"
+        Background="#050a14"
+        WindowStartupLocation="CenterScreen"
+        StateChanged="Window_StateChanged"
+        Closing="OnClosing">
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="BgDark"      Color="#050a14"/>
+        <SolidColorBrush x:Key="BgDarker"    Color="#020b1d"/>
+        <SolidColorBrush x:Key="BorderColor" Color="#1e3a5f"/>
+        <SolidColorBrush x:Key="HoverBg"     Color="#1a2d4a"/>
+        <SolidColorBrush x:Key="ActiveBg"    Color="#1e3a5f"/>
+        <SolidColorBrush x:Key="TextPrimary" Color="#e2e8f0"/>
+        <SolidColorBrush x:Key="TextSecondary" Color="#64748b"/>
+        <SolidColorBrush x:Key="TextMuted"   Color="#334155"/>
+        <SolidColorBrush x:Key="PrimaryBrush" Color="#3b82f6"/>
+        <SolidColorBrush x:Key="GreenBrush"  Color="#10b981"/>
+        <SolidColorBrush x:Key="AmberBrush"  Color="#f59e0b"/>
+
+        <Style x:Key="TitleBarBtn" TargetType="Button">
+            <Setter Property="Background"    Value="Transparent"/>
+            <Setter Property="Foreground"    Value="{StaticResource TextSecondary}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Width"         Value="46"/>
+            <Setter Property="Height"        Value="32"/>
+            <Setter Property="FontSize"      Value="13"/>
+            <Setter Property="Cursor"        Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBg}"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CloseBtn" TargetType="Button" BasedOn="{StaticResource TitleBarBtn}">
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#ef4444"/>
+                    <Setter Property="Foreground" Value="White"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="NavBtn" TargetType="Button">
+            <Setter Property="Background"             Value="Transparent"/>
+            <Setter Property="Foreground"             Value="{StaticResource TextSecondary}"/>
+            <Setter Property="BorderThickness"        Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Padding"                Value="14,0,12,0"/>
+            <Setter Property="Height"                 Value="42"/>
+            <Setter Property="Cursor"                 Value="Hand"/>
+            <Setter Property="FontSize"               Value="13"/>
+            <Setter Property="Margin"                 Value="8,2,8,2"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBg}"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="NavBtnActive" TargetType="Button" BasedOn="{StaticResource NavBtn}">
+            <Setter Property="Background" Value="{StaticResource ActiveBg}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="38"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="26"/>
+        </Grid.RowDefinitions>
+
+        <!-- ═══ TITLE BAR ═══ -->
+        <Border Grid.Row="0" Background="{StaticResource BgDarker}"
+                BorderBrush="{StaticResource BorderColor}" BorderThickness="0,0,0,1"
+                MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Logo -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="14,0,0,0">
+                    <Border Width="20" Height="20" CornerRadius="6" Margin="0,0,8,0">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#3b82f6" Offset="0"/>
+                                <GradientStop Color="#6366f1" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <TextBlock Text="T" FontSize="11" FontWeight="Black" Foreground="White"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="Thalamus AI" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimary}"
+                               VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <Border CornerRadius="10" Background="#0d1f3c"
+                            BorderBrush="{StaticResource BorderColor}" BorderThickness="1" Padding="7,2">
+                        <TextBlock Text="L4.5" FontSize="9" FontWeight="Bold"
+                                   Foreground="{StaticResource PrimaryBrush}"/>
+                    </Border>
+                </StackPanel>
+
+                <!-- User info (center) -->
+                <TextBlock Grid.Column="1" x:Name="UserLabel"
+                           Text="" FontSize="11" Foreground="{StaticResource TextSecondary}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+
+                <!-- Window controls -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Style="{StaticResource TitleBarBtn}" Content="&#x2212;" Click="MinBtn_Click"/>
+                    <Button x:Name="MaxBtn" Style="{StaticResource TitleBarBtn}" Content="&#x25A1;" Click="MaxBtn_Click"/>
+                    <Button Style="{StaticResource CloseBtn}" Content="&#x2715;" Click="ClsBtn_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ═══ MAIN ═══ -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="210"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Sidebar -->
+            <Border Grid.Column="0" Background="{StaticResource BgDarker}"
+                    BorderBrush="{StaticResource BorderColor}" BorderThickness="0,0,1,0">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Padding="16,16,16,8">
+                        <TextBlock Text="MODES" FontSize="10" FontWeight="Bold"
+                                   Foreground="{StaticResource TextMuted}"/>
+                    </Border>
+
+                    <StackPanel DockPanel.Dock="Top">
+                        <Button x:Name="BtnCode" Tag="Code" Click="Nav_Click" Style="{StaticResource NavBtnActive}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#x26A1; " FontSize="14"/>
+                                <TextBlock Text="Code" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="BtnChat" Tag="Chat" Click="Nav_Click" Style="{StaticResource NavBtn}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#x1F4AC; " FontSize="14"/>
+                                <TextBlock Text="Chat" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="BtnResearch" Tag="Research" Click="Nav_Click" Style="{StaticResource NavBtn}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#x1F50D; " FontSize="14"/>
+                                <TextBlock Text="Research" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="BtnStudy" Tag="Study" Click="Nav_Click" Style="{StaticResource NavBtn}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#x1F4DA; " FontSize="14"/>
+                                <TextBlock Text="Study" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <Separator DockPanel.Dock="Top" Background="{StaticResource BorderColor}"
+                               Margin="16,12,16,12" Height="1"/>
+
+                    <StackPanel DockPanel.Dock="Top">
+                        <Border Padding="16,0,16,8">
+                            <TextBlock Text="ACCOUNT" FontSize="10" FontWeight="Bold"
+                                       Foreground="{StaticResource TextMuted}"/>
+                        </Border>
+                        <Button Tag="Logout" Click="Nav_Click" Style="{StaticResource NavBtn}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#x21AA; " FontSize="14"/>
+                                <TextBlock Text="Sign Out" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Version + update -->
+                    <Border DockPanel.Dock="Bottom" Padding="16,12"
+                            BorderBrush="{StaticResource BorderColor}" BorderThickness="0,1,0,0">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock x:Name="VersionLabel" Text="v1.0.0"
+                                           FontSize="11" Foreground="{StaticResource TextMuted}"/>
+                                <TextBlock Text=" · " FontSize="11" Foreground="{StaticResource TextMuted}"/>
+                                <TextBlock x:Name="UpdateLabel" Text="Up to date"
+                                           FontSize="11" Foreground="{StaticResource GreenBrush}"/>
+                            </StackPanel>
+                            <TextBlock x:Name="UpdateSubLabel" Text="" FontSize="10"
+                                       Foreground="{StaticResource TextMuted}"
+                                       Margin="0,2,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Grid/>
+                </DockPanel>
+            </Border>
+
+            <!-- Content panels — only one visible at a time -->
+            <Grid Grid.Column="1">
+                <modes:CodeView     x:Name="CodePanel"     Visibility="Visible"/>
+                <modes:ChatView     x:Name="ChatPanel"     Visibility="Collapsed"/>
+                <modes:ResearchView x:Name="ResearchPanel" Visibility="Collapsed"/>
+                <modes:StudyView    x:Name="StudyPanel"    Visibility="Collapsed"/>
+            </Grid>
+        </Grid>
+
+        <!-- ═══ STATUS BAR ═══ -->
+        <Border Grid.Row="2" Background="{StaticResource BgDarker}"
+                BorderBrush="{StaticResource BorderColor}" BorderThickness="0,1,0,0"
+                Padding="14,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="StatusText" Text="Ready" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextSecondary}" FontSize="11"/>
+                <TextBlock x:Name="ModeLabel" Grid.Column="1" Text="Code Mode"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource TextMuted}" FontSize="11"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
