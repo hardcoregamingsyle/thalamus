@@ -1,0 +1,21 @@
+# Installed dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-ssr/
+dist-desktop/
+
+# C# build artifacts
+thalamus-native/ThalamusApp/bin/
+thalamus-native/ThalamusApp/obj/
+thalamus-native/ThalamusInstaller/bin/
+thalamus-native/ThalamusInstaller/obj/
+
+# Logs
+*.log
+logs/
+
+# Cache
+.cache/
+.vite/

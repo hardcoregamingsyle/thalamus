@@ -1,0 +1,136 @@
+# CLAUDE.md
+
+This file provides behavioral guidelines and repository context for Claude Code (claude.ai/code) or any LLM agent working within this repository.
+
+**Tradeoff:** Bias toward caution over speed. For trivial tasks, use judgment, but always prioritize stability and accuracy.
+
+---
+
+## 1. Core Behavioral Guidelines
+
+### Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+* State your assumptions explicitly. If uncertain, stop and ask.
+* If multiple interpretations exist, present them—don't pick silently.
+* If a simpler approach exists, propose it. Push back when warranted.
+* **Never** generate random/hallucinated links or assume domain ownership.
+
+### Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+* Build exactly what was asked—no extra features, single-use abstractions, or unrequested "flexibility."
+* If you write 200 lines and it could be 50, rewrite it.
+* Ask yourself: *"Would a senior engineer say this is overcomplicated?"* If yes, simplify.
+
+### Surgical Changes & Refactoring
+
+**Touch only what you must. Clean up only your own mess.**
+
+* Match existing style exactly, even if you prefer a different format.
+* Do not "improve" adjacent code, comments, or formatting. Don't refactor unbroken systems.
+* **Dependency Check:** When refactoring or modifying a file, rigorously check and update all files that directly or indirectly depend on it.
+* When your changes create orphans, remove the imports/variables/functions that *your* changes made unused. Do not remove pre-existing dead code unless asked.
+* *The test:* Every changed line must trace directly to the user's request.
+
+### Goal-Driven Autonomy
+
+**Define success criteria. Loop until verified.**
+
+* Transform tasks into verifiable goals (e.g., "Add validation" → "Write tests for invalid inputs, then make them pass").
+* For multi-step tasks, state a brief plan and verify each step.
+* **Proactive Tooling:** If a required software or package is not installed, install it automatically via the command line. Do not wait for the user to do it.
+* **Desktop App Releases:** If releasing a new desktop app, you *must* ensure the endpoint at the original website is updated accordingly.
+
+---
+
+## 2. Development Commands & Environment
+
+Both the Vite frontend and Convex backend must run simultaneously during development. The frontend reads `VITE_CONVEX_URL` to connect to the live backend.
+
+```bash
+bun run dev          # Start Vite dev server (frontend only)
+npx convex dev       # Start Convex backend (required alongside dev server)
+bun run build        # Type-check + production build → dist/
+bun run type-check   # TypeScript check only (no emit)
+bun run lint         # ESLint
+bun run format       # Prettier (writes files)
+bun test             # Run tests
+bun test --watch     # Watch mode
+
+```
+
+### Environment Variables
+
+**Required `.env.local`:**
+
+```text
+CONVEX_DEPLOYMENT=your-deployment-name
+VITE_CONVEX_URL=https://your-deployment.convex.cloud
+
+```
+
+**Server-side Secrets:** Managed strictly via the Convex Dashboard, *not* `.env`. These include: `AWS_BEDROCK_API_KEY`, `AGENTROUTER_API_KEY`, `ADMIN_TOKEN`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `JWKS`, `JWT_PRIVATE_KEY`, `SITE_URL`, and `BREVO_EMAIL_SENDER`.
+*Note:* AWS Bedrock credentials can also be managed through the `/admin` panel and stored in the `awsCredentials` table (the database takes priority over environment variables). Gemini keys are managed through the `/admin` → Gemini Keys tab and stored in the `geminiKeys` table.
+
+---
+
+## 3. Project Architecture
+
+### Frontend (React + Vite)
+
+* **`src/main.tsx`:** Entry point. Sets up routing, Convex auth provider, and desktop app detection (`window.NL_PORT` = Neutralinojs).
+* **`src/pages/`:** Route-level components (`Portal`, `TeamPortal`, `CodeProjects`, `CodeBranches`, `CodeWorkspace`, `Admin`, `Auth`, `Landing`).
+* **`src/components/`:** Feature components. The `src/components/ui/` folder contains the Shadcn UI layer—**do not customize these directly**.
+* **`src/lib/vmLauncher.ts`:** WebSocket client communicating with the local VM Bridge on `ws://localhost:5900`.
+
+### Backend (Convex — `src/convex/`)
+
+All backend logic lives here as Convex functions. The `convex.json` file points to this directory.
+
+* **`schema.ts`:** Full database schema, standard indexes, and vector indexes.
+* **`agentCore.ts`:** Model call primitives, credit deduction, and AWS Bedrock + Gemini fallback routing.
+* **`agentPipeline.ts`:** The 9-agent sequential pipeline (Researcher → Analyser → Planner → Coder → Optimiser → Organizer → Tester → Hacker → Critic), running as Convex scheduled functions.
+* **`agentTeamHelpers.ts`:** Shared helpers for agent coordination.
+* **`ai.ts` / `aiHelpers.ts`:** AI functions for chat, research, and study modes.
+* **`rag.ts`:** Vector search over `ragChunks` and `graphNodes` for study mode.
+* **`auth.ts` / `auth.config.ts`:** Email OTP auth via `@convex-dev/auth`.
+* **`github.ts`:** GitHub OAuth flow and repo syncing.
+* **`http.ts`:** HTTP routes (OAuth callbacks, etc.).
+* **`crons.ts`:** Scheduled database jobs.
+
+---
+
+## 4. Key Subsystems
+
+### Two Parallel "Code Mode" Systems
+
+The codebase currently maintains two overlapping systems. Be highly conscious of which one you are modifying:
+
+1. **Original System:** `teamSessions` / `agentMessages` / `projectFiles` (Used in "Team Portal", `/team` route, `src/pages/TeamPortal.tsx`).
+2. **Newer System:** `codeProjects` / `codeBranches` / `codeMessages` / `codeFiles` (Used in `/portal/code` routes, `src/pages/CodeWorkspace.tsx`, and powered by `codePipeline.ts`, `codeBranches.ts`, `codeCommands.ts`).
+*Both use the 9-agent pipeline but rely on different entry points and data models.*
+
+### Model Routing
+
+AI calls route through `agentCore.ts`.
+
+* **Priority Chain:** AWS Bedrock (Claude Opus 4.8/4.6, Sonnet, Haiku) → VLY gateway → Google Gemini 2.0 Flash → Gemini Flash Lite.
+* Each agent in the pipeline uses a specific, hardcoded model tier (refer to `README` for the exact mapping).
+
+### VM & Sandbox Environments
+
+* **Browser VMs:** Utilizes the `v86` npm package for x86 WebAssembly emulation (no bridge needed).
+* **QEMU VMs:** Requires the local Node.js VM Bridge running on port 5900. Controlled via `src/lib/vmLauncher.ts` (`boot`, `stop`, `list`, `ping`).
+* **UI Components:** Sandbox UI is handled in `src/components/code-workspace/SandboxView.tsx`. Display views are handled by `QEMUScreen.tsx` and `VMScreen.tsx`.
+
+### Desktop & Native Apps
+
+* **Neutralinojs Desktop App:** Built using `neutralino.config.json`. Pre-built binaries live in `dist-desktop/`. To rebuild: build Vite first, then package via the Neutralino toolchain. Runtime detection relies on `window.NL_PORT`.
+* **Native C# App (`thalamus-native/`):** A strictly independent WPF application (`ThalamusApp.csproj`) and installer (`ThalamusInstaller.csproj`). Build instructions are isolated in `thalamus-native/BUILD.md`.
+
+### Platform Credits (AgentBucks)
+
+User balances (`agentBucksBalance`) are stored on the `users` table and deducted per-token in `agentCore.ts` according to the `modelPricing` table. Total platform spending is tracked via `platformBudget`. The admin panel (`/admin`) manages API keys, pricing, and budgets.
