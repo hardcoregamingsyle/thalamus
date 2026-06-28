@@ -1,169 +1,251 @@
-# Building Thalamus AI — Native C# App + Installer
+# Building Thalamus AI — Native Windows Desktop App
 
-## What's in this folder
+![Windows](https://img.shields.io/badge/OS-Windows%2010%2B-blue)
+![Qt](https://img.shields.io/badge/UI-Qt%206%20C%2B%2B-green)
+![Installer](https://img.shields.io/badge/Installer-WiX%20Toolset-orange)
+
+## Overview
+
+This directory contains the **native Windows desktop application** for Thalamus AI, built with:
+
+- **Qt 6.5+ C++** — UI framework (Core, Gui, Widgets, Network, WebSockets, Svg)
+- **WiX Toolset v4** — MSI installer (optional)
+- **CMake 3.22+** — Build system
+- **Win32 API** — URI scheme registration, system tray, single-instance locking
+
+## Architecture
 
 ```
 thalamus-native/
-├── ThalamusApp/            ← Native WPF desktop app (.NET 8)
-│   ├── ThalamusApp.csproj
-│   ├── App.xaml / App.xaml.cs
-│   ├── MainWindow.xaml / .cs   ← WebView2 for AI modes, native Sandbox tab
-│   ├── SandboxView.xaml / .cs  ← Full QEMU + embedded VNC control
-│   ├── QemuBridgeManager.cs    ← Starts/stops QEMU processes directly
-│   ├── VncIntegration.cs       ← Pure C# RFB 3.8 VNC client
-│   ├── AutoUpdateSystem.cs     ← GitHub Releases auto-update
-│   └── Assets/icon.ico
-│
-├── ThalamusInstaller/      ← Native WPF installer (.NET 8)
-│   ├── ThalamusInstaller.csproj
-│   ├── InstallerWindow.xaml / .cs  ← Dark-themed multi-page installer UI
-│   └── app.manifest
-│
-├── installer.iss           ← Inno Setup script (wraps app for traditional setup .exe)
-├── build.ps1               ← One-click build script (builds both projects + Inno Setup)
-└── BUILD.md                ← This file
+├── ThalamusApp/                 ← Qt 6 C++ desktop app
+│   ├── CMakeLists.txt          ← CMake build configuration
+│   ├── src/
+│   │   ├── main.cpp            ← Entry point, single-instance, URI scheme
+│   │   ├── MainWindow.h/cpp    ← Tabbed main window + system tray
+│   │   ├── ConvexClient.h/cpp  ← HTTP/WS client for Convex backend
+│   │   ├── AuthDialog.h/cpp    ← Email OTP authentication dialog
+│   │   ├── ChatView.h/cpp      ← Streaming AI chat mode
+│   │   ├── ResearchView.h/cpp  ← Deep research mode
+│   │   ├── StudyView.h/cpp     ← RAG-enhanced study mode
+│   │   ├── CodeModeView.h/cpp  ← 9-agent autonomous coding pipeline
+│   │   ├── VMSandboxView.h/cpp ← QEMU VM management UI
+│   │   ├── VMBridgeManager.h/cpp ← Bridge process & WebSocket management
+│   │   ├── VNCWidget.h/cpp     ← Embedded RFB 3.8 VNC client
+│   │   ├── MarkdownRenderer.h/cpp ← Markdown → HTML rendering
+│   │   ├── Settings.h/cpp      ← Settings page (general, VM, account)
+│   │   ├── AutoUpdater.h/cpp   ← GitHub Releases update checker
+│   │   ├── NotificationManager.h/cpp ← Toast/tray notifications
+│   │   ├── OSSelectorDialog.h/cpp ← OS selection dialog
+│   │   └── FileTreeWidget.h/cpp ← Project file tree widget
+│   └── resources/
+│       ├── resources.qrc       ← Qt resource file
+│       ├── style.qss           ← Dark theme stylesheet
+│       ├── version.rc          ← Windows version metadata
+│       └── icons/
+│           └── app.ico         ← Application icon
+├── installer/
+│   ├── Bundle.wxs              ← WiX Burn bundle (prerequisites + app)
+│   └── Product.wxs             ← WiX MSI product configuration
+├── build.bat                   ← One-click build script
+├── BUILD.md                    ← This file
+└── README.md                   ← Overview
+
+## Runtime Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   Thalamus.exe (Qt 6 C++)               │
+│                                                         │
+│  ┌──────┐ ┌──────────┐ ┌────────┐ ┌────────┐ ┌──────┐ │
+│  │ Chat │ │ Research │ │ Study  │ │  Code  │ │ VM   │ │
+│  │ View │ │  View    │ │ View   │ │  View  │ │Sndbx │ │
+│  └──┬───┘ └────┬─────┘ └───┬────┘ └───┬────┘ └──┬───┘ │
+│     │          │           │          │         │      │
+│     └──────────┴─────┬─────┴──────────┘         │      │
+│                      │                          │      │
+│             ConvexClient (HTTP/SSE)      VMBridgeManager │
+│                      │                    (WebSocket)    │
+│                      │                          │      │
+│                      ▼                          │      │
+│           glad-ermine-937.convex.cloud     VNCWidget    │
+│                                            (RFB 3.8)    │
+└──────────────┬───────────────────────────────┬──────────┘
+               │                               │
+               ▼                               ▼
+      Convex Backend (Cloud)         QEMU VM (localhost)
 ```
 
 ## Prerequisites
 
-1. **Windows 10/11 64-bit** (required)
-2. **.NET 8.0 SDK** → https://dotnet.microsoft.com/download/dotnet/8
-   - Install workload: `.NET desktop development`
-3. **Inno Setup 6.x** *(optional — only needed for .iss compilation)* → https://jrsoftware.org/isdl.php
+### Required
 
----
+1. **Windows 10 or 11 (64-bit)** — Build and target platform
+2. **Visual Studio 2022** — With "Desktop development with C++" workload
+   - Download: https://visualstudio.microsoft.com/downloads/
+3. **CMake 3.22+** — Included with Visual Studio 2022
+4. **Qt 6.5+** — Static linking recommended for self-contained binary
+   - Download: https://www.qt.io/download
+   - Required modules: Core, Gui, Widgets, Network, WebSockets, Svg, SvgWidgets, Concurrent
+   - Install to `C:\Qt\6.5.3\msvc2022_64`
 
-## Quick Build (Recommended)
+### Optional (for installer)
 
-```powershell
-cd thalamus-native
-.\build.ps1
+5. **WiX Toolset v4** — For MSI installer creation
+   - Download: https://wixtoolset.org/releases/
+6. **Inno Setup 6.x** — Alternate .exe installer wrapper (legacy)
+   - Download: https://jrsoftware.org/isdl.php
+7. **SignTool** — For code signing (included with Windows SDK)
+
+### Runtime (bundled in installer)
+
+8. **Microsoft Visual C++ Redistributable 2022 (x64)** — Auto-installed by Burn bundle
+9. **QEMU for Windows** — Bundled in installer for VM Sandbox
+   - Download: https://qemu.weilnetz.de/w64/
+
+## Quick Build
+
+### 1. Set up environment
+
+Open **Visual Studio 2022 Developer Command Prompt (x64)**:
+
+```cmd
+# Set Qt path (adjust for your installation)
+set CMAKE_PREFIX_PATH=C:\Qt\6.5.3\msvc2022_64
 ```
 
-This script:
-1. Compiles `ThalamusApp` → `Thalamus.exe` (single-file, self-contained, ~50 MB)
-2. Compiles `ThalamusInstaller` → `ThalamusSetup.exe` (single-file, self-contained, ~15 MB)
-3. Stages files into `installer-build\`
-4. Compiles Inno Setup → `dist\Thalamus-Setup-v1.0.0.exe` (if Inno Setup is present)
-5. Generates SHA-256 checksums
+### 2. Build
 
----
+```cmd
+cd thalamus-native
+
+# Debug build (fast compilation)
+build.bat
+
+# Release build (optimised, needs Qt static libs)
+build.bat release
+
+# Full release with MSI installer (needs WiX Toolset)
+build.bat installer
+```
+
+### 3. Output
+
+```
+thalamus-native\dist\
+├── Thalamus.exe                   ← Desktop app (~8 MB debug, ~50 MB release)
+├── Thalamus-Setup-v1.0.0.msi     ← MSI installer (if built)
+└── Thalamus-Setup-v1.0.0.exe     ← Inno Setup wrapper (if built)
+```
 
 ## Manual Build Steps
 
-### 1. Build the desktop app
+### Step 1: Configure CMake
 
-```powershell
-cd thalamus-native\ThalamusApp
-
-# Restore NuGet packages
-dotnet restore
-
-# Build (debug — fast, no optimisations)
-dotnet build -c Release
-
-# Publish — single self-contained exe (~50 MB)
-dotnet publish -c Release -r win-x64 --self-contained `
-  -p:PublishSingleFile=true `
-  -p:IncludeNativeLibrariesForSelfExtract=true
-```
-
-Output: `bin\Release\net8.0-windows\win-x64\publish\Thalamus.exe`
-
-### 2. Build the native installer
-
-```powershell
-cd thalamus-native\ThalamusInstaller
-
-dotnet publish -c Release -r win-x64 --self-contained `
-  -p:PublishSingleFile=true `
-  -p:IncludeNativeLibrariesForSelfExtract=true
-```
-
-Output: `bin\Release\net8.0-windows\win-x64\publish\ThalamusSetup.exe`
-
-### 3. (Optional) Wrap with Inno Setup
-
-```powershell
+```cmd
 cd thalamus-native
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+mkdir build
+cd build
+
+cmake ..\ThalamusApp ^
+    -G "Visual Studio 17 2022" ^
+    -A x64 ^
+    -DCMAKE_BUILD_TYPE=Release ^
+    -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ^
+    -DBUILD_SHARED_LIBS=OFF
 ```
 
-Output: `dist\Thalamus-Setup-v1.0.0.exe`
+### Step 2: Build
 
----
-
-## What the native installer does (ThalamusSetup.exe)
-
-The `ThalamusInstaller` project is a full WPF app with a beautiful dark UI. It:
-
-1. Shows a welcome screen explaining what Thalamus is
-2. Lets the user choose the install folder (default: `%LOCALAPPDATA%\Thalamus`)
-3. Lets the user choose components (QEMU, TightVNC, aria2 are optional)
-4. Downloads all selected components from their official URLs:
-   - `Thalamus.exe` from GitHub Releases
-   - `thalamus-vm-bridge.exe` from GitHub Releases
-   - QEMU from `qemu.weilnetz.de` (official mirror)
-   - TightVNC portable viewer
-   - aria2c from GitHub Releases
-5. Shows a live progress bar + download speed + log
-6. Registers with Windows Add/Remove Programs
-7. Creates desktop + Start Menu shortcuts
-8. Registers the `thalamus://` URI scheme
-9. Adds the VM bridge to startup
-10. Offers to launch Thalamus AI immediately
-
----
-
-## What the desktop app does (Thalamus.exe)
-
-`ThalamusApp` is a native WPF window (.NET 8) that:
-
-- Loads the Thalamus web app (`thalamus.aphantic.skinticals.com`) inside **WebView2** (the same
-  engine as Edge — already installed on every Windows 10/11 machine)
-- Shows Chat / Research / Study / Build modes via WebView2 (100% parity with the website)
-- The **VM Sandbox** tab is **fully native WPF** — no browser involved:
-  - OS selector with categories (Windows, macOS, Android, Linux)
-  - RAM / CPU sliders
-  - Starts QEMU directly via `QemuBridgeManager`
-  - Embedded VNC display using a pure C# RFB 3.8 client rendering to a `WriteableBitmap`
-  - Falls back to launching TightVNC externally if needed
-- Checks for updates from GitHub Releases (non-blocking, background)
-- Single-instance (brings existing window to front if already running)
-- Custom frameless title bar with gradient logo
-- Status bar shows bridge online/offline, version, update availability
-
----
-
-## Folder structure expected at runtime
-
-```
-%LOCALAPPDATA%\Thalamus\
-├── Thalamus.exe            ← Desktop app
-├── thalamus-vm-bridge.exe  ← VM bridge (WebSocket server, port 5900)
-├── tvnviewer.exe           ← TightVNC viewer (optional, for external VNC)
-├── aria2c.exe              ← ISO download manager (optional)
-├── install.json            ← Install metadata
-├── isos\                   ← OS ISO files go here
-└── disks\                  ← QCOW2 disk images (auto-created on first VM boot)
-
-C:\Program Files\QEMU\
-└── qemu-system-x86_64.exe  ← Installed by QEMU official installer
+```cmd
+cmake --build . --config Release --parallel
 ```
 
----
+Output: `build\Release\Thalamus.exe`
+
+### Step 3: Build MSI Installer
+
+```cmd
+cd ..\installer
+candle Product.wxs -out ..\build\Product.wixobj -arch x64
+light ..\build\Product.wixobj -out ..\dist\Thalamus-Setup-v1.0.0.msi ^
+    -ext WixUIExtension
+```
+
+## What the Installer Does
+
+The WiX MSI installer:
+
+1. Installs Thalamus.exe to `%PROGRAMFILES%\Thalamus AI\`
+2. Installs the VM bridge (`thalamus-vm-bridge.exe`)
+3. Installs QEMU binaries for system emulation
+4. Creates `%PROGRAMFILES%\Thalamus AI\data\` for VM disk images
+5. Registers the `thalamus://` URI scheme for deep linking
+6. Creates Start Menu shortcuts
+7. Optionally adds desktop shortcut
+8. Optionally auto-starts the VM bridge on login
+9. Registers with Windows Add/Remove Programs
+10. Installs VC++ Redistributable if missing (via Burn bundle)
+
+## What the Desktop App Does
+
+Thalamus.exe is a **fully native Win32 application** that:
+
+- **Chat Mode** — Streaming AI chat with Convex backend (SSE endpoint)
+- **Research Mode** — Deep multi-source AI-powered research
+- **Study Mode** — RAG-enhanced learning with uploaded materials
+- **Code Mode** — 9-agent autonomous development pipeline
+- **VM Sandbox** — Full QEMU virtualisation with embedded VNC viewer
+  - OS selector: Windows 11, Ubuntu, Fedora, macOS, Android
+  - Configurable RAM/CPU
+  - Embedded VNC client (RFB 3.8) for direct display
+- **System tray** — Minimizes to tray, background bridge management
+- **Auto-update** — Checks GitHub Releases for new versions
+- **Dark theme** — Full custom Qt stylesheet
+
+## Convex Backend
+
+The app communicates with a Convex deployment:
+
+- **Deployment slug:** `glad-ermine-937`
+- **Full URL:** `https://glad-ermine-937.convex.cloud`
+
+To change the backend URL, go to Settings → General in the app.
+
+## Signing the Executable
+
+For distribution, code signing is recommended:
+
+```cmd
+signtool sign /f certificate.pfx /p password ^
+    /t http://timestamp.digicert.com ^
+    "dist\Thalamus.exe"
+
+signtool sign /f certificate.pfx /p password ^
+    /t http://timestamp.digicert.com ^
+    "dist\Thalamus-Setup-v1.0.0.msi"
+```
 
 ## Releasing to GitHub
 
-```powershell
+```cmd
 # Build
-.\build.ps1 -Version "1.0.1"
+build.bat installer
 
-# Upload to GitHub Releases
-gh release create v1.0.1 `
-  dist\Thalamus-Setup-v1.0.1.exe `
-  ThalamusInstaller\bin\Release\net8.0-windows\win-x64\publish\ThalamusSetup.exe `
-  dist\checksums.txt `
-  --repo hardcoregamingsyle/thalamus `
-  --title "Thalamus AI v1.0.1"
+# Create GitHub Release
+gh release create v1.0.0 ^
+    dist\Thalamus.exe ^
+    dist\Thalamus-Setup-v1.0.0.msi ^
+    --repo hardcoregamingsyle/thalamus ^
+    --title "Thalamus AI v1.0.0 - Native Windows Desktop"
 ```
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| `CMake Error: Qt6 not found` | Set `CMAKE_PREFIX_PATH` to Qt install dir |
+| `LNK2038: mismatch detected` | Ensure all dependencies use same runtime (/MT for static) |
+| `WebSocket connection failed` | Ensure VM bridge is running on port 5900 |
+| `QEMU not found` | Install QEMU or set path in Settings → VM |
+| `MSI build fails` | Install WiX Toolset v4 from wixtoolset.org |
+| `High DPI blurry` | Qt 6 handles DPI scaling automatically |

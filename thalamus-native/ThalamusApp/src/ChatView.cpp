@@ -1,5 +1,4 @@
 #include "ChatView.h"
-#include <QListWidget>
 #include <QSplitter>
 #include <QHBoxLayout>
 #include <QScrollBar>
@@ -7,6 +6,7 @@
 #include <QDateTime>
 #include <QApplication>
 #include <QClipboard>
+#include <QKeyEvent>
 
 ChatView::ChatView(ConvexClient *client, QWidget *parent)
     : QWidget(parent)
@@ -129,17 +129,8 @@ void ChatView::setupUI()
         m_sendBtn->setEnabled(!m_inputEdit->toPlainText().trimmed().isEmpty());
     });
 
-    // Ctrl+Enter or plain Enter to send
-    // Install event filter or use shortcut:
-    connect(m_inputEdit, &QTextEdit::textChanged, this, [this]() {
-        // Enter sends, Shift+Enter adds newline
-        QString text = m_inputEdit->toPlainText();
-        if (text.endsWith('\n') && !(QApplication::keyboardModifiers() & Qt::ShiftModifier)) {
-            text.chop(1);
-            m_inputEdit->setPlainText(text);
-            onSendMessage();
-        }
-    });
+    // Install event filter on the input for Enter key handling
+    m_inputEdit->installEventFilter(this);
 
     connect(m_conversationList, &QListWidget::currentRowChanged, this, [this](int row) {
         if (row >= 0) {
@@ -152,6 +143,20 @@ void ChatView::setupUI()
         Q_UNUSED(result);
         // Handle query results routed to the right handler
     });
+}
+
+bool ChatView::eventFilter(QObject *obj, QEvent *event)
+{
+    if (obj == m_inputEdit && event->type() == QEvent::KeyPress) {
+        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+        if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+            if (!(keyEvent->modifiers() & Qt::ShiftModifier)) {
+                onSendMessage();
+                return true;
+            }
+        }
+    }
+    return QWidget::eventFilter(obj, event);
 }
 
 void ChatView::onSendMessage()

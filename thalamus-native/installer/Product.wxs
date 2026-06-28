@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Thalamus AI — Native Windows Installer
+Built with WiX Toolset v4 (https://wixtoolset.org/)
+
+Install structure:
+  %PROGRAMFILES%\Thalamus AI\
+    Thalamus.exe              ← Qt 6 C++ desktop app
+    thalamus-vm-bridge.exe    ← VM bridge (standalone, included)
+    vncviewer.exe             ← TightVNC portable viewer (optional)
+    qemu\                     ← QEMU binaries
+      qemu-system-x86_64.exe
+      qemu-img.exe
+      ...
+    data\                     ← VM disk images and ISOs
+    plugins\                  ← Qt plugins (for static builds, empty)
+
+Registry:
+  HKCU\Software\Classes\thalamus\  ← URI scheme
+  HKCU\...\Run\ThalamusBridge      ← Auto-start bridge
+  HKLM\...\Uninstall\Thalamus AI   ← Add/Remove Programs
+
+Prerequisites (installed automatically if missing):
+  - Microsoft Visual C++ Redistributable 2022 (x64)
+  - Qt 6 runtime (only if not statically linked)
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+    <!-- ── Package ────────────────────────────────────────────────────────── -->
+    <Package
+        Name="Thalamus AI"
+        Manufacturer="Aphantic Corporations"
+        Version="1.0.0"
+        UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+        Scope="perMachine"
+        Compressed="yes"
+        Platform="x64">
+
+        <SummaryInformation
+            Description="Thalamus AI — The world's first L4.5 Agent Platform" />
+
+        <MajorUpgrade DowngradeErrorMessage="A newer version of Thalamus AI is already installed." />
+
+        <!-- ── Media ────────────────────────────────────────────────────────── -->
+        <Media Id="1" Cabinet="product.cab" EmbedCab="yes" CompressionLevel="high" />
+
+        <!-- ── Launch Conditions ────────────────────────────────────────────── -->
+        <Condition Message="Thalamus AI requires Windows 10 or later.">
+            <![CDATA[VersionNT >= 1000]]>
+        </Condition>
+
+        <!-- ── Directory Structure ──────────────────────────────────────────── -->
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="INSTALLFOLDER" Name="Thalamus AI">
+                <!-- Application -->
+                <Directory Id="BINFOLDER" Name="bin" />
+                <!-- QEMU binaries -->
+                <Directory Id="QEMUFOLDER" Name="qemu" />
+                <!-- VM data (ISOs, disks) -->
+                <Directory Id="DATAFOLDER" Name="data" />
+            </Directory>
+        </StandardDirectory>
+
+        <StandardDirectory Id="ProgramMenuFolder">
+            <Directory Id="ProgramMenuDir" Name="Thalamus AI" />
+        </StandardDirectory>
+
+        <StandardDirectory Id="DesktopFolder" />
+
+        <!-- ── Components ───────────────────────────────────────────────────── -->
+        <!-- Main Application -->
+        <Component Id="C_MainExecutable" Bitness="always64" Guid="B2C3D4E5-F6A7-8901-BCDE-F12345678901">
+            <File Id="F_ThalamusExe" Source="..\build\Release\Thalamus.exe"
+                  Name="Thalamus.exe" Vital="yes" Checksum="yes" />
+            <File Id="F_BridgeExe" Source="..\bridge\thalamus-vm-bridge.exe"
+                  Name="thalamus-vm-bridge.exe" Vital="yes" />
+            <File Id="F_VNCViewer" Source="..\tools\tvnviewer.exe"
+                  Name="tvnviewer.exe" />
+            <File Id="F_Icon" Source="..\ThalamusApp\resources\icons\app.ico"
+                  Name="app.ico" />
+
+            <!-- VC++ Redistributable merge module -->
+            <Merge Ref="VCRedist" />
+        </Component>
+
+        <!-- QEMU Binaries -->
+        <Component Id="C_QEMU" Bitness="always64" Guid="C3D4E5F6-A7B8-9012-CDEF-123456789012">
+            <Condition>QEMU_INSTALLED</Condition>
+            <File Id="F_QEMU_System" Source="..\qemu\qemu-system-x86_64.exe"
+                  Name="qemu-system-x86_64.exe" />
+            <File Id="F_QEMU_Img" Source="..\qemu\qemu-img.exe"
+                  Name="qemu-img.exe" />
+            <File Id="F_QEMU_Iso" Source="..\qemu\qemu-system-x86_64.exe"
+                  Name="qemu-io.exe" />
+            <!-- Additional QEMU DLLs would be listed here -->
+        </Component>
+
+        <!-- VM Data Directory (created empty) -->
+        <Component Id="C_VMDataDir" Bitness="always64" Guid="D4E5F6A7-B8C9-0123-DEF0-123456789012">
+            <CreateFolder Directory="DATAFOLDER" />
+            <RemoveFile Id="RF_VMData" On="uninstall" Directory="DATAFOLDER" Name="*.*" />
+        </Component>
+
+        <!-- Start Menu Shortcuts -->
+        <Component Id="C_StartMenu" Bitness="always64" Guid="E5F6A7B8-C9D0-1234-EF01-234567890123">
+            <Shortcut Id="S_Main" Directory="ProgramMenuDir"
+                      Name="Thalamus AI" Target="[INSTALLFOLDER]Thalamus.exe"
+                      WorkingDirectory="INSTALLFOLDER" Icon="app.ico" />
+            <Shortcut Id="S_Uninstall" Directory="ProgramMenuDir"
+                      Name="Uninstall Thalamus AI" Target="[System64Folder]msiexec.exe"
+                      Arguments="/x [ProductCode]" />
+            <RemoveFolder Id="RF_ProgramMenu" Directory="ProgramMenuDir" On="uninstall" />
+            <RegistryValue Root="HKCU" Key="Software\Thalamus\Installer"
+                           Name="installed" Type="integer" Value="1" />
+        </Component>
+
+        <!-- Desktop Shortcut -->
+        <Component Id="C_DesktopShortcut" Bitness="always64" Guid="F6A7B8C9-D0E1-2345-F012-345678901234">
+            <Condition>DESKTOP_SHORTCUT</Condition>
+            <Shortcut Id="S_Desktop" Directory="DesktopFolder"
+                      Name="Thalamus AI" Target="[INSTALLFOLDER]Thalamus.exe"
+                      WorkingDirectory="INSTALLFOLDER" Icon="app.ico" />
+            <RegistryValue Root="HKCU" Key="Software\Thalamus\Installer"
+                           Name="desktopShortcut" Type="integer" Value="1" />
+        </Component>
+
+        <!-- ── Registry: thalamus:// URI Scheme ─────────────────────────────── -->
+        <Component Id="C_URIScheme" Bitness="always64" Guid="A7B8C9D0-E1F2-3456-7890-1234567890AB">
+            <RegistryKey Root="HKCU" Key="Software\Classes\thalamus">
+                <RegistryValue Type="string" Value="URL:Thalamus Protocol" />
+                <RegistryValue Type="string" Name="URL Protocol" Value="" />
+                <RegistryKey Key="shell\open\command">
+                    <RegistryValue Type="string"
+                        Value="&quot;[INSTALLFOLDER]Thalamus.exe&quot; &quot;%1&quot;" />
+                </RegistryKey>
+            </RegistryKey>
+        </Component>
+
+        <!-- ── Registry: Auto-start Bridge ───────────────────────────────────── -->
+        <Component Id="C_AutoStartBridge" Bitness="always64" Guid="B8C9D0E1-F2A3-4567-8901-234567890ABC">
+            <Condition>AUTO_START_BRIDGE</Condition>
+            <RegistryKey Root="HKCU"
+                Key="Software\Microsoft\Windows\CurrentVersion\Run">
+                <RegistryValue Type="string" Name="ThalamusBridge"
+                    Value="&quot;[INSTALLFOLDER]thalamus-vm-bridge.exe&quot;" />
+            </RegistryKey>
+        </Component>
+
+        <!-- ── Features ──────────────────────────────────────────────────────── -->
+        <Feature Id="F_MainApp" Title="Thalamus AI App" Level="1"
+                 Description="The main Thalamus AI desktop application">
+            <ComponentRef Id="C_MainExecutable" />
+            <ComponentRef Id="C_StartMenu" />
+            <ComponentRef Id="C_DesktopShortcut" />
+            <ComponentRef Id="C_VMDataDir" />
+            <ComponentRef Id="C_URIScheme" />
+            <ComponentRef Id="C_AutoStartBridge" />
+        </Feature>
+
+        <Feature Id="F_QEMU" Title="QEMU Virtualisation Engine" Level="1"
+                 Description="QEMU for running full OS virtual machines.
+                              Required for VM Sandbox functionality.">
+            <ComponentRef Id="C_QEMU" />
+        </Feature>
+
+        <!-- ── UI ────────────────────────────────────────────────────────────── -->
+        <ui:WixUI Id="WixUI_FeatureTree" />
+
+        <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+
+        <!-- Custom dialog text -->
+        <ui:Text Id="WelcomeText">
+            This will install Thalamus AI — the world's first L4.5 Agent Platform.
+
+            Thalamus combines AI chat, deep research, autonomous coding, and full
+            OS virtualisation (QEMU + VNC) in a single native Windows app.
+
+            Click Next to continue, or Cancel to exit setup.
+        </ui:Text>
+
+        <!-- ── Properties ────────────────────────────────────────────────────── -->
+        <Property Id="DESKTOP_SHORTCUT" Value="1" />
+        <Property Id="AUTO_START_BRIDGE" Value="1" />
+        <Property Id="QEMU_INSTALLED" Value="1" />
+
+        <!-- ── Custom Actions ────────────────────────────────────────────────── -->
+        <CustomAction Id="CA_LaunchApp"
+                      FileKey="F_ThalamusExe"
+                      ExeCommand=""
+                      Execute="immediate"
+                      Impersonate="yes"
+                      Return="asyncNoWait" />
+
+        <CustomAction Id="CA_StartBridge"
+                      FileKey="F_BridgeExe"
+                      ExeCommand=""
+                      Execute="immediate"
+                      Impersonate="yes"
+                      Return="asyncNoWait" />
+
+        <!-- ── Install Sequence ──────────────────────────────────────────────── -->
+        <InstallExecuteSequence>
+            <Custom Action="CA_LaunchApp" After="InstallFinalize">
+                <![CDATA[NOT Installed AND LAUNCH_AFTER_INSTALL]]>
+            </Custom>
+            <Custom Action="CA_StartBridge" After="InstallFinalize">
+                <![CDATA[NOT Installed AND START_BRIDGE]]>
+            </Custom>
+        </InstallExecuteSequence>
+
+        <Property Id="LAUNCH_AFTER_INSTALL" Value="1" />
+        <Property Id="START_BRIDGE" Value="1" />
+
+        <!-- ── UI Customization ──────────────────────────────────────────────── -->
+        <ui:WixUI Id="WixUI_InstallDir" />
+
+        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT"
+                  Value="Launch Thalamus AI" />
+        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX2TEXT"
+                  Value="Start VM Bridge" />
+
+        <!-- ── Merge Modules ─────────────────────────────────────────────────── -->
+        <Merge Id="VCRedist" Language="0" DiskId="1"
+               SourceFile="C:\Program Files (x86)\Microsoft Visual Studio\2022\VC\Redist\MSVC\vcredist_2022_x64.msm" />
+
+    </Package>
+</Wix>
