@@ -38,11 +38,11 @@ jobs:
       - name: Install Qt 6
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.5.3'
+          version: '6.7.3'
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
-          modules: 'qtwebsockets qtsvg qt5compat'
+          modules: 'qtwebsockets qtsvg'
           cache: true
 
       # ── Install WiX Toolset v4 ────────────────────────────────────────────
@@ -61,8 +61,7 @@ jobs:
           cd build
           cmake ../ThalamusApp -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_BUILD_TYPE=Release `
-            -DBUILD_SHARED_LIBS=ON `
-            -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreadedDLL"
+            -DBUILD_SHARED_LIBS=ON
 
       # ── Build with MSVC ──────────────────────────────────────────────────
       - name: Build ThalamusApp
