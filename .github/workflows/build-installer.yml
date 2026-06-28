@@ -59,14 +59,14 @@ jobs:
           arch: x64
           toolset: 14.4
 
-      # ── Configure CMake (dynamic libs for CI) ─────────────────────────────
+      # ── Configure CMake (Ninja generator, dynamic libs for CI) ──────────
       - name: Configure CMake
         shell: pwsh
         run: |
           cd thalamus-native
           mkdir build -Force
           cd build
-          cmake ../ThalamusApp -G "Visual Studio 17 2022" -A x64 `
+          cmake ../ThalamusApp -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DBUILD_SHARED_LIBS=ON
 
@@ -74,8 +74,7 @@ jobs:
       - name: Build ThalamusApp
         shell: pwsh
         run: |
-          cmake --build thalamus-native/build --config Release --parallel `
-            -- /p:PreferredToolArchitecture=x64
+          cmake --build thalamus-native/build --parallel
 
       # ── Collect Qt DLLs with windeployqt ──────────────────────────────────
       - name: Deploy Qt Runtime DLLs
@@ -83,7 +82,7 @@ jobs:
         run: |
           $qtBin = "${{ env.QT_ROOT_DIR }}\bin"
           & "$qtBin\windeployqt.exe" --release --no-compiler-runtime `
-            thalamus-native\build\Release\Thalamus.exe
+            thalamus-native\build\Thalamus.exe
 
       # ── Stage installer payload ───────────────────────────────────────────
       - name: Stage installer payload
@@ -93,13 +92,13 @@ jobs:
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
 
           # Main app
-          Copy-Item "thalamus-native\build\Release\Thalamus.exe" "$stage\"
-          Copy-Item "thalamus-native\build\Release\*.dll" "$stage\" -ErrorAction SilentlyContinue
-          Copy-Item "thalamus-native\build\Release\platforms" "$stage\" -Recurse -ErrorAction SilentlyContinue
-          Copy-Item "thalamus-native\build\Release\styles" "$stage\" -Recurse -ErrorAction SilentlyContinue
-          Copy-Item "thalamus-native\build\Release\iconengines" "$stage\" -Recurse -ErrorAction SilentlyContinue
-          Copy-Item "thalamus-native\build\Release\imageformats" "$stage\" -Recurse -ErrorAction SilentlyContinue
-          Copy-Item "thalamus-native\build\Release\tls" "$stage\" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "thalamus-native\build\Thalamus.exe" "$stage\"
+          Copy-Item "thalamus-native\build\*.dll" "$stage\" -ErrorAction SilentlyContinue
+          Copy-Item "thalamus-native\build\platforms" "$stage\" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "thalamus-native\build\styles" "$stage\" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "thalamus-native\build\iconengines" "$stage\" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "thalamus-native\build\imageformats" "$stage\" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "thalamus-native\build\tls" "$stage\" -Recurse -ErrorAction SilentlyContinue
 
           # Icon
           Copy-Item "thalamus-native\ThalamusApp\resources\icons\app.ico" "$stage\"
