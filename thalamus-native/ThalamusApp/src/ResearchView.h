@@ -49,6 +49,8 @@ private:
 
     // State
     bool m_isResearching;
+    QString m_researchQuery;
+    QString m_currentResearchResponse;
 };
 
 #endif // RESEARCHVIEW_H
