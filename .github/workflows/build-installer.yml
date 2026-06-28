@@ -42,7 +42,7 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
-          modules: 'qtwebsockets qtsvg'
+          modules: 'qtwebsockets'
           cache: true
 
       # ── Install WiX Toolset v4 ────────────────────────────────────────────
