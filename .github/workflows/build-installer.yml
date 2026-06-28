@@ -1,0 +1,175 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Thalamus AI — Windows Installer Builder
+#
+#  Triggered by pushing a tag matching v*.*.*-native (e.g. v1.0.0-native).
+#  Builds the Qt 6 C++ desktop app and WiX Burn bundle installer on a
+#  Windows GitHub Actions runner, then creates a GitHub Release with the
+#  installer .exe attached — which is what the "Download for Windows"
+#  buttons on the Landing page and VM Setup dialog point to.
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: Build Windows Installer
+
+on:
+  push:
+    tags:
+      - 'v*.*.*-native'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. v1.0.0-native)'
+        required: true
+        default: 'v1.0.0-native'
+
+env:
+  APP_VERSION: '1.0.0'
+  INSTALLER_NAME: 'Thalamus-Setup-v1.0.0.exe'
+
+jobs:
+  build-installer:
+    name: Build Installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Install Qt 6 ──────────────────────────────────────────────────────
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.5.3'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          modules: 'qtwebsockets qtsvg qt5compat'
+          cache: true
+
+      # ── Install WiX Toolset v4 ────────────────────────────────────────────
+      - name: Install WiX Toolset v4
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 4.0.5
+          wix --version
+
+      # ── Configure CMake (dynamic libs for CI) ─────────────────────────────
+      - name: Configure CMake
+        shell: pwsh
+        run: |
+          cd thalamus-native
+          mkdir build -Force
+          cd build
+          cmake ../ThalamusApp -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_SHARED_LIBS=ON `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreadedDLL"
+
+      # ── Build with MSVC ──────────────────────────────────────────────────
+      - name: Build ThalamusApp
+        shell: pwsh
+        run: |
+          cmake --build thalamus-native/build --config Release --parallel `
+            -- /p:PreferredToolArchitecture=x64
+
+      # ── Collect Qt DLLs with windeployqt ──────────────────────────────────
+      - name: Deploy Qt Runtime DLLs
+        shell: pwsh
+        run: |
+          $qtBin = "${{ env.QT_ROOT_DIR }}\bin"
+          & "$qtBin\windeployqt.exe" --release --no-compiler-runtime `
+            thalamus-native\build\Release\Thalamus.exe
+
+      # ── Stage installer payload ───────────────────────────────────────────
+      - name: Stage installer payload
+        shell: pwsh
+        run: |
+          $stage = "thalamus-native\build\stage"
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+
+          # Main app
+          Copy-Item "thalamus-native\build\Release\Thalamus.exe" "$stage\"
+          Copy-Item "thalamus-native\build\Release\*.dll" "$stage\" -ErrorAction SilentlyContinue
+          Copy-Item "thalamus-native\build\Release\platforms" "$stage\" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "thalamus-native\build\Release\styles" "$stage\" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "thalamus-native\build\Release\iconengines" "$stage\" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "thalamus-native\build\Release\imageformats" "$stage\" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "thalamus-native\build\Release\tls" "$stage\" -Recurse -ErrorAction SilentlyContinue
+
+          # Icon
+          Copy-Item "thalamus-native\ThalamusApp\resources\icons\app.ico" "$stage\"
+
+      # ── Generate WiX fragment with heat ───────────────────────────────────
+      - name: Harvest files with WiX heat
+        shell: pwsh
+        run: |
+          wix harvest dir "thalamus-native\build\stage" `
+            -o "thalamus-native\build\HeatFiles.wxs" `
+            -cg "AllAppFiles" `
+            -dr "INSTALLFOLDER" `
+            -x "*.pdb" `
+            -suo `
+            -sf
+
+      # ── Compile WiX sources ──────────────────────────────────────────────
+      - name: Compile WiX sources
+        shell: pwsh
+        run: |
+          $buildDir = "thalamus-native\build"
+          wix build `
+            "$buildDir\HeatFiles.wxs" `
+            "thalamus-native\installer\Product.ci.wxs" `
+            -o "$buildDir\ThalamusApp.msi" `
+            -d Version=${{ env.APP_VERSION }} `
+            -arch x64 `
+            -ext WixUIExtension
+
+      # ── Build Burn bootstrapper (.exe) ───────────────────────────────────
+      - name: Build Burn Bundle
+        shell: pwsh
+        run: |
+          $buildDir = "thalamus-native\build"
+          $distDir = "thalamus-native\dist"
+          New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+
+          wix build `
+            "thalamus-native\installer\Bundle.ci.wxs" `
+            -o "$distDir\${{ env.INSTALLER_NAME }}" `
+            -d Version=${{ env.APP_VERSION }} `
+            -d MsiPath="$buildDir\ThalamusApp.msi" `
+            -arch x64 `
+            -ext WixBalExtension `
+            -ext WixUIExtension
+
+      # ── Create GitHub Release ─────────────────────────────────────────────
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          name: Thalamus AI ${{ github.ref_name }}
+          body: |
+            ## Thalamus AI — Native Windows Installer
+
+            **Version:** ${{ github.ref_name }}
+
+            ### What's included:
+            - Qt 6 C++ desktop application (Chat, Research, Study, Code, VM Sandbox)
+            - Built-in VNC client
+            - `thalamus://` protocol handler for one-click VM boot
+            - Auto-start VM Bridge service
+            - Microsoft VC++ Redistributable 2022 (auto-installed)
+
+            ### System Requirements:
+            - Windows 10 64-bit or later
+            - 8GB+ RAM recommended
+            - Hardware virtualization (VT-x/AMD-V) for VM Sandbox
+
+            ### Install:
+            1. Download `${{ env.INSTALLER_NAME }}`
+            2. Double-click to run (Windows SmartScreen may show a warning — click "More info" → "Run anyway")
+            3. Follow the setup wizard
+            4. Thalamus AI will launch automatically after installation
+          files: |
+            thalamus-native/dist/${{ env.INSTALLER_NAME }}
+            thalamus-native/build/ThalamusApp.msi
+          draft: false
+          prerelease: false
