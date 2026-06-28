@@ -176,20 +176,20 @@ void ConvexClient::streamChat(
     userContext["timezone"] = QDateTime::currentDateTime().timeZoneAbbreviation();
     body["userContext"] = userContext;
 
+    QSharedPointer<QByteArray> buffer(new QByteArray());
     QNetworkReply *reply = m_network->post(req, QJsonDocument(body).toJson());
 
     // Connect to readyRead for streaming
-    QByteArray buffer;
-    connect(reply, &QNetworkReply::readyRead, this, [reply, onChunk, &buffer]() {
-        buffer.append(reply->readAll());
+    connect(reply, &QNetworkReply::readyRead, this, [reply, onChunk, buffer]() {
+        buffer->append(reply->readAll());
 
         // Parse SSE events
         while (true) {
-            int lineEnd = buffer.indexOf('\n');
+            int lineEnd = buffer->indexOf('\n');
             if (lineEnd < 0) break;
 
-            QByteArray line = buffer.left(lineEnd).trimmed();
-            buffer = buffer.mid(lineEnd + 1);
+            QByteArray line = buffer->left(lineEnd).trimmed();
+            *buffer = buffer->mid(lineEnd + 1);
 
             if (line.isEmpty()) continue; // blank line = event separator
 

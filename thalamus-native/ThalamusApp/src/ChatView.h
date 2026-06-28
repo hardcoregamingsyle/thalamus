@@ -7,6 +7,8 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QLabel>
+#include <QListWidget>
+#include <QListWidgetItem>
 #include <QJsonArray>
 #include <QJsonObject>
 #include "ConvexClient.h"
@@ -42,6 +44,7 @@ private:
     void appendAssistantChunk(const QString &chunk);
     void clearChat();
     void loadConversations();
+    bool eventFilter(QObject *obj, QEvent *event) override;
     void switchConversation(const QString &id);
     QString formatTimestamp();
 

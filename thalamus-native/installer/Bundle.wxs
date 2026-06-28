@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Thalamus AI — Burn Bundle Installer
+Downloads and installs prerequisites before installing the main app.
+
+Chain:
+  1. VC++ Redistributable 2022 (x64)
+  2. Qt 6 Runtime (optional, only if not statically linked)
+  3. Thalamus AI MSI
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+    <Bundle
+        Name="Thalamus AI"
+        Version="1.0.0"
+        Manufacturer="Aphantic Corporations"
+        UpgradeCode="F1A2B3C4-D5E6-7890-ABCD-EF1234567890"
+        IconSourceFile="..\ThalamusApp\resources\icons\app.ico"
+        DisableModify="yes">
+
+        <bal:Condition
+            Message="Thalamus AI requires Windows 10 64-bit or later.">
+            <![CDATA[VersionNT64 >= 1000]]>
+        </bal:Condition>
+
+        <Chain>
+            <!-- VC++ Redistributable 2022 x64 -->
+            <ExePackage
+                Id="VCRedist"
+                Name="vc_redist.x64.exe"
+                Cache="no"
+                Compressed="no"
+                Perpetual="yes"
+                Permanent="yes"
+                Vital="yes"
+                DisplayName="Microsoft Visual C++ 2022 Redistributable (x64)"
+                DownloadUrl="https://aka.ms/vs/17/release/vc_redist.x64.exe"
+                InstallCommand="/install /quiet /norestart"
+                UninstallCommand="/uninstall /quiet /norestart"
+                DetectCondition="VCRedistInstalled"
+                LogPathVariable="WixBundleLog_VCRedist">
+                <ExitCode Behavior="forceReboot" />
+            </ExePackage>
+
+            <!-- Main MSI -->
+            <MsiPackage
+                Id="ThalamusApp"
+                SourceFile="..\build\ThalamusApp.msi"
+                Vital="yes"
+                DisplayName="Thalamus AI"
+                LogPathVariable="WixBundleLog_ThalamusApp"
+                ForcePerMachine="yes">
+                <MsiProperty Name="LAUNCH_AFTER_INSTALL" Value="[LaunchApp]" />
+                <MsiProperty Name="START_BRIDGE" Value="[StartBridge]" />
+                <MsiProperty Name="DESKTOP_SHORTCUT" Value="[DesktopShortcut]" />
+                <MsiProperty Name="AUTO_START_BRIDGE" Value="[AutoStartBridge]" />
+            </MsiPackage>
+        </Chain>
+
+        <!-- ── Bundle UI ─────────────────────────────────────────────────────── -->
+        <bal:WixStandardBootstrapperApplication
+            Theme="hyperlinkLarge"
+            LicenseUrl="https://thalamus.aphantic.skinticals.com"
+            LogoFile="..\ThalamusApp\resources\icons\app.ico" />
+
+        <!-- ── Variables ─────────────────────────────────────────────────────── -->
+        <Variable Name="LaunchApp" Type="string" Value="1" />
+        <Variable Name="StartBridge" Type="string" Value="1" />
+        <Variable Name="DesktopShortcut" Type="string" Value="1" />
+        <Variable Name="AutoStartBridge" Type="string" Value="1" />
+
+    </Bundle>
+</Wix>
