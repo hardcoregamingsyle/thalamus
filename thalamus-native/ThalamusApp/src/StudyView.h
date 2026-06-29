@@ -11,6 +11,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QComboBox>
+#include <QListWidget>
 #include <QProgressBar>
 #include "ConvexClient.h"
 #include "MarkdownRenderer.h"

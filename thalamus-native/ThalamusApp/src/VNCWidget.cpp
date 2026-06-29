@@ -1,4 +1,5 @@
 #include "VNCWidget.h"
+#include <QApplication>
 #include <QPainter>
 #include <QMouseEvent>
 #include <QWheelEvent>
@@ -37,7 +38,7 @@ VNCWidget::VNCWidget(QWidget *parent)
     connect(m_socket, &QTcpSocket::connected, this, &VNCWidget::onSocketConnected);
     connect(m_socket, &QTcpSocket::disconnected, this, &VNCWidget::onSocketDisconnected);
     connect(m_socket, &QTcpSocket::readyRead, this, &VNCWidget::onSocketReadyRead);
-    connect(m_socket, QOverload<QAbstractSocket::SocketError>::of(&QTcpSocket::error),
+    connect(m_socket, &QAbstractSocket::errorOccurred,
             this, &VNCWidget::onSocketError);
 
     // Request framebuffer updates every 100ms
