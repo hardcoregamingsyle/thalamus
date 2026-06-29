@@ -51,9 +51,34 @@ jobs:
         run: |
           dotnet tool install --global wix --version 4.0.5
           wix --version
-          # Register WiX v4 extensions (required before -ext flags work)
-          wix extension add WixToolset.UI.wixext
-          wix extension add WixToolset.Bal.wixext
+
+          # Download WiX v4 extension DLLs from NuGet directly.
+          # wix extension add is unreliable in CI — we download the .nupkg,
+          # extract it, and reference the DLLs by absolute path.
+          $extDir = "$env:USERPROFILE\.wix\extensions"
+          New-Item -ItemType Directory -Path $extDir -Force | Out-Null
+
+          function Get-WixExtension($pkgName) {
+            $zipPath = "$extDir\$pkgName.zip"
+            $outDir = "$extDir\$pkgName"
+            Write-Host "Downloading $pkgName..."
+            Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/$pkgName/4.0.5" `
+              -OutFile $zipPath -UseBasicParsing
+            Expand-Archive -Path $zipPath -DestinationPath $outDir -Force
+            $dll = Get-ChildItem -Path $outDir -Recurse -Filter "$pkgName.dll" | Select-Object -First 1
+            Remove-Item $zipPath -Force
+            return $dll.FullName
+          }
+
+          $uiDll = Get-WixExtension "WixToolset.UI.wixext"
+          $balDll = Get-WixExtension "WixToolset.Bal.wixext"
+
+          Write-Host "UI DLL: $uiDll"
+          Write-Host "BAL DLL: $balDll"
+
+          # Export as env vars for later steps
+          echo "WIX_UI_DLL=$uiDll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "WIX_BAL_DLL=$balDll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       # ── Set up MSVC developer environment ─────────────────────────────────
       - name: Set up MSVC developer command prompt
@@ -203,7 +228,7 @@ jobs:
             -o "$buildDir\ThalamusApp.msi" `
             -d Version=${{ env.APP_VERSION }} `
             -arch x64 `
-            -ext WixToolset.UI.wixext
+            -ext "$env:WIX_UI_DLL"
 
       # ── Build Burn bootstrapper (.exe) ───────────────────────────────────
       - name: Build Burn Bundle
@@ -219,8 +244,8 @@ jobs:
             -d Version=${{ env.APP_VERSION }} `
             -d MsiPath="$buildDir\ThalamusApp.msi" `
             -arch x64 `
-            -ext WixToolset.Bal.wixext `
-            -ext WixToolset.UI.wixext
+            -ext "$env:WIX_BAL_DLL" `
+            -ext "$env:WIX_UI_DLL"
 
       # ── Create GitHub Release ─────────────────────────────────────────────
       - name: Create Release
