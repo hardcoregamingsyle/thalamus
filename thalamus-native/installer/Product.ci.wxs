@@ -27,6 +27,11 @@ shortcuts, and custom actions on top.
 
         <Media Id="1" Cabinet="product.cab" EmbedCab="yes" CompressionLevel="high" />
 
+        <!-- ── Launch Conditions ─────────────────────────────────────────── -->
+        <Condition Message="Thalamus AI requires Windows 10 or later.">
+            VersionNT >= 1000
+        </Condition>
+
         <!-- ── Directory Structure ────────────────────────────────────────── -->
         <StandardDirectory Id="ProgramFiles64Folder">
             <Directory Id="INSTALLFOLDER" Name="Thalamus AI" />
@@ -42,7 +47,6 @@ shortcuts, and custom actions on top.
         <Feature Id="F_Complete" Title="Thalamus AI" Level="1"
                  Description="Complete Thalamus AI installation">
             <ComponentGroupRef Id="AllAppFiles" />
-            <ComponentRef Id="C_LaunchCondition" />
             <ComponentRef Id="C_StartMenu" />
             <ComponentRef Id="C_DesktopShortcut" />
             <ComponentRef Id="C_URIScheme" />
@@ -58,7 +62,7 @@ shortcuts, and custom actions on top.
                       Return="asyncNoWait" />
 
         <InstallExecuteSequence>
-            <Custom Action="CA_LaunchApp" After="InstallFinalize">NOT Installed</Custom>
+            <Custom Action="CA_LaunchApp" After="InstallFinalize" Condition="NOT Installed" />
         </InstallExecuteSequence>
 
         <!-- ── UI ─────────────────────────────────────────────────────────── -->
@@ -72,13 +76,6 @@ shortcuts, and custom actions on top.
     <Fragment>
         <!-- ── Icons ──────────────────────────────────────────────────────── -->
         <Icon Id="appicon" SourceFile="app.ico" />
-
-        <!-- ── Launch Condition ───────────────────────────────────────────── -->
-        <Component Id="C_LaunchCondition" Directory="INSTALLFOLDER" Guid="*">
-            <Condition Message="Thalamus AI requires Windows 10 or later.">
-                VersionNT >= 1000
-            </Condition>
-        </Component>
 
         <!-- ── Start Menu Shortcuts ───────────────────────────────────────── -->
         <Component Id="C_StartMenu" Directory="ProgramMenuDir"
