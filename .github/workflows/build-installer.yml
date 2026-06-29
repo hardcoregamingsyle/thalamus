@@ -231,11 +231,13 @@ jobs:
         shell: pwsh
         run: |
           $buildDir = "thalamus-native\build"
+          $stageDir = "$buildDir\stage"
           wix build `
             "$buildDir\HeatFiles.wxs" `
             "thalamus-native\installer\Product.ci.wxs" `
             -o "$buildDir\ThalamusApp.msi" `
             -d Version=${{ env.APP_VERSION }} `
+            -d StageDir="$stageDir" `
             -arch x64 `
             -ext "$env:WIX_UI_DLL"
 
