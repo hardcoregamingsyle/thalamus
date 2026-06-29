@@ -31,7 +31,7 @@ void AutoUpdater::setCurrentVersion(const QString &version)
 
 void AutoUpdater::checkForUpdates()
 {
-    QNetworkRequest req(QUrl(m_releasesUrl));
+    QNetworkRequest req{QUrl(m_releasesUrl)};
     req.setRawHeader("Accept", "application/vnd.github.v3+json");
     req.setRawHeader("User-Agent", "ThalamusAI");
 
@@ -98,7 +98,7 @@ void AutoUpdater::downloadUpdate(const QString &url, const QString &filename)
     QString saveName = filename.isEmpty() ? "Thalamus-Setup-" + m_latestVersion + ".exe" : filename;
     QString savePath = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation) + "/" + saveName;
 
-    QNetworkRequest req(QUrl(downloadUrl));
+    QNetworkRequest req{QUrl(downloadUrl)};
     QNetworkReply *reply = m_network->get(req);
 
     connect(reply, &QNetworkReply::downloadProgress, this, [this](qint64 received, qint64 total) {
