@@ -183,7 +183,12 @@ jobs:
           foreach ($fe in $fileGroups['']) {
             $idx++
             [void]$sb.AppendLine("      <Component Id=`"C_h$idx`" Guid=`"*`">")
-            [void]$sb.AppendLine("        <File Source=`"$($fe.File.FullName)`" />")
+            if ($fe.File.Name -eq 'Thalamus.exe') {
+              # Give Thalamus.exe a known File Id so CustomAction can reference it
+              [void]$sb.AppendLine("        <File Id='F_ThalamusExe' Source=`"$($fe.File.FullName)`" />")
+            } else {
+              [void]$sb.AppendLine("        <File Source=`"$($fe.File.FullName)`" />")
+            }
             [void]$sb.AppendLine("      </Component>")
           }
 
