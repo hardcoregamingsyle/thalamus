@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-Thalamus AI — CI-Optimized Product (heat-harvested)
-Built by GitHub Actions with WiX Toolset v4.
+Thalamus AI — CI-Optimized Product (WiX Toolset v4)
+Built by GitHub Actions.
 
-Files are harvested by `wix harvest dir` into HeatFiles.wxs,
-which generates a ComponentGroup named "AllAppFiles".
+Files are harvested into HeatFiles.wxs, which generates
+a ComponentGroup named "AllAppFiles".
 
 This product references that group and adds registry entries,
 shortcuts, and custom actions on top.
@@ -27,10 +27,6 @@ shortcuts, and custom actions on top.
 
         <Media Id="1" Cabinet="product.cab" EmbedCab="yes" CompressionLevel="high" />
 
-        <Condition Message="Thalamus AI requires Windows 10 or later.">
-            <![CDATA[VersionNT >= 1000]]>
-        </Condition>
-
         <!-- ── Directory Structure ────────────────────────────────────────── -->
         <StandardDirectory Id="ProgramFiles64Folder">
             <Directory Id="INSTALLFOLDER" Name="Thalamus AI" />
@@ -41,57 +37,6 @@ shortcuts, and custom actions on top.
         </StandardDirectory>
 
         <StandardDirectory Id="DesktopFolder" />
-
-        <!-- ── Icons ──────────────────────────────────────────────────────── -->
-        <Icon Id="appicon" SourceFile="app.ico" />
-
-        <!-- ── Harvester output ───────────────────────────────────────────── -->
-        <ComponentGroupRef Id="AllAppFiles" />
-
-        <!-- ── Start Menu Shortcuts ───────────────────────────────────────── -->
-        <Component Id="C_StartMenu" Bitness="always64" Guid="E5F6A7B8-C9D0-1234-EF01-234567890123">
-            <Shortcut Id="S_Main" Directory="ProgramMenuDir"
-                      Name="Thalamus AI" Target="[INSTALLFOLDER]Thalamus.exe"
-                      WorkingDirectory="INSTALLFOLDER"
-                      Icon="appicon" />
-            <Shortcut Id="S_Uninstall" Directory="ProgramMenuDir"
-                      Name="Uninstall Thalamus AI" Target="[System64Folder]msiexec.exe"
-                      Arguments="/x [ProductCode]" />
-            <RemoveFolder Id="RF_ProgramMenu" Directory="ProgramMenuDir" On="uninstall" />
-            <RegistryValue Root="HKCU" Key="Software\Thalamus\Installer"
-                           Name="installed" Type="integer" Value="1" />
-        </Component>
-
-        <!-- ── Desktop Shortcut ───────────────────────────────────────────── -->
-        <Component Id="C_DesktopShortcut" Bitness="always64" Guid="F6A7B8C9-D0E1-2345-F012-345678901234">
-            <Shortcut Id="S_Desktop" Directory="DesktopFolder"
-                      Name="Thalamus AI" Target="[INSTALLFOLDER]Thalamus.exe"
-                      WorkingDirectory="INSTALLFOLDER"
-                      Icon="appicon" />
-            <RegistryValue Root="HKCU" Key="Software\Thalamus\Installer"
-                           Name="desktopShortcut" Type="integer" Value="1" />
-        </Component>
-
-        <!-- ── thalamus:// URI Scheme ─────────────────────────────────────── -->
-        <Component Id="C_URIScheme" Bitness="always64" Guid="A7B8C9D0-E1F2-3456-7890-1234567890AB">
-            <RegistryKey Root="HKCU" Key="Software\Classes\thalamus">
-                <RegistryValue Type="string" Value="URL:Thalamus Protocol" />
-                <RegistryValue Type="string" Name="URL Protocol" Value="" />
-                <RegistryKey Key="shell\open\command">
-                    <RegistryValue Type="string"
-                        Value="&quot;[INSTALLFOLDER]Thalamus.exe&quot; &quot;%1&quot;" />
-                </RegistryKey>
-            </RegistryKey>
-        </Component>
-
-        <!-- ── Auto-start Bridge ──────────────────────────────────────────── -->
-        <Component Id="C_AutoStartBridge" Bitness="always64" Guid="B8C9D0E1-F2A3-4567-8901-234567890ABC">
-            <RegistryKey Root="HKCU"
-                Key="Software\Microsoft\Windows\CurrentVersion\Run">
-                <RegistryValue Type="string" Name="ThalamusBridge"
-                    Value="&quot;[INSTALLFOLDER]Thalamus.exe&quot; --bridge" />
-            </RegistryKey>
-        </Component>
 
         <!-- ── Features ───────────────────────────────────────────────────── -->
         <Feature Id="F_Complete" Title="Thalamus AI" Level="1"
@@ -105,16 +50,14 @@ shortcuts, and custom actions on top.
 
         <!-- ── Custom Actions ─────────────────────────────────────────────── -->
         <CustomAction Id="CA_LaunchApp"
-                      FileKey="Thalamus.exe"
+                      FileRef="F_ThalamusExe"
                       ExeCommand=""
                       Execute="immediate"
                       Impersonate="yes"
                       Return="asyncNoWait" />
 
         <InstallExecuteSequence>
-            <Custom Action="CA_LaunchApp" After="InstallFinalize">
-                <![CDATA[NOT Installed]]>
-            </Custom>
+            <Custom Action="CA_LaunchApp" After="InstallFinalize">NOT Installed</Custom>
         </InstallExecuteSequence>
 
         <!-- ── UI ─────────────────────────────────────────────────────────── -->
@@ -124,4 +67,66 @@ shortcuts, and custom actions on top.
                   Value="Launch Thalamus AI" />
 
     </Package>
+
+    <Fragment>
+        <!-- ── Icons ──────────────────────────────────────────────────────── -->
+        <Icon Id="appicon" SourceFile="app.ico" />
+
+        <!-- ── Launch Condition ───────────────────────────────────────────── -->
+        <Component Id="C_LaunchCondition" Directory="INSTALLFOLDER" Guid="*">
+            <Condition Message="Thalamus AI requires Windows 10 or later.">
+                VersionNT >= 1000
+            </Condition>
+        </Component>
+
+        <!-- ── Start Menu Shortcuts ───────────────────────────────────────── -->
+        <Component Id="C_StartMenu" Directory="ProgramMenuDir"
+                   Bitness="always64" Guid="E5F6A7B8-C9D0-1234-EF01-234567890123">
+            <Shortcut Id="S_Main" Directory="ProgramMenuDir"
+                      Name="Thalamus AI" Target="[INSTALLFOLDER]Thalamus.exe"
+                      WorkingDirectory="INSTALLFOLDER"
+                      Icon="appicon" />
+            <Shortcut Id="S_Uninstall" Directory="ProgramMenuDir"
+                      Name="Uninstall Thalamus AI" Target="[System64Folder]msiexec.exe"
+                      Arguments="/x [ProductCode]" />
+            <RemoveFolder Id="RF_ProgramMenu" Directory="ProgramMenuDir" On="uninstall" />
+            <RegistryValue Root="HKCU" Key="Software\Thalamus\Installer"
+                           Name="installed" Type="integer" Value="1" />
+        </Component>
+
+        <!-- ── Desktop Shortcut ───────────────────────────────────────────── -->
+        <Component Id="C_DesktopShortcut" Directory="DesktopFolder"
+                   Bitness="always64" Guid="F6A7B8C9-D0E1-2345-F012-345678901234">
+            <Shortcut Id="S_Desktop" Directory="DesktopFolder"
+                      Name="Thalamus AI" Target="[INSTALLFOLDER]Thalamus.exe"
+                      WorkingDirectory="INSTALLFOLDER"
+                      Icon="appicon" />
+            <RegistryValue Root="HKCU" Key="Software\Thalamus\Installer"
+                           Name="desktopShortcut" Type="integer" Value="1" />
+        </Component>
+
+        <!-- ── thalamus:// URI Scheme ─────────────────────────────────────── -->
+        <Component Id="C_URIScheme" Directory="INSTALLFOLDER"
+                   Bitness="always64" Guid="A7B8C9D0-E1F2-3456-7890-1234567890AB">
+            <RegistryKey Root="HKCU" Key="Software\Classes\thalamus">
+                <RegistryValue Type="string" Value="URL:Thalamus Protocol" />
+                <RegistryValue Type="string" Name="URL Protocol" Value="" />
+                <RegistryKey Key="shell\open\command">
+                    <RegistryValue Type="string"
+                        Value="&quot;[INSTALLFOLDER]Thalamus.exe&quot; &quot;%1&quot;" />
+                </RegistryKey>
+            </RegistryKey>
+        </Component>
+
+        <!-- ── Auto-start Bridge ──────────────────────────────────────────── -->
+        <Component Id="C_AutoStartBridge" Directory="INSTALLFOLDER"
+                   Bitness="always64" Guid="B8C9D0E1-F2A3-4567-8901-234567890ABC">
+            <RegistryKey Root="HKCU"
+                Key="Software\Microsoft\Windows\CurrentVersion\Run">
+                <RegistryValue Type="string" Name="ThalamusBridge"
+                    Value="&quot;[INSTALLFOLDER]Thalamus.exe&quot; --bridge" />
+            </RegistryKey>
+        </Component>
+
+    </Fragment>
 </Wix>
