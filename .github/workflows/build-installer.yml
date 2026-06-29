@@ -51,6 +51,9 @@ jobs:
         run: |
           dotnet tool install --global wix --version 4.0.5
           wix --version
+          # Register WiX v4 extensions (required before -ext flags work)
+          wix extension add WixToolset.UI.wixext
+          wix extension add WixToolset.Bal.wixext
 
       # ── Set up MSVC developer environment ─────────────────────────────────
       - name: Set up MSVC developer command prompt
@@ -200,7 +203,7 @@ jobs:
             -o "$buildDir\ThalamusApp.msi" `
             -d Version=${{ env.APP_VERSION }} `
             -arch x64 `
-            -ext WixUIExtension
+            -ext WixToolset.UI.wixext
 
       # ── Build Burn bootstrapper (.exe) ───────────────────────────────────
       - name: Build Burn Bundle
@@ -216,8 +219,8 @@ jobs:
             -d Version=${{ env.APP_VERSION }} `
             -d MsiPath="$buildDir\ThalamusApp.msi" `
             -arch x64 `
-            -ext WixBalExtension `
-            -ext WixUIExtension
+            -ext WixToolset.Bal.wixext `
+            -ext WixToolset.UI.wixext
 
       # ── Create GitHub Release ─────────────────────────────────────────────
       - name: Create Release
