@@ -136,8 +136,7 @@ jobs:
 
           # VC++ Redistributable (for Burn bundle payload — required at build time even with Compressed=no)
           Write-Host "Downloading VC++ 2022 Redistributable..."
-          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" \
-            -OutFile "$stage\vc_redist.x64.exe" -UseBasicParsing
+          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$stage\vc_redist.x64.exe" -UseBasicParsing
 
       # ── Generate WiX harvest fragment ──────────────────────────────────
       # WiX v4 dropped heat.exe from the core CLI, so we generate the harvest
