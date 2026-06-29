@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QProcess>
 #include <QString>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QTimer>
 #include <QWebSocket>
