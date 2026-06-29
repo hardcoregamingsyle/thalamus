@@ -55,6 +55,7 @@ private:
     QVBoxLayout *m_chatLayout;
     QTextEdit *m_questionInput;
     QPushButton *m_askBtn;
+    QPushButton *m_clearBtn;
     QComboBox *m_modeCombo;
     QLabel *m_statusLabel;
     QProgressBar *m_progressBar;
