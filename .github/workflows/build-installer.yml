@@ -59,13 +59,16 @@ jobs:
           New-Item -ItemType Directory -Path $extDir -Force | Out-Null
 
           function Get-WixExtension($pkgName) {
+            # Ensure TLS 1.2 for NuGet.org
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             $zipPath = "$extDir\$pkgName.zip"
             $outDir = "$extDir\$pkgName"
             Write-Host "Downloading $pkgName..."
             Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/$pkgName/4.0.5" `
               -OutFile $zipPath -UseBasicParsing
             Expand-Archive -Path $zipPath -DestinationPath $outDir -Force
-            $dll = Get-ChildItem -Path $outDir -Recurse -Filter "$pkgName.dll" | Select-Object -First 1
+            $dll = Get-ChildItem -Path $outDir -Recurse | Where-Object { $_.Name -eq "$pkgName.dll" } | Select-Object -First 1
+            if (-not $dll) { throw "Could not find $pkgName.dll in extracted NuGet package" }
             Remove-Item $zipPath -Force
             return $dll.FullName
           }
