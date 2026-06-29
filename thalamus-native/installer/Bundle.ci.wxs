@@ -17,25 +17,22 @@ producing the self-contained Thalamus-Setup-v1.0.0.exe that the web app's
         UpgradeCode="F1A2B3C4-D5E6-7890-ABCD-EF1234567890"
         DisableModify="yes">
 
-        <bal:Condition
-            Message="Thalamus AI requires Windows 10 64-bit or later.">
-            <![CDATA[VersionNT64 >= 1000]]>
-        </bal:Condition>
+        <bal:Condition Condition="VersionNT64 >= 1000"
+                       Message="Thalamus AI requires Windows 10 64-bit or later." />
 
         <Chain>
             <!-- VC++ Redistributable 2022 x64 -->
             <ExePackage
                 Id="VCRedist"
                 Name="vc_redist.x64.exe"
-                Cache="no"
+                Cache="remove"
                 Compressed="no"
-                Perpetual="yes"
                 Permanent="yes"
                 Vital="yes"
                 DisplayName="Microsoft Visual C++ 2022 Redistributable (x64)"
                 DownloadUrl="https://aka.ms/vs/17/release/vc_redist.x64.exe"
-                InstallCommand="/install /quiet /norestart"
-                UninstallCommand="/uninstall /quiet /norestart"
+                InstallArguments="/install /quiet /norestart"
+                UninstallArguments="/uninstall /quiet /norestart"
                 DetectCondition="VCRedistInstalled">
                 <ExitCode Behavior="forceReboot" />
             </ExePackage>
@@ -49,9 +46,11 @@ producing the self-contained Thalamus-Setup-v1.0.0.exe that the web app's
                 ForcePerMachine="yes" />
         </Chain>
 
-        <bal:WixStandardBootstrapperApplication
-            Theme="hyperlinkLarge"
-            LicenseUrl="https://thalamus.aphantic.skinticals.com" />
+        <BootstrapperApplication>
+            <bal:WixStandardBootstrapperApplication
+                Theme="hyperlinkLarge"
+                LicenseUrl="https://thalamus.aphantic.skinticals.com" />
+        </BootstrapperApplication>
 
     </Bundle>
 </Wix>
