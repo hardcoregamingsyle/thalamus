@@ -74,7 +74,7 @@ shortcuts, and custom actions on top.
 
     <Fragment>
         <!-- ── Icons ──────────────────────────────────────────────────────── -->
-        <Icon Id="appicon" SourceFile="app.ico" />
+        <Icon Id="appicon" SourceFile="$(var.StageDir)/app.ico" />
 
         <!-- ── Start Menu Shortcuts ───────────────────────────────────────── -->
         <Component Id="C_StartMenu" Directory="ProgramMenuDir"
