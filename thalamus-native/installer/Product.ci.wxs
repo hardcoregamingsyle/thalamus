@@ -28,9 +28,8 @@ shortcuts, and custom actions on top.
         <Media Id="1" Cabinet="product.cab" EmbedCab="yes" CompressionLevel="high" />
 
         <!-- ── Launch Conditions ─────────────────────────────────────────── -->
-        <Condition Message="Thalamus AI requires Windows 10 or later.">
-            VersionNT >= 1000
-        </Condition>
+        <Launch Condition="VersionNT >= 1000"
+                Message="Thalamus AI requires Windows 10 or later." />
 
         <!-- ── Directory Structure ────────────────────────────────────────── -->
         <StandardDirectory Id="ProgramFiles64Folder">
