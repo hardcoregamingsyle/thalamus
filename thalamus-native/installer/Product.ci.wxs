@@ -42,6 +42,7 @@ shortcuts, and custom actions on top.
         <Feature Id="F_Complete" Title="Thalamus AI" Level="1"
                  Description="Complete Thalamus AI installation">
             <ComponentGroupRef Id="AllAppFiles" />
+            <ComponentRef Id="C_LaunchCondition" />
             <ComponentRef Id="C_StartMenu" />
             <ComponentRef Id="C_DesktopShortcut" />
             <ComponentRef Id="C_URIScheme" />
