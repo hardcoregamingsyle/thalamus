@@ -103,17 +103,37 @@ jobs:
           # Icon
           Copy-Item "thalamus-native\ThalamusApp\resources\icons\app.ico" "$stage\"
 
-      # ── Generate WiX fragment with heat ───────────────────────────────────
+      # ── Generate WiX fragment (manual harvest) ───────────────────────────
+      # WiX v4 dropped heat.exe from the core CLI, so we generate the harvest
+      # fragment directly with a PowerShell script using absolute source paths.
       - name: Harvest files with WiX heat
         shell: pwsh
         run: |
-          wix harvest dir "thalamus-native\build\stage" `
-            -o "thalamus-native\build\HeatFiles.wxs" `
-            -cg "AllAppFiles" `
-            -dr "INSTALLFOLDER" `
-            -x "*.pdb" `
-            -suo `
-            -sf
+          $stage = Resolve-Path "thalamus-native\build\stage"
+          $output = "thalamus-native\build\HeatFiles.wxs"
+
+          @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+            <Fragment>
+              <ComponentGroup Id="AllAppFiles" Directory="INSTALLFOLDER">
+          "@ | Out-File -FilePath $output -Encoding utf8
+
+          Get-ChildItem -Path $stage -File -Recurse | ForEach-Object {
+            @"
+                <Component>
+                  <File Source="$($_.FullName)" />
+                </Component>
+          "@ | Out-File -FilePath $output -Encoding utf8 -Append
+          }
+
+          @"
+              </ComponentGroup>
+            </Fragment>
+          </Wix>
+          "@ | Out-File -FilePath $output -Encoding utf8 -Append
+
+          Write-Host "Generated harvest file at $output with $((Get-ChildItem $stage -File -Recurse | Measure-Object).Count) files"
 
       # ── Compile WiX sources ──────────────────────────────────────────────
       - name: Compile WiX sources
