@@ -48,7 +48,7 @@ producing the self-contained Thalamus-Setup-v1.0.0.exe that the web app's
 
         <BootstrapperApplication>
             <bal:WixStandardBootstrapperApplication
-                Theme="HyperlinkLicense"
+                Theme="hyperlinkLicense"
                 LicenseUrl="https://thalamus.aphantic.skinticals.com" />
         </BootstrapperApplication>
 
