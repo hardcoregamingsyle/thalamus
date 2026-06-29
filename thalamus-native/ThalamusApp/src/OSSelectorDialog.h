@@ -29,10 +29,6 @@ public:
     QString selectedOS() const { return m_selectedOS; }
     QString selectedOSName() const;
 
-private slots:
-    void onItemClicked(QListWidgetItem *item);
-    void onBootClicked();
-
 private:
     void setupUI();
     void addOSCategory(const QString &name, const QJsonObject &oses);
