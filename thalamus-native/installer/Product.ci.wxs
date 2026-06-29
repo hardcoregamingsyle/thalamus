@@ -18,8 +18,7 @@ shortcuts, and custom actions on top.
         Version="$(var.Version)"
         UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
         Scope="perMachine"
-        Compressed="yes"
-        Platform="x64">
+        Compressed="yes">
 
         <SummaryInformation
             Description="Thalamus AI — The world's first L4.5 Agent Platform" />
