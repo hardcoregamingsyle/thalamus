@@ -25,6 +25,7 @@ producing the self-contained Thalamus-Setup-v1.0.0.exe that the web app's
             <ExePackage
                 Id="VCRedist"
                 Name="vc_redist.x64.exe"
+                SourceFile="$(var.VcRedistPath)"
                 Cache="remove"
                 Compressed="no"
                 Permanent="yes"

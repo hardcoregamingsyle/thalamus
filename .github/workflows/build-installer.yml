@@ -134,6 +134,11 @@ jobs:
           # Icon
           Copy-Item "thalamus-native\ThalamusApp\resources\icons\app.ico" "$stage\"
 
+          # VC++ Redistributable (for Burn bundle payload — required at build time even with Compressed=no)
+          Write-Host "Downloading VC++ 2022 Redistributable..."
+          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" \
+            -OutFile "$stage\vc_redist.x64.exe" -UseBasicParsing
+
       # ── Generate WiX harvest fragment ──────────────────────────────────
       # WiX v4 dropped heat.exe from the core CLI, so we generate the harvest
       # fragment directly with a PowerShell script.
@@ -249,11 +254,13 @@ jobs:
           $distDir = "thalamus-native\dist"
           New-Item -ItemType Directory -Path $distDir -Force | Out-Null
 
+          $vcRedistPath = "$buildDir\stage\vc_redist.x64.exe"
           wix build `
             "thalamus-native\installer\Bundle.ci.wxs" `
             -o "$distDir\${{ env.INSTALLER_NAME }}" `
             -d Version=${{ env.APP_VERSION }} `
             -d MsiPath="$buildDir\ThalamusApp.msi" `
+            -d VcRedistPath="$vcRedistPath" `
             -arch x64 `
             -ext "$env:WIX_BAL_DLL" `
             -ext "$env:WIX_UI_DLL"
