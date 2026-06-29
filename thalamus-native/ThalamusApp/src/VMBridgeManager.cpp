@@ -44,7 +44,7 @@ void VMBridgeManager::connectToBridge(const QString &url)
     connect(m_ws, &QWebSocket::connected, this, &VMBridgeManager::onWsConnected);
     connect(m_ws, &QWebSocket::disconnected, this, &VMBridgeManager::onWsDisconnected);
     connect(m_ws, &QWebSocket::textMessageReceived, this, &VMBridgeManager::onWsTextMessage);
-    connect(m_ws, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error),
+    connect(m_ws, &QWebSocket::errorOccurred,
             this, &VMBridgeManager::onWsError);
 
     m_ws->open(QUrl(m_bridgeUrl));
