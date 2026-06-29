@@ -103,37 +103,91 @@ jobs:
           # Icon
           Copy-Item "thalamus-native\ThalamusApp\resources\icons\app.ico" "$stage\"
 
-      # ── Generate WiX fragment (manual harvest) ───────────────────────────
+      # ── Generate WiX harvest fragment ──────────────────────────────────
       # WiX v4 dropped heat.exe from the core CLI, so we generate the harvest
-      # fragment directly with a PowerShell script using absolute source paths.
+      # fragment directly with a PowerShell script.
+      #
+      # The generated WXS uses DirectoryRef with nested Directory elements to
+      # preserve Qt plugin subdirectory structure (platforms, styles, etc.).
+      # A ComponentGroup at the end collects all components via ComponentRef
+      # so Product.ci.wxs can reference them via ComponentGroupRef Id="AllAppFiles".
       - name: Harvest files with WiX heat
         shell: pwsh
         run: |
           $stage = Resolve-Path "thalamus-native\build\stage"
           $output = "thalamus-native\build\HeatFiles.wxs"
+          $stageLen = $stage.Path.Length + 1
 
-          @"
-          <?xml version="1.0" encoding="utf-8"?>
-          <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-            <Fragment>
-              <ComponentGroup Id="AllAppFiles" Directory="INSTALLFOLDER">
-          "@ | Out-File -FilePath $output -Encoding utf8
+          # Collect all files (excluding .pdb)
+          $allFiles = Get-ChildItem -Path $stage -File -Recurse | Where-Object { $_.Extension -ne '.pdb' }
 
-          Get-ChildItem -Path $stage -File -Recurse | ForEach-Object {
-            @"
-                <Component>
-                  <File Source="$($_.FullName)" />
-                </Component>
-          "@ | Out-File -FilePath $output -Encoding utf8 -Append
+          # Group files by their relative directory path
+          $fileGroups = @{ '' = @() }
+          foreach ($file in $allFiles) {
+            $rel = $file.FullName.Substring($stageLen)
+            $dir = [System.IO.Path]::GetDirectoryName($rel)
+            if (-not $dir) { $dir = '' }
+            if (-not $fileGroups.ContainsKey($dir)) { $fileGroups[$dir] = @() }
+            $fileGroups[$dir] += @{ File = $file; RelPath = $rel }
           }
 
-          @"
-              </ComponentGroup>
-            </Fragment>
-          </Wix>
-          "@ | Out-File -FilePath $output -Encoding utf8 -Append
+          # Collect all unique directory paths sorted (parents before children)
+          $allDirs = $fileGroups.Keys | Where-Object { $_ -ne '' } | Sort-Object
+          $allDirsRev = $allDirs | Sort-Object -Descending
 
-          Write-Host "Generated harvest file at $output with $((Get-ChildItem $stage -File -Recurse | Measure-Object).Count) files"
+          # Helper: sanitize a relative dir path into a WiX identifier
+          function DirId($relDir) {
+            if (-not $relDir) { return 'INSTALLFOLDER' }
+            'd_' + $relDir.Replace('\','_').Replace('.','_').Replace(' ','_').Replace('-','_')
+          }
+
+          $sb = New-Object System.Text.StringBuilder
+          [void]$sb.AppendLine('<?xml version="1.0" encoding="utf-8"?>')
+          [void]$sb.AppendLine('<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">')
+          [void]$sb.AppendLine('  <Fragment>')
+          [void]$sb.AppendLine('    <DirectoryRef Id="INSTALLFOLDER">')
+
+          # Emit files in the root directory directly
+          $idx = 0
+          foreach ($fe in $fileGroups['']) {
+            $idx++
+            [void]$sb.AppendLine("      <Component Id=`"C_h$idx`" Guid=`"*`">")
+            [void]$sb.AppendLine("        <File Source=`"$($fe.File.FullName)`" />")
+            [void]$sb.AppendLine("      </Component>")
+          }
+
+          # Walk each subdirectory and emit files nested inside Directory elements
+          foreach ($dir in $allDirs) {
+            $parts = $dir -split '\\'
+            $dirName = $parts[-1]
+            [void]$sb.AppendLine("      <Directory Id=`"$(DirId $dir)`" Name=`"$dirName`">")
+            foreach ($fe in $fileGroups[$dir]) {
+              $idx++
+              [void]$sb.AppendLine("        <Component Id=`"C_h$idx`" Guid=`"*`">")
+              [void]$sb.AppendLine("          <File Source=`"$($fe.File.FullName)`" />")
+              [void]$sb.AppendLine("        </Component>")
+            }
+          }
+
+          # Close all Directory elements (reverse order)
+          foreach ($dir in $allDirsRev) {
+            [void]$sb.AppendLine('      </Directory>')
+          }
+
+          [void]$sb.AppendLine('    </DirectoryRef>')
+
+          # ComponentGroup referencing all harvested components
+          [void]$sb.AppendLine('    <ComponentGroup Id="AllAppFiles">')
+          for ($i = 1; $i -le $idx; $i++) {
+            [void]$sb.AppendLine("      <ComponentRef Id=`"C_h$i`" />")
+          }
+          [void]$sb.AppendLine('    </ComponentGroup>')
+
+          [void]$sb.AppendLine('  </Fragment>')
+          [void]$sb.AppendLine('</Wix>')
+
+          $sb.ToString() | Out-File -FilePath $output -Encoding utf8
+          Write-Host "Generated harvest: $idx files in $($allDirs.Count) subdirectories"
 
       # ── Compile WiX sources ──────────────────────────────────────────────
       - name: Compile WiX sources
