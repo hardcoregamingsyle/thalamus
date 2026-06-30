@@ -3,9 +3,9 @@
 #include "ConvexClient.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QFormLayout>
 #include <QMessageBox>
 #include <QRegularExpression>
+#include <QSettings>
 #include <QFont>
 
 AuthDialog::AuthDialog(ConvexClient *client, QWidget *parent)
@@ -17,6 +17,16 @@ AuthDialog::AuthDialog(ConvexClient *client, QWidget *parent)
 
     connect(m_client, &ConvexClient::otpSent, this, &AuthDialog::onOtpSent);
     connect(m_client, &ConvexClient::otpVerified, this, &AuthDialog::onOtpVerified);
+
+    // Restore saved auth token
+    QSettings settings;
+    QString savedToken = settings.value("auth/token").toString();
+    if (!savedToken.isEmpty()) {
+        m_client->setAuthToken(savedToken);
+        m_authenticated = true;
+        emit authenticated();
+        accept();
+    }
 }
 
 bool AuthDialog::isAuthenticated() const { return m_authenticated; }
@@ -31,7 +41,6 @@ void AuthDialog::setupUi()
     mainLayout->setSpacing(16);
     mainLayout->setContentsMargins(32, 32, 32, 32);
 
-    // App logo / title
     auto *titleLabel = new QLabel("Thalamus AI");
     titleLabel->setAlignment(Qt::AlignCenter);
     QFont titleFont = titleLabel->font();
@@ -47,10 +56,9 @@ void AuthDialog::setupUi()
     mainLayout->addWidget(subtitleLabel);
     mainLayout->addSpacing(16);
 
-    // Stacked widget for two-step flow
     m_stack = new QStackedWidget(this);
 
-    // ── Page 1: Email input ──────────────────────────────────────────────────
+    // Page 1: Email input
     m_emailPage = new QWidget;
     auto *emailLayout = new QVBoxLayout(m_emailPage);
     emailLayout->setSpacing(12);
@@ -60,8 +68,7 @@ void AuthDialog::setupUi()
     m_emailInput->setStyleSheet(
         "QLineEdit { padding: 10px; border: 1px solid #3e3e5e; border-radius: 6px; "
         "background: #1e1e32; color: #e0e0f0; font-size: 14px; }"
-        "QLineEdit:focus { border-color: #6e6eff; }"
-    );
+        "QLineEdit:focus { border-color: #6e6eff; }");
     emailLayout->addWidget(m_emailInput);
 
     m_sendOtpButton = new QPushButton("Send Verification Code");
@@ -70,8 +77,7 @@ void AuthDialog::setupUi()
         "QPushButton { padding: 10px; border: none; border-radius: 6px; "
         "background: #4a4aff; color: white; font-size: 14px; font-weight: bold; }"
         "QPushButton:hover { background: #5a5aff; }"
-        "QPushButton:disabled { background: #2a2a4a; color: #606080; }"
-    );
+        "QPushButton:disabled { background: #2a2a4a; color: #606080; }");
     connect(m_sendOtpButton, &QPushButton::clicked, this, &AuthDialog::onSendOtp);
     emailLayout->addWidget(m_sendOtpButton);
 
@@ -83,7 +89,7 @@ void AuthDialog::setupUi()
 
     m_stack->addWidget(m_emailPage);
 
-    // ── Page 2: OTP verification ────────────────────────────────────────────
+    // Page 2: OTP verification
     m_otpPage = new QWidget;
     auto *otpLayout = new QVBoxLayout(m_otpPage);
     otpLayout->setSpacing(12);
@@ -99,8 +105,7 @@ void AuthDialog::setupUi()
     m_otpInput->setStyleSheet(
         "QLineEdit { padding: 10px; border: 1px solid #3e3e5e; border-radius: 6px; "
         "background: #1e1e32; color: #e0e0f0; font-size: 18px; letter-spacing: 8px; }"
-        "QLineEdit:focus { border-color: #6e6eff; }"
-    );
+        "QLineEdit:focus { border-color: #6e6eff; }");
     otpLayout->addWidget(m_otpInput);
 
     m_verifyButton = new QPushButton("Verify & Sign In");
@@ -109,8 +114,7 @@ void AuthDialog::setupUi()
         "QPushButton { padding: 10px; border: none; border-radius: 6px; "
         "background: #4a4aff; color: white; font-size: 14px; font-weight: bold; }"
         "QPushButton:hover { background: #5a5aff; }"
-        "QPushButton:disabled { background: #2a2a4a; color: #606080; }"
-    );
+        "QPushButton:disabled { background: #2a2a4a; color: #606080; }");
     connect(m_verifyButton, &QPushButton::clicked, this, &AuthDialog::onVerifyOtp);
     otpLayout->addWidget(m_verifyButton);
 
@@ -120,13 +124,12 @@ void AuthDialog::setupUi()
     m_otpError->hide();
     otpLayout->addWidget(m_otpError);
 
-    m_backButton = new QPushButton("← Back");
+    m_backButton = new QPushButton("\u2190 Back");
     m_backButton->setFlat(true);
     m_backButton->setCursor(Qt::PointingHandCursor);
     m_backButton->setStyleSheet(
         "QPushButton { color: #8080a0; font-size: 12px; border: none; }"
-        "QPushButton:hover { color: #c0c0f0; }"
-    );
+        "QPushButton:hover { color: #c0c0f0; }");
     connect(m_backButton, &QPushButton::clicked, this, [this]() {
         m_stack->setCurrentIndex(0);
         m_emailError->hide();
@@ -135,31 +138,18 @@ void AuthDialog::setupUi()
     otpLayout->addWidget(m_backButton);
 
     m_stack->addWidget(m_otpPage);
-
     mainLayout->addWidget(m_stack);
-
-    // Search for existing token
-    QSettings settings;
-    QString savedToken = settings.value("auth/token").toString();
-    if (!savedToken.isEmpty()) {
-        m_client->setAuthToken(savedToken); // we need to add this method
-        m_authenticated = true;
-        accept();
-    }
 }
 
 void AuthDialog::onSendOtp()
 {
     m_email = m_emailInput->text().trimmed();
-
-    // Validate email
     QRegularExpression emailRegex(R"(^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$)");
     if (!emailRegex.match(m_email).hasMatch()) {
         m_emailError->setText("Please enter a valid email address");
         m_emailError->show();
         return;
     }
-
     m_emailError->hide();
     m_sendOtpButton->setEnabled(false);
     m_sendOtpButton->setText("Sending...");
@@ -191,7 +181,6 @@ void AuthDialog::onVerifyOtp()
         m_otpError->show();
         return;
     }
-
     m_otpError->hide();
     m_verifyButton->setEnabled(false);
     m_verifyButton->setText("Verifying...");
@@ -205,6 +194,8 @@ void AuthDialog::onOtpVerified(bool success, const QString &error)
 
     if (success) {
         m_authenticated = true;
+        QSettings settings;
+        settings.setValue("auth/token", m_client->authToken());
         emit authenticated();
         accept();
     } else {

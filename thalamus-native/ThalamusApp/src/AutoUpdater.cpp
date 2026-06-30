@@ -1,155 +1,120 @@
+// Thalamus AI — AutoUpdater.cpp
 #include "AutoUpdater.h"
+#include <QNetworkReply>
 #include <QJsonDocument>
-#include <QJsonArray>
 #include <QJsonObject>
-#include <QTimer>
+#include <QJsonArray>
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
-#include <QCoreApplication>
 #include <QProcess>
-#include <QStandardPaths>
+#include <QVersionNumber>
+#include <QCoreApplication>
 
 AutoUpdater::AutoUpdater(QObject *parent)
     : QObject(parent)
-    , m_network(new QNetworkAccessManager(this))
-    , m_currentVersion("1.0.0")
-    , m_releasesUrl("https://api.github.com/repos/hardcoregamingsyle/thalamus/releases/latest")
-    , m_checkTimer(nullptr)
-{
-}
+    , m_networkManager(new QNetworkAccessManager(this))
+    , m_currentVersion(QCoreApplication::applicationVersion())
+    , m_repoOwner("hardcoregamingsyle")
+    , m_repoName("thalamus")
+    , m_updateAvailable(false)
+{}
 
-AutoUpdater::~AutoUpdater()
-{
-    stopPeriodicChecks();
-}
-
-void AutoUpdater::setCurrentVersion(const QString &version)
-{
-    m_currentVersion = version;
-}
+QString AutoUpdater::currentVersion() const { return m_currentVersion; }
+QString AutoUpdater::latestVersion() const { return m_latestVersion; }
+bool AutoUpdater::updateAvailable() const { return m_updateAvailable; }
 
 void AutoUpdater::checkForUpdates()
 {
-    QNetworkRequest req{QUrl(m_releasesUrl)};
-    req.setRawHeader("Accept", "application/vnd.github.v3+json");
-    req.setRawHeader("User-Agent", "ThalamusAI");
+    QString url = QString("https://api.github.com/repos/%1/%2/releases/latest")
+        .arg(m_repoOwner, m_repoName);
 
-    QNetworkReply *reply = m_network->get(req);
+    QNetworkRequest request(QUrl(url));
+    request.setRawHeader("Accept", "application/vnd.github.v3+json");
+    request.setRawHeader("User-Agent", "ThalamusAI/1.0.0");
+
+    QNetworkReply *reply = m_networkManager->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
-        onCheckReply(reply);
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            emit error("Failed to check for updates: " + reply->errorString());
+            return;
+        }
+        parseRelease(reply->readAll());
     });
 }
 
-void AutoUpdater::onCheckReply(QNetworkReply *reply)
+void AutoUpdater::parseRelease(const QByteArray &data)
 {
-    reply->deleteLater();
-
-    if (reply->error() != QNetworkReply::NoError) {
-        // Check if rate limited
-        if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 403) {
-            emit checkError("GitHub API rate limited. Will retry later.");
-        } else {
-            emit checkError("Update check failed: " + reply->errorString());
-        }
-        return;
-    }
-
-    QByteArray data = reply->readAll();
     QJsonDocument doc = QJsonDocument::fromJson(data);
     QJsonObject release = doc.object();
 
     m_latestVersion = release["tag_name"].toString();
-    if (m_latestVersion.startsWith('v')) {
+    if (m_latestVersion.startsWith('v'))
         m_latestVersion = m_latestVersion.mid(1);
-    }
 
-    // Get download URL
-    QJsonArray assets = release["assets"].toArray();
-    for (const QJsonValue &asset : assets) {
-        QJsonObject a = asset.toObject();
-        QString name = a["name"].toString();
-        if (name.contains("Setup") && name.endsWith(".exe")) {
-            m_downloadUrl = a["browser_download_url"].toString();
-            break;
-        }
-    }
-
-    // Compare versions
     QVersionNumber current = QVersionNumber::fromString(m_currentVersion);
     QVersionNumber latest = QVersionNumber::fromString(m_latestVersion);
 
     if (!latest.isNull() && latest > current) {
-        emit updateAvailable(m_currentVersion, m_latestVersion);
+        // Find the asset URL for the MSI installer
+        QJsonArray assets = release["assets"].toArray();
+        for (const QJsonValue &asset : assets) {
+            QJsonObject obj = asset.toObject();
+            QString name = obj["name"].toString();
+            if (name.endsWith(".msi") || name.endsWith(".exe")) {
+                m_downloadUrl = obj["browser_download_url"].toString();
+                break;
+            }
+        }
+        m_updateAvailable = true;
+        emit updateAvailable(m_latestVersion, m_downloadUrl);
     } else {
+        m_updateAvailable = false;
         emit upToDate();
     }
 }
 
-void AutoUpdater::downloadUpdate(const QString &url, const QString &filename)
+void AutoUpdater::downloadUpdate(const QString &url)
 {
-    QString downloadUrl = url.isEmpty() ? m_downloadUrl : url;
-    if (downloadUrl.isEmpty()) {
-        emit downloadError("No download URL available");
-        return;
-    }
+    QNetworkRequest request(QUrl(url));
+    QNetworkReply *reply = m_networkManager->get(request);
 
-    // Determine save path
-    QString saveName = filename.isEmpty() ? "Thalamus-Setup-" + m_latestVersion + ".exe" : filename;
-    QString savePath = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation) + "/" + saveName;
+    connect(reply, &QNetworkReply::downloadProgress,
+            this, &AutoUpdater::downloadProgress);
 
-    QNetworkRequest req{QUrl(downloadUrl)};
-    QNetworkReply *reply = m_network->get(req);
-
-    connect(reply, &QNetworkReply::downloadProgress, this, [this](qint64 received, qint64 total) {
-        emit downloadProgress(received, total);
-    });
-
-    connect(reply, &QNetworkReply::finished, this, [this, reply, savePath]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
-            emit downloadError(reply->errorString());
+            emit error("Download failed: " + reply->errorString());
             return;
         }
 
-        QFile file(savePath);
+        // Save to temp directory
+        QString tempPath = QDir::tempPath() + "/Thalamus-Update.msi";
+        QFile file(tempPath);
         if (file.open(QIODevice::WriteOnly)) {
             file.write(reply->readAll());
             file.close();
-            emit downloadComplete(savePath);
-
-            // Launch installer
-            QProcess::startDetached("\"" + savePath + "\"", QStringList());
-            QCoreApplication::quit();
+            emit downloadComplete(tempPath);
         } else {
-            emit downloadError("Could not save update file to " + savePath);
+            emit error("Failed to save update file");
         }
     });
 }
 
-bool AutoUpdater::updateAvailable() const
+void AutoUpdater::installUpdate(const QString &filePath)
 {
-    if (m_latestVersion.isEmpty()) return false;
-    QVersionNumber current = QVersionNumber::fromString(m_currentVersion);
-    QVersionNumber latest = QVersionNumber::fromString(m_latestVersion);
-    return !latest.isNull() && latest > current;
-}
-
-void AutoUpdater::startPeriodicChecks(int intervalHours)
-{
-    if (!m_checkTimer) {
-        m_checkTimer = new QTimer(this);
-        connect(m_checkTimer, &QTimer::timeout, this, &AutoUpdater::checkForUpdates);
+    if (!QFile::exists(filePath)) {
+        emit error("Update file not found: " + filePath);
+        return;
     }
-    m_checkTimer->start(intervalHours * 3600000); // Convert hours to ms
 
-    // Also check immediately
-    checkForUpdates();
-}
-
-void AutoUpdater::stopPeriodicChecks()
-{
-    if (m_checkTimer) {
-        m_checkTimer->stop();
+    // Launch MSI installer and quit
+    if (!QProcess::startDetached("msiexec", {"/i", filePath, "/qb"})) {
+        emit error("Failed to launch installer");
+        return;
     }
+
+    QCoreApplication::quit();
 }
