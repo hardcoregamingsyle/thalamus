@@ -2,55 +2,45 @@
 #define RESEARCHVIEW_H
 
 #include <QWidget>
-#include <QVBoxLayout>
-#include <QTextEdit>
+#include <QTextBrowser>
+#include <QLineEdit>
 #include <QPushButton>
-#include <QScrollArea>
-#include <QLabel>
+#include <QVBoxLayout>
 #include <QJsonArray>
-#include <QComboBox>
-#include <QProgressBar>
-#include "ConvexClient.h"
-#include "MarkdownRenderer.h"
 
-/**
- * @brief Deep Research mode — multi-round web research with comprehensive reports.
- */
-class ResearchView : public QWidget
-{
+class ConvexClient;
+
+class ResearchView : public QWidget {
     Q_OBJECT
 
 public:
     explicit ResearchView(ConvexClient *client, QWidget *parent = nullptr);
-    ~ResearchView();
 
 private slots:
-    void onStartResearch();
-    void onClearResearch();
+    void onSendClicked();
+    void onStreamChunk(const QString &chunk);
+    void onStreamDone(const QString &fullText);
+    void onStreamError(const QString &error);
 
 private:
-    void setupUI();
-    void appendResult(const QString &title, const QString &content);
-    QString renderReport(const QString &rawText);
+    void setupUi();
+    void startResearch(const QString &topic);
+    void appendMessage(const QString &role, const QString &html);
+    void scrollToBottom();
 
     ConvexClient *m_client;
-    MarkdownRenderer *m_mdRenderer;
-
-    // UI
-    QTextEdit *m_queryInput;
-    QPushButton *m_researchBtn;
-    QPushButton *m_clearBtn;
-    QScrollArea *m_resultScroll;
-    QWidget *m_resultContainer;
-    QVBoxLayout *m_resultLayout;
+    QVBoxLayout *m_mainLayout;
+    QScrollArea *m_scrollArea;
+    QWidget *m_messagesContainer;
+    QVBoxLayout *m_messagesLayout;
+    QLineEdit *m_input;
+    QPushButton *m_sendBtn;
     QLabel *m_statusLabel;
-    QComboBox *m_depthCombo;
-    QProgressBar *m_progressBar;
+    QTextBrowser *m_currentAssistant;
 
-    // State
-    bool m_isResearching;
-    QString m_researchQuery;
-    QString m_currentResearchResponse;
+    QJsonArray m_history;
+    QString m_currentResponse;
+    bool m_streaming;
 };
 
 #endif // RESEARCHVIEW_H
