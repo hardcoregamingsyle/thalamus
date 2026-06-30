@@ -1,46 +1,44 @@
-#ifndef STUDYVIEW_H
-#define STUDYVIEW_H
+// Thalamus AI — StudyView.h
+#pragma once
 
 #include <QWidget>
-#include <QTextBrowser>
+#include <QTextEdit>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QVBoxLayout>
-#include <QJsonArray>
+#include <QListWidget>
+#include <QSplitter>
 
 class ConvexClient;
+class MarkdownRenderer;
 
-class StudyView : public QWidget {
+class StudyView : public QWidget
+{
     Q_OBJECT
 
 public:
     explicit StudyView(ConvexClient *client, QWidget *parent = nullptr);
+    ~StudyView() = default;
 
 private slots:
-    void onSendClicked();
-    void onStreamChunk(const QString &chunk);
-    void onStreamDone(const QString &fullText);
-    void onStreamError(const QString &error);
+    void onAskQuestion();
+    void onUploadMaterial();
+    void onStreamChunk(const QString &text);
+    void onStreamDone();
 
 private:
     void setupUi();
-    void startStudy(const QString &question);
-    void appendMessage(const QString &role, const QString &html);
-    void scrollToBottom();
+    void setInputEnabled(bool enabled);
 
     ConvexClient *m_client;
-    QVBoxLayout *m_mainLayout;
-    QScrollArea *m_scrollArea;
-    QWidget *m_messagesContainer;
-    QVBoxLayout *m_messagesLayout;
-    QLineEdit *m_input;
-    QPushButton *m_sendBtn;
-    QLabel *m_statusLabel;
-    QTextBrowser *m_currentAssistant;
+    MarkdownRenderer *m_mdRenderer;
 
-    QJsonArray m_history;
-    QString m_currentResponse;
-    bool m_streaming;
+    QListWidget *m_materialList;
+    QTextEdit *m_studyDisplay;
+    QLineEdit *m_questionInput;
+    QPushButton *m_askButton;
+    QPushButton *m_stopButton;
+    QPushButton *m_uploadButton;
+
+    bool m_isStudying;
+    QString m_currentAnswer;
 };
-
-#endif // STUDYVIEW_H

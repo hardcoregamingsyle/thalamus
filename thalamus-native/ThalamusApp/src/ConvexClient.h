@@ -1,69 +1,74 @@
-#ifndef CONVEXCLIENT_H
-#define CONVEXCLIENT_H
+// Thalamus AI — ConvexClient.h
+#pragma once
 
 #include <QObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
-#include <QTimer>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QWebSocket>
+#include <QUrl>
+#include <QTimer>
+#include <functional>
 
-class ConvexClient : public QObject {
+class ConvexClient : public QObject
+{
     Q_OBJECT
 
 public:
     explicit ConvexClient(QObject *parent = nullptr);
+    ~ConvexClient();
 
-    void setBackendUrl(const QString &url);
-    QString backendUrl() const;
+    // Base URL management
+    void setBaseUrl(const QString &url);
+    QString baseUrl() const;
 
-    void setAuthToken(const QString &token);
+    // Auth
+    void sendEmailOtp(const QString &email);
+    void verifyEmailOtp(const QString &email, const QString &code);
+    void signOut();
+    bool isAuthenticated() const;
     QString authToken() const;
 
-    // Chat with SSE streaming
-    void streamChat(const QString &content,
-                    const QString &mode,
-                    const QJsonArray &history,
-                    const QString &systemPrompt,
-                    const QString &conversationId = QString());
+    // HTTP actions
+    using ActionCallback = std::function<void(bool success, const QJsonObject &result, const QString &error)>;
+    void callAction(const QString &actionName, const QJsonObject &args, ActionCallback callback);
 
-    // Non-streaming guest chat
-    void guestChat(const QString &content,
-                   const QString &mode,
-                   const QJsonArray &history);
+    // Streaming SSE chat
+    using StreamChunkCallback = std::function<void(const QString &text)>;
+    using StreamDoneCallback = std::function<void()>;
+    void startChatStream(const QString &message, const QString &mode,
+                         StreamChunkCallback onChunk, StreamDoneCallback onDone);
+    void cancelStream();
 
-    // Generate conversation title
-    void generateTitle(const QString &firstMessage, const QString &conversationId);
-
-    bool isAuthenticated() const;
-    bool isStreaming() const;
+    // WebSocket (VM bridge)
+    void connectWebSocket(const QUrl &url);
+    void sendWebSocketMessage(const QByteArray &message);
+    QWebSocket *webSocket() const;
 
 signals:
-    void streamThinking(const QString &chunk);
-    void streamAnswerStart();
-    void streamChunk(const QString &chunk);
-    void streamDone(const QString &fullText);
-    void streamError(const QString &error);
-    void chatComplete(const QString &response);
-    void chatError(const QString &error);
-    void titleGenerated(const QString &title);
     void authStateChanged(bool authenticated);
+    void otpSent(bool success, const QString &error);
+    void otpVerified(bool success, const QString &error);
+    void connectionError(const QString &error);
 
 private slots:
-    void onStreamReadyRead();
+    void onStreamDataReady();
     void onStreamFinished();
-    void onReplyFinished(QNetworkReply *reply);
 
 private:
-    QNetworkRequest buildRequest(const QString &path, bool json = true) const;
-    void parseSSELine(const QString &line);
+    QNetworkRequest createRequest(const QString &path) const;
+    void handleActionResponse(QNetworkReply *reply, ActionCallback callback);
 
-    QNetworkAccessManager *m_nam;
-    QNetworkReply *m_streamReply;
-    QString m_backendUrl;
+    QNetworkAccessManager *m_networkManager;
+    QWebSocket *m_webSocket;
+    QString m_baseUrl;
     QString m_authToken;
-    QString m_streamBuffer;
-    bool m_streaming;
-};
+    bool m_authenticated;
 
-#endif // CONVEXCLIENT_H
+    // Streaming state
+    QNetworkReply *m_streamReply;
+    QByteArray m_streamBuffer;
+    StreamChunkCallback m_streamChunkCallback;
+    StreamDoneCallback m_streamDoneCallback;
+};

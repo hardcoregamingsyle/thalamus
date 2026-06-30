@@ -1,54 +1,44 @@
-#ifndef CHATVIEW_H
-#define CHATVIEW_H
+// Thalamus AI — ChatView.h
+#pragma once
 
 #include <QWidget>
-#include <QTextBrowser>
+#include <QTextEdit>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
-#include <QJsonArray>
-#include <QJsonObject>
-#include <QLabel>
 #include <QScrollArea>
 
 class ConvexClient;
+class MarkdownRenderer;
 
-class ChatView : public QWidget {
+class ChatView : public QWidget
+{
     Q_OBJECT
 
 public:
     explicit ChatView(ConvexClient *client, QWidget *parent = nullptr);
+    ~ChatView() = default;
 
-    void newConversation();
-    void sendMessage(const QString &text);
+    void sendMessage(const QString &message);
 
 private slots:
     void onSendClicked();
-    void onStreamThinking(const QString &chunk);
-    void onStreamAnswerStart();
-    void onStreamChunk(const QString &chunk);
-    void onStreamDone(const QString &fullText);
-    void onStreamError(const QString &error);
+    void onStreamChunk(const QString &text);
+    void onStreamDone();
 
 private:
     void setupUi();
     void appendMessage(const QString &role, const QString &html);
-    void scrollToBottom();
+    void setInputEnabled(bool enabled);
 
     ConvexClient *m_client;
-    QVBoxLayout *m_mainLayout;
-    QScrollArea *m_scrollArea;
-    QWidget *m_messagesContainer;
-    QVBoxLayout *m_messagesLayout;
-    QLineEdit *m_input;
-    QPushButton *m_sendBtn;
-    QLabel *m_statusLabel;
-    QTextBrowser *m_currentAssistant;
+    MarkdownRenderer *m_mdRenderer;
 
-    QJsonArray m_history;
-    QString m_currentResponse;
-    QString m_conversationId;
-    bool m_streaming;
+    QTextEdit *m_chatDisplay;
+    QLineEdit *m_messageInput;
+    QPushButton *m_sendButton;
+    QPushButton *m_stopButton;
+
+    bool m_isStreaming;
+    QString m_currentAssistantMessage;
 };
-
-#endif // CHATVIEW_H
