@@ -37,7 +37,6 @@ private:
     void setupTrayIcon();
     void saveSettings();
     void restoreSettings();
-    void checkForUpdates();
 
     QTabWidget *m_tabWidget;
     ChatView *m_chatView;
