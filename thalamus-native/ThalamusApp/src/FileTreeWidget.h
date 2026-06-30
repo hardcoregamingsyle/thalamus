@@ -1,61 +1,34 @@
-#ifndef FILETREEWIDGET_H
-#define FILETREEWIDGET_H
+// Thalamus AI — FileTreeWidget.h
+#pragma once
 
 #include <QWidget>
 #include <QTreeWidget>
-#include <QVBoxLayout>
+#include <QPushButton>
 #include <QLabel>
-#include <QJsonArray>
-#include <QJsonObject>
-#include <QMap>
 
-/**
- * @brief File tree widget for browsing project files in Code mode.
- *
- * Displays a hierarchical file tree with syntax-highlighted file icons,
- * file size info, and drag-drop support.
- */
 class FileTreeWidget : public QWidget
 {
     Q_OBJECT
 
 public:
     explicit FileTreeWidget(QWidget *parent = nullptr);
-    ~FileTreeWidget();
+    ~FileTreeWidget() = default;
 
-    /// Update the file tree with a list of file paths
-    void setFiles(const QJsonArray &files);
-
-    /// Update with file objects containing path, size, type
-    void setFileObjects(const QJsonArray &files);
-
-    /// Clear the tree
-    void clearFiles();
-
-    /// Get selected file path
-    QString selectedFilePath() const;
-
-    /// Expand all directories
-    void expandAll();
-
-    /// Collapse all directories
-    void collapseAll();
+    void loadFiles(const QJsonArray &files);
+    void clear();
 
 signals:
-    void fileSelected(const QString &filePath);
-    void fileDoubleClicked(const QString &filePath);
+    void fileSelected(const QString &path);
+    void fileDeleted(const QString &path);
+    void newFileRequested();
+    void newFolderRequested();
 
 private:
-    void setupUI();
-    void addFileToTree(QTreeWidgetItem *root, const QString &path);
-    QString getFileIcon(const QString &fileName);
-    QString getFileType(const QString &fileName);
+    void setupUi();
+    void populateTree(const QJsonArray &files, QTreeWidgetItem *parentItem);
 
-    QTreeWidget *m_tree;
-    QLabel *m_header;
-
-    // Cache for file types
-    QMap<QString, QString> m_fileIcons;
+    QTreeWidget *m_treeWidget;
+    QLabel *m_projectLabel;
+    QPushButton *m_newFileButton;
+    QPushButton *m_newFolderButton;
 };
-
-#endif // FILETREEWIDGET_H
