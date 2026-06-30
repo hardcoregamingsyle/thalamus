@@ -17,6 +17,9 @@ set GENERATOR="Visual Studio 17 2022"
 if /I "%1"=="release" set BUILD_TYPE=Release
 if /I "%1"=="installer" set BUILD_TYPE=Release
 
+set RUNTIME_LIB=MultiThreaded
+if "%BUILD_TYPE%"=="Debug" set RUNTIME_LIB=MultiThreadedDebug
+
 echo === Thalamus AI Build Script ===
 echo Build type: %BUILD_TYPE%
 echo.
@@ -29,7 +32,7 @@ cmake -S "%SCRIPT_DIR%ThalamusApp" -B "%BUILD_DIR%" ^
     -G %GENERATOR% ^
     -A x64 ^
     -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
-    -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded%if "%BUILD_TYPE%"=="Debug" (+Debug) ^
+    -DCMAKE_MSVC_RUNTIME_LIBRARY=%RUNTIME_LIB% ^
     -DBUILD_SHARED_LIBS=OFF
 
 if %ERRORLEVEL% neq 0 (
