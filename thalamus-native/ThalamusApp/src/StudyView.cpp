@@ -7,6 +7,7 @@
 #include <QLabel>
 #include <QScrollBar>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QMessageBox>
 
 StudyView::StudyView(ConvexClient *client, QWidget *parent)
@@ -24,7 +25,6 @@ void StudyView::setupUi()
     layout->setSpacing(8);
     layout->setContentsMargins(16, 16, 16, 16);
 
-    // Header
     auto *header = new QLabel("Study Mode");
     header->setStyleSheet("font-size: 18px; font-weight: bold; color: #c0c0f0;");
     layout->addWidget(header);
@@ -36,10 +36,9 @@ void StudyView::setupUi()
     description->setStyleSheet("color: #8080a0; font-size: 13px; margin-bottom: 8px;");
     layout->addWidget(description);
 
-    // Splitter: Materials + Study area
+    // Splitter: materials + study area
     auto *splitter = new QSplitter(Qt::Horizontal, this);
 
-    // Materials panel
     auto *materialsContainer = new QWidget;
     auto *materialsLayout = new QVBoxLayout(materialsContainer);
     materialsLayout->setContentsMargins(0, 0, 0, 0);
@@ -54,8 +53,7 @@ void StudyView::setupUi()
     m_uploadButton->setStyleSheet(
         "QPushButton { padding: 8px 16px; border: 1px dashed #3e3e5e; border-radius: 6px; "
         "background: transparent; color: #8080a0; font-size: 13px; }"
-        "QPushButton:hover { border-color: #6e6eff; color: #c0c0f0; }"
-    );
+        "QPushButton:hover { border-color: #6e6eff; color: #c0c0f0; }");
     connect(m_uploadButton, &QPushButton::clicked, this, &StudyView::onUploadMaterial);
     materialsLayout->addWidget(m_uploadButton);
 
@@ -64,22 +62,17 @@ void StudyView::setupUi()
         "QListWidget { background: #16162a; border: 1px solid #2e2e4e; border-radius: 6px; "
         "color: #c0c0e0; font-size: 13px; }"
         "QListWidget::item { padding: 8px 12px; border-bottom: 1px solid #1e1e32; }"
-        "QListWidget::item:selected { background: #2a2a4a; }"
-    );
+        "QListWidget::item:selected { background: #2a2a4a; }");
     materialsLayout->addWidget(m_materialList, 1);
-
     materialsContainer->setMinimumWidth(200);
     splitter->addWidget(materialsContainer);
 
-    // Study display
     m_studyDisplay = new QTextEdit;
     m_studyDisplay->setReadOnly(true);
     m_studyDisplay->setStyleSheet(
         "QTextEdit { background: #16162a; border: 1px solid #2e2e4e; border-radius: 6px; "
-        "padding: 16px; color: #d0d0e8; font-size: 14px; }"
-    );
+        "padding: 16px; color: #d0d0e8; font-size: 14px; }");
     splitter->addWidget(m_studyDisplay);
-
     layout->addWidget(splitter, 1);
 
     // Question input
@@ -89,8 +82,7 @@ void StudyView::setupUi()
     m_questionInput->setStyleSheet(
         "QLineEdit { padding: 12px; border: 1px solid #3e3e5e; border-radius: 8px; "
         "background: #16162a; color: #e0e0f0; font-size: 14px; }"
-        "QLineEdit:focus { border-color: #6e6eff; }"
-    );
+        "QLineEdit:focus { border-color: #6e6eff; }");
     connect(m_questionInput, &QLineEdit::returnPressed, this, &StudyView::onAskQuestion);
     inputLayout->addWidget(m_questionInput, 1);
 
@@ -100,8 +92,7 @@ void StudyView::setupUi()
         "QPushButton { padding: 10px 20px; border: none; border-radius: 8px; "
         "background: #4a4aff; color: white; font-size: 14px; font-weight: bold; }"
         "QPushButton:hover { background: #5a5aff; }"
-        "QPushButton:disabled { background: #2a2a4a; color: #606080; }"
-    );
+        "QPushButton:disabled { background: #2a2a4a; color: #606080; }");
     connect(m_askButton, &QPushButton::clicked, this, &StudyView::onAskQuestion);
     inputLayout->addWidget(m_askButton);
 
@@ -110,15 +101,13 @@ void StudyView::setupUi()
     m_stopButton->setStyleSheet(
         "QPushButton { padding: 10px 20px; border: none; border-radius: 8px; "
         "background: #ff4a4a; color: white; font-size: 14px; font-weight: bold; }"
-        "QPushButton:hover { background: #ff5a5a; }"
-    );
+        "QPushButton:hover { background: #ff5a5a; }");
     m_stopButton->hide();
     connect(m_stopButton, &QPushButton::clicked, this, [this]() {
         m_client->cancelStream();
         onStreamDone();
     });
     inputLayout->addWidget(m_stopButton);
-
     layout->addLayout(inputLayout);
 }
 
@@ -136,19 +125,17 @@ void StudyView::onAskQuestion()
     setInputEnabled(false);
     m_isStudying = true;
 
-    m_client->startChatStream(
-        question, "study",
+    m_client->startChatStream(question, "study",
         [this](const QString &chunk) { onStreamChunk(chunk); },
-        [this]() { onStreamDone(); }
-    );
+        [this]() { onStreamDone(); });
 }
 
 void StudyView::onStreamChunk(const QString &text)
 {
     m_currentAnswer += text;
     m_studyDisplay->setHtml(m_mdRenderer->render(m_currentAnswer));
-    QScrollBar *scrollBar = m_studyDisplay->verticalScrollBar();
-    if (scrollBar) scrollBar->setValue(scrollBar->maximum());
+    QScrollBar *sb = m_studyDisplay->verticalScrollBar();
+    if (sb) sb->setValue(sb->maximum());
 }
 
 void StudyView::onStreamDone()
@@ -170,13 +157,10 @@ void StudyView::onUploadMaterial()
     }
 
     if (!files.isEmpty()) {
-        // In a full implementation, we would upload the files to Convex
-        // For now, we show them in the list
         QMessageBox::information(this, "Upload",
             QString("%1 file(s) added to study materials.\n\n"
                     "Full file upload to Convex storage will be implemented "
-                    "in a future update.")
-                .arg(files.size()));
+                    "in a future update.").arg(files.size()));
     }
 }
 
