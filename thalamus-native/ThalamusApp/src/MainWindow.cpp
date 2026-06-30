@@ -7,11 +7,9 @@
 #include "CodeModeView.h"
 #include "VMSandboxView.h"
 #include "Settings.h"
-
 #include <QVBoxLayout>
 #include <QAction>
 #include <QMenuBar>
-#include <QMessageBox>
 #include <QSettings>
 #include <QCloseEvent>
 #include <QApplication>
@@ -20,17 +18,10 @@
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
-    , m_tabWidget(nullptr)
-    , m_chatView(nullptr)
-    , m_researchView(nullptr)
-    , m_studyView(nullptr)
-    , m_codeModeView(nullptr)
-    , m_vmSandboxView(nullptr)
-    , m_settingsView(nullptr)
-    , m_trayIcon(nullptr)
-    , m_trayMenu(nullptr)
-    , m_showAction(nullptr)
-    , m_quitAction(nullptr)
+    , m_tabWidget(nullptr), m_chatView(nullptr), m_researchView(nullptr)
+    , m_studyView(nullptr), m_codeModeView(nullptr), m_vmSandboxView(nullptr)
+    , m_settingsView(nullptr), m_trayIcon(nullptr), m_trayMenu(nullptr)
+    , m_showAction(nullptr), m_quitAction(nullptr)
     , m_convexClient(new ConvexClient(this))
 {
     setupUi();
@@ -38,10 +29,7 @@ MainWindow::MainWindow(QWidget *parent)
     restoreSettings();
 }
 
-MainWindow::~MainWindow()
-{
-    saveSettings();
-}
+MainWindow::~MainWindow() { saveSettings(); }
 
 void MainWindow::setupUi()
 {
@@ -49,14 +37,12 @@ void MainWindow::setupUi()
     setMinimumSize(1024, 720);
     resize(1280, 860);
 
-    // Tab widget
     m_tabWidget = new QTabWidget(this);
     m_tabWidget->setTabPosition(QTabWidget::South);
     m_tabWidget->setMovable(true);
     m_tabWidget->setDocumentMode(true);
     setCentralWidget(m_tabWidget);
 
-    // Create views
     m_chatView = new ChatView(m_convexClient, this);
     m_researchView = new ResearchView(m_convexClient, this);
     m_studyView = new StudyView(m_convexClient, this);
@@ -64,7 +50,6 @@ void MainWindow::setupUi()
     m_vmSandboxView = new VMSandboxView(m_convexClient, this);
     m_settingsView = new Settings(m_convexClient, this);
 
-    // Add tabs
     m_tabWidget->addTab(m_chatView, QIcon(), "Chat");
     m_tabWidget->addTab(m_researchView, QIcon(), "Research");
     m_tabWidget->addTab(m_studyView, QIcon(), "Study");
@@ -74,7 +59,6 @@ void MainWindow::setupUi()
 
     connect(m_tabWidget, &QTabWidget::currentChanged, this, &MainWindow::onTabChanged);
 
-    // Status bar
     statusBar()->setStyleSheet(
         "QStatusBar { background: #1e1e2e; color: #a0a0c0; border-top: 1px solid #2e2e3e; }"
         "QStatusBar::item { border: none; }");
@@ -89,11 +73,8 @@ void MainWindow::setupTrayIcon()
     m_trayMenu = new QMenu(this);
     m_showAction = m_trayMenu->addAction("Show Thalamus");
     connect(m_showAction, &QAction::triggered, this, [this]() {
-        show();
-        raise();
-        activateWindow();
+        show(); raise(); activateWindow();
     });
-
     m_trayMenu->addSeparator();
     m_quitAction = m_trayMenu->addAction("Quit");
     connect(m_quitAction, &QAction::triggered, qApp, &QApplication::quit);
@@ -106,9 +87,7 @@ void MainWindow::setupTrayIcon()
 void MainWindow::onTrayActivated(QSystemTrayIcon::ActivationReason reason)
 {
     if (reason == QSystemTrayIcon::DoubleClick) {
-        show();
-        raise();
-        activateWindow();
+        show(); raise(); activateWindow();
     }
 }
 
@@ -116,15 +95,15 @@ void MainWindow::onTabChanged(int index)
 {
     QWidget *w = m_tabWidget->widget(index);
     if (qobject_cast<ChatView *>(w))
-        statusBar()->showMessage("Chat Mode \u2014 Ask anything");
+        statusBar()->showMessage("Chat Mode");
     else if (qobject_cast<ResearchView *>(w))
-        statusBar()->showMessage("Research Mode \u2014 Deep multi-source research");
+        statusBar()->showMessage("Research Mode");
     else if (qobject_cast<StudyView *>(w))
-        statusBar()->showMessage("Study Mode \u2014 RAG-enhanced learning");
+        statusBar()->showMessage("Study Mode");
     else if (qobject_cast<CodeModeView *>(w))
-        statusBar()->showMessage("Code Mode \u2014 Autonomous development pipeline");
+        statusBar()->showMessage("Code Mode");
     else if (qobject_cast<VMSandboxView *>(w))
-        statusBar()->showMessage("VM Sandbox \u2014 Virtual machine management");
+        statusBar()->showMessage("VM Sandbox");
     else if (qobject_cast<Settings *>(w))
         statusBar()->showMessage("Settings");
 }
@@ -134,9 +113,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
     saveSettings();
     if (m_trayIcon && m_trayIcon->isVisible()) {
         hide();
-        m_trayIcon->showMessage(
-            "Thalamus AI",
-            "Application minimized to tray. Double-click to restore.",
+        m_trayIcon->showMessage("Thalamus AI",
+            "Minimized to tray. Double-click to restore.",
             QSystemTrayIcon::Information, 2000);
         event->ignore();
     } else {
@@ -146,35 +124,29 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
 void MainWindow::saveSettings()
 {
-    QSettings settings;
-    settings.setValue("window/geometry", saveGeometry());
-    settings.setValue("window/state", saveState());
-    settings.setValue("window/tab", m_tabWidget->currentIndex());
-    settings.setValue("convex/baseUrl", m_convexClient->baseUrl());
+    QSettings s;
+    s.setValue("window/geometry", saveGeometry());
+    s.setValue("window/state", saveState());
+    s.setValue("window/tab", m_tabWidget->currentIndex());
+    s.setValue("convex/baseUrl", m_convexClient->baseUrl());
 }
 
 void MainWindow::restoreSettings()
 {
-    QSettings settings;
-    if (settings.contains("window/geometry"))
-        restoreGeometry(settings.value("window/geometry").toByteArray());
-    if (settings.contains("window/state"))
-        restoreState(settings.value("window/state").toByteArray());
-    if (settings.contains("window/tab"))
-        m_tabWidget->setCurrentIndex(settings.value("window/tab").toInt());
-    if (settings.contains("convex/baseUrl"))
-        m_convexClient->setBaseUrl(settings.value("convex/baseUrl").toString());
+    QSettings s;
+    if (s.contains("window/geometry"))
+        restoreGeometry(s.value("window/geometry").toByteArray());
+    if (s.contains("window/state"))
+        restoreState(s.value("window/state").toByteArray());
+    if (s.contains("window/tab"))
+        m_tabWidget->setCurrentIndex(s.value("window/tab").toInt());
+    if (s.contains("convex/baseUrl"))
+        m_convexClient->setBaseUrl(s.value("convex/baseUrl").toString());
 }
 
 void MainWindow::handleUri(const QString &uri)
 {
-    show();
-    raise();
-    activateWindow();
-
-    if (uri == "thalamus://activate")
-        return;
-
+    show(); raise(); activateWindow();
     if (uri.startsWith("thalamus://chat"))
         m_tabWidget->setCurrentIndex(0);
     else if (uri.startsWith("thalamus://research"))

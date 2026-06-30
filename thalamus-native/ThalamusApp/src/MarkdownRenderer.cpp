@@ -2,117 +2,37 @@
 #include "MarkdownRenderer.h"
 #include <QRegularExpression>
 
-MarkdownRenderer::MarkdownRenderer(QObject *parent)
-    : QObject(parent)
-{}
+MarkdownRenderer::MarkdownRenderer(QObject *parent) : QObject(parent) {}
 
-QString MarkdownRenderer::render(const QString &markdown) const
+QString MarkdownRenderer::render(const QString &md) const
 {
-    QString html = markdown;
-
-    // Escape HTML entities first
-    html = escapeHtml(html);
-
-    // Headers (h1-h4)
-    html.replace(QRegularExpression("^#### (.+)$", QRegularExpression::MultilineOption),
-                 "<h4>\\1</h4>");
-    html.replace(QRegularExpression("^### (.+)$", QRegularExpression::MultilineOption),
-                 "<h3>\\1</h3>");
-    html.replace(QRegularExpression("^## (.+)$", QRegularExpression::MultilineOption),
-                 "<h2>\\1</h2>");
-    html.replace(QRegularExpression("^# (.+)$", QRegularExpression::MultilineOption),
-                 "<h1>\\1</h1>");
-
-    // Bold and italic
+    QString html = md;
+    html.replace("&","&amp;"); html.replace("<","&lt;"); html.replace(">","&gt;");
+    html.replace(QRegularExpression("^#### (.+)$", QRegularExpression::MultilineOption), "<h4>\\1</h4>");
+    html.replace(QRegularExpression("^### (.+)$", QRegularExpression::MultilineOption), "<h3>\\1</h3>");
+    html.replace(QRegularExpression("^## (.+)$", QRegularExpression::MultilineOption), "<h2>\\1</h2>");
+    html.replace(QRegularExpression("^# (.+)$", QRegularExpression::MultilineOption), "<h1>\\1</h1>");
     html.replace(QRegularExpression("\\*\\*(.+?)\\*\\*"), "<b>\\1</b>");
     html.replace(QRegularExpression("\\*(.+?)\\*"), "<i>\\1</i>");
-
-    // Inline code
     html.replace(QRegularExpression("`([^`]+)`"), "<code>\\1</code>");
+    html.replace(QRegularExpression("```(?:\\w*)\\n([\\s\\S]*?)```"), "<pre>\\1</pre>");
+    html.replace(QRegularExpression("\\[([^\\]]+)\\]\\(([^)]+)\\)"), "<a href=\"\\2\">\\1</a>");
+    html.replace(QRegularExpression("^\\* (.+)$", QRegularExpression::MultilineOption), "<li>\\1</li>");
+    html.replace(QRegularExpression("(?:<li>.*</li>\\s*)+"), "<ul>\\0</ul>");
+    html.replace(QRegularExpression("^---+$", QRegularExpression::MultilineOption), "<hr>");
+    html.replace(QRegularExpression("^> (.+)$", QRegularExpression::MultilineOption), "<blockquote>\\1</blockquote>");
 
-    // Code blocks (```...```)
-    html.replace(QRegularExpression("```(?:\\w*)\\n([\\s\\S]*?)```"),
-                 "<pre>\\1</pre>");
-
-    // Links
-    html.replace(QRegularExpression("\\[([^\\]]+)\\]\\(([^)]+)\\)"),
-                 "<a href=\"\\2\">\\1</a>");
-
-    // Unordered lists
-    html.replace(QRegularExpression("^\\* (.+)$", QRegularExpression::MultilineOption),
-                 "<li>\\1</li>");
-    html.replace(QRegularExpression("(?:<li>.*</li>\\s*)+"),
-                 "<ul>\\0</ul>");
-
-    // Horizontal rules
-    html.replace(QRegularExpression("^---+$", QRegularExpression::MultilineOption),
-                 "<hr>");
-
-    // Blockquotes
-    html.replace(QRegularExpression("^> (.+)$", QRegularExpression::MultilineOption),
-                 "<blockquote>\\1</blockquote>");
-
-    // Paragraphs: wrap lines that aren't already wrapped in block elements
     QStringList lines = html.split('\n');
-    QString result;
-    bool inParagraph = false;
-
+    QString result; bool inP = false;
     for (const QString &line : lines) {
-        QString trimmed = line.trimmed();
-        if (trimmed.isEmpty()) {
-            if (inParagraph) {
-                result += "</p>\n";
-                inParagraph = false;
-            }
-            result += "\n";
-            continue;
-        }
-
-        // Skip lines already wrapped in block elements
-        if (trimmed.startsWith('<') && (trimmed.startsWith("<h") || trimmed.startsWith("<ul") ||
-            trimmed.startsWith("<li") || trimmed.startsWith("<pre") || trimmed.startsWith("<blockquote") ||
-            trimmed.startsWith("<hr") || trimmed.startsWith("<div"))) {
-            if (inParagraph) {
-                result += "</p>\n";
-                inParagraph = false;
-            }
-            result += line + "\n";
-            continue;
-        }
-
-        if (trimmed.endsWith("</li>") || trimmed.endsWith("</ul>") ||
-            trimmed.endsWith("</pre>") || trimmed.endsWith("</blockquote>") ||
-            trimmed.endsWith("</h1>") || trimmed.endsWith("</h2>") ||
-            trimmed.endsWith("</h3>") || trimmed.endsWith("</h4>") ||
-            trimmed.endsWith("</hr>")) {
-            if (inParagraph) {
-                result += "</p>\n";
-                inParagraph = false;
-            }
-            result += line + "\n";
-            continue;
-        }
-
-        if (!inParagraph) {
-            result += "<p>";
-            inParagraph = true;
-        } else {
-            result += "\n";
-        }
-        result += trimmed;
+        QString t = line.trimmed();
+        if (t.isEmpty()) { if (inP) { result+="</p>\n"; inP=false; } result+="\n"; continue; }
+        if (t.startsWith('<') && (t.startsWith("<h")||t.startsWith("<ul")||t.startsWith("<li")||
+            t.startsWith("<pre")||t.startsWith("<blockquote")||t.startsWith("<hr"))) {
+            if (inP) { result+="</p>\n"; inP=false; } result+=line+"\n"; continue; }
+        if (!inP) { result+="<p>"; inP=true; } else result+="\n";
+        result += t;
     }
-
-    if (inParagraph)
-        result += "</p>\n";
-
-    return result;
-}
-
-QString MarkdownRenderer::escapeHtml(const QString &text) const
-{
-    QString result = text;
-    result.replace("&", "&amp;");
-    result.replace("<", "&lt;");
-    result.replace(">", "&gt;");
+    if (inP) result+="</p>\n";
     return result;
 }

@@ -15,8 +15,6 @@ class AuthDialog : public QDialog
 
 public:
     explicit AuthDialog(ConvexClient *client, QWidget *parent = nullptr);
-    ~AuthDialog() = default;
-
     bool isAuthenticated() const;
 
 signals:
@@ -30,22 +28,18 @@ private slots:
 
 private:
     void setupUi();
-
     ConvexClient *m_client;
     QStackedWidget *m_stack;
-
     QWidget *m_emailPage;
     QLineEdit *m_emailInput;
     QPushButton *m_sendOtpButton;
     QLabel *m_emailError;
-
     QWidget *m_otpPage;
     QLabel *m_otpLabel;
     QLineEdit *m_otpInput;
     QPushButton *m_verifyButton;
     QLabel *m_otpError;
     QPushButton *m_backButton;
-
     QString m_email;
     bool m_authenticated;
 };

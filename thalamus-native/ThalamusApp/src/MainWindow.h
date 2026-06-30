@@ -22,7 +22,6 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
-
     void handleUri(const QString &uri);
 
 protected:
@@ -45,11 +44,9 @@ private:
     CodeModeView *m_codeModeView;
     VMSandboxView *m_vmSandboxView;
     Settings *m_settingsView;
-
     QSystemTrayIcon *m_trayIcon;
     QMenu *m_trayMenu;
     QAction *m_showAction;
     QAction *m_quitAction;
-
     ConvexClient *m_convexClient;
 };
