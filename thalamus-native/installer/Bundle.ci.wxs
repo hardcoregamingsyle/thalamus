@@ -35,7 +35,6 @@ producing the self-contained Thalamus-Setup-v1.0.0.exe that the web app's
                 InstallArguments="/install /quiet /norestart"
                 UninstallArguments="/uninstall /quiet /norestart"
                 DetectCondition="VCRedistInstalled">
-                <ExitCode Behavior="forceReboot" />
             </ExePackage>
 
             <!-- Main MSI -->
