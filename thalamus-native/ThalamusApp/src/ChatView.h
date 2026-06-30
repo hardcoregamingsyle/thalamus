@@ -2,75 +2,53 @@
 #define CHATVIEW_H
 
 #include <QWidget>
-#include <QVBoxLayout>
-#include <QTextEdit>
+#include <QTextBrowser>
+#include <QLineEdit>
 #include <QPushButton>
-#include <QScrollArea>
-#include <QLabel>
-#include <QListWidget>
-#include <QListWidgetItem>
+#include <QVBoxLayout>
 #include <QJsonArray>
 #include <QJsonObject>
-#include "ConvexClient.h"
-#include "MarkdownRenderer.h"
+#include <QLabel>
+#include <QScrollArea>
 
-/**
- * @brief Chat mode UI — send messages, receive streaming AI responses.
- */
-class ChatView : public QWidget
-{
+class ConvexClient;
+
+class ChatView : public QWidget {
     Q_OBJECT
 
 public:
     explicit ChatView(ConvexClient *client, QWidget *parent = nullptr);
-    ~ChatView();
 
-    void setConversationId(const QString &id) { m_conversationId = id; }
-    QString conversationId() const { return m_conversationId; }
-
-signals:
-    void conversationSelected(const QString &id);
+    void newConversation();
+    void sendMessage(const QString &text);
 
 private slots:
-    void onSendMessage();
-    void onNewConversation();
-    void onConversationsLoaded(const QJsonArray &convs);
-    void onConversationCreated(const QJsonObject &conv);
-    void onMessagesLoaded(const QJsonArray &messages);
+    void onSendClicked();
+    void onStreamThinking(const QString &chunk);
+    void onStreamAnswerStart();
+    void onStreamChunk(const QString &chunk);
+    void onStreamDone(const QString &fullText);
+    void onStreamError(const QString &error);
 
 private:
-    void setupUI();
-    void appendMessage(const QString &role, const QString &content);
-    void appendAssistantChunk(const QString &chunk);
-    void clearChat();
-    void loadConversations();
-    bool eventFilter(QObject *obj, QEvent *event) override;
-    void switchConversation(const QString &id);
-    QString formatTimestamp();
+    void setupUi();
+    void appendMessage(const QString &role, const QString &html);
+    void scrollToBottom();
 
     ConvexClient *m_client;
-    MarkdownRenderer *m_mdRenderer;
-
-    // UI
-    QWidget *m_sidebar;
-    QListWidget *m_conversationList;
-    QWidget *m_chatArea;
-    QScrollArea *m_messageScroll;
-    QWidget *m_messageContainer;
-    QVBoxLayout *m_messageLayout;
-    QTextEdit *m_inputEdit;
+    QVBoxLayout *m_mainLayout;
+    QScrollArea *m_scrollArea;
+    QWidget *m_messagesContainer;
+    QVBoxLayout *m_messagesLayout;
+    QLineEdit *m_input;
     QPushButton *m_sendBtn;
-    QPushButton *m_newBtn;
-    QLabel *m_modeLabel;
     QLabel *m_statusLabel;
+    QTextBrowser *m_currentAssistant;
 
-    // State
-    QString m_currentMode;
-    QString m_conversationId;
     QJsonArray m_history;
-    QList<QPair<QString, QString>> m_messages; // role, content
-    bool m_isReceiving;
     QString m_currentResponse;
+    QString m_conversationId;
+    bool m_streaming;
 };
 
 #endif // CHATVIEW_H
