@@ -1,84 +1,143 @@
-/**
- * Thalamus AI — Native Windows Desktop App
- * Entry point: single-instance lock, URI scheme registration, dark theme
- */
+// Thalamus AI — Native Windows Desktop App
+// Main entry point: single-instance, URI scheme, system tray
 
 #include <QApplication>
-#include <QSharedMemory>
 #include <QMessageBox>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QStyleFactory>
 #include <QFile>
 #include <QDir>
-#include <QStandardPaths>
 #include <QSettings>
-
+#include <QFileInfo>
 #include "MainWindow.h"
-#include "Settings.h"
 
 #ifdef Q_OS_WIN
 #include <windows.h>
-#include <shellapi.h>
 #endif
 
-static const char *SHARED_MEMORY_KEY = "thalamus-ai-single-instance";
-static const char *URI_SCHEME = "thalamus";
+static const char *APP_GUID = "thalamus-ai-7a4c9f82-1e3b-4f6d-8c0a-5b2d7e9f1a3c";
+static const char *LOCAL_SERVER_NAME = "ThalamusAISingleInstance";
 
+// Forward a thalamus:// URI to the running instance
+static void sendUriToRunningInstance(const QString &uri)
+{
+    QLocalSocket socket;
+    socket.connectToServer(LOCAL_SERVER_NAME);
+    if (socket.waitForConnected(2000)) {
+        QByteArray data = uri.toUtf8();
+        socket.write(data);
+        socket.waitForBytesWritten(1000);
+        socket.waitForDisconnected(1000);
+    }
+}
+
+// Handle WM_COPYDATA for URI scheme from browser
 #ifdef Q_OS_WIN
-static void registerUriScheme() {
-    QSettings reg("HKEY_CLASSES_ROOT", QSettings::NativeFormat);
-    QString appPath = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
-
-    reg.setValue(QString("%1/Default").arg(URI_SCHEME), "URL:Thalamus AI Protocol");
-    reg.setValue(QString("%1/URL Protocol").arg(URI_SCHEME), "");
-
-    QSettings icon("HKEY_CLASSES_ROOT", QSettings::NativeFormat);
-    icon.setValue(QString("%1/DefaultIcon/Default").arg(URI_SCHEME), QString("\"%1\",0").arg(appPath));
-
-    QSettings cmd("HKEY_CLASSES_ROOT", QSettings::NativeFormat);
-    cmd.setValue(QString("%1/shell/open/command/Default").arg(URI_SCHEME),
-                 QString("\"%1\" --uri \"%2\"").arg(appPath, "%1"));
+static bool handleWindowsMessage(MSG *msg, Qt::HANDle *)
+{
+    if (msg->message == WM_COPYDATA) {
+        COPYDATASTRUCT *cds = reinterpret_cast<COPYDATASTRUCT *>(msg->lParam);
+        if (cds->dwData == 0x5448414C) { // 'THAL'
+            QString uri = QString::fromUtf8(
+                reinterpret_cast<const char *>(cds->lpData), cds->cbData);
+            // Find MainWindow and open URI
+            for (QWidget *w : QApplication::topLevelWidgets()) {
+                if (auto *mw = qobject_cast<MainWindow *>(w)) {
+                    mw->handleUri(uri);
+                    break;
+                }
+            }
+        }
+    }
+    return false;
 }
 #endif
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
     QApplication app(argc, argv);
     app.setApplicationName("Thalamus AI");
-    app.setOrganizationName("Aphantic Corporations");
     app.setApplicationVersion("1.0.0");
-    app.setQuitOnLastWindowClosed(false); // stay in tray
+    app.setOrganizationName("Thalamus AI");
+    app.setOrganizationDomain("thalamus.ai");
+    app.setWindowIcon(QIcon(":/icons/app.ico"));
 
-    // Single-instance enforcement via shared memory
-    QSharedMemory mem(SHARED_MEMORY_KEY);
-    if (!mem.create(1)) {
-        QMessageBox::information(nullptr, "Thalamus AI",
-            "Thalamus AI is already running.\nCheck your system tray.");
-        return 0;
-    }
+    // Force Fusion style for consistent dark theme
+    app.setStyle(QStyleFactory::create("Fusion"));
 
-    // Register thalamus:// URI scheme (Windows)
-#ifdef Q_OS_WIN
-    registerUriScheme();
-#endif
-
-    // Handle --uri argument for deep linking
-    const QStringList args = app.arguments();
-    for (int i = 1; i < args.size(); ++i) {
-        if (args[i] == "--uri" && i + 1 < args.size()) {
-            QString uri = args[i + 1];
-            // Will be forwarded to MainWindow after creation
-            Q_UNUSED(uri);
-        }
-    }
-
-    // Load dark theme stylesheet
+    // ── Load stylesheet ─────────────────────────────────────────────────────
     QFile styleFile(":/style.qss");
     if (styleFile.open(QFile::ReadOnly | QFile::Text)) {
-        app.setStyleSheet(styleFile.readAll());
+        QString styleSheet = QString::fromUtf8(styleFile.readAll());
+        app.setStyleSheet(styleSheet);
         styleFile.close();
     }
 
-    // Create and show main window
-    MainWindow window;
-    window.show();
+    // ── Single-instance enforcement ─────────────────────────────────────────
+    QLocalSocket pingSocket;
+    pingSocket.connectToServer(LOCAL_SERVER_NAME);
+    bool isFirstInstance = !pingSocket.waitForConnected(500);
+
+    if (!isFirstInstance) {
+        // Forward any URI from argv[1] to the running instance
+        if (argc > 1) {
+            QString uri = QString::fromUtf8(argv[1]);
+            if (uri.startsWith("thalamus://")) {
+                sendUriToRunningInstance(uri);
+            }
+        } else {
+            // Just bring the running instance to front
+            sendUriToRunningInstance("thalamus://activate");
+        }
+        return 0;
+    }
+
+    // ── Start local server for single-instance IPC ──────────────────────────
+    QLocalServer localServer;
+    // Clean up stale server name if previous instance crashed
+    QLocalServer::removeServer(LOCAL_SERVER_NAME);
+    localServer.listen(LOCAL_SERVER_NAME);
+
+    // ── Register thalamus:// URI scheme (Windows) ───────────────────────────
+#ifdef Q_OS_WIN
+    QSettings uriScheme(
+        "HKEY_CURRENT_USER\\Software\\Classes\\thalamus",
+        QSettings::NativeFormat);
+    uriScheme.setValue("Default", "URL:Thalamus AI Protocol");
+    uriScheme.setValue("URL Protocol", "");
+    QSettings uriCmd(
+        "HKEY_CURRENT_USER\\Software\\Classes\\thalamus\\shell\\open\\command",
+        QSettings::NativeFormat);
+    QString appPath = QDir::toNativeSeparators(QFileInfo(argv[0]).absoluteFilePath());
+    uriCmd.setValue("Default",
+        QString("\"%1\" \"%2\"").arg(appPath).arg("%1"));
+
+    // Install native event filter for WM_COPYDATA
+    // app.installNativeEventFilter(...) — handled via qApp->nativeEvent
+#endif
+
+    // ── Create main window ──────────────────────────────────────────────────
+    MainWindow mainWindow;
+
+    // Handle URI from second instance
+    QObject::connect(&localServer, &QLocalServer::newConnection, [&]() {
+        QLocalSocket *client = localServer.nextPendingConnection();
+        if (client) {
+            client->waitForReadyRead(2000);
+            QString uri = QString::fromUtf8(client->readAll());
+            if (uri == "thalamus://activate") {
+                mainWindow.show();
+                mainWindow.raise();
+                mainWindow.activateWindow();
+            } else {
+                mainWindow.handleUri(uri);
+            }
+            client->deleteLater();
+        }
+    });
+
+    mainWindow.show();
 
     return app.exec();
 }
