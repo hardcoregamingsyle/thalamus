@@ -1,440 +1,184 @@
+// Thalamus AI — VMSandboxView.cpp
 #include "VMSandboxView.h"
+#include "ConvexClient.h"
+#include "VMBridgeManager.h"
+#include "VNCWidget.h"
 #include "OSSelectorDialog.h"
-#include <QGridLayout>
+#include <QHBoxLayout>
+#include <QGroupBox>
+#include <QFormLayout>
 #include <QFrame>
-#include <QMessageBox>
-#include <QFileDialog>
-#include <QProcess>
-#include <QDesktopServices>
-#include <QUrl>
 
 VMSandboxView::VMSandboxView(ConvexClient *client, QWidget *parent)
     : QWidget(parent)
     , m_client(client)
-    , m_bridge(new VMBridgeManager(this))
+    , m_bridgeManager(new VMBridgeManager(this))
     , m_vmRunning(false)
-    , m_vmPaused(false)
-    , m_bridgeConnected(false)
-    , m_hasIso(false)
 {
-    loadOSTemplates();
-    setupUI();
-
-    connect(m_bridge, &VMBridgeManager::bridgeConnected, this, &VMSandboxView::onBridgeConnected);
-    connect(m_bridge, &VMBridgeManager::bridgeDisconnected, this, &VMSandboxView::onBridgeDisconnected);
-    connect(m_bridge, &VMBridgeManager::bridgeError, this, &VMSandboxView::onBridgeError);
-    connect(m_bridge, &VMBridgeManager::vmBooted, this, &VMSandboxView::onVMBooted);
-    connect(m_bridge, &VMBridgeManager::vmStopped, this, &VMSandboxView::onVMStopped);
+    setupUi();
+    connect(m_bridgeManager, &VMBridgeManager::vmBooted, this, &VMSandboxView::onVMBooted);
+    connect(m_bridgeManager, &VMBridgeManager::vmStopped, this, &VMSandboxView::onVMStopped);
+    connect(m_bridgeManager, &VMBridgeManager::error, this, &VMSandboxView::onVMError);
 }
 
-VMSandboxView::~VMSandboxView() {}
-
-void VMSandboxView::loadOSTemplates()
+void VMSandboxView::setupUi()
 {
-    m_osConfigs = {
-        {"windows-11", {"Windows 11 Pro", 4096, 8192, 2, "64-bit QEMU VM with TPM 2.0, Secure Boot, and UEFI"}},
-        {"windows-10", {"Windows 10 Pro", 2048, 4096, 2, "64-bit QEMU VM with UEFI and Secure Boot"}},
-        {"ubuntu-24", {"Ubuntu 24.04 LTS", 2048, 4096, 2, "64-bit QEMU VM with SPICE display"}},
-        {"ubuntu-22", {"Ubuntu 22.04 LTS", 2048, 2048, 2, "64-bit QEMU VM"}},
-        {"fedora-40", {"Fedora 40 Workstation", 2048, 4096, 2, "64-bit QEMU VM"}},
-        {"debian-12", {"Debian 12 Bookworm", 1024, 2048, 1, "64-bit QEMU VM"}},
-        {"macos-sequoia", {"macOS 15 Sequoia", 4096, 8192, 2, "Experimental QEMU HVF acceleration"}},
-        {"android-14", {"Android 14 x86_64", 2048, 4096, 2, "Android x86_64 QEMU VM"}},
-        {"alpine", {"Alpine Linux", 512, 1024, 1, "Lightweight 64-bit QEMU VM"}},
-        {"freedos", {"FreeDOS", 64, 128, 1, "16-bit legacy QEMU VM"}},
-    };
-}
+    auto *layout = new QVBoxLayout(this);
+    layout->setSpacing(8);
+    layout->setContentsMargins(16, 16, 16, 16);
 
-QString VMSandboxView::osDescription(const QString &os)
-{
-    auto it = m_osConfigs.find(os);
-    if (it != m_osConfigs.end()) return it->description;
-    return "";
-}
+    auto *header = new QLabel("VM Sandbox");
+    header->setStyleSheet("font-size: 18px; font-weight: bold; color: #c0c0f0;");
+    layout->addWidget(header);
 
-void VMSandboxView::setupUI()
-{
-    auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(16, 16, 16, 16);
-    mainLayout->setSpacing(12);
+    auto *description = new QLabel(
+        "Boot a virtual machine in the cloud sandbox. "
+        "Choose your OS, configure resources, and access it via the embedded VNC viewer.");
+    description->setWordWrap(true);
+    description->setStyleSheet("color: #8080a0; font-size: 13px; margin-bottom: 8px;");
+    layout->addWidget(description);
 
-    // ── Header ─────────────────────────────────────────────────────────────
-    auto *header = new QLabel("🖥️  VM Sandbox");
-    header->setStyleSheet("font-size: 22px; font-weight: 700; color: #fff;");
+    // Config panel
+    m_configPanel = new QWidget;
+    auto *configLayout = new QHBoxLayout(m_configPanel);
+    configLayout->setSpacing(16);
 
-    auto *subtitle = new QLabel("Boot full operating systems with hardware-accelerated QEMU virtualisation");
-    subtitle->setStyleSheet("font-size: 12px; color: #888;");
-    subtitle->setWordWrap(true);
-
-    mainLayout->addWidget(header);
-    mainLayout->addWidget(subtitle);
-
-    // ── Control panel ──────────────────────────────────────────────────────
-    auto *controlPanel = new QWidget();
-    controlPanel->setStyleSheet("background: #1a1a1a; border-radius: 12px; padding: 16px;");
-    auto *ctlGrid = new QGridLayout(controlPanel);
-    ctlGrid->setSpacing(12);
-
-    // Row 0: OS selector
-    auto *osLabel = new QLabel("Operating System");
-    osLabel->setStyleSheet("font-size: 11px; font-weight: 600; color: #888;");
-
-    m_osCombo = new QComboBox();
-    m_osCombo->setStyleSheet(
-        "QComboBox { background: #0d0d0d; border: 1px solid #333; border-radius: 8px;"
-        "  padding: 10px; font-size: 13px; color: #fff; min-height: 20px; }"
+    // OS selector
+    auto *osGroup = new QGroupBox("Operating System");
+    osGroup->setStyleSheet(
+        "QGroupBox { color: #a0a0c0; border: 1px solid #2e2e4e; border-radius: 6px; "
+        "padding: 12px; padding-top: 20px; font-size: 13px; }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; }");
+    auto *osLayout = new QVBoxLayout(osGroup);
+    m_osSelector = new QComboBox;
+    m_osSelector->addItems({"Windows 11", "Ubuntu 24.04", "Fedora 40", "macOS 15", "Android 14"});
+    m_osSelector->setStyleSheet(
+        "QComboBox { padding: 8px; border: 1px solid #3e3e5e; border-radius: 6px; "
+        "background: #16162a; color: #e0e0f0; font-size: 13px; }"
         "QComboBox::drop-down { border: none; }"
-        "QComboBox:hover { border-color: #a78bfa; }"
-        "QComboBox QAbstractItemView { background: #1a1a1a; color: #fff; border: 1px solid #333; }"
-    );
-    // Populate OS list
-    for (auto it = m_osConfigs.begin(); it != m_osConfigs.end(); ++it) {
-        m_osCombo->addItem(it->label, it.key());
-    }
+        "QComboBox QAbstractItemView { background: #1e1e32; color: #e0e0f0; "
+        "selection-background-color: #2a2a4a; }");
+    osLayout->addWidget(m_osSelector);
+    configLayout->addWidget(osGroup);
 
-    m_osInfo = new QLabel();
-    m_osInfo->setStyleSheet("font-size: 11px; color: #666; padding: 4px 0;");
-    m_osInfo->setWordWrap(true);
+    // RAM
+    auto *ramGroup = new QGroupBox("RAM");
+    ramGroup->setStyleSheet(osGroup->styleSheet());
+    auto *ramLayout = new QVBoxLayout(ramGroup);
+    m_ramSpinBox = new QSpinBox;
+    m_ramSpinBox->setRange(1024, 16384);
+    m_ramSpinBox->setValue(4096);
+    m_ramSpinBox->setSuffix(" MB");
+    m_ramSpinBox->setSingleStep(1024);
+    m_ramSpinBox->setStyleSheet(
+        "QSpinBox { padding: 8px; border: 1px solid #3e3e5e; border-radius: 6px; "
+        "background: #16162a; color: #e0e0f0; font-size: 13px; }");
+    ramLayout->addWidget(m_ramSpinBox);
+    configLayout->addWidget(ramGroup);
 
-    ctlGrid->addWidget(osLabel, 0, 0);
-    ctlGrid->addWidget(m_osCombo, 0, 1);
-    ctlGrid->addWidget(m_osInfo, 1, 0, 1, 2);
+    // CPU cores
+    auto *cpuGroup = new QGroupBox("CPU Cores");
+    cpuGroup->setStyleSheet(osGroup->styleSheet());
+    auto *cpuLayout = new QVBoxLayout(cpuGroup);
+    m_cpuSpinBox = new QSpinBox;
+    m_cpuSpinBox->setRange(1, 16);
+    m_cpuSpinBox->setValue(4);
+    m_cpuSpinBox->setStyleSheet(m_ramSpinBox->styleSheet());
+    cpuLayout->addWidget(m_cpuSpinBox);
+    configLayout->addWidget(cpuGroup);
 
-    // Row 2: RAM slider
-    auto *ramLabel = new QLabel("RAM");
-    ramLabel->setStyleSheet("font-size: 11px; font-weight: 600; color: #888;");
+    // Boot/Stop buttons
+    auto *actionGroup = new QGroupBox("Actions");
+    actionGroup->setStyleSheet(osGroup->styleSheet());
+    auto *actionLayout = new QVBoxLayout(actionGroup);
 
-    m_ramSlider = new QSlider(Qt::Horizontal);
-    m_ramSlider->setRange(512, 16384);
-    m_ramSlider->setValue(4096);
-    m_ramSlider->setTickPosition(QSlider::TicksBelow);
-    m_ramSlider->setTickInterval(1024);
-    m_ramSlider->setStyleSheet(
-        "QSlider::groove:horizontal { background: #2a2a2a; height: 6px; border-radius: 3px; }"
-        "QSlider::handle:horizontal { background: #a78bfa; width: 18px; height: 18px; margin: -6px 0; border-radius: 9px; }"
-        "QSlider::sub-page:horizontal { background: #a78bfa; border-radius: 3px; }"
-    );
+    m_bootButton = new QPushButton("Boot VM");
+    m_bootButton->setCursor(Qt::PointingHandCursor);
+    m_bootButton->setStyleSheet(
+        "QPushButton { padding: 10px 20px; border: none; border-radius: 6px; "
+        "background: #4aaf4a; color: white; font-size: 14px; font-weight: bold; }"
+        "QPushButton:hover { background: #5abf5a; }");
+    connect(m_bootButton, &QPushButton::clicked, this, &VMSandboxView::onBootVM);
+    actionLayout->addWidget(m_bootButton);
 
-    m_ramValue = new QSpinBox();
-    m_ramValue->setRange(512, 16384);
-    m_ramValue->setValue(4096);
-    m_ramValue->setSuffix(" MB");
-    m_ramValue->setSingleStep(512);
-    m_ramValue->setStyleSheet(
-        "QSpinBox { background: #0d0d0d; border: 1px solid #333; border-radius: 6px;"
-        "  padding: 6px; font-size: 12px; color: #fff; min-width: 90px; }"
-    );
+    m_stopButton = new QPushButton("Stop VM");
+    m_stopButton->setCursor(Qt::PointingHandCursor);
+    m_stopButton->setEnabled(false);
+    m_stopButton->setStyleSheet(
+        "QPushButton { padding: 10px 20px; border: none; border-radius: 6px; "
+        "background: #ff4a4a; color: white; font-size: 14px; font-weight: bold; }"
+        "QPushButton:hover { background: #ff5a5a; }"
+        "QPushButton:disabled { background: #2a2a4a; color: #606080; }");
+    connect(m_stopButton, &QPushButton::clicked, this, &VMSandboxView::onStopVM);
+    actionLayout->addWidget(m_stopButton);
 
-    connect(m_ramSlider, &QSlider::valueChanged, m_ramValue, &QSpinBox::setValue);
-    connect(m_ramValue, QOverload<int>::of(&QSpinBox::valueChanged), m_ramSlider, &QSlider::setValue);
+    configLayout->addWidget(actionGroup);
+    layout->addWidget(m_configPanel);
 
-    ctlGrid->addWidget(ramLabel, 2, 0);
-    auto *ramLayout = new QHBoxLayout();
-    ramLayout->addWidget(m_ramSlider);
-    ramLayout->addWidget(m_ramValue);
-    ctlGrid->addLayout(ramLayout, 2, 1);
+    // Status
+    m_statusLabel = new QLabel("VM not running");
+    m_statusLabel->setStyleSheet("color: #8080a0; font-size: 12px; padding: 4px 0;");
+    layout->addWidget(m_statusLabel);
 
-    // Row 3: CPU cores
-    auto *cpuLabel = new QLabel("CPU Cores");
-    cpuLabel->setStyleSheet("font-size: 11px; font-weight: 600; color: #888;");
+    // VNC display panel
+    m_displayPanel = new QWidget;
+    auto *displayLayout = new QVBoxLayout(m_displayPanel);
+    displayLayout->setContentsMargins(0, 0, 0, 0);
 
-    m_cpuSlider = new QSlider(Qt::Horizontal);
-    m_cpuSlider->setRange(1, 16);
-    m_cpuSlider->setValue(4);
-    m_cpuSlider->setTickPosition(QSlider::TicksBelow);
-    m_cpuSlider->setTickInterval(1);
-    m_cpuSlider->setStyleSheet(
-        "QSlider::groove:horizontal { background: #2a2a2a; height: 6px; border-radius: 3px; }"
-        "QSlider::handle:horizontal { background: #a78bfa; width: 18px; height: 18px; margin: -6px 0; border-radius: 9px; }"
-        "QSlider::sub-page:horizontal { background: #a78bfa; border-radius: 3px; }"
-    );
+    m_vncWidget = new VNCWidget(m_bridgeManager, this);
+    displayLayout->addWidget(m_vncWidget, 1);
 
-    m_cpuValue = new QSpinBox();
-    m_cpuValue->setRange(1, 16);
-    m_cpuValue->setValue(4);
-    m_cpuValue->setStyleSheet(
-        "QSpinBox { background: #0d0d0d; border: 1px solid #333; border-radius: 6px;"
-        "  padding: 6px; font-size: 12px; color: #fff; min-width: 90px; }"
-    );
-
-    connect(m_cpuSlider, &QSlider::valueChanged, m_cpuValue, &QSpinBox::setValue);
-    connect(m_cpuValue, QOverload<int>::of(&QSpinBox::valueChanged), m_cpuSlider, &QSlider::setValue);
-
-    ctlGrid->addWidget(cpuLabel, 3, 0);
-    auto *cpuLayout = new QHBoxLayout();
-    cpuLayout->addWidget(m_cpuSlider);
-    cpuLayout->addWidget(m_cpuValue);
-    ctlGrid->addLayout(cpuLayout, 3, 1);
-
-    // Row 4: Action buttons
-    auto *btnLayout = new QHBoxLayout();
-    btnLayout->setSpacing(8);
-
-    m_connectBtn = new QPushButton("🔗  Connect Bridge");
-    m_connectBtn->setCursor(Qt::PointingHandCursor);
-    m_connectBtn->setStyleSheet(
-        "QPushButton { background: #a78bfa; color: #fff; border: none; border-radius: 8px;"
-        "  padding: 10px 16px; font-size: 12px; font-weight: 600; }"
-        "QPushButton:hover { background: #8b6ff0; }"
-    );
-
-    m_disconnectBtn = new QPushButton("✕  Disconnect");
-    m_disconnectBtn->setVisible(false);
-    m_disconnectBtn->setCursor(Qt::PointingHandCursor);
-    m_disconnectBtn->setStyleSheet(
-        "QPushButton { background: #ff6b6b; color: #fff; border: none; border-radius: 8px;"
-        "  padding: 10px 16px; font-size: 12px; font-weight: 600; }"
-        "QPushButton:hover { background: #e05555; }"
-    );
-
-    m_bootBtn = new QPushButton("▶  Boot VM");
-    m_bootBtn->setCursor(Qt::PointingHandCursor);
-    m_bootBtn->setEnabled(false);
-    m_bootBtn->setStyleSheet(
-        "QPushButton { background: #51cf66; color: #fff; border: none; border-radius: 8px;"
-        "  padding: 10px 24px; font-size: 13px; font-weight: 700; }"
-        "QPushButton:hover { background: #40c057; }"
-        "QPushButton:disabled { background: #333; color: #555; }"
-    );
-
-    m_stopBtn = new QPushButton("⏹  Stop VM");
-    m_stopBtn->setVisible(false);
-    m_stopBtn->setCursor(Qt::PointingHandCursor);
-    m_stopBtn->setStyleSheet(
-        "QPushButton { background: #ff6b6b; color: #fff; border: none; border-radius: 8px;"
-        "  padding: 10px 16px; font-size: 12px; font-weight: 600; }"
-        "QPushButton:hover { background: #e05555; }"
-    );
-
-    m_pauseBtn = new QPushButton("⏸  Pause");
-    m_pauseBtn->setVisible(false);
-    m_pauseBtn->setCursor(Qt::PointingHandCursor);
-    m_pauseBtn->setStyleSheet(
-        "QPushButton { background: #ffd43b; color: #000; border: none; border-radius: 8px;"
-        "  padding: 10px 16px; font-size: 12px; font-weight: 600; }"
-        "QPushButton:hover { background: #fcc419; }"
-    );
-
-    m_downloadBtn = new QPushButton("⬇  Download ISO");
-    m_downloadBtn->setCursor(Qt::PointingHandCursor);
-    m_downloadBtn->setStyleSheet(
-        "QPushButton { background: transparent; color: #a78bfa; border: 1px solid #a78bfa44; border-radius: 8px;"
-        "  padding: 10px 16px; font-size: 11px; }"
-        "QPushButton:hover { background: #a78bfa11; }"
-    );
-
-    btnLayout->addWidget(m_connectBtn);
-    btnLayout->addWidget(m_disconnectBtn);
-    btnLayout->addWidget(m_bootBtn);
-    btnLayout->addWidget(m_stopBtn);
-    btnLayout->addWidget(m_pauseBtn);
-    btnLayout->addStretch();
-    btnLayout->addWidget(m_downloadBtn);
-    ctlGrid->addLayout(btnLayout, 4, 0, 1, 2);
-
-    // Row 5: Status
-    m_bridgeStatus = new QLabel("● Bridge: Not Connected");
-    m_bridgeStatus->setStyleSheet("font-size: 11px; color: #ff6b6b; padding: 4px 0;");
-
-    m_vmStatus = new QLabel("VM: Idle");
-    m_vmStatus->setStyleSheet("font-size: 11px; color: #888; padding: 4px 0;");
-
-    ctlGrid->addWidget(m_bridgeStatus, 5, 0, 1, 2);
-    ctlGrid->addWidget(m_vmStatus, 6, 0, 1, 2);
-
-    mainLayout->addWidget(controlPanel);
-
-    // ── VNC Display ────────────────────────────────────────────────────────
-    m_vncDisplay = new VNCWidget();
-    m_vncDisplay->setMinimumHeight(480);
-    m_vncDisplay->setStyleSheet("background: #0d0d0d; border: 1px solid #2a2a2a; border-radius: 8px;");
-
-    mainLayout->addWidget(m_vncDisplay, 1);
-
-    // ── Connections ────────────────────────────────────────────────────────
-    connect(m_connectBtn, &QPushButton::clicked, this, &VMSandboxView::onConnectBridge);
-    connect(m_disconnectBtn, &QPushButton::clicked, this, &VMSandboxView::onDisconnectBridge);
-    connect(m_bootBtn, &QPushButton::clicked, this, &VMSandboxView::onBootVM);
-    connect(m_stopBtn, &QPushButton::clicked, this, &VMSandboxView::onStopVM);
-    connect(m_pauseBtn, &QPushButton::clicked, this, &VMSandboxView::onPauseVM);
-    connect(m_downloadBtn, &QPushButton::clicked, this, &VMSandboxView::onDownloadISO);
-    connect(m_osCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &VMSandboxView::onOSChanged);
-
-    // Connect VNC display signals
-    connect(m_vncDisplay, &VNCWidget::connected, this, [this]() {
-        m_vmStatus->setText("VM: Running — VNC connected");
-    });
-    connect(m_vncDisplay, &VNCWidget::disconnected, this, [this]() {
-        m_vmStatus->setText("VM: Stopped — VNC disconnected");
-    });
-
-    // Trigger initial OS info display
-    onOSChanged(0);
-}
-
-void VMSandboxView::onOSChanged(int index)
-{
-    QString os = m_osCombo->itemData(index).toString();
-    auto it = m_osConfigs.find(os);
-    if (it != m_osConfigs.end()) {
-        m_osInfo->setText(QString("▸ %1\n▸ Min RAM: %2 MB | Recommended: %3 MB | Min cores: %4")
-                         .arg(it->description)
-                         .arg(it->minRam)
-                         .arg(it->recommendedRam)
-                         .arg(it->minCores));
-
-        // Update RAM/CU limits based on OS
-        m_ramSlider->setMinimum(it->minRam);
-        m_cpuSlider->setMinimum(it->minCores);
-
-        if (m_ramSlider->value() < it->minRam)
-            m_ramSlider->setValue(it->recommendedRam);
-    }
-    updateUIState();
-}
-
-void VMSandboxView::updateUIState()
-{
-    m_connectBtn->setVisible(!m_bridgeConnected);
-    m_disconnectBtn->setVisible(m_bridgeConnected);
-    m_bootBtn->setEnabled(m_bridgeConnected && !m_vmRunning);
-    m_stopBtn->setVisible(m_vmRunning);
-    m_pauseBtn->setVisible(m_vmRunning);
-    m_osCombo->setEnabled(!m_vmRunning);
-    m_ramSlider->setEnabled(!m_vmRunning);
-    m_cpuSlider->setEnabled(!m_vmRunning);
-}
-
-void VMSandboxView::onConnectBridge()
-{
-    m_bridge->connectToBridge("ws://localhost:5900");
-    m_bridgeStatus->setText("● Bridge: Connecting...");
-    m_bridgeStatus->setStyleSheet("font-size: 11px; color: #ffd43b;");
-}
-
-void VMSandboxView::onDisconnectBridge()
-{
-    if (m_vmRunning) {
-        m_bridge->stopVM(m_currentVmId);
-    }
-    m_bridge->disconnectFromBridge();
+    m_displayPanel->hide();
+    layout->addWidget(m_displayPanel, 1);
 }
 
 void VMSandboxView::onBootVM()
 {
-    if (!m_bridgeConnected) return;
+    setVmState(true);
+    QString os = m_osSelector->currentText();
+    int ram = m_ramSpinBox->value();
+    int cpu = m_cpuSpinBox->value();
 
-    QString os = m_osCombo->currentData().toString();
-    int ram = m_ramSlider->value();
-    int cores = m_cpuSlider->value();
-
-    m_bootBtn->setEnabled(false);
-    m_bootBtn->setText("Booting...");
-    m_vmStatus->setText("VM: Booting...");
-    m_vmStatus->setStyleSheet("font-size: 11px; color: #ffd43b;");
-
-    m_bridge->bootVM(os, ram, cores);
+    m_statusLabel->setText(QString("Booting %1 (%2 MB, %3 cores)...")
+        .arg(os).arg(ram).arg(cpu));
+    m_bridgeManager->bootVm(os, ram, cpu);
 }
 
 void VMSandboxView::onStopVM()
 {
-    if (!m_currentVmId.isEmpty() && m_bridgeConnected) {
-        m_bridge->stopVM(m_currentVmId);
-    }
-    m_vmRunning = false;
-    m_vmStatus->setText("VM: Stopped");
-    m_vmStatus->setStyleSheet("font-size: 11px; color: #ff6b6b;");
-    m_vncDisplay->disconnectFromHost();
-    updateUIState();
+    m_bridgeManager->stopVm();
 }
 
-void VMSandboxView::onPauseVM()
+void VMSandboxView::onVMBooted()
 {
-    m_vmPaused = !m_vmPaused;
-    m_pauseBtn->setText(m_vmPaused ? "▶ Resume" : "⏸  Pause");
-    m_vmStatus->setText(m_vmPaused ? "VM: Paused" : "VM: Running");
+    m_statusLabel->setText("VM running \u2014 connected via VNC");
+    m_configPanel->hide();
+    m_displayPanel->show();
+    m_vncWidget->start();
 }
 
-void VMSandboxView::onDownloadISO()
+void VMSandboxView::onVMStopped()
 {
-    QString os = m_osCombo->currentData().toString();
-
-    // Map OS to download URLs
-    QMap<QString, QString> isoUrls;
-    isoUrls["ubuntu-24"] = "https://releases.ubuntu.com/24.04/ubuntu-24.04-desktop-amd64.iso";
-    isoUrls["ubuntu-22"] = "https://releases.ubuntu.com/22.04/ubuntu-22.04.4-desktop-amd64.iso";
-    isoUrls["fedora-40"] = "https://download.fedoraproject.org/pub/fedora/linux/releases/40/Workstation/x86_64/iso/Fedora-Workstation-Live-x86_64-40-1.14.iso";
-    isoUrls["debian-12"] = "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.5.0-amd64-netinst.iso";
-    isoUrls["alpine"] = "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-virt-3.19.1-x86_64.iso";
-
-    QString url = isoUrls.value(os);
-    if (!url.isEmpty()) {
-        QDesktopServices::openUrl(QUrl(url));
-    } else {
-        QMessageBox::information(this, "ISO Download",
-            "This OS requires a licensed ISO. Please obtain it from the official source.");
-    }
+    setVmState(false);
+    m_statusLabel->setText("VM stopped");
+    m_configPanel->show();
+    m_displayPanel->hide();
+    m_vncWidget->stop();
 }
 
-void VMSandboxView::onBridgeConnected()
+void VMSandboxView::onVMError(const QString &error)
 {
-    m_bridgeConnected = true;
-    m_bridgeStatus->setText("● Bridge: Connected");
-    m_bridgeStatus->setStyleSheet("font-size: 11px; color: #51cf66;");
-    updateUIState();
+    setVmState(false);
+    m_statusLabel->setText("Error: " + error);
+    m_statusLabel->setStyleSheet("color: #ff4a4a; font-size: 12px; padding: 4px 0;");
 }
 
-void VMSandboxView::onBridgeDisconnected()
+void VMSandboxView::setVmState(bool running)
 {
-    m_bridgeConnected = false;
-    m_bridgeStatus->setText("● Bridge: Not Connected");
-    m_bridgeStatus->setStyleSheet("font-size: 11px; color: #ff6b6b;");
-    if (m_vmRunning) {
-        m_vmRunning = false;
-        m_vncDisplay->disconnectFromHost();
-    }
-    updateUIState();
-}
-
-void VMSandboxView::onBridgeError(const QString &error)
-{
-    m_bridgeStatus->setText("● Bridge Error: " + error);
-    m_bridgeStatus->setStyleSheet("font-size: 11px; color: #ff6b6b;");
-}
-
-void VMSandboxView::onVMBooted(const QString &vmId, int vncPort, bool hasIso)
-{
-    m_currentVmId = vmId;
-    m_currentVncPort = vncPort;
-    m_vmRunning = true;
-    m_hasIso = hasIso;
-
-    m_vmStatus->setText(QString("VM: Running — VNC on localhost:%1").arg(vncPort));
-    m_vmStatus->setStyleSheet("font-size: 11px; color: #51cf66;");
-    m_bootBtn->setText("▶  Boot VM");
-
-    // Connect VNC display
-    m_vncDisplay->connectToHost("127.0.0.1", vncPort);
-    updateUIState();
-}
-
-void VMSandboxView::onVMStopped(const QString &vmId)
-{
-    Q_UNUSED(vmId);
-    m_vmRunning = false;
-    m_vmStatus->setText("VM: Stopped");
-    m_vmStatus->setStyleSheet("font-size: 11px; color: #ff6b6b;");
-    m_vncDisplay->disconnectFromHost();
-    updateUIState();
-}
-
-void VMSandboxView::handleBridgeMessage(const QJsonObject &msg)
-{
-    // Route bridge messages to the VMBridgeManager for processing
-    QString status = msg["status"].toString();
-    QString action = msg["action"].toString();
-
-    if (action == "boot" || status == "success") {
-        // Already handled via VMBridgeManager signals
-    }
+    m_vmRunning = running;
+    m_bootButton->setEnabled(!running);
+    m_stopButton->setEnabled(running);
+    m_osSelector->setEnabled(!running);
+    m_ramSpinBox->setEnabled(!running);
+    m_cpuSpinBox->setEnabled(!running);
 }
