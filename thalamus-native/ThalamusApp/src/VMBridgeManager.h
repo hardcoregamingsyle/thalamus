@@ -1,24 +1,12 @@
-#ifndef VMBRIDGEMANAGER_H
-#define VMBRIDGEMANAGER_H
+// Thalamus AI — VMBridgeManager.h
+#pragma once
 
 #include <QObject>
-#include <QProcess>
-#include <QString>
-#include <QJsonArray>
-#include <QJsonObject>
-#include <QTimer>
 #include <QWebSocket>
+#include <QProcess>
+#include <QUrl>
+#include <QTimer>
 
-/**
- * @brief Manages the local QEMU VM bridge process and WebSocket communication.
- *
- * Handles:
- * - Launching QEMU processes for VMs
- * - Connecting to the VM bridge WebSocket (port 5900)
- * - VM lifecycle (boot, stop, pause, resume)
- * - VNC port negotiation
- * - ISO/disk image management
- */
 class VMBridgeManager : public QObject
 {
     Q_OBJECT
@@ -27,69 +15,34 @@ public:
     explicit VMBridgeManager(QObject *parent = nullptr);
     ~VMBridgeManager();
 
-    /// Check if bridge WebSocket is connected
-    bool isConnected() const;
+    void bootVm(const QString &os, int ramMB, int cpuCores);
+    void stopVm();
+    bool isRunning() const;
 
-    /// Connect to the VM bridge
-    void connectToBridge(const QString &url = "ws://localhost:5900");
+    void sendKeyboardEvent(bool down, quint32 keysym);
+    void sendPointerEvent(int x, int y, int buttonMask);
 
-    /// Disconnect from bridge
-    void disconnectFromBridge();
-
-    /// Boot a new VM
-    void bootVM(const QString &os, int ramMB, int cores);
-
-    /// Stop a running VM
-    void stopVM(const QString &vmId);
-
-    /// List active VMs
-    void listVMs();
-
-    /// Ping the bridge
-    void ping();
-
-    /// Launch the bridge executable if bundled
-    void launchBridgeProcess(const QString &bridgePath);
-
-    /// Get VNC port for a VM
-    int vncPort() const { return m_vncPort; }
-
-    /// Get bridge process status
-    bool isBridgeProcessRunning() const;
+    QWebSocket *webSocket() const;
 
 signals:
-    void bridgeConnected();
-    void bridgeDisconnected();
-    void bridgeError(const QString &error);
-    void bridgeStatus(const QJsonObject &status);
-    void vmBooted(const QString &vmId, int vncPort, bool hasIso);
-    void vmStopped(const QString &vmId);
-    void vmListUpdated(const QJsonArray &vms);
-    void bridgeProcessStarted();
-    void bridgeProcessStopped(int exitCode);
+    void vmBooted();
+    void vmStopped();
+    void vncFrameAvailable(const QByteArray &framebuffer);
+    void error(const QString &message);
 
 private slots:
-    void onWsConnected();
-    void onWsDisconnected();
-    void onWsTextMessage(const QString &message);
-    void onWsError(QAbstractSocket::SocketError error);
-    void onProcessStarted();
-    void onProcessFinished(int exitCode, QProcess::ExitStatus status);
-    void onProcessError(QProcess::ProcessError error);
+    void onConnected();
+    void onDisconnected();
+    void onTextMessageReceived(const QString &message);
+    void onError(QAbstractSocket::SocketError error);
 
 private:
-    void sendCommand(const QJsonObject &cmd);
-    void handlePong(const QJsonObject &msg);
-    void handleBootResponse(const QJsonObject &msg);
-    void handleStopResponse(const QJsonObject &msg);
+    void sendCommand(const QString &command, const QJsonObject &params = QJsonObject());
 
-    QWebSocket *m_ws;
+    QWebSocket *m_webSocket;
     QProcess *m_bridgeProcess;
-    QString m_bridgeUrl;
-    QString m_currentVmId;
-    int m_vncPort;
-    int m_connectRetries;
-    static const int MAX_RETRIES = 5;
+    QTimer *m_reconnectTimer;
+    QString m_bridgePath;
+    int m_port;
+    bool m_running;
 };
-
-#endif // VMBRIDGEMANAGER_H

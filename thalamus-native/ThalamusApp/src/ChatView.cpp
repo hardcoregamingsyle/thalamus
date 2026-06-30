@@ -3,7 +3,6 @@
 #include "ConvexClient.h"
 #include "MarkdownRenderer.h"
 #include <QScrollBar>
-#include <QDateTime>
 #include <QHBoxLayout>
 
 ChatView::ChatView(ConvexClient *client, QWidget *parent)
@@ -27,29 +26,20 @@ void ChatView::setupUi()
         "font-size: 18px; font-weight: bold; color: #c0c0f0; padding: 16px 20px 8px;");
     layout->addWidget(headerLabel);
 
-    // Chat display area
+    // Chat display
     m_chatDisplay = new QTextEdit(this);
     m_chatDisplay->setReadOnly(true);
     m_chatDisplay->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_chatDisplay->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_chatDisplay->setStyleSheet(
         "QTextEdit { background: #16162a; border: none; padding: 16px; "
-        "color: #d0d0e8; font-size: 14px; }"
-    );
-    m_chatDisplay->document()->setDefaultStyleSheet(
-        "p { margin: 4px 0; }"
-        "pre { background: #1a1a2e; border: 1px solid #2e2e4e; border-radius: 6px; "
-        "padding: 12px; font-size: 13px; }"
-        "code { background: #1a1a2e; padding: 2px 6px; border-radius: 3px; font-size: 13px; }"
-        "h1, h2, h3 { color: #c0c0f0; }"
-        "a { color: #6e6eff; }"
-    );
+        "color: #d0d0e8; font-size: 14px; }");
     layout->addWidget(m_chatDisplay, 1);
 
     // Welcome message
     appendMessage("assistant",
         "<p style='color:#8080a0; font-size:15px;'>Hello! I'm Thalamus AI. "
-        "Ask me anything — I can help with coding, research, analysis, and more.</p>");
+        "Ask me anything \u2014 I can help with coding, research, analysis, and more.</p>");
 
     // Input area
     auto *inputContainer = new QWidget(this);
@@ -63,8 +53,7 @@ void ChatView::setupUi()
     m_messageInput->setStyleSheet(
         "QLineEdit { padding: 12px; border: 1px solid #3e3e5e; border-radius: 8px; "
         "background: #16162a; color: #e0e0f0; font-size: 14px; }"
-        "QLineEdit:focus { border-color: #6e6eff; }"
-    );
+        "QLineEdit:focus { border-color: #6e6eff; }");
     connect(m_messageInput, &QLineEdit::returnPressed, this, &ChatView::onSendClicked);
     inputLayout->addWidget(m_messageInput, 1);
 
@@ -74,8 +63,7 @@ void ChatView::setupUi()
         "QPushButton { padding: 10px 20px; border: none; border-radius: 8px; "
         "background: #4a4aff; color: white; font-size: 14px; font-weight: bold; }"
         "QPushButton:hover { background: #5a5aff; }"
-        "QPushButton:disabled { background: #2a2a4a; color: #606080; }"
-    );
+        "QPushButton:disabled { background: #2a2a4a; color: #606080; }");
     connect(m_sendButton, &QPushButton::clicked, this, &ChatView::onSendClicked);
     inputLayout->addWidget(m_sendButton);
 
@@ -84,8 +72,7 @@ void ChatView::setupUi()
     m_stopButton->setStyleSheet(
         "QPushButton { padding: 10px 20px; border: none; border-radius: 8px; "
         "background: #ff4a4a; color: white; font-size: 14px; font-weight: bold; }"
-        "QPushButton:hover { background: #ff5a5a; }"
-    );
+        "QPushButton:hover { background: #ff5a5a; }");
     m_stopButton->hide();
     connect(m_stopButton, &QPushButton::clicked, this, [this]() {
         m_client->cancelStream();
@@ -98,16 +85,15 @@ void ChatView::setupUi()
 
 void ChatView::onSendClicked()
 {
-    QString message = m_messageInput->text().trimmed();
-    if (message.isEmpty()) return;
-
-    sendMessage(message);
+    QString msg = m_messageInput->text().trimmed();
+    if (!msg.isEmpty()) sendMessage(msg);
 }
 
 void ChatView::sendMessage(const QString &message)
 {
-    // Display user message
-    appendMessage("user", QString("<p><b>You:</b> %1</p>").arg(message.toHtmlEscaped()));
+    appendMessage("user",
+        QString("<div style='margin: 8px 0;'><p style='color:#a0a0d0;'><b>You:</b> %1</p></div>")
+            .arg(message.toHtmlEscaped()));
 
     m_messageInput->clear();
     setInputEnabled(false);
@@ -117,31 +103,18 @@ void ChatView::sendMessage(const QString &message)
     m_client->startChatStream(
         message, "chat",
         [this](const QString &chunk) { onStreamChunk(chunk); },
-        [this]() { onStreamDone(); }
-    );
+        [this]() { onStreamDone(); });
 }
 
 void ChatView::onStreamChunk(const QString &text)
 {
     m_currentAssistantMessage += text;
-
-    // Render as markdown
-    QString html = m_mdRenderer->render(m_currentAssistantMessage);
-
-    // Update the last message in the chat display
-    // For simplicity, we'll re-render the entire chat
-    // A more efficient approach would maintain messages and update the last one
     QTextCursor cursor = m_chatDisplay->textCursor();
     cursor.movePosition(QTextCursor::End);
-
-    // Simple: append text chunks
     cursor.insertHtml(text.toHtmlEscaped());
 
-    // Auto-scroll
-    QScrollBar *scrollBar = m_chatDisplay->verticalScrollBar();
-    if (scrollBar) {
-        scrollBar->setValue(scrollBar->maximum());
-    }
+    QScrollBar *sb = m_chatDisplay->verticalScrollBar();
+    if (sb) sb->setValue(sb->maximum());
 }
 
 void ChatView::onStreamDone()
@@ -151,13 +124,11 @@ void ChatView::onStreamDone()
     m_chatDisplay->append("");
 }
 
-void ChatView::appendMessage(const QString &role, const QString &html)
+void ChatView::appendMessage(const QString &, const QString &html)
 {
     m_chatDisplay->append(html);
-    QScrollBar *scrollBar = m_chatDisplay->verticalScrollBar();
-    if (scrollBar) {
-        scrollBar->setValue(scrollBar->maximum());
-    }
+    QScrollBar *sb = m_chatDisplay->verticalScrollBar();
+    if (sb) sb->setValue(sb->maximum());
 }
 
 void ChatView::setInputEnabled(bool enabled)
@@ -165,7 +136,5 @@ void ChatView::setInputEnabled(bool enabled)
     m_messageInput->setEnabled(enabled);
     m_sendButton->setVisible(enabled);
     m_stopButton->setVisible(!enabled);
-    if (enabled) {
-        m_messageInput->setFocus();
-    }
+    if (enabled) m_messageInput->setFocus();
 }

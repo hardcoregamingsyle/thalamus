@@ -6,7 +6,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
-#include <QScrollArea>
+#include <QLabel>
 
 class ConvexClient;
 class MarkdownRenderer;

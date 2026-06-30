@@ -1,54 +1,22 @@
-#ifndef OSSELECTORDIALOG_H
-#define OSSELECTORDIALOG_H
+// Thalamus AI — OSSelectorDialog.h
+#pragma once
 
 #include <QDialog>
-#include <QVBoxLayout>
 #include <QListWidget>
-#include <QLabel>
-#include <QPushButton>
-#include <QJsonObject>
+#include <QDialogButtonBox>
 
-/**
- * @brief OS selection dialog for VM boot with categorized OS list.
- *
- * Shows operating systems in categories:
- * - Windows (10/11)
- * - Linux (Ubuntu, Fedora, Debian, Alpine)
- * - macOS
- * - Android
- * - Other (FreeDOS, etc.)
- */
 class OSSelectorDialog : public QDialog
 {
     Q_OBJECT
 
 public:
     explicit OSSelectorDialog(QWidget *parent = nullptr);
-    ~OSSelectorDialog();
 
-    QString selectedOS() const { return m_selectedOS; }
-    QString selectedOSName() const;
+    QString selectedOs() const;
 
 private:
-    void setupUI();
-    void addOSCategory(const QString &name, const QJsonObject &oses);
+    void setupUi();
 
     QListWidget *m_osList;
-    QLabel *m_osInfo;
-    QPushButton *m_bootBtn;
-    QPushButton *m_cancelBtn;
-
-    QString m_selectedOS;
-    QString m_selectedOSName;
-    QJsonObject m_osDetails;
-
-    struct OSEntry {
-        QString id;
-        QString name;
-        QString description;
-        int minRam;
-        int minCores;
-    };
+    QString m_selectedOs;
 };
-
-#endif // OSSELECTORDIALOG_H

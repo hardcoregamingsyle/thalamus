@@ -5,8 +5,6 @@
 #include <QJsonArray>
 #include <QNetworkReply>
 #include <QUrlQuery>
-#include <QWebSocket>
-#include <QRegularExpression>
 
 ConvexClient::ConvexClient(QObject *parent)
     : QObject(parent)
@@ -16,7 +14,6 @@ ConvexClient::ConvexClient(QObject *parent)
     , m_authenticated(false)
     , m_streamReply(nullptr)
 {
-    // WebSocket cleanup on disconnect
     connect(m_webSocket, &QWebSocket::disconnected, this, [this]() {
         m_webSocket->deleteLater();
         m_webSocket = new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this);
@@ -31,12 +28,18 @@ ConvexClient::~ConvexClient()
 void ConvexClient::setBaseUrl(const QString &url)
 {
     m_baseUrl = url;
-    // Strip trailing slash
     while (m_baseUrl.endsWith('/'))
         m_baseUrl.chop(1);
 }
 
 QString ConvexClient::baseUrl() const { return m_baseUrl; }
+
+void ConvexClient::setAuthToken(const QString &token)
+{
+    m_authToken = token;
+    m_authenticated = !token.isEmpty();
+    emit authStateChanged(m_authenticated);
+}
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -44,13 +47,8 @@ void ConvexClient::sendEmailOtp(const QString &email)
 {
     QJsonObject args;
     args["email"] = email;
-
     callAction("auth:sendEmailOtp", args, [this](bool success, const QJsonObject &, const QString &error) {
-        if (success) {
-            emit otpSent(true, QString());
-        } else {
-            emit otpSent(false, error);
-        }
+        emit otpSent(success, error);
     });
 }
 
@@ -59,7 +57,6 @@ void ConvexClient::verifyEmailOtp(const QString &email, const QString &code)
     QJsonObject args;
     args["email"] = email;
     args["code"] = code;
-
     callAction("auth:verifyEmailOtp", args, [this](bool success, const QJsonObject &result, const QString &error) {
         if (success) {
             m_authToken = result["token"].toString();
@@ -86,16 +83,20 @@ QString ConvexClient::authToken() const { return m_authToken; }
 
 // ── HTTP calls ───────────────────────────────────────────────────────────────
 
-void ConvexClient::callAction(const QString &actionName, const QJsonObject &args, ActionCallback callback)
+QNetworkRequest ConvexClient::createRequest(const QString &path) const
 {
-    QUrl url(m_baseUrl + "/api/action/" + actionName);
+    QUrl url(m_baseUrl + path);
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setRawHeader("Convex-Client", "thalamus-native/1.0.0");
-
-    if (m_authenticated) {
+    if (m_authenticated)
         request.setRawHeader("Authorization", ("Bearer " + m_authToken).toUtf8());
-    }
+    return request;
+}
+
+void ConvexClient::callAction(const QString &actionName, const QJsonObject &args, ActionCallback callback)
+{
+    QNetworkRequest request = createRequest("/api/action/" + actionName);
 
     QJsonObject body;
     body["args"] = args;
@@ -110,7 +111,6 @@ void ConvexClient::callAction(const QString &actionName, const QJsonObject &args
 void ConvexClient::handleActionResponse(QNetworkReply *reply, ActionCallback callback)
 {
     reply->deleteLater();
-
     if (reply->error() != QNetworkReply::NoError) {
         callback(false, QJsonObject(), reply->errorString());
         return;
@@ -125,8 +125,7 @@ void ConvexClient::handleActionResponse(QNetworkReply *reply, ActionCallback cal
         if (errorMsg.isEmpty()) errorMsg = response["error"].toString();
         callback(false, QJsonObject(), errorMsg);
     } else {
-        QJsonObject result = response["result"].toObject();
-        callback(true, result, QString());
+        callback(true, response["result"].toObject(), QString());
     }
 }
 
@@ -141,17 +140,11 @@ void ConvexClient::startChatStream(const QString &message, const QString &mode,
     m_streamDoneCallback = onDone;
     m_streamBuffer.clear();
 
-    QUrl url(m_baseUrl + "/api/sse/chat");
-    QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    QNetworkRequest request = createRequest("/api/sse/chat");
     request.setRawHeader("Accept", "text/event-stream");
     request.setRawHeader("Cache-Control", "no-cache");
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::NoLessSafeRedirectPolicy);
-
-    if (m_authenticated) {
-        request.setRawHeader("Authorization", ("Bearer " + m_authToken).toUtf8());
-    }
 
     QJsonObject body;
     body["message"] = message;
@@ -159,7 +152,6 @@ void ConvexClient::startChatStream(const QString &message, const QString &mode,
     QByteArray data = QJsonDocument(body).toJson(QJsonDocument::Compact);
 
     m_streamReply = m_networkManager->post(request, data);
-
     connect(m_streamReply, &QNetworkReply::readyRead, this, &ConvexClient::onStreamDataReady);
     connect(m_streamReply, &QNetworkReply::finished, this, &ConvexClient::onStreamFinished);
 }
@@ -179,10 +171,8 @@ void ConvexClient::cancelStream()
 void ConvexClient::onStreamDataReady()
 {
     if (!m_streamReply) return;
-
     m_streamBuffer.append(m_streamReply->readAll());
 
-    // Parse SSE lines from buffer
     while (true) {
         int newlinePos = m_streamBuffer.indexOf('\n');
         if (newlinePos < 0) break;
@@ -191,15 +181,11 @@ void ConvexClient::onStreamDataReady()
         m_streamBuffer.remove(0, newlinePos + 1);
 
         if (line.isEmpty()) continue;
-
-        // SSE: "data: ..." or "event: ..."
         if (line.startsWith("data: ")) {
             QByteArray payload = line.mid(6);
-            if (payload == "[DONE]") {
-                // Stream complete
-            } else {
+            if (payload == "[DONE]") continue;
+            if (m_streamChunkCallback)
                 m_streamChunkCallback(QString::fromUtf8(payload));
-            }
         }
     }
 }
@@ -210,9 +196,8 @@ void ConvexClient::onStreamFinished()
         m_streamReply->deleteLater();
         m_streamReply = nullptr;
     }
-    if (m_streamDoneCallback) {
+    if (m_streamDoneCallback)
         m_streamDoneCallback();
-    }
 }
 
 // ── WebSocket (VM Bridge) ────────────────────────────────────────────────────
@@ -224,9 +209,8 @@ void ConvexClient::connectWebSocket(const QUrl &url)
 
 void ConvexClient::sendWebSocketMessage(const QByteArray &message)
 {
-    if (m_webSocket->state() == QAbstractSocket::ConnectedState) {
+    if (m_webSocket->state() == QAbstractSocket::ConnectedState)
         m_webSocket->sendTextMessage(QString::fromUtf8(message));
-    }
 }
 
 QWebSocket *ConvexClient::webSocket() const { return m_webSocket; }
