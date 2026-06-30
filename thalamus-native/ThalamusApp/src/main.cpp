@@ -2,7 +2,6 @@
 // Main entry point: single-instance, URI scheme, system tray
 
 #include <QApplication>
-#include <QMessageBox>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QStyleFactory>
@@ -39,17 +38,15 @@ int main(int argc, char *argv[])
     app.setOrganizationDomain("thalamus.ai");
     app.setWindowIcon(QIcon(":/icons/app.ico"));
 
-    // Force Fusion style for consistent dark theme
     app.setStyle(QStyleFactory::create("Fusion"));
 
-    // Load dark theme stylesheet
     QFile styleFile(":/style.qss");
     if (styleFile.open(QFile::ReadOnly | QFile::Text)) {
         app.setStyleSheet(QString::fromUtf8(styleFile.readAll()));
         styleFile.close();
     }
 
-    // ── Single-instance enforcement ─────────────────────────────────────────
+    // Single-instance enforcement
     QLocalSocket pingSocket;
     pingSocket.connectToServer(LOCAL_SERVER_NAME);
     bool isFirstInstance = !pingSocket.waitForConnected(500);
@@ -66,12 +63,10 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    // Start local server for IPC
     QLocalServer localServer;
     QLocalServer::removeServer(LOCAL_SERVER_NAME);
     localServer.listen(LOCAL_SERVER_NAME);
 
-    // Register thalamus:// URI scheme (Windows)
 #ifdef Q_OS_WIN
     {
         QSettings uriScheme(
@@ -89,10 +84,8 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    // Create main window
     MainWindow mainWindow;
 
-    // Handle URI from second instance
     QObject::connect(&localServer, &QLocalServer::newConnection, [&]() {
         QLocalSocket *client = localServer.nextPendingConnection();
         if (client) {

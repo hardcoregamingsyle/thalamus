@@ -20,29 +20,23 @@ public:
 
     void setBaseUrl(const QString &url);
     QString baseUrl() const;
-
-    // Auth
+    void setAuthToken(const QString &token);
     void sendEmailOtp(const QString &email);
     void verifyEmailOtp(const QString &email, const QString &code);
     void signOut();
     bool isAuthenticated() const;
     QString authToken() const;
-    void setAuthToken(const QString &token);
 
-    // HTTP actions
-    using ActionCallback = std::function<void(bool success, const QJsonObject &result, const QString &error)>;
-    void callAction(const QString &actionName, const QJsonObject &args, ActionCallback callback);
+    using ActionCallback = std::function<void(bool, const QJsonObject &, const QString &)>;
+    void callAction(const QString &actionName, const QJsonObject &args, ActionCallback cb);
 
-    // Streaming SSE chat
-    using StreamChunkCallback = std::function<void(const QString &text)>;
+    using StreamChunkCallback = std::function<void(const QString &)>;
     using StreamDoneCallback = std::function<void()>;
-    void startChatStream(const QString &message, const QString &mode,
+    void startChatStream(const QString &msg, const QString &mode,
                          StreamChunkCallback onChunk, StreamDoneCallback onDone);
     void cancelStream();
-
-    // WebSocket (VM bridge)
     void connectWebSocket(const QUrl &url);
-    void sendWebSocketMessage(const QByteArray &message);
+    void sendWebSocketMessage(const QByteArray &msg);
     QWebSocket *webSocket() const;
 
 signals:
@@ -57,15 +51,13 @@ private slots:
 
 private:
     QNetworkRequest createRequest(const QString &path) const;
-    void handleActionResponse(QNetworkReply *reply, ActionCallback callback);
+    void handleActionResponse(QNetworkReply *reply, ActionCallback cb);
 
     QNetworkAccessManager *m_networkManager;
     QWebSocket *m_webSocket;
     QString m_baseUrl;
     QString m_authToken;
     bool m_authenticated;
-
-    // Streaming state
     QNetworkReply *m_streamReply;
     QByteArray m_streamBuffer;
     StreamChunkCallback m_streamChunkCallback;
