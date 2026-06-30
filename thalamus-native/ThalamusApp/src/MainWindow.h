@@ -1,26 +1,22 @@
-#ifndef MAINWINDOW_H
-#define MAINWINDOW_H
+// Thalamus AI — MainWindow.h
+#pragma once
 
 #include <QMainWindow>
+#include <QTabWidget>
 #include <QSystemTrayIcon>
 #include <QMenu>
-#include <QAction>
-#include <QTabWidget>
-#include <QVBoxLayout>
-#include <QLabel>
-#include <QPushButton>
 #include <QCloseEvent>
 
-class ConvexClient;
-class VMBridgeManager;
 class ChatView;
 class ResearchView;
 class StudyView;
 class CodeModeView;
 class VMSandboxView;
 class Settings;
+class ConvexClient;
 
-class MainWindow : public QMainWindow {
+class MainWindow : public QMainWindow
+{
     Q_OBJECT
 
 public:
@@ -33,33 +29,28 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 
 private slots:
+    void onTabChanged(int index);
     void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
-    void onSettingsRequested();
-    void onAbout();
-    void onNewChat();
-    void onBridgeConnected();
-    void onBridgeDisconnected();
 
 private:
     void setupUi();
-    void setupSystemTray();
-    void setupMenuBar();
+    void setupTrayIcon();
+    void saveSettings();
+    void restoreSettings();
+    void checkForUpdates();
 
-    QTabWidget *m_tabs;
-    QSystemTrayIcon *m_trayIcon;
-    QMenu *m_trayMenu;
-
-    ConvexClient *m_convexClient;
-    VMBridgeManager *m_bridgeManager;
-
+    QTabWidget *m_tabWidget;
     ChatView *m_chatView;
     ResearchView *m_researchView;
     StudyView *m_studyView;
     CodeModeView *m_codeModeView;
     VMSandboxView *m_vmSandboxView;
+    Settings *m_settingsView;
 
-    QAction *m_trayShowAction;
-    QAction *m_bridgeStatusAction;
+    QSystemTrayIcon *m_trayIcon;
+    QMenu *m_trayMenu;
+    QAction *m_showAction;
+    QAction *m_quitAction;
+
+    ConvexClient *m_convexClient;
 };
-
-#endif // MAINWINDOW_H

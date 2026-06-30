@@ -1,46 +1,44 @@
-#ifndef RESEARCHVIEW_H
-#define RESEARCHVIEW_H
+// Thalamus AI — ResearchView.h
+#pragma once
 
 #include <QWidget>
-#include <QTextBrowser>
+#include <QTextEdit>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QVBoxLayout>
-#include <QJsonArray>
+#include <QProgressBar>
+#include <QTreeWidget>
+#include <QSplitter>
 
 class ConvexClient;
+class MarkdownRenderer;
 
-class ResearchView : public QWidget {
+class ResearchView : public QWidget
+{
     Q_OBJECT
 
 public:
     explicit ResearchView(ConvexClient *client, QWidget *parent = nullptr);
+    ~ResearchView() = default;
 
 private slots:
-    void onSendClicked();
-    void onStreamChunk(const QString &chunk);
-    void onStreamDone(const QString &fullText);
-    void onStreamError(const QString &error);
+    void onStartResearch();
+    void onStreamChunk(const QString &text);
+    void onStreamDone();
 
 private:
     void setupUi();
-    void startResearch(const QString &topic);
-    void appendMessage(const QString &role, const QString &html);
-    void scrollToBottom();
+    void setInputEnabled(bool enabled);
 
     ConvexClient *m_client;
-    QVBoxLayout *m_mainLayout;
-    QScrollArea *m_scrollArea;
-    QWidget *m_messagesContainer;
-    QVBoxLayout *m_messagesLayout;
-    QLineEdit *m_input;
-    QPushButton *m_sendBtn;
-    QLabel *m_statusLabel;
-    QTextBrowser *m_currentAssistant;
+    MarkdownRenderer *m_mdRenderer;
 
-    QJsonArray m_history;
-    QString m_currentResponse;
-    bool m_streaming;
+    QLineEdit *m_queryInput;
+    QPushButton *m_startButton;
+    QPushButton *m_stopButton;
+    QProgressBar *m_progressBar;
+    QTextEdit *m_resultDisplay;
+    QTreeWidget *m_sourcesTree;
+
+    bool m_isResearching;
+    QString m_currentResult;
 };
-
-#endif // RESEARCHVIEW_H

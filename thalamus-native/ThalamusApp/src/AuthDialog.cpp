@@ -1,164 +1,214 @@
-/**
- * Thalamus AI — Email OTP Authentication Dialog
- * Two-step flow: enter email → receive OTP → verify.
- */
-
+// Thalamus AI — AuthDialog.cpp
 #include "AuthDialog.h"
 #include "ConvexClient.h"
-
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QStackedWidget>
-#include <QLabel>
-#include <QLineEdit>
-#include <QPushButton>
+#include <QFormLayout>
 #include <QMessageBox>
-#include <QNetworkAccessManager>
-#include <QNetworkRequest>
-#include <QNetworkReply>
-#include <QJsonDocument>
-#include <QJsonObject>
+#include <QRegularExpression>
+#include <QFont>
 
 AuthDialog::AuthDialog(ConvexClient *client, QWidget *parent)
     : QDialog(parent)
     , m_client(client)
-    , m_stack(new QStackedWidget(this))
-    , m_emailEdit(new QLineEdit(this))
-    , m_otpEdit(new QLineEdit(this))
-    , m_sendBtn(new QPushButton("Send Code", this))
-    , m_verifyBtn(new QPushButton("Verify", this))
-    , m_statusLabel(new QLabel(this))
-    , m_titleLabel(new QLabel("Thalamus AI", this))
+    , m_authenticated(false)
 {
-    setWindowTitle("Sign In");
-    setFixedSize(380, 320);
     setupUi();
+
+    connect(m_client, &ConvexClient::otpSent, this, &AuthDialog::onOtpSent);
+    connect(m_client, &ConvexClient::otpVerified, this, &AuthDialog::onOtpVerified);
 }
 
-void AuthDialog::setupUi() {
-    auto *layout = new QVBoxLayout(this);
-    layout->setSpacing(12);
-    layout->setContentsMargins(32, 24, 32, 24);
+bool AuthDialog::isAuthenticated() const { return m_authenticated; }
 
-    // Title
-    m_titleLabel->setAlignment(Qt::AlignCenter);
-    QFont titleFont;
-    titleFont.setPointSize(18);
+void AuthDialog::setupUi()
+{
+    setWindowTitle("Sign in to Thalamus AI");
+    setFixedSize(420, 380);
+    setModal(true);
+
+    auto *mainLayout = new QVBoxLayout(this);
+    mainLayout->setSpacing(16);
+    mainLayout->setContentsMargins(32, 32, 32, 32);
+
+    // App logo / title
+    auto *titleLabel = new QLabel("Thalamus AI");
+    titleLabel->setAlignment(Qt::AlignCenter);
+    QFont titleFont = titleLabel->font();
+    titleFont.setPointSize(22);
     titleFont.setBold(true);
-    m_titleLabel->setFont(titleFont);
-    m_titleLabel->setStyleSheet("color: #e5e7eb;");
-    layout->addWidget(m_titleLabel);
+    titleLabel->setFont(titleFont);
+    titleLabel->setStyleSheet("color: #c0c0f0;");
+    mainLayout->addWidget(titleLabel);
 
-    // Subtitle
-    auto *subtitle = new QLabel("Sign in with your email", this);
-    subtitle->setAlignment(Qt::AlignCenter);
-    subtitle->setStyleSheet("color: #9ca3af; font-size: 12px;");
-    layout->addWidget(subtitle);
+    auto *subtitleLabel = new QLabel("Sign in with your email");
+    subtitleLabel->setAlignment(Qt::AlignCenter);
+    subtitleLabel->setStyleSheet("color: #8080a0; font-size: 13px;");
+    mainLayout->addWidget(subtitleLabel);
+    mainLayout->addSpacing(16);
 
-    layout->addSpacing(16);
+    // Stacked widget for two-step flow
+    m_stack = new QStackedWidget(this);
 
-    // Step 1: Email
-    auto *emailPage = new QWidget();
-    auto *emailLayout = new QVBoxLayout(emailPage);
-    emailLayout->setContentsMargins(0, 0, 0, 0);
-    emailLayout->setSpacing(10);
+    // ── Page 1: Email input ──────────────────────────────────────────────────
+    m_emailPage = new QWidget;
+    auto *emailLayout = new QVBoxLayout(m_emailPage);
+    emailLayout->setSpacing(12);
 
-    m_emailEdit->setPlaceholderText("you@example.com");
-    m_emailEdit->setStyleSheet(
-        "QLineEdit { padding: 10px 14px; border: 1px solid #374151; border-radius: 8px; "
-        "background: #111827; color: #e5e7eb; font-size: 14px; }"
-        "QLineEdit:focus { border-color: #6366f1; }");
-    emailLayout->addWidget(m_emailEdit);
+    m_emailInput = new QLineEdit;
+    m_emailInput->setPlaceholderText("you@example.com");
+    m_emailInput->setStyleSheet(
+        "QLineEdit { padding: 10px; border: 1px solid #3e3e5e; border-radius: 6px; "
+        "background: #1e1e32; color: #e0e0f0; font-size: 14px; }"
+        "QLineEdit:focus { border-color: #6e6eff; }"
+    );
+    emailLayout->addWidget(m_emailInput);
 
-    m_sendBtn->setStyleSheet(
-        "QPushButton { padding: 10px; background: #6366f1; color: white; border: none; "
-        "border-radius: 8px; font-weight: bold; font-size: 14px; }"
-        "QPushButton:hover { background: #818cf8; }");
-    emailLayout->addWidget(m_sendBtn);
+    m_sendOtpButton = new QPushButton("Send Verification Code");
+    m_sendOtpButton->setCursor(Qt::PointingHandCursor);
+    m_sendOtpButton->setStyleSheet(
+        "QPushButton { padding: 10px; border: none; border-radius: 6px; "
+        "background: #4a4aff; color: white; font-size: 14px; font-weight: bold; }"
+        "QPushButton:hover { background: #5a5aff; }"
+        "QPushButton:disabled { background: #2a2a4a; color: #606080; }"
+    );
+    connect(m_sendOtpButton, &QPushButton::clicked, this, &AuthDialog::onSendOtp);
+    emailLayout->addWidget(m_sendOtpButton);
 
-    // Step 2: OTP
-    auto *otpPage = new QWidget();
-    auto *otpLayout = new QVBoxLayout(otpPage);
-    otpLayout->setContentsMargins(0, 0, 0, 0);
-    otpLayout->setSpacing(10);
+    m_emailError = new QLabel;
+    m_emailError->setStyleSheet("color: #ff6b6b; font-size: 12px;");
+    m_emailError->setWordWrap(true);
+    m_emailError->hide();
+    emailLayout->addWidget(m_emailError);
 
-    auto *otpHint = new QLabel("Enter the 6-digit code sent to your email", otpPage);
-    otpHint->setAlignment(Qt::AlignCenter);
-    otpHint->setStyleSheet("color: #9ca3af; font-size: 12px;");
-    otpLayout->addWidget(otpHint);
+    m_stack->addWidget(m_emailPage);
 
-    m_otpEdit->setPlaceholderText("000000");
-    m_otpEdit->setMaxLength(6);
-    m_otpEdit->setStyleSheet(
-        "QLineEdit { padding: 10px 14px; border: 1px solid #374151; border-radius: 8px; "
-        "background: #111827; color: #e5e7eb; font-size: 18px; letter-spacing: 8px; }"
-        "QLineEdit:focus { border-color: #6366f1; }");
-    otpLayout->addWidget(m_otpEdit);
+    // ── Page 2: OTP verification ────────────────────────────────────────────
+    m_otpPage = new QWidget;
+    auto *otpLayout = new QVBoxLayout(m_otpPage);
+    otpLayout->setSpacing(12);
 
-    m_verifyBtn->setStyleSheet(
-        "QPushButton { padding: 10px; background: #6366f1; color: white; border: none; "
-        "border-radius: 8px; font-weight: bold; font-size: 14px; }"
-        "QPushButton:hover { background: #818cf8; }");
-    otpLayout->addWidget(m_verifyBtn);
+    m_otpLabel = new QLabel("Enter the verification code sent to your email");
+    m_otpLabel->setWordWrap(true);
+    m_otpLabel->setStyleSheet("color: #a0a0c0; font-size: 13px;");
+    otpLayout->addWidget(m_otpLabel);
 
-    m_stack->addWidget(emailPage);
-    m_stack->addWidget(otpPage);
-    layout->addWidget(m_stack);
+    m_otpInput = new QLineEdit;
+    m_otpInput->setPlaceholderText("000000");
+    m_otpInput->setMaxLength(6);
+    m_otpInput->setStyleSheet(
+        "QLineEdit { padding: 10px; border: 1px solid #3e3e5e; border-radius: 6px; "
+        "background: #1e1e32; color: #e0e0f0; font-size: 18px; letter-spacing: 8px; }"
+        "QLineEdit:focus { border-color: #6e6eff; }"
+    );
+    otpLayout->addWidget(m_otpInput);
 
-    // Status
-    m_statusLabel->setAlignment(Qt::AlignCenter);
-    m_statusLabel->setStyleSheet("color: #ef4444; font-size: 12px;");
-    layout->addWidget(m_statusLabel);
+    m_verifyButton = new QPushButton("Verify & Sign In");
+    m_verifyButton->setCursor(Qt::PointingHandCursor);
+    m_verifyButton->setStyleSheet(
+        "QPushButton { padding: 10px; border: none; border-radius: 6px; "
+        "background: #4a4aff; color: white; font-size: 14px; font-weight: bold; }"
+        "QPushButton:hover { background: #5a5aff; }"
+        "QPushButton:disabled { background: #2a2a4a; color: #606080; }"
+    );
+    connect(m_verifyButton, &QPushButton::clicked, this, &AuthDialog::onVerifyOtp);
+    otpLayout->addWidget(m_verifyButton);
 
-    // Connections
-    connect(m_sendBtn, &QPushButton::clicked, this, &AuthDialog::onSendOtp);
-    connect(m_verifyBtn, &QPushButton::clicked, this, &AuthDialog::onVerifyOtp);
-    connect(m_client, &ConvexClient::authStateChanged, this, &AuthDialog::onAuthStateChanged);
-}
+    m_otpError = new QLabel;
+    m_otpError->setStyleSheet("color: #ff6b6b; font-size: 12px;");
+    m_otpError->setWordWrap(true);
+    m_otpError->hide();
+    otpLayout->addWidget(m_otpError);
 
-void AuthDialog::onSendOtp() {
-    QString email = m_emailEdit->text().trimmed();
-    if (email.isEmpty() || !email.contains('@')) {
-        m_statusLabel->setText("Please enter a valid email address");
-        return;
-    }
-    m_sendBtn->setEnabled(false);
-    m_sendBtn->setText("Sending...");
-    m_statusLabel->setText("");
-
-    // TODO: Call Convex emailOtp.send action via HTTP
-    // For now, simulate with a timer
-    QTimer::singleShot(1500, this, [this]() {
-        m_stack->setCurrentIndex(1);
-        m_sendBtn->setEnabled(true);
-        m_sendBtn->setText("Send Code");
-        m_statusLabel->setText("Code sent! Check your email.");
-        m_statusLabel->setStyleSheet("color: #22c55e; font-size: 12px;");
+    m_backButton = new QPushButton("← Back");
+    m_backButton->setFlat(true);
+    m_backButton->setCursor(Qt::PointingHandCursor);
+    m_backButton->setStyleSheet(
+        "QPushButton { color: #8080a0; font-size: 12px; border: none; }"
+        "QPushButton:hover { color: #c0c0f0; }"
+    );
+    connect(m_backButton, &QPushButton::clicked, this, [this]() {
+        m_stack->setCurrentIndex(0);
+        m_emailError->hide();
+        m_otpError->hide();
     });
-}
+    otpLayout->addWidget(m_backButton);
 
-void AuthDialog::onVerifyOtp() {
-    QString otp = m_otpEdit->text().trimmed();
-    if (otp.length() != 6) {
-        m_statusLabel->setText("Please enter the 6-digit code");
-        return;
-    }
-    m_verifyBtn->setEnabled(false);
-    m_verifyBtn->setText("Verifying...");
-    m_statusLabel->setText("");
+    m_stack->addWidget(m_otpPage);
 
-    // TODO: Call Convex emailOtp.verify action via HTTP
-    // For now, simulate success
-    QTimer::singleShot(1500, this, [this]() {
-        m_verifyBtn->setEnabled(true);
-        m_verifyBtn->setText("Verify");
-        m_statusLabel->setText("Invalid code. Please try again.");
-        m_statusLabel->setStyleSheet("color: #ef4444; font-size: 12px;");
-    });
-}
+    mainLayout->addWidget(m_stack);
 
-void AuthDialog::onAuthStateChanged(bool authenticated) {
-    if (authenticated) {
+    // Search for existing token
+    QSettings settings;
+    QString savedToken = settings.value("auth/token").toString();
+    if (!savedToken.isEmpty()) {
+        m_client->setAuthToken(savedToken); // we need to add this method
+        m_authenticated = true;
         accept();
+    }
+}
+
+void AuthDialog::onSendOtp()
+{
+    m_email = m_emailInput->text().trimmed();
+
+    // Validate email
+    QRegularExpression emailRegex(R"(^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$)");
+    if (!emailRegex.match(m_email).hasMatch()) {
+        m_emailError->setText("Please enter a valid email address");
+        m_emailError->show();
+        return;
+    }
+
+    m_emailError->hide();
+    m_sendOtpButton->setEnabled(false);
+    m_sendOtpButton->setText("Sending...");
+    m_client->sendEmailOtp(m_email);
+}
+
+void AuthDialog::onOtpSent(bool success, const QString &error)
+{
+    m_sendOtpButton->setEnabled(true);
+    m_sendOtpButton->setText("Send Verification Code");
+
+    if (success) {
+        m_otpLabel->setText(QString("Enter the verification code sent to\n%1").arg(m_email));
+        m_otpInput->clear();
+        m_otpError->hide();
+        m_stack->setCurrentIndex(1);
+        m_otpInput->setFocus();
+    } else {
+        m_emailError->setText(error.isEmpty() ? "Failed to send code. Try again." : error);
+        m_emailError->show();
+    }
+}
+
+void AuthDialog::onVerifyOtp()
+{
+    QString code = m_otpInput->text().trimmed();
+    if (code.length() < 4) {
+        m_otpError->setText("Please enter the full verification code");
+        m_otpError->show();
+        return;
+    }
+
+    m_otpError->hide();
+    m_verifyButton->setEnabled(false);
+    m_verifyButton->setText("Verifying...");
+    m_client->verifyEmailOtp(m_email, code);
+}
+
+void AuthDialog::onOtpVerified(bool success, const QString &error)
+{
+    m_verifyButton->setEnabled(true);
+    m_verifyButton->setText("Verify & Sign In");
+
+    if (success) {
+        m_authenticated = true;
+        emit authenticated();
+        accept();
+    } else {
+        m_otpError->setText(error.isEmpty() ? "Invalid or expired code. Try again." : error);
+        m_otpError->show();
     }
 }
