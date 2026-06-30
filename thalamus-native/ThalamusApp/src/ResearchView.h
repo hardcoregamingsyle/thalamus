@@ -18,7 +18,6 @@ class ResearchView : public QWidget
 
 public:
     explicit ResearchView(ConvexClient *client, QWidget *parent = nullptr);
-    ~ResearchView() = default;
 
 private slots:
     void onStartResearch();
@@ -27,18 +26,14 @@ private slots:
 
 private:
     void setupUi();
-    void setInputEnabled(bool enabled);
-
+    void setInputEnabled(bool en);
     ConvexClient *m_client;
     MarkdownRenderer *m_mdRenderer;
-
     QLineEdit *m_queryInput;
-    QPushButton *m_startButton;
-    QPushButton *m_stopButton;
+    QPushButton *m_startButton, *m_stopButton;
     QProgressBar *m_progressBar;
     QTextEdit *m_resultDisplay;
     QTreeWidget *m_sourcesTree;
-
     bool m_isResearching;
     QString m_currentResult;
 };
