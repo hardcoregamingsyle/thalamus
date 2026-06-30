@@ -1,182 +1,206 @@
-/**
- * Thalamus AI — Main Window
- * Tabbed interface: Chat, Research, Study, Code, VM Sandbox
- * System tray integration and VM bridge lifecycle management.
- */
-
+// Thalamus AI — MainWindow.cpp
 #include "MainWindow.h"
 #include "ConvexClient.h"
-#include "VMBridgeManager.h"
 #include "ChatView.h"
 #include "ResearchView.h"
 #include "StudyView.h"
 #include "CodeModeView.h"
 #include "VMSandboxView.h"
 #include "Settings.h"
-#include "NotificationManager.h"
 
-#include <QApplication>
-#include <QMenuBar>
-#include <QStatusBar>
+#include <QTabWidget>
 #include <QVBoxLayout>
+#include <QAction>
+#include <QMenuBar>
 #include <QMessageBox>
-#include <QDesktopServices>
-#include <QUrl>
-#include <QStyle>
-#include <QFont>
+#include <QSettings>
+#include <QCloseEvent>
+#include <QApplication>
+#include <QStatusBar>
+#include <QLabel>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
-    , m_tabs(new QTabWidget(this))
-    , m_trayIcon(new QSystemTrayIcon(this))
-    , m_trayMenu(new QMenu(this))
-    , m_convexClient(new ConvexClient(this))
-    , m_bridgeManager(new VMBridgeManager(this))
+    , m_tabWidget(nullptr)
     , m_chatView(nullptr)
     , m_researchView(nullptr)
     , m_studyView(nullptr)
     , m_codeModeView(nullptr)
     , m_vmSandboxView(nullptr)
-    , m_trayShowAction(nullptr)
-    , m_bridgeStatusAction(nullptr)
+    , m_settingsView(nullptr)
+    , m_trayIcon(nullptr)
+    , m_trayMenu(nullptr)
+    , m_showAction(nullptr)
+    , m_quitAction(nullptr)
+    , m_convexClient(new ConvexClient(this))
 {
-    setWindowTitle("Thalamus AI");
-    setMinimumSize(1100, 720);
-    resize(1280, 800);
-
     setupUi();
-    setupSystemTray();
-    setupMenuBar();
-
-    statusBar()->showMessage("Ready");
-
-    // Connect bridge signals
-    connect(m_bridgeManager, &VMBridgeManager::connected,
-            this, &MainWindow::onBridgeConnected);
-    connect(m_bridgeManager, &VMBridgeManager::disconnected,
-            this, &MainWindow::onBridgeDisconnected);
-
-    // Try connecting to VM bridge
-    m_bridgeManager->connectToBridge();
+    setupTrayIcon();
+    restoreSettings();
+    checkForUpdates();
 }
 
-MainWindow::~MainWindow() {}
+MainWindow::~MainWindow()
+{
+    saveSettings();
+}
 
-void MainWindow::setupUi() {
+void MainWindow::setupUi()
+{
+    setWindowTitle("Thalamus AI");
+    setMinimumSize(1024, 720);
+    resize(1280, 860);
+
+    // Central widget with tabs
+    m_tabWidget = new QTabWidget(this);
+    m_tabWidget->setTabPosition(QTabWidget::South);
+    m_tabWidget->setMovable(true);
+    m_tabWidget->setDocumentMode(true);
+    setCentralWidget(m_tabWidget);
+
+    // Create views
     m_chatView = new ChatView(m_convexClient, this);
     m_researchView = new ResearchView(m_convexClient, this);
     m_studyView = new StudyView(m_convexClient, this);
     m_codeModeView = new CodeModeView(m_convexClient, this);
-    m_vmSandboxView = new VMSandboxView(m_bridgeManager, this);
+    m_vmSandboxView = new VMSandboxView(m_convexClient, this);
+    m_settingsView = new Settings(m_convexClient, this);
 
-    m_tabs->setTabPosition(QTabWidget::North);
-    m_tabs->setDocumentMode(true);
+    // Add tabs
+    m_tabWidget->addTab(m_chatView, QIcon(":/icons/chat.svg"), "Chat");
+    m_tabWidget->addTab(m_researchView, QIcon(":/icons/research.svg"), "Research");
+    m_tabWidget->addTab(m_studyView, QIcon(":/icons/study.svg"), "Study");
+    m_tabWidget->addTab(m_codeModeView, QIcon(":/icons/code.svg"), "Code");
+    m_tabWidget->addTab(m_vmSandboxView, QIcon(":/icons/vm.svg"), "VM Sandbox");
+    m_tabWidget->addTab(m_settingsView, QIcon(":/icons/settings.svg"), "Settings");
 
-    m_tabs->addTab(m_chatView, QIcon(), "💬 Chat");
-    m_tabs->addTab(m_researchView, QIcon(), "🔬 Research");
-    m_tabs->addTab(m_studyView, QIcon(), "📚 Study");
-    m_tabs->addTab(m_codeModeView, QIcon(), "⚡ Code");
-    m_tabs->addTab(m_vmSandboxView, QIcon(), "🖥️ VM Sandbox");
+    connect(m_tabWidget, &QTabWidget::currentChanged, this, &MainWindow::onTabChanged);
 
-    m_tabs->setStyleSheet(
-        "QTabWidget::pane { border: none; }"
-        "QTabBar::tab { padding: 10px 20px; font-size: 13px; }"
-        "QTabBar::tab:selected { border-bottom: 2px solid #6366f1; }"
+    // Status bar
+    statusBar()->showMessage("Ready");
+    statusBar()->setStyleSheet(
+        "QStatusBar { background: #1e1e2e; color: #a0a0c0; border-top: 1px solid #2e2e3e; }"
+        "QStatusBar::item { border: none; }"
     );
-
-    setCentralWidget(m_tabs);
 }
 
-void MainWindow::setupSystemTray() {
-    m_trayShowAction = m_trayMenu->addAction("Show Window");
-    connect(m_trayShowAction, &QAction::triggered, this, [this]() {
-        showNormal();
+void MainWindow::setupTrayIcon()
+{
+    m_trayIcon = new QSystemTrayIcon(QIcon(":/icons/app.ico"), this);
+    m_trayIcon->setToolTip("Thalamus AI");
+
+    m_trayMenu = new QMenu(this);
+    m_showAction = m_trayMenu->addAction("Show Thalamus");
+    connect(m_showAction, &QAction::triggered, this, [this]() {
+        show();
         raise();
         activateWindow();
     });
 
-    m_bridgeStatusAction = m_trayMenu->addAction("Bridge: Disconnected");
-    m_bridgeStatusAction->setEnabled(false);
-
     m_trayMenu->addSeparator();
 
-    QAction *aboutAction = m_trayMenu->addAction("About Thalamus AI");
-    connect(aboutAction, &QAction::triggered, this, &MainWindow::onAbout);
-
-    m_trayMenu->addSeparator();
-
-    QAction *quitAction = m_trayMenu->addAction("Quit");
-    connect(quitAction, &QAction::triggered, qApp, &QApplication::quit);
+    m_quitAction = m_trayMenu->addAction("Quit");
+    connect(m_quitAction, &QAction::triggered, qApp, &QApplication::quit);
 
     m_trayIcon->setContextMenu(m_trayMenu);
-    m_trayIcon->setToolTip("Thalamus AI");
+
+    connect(m_trayIcon, &QSystemTrayIcon::activated, this, &MainWindow::onTrayActivated);
+
     m_trayIcon->show();
-
-    connect(m_trayIcon, &QSystemTrayIcon::activated,
-            this, &MainWindow::onTrayActivated);
 }
 
-void MainWindow::setupMenuBar() {
-    QMenuBar *bar = menuBar();
-
-    QMenu *fileMenu = bar->addMenu("&File");
-    fileMenu->addAction("&New Chat", this, &MainWindow::onNewChat, QKeySequence::New);
-    fileMenu->addSeparator();
-    fileMenu->addAction("&Settings...", this, &MainWindow::onSettingsRequested, QKeySequence::Preferences);
-    fileMenu->addSeparator();
-    fileMenu->addAction("E&xit", qApp, &QApplication::quit, QKeySequence::Quit);
-
-    QMenu *helpMenu = bar->addMenu("&Help");
-    helpMenu->addAction("&About", this, &MainWindow::onAbout);
-    helpMenu->addAction("About &Qt", qApp, &QApplication::aboutQt);
-}
-
-void MainWindow::closeEvent(QCloseEvent *event) {
-    if (m_trayIcon->isVisible()) {
-        hide();
-        event->ignore();
-    }
-}
-
-void MainWindow::onTrayActivated(QSystemTrayIcon::ActivationReason reason) {
+void MainWindow::onTrayActivated(QSystemTrayIcon::ActivationReason reason)
+{
     if (reason == QSystemTrayIcon::DoubleClick) {
-        showNormal();
+        show();
         raise();
         activateWindow();
     }
 }
 
-void MainWindow::onSettingsRequested() {
-    Settings dlg(this);
-    dlg.exec();
-}
-
-void MainWindow::onAbout() {
-    QMessageBox::about(this, "About Thalamus AI",
-        "<h2>Thalamus AI</h2>"
-        "<p>Version 1.0.0</p>"
-        "<p>Native Windows Desktop App</p>"
-        "<p>Built with Qt 6 C++</p>"
-        "<p>&copy; 2026 Aphantic Corporations</p>");
-}
-
-void MainWindow::onNewChat() {
-    m_tabs->setCurrentIndex(0); // Switch to Chat tab
-    m_chatView->newConversation();
-}
-
-void MainWindow::handleUri(const QString &uri) {
-    if (uri.startsWith("thalamus://launch-vm")) {
-        m_tabs->setCurrentIndex(4); // VM Sandbox tab
+void MainWindow::onTabChanged(int index)
+{
+    QWidget *w = m_tabWidget->widget(index);
+    if (auto *chat = qobject_cast<ChatView *>(w)) {
+        statusBar()->showMessage("Chat Mode — Ask anything");
+    } else if (qobject_cast<ResearchView *>(w)) {
+        statusBar()->showMessage("Research Mode — Deep multi-source research");
+    } else if (qobject_cast<StudyView *>(w)) {
+        statusBar()->showMessage("Study Mode — RAG-enhanced learning");
+    } else if (qobject_cast<CodeModeView *>(w)) {
+        statusBar()->showMessage("Code Mode — Autonomous development pipeline");
+    } else if (qobject_cast<VMSandboxView *>(w)) {
+        statusBar()->showMessage("VM Sandbox — Virtual machine management");
+    } else if (qobject_cast<Settings *>(w)) {
+        statusBar()->showMessage("Settings");
     }
 }
 
-void MainWindow::onBridgeConnected() {
-    m_bridgeStatusAction->setText("Bridge: Connected ✓");
-    statusBar()->showMessage("VM Bridge connected on port 5900", 5000);
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    saveSettings();
+    if (m_trayIcon && m_trayIcon->isVisible()) {
+        hide();
+        m_trayIcon->showMessage(
+            "Thalamus AI",
+            "Application minimized to tray. Double-click to restore.",
+            QSystemTrayIcon::Information,
+            2000
+        );
+        event->ignore();
+    } else {
+        event->accept();
+    }
 }
 
-void MainWindow::onBridgeDisconnected() {
-    m_bridgeStatusAction->setText("Bridge: Disconnected");
-    statusBar()->showMessage("VM Bridge disconnected", 5000);
+void MainWindow::saveSettings()
+{
+    QSettings settings;
+    settings.setValue("window/geometry", saveGeometry());
+    settings.setValue("window/state", saveState());
+    settings.setValue("window/tab", m_tabWidget->currentIndex());
+    settings.setValue("convex/baseUrl", m_convexClient->baseUrl());
+}
+
+void MainWindow::restoreSettings()
+{
+    QSettings settings;
+    if (settings.contains("window/geometry")) {
+        restoreGeometry(settings.value("window/geometry").toByteArray());
+    }
+    if (settings.contains("window/state")) {
+        restoreState(settings.value("window/state").toByteArray());
+    }
+    if (settings.contains("window/tab")) {
+        m_tabWidget->setCurrentIndex(settings.value("window/tab").toInt());
+    }
+    if (settings.contains("convex/baseUrl")) {
+        m_convexClient->setBaseUrl(settings.value("convex/baseUrl").toString());
+    }
+}
+
+void MainWindow::handleUri(const QString &uri)
+{
+    // Parse thalamus://... URIs (e.g., thalamus://chat?message=hello)
+    show();
+    raise();
+    activateWindow();
+
+    if (uri == "thalamus://activate")
+        return;
+
+    // Switch tab based on URI path
+    if (uri.startsWith("thalamus://chat")) {
+        m_tabWidget->setCurrentIndex(0);
+    } else if (uri.startsWith("thalamus://research")) {
+        m_tabWidget->setCurrentIndex(1);
+    } else if (uri.startsWith("thalamus://code")) {
+        m_tabWidget->setCurrentIndex(3);
+    }
+}
+
+void MainWindow::checkForUpdates()
+{
+    // AutoUpdater will be initialized in a separate thread
+    // to check GitHub Releases without blocking startup
 }
