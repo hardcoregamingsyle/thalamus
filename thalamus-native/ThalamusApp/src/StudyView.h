@@ -2,66 +2,45 @@
 #define STUDYVIEW_H
 
 #include <QWidget>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QTextEdit>
+#include <QTextBrowser>
+#include <QLineEdit>
 #include <QPushButton>
-#include <QScrollArea>
-#include <QLabel>
+#include <QVBoxLayout>
 #include <QJsonArray>
-#include <QJsonObject>
-#include <QComboBox>
-#include <QListWidget>
-#include <QProgressBar>
-#include "ConvexClient.h"
-#include "MarkdownRenderer.h"
 
-/**
- * @brief Study mode — RAG-enhanced learning with knowledge graphs.
- *
- * Features: upload study materials, vector search, knowledge graph,
- * AI-powered tutoring based on uploaded content.
- */
-class StudyView : public QWidget
-{
+class ConvexClient;
+
+class StudyView : public QWidget {
     Q_OBJECT
 
 public:
     explicit StudyView(ConvexClient *client, QWidget *parent = nullptr);
-    ~StudyView();
 
 private slots:
-    void onAskQuestion();
-    void onUploadMaterial();
-    void onClearStudy();
+    void onSendClicked();
+    void onStreamChunk(const QString &chunk);
+    void onStreamDone(const QString &fullText);
+    void onStreamError(const QString &error);
 
 private:
-    void setupUI();
-    void appendMessage(const QString &role, const QString &content);
-    void loadResources();
-    void addResourceItem(const QString &title, const QString &id);
+    void setupUi();
+    void startStudy(const QString &question);
+    void appendMessage(const QString &role, const QString &html);
+    void scrollToBottom();
 
     ConvexClient *m_client;
-    MarkdownRenderer *m_mdRenderer;
-
-    // UI
-    QWidget *m_sidebar;
-    QListWidget *m_resourceList;
-    QPushButton *m_uploadBtn;
-
-    QWidget *m_mainArea;
-    QScrollArea *m_chatScroll;
-    QWidget *m_chatContainer;
-    QVBoxLayout *m_chatLayout;
-    QTextEdit *m_questionInput;
-    QPushButton *m_askBtn;
-    QPushButton *m_clearBtn;
-    QComboBox *m_modeCombo;
+    QVBoxLayout *m_mainLayout;
+    QScrollArea *m_scrollArea;
+    QWidget *m_messagesContainer;
+    QVBoxLayout *m_messagesLayout;
+    QLineEdit *m_input;
+    QPushButton *m_sendBtn;
     QLabel *m_statusLabel;
-    QProgressBar *m_progressBar;
+    QTextBrowser *m_currentAssistant;
 
-    // State
-    bool m_isAsking;
+    QJsonArray m_history;
+    QString m_currentResponse;
+    bool m_streaming;
 };
 
 #endif // STUDYVIEW_H

@@ -1,125 +1,84 @@
 /**
- * Thalamus AI — Native Windows Desktop Application
- *
- * Built with Qt 6 (C++17) and Win32 API integration.
- * Provides: Chat, Research, Study, Code (9-agent pipeline),
- * and VM Sandbox (QEMU + VNC) in a single native app.
- *
- * Architecture:
- * - Qt 6 Widgets for the UI framework
- * - Convex HTTP API for backend communication
- * - Custom RFB 3.8 VNC client for VM display
- * - QProcess for QEMU/VM bridge management
- * - Win32 API for URI scheme registration and system integration
- *
- * Build prerequisites:
- * - CMake 3.22+
- * - Qt 6.5+ (Core, Gui, Widgets, Network, WebSockets, Svg)
- * - C++17 compatible compiler (MSVC 2022 recommended)
- * - Convex deployment (glad-ermine-937)
+ * Thalamus AI — Native Windows Desktop App
+ * Entry point: single-instance lock, URI scheme registration, dark theme
  */
 
 #include <QApplication>
-#include <QStyleFactory>
+#include <QSharedMemory>
+#include <QMessageBox>
 #include <QFile>
 #include <QDir>
-#include <QSettings>
 #include <QStandardPaths>
-#include <QMessageBox>
-#include <QFontDatabase>
-#include <QSplashScreen>
-#include <QTimer>
-#include <QProcess>
-#include <QLockFile>
-#include <QDir>
+#include <QSettings>
 
 #include "MainWindow.h"
+#include "Settings.h"
 
-int main(int argc, char *argv[])
-{
-    // High DPI support
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    QApplication::setHighDpiScaleFactorRoundingPolicy(
-        Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <shellapi.h>
 #endif
 
+static const char *SHARED_MEMORY_KEY = "thalamus-ai-single-instance";
+static const char *URI_SCHEME = "thalamus";
+
+#ifdef Q_OS_WIN
+static void registerUriScheme() {
+    QSettings reg("HKEY_CLASSES_ROOT", QSettings::NativeFormat);
+    QString appPath = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+
+    reg.setValue(QString("%1/Default").arg(URI_SCHEME), "URL:Thalamus AI Protocol");
+    reg.setValue(QString("%1/URL Protocol").arg(URI_SCHEME), "");
+
+    QSettings icon("HKEY_CLASSES_ROOT", QSettings::NativeFormat);
+    icon.setValue(QString("%1/DefaultIcon/Default").arg(URI_SCHEME), QString("\"%1\",0").arg(appPath));
+
+    QSettings cmd("HKEY_CLASSES_ROOT", QSettings::NativeFormat);
+    cmd.setValue(QString("%1/shell/open/command/Default").arg(URI_SCHEME),
+                 QString("\"%1\" --uri \"%2\"").arg(appPath, "%1"));
+}
+#endif
+
+int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     app.setApplicationName("Thalamus AI");
-    app.setApplicationDisplayName("Thalamus AI");
-    app.setOrganizationName("Thalamus");
-    app.setOrganizationDomain("thalamus.dev");
+    app.setOrganizationName("Aphantic Corporations");
     app.setApplicationVersion("1.0.0");
-    app.setWindowIcon(QIcon(":/icons/app.ico"));
+    app.setQuitOnLastWindowClosed(false); // stay in tray
 
-    // Use Fusion style as base for consistent dark theme
-    app.setStyle(QStyleFactory::create("Fusion"));
-
-    // ── Single instance lock ────────────────────────────────────────────────
-    QString lockPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
-                       + "/thalamus-app.lock";
-    QLockFile lockFile(lockPath);
-    if (!lockFile.tryLock(100)) {
-        // Another instance is already running — bring it to foreground
+    // Single-instance enforcement via shared memory
+    QSharedMemory mem(SHARED_MEMORY_KEY);
+    if (!mem.create(1)) {
         QMessageBox::information(nullptr, "Thalamus AI",
-            "Thalamus AI is already running.");
+            "Thalamus AI is already running.\nCheck your system tray.");
         return 0;
     }
 
-    // ── Register thalamus:// URI scheme (Win32) ────────────────────────────
+    // Register thalamus:// URI scheme (Windows)
 #ifdef Q_OS_WIN
-    QSettings uriSettings(
-        "HKEY_CURRENT_USER\\Software\\Classes\\thalamus",
-        QSettings::NativeFormat);
-    uriSettings.setValue(".", "URL:Thalamus Protocol");
-    uriSettings.setValue("URL Protocol", "");
-    uriSettings.setValue(
-        "shell\\open\\command\\.",
-        "\"" + QDir::toNativeSeparators(app.applicationFilePath()) + "\" \"%1\"");
+    registerUriScheme();
 #endif
 
-    // ── Load custom fonts ───────────────────────────────────────────────────
-    // Segoe UI is the default Windows font, loaded via system
-
-    // ── Splash screen ───────────────────────────────────────────────────────
-    QSplashScreen splash;
-    splash.setWindowFlags(Qt::WindowStaysOnTopHint | Qt::FramelessWindowHint);
-    splash.resize(400, 250);
-    splash.setStyleSheet(
-        "QSplashScreen {"
-        "  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,"
-        "    stop:0 #0d0d0d, stop:1 #1a1a1a);"
-        "  border: 1px solid #2a2a2a;"
-        "}"
-    );
-    splash.showMessage(
-        "<div style='text-align:center; padding-top:60px;'>"
-        "<span style='font-size:48px; color:#a78bfa;'>◆</span><br>"
-        "<span style='font-size:24px; font-weight:700; color:#fff;'>Thalamus AI</span><br>"
-        "<span style='font-size:12px; color:#888;'>v1.0.0 — Loading...</span>"
-        "</div>",
-        Qt::AlignCenter, QColor(0xa7, 0x8b, 0xfa));
-    splash.show();
-    app.processEvents();
-
-    // ── Create and show main window ─────────────────────────────────────────
-    MainWindow mainWindow;
-
-    // Check if we should start minimized
-    QSettings settings("Thalamus", "ThalamusAI");
-    bool startMinimized = settings.value("startMinimized", false).toBool();
-
-    if (startMinimized) {
-        mainWindow.hide();
-    } else {
-        mainWindow.show();
+    // Handle --uri argument for deep linking
+    const QStringList args = app.arguments();
+    for (int i = 1; i < args.size(); ++i) {
+        if (args[i] == "--uri" && i + 1 < args.size()) {
+            QString uri = args[i + 1];
+            // Will be forwarded to MainWindow after creation
+            Q_UNUSED(uri);
+        }
     }
 
-    splash.finish(&mainWindow);
+    // Load dark theme stylesheet
+    QFile styleFile(":/style.qss");
+    if (styleFile.open(QFile::ReadOnly | QFile::Text)) {
+        app.setStyleSheet(styleFile.readAll());
+        styleFile.close();
+    }
 
-    // ── Initialize ──────────────────────────────────────────────────────────
-    QTimer::singleShot(100, [&mainWindow]() {
-        mainWindow.initialize();
-    });
+    // Create and show main window
+    MainWindow window;
+    window.show();
 
     return app.exec();
 }
