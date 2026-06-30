@@ -22,8 +22,8 @@ on:
         default: 'v1.0.0-native'
 
 env:
-  APP_VERSION: '1.0.0'
-  INSTALLER_NAME: 'Thalamus-Setup-v1.0.0.exe'
+  APP_VERSION: '1.0.1'
+  INSTALLER_NAME: 'Thalamus-Setup-v1.0.1.exe'
 
 permissions:
   contents: write
