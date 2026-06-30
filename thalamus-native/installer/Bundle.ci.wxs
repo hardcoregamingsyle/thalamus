@@ -17,7 +17,7 @@ producing the self-contained Thalamus-Setup-v1.0.0.exe that the web app's
         UpgradeCode="F1A2B3C4-D5E6-7890-ABCD-EF1234567890"
         DisableModify="yes">
 
-        <bal:Condition Condition="VersionNT64 >= 1000"
+        <bal:Condition Condition="VersionNT64 AND VersionNT >= v10.0"
                        Message="Thalamus AI requires Windows 10 64-bit or later." />
 
         <Chain>
