@@ -17,7 +17,6 @@ class StudyView : public QWidget
 
 public:
     explicit StudyView(ConvexClient *client, QWidget *parent = nullptr);
-    ~StudyView() = default;
 
 private slots:
     void onAskQuestion();
@@ -27,18 +26,13 @@ private slots:
 
 private:
     void setupUi();
-    void setInputEnabled(bool enabled);
-
+    void setInputEnabled(bool en);
     ConvexClient *m_client;
     MarkdownRenderer *m_mdRenderer;
-
     QListWidget *m_materialList;
     QTextEdit *m_studyDisplay;
     QLineEdit *m_questionInput;
-    QPushButton *m_askButton;
-    QPushButton *m_stopButton;
-    QPushButton *m_uploadButton;
-
+    QPushButton *m_askButton, *m_stopButton, *m_uploadButton;
     bool m_isStudying;
     QString m_currentAnswer;
 };

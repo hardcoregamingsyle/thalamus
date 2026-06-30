@@ -2,18 +2,13 @@
 #include "VMBridgeManager.h"
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QJsonArray>
 #include <QCoreApplication>
 #include <QDir>
 
 VMBridgeManager::VMBridgeManager(QObject *parent)
     : QObject(parent)
     , m_webSocket(new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this))
-    , m_bridgeProcess(nullptr)
-    , m_reconnectTimer(new QTimer(this))
-    , m_bridgePath("thalamus-vm-bridge")
-    , m_port(5900)
-    , m_running(false)
+    , m_bridgeProcess(nullptr), m_port(5900), m_running(false)
 {
     connect(m_webSocket, &QWebSocket::connected, this, &VMBridgeManager::onConnected);
     connect(m_webSocket, &QWebSocket::disconnected, this, &VMBridgeManager::onDisconnected);
@@ -22,115 +17,67 @@ VMBridgeManager::VMBridgeManager(QObject *parent)
             this, &VMBridgeManager::onError);
 }
 
-VMBridgeManager::~VMBridgeManager()
-{
-    stopVm();
-}
+VMBridgeManager::~VMBridgeManager() { stopVm(); }
 
 void VMBridgeManager::bootVm(const QString &os, int ramMB, int cpuCores)
 {
-    QJsonObject params;
-    params["os"] = os;
-    params["ram_mb"] = ramMB;
-    params["cpu_cores"] = cpuCores;
-    sendCommand("boot", params);
+    QJsonObject p; p["os"]=os; p["ram_mb"]=ramMB; p["cpu_cores"]=cpuCores;
+    sendCommand("boot", p);
 }
 
 void VMBridgeManager::stopVm()
 {
     if (m_webSocket->state() == QAbstractSocket::ConnectedState) {
-        sendCommand("stop");
-        m_webSocket->close();
+        sendCommand("stop"); m_webSocket->close();
     }
-
     if (m_bridgeProcess && m_bridgeProcess->state() == QProcess::Running) {
         m_bridgeProcess->terminate();
-        if (!m_bridgeProcess->waitForFinished(3000)) {
-            m_bridgeProcess->kill();
-        }
+        if (!m_bridgeProcess->waitForFinished(3000)) m_bridgeProcess->kill();
     }
-
-    m_running = false;
-    emit vmStopped();
+    m_running = false; emit vmStopped();
 }
 
 bool VMBridgeManager::isRunning() const { return m_running; }
-
-void VMBridgeManager::sendKeyboardEvent(bool down, quint32 keysym)
-{
-    QJsonObject params;
-    params["down"] = down;
-    params["keysym"] = static_cast<double>(keysym);
-    sendCommand("keyboard", params);
+void VMBridgeManager::sendKeyboardEvent(bool down, quint32 keysym) {
+    QJsonObject p; p["down"]=down; p["keysym"]=static_cast<double>(keysym);
+    sendCommand("keyboard", p);
 }
-
-void VMBridgeManager::sendPointerEvent(int x, int y, int buttonMask)
-{
-    QJsonObject params;
-    params["x"] = x;
-    params["y"] = y;
-    params["button_mask"] = buttonMask;
-    sendCommand("pointer", params);
+void VMBridgeManager::sendPointerEvent(int x, int y, int buttonMask) {
+    QJsonObject p; p["x"]=x; p["y"]=y; p["button_mask"]=buttonMask;
+    sendCommand("pointer", p);
 }
-
 QWebSocket *VMBridgeManager::webSocket() const { return m_webSocket; }
 
-void VMBridgeManager::onConnected()
-{
-    if (!m_reconnectTimer->isActive())
-        m_reconnectTimer->start(5000);
-}
-
-void VMBridgeManager::onDisconnected()
-{
-    m_running = false;
-}
-
+void VMBridgeManager::onConnected() {}
+void VMBridgeManager::onDisconnected() { m_running = false; }
 void VMBridgeManager::onTextMessageReceived(const QString &message)
 {
-    QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8());
-    QJsonObject msg = doc.object();
-    QString type = msg["type"].toString();
-
-    if (type == "booted") {
-        m_running = true;
-        emit vmBooted();
-    } else if (type == "stopped") {
-        m_running = false;
-        emit vmStopped();
-    } else if (type == "error") {
-        emit error(msg["message"].toString());
-    } else if (type == "framebuffer") {
-        QByteArray fb = QByteArray::fromBase64(msg["data"].toString().toUtf8());
-        emit vncFrameAvailable(fb);
-    }
+    QJsonObject msg = QJsonDocument::fromJson(message.toUtf8()).object();
+    QString t = msg["type"].toString();
+    if (t=="booted") { m_running=true; emit vmBooted(); }
+    else if (t=="stopped") { m_running=false; emit vmStopped(); }
+    else if (t=="error") { emit error(msg["message"].toString()); }
 }
 
 void VMBridgeManager::onError(QAbstractSocket::SocketError)
-{
-    emit error("WebSocket connection failed");
-}
+{ emit error("WebSocket connection failed"); }
 
 void VMBridgeManager::sendCommand(const QString &command, const QJsonObject &params)
 {
     if (m_webSocket->state() != QAbstractSocket::ConnectedState) {
-        // Auto-connect to local bridge
         m_webSocket->open(QUrl(QString("ws://localhost:%1").arg(m_port)));
-        // Give it a moment, then send
         QTimer::singleShot(500, this, [this, command, params]() {
             if (m_webSocket->state() == QAbstractSocket::ConnectedState) {
-                QJsonObject cmd;
-                cmd["command"] = command;
-                if (!params.isEmpty()) cmd["params"] = params;
-                m_webSocket->sendTextMessage(
-                    QString::fromUtf8(QJsonDocument(cmd).toJson(QJsonDocument::Compact)));
+                QJsonObject cmd; cmd["command"]=command;
+                if (!params.isEmpty()) cmd["params"]=params;
+                m_webSocket->sendTextMessage(QString::fromUtf8(
+                    QJsonDocument(cmd).toJson(QJsonDocument::Compact)));
             }
         });
     } else {
-        QJsonObject cmd;
-        cmd["command"] = command;
-        if (!params.isEmpty()) cmd["params"] = params;
-        m_webSocket->sendTextMessage(
-            QString::fromUtf8(QJsonDocument(cmd).toJson(QJsonDocument::Compact)));
+        QJsonObject cmd; cmd["command"]=command;
+        if (!params.isEmpty()) cmd["params"]=params;
+        m_webSocket->sendTextMessage(QString::fromUtf8(
+            QJsonDocument(cmd).toJson(QJsonDocument::Compact)));
     }
 }

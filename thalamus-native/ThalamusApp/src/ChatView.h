@@ -17,9 +17,7 @@ class ChatView : public QWidget
 
 public:
     explicit ChatView(ConvexClient *client, QWidget *parent = nullptr);
-    ~ChatView() = default;
-
-    void sendMessage(const QString &message);
+    void sendMessage(const QString &msg);
 
 private slots:
     void onSendClicked();
@@ -29,16 +27,12 @@ private slots:
 private:
     void setupUi();
     void appendMessage(const QString &role, const QString &html);
-    void setInputEnabled(bool enabled);
-
+    void setInputEnabled(bool en);
     ConvexClient *m_client;
     MarkdownRenderer *m_mdRenderer;
-
     QTextEdit *m_chatDisplay;
     QLineEdit *m_messageInput;
-    QPushButton *m_sendButton;
-    QPushButton *m_stopButton;
-
+    QPushButton *m_sendButton, *m_stopButton;
     bool m_isStreaming;
     QString m_currentAssistantMessage;
 };
