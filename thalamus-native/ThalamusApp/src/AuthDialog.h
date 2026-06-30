@@ -1,5 +1,5 @@
-#ifndef AUTHDIALOG_H
-#define AUTHDIALOG_H
+// Thalamus AI — AuthDialog.h
+#pragma once
 
 #include <QDialog>
 #include <QLineEdit>
@@ -9,28 +9,46 @@
 
 class ConvexClient;
 
-class AuthDialog : public QDialog {
+class AuthDialog : public QDialog
+{
     Q_OBJECT
 
 public:
     explicit AuthDialog(ConvexClient *client, QWidget *parent = nullptr);
+    ~AuthDialog() = default;
+
+    bool isAuthenticated() const;
+
+signals:
+    void authenticated();
 
 private slots:
     void onSendOtp();
     void onVerifyOtp();
-    void onAuthStateChanged(bool authenticated);
+    void onOtpSent(bool success, const QString &error);
+    void onOtpVerified(bool success, const QString &error);
 
 private:
     void setupUi();
 
     ConvexClient *m_client;
-    QStackedWidget *m_stack;
-    QLineEdit *m_emailEdit;
-    QLineEdit *m_otpEdit;
-    QPushButton *m_sendBtn;
-    QPushButton *m_verifyBtn;
-    QLabel *m_statusLabel;
-    QLabel *m_titleLabel;
-};
 
-#endif // AUTHDIALOG_H
+    QStackedWidget *m_stack;
+
+    // Email step
+    QWidget *m_emailPage;
+    QLineEdit *m_emailInput;
+    QPushButton *m_sendOtpButton;
+    QLabel *m_emailError;
+
+    // OTP step
+    QWidget *m_otpPage;
+    QLabel *m_otpLabel;
+    QLineEdit *m_otpInput;
+    QPushButton *m_verifyButton;
+    QLabel *m_otpError;
+
+    QPushButton *m_backButton;
+    QString m_email;
+    bool m_authenticated;
+};
