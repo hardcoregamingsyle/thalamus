@@ -1,75 +1,52 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-Thalamus AI — Burn Bundle Installer
-Downloads and installs prerequisites before installing the main app.
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:bal="http://schemas.microsoft.com/wix/BalExtension">
+    <Bundle Name="Thalamus AI Installer"
+            Version="1.0.0"
+            Manufacturer="Thalamus AI"
+            UpgradeCode="8B5D0E93-2F4C-4A7E-9B1D-6C3A8E1F4B7D"
+            IconSourceFile="$(var.SourceDir)\Thalamus.exe"
+            AboutUrl="https://thalamus.ai"
+            Compressed="yes">
 
-Chain:
-  1. VC++ Redistributable 2022 (x64)
-  2. Qt 6 Runtime (optional, only if not statically linked)
-  3. Thalamus AI MSI
--->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
-     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
-
-    <Bundle
-        Name="Thalamus AI"
-        Version="1.0.0"
-        Manufacturer="Aphantic Corporations"
-        UpgradeCode="F1A2B3C4-D5E6-7890-ABCD-EF1234567890"
-        IconSourceFile="..\ThalamusApp\resources\icons\app.ico"
-        DisableModify="yes">
-
-        <bal:Condition
-            Message="Thalamus AI requires Windows 10 64-bit or later.">
-            <![CDATA[VersionNT64 >= 1000]]>
+        <bal:Condition Message="This application requires Windows 10 or later.">
+            <![CDATA[VersionNT >= 1000]]>
         </bal:Condition>
 
+        <!-- ── VC++ Redistributable Prerequisite ─────────────────────── -->
         <Chain>
-            <!-- VC++ Redistributable 2022 x64 -->
-            <ExePackage
-                Id="VCRedist"
-                Name="vc_redist.x64.exe"
-                Cache="no"
-                Compressed="no"
-                Perpetual="yes"
-                Permanent="yes"
-                Vital="yes"
-                DisplayName="Microsoft Visual C++ 2022 Redistributable (x64)"
-                DownloadUrl="https://aka.ms/vs/17/release/vc_redist.x64.exe"
-                InstallCommand="/install /quiet /norestart"
-                UninstallCommand="/uninstall /quiet /norestart"
-                DetectCondition="VCRedistInstalled"
-                LogPathVariable="WixBundleLog_VCRedist">
-                <ExitCode Behavior="forceReboot" />
-            </ExePackage>
+            <PackageGroupRef Id="VCRedist" />
 
-            <!-- Main MSI -->
-            <MsiPackage
-                Id="ThalamusApp"
-                SourceFile="..\build\ThalamusApp.msi"
-                Vital="yes"
-                DisplayName="Thalamus AI"
-                LogPathVariable="WixBundleLog_ThalamusApp"
-                ForcePerMachine="yes">
-                <MsiProperty Name="LAUNCH_AFTER_INSTALL" Value="[LaunchApp]" />
-                <MsiProperty Name="START_BRIDGE" Value="[StartBridge]" />
-                <MsiProperty Name="DESKTOP_SHORTCUT" Value="[DesktopShortcut]" />
-                <MsiProperty Name="AUTO_START_BRIDGE" Value="[AutoStartBridge]" />
+            <!-- Thalamus AI MSI -->
+            <MsiPackage Id="ThalamusMsi"
+                        SourceFile="$(var.SourceDir)\Thalamus-Setup-v1.0.0.msi"
+                        DisplayInternalUI="no"
+                        Vital="yes"
+                        Compressed="yes">
+                <MsiProperty Name="ALLUSERS" Value="1" />
             </MsiPackage>
         </Chain>
 
-        <!-- ── Bundle UI ─────────────────────────────────────────────────────── -->
-        <bal:WixStandardBootstrapperApplication
-            Theme="hyperlinkLarge"
-            LicenseUrl="https://thalamus.aphantic.skinticals.com"
-            LogoFile="..\ThalamusApp\resources\icons\app.ico" />
+        <!-- ── VC++ Redistributable 2022 x64 ─────────────────────────── -->
+        <Fragment>
+            <PackageGroup Id="VCRedist">
+                <ExePackage Id="vc_redist_x64"
+                            Name="vc_redist.x64.exe"
+                            SourceFile="$(var.SourceDir)\vc_redist.x64.exe"
+                            InstallCommand="/install /quiet /norestart"
+                            RepairCommand="/repair /quiet /norestart"
+                            DetectCondition="VC_REDIST_INSTALLED"
+                            Permanent="yes"
+                            Vital="yes" />
+            </PackageGroup>
+        </Fragment>
 
-        <!-- ── Variables ─────────────────────────────────────────────────────── -->
-        <Variable Name="LaunchApp" Type="string" Value="1" />
-        <Variable Name="StartBridge" Type="string" Value="1" />
-        <Variable Name="DesktopShortcut" Type="string" Value="1" />
-        <Variable Name="AutoStartBridge" Type="string" Value="1" />
-
+        <!-- ── Custom BA Theme ───────────────────────────────────────── -->
+        <BootstrapperApplicationRef Id="WixStandardBootstrapperApplication.RtfLicense">
+            <bal:WixStandardBootstrapperApplication
+                LicenseFile="$(var.SourceDir)\LICENSE.rtf"
+                SuppressOptionsUI="yes"
+                Theme="standard" />
+        </BootstrapperApplicationRef>
     </Bundle>
 </Wix>

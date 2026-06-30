@@ -13,20 +13,18 @@ BEGIN
     BEGIN
         BLOCK "040904B0"
         BEGIN
-            VALUE "CompanyName",      "Aphantic Corporations"
-            VALUE "FileDescription",  "Thalamus AI — L4.5 Agent Platform"
-            VALUE "FileVersion",      "1.0.0"
+            VALUE "CompanyName",      "Thalamus AI"
+            VALUE "FileDescription",  "Thalamus AI — Native Desktop Application"
+            VALUE "FileVersion",      "1.0.0.0"
             VALUE "InternalName",     "Thalamus"
-            VALUE "LegalCopyright",   "© 2026 Aphantic Corporations"
+            VALUE "LegalCopyright",   "Copyright (C) 2025 Thalamus AI"
             VALUE "OriginalFilename", "Thalamus.exe"
             VALUE "ProductName",      "Thalamus AI"
-            VALUE "ProductVersion",   "1.0.0"
+            VALUE "ProductVersion",   "1.0.0.0"
         END
     END
     BLOCK "VarFileInfo"
     BEGIN
-        VALUE "Translation", 0x409, 1200
+        VALUE "Translation", 0x409, 0x4B0
     END
 END
-
-1 ICON "icons/app.ico"
