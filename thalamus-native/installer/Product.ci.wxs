@@ -23,7 +23,8 @@ shortcuts, and custom actions on top.
         <SummaryInformation
             Description="Thalamus AI — The world's first L4.5 Agent Platform" />
 
-        <MajorUpgrade DowngradeErrorMessage="A newer version of Thalamus AI is already installed." />
+        <MajorUpgrade DowngradeErrorMessage="A newer version of Thalamus AI is already installed."
+                        AllowSameVersionUpgrades="yes" />
 
         <Media Id="1" Cabinet="product.cab" EmbedCab="yes" CompressionLevel="high" />
 
