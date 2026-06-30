@@ -1,334 +1,223 @@
+/**
+ * Thalamus AI — Chat View
+ * Streaming AI chat with Convex backend.
+ * Displays AI responses as rich HTML.
+ */
+
 #include "ChatView.h"
-#include <QSplitter>
+#include "ConvexClient.h"
+
+#include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QScrollArea>
+#include <QTextBrowser>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QLabel>
 #include <QScrollBar>
-#include <QTimer>
-#include <QDateTime>
-#include <QApplication>
-#include <QClipboard>
-#include <QKeyEvent>
+#include <QJsonDocument>
+#include <QJsonObject>
+
+static const QString CHAT_SYSTEM_PROMPT =
+    "You are Thalamus AI, an advanced AI assistant by Aphantic Corporations. "
+    "Be helpful, accurate, and concise. Use rich formatting.";
 
 ChatView::ChatView(ConvexClient *client, QWidget *parent)
     : QWidget(parent)
     , m_client(client)
-    , m_mdRenderer(new MarkdownRenderer(this))
-    , m_currentMode("chat")
-    , m_isReceiving(false)
+    , m_mainLayout(new QVBoxLayout(this))
+    , m_scrollArea(new QScrollArea(this))
+    , m_messagesContainer(new QWidget())
+    , m_messagesLayout(new QVBoxLayout(m_messagesContainer))
+    , m_input(new QLineEdit(this))
+    , m_sendBtn(new QPushButton("→", this))
+    , m_statusLabel(new QLabel(this))
+    , m_currentAssistant(nullptr)
+    , m_streaming(false)
 {
-    setupUI();
-
-    connect(m_client, &ConvexClient::conversationsLoaded, this, &ChatView::onConversationsLoaded);
-    connect(m_client, &ConvexClient::conversationCreated, this, &ChatView::onConversationCreated);
-    connect(m_client, &ConvexClient::messagesLoaded, this, &ChatView::onMessagesLoaded);
+    setupUi();
+    newConversation();
 }
 
-ChatView::~ChatView() {}
+void ChatView::setupUi() {
+    m_mainLayout->setContentsMargins(0, 0, 0, 0);
+    m_mainLayout->setSpacing(0);
 
-void ChatView::setupUI()
-{
-    auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(0, 0, 0, 0);
+    // Messages area
+    m_scrollArea->setWidgetResizable(true);
+    m_scrollArea->setWidget(m_messagesContainer);
+    m_scrollArea->setFrameShape(QFrame::NoFrame);
+    m_scrollArea->setStyleSheet("QScrollArea { background: #0d1117; }");
 
-    auto *splitter = new QSplitter(Qt::Horizontal, this);
+    m_messagesLayout->setContentsMargins(16, 16, 16, 16);
+    m_messagesLayout->setSpacing(12);
+    m_messagesLayout->addStretch();
 
-    // ── Sidebar: conversation list ─────────────────────────────────────────
-    m_sidebar = new QWidget();
-    auto *sidebarLayout = new QVBoxLayout(m_sidebar);
-    sidebarLayout->setContentsMargins(8, 8, 8, 8);
-    sidebarLayout->setSpacing(8);
+    m_mainLayout->addWidget(m_scrollArea, 1);
 
-    m_modeLabel = new QLabel("💬  Chat");
-    m_modeLabel->setStyleSheet("font-size: 16px; font-weight: 700; color: #fff; padding: 8px;");
-
-    m_newBtn = new QPushButton("+ New Conversation");
-    m_newBtn->setCursor(Qt::PointingHandCursor);
-    m_newBtn->setStyleSheet(
-        "QPushButton { background: #a78bfa; color: #fff; border: none; border-radius: 8px;"
-        "  padding: 10px; font-size: 12px; font-weight: 600; }"
-        "QPushButton:hover { background: #8b6ff0; }"
-    );
-
-    m_conversationList = new QListWidget();
-    m_conversationList->setStyleSheet(
-        "QListWidget { background: transparent; border: none; }"
-        "QListWidget::item { padding: 10px; border-radius: 8px; margin: 2px 0; font-size: 12px; }"
-        "QListWidget::item:selected { background: #a78bfa22; color: #a78bfa; }"
-        "QListWidget::item:hover { background: #1a1a1a; }"
-    );
-
-    sidebarLayout->addWidget(m_modeLabel);
-    sidebarLayout->addWidget(m_newBtn);
-    sidebarLayout->addWidget(m_conversationList);
-
-    // ── Chat area ──────────────────────────────────────────────────────────
-    m_chatArea = new QWidget();
-    auto *chatLayout = new QVBoxLayout(m_chatArea);
-    chatLayout->setContentsMargins(0, 0, 0, 0);
-    chatLayout->setSpacing(0);
-
-    // Messages scroll area
-    m_messageScroll = new QScrollArea();
-    m_messageScroll->setWidgetResizable(true);
-    m_messageScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_messageScroll->setStyleSheet("QScrollArea { background: #111; border: none; }");
-
-    m_messageContainer = new QWidget();
-    m_messageLayout = new QVBoxLayout(m_messageContainer);
-    m_messageLayout->setContentsMargins(16, 16, 16, 16);
-    m_messageLayout->setSpacing(12);
-    m_messageLayout->addStretch();
-
-    m_messageScroll->setWidget(m_messageContainer);
+    // Status label
+    m_statusLabel->setStyleSheet("color: #9ca3af; font-size: 11px; padding: 4px 16px;");
+    m_statusLabel->hide();
+    m_mainLayout->addWidget(m_statusLabel);
 
     // Input area
-    auto *inputLayout = new QHBoxLayout();
-    inputLayout->setContentsMargins(12, 8, 12, 12);
-    inputLayout->setSpacing(8);
+    auto *inputBar = new QWidget(this);
+    inputBar->setStyleSheet("QWidget { background: #0d1117; border-top: 1px solid #1f2937; }");
+    auto *inputLayout = new QHBoxLayout(inputBar);
+    inputLayout->setContentsMargins(16, 12, 16, 16);
 
-    m_inputEdit = new QTextEdit();
-    m_inputEdit->setPlaceholderText("Type a message... (Enter to send, Shift+Enter for new line)");
-    m_inputEdit->setMaximumHeight(80);
-    m_inputEdit->setAcceptRichText(false);
-    m_inputEdit->setStyleSheet(
-        "QTextEdit { background: #1a1a1a; border: 1px solid #333; border-radius: 12px;"
-        "  padding: 12px; font-size: 13px; color: #e0e0e0; }"
-        "QTextEdit:focus { border-color: #a78bfa; }"
-    );
+    m_input->setPlaceholderText("Ask Thalamus AI anything...");
+    m_input->setStyleSheet(
+        "QLineEdit { padding: 12px 16px; border: 1px solid #374151; border-radius: 12px; "
+        "background: #111827; color: #e5e7eb; font-size: 14px; }"
+        "QLineEdit:focus { border-color: #6366f1; }");
+    inputLayout->addWidget(m_input, 1);
 
-    m_sendBtn = new QPushButton("➤");
     m_sendBtn->setFixedSize(44, 44);
-    m_sendBtn->setCursor(Qt::PointingHandCursor);
     m_sendBtn->setStyleSheet(
-        "QPushButton { background: #a78bfa; color: #fff; border: none; border-radius: 22px; font-size: 18px; }"
-        "QPushButton:hover { background: #8b6ff0; }"
-        "QPushButton:disabled { background: #333; color: #555; }"
-    );
-    m_sendBtn->setEnabled(false);
-
-    m_statusLabel = new QLabel();
-    m_statusLabel->setStyleSheet("font-size: 11px; color: #666; padding: 0 8px;");
-
-    inputLayout->addWidget(m_inputEdit);
+        "QPushButton { background: #6366f1; color: white; border: none; border-radius: 12px; "
+        "font-size: 18px; font-weight: bold; }"
+        "QPushButton:hover { background: #818cf8; }"
+        "QPushButton:disabled { background: #374151; color: #6b7280; }");
     inputLayout->addWidget(m_sendBtn);
-    chatLayout->addWidget(m_messageScroll);
-    chatLayout->addWidget(m_statusLabel);
-    chatLayout->addLayout(inputLayout);
 
-    splitter->addWidget(m_sidebar);
-    splitter->addWidget(m_chatArea);
-    splitter->setStretchFactor(0, 1);
-    splitter->setStretchFactor(1, 3);
-    splitter->setSizes({280, 800});
+    m_mainLayout->addWidget(inputBar);
 
-    mainLayout->addWidget(splitter);
-
-    // ── Connections ────────────────────────────────────────────────────────
-    connect(m_sendBtn, &QPushButton::clicked, this, &ChatView::onSendMessage);
-    connect(m_newBtn, &QPushButton::clicked, this, &ChatView::onNewConversation);
-    connect(m_inputEdit, &QTextEdit::textChanged, this, [this]() {
-        m_sendBtn->setEnabled(!m_inputEdit->toPlainText().trimmed().isEmpty());
-    });
-
-    // Install event filter on the input for Enter key handling
-    m_inputEdit->installEventFilter(this);
-
-    connect(m_conversationList, &QListWidget::currentRowChanged, this, [this](int row) {
-        if (row >= 0) {
-            QListWidgetItem *item = m_conversationList->item(row);
-            switchConversation(item->data(Qt::UserRole).toString());
-        }
-    });
-
-    connect(m_client, &ConvexClient::queryResult, this, [this](const QJsonValue &result) {
-        Q_UNUSED(result);
-        // Handle query results routed to the right handler
-    });
+    // Connections
+    connect(m_sendBtn, &QPushButton::clicked, this, &ChatView::onSendClicked);
+    connect(m_input, &QLineEdit::returnPressed, this, &ChatView::onSendClicked);
+    connect(m_client, &ConvexClient::streamThinking, this, &ChatView::onStreamThinking);
+    connect(m_client, &ConvexClient::streamAnswerStart, this, &ChatView::onStreamAnswerStart);
+    connect(m_client, &ConvexClient::streamChunk, this, &ChatView::onStreamChunk);
+    connect(m_client, &ConvexClient::streamDone, this, &ChatView::onStreamDone);
+    connect(m_client, &ConvexClient::streamError, this, &ChatView::onStreamError);
 }
 
-bool ChatView::eventFilter(QObject *obj, QEvent *event)
-{
-    if (obj == m_inputEdit && event->type() == QEvent::KeyPress) {
-        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-        if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
-            if (!(keyEvent->modifiers() & Qt::ShiftModifier)) {
-                onSendMessage();
-                return true;
-            }
-        }
-    }
-    return QWidget::eventFilter(obj, event);
-}
-
-void ChatView::onSendMessage()
-{
-    if (!m_client->isAuthenticated()) {
-        m_statusLabel->setText("Please sign in first");
-        return;
-    }
-
-    QString content = m_inputEdit->toPlainText().trimmed();
-    if (content.isEmpty() || m_isReceiving) return;
-
-    m_inputEdit->clear();
-    m_sendBtn->setEnabled(false);
-    m_statusLabel->setText("Thinking...");
-
-    appendMessage("user", content);
-    m_history.append(QJsonObject{{"role", "user"}, {"content", content}});
-    m_isReceiving = true;
-    m_currentResponse.clear();
-
-    m_client->streamChat(
-        content,
-        m_currentMode,
-        m_history,
-        "You are Thalamus AI, a helpful AI assistant. Be concise and accurate.",
-        m_conversationId,
-        m_client->authToken(),
-        [this](const QString &chunk) {
-            if (!chunk.isEmpty()) {
-                m_currentResponse += chunk;
-                appendAssistantChunk(chunk);
-            }
-        },
-        [this](const QString &fullText, bool success) {
-            m_isReceiving = false;
-            m_sendBtn->setEnabled(true);
-            m_statusLabel->setText(success ? "Response complete" : "Error generating response");
-            if (success && !fullText.isEmpty()) {
-                m_currentResponse = fullText;
-                m_history.append(QJsonObject{{"role", "assistant"}, {"content", fullText}});
-            }
-        }
-    );
-}
-
-void ChatView::appendMessage(const QString &role, const QString &content)
-{
-    QString prefix = (role == "user") ? "👤  You" : "🤖  Thalamus";
-    QString color = (role == "user") ? "#a78bfa" : "#51cf66";
-    QString align = (role == "user") ? "right" : "left";
-
-    auto *msgWidget = new QWidget();
-    msgWidget->setStyleSheet(QString("background: %1; border-radius: 12px; padding: 12px;")
-                             .arg(role == "user" ? "#1a1a1a" : "#0d0d0d"));
-
-    auto *layout = new QVBoxLayout(msgWidget);
-    layout->setContentsMargins(12, 8, 12, 8);
-    layout->setSpacing(6);
-
-    auto *header = new QLabel(QString("<span style='font-size:11px; font-weight:600; color:%1;'>%2</span>"
-                                      " <span style='font-size:10px; color:#555;'>%3</span>")
-                              .arg(color, prefix, formatTimestamp()));
-    header->setTextFormat(Qt::RichText);
-
-    auto *contentLabel = new QLabel(m_mdRenderer->renderToHtml(content));
-    contentLabel->setTextFormat(Qt::RichText);
-    contentLabel->setWordWrap(true);
-    contentLabel->setStyleSheet("font-size: 13px; color: #e0e0e0; background: transparent;");
-    contentLabel->setMinimumWidth(200);
-    contentLabel->setMaximumWidth(700);
-
-    auto *hLayout = new QHBoxLayout();
-    if (role == "user") hLayout->addStretch();
-    hLayout->addWidget(contentLabel);
-    if (role != "user") hLayout->addStretch();
-
-    layout->addWidget(header);
-    layout->addLayout(hLayout);
-
-    // Insert before stretch
-    m_messageLayout->insertWidget(m_messageLayout->count() - 1, msgWidget);
-
-    // Scroll to bottom
-    QTimer::singleShot(50, this, [this]() {
-        m_messageScroll->verticalScrollBar()->setValue(
-            m_messageScroll->verticalScrollBar()->maximum()
-        );
-    });
-}
-
-void ChatView::appendAssistantChunk(const QString &chunk)
-{
-    // If this is the first chunk, clear any placeholder and begin a new assistant message
-    if (m_currentResponse.isEmpty() && chunk.isEmpty()) return;
-
-    m_messages.append({"assistant", chunk});
-    // Scroll to bottom
-    QTimer::singleShot(10, this, [this]() {
-        m_messageScroll->verticalScrollBar()->setValue(
-            m_messageScroll->verticalScrollBar()->maximum()
-        );
-    });
-}
-
-void ChatView::clearChat()
-{
-    // Remove all message widgets except spacer
-    while (m_messageLayout->count() > 1) {
-        QLayoutItem *item = m_messageLayout->takeAt(0);
-        if (item->widget()) delete item->widget();
+void ChatView::newConversation() {
+    // Clear all messages
+    QLayoutItem *item;
+    while ((item = m_messagesLayout->takeAt(0)) != nullptr) {
+        if (item->widget()) item->widget()->deleteLater();
         delete item;
     }
+    m_messagesLayout->addStretch();
     m_history = QJsonArray();
-    m_messages.clear();
+    m_conversationId.clear();
     m_currentResponse.clear();
-    m_conversationId.clear();
+    m_currentAssistant = nullptr;
+
+    // Welcome message
+    appendMessage("assistant",
+        "<div style='padding: 20px; text-align: center;'>"
+        "<h1 style='color: #f9fafb; font-size: 24px;'>🧠 Thalamus AI</h1>"
+        "<p style='color: #9ca3af; font-size: 14px; margin-top: 8px;'>"
+        "Your AI-powered research, coding, and study companion.</p>"
+        "<p style='color: #6b7280; font-size: 12px; margin-top: 4px;'>"
+        "Ask me anything to get started.</p>"
+        "</div>");
 }
 
-void ChatView::onNewConversation()
-{
-    clearChat();
-    m_conversationId.clear();
-    m_statusLabel->setText("New conversation");
+void ChatView::sendMessage(const QString &text) {
+    if (text.trimmed().isEmpty() || m_streaming) return;
+
+    m_streaming = true;
+    m_input->setEnabled(false);
+    m_sendBtn->setEnabled(false);
+    m_statusLabel->setText("Thinking...");
+    m_statusLabel->show();
+
+    appendMessage("user", QString("<div style='color: #e5e7eb;'>%1</div>").arg(text.toHtmlEscaped()));
+
+    m_history.append(QJsonObject{{"role", "user"}, {"content", text}});
+
+    m_client->streamChat(text, "chat", m_history, CHAT_SYSTEM_PROMPT, m_conversationId);
 }
 
-void ChatView::loadConversations()
-{
-    m_client->listConversations(m_currentMode);
+void ChatView::appendMessage(const QString &role, const QString &html) {
+    auto *msgWidget = new QWidget();
+    auto *msgLayout = new QVBoxLayout(msgWidget);
+    msgLayout->setContentsMargins(0, 0, 0, 0);
+
+    auto *browser = new QTextBrowser();
+    browser->setOpenExternalLinks(true);
+    browser->setFrameShape(QFrame::NoFrame);
+    browser->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    browser->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    browser->document()->setDefaultStyleSheet(
+        "body { font-family: 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.6; }"
+        "h1, h2, h3 { color: #f9fafb; }"
+        "p { color: #d1d5db; }"
+        "code { background: #1f2937; color: #34d399; padding: 2px 6px; border-radius: 4px; font-family: monospace; }"
+        "pre { background: #111827; color: #34d399; padding: 12px; border-radius: 8px; overflow-x: auto; }"
+        "pre code { background: none; padding: 0; }"
+        "a { color: #60a5fa; }"
+        "blockquote { border-left: 3px solid #374151; padding-left: 12px; color: #9ca3af; }"
+        "ul, ol { margin: 4px 0; padding-left: 20px; color: #d1d5db; }"
+        "li { margin: 2px 0; }"
+    );
+
+    if (role == "assistant") {
+        msgWidget->setStyleSheet("background: #0d1117;");
+        m_currentAssistant = browser;
+    } else {
+        msgWidget->setStyleSheet("background: #0d1117;");
+    }
+
+    browser->setHtml(html);
+    msgLayout->addWidget(browser);
+
+    // Insert before the stretch
+    int count = m_messagesLayout->count();
+    m_messagesLayout->insertWidget(count - 1, msgWidget);
 }
 
-void ChatView::switchConversation(const QString &id)
-{
-    m_conversationId = id;
-    clearChat();
-    m_client->getConversationMessages(id);
+void ChatView::scrollToBottom() {
+    QScrollBar *sb = m_scrollArea->verticalScrollBar();
+    sb->setValue(sb->maximum());
 }
 
-void ChatView::onConversationsLoaded(const QJsonArray &convs)
-{
-    m_conversationList->clear();
-    for (const QJsonValue &val : convs) {
-        QJsonObject conv = val.toObject();
-        auto *item = new QListWidgetItem(conv["title"].toString());
-        item->setData(Qt::UserRole, conv["_id"].toString());
-        m_conversationList->addItem(item);
+void ChatView::onSendClicked() {
+    QString text = m_input->text().trimmed();
+    if (!text.isEmpty()) {
+        m_input->clear();
+        sendMessage(text);
     }
 }
 
-void ChatView::onConversationCreated(const QJsonObject &conv)
-{
-    m_conversationId = conv["_id"].toString();
-    // Add to list
-    auto *item = new QListWidgetItem(conv["title"].toString());
-    item->setData(Qt::UserRole, m_conversationId);
-    m_conversationList->insertItem(0, item);
-    m_conversationList->setCurrentRow(0);
+void ChatView::onStreamThinking(const QString &chunk) {
+    m_statusLabel->setText(chunk.trimmed());
 }
 
-void ChatView::onMessagesLoaded(const QJsonArray &messages)
-{
-    for (const QJsonValue &val : messages) {
-        QJsonObject msg = val.toObject();
-        appendMessage(msg["role"].toString(), msg["content"].toString());
-        m_history.append(QJsonObject{
-            {"role", msg["role"]},
-            {"content", msg["content"]}
-        });
+void ChatView::onStreamAnswerStart() {
+    m_currentResponse.clear();
+    appendMessage("assistant", "<div style='color: #d1d5db;'></div>");
+}
+
+void ChatView::onStreamChunk(const QString &chunk) {
+    m_currentResponse += chunk;
+    if (m_currentAssistant) {
+        m_currentAssistant->setHtml(
+            QString("<div style='color: #d1d5db;'>%1</div>").arg(m_currentResponse));
+        scrollToBottom();
     }
 }
 
-QString ChatView::formatTimestamp()
-{
-    return QDateTime::currentDateTime().toString("h:mm AP");
+void ChatView::onStreamDone(const QString &fullText) {
+    m_currentResponse = fullText;
+    m_history.append(QJsonObject{{"role", "assistant"}, {"content", fullText}});
+
+    m_streaming = false;
+    m_input->setEnabled(true);
+    m_sendBtn->setEnabled(true);
+    m_statusLabel->hide();
+    scrollToBottom();
+}
+
+void ChatView::onStreamError(const QString &error) {
+    m_streaming = false;
+    m_input->setEnabled(true);
+    m_sendBtn->setEnabled(true);
+    m_statusLabel->setText("Error: " + error);
+    m_statusLabel->setStyleSheet("color: #ef4444; font-size: 11px; padding: 4px 16px;");
+    m_statusLabel->show();
 }
