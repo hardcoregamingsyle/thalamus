@@ -25,6 +25,9 @@ env:
   APP_VERSION: '1.0.0'
   INSTALLER_NAME: 'Thalamus-Setup-v1.0.0.exe'
 
+permissions:
+  contents: write
+
 jobs:
   build-installer:
     name: Build Installer
