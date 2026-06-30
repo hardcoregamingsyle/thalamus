@@ -2,93 +2,64 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QTabWidget>
 #include <QSystemTrayIcon>
 #include <QMenu>
+#include <QAction>
+#include <QTabWidget>
+#include <QVBoxLayout>
 #include <QLabel>
-#include <QStatusBar>
 #include <QPushButton>
-#include "ConvexClient.h"
-#include "ChatView.h"
-#include "ResearchView.h"
-#include "StudyView.h"
-#include "CodeModeView.h"
-#include "VMSandboxView.h"
-#include "Settings.h"
+#include <QCloseEvent>
 
-/**
- * @brief Main application window for Thalamus AI desktop app.
- *
- * Provides a tabbed interface with:
- * - Chat mode
- * - Research mode
- * - Study mode (with RAG + knowledge graph)
- * - Code mode (9-agent pipeline)
- * - VM Sandbox (QEMU + VNC)
- * - Settings / Account
- */
-class MainWindow : public QMainWindow
-{
+class ConvexClient;
+class VMBridgeManager;
+class ChatView;
+class ResearchView;
+class StudyView;
+class CodeModeView;
+class VMSandboxView;
+class Settings;
+
+class MainWindow : public QMainWindow {
     Q_OBJECT
 
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
-    void initialize();
-
-signals:
-    void vmBridgeStatusChanged(bool connected);
+    void handleUri(const QString &uri);
 
 protected:
     void closeEvent(QCloseEvent *event) override;
-    void changeEvent(QEvent *event) override;
 
 private slots:
-    void onAuthResult(bool success);
-    void onTabChanged(int index);
-    void onVmBridgeConnected();
-    void onVmBridgeDisconnected();
-    void onVmBridgeMessage(const QJsonObject &msg);
-    void onUserFetched(const QJsonObject &user);
-    void showAboutDialog();
+    void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
+    void onSettingsRequested();
+    void onAbout();
+    void onNewChat();
+    void onBridgeConnected();
+    void onBridgeDisconnected();
 
 private:
-    void setupUI();
-    void setupMenuBar();
+    void setupUi();
     void setupSystemTray();
-    void setupStatusBar();
-    void applyTheme();
-    void checkAuth();
-    void loadSettings();
-    void saveSettings();
-    void updateTitleBar();
+    void setupMenuBar();
 
-    // Core
-    ConvexClient *m_client;
-
-    // UI
-    QTabWidget *m_tabWidget;
-    ChatView *m_chatView;
-    ResearchView *m_researchView;
-    StudyView *m_studyView;
-    CodeModeView *m_codeView;
-    VMSandboxView *m_vmView;
-    Settings *m_settingsPage;
-
-    // Status bar
-    QLabel *m_statusLabel;
-    QLabel *m_bridgeStatus;
-    QLabel *m_userLabel;
-
-    // System tray
+    QTabWidget *m_tabs;
     QSystemTrayIcon *m_trayIcon;
     QMenu *m_trayMenu;
 
-    // Auth state
-    bool m_authenticated;
-    QString m_userId;
-    QString m_userName;
+    ConvexClient *m_convexClient;
+    VMBridgeManager *m_bridgeManager;
+
+    ChatView *m_chatView;
+    ResearchView *m_researchView;
+    StudyView *m_studyView;
+    CodeModeView *m_codeModeView;
+    VMSandboxView *m_vmSandboxView;
+
+    QAction *m_trayShowAction;
+    QAction *m_bridgeStatusAction;
 };
 
 #endif // MAINWINDOW_H
