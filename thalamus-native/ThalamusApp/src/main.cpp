@@ -16,10 +16,8 @@
 #include <windows.h>
 #endif
 
-static const char *APP_GUID = "thalamus-ai-7a4c9f82-1e3b-4f6d-8c0a-5b2d7e9f1a3c";
 static const char *LOCAL_SERVER_NAME = "ThalamusAISingleInstance";
 
-// Forward a thalamus:// URI to the running instance
 static void sendUriToRunningInstance(const QString &uri)
 {
     QLocalSocket socket;
@@ -31,28 +29,6 @@ static void sendUriToRunningInstance(const QString &uri)
         socket.waitForDisconnected(1000);
     }
 }
-
-// Handle WM_COPYDATA for URI scheme from browser
-#ifdef Q_OS_WIN
-static bool handleWindowsMessage(MSG *msg, Qt::HANDle *)
-{
-    if (msg->message == WM_COPYDATA) {
-        COPYDATASTRUCT *cds = reinterpret_cast<COPYDATASTRUCT *>(msg->lParam);
-        if (cds->dwData == 0x5448414C) { // 'THAL'
-            QString uri = QString::fromUtf8(
-                reinterpret_cast<const char *>(cds->lpData), cds->cbData);
-            // Find MainWindow and open URI
-            for (QWidget *w : QApplication::topLevelWidgets()) {
-                if (auto *mw = qobject_cast<MainWindow *>(w)) {
-                    mw->handleUri(uri);
-                    break;
-                }
-            }
-        }
-    }
-    return false;
-}
-#endif
 
 int main(int argc, char *argv[])
 {
@@ -66,11 +42,10 @@ int main(int argc, char *argv[])
     // Force Fusion style for consistent dark theme
     app.setStyle(QStyleFactory::create("Fusion"));
 
-    // ── Load stylesheet ─────────────────────────────────────────────────────
+    // Load dark theme stylesheet
     QFile styleFile(":/style.qss");
     if (styleFile.open(QFile::ReadOnly | QFile::Text)) {
-        QString styleSheet = QString::fromUtf8(styleFile.readAll());
-        app.setStyleSheet(styleSheet);
+        app.setStyleSheet(QString::fromUtf8(styleFile.readAll()));
         styleFile.close();
     }
 
@@ -78,46 +53,43 @@ int main(int argc, char *argv[])
     QLocalSocket pingSocket;
     pingSocket.connectToServer(LOCAL_SERVER_NAME);
     bool isFirstInstance = !pingSocket.waitForConnected(500);
+    pingSocket.disconnectFromServer();
 
     if (!isFirstInstance) {
-        // Forward any URI from argv[1] to the running instance
         if (argc > 1) {
             QString uri = QString::fromUtf8(argv[1]);
-            if (uri.startsWith("thalamus://")) {
+            if (uri.startsWith("thalamus://"))
                 sendUriToRunningInstance(uri);
-            }
         } else {
-            // Just bring the running instance to front
             sendUriToRunningInstance("thalamus://activate");
         }
         return 0;
     }
 
-    // ── Start local server for single-instance IPC ──────────────────────────
+    // Start local server for IPC
     QLocalServer localServer;
-    // Clean up stale server name if previous instance crashed
     QLocalServer::removeServer(LOCAL_SERVER_NAME);
     localServer.listen(LOCAL_SERVER_NAME);
 
-    // ── Register thalamus:// URI scheme (Windows) ───────────────────────────
+    // Register thalamus:// URI scheme (Windows)
 #ifdef Q_OS_WIN
-    QSettings uriScheme(
-        "HKEY_CURRENT_USER\\Software\\Classes\\thalamus",
-        QSettings::NativeFormat);
-    uriScheme.setValue("Default", "URL:Thalamus AI Protocol");
-    uriScheme.setValue("URL Protocol", "");
-    QSettings uriCmd(
-        "HKEY_CURRENT_USER\\Software\\Classes\\thalamus\\shell\\open\\command",
-        QSettings::NativeFormat);
-    QString appPath = QDir::toNativeSeparators(QFileInfo(argv[0]).absoluteFilePath());
-    uriCmd.setValue("Default",
-        QString("\"%1\" \"%2\"").arg(appPath).arg("%1"));
+    {
+        QSettings uriScheme(
+            "HKEY_CURRENT_USER\\Software\\Classes\\thalamus",
+            QSettings::NativeFormat);
+        uriScheme.setValue("Default", "URL:Thalamus AI Protocol");
+        uriScheme.setValue("URL Protocol", "");
 
-    // Install native event filter for WM_COPYDATA
-    // app.installNativeEventFilter(...) — handled via qApp->nativeEvent
+        QSettings uriCmd(
+            "HKEY_CURRENT_USER\\Software\\Classes\\thalamus\\shell\\open\\command",
+            QSettings::NativeFormat);
+        QString appPath = QDir::toNativeSeparators(QFileInfo(argv[0]).absoluteFilePath());
+        uriCmd.setValue("Default",
+            QString("\"%1\" \"%2\"").arg(appPath).arg("%1"));
+    }
 #endif
 
-    // ── Create main window ──────────────────────────────────────────────────
+    // Create main window
     MainWindow mainWindow;
 
     // Handle URI from second instance
@@ -138,6 +110,5 @@ int main(int argc, char *argv[])
     });
 
     mainWindow.show();
-
     return app.exec();
 }

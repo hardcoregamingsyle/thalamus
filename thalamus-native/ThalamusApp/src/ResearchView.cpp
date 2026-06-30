@@ -23,7 +23,6 @@ void ResearchView::setupUi()
     layout->setSpacing(8);
     layout->setContentsMargins(16, 16, 16, 16);
 
-    // Header
     auto *header = new QLabel("Deep Research");
     header->setStyleSheet("font-size: 18px; font-weight: bold; color: #c0c0f0;");
     layout->addWidget(header);
@@ -35,15 +34,14 @@ void ResearchView::setupUi()
     description->setStyleSheet("color: #8080a0; font-size: 13px; margin-bottom: 8px;");
     layout->addWidget(description);
 
-    // Query input
+    // Input row
     auto *inputLayout = new QHBoxLayout;
     m_queryInput = new QLineEdit;
     m_queryInput->setPlaceholderText("Enter a research topic...");
     m_queryInput->setStyleSheet(
         "QLineEdit { padding: 12px; border: 1px solid #3e3e5e; border-radius: 8px; "
         "background: #16162a; color: #e0e0f0; font-size: 14px; }"
-        "QLineEdit:focus { border-color: #6e6eff; }"
-    );
+        "QLineEdit:focus { border-color: #6e6eff; }");
     connect(m_queryInput, &QLineEdit::returnPressed, this, &ResearchView::onStartResearch);
     inputLayout->addWidget(m_queryInput, 1);
 
@@ -53,8 +51,7 @@ void ResearchView::setupUi()
         "QPushButton { padding: 10px 24px; border: none; border-radius: 8px; "
         "background: #4a4aff; color: white; font-size: 14px; font-weight: bold; }"
         "QPushButton:hover { background: #5a5aff; }"
-        "QPushButton:disabled { background: #2a2a4a; color: #606080; }"
-    );
+        "QPushButton:disabled { background: #2a2a4a; color: #606080; }");
     connect(m_startButton, &QPushButton::clicked, this, &ResearchView::onStartResearch);
     inputLayout->addWidget(m_startButton);
 
@@ -63,28 +60,25 @@ void ResearchView::setupUi()
     m_stopButton->setStyleSheet(
         "QPushButton { padding: 10px 24px; border: none; border-radius: 8px; "
         "background: #ff4a4a; color: white; font-size: 14px; font-weight: bold; }"
-        "QPushButton:hover { background: #ff5a5a; }"
-    );
+        "QPushButton:hover { background: #ff5a5a; }");
     m_stopButton->hide();
     connect(m_stopButton, &QPushButton::clicked, this, [this]() {
         m_client->cancelStream();
         onStreamDone();
     });
     inputLayout->addWidget(m_stopButton);
-
     layout->addLayout(inputLayout);
 
-    // Progress bar
+    // Indeterminate progress bar
     m_progressBar = new QProgressBar;
-    m_progressBar->setRange(0, 0); // indeterminate
+    m_progressBar->setRange(0, 0);
     m_progressBar->setStyleSheet(
         "QProgressBar { border: none; border-radius: 4px; background: #1e1e32; height: 6px; }"
-        "QProgressBar::chunk { background: #4a4aff; border-radius: 4px; }"
-    );
+        "QProgressBar::chunk { background: #4a4aff; border-radius: 4px; }");
     m_progressBar->hide();
     layout->addWidget(m_progressBar);
 
-    // Splitter: Sources tree + Result
+    // Splitter: sources + result
     auto *splitter = new QSplitter(Qt::Horizontal, this);
 
     m_sourcesTree = new QTreeWidget;
@@ -95,8 +89,7 @@ void ResearchView::setupUi()
         "QTreeWidget::item { padding: 4px 8px; }"
         "QTreeWidget::item:selected { background: #2a2a4a; }"
         "QHeaderView::section { background: #1e1e32; color: #8080a0; padding: 4px; "
-        "border: none; border-bottom: 1px solid #2e2e4e; }"
-    );
+        "border: none; border-bottom: 1px solid #2e2e4e; }");
     m_sourcesTree->setMinimumWidth(200);
     m_sourcesTree->header()->setStretchLastSection(true);
     splitter->addWidget(m_sourcesTree);
@@ -105,8 +98,7 @@ void ResearchView::setupUi()
     m_resultDisplay->setReadOnly(true);
     m_resultDisplay->setStyleSheet(
         "QTextEdit { background: #16162a; border: 1px solid #2e2e4e; border-radius: 6px; "
-        "padding: 16px; color: #d0d0e8; font-size: 14px; }"
-    );
+        "padding: 16px; color: #d0d0e8; font-size: 14px; }");
     splitter->addWidget(m_resultDisplay);
 
     layout->addWidget(splitter, 1);
@@ -120,25 +112,21 @@ void ResearchView::onStartResearch()
     m_resultDisplay->clear();
     m_sourcesTree->clear();
     m_currentResult.clear();
-
     setInputEnabled(false);
     m_isResearching = true;
     m_progressBar->show();
 
-    m_client->startChatStream(
-        query, "research",
+    m_client->startChatStream(query, "research",
         [this](const QString &chunk) { onStreamChunk(chunk); },
-        [this]() { onStreamDone(); }
-    );
+        [this]() { onStreamDone(); });
 }
 
 void ResearchView::onStreamChunk(const QString &text)
 {
     m_currentResult += text;
     m_resultDisplay->setHtml(m_mdRenderer->render(m_currentResult));
-
-    QScrollBar *scrollBar = m_resultDisplay->verticalScrollBar();
-    if (scrollBar) scrollBar->setValue(scrollBar->maximum());
+    QScrollBar *sb = m_resultDisplay->verticalScrollBar();
+    if (sb) sb->setValue(sb->maximum());
 }
 
 void ResearchView::onStreamDone()

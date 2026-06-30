@@ -1,154 +1,143 @@
+// Thalamus AI — FileTreeWidget.cpp
 #include "FileTreeWidget.h"
-#include <QApplication>
-#include <QStyle>
-#include <QHeaderView>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QFileInfo>
+#include <QMenu>
 
 FileTreeWidget::FileTreeWidget(QWidget *parent)
     : QWidget(parent)
 {
-    setupUI();
+    setupUi();
 }
 
-FileTreeWidget::~FileTreeWidget() {}
-
-void FileTreeWidget::setupUI()
+void FileTreeWidget::setupUi()
 {
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(4);
+    layout->setContentsMargins(0, 0, 0, 0);
 
-    m_header = new QLabel("📁  Files");
-    m_header->setStyleSheet("font-size: 11px; font-weight: 600; color: #888; padding: 4px 8px;");
+    // Project header
+    m_projectLabel = new QLabel("Project Files");
+    m_projectLabel->setStyleSheet(
+        "color: #a0a0c0; font-size: 12px; font-weight: bold; padding: 4px 0;");
+    layout->addWidget(m_projectLabel);
 
-    m_tree = new QTreeWidget();
-    m_tree->setHeaderHidden(true);
-    m_tree->setAnimated(true);
-    m_tree->setIndentation(16);
-    m_tree->setStyleSheet(
-        "QTreeWidget { background: transparent; border: none; font-size: 11px; }"
-        "QTreeWidget::item { padding: 4px 6px; border-radius: 3px; min-height: 22px; }"
-        "QTreeWidget::item:selected { background: #a78bfa22; color: #a78bfa; }"
-        "QTreeWidget::item:hover { background: #1a1a1a; }"
-        "QTreeWidget::branch:has-children:!has-siblings:closed, "
-        "QTreeWidget::branch:closed:has-children:has-siblings { "
-        "  border-image: none; image: none; }"
-        "QTreeWidget::branch:open:has-children:!has-siblings, "
-        "QTreeWidget::branch:open:has-children:has-siblings { "
-        "  border-image: none; image: none; }"
-    );
+    // Action buttons
+    auto *buttonLayout = new QHBoxLayout;
+    buttonLayout->setSpacing(4);
 
-    connect(m_tree, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int) {
-        if (item && !item->childCount()) { // Only files (leaf nodes)
+    m_newFileButton = new QPushButton("+ File");
+    m_newFileButton->setCursor(Qt::PointingHandCursor);
+    m_newFileButton->setStyleSheet(
+        "QPushButton { padding: 4px 10px; border: 1px solid #3e3e5e; border-radius: 4px; "
+        "background: transparent; color: #8080a0; font-size: 11px; }"
+        "QPushButton:hover { border-color: #6e6eff; color: #c0c0f0; }");
+    connect(m_newFileButton, &QPushButton::clicked, this, &FileTreeWidget::newFileRequested);
+    buttonLayout->addWidget(m_newFileButton);
+
+    m_newFolderButton = new QPushButton("+ Folder");
+    m_newFolderButton->setCursor(Qt::PointingHandCursor);
+    m_newFolderButton->setStyleSheet(m_newFileButton->styleSheet());
+    connect(m_newFolderButton, &QPushButton::clicked, this, &FileTreeWidget::newFolderRequested);
+    buttonLayout->addWidget(m_newFolderButton);
+
+    buttonLayout->addStretch();
+    layout->addLayout(buttonLayout);
+
+    // Tree widget
+    m_treeWidget = new QTreeWidget;
+    m_treeWidget->setHeaderHidden(true);
+    m_treeWidget->setAnimated(true);
+    m_treeWidget->setIndentation(16);
+    m_treeWidget->setStyleSheet(
+        "QTreeWidget { background: #16162a; border: 1px solid #2e2e4e; border-radius: 6px; "
+        "color: #c0c0e0; font-size: 12px; }"
+        "QTreeWidget::item { padding: 4px 8px; }"
+        "QTreeWidget::item:selected { background: #2a2a4a; color: #c0c0ff; }"
+        "QTreeWidget::item:hover { background: #1e1e36; }");
+
+    connect(m_treeWidget, &QTreeWidget::itemDoubleClicked,
+            this, [this](QTreeWidgetItem *item, int) {
+        if (item && !item->childCount()) {
             emit fileSelected(item->data(0, Qt::UserRole).toString());
         }
     });
 
-    connect(m_tree, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item, int) {
-        if (item && !item->childCount()) {
-            emit fileDoubleClicked(item->data(0, Qt::UserRole).toString());
+    // Context menu
+    m_treeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_treeWidget, &QTreeWidget::customContextMenuRequested,
+            this, [this](const QPoint &pos) {
+        QTreeWidgetItem *item = m_treeWidget->itemAt(pos);
+        if (item) {
+            QMenu menu(this);
+            menu.setStyleSheet(
+                "QMenu { background: #1e1e32; border: 1px solid #2e2e4e; color: #c0c0e0; }"
+                "QMenu::item:selected { background: #2a2a4a; }");
+
+            QAction *openAction = menu.addAction("Open");
+            connect(openAction, &QAction::triggered, this, [this, item]() {
+                emit fileSelected(item->data(0, Qt::UserRole).toString());
+            });
+
+            if (!item->childCount()) {
+                QAction *deleteAction = menu.addAction("Delete");
+                connect(deleteAction, &QAction::triggered, this, [this, item]() {
+                    emit fileDeleted(item->data(0, Qt::UserRole).toString());
+                });
+            }
+
+            menu.exec(m_treeWidget->viewport()->mapToGlobal(pos));
         }
     });
 
-    layout->addWidget(m_header);
-    layout->addWidget(m_tree);
+    layout->addWidget(m_treeWidget, 1);
 }
 
-QString FileTreeWidget::getFileIcon(const QString &fileName)
+void FileTreeWidget::loadFiles(const QJsonArray &files)
 {
-    if (fileName.endsWith(".ts") || fileName.endsWith(".tsx")) return "🔵";
-    if (fileName.endsWith(".js") || fileName.endsWith(".jsx")) return "🟡";
-    if (fileName.endsWith(".py")) return "🐍";
-    if (fileName.endsWith(".css") || fileName.endsWith(".scss")) return "🎨";
-    if (fileName.endsWith(".html") || fileName.endsWith(".htm")) return "🌐";
-    if (fileName.endsWith(".json")) return "📋";
-    if (fileName.endsWith(".md")) return "📝";
-    if (fileName.endsWith(".yml") || fileName.endsWith(".yaml")) return "⚙️";
-    if (fileName.endsWith(".exe") || fileName.endsWith(".dll")) return "⚡";
-    if (fileName == "Dockerfile" || fileName.endsWith("Dockerfile")) return "🐳";
-    if (fileName.endsWith(".gitignore")) return "🙈";
-    if (fileName.endsWith(".ico") || fileName.endsWith(".png") || fileName.endsWith(".jpg")) return "🖼️";
-    if (fileName.endsWith(".c") || fileName.endsWith(".cpp") || fileName.endsWith(".h")) return "⚡";
-    if (fileName.endsWith(".rs")) return "🦀";
-    if (fileName.endsWith(".go")) return "🔷";
-    if (fileName.endsWith(".sh") || fileName.endsWith(".bat")) return "📜";
-    return "📄";
+    m_treeWidget->clear();
+    populateTree(files, nullptr);
 }
 
-QString FileTreeWidget::getFileType(const QString &fileName)
+void FileTreeWidget::populateTree(const QJsonArray &files, QTreeWidgetItem *parentItem)
 {
-    int dot = fileName.lastIndexOf('.');
-    if (dot >= 0) return fileName.mid(dot + 1).toLower();
-    return "unknown";
-}
-
-void FileTreeWidget::setFiles(const QJsonArray &files)
-{
-    m_tree->clear();
     for (const QJsonValue &val : files) {
-        addFileToTree(nullptr, val.toString());
-    }
-}
+        QJsonObject file = val.toObject();
+        QString name = file["name"].toString();
+        QString path = file["path"].toString();
+        bool isDir = file["type"].toString() == "directory";
 
-void FileTreeWidget::setFileObjects(const QJsonArray &files)
-{
-    m_tree->clear();
-    for (const QJsonValue &val : files) {
-        QJsonObject fileObj = val.toObject();
-        QString path = fileObj["filepath"].toString();
-        if (path.isEmpty()) path = fileObj["path"].toString();
-        if (path.isEmpty()) continue;
+        auto *item = parentItem
+            ? new QTreeWidgetItem(parentItem)
+            : new QTreeWidgetItem(m_treeWidget);
 
-        QTreeWidgetItem *root = nullptr;
-        for (int i = 0; i < m_tree->topLevelItemCount(); i++) {
-            if (m_tree->topLevelItem(i)->data(0, Qt::UserRole).toString() == path) {
-                root = m_tree->topLevelItem(i);
-                break;
-            }
+        item->setText(0, name);
+        item->setData(0, Qt::UserRole, path);
+
+        if (isDir) {
+            item->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
+            QJsonArray children = file["children"].toArray();
+            populateTree(children, item);
         }
 
-        QString icon = getFileIcon(path);
-        auto *item = new QTreeWidgetItem();
-        item->setText(0, icon + "  " + path.section('/', -1));
-        item->setData(0, Qt::UserRole, path);
-        item->setToolTip(0, path);
-        m_tree->addTopLevelItem(item);
+        // Set icon based on extension
+        QString ext = QFileInfo(name).suffix().toLower();
+        if (ext == "cpp" || ext == "h" || ext == "hpp")
+            item->setForeground(0, QColor("#6e9eff"));
+        else if (ext == "js" || ext == "ts" || ext == "jsx" || ext == "tsx")
+            item->setForeground(0, QColor("#f0db4f"));
+        else if (ext == "py")
+            item->setForeground(0, QColor("#3572A5"));
+        else if (ext == "json" || ext == "yaml" || ext == "yml")
+            item->setForeground(0, QColor("#5a5a7a"));
     }
 }
 
-void FileTreeWidget::clearFiles()
+void FileTreeWidget::clear()
 {
-    m_tree->clear();
-}
-
-void FileTreeWidget::addFileToTree(QTreeWidgetItem *root, const QString &path)
-{
-    QString icon = getFileIcon(path);
-    auto *item = new QTreeWidgetItem();
-    item->setText(0, icon + "  " + path.section('/', -1));
-    item->setData(0, Qt::UserRole, path);
-    item->setToolTip(0, path);
-
-    if (root) {
-        root->addChild(item);
-    } else {
-        m_tree->addTopLevelItem(item);
-    }
-}
-
-QString FileTreeWidget::selectedFilePath() const
-{
-    auto items = m_tree->selectedItems();
-    if (items.isEmpty()) return "";
-    return items.first()->data(0, Qt::UserRole).toString();
-}
-
-void FileTreeWidget::expandAll()
-{
-    m_tree->expandAll();
-}
-
-void FileTreeWidget::collapseAll()
-{
-    m_tree->collapseAll();
+    m_treeWidget->clear();
 }

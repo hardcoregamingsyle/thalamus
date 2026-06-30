@@ -8,7 +8,6 @@
 #include <QJsonArray>
 #include <QWebSocket>
 #include <QUrl>
-#include <QTimer>
 #include <functional>
 
 class ConvexClient : public QObject
@@ -19,7 +18,6 @@ public:
     explicit ConvexClient(QObject *parent = nullptr);
     ~ConvexClient();
 
-    // Base URL management
     void setBaseUrl(const QString &url);
     QString baseUrl() const;
 
@@ -29,6 +27,7 @@ public:
     void signOut();
     bool isAuthenticated() const;
     QString authToken() const;
+    void setAuthToken(const QString &token);
 
     // HTTP actions
     using ActionCallback = std::function<void(bool success, const QJsonObject &result, const QString &error)>;
