@@ -1,244 +1,175 @@
+/**
+ * Thalamus AI — Research View
+ * Deep multi-source AI-powered research mode.
+ * Structured reports with tables, citations, and analysis.
+ */
+
 #include "ResearchView.h"
-#include <QHBoxLayout>
-#include <QSplitter>
+#include "ConvexClient.h"
+
+#include <QScrollArea>
 #include <QScrollBar>
-#include <QTimer>
-#include <QDateTime>
+#include <QLabel>
+#include <QJsonDocument>
+#include <QJsonObject>
+
+static const QString RESEARCH_SYSTEM_PROMPT =
+    "You are Thalamus AI Research Mode — a deep research assistant by Aphantic Corporations. "
+    "Structure research reports with clear headings, analysis paragraphs, findings, comparisons in tables, "
+    "key insights in blockquotes, and technical examples in code blocks. Be comprehensive and cite reasoning.";
 
 ResearchView::ResearchView(ConvexClient *client, QWidget *parent)
     : QWidget(parent)
     , m_client(client)
-    , m_mdRenderer(new MarkdownRenderer(this))
-    , m_isResearching(false)
+    , m_mainLayout(new QVBoxLayout(this))
+    , m_scrollArea(new QScrollArea(this))
+    , m_messagesContainer(new QWidget())
+    , m_messagesLayout(new QVBoxLayout(m_messagesContainer))
+    , m_input(new QLineEdit(this))
+    , m_sendBtn(new QPushButton("→", this))
+    , m_statusLabel(new QLabel(this))
+    , m_currentAssistant(nullptr)
+    , m_streaming(false)
 {
-    setupUI();
+    setupUi();
+
+    // Welcome message
+    appendMessage("assistant",
+        "<div style='padding: 20px; text-align: center;'>"
+        "<h1 style='color: #f9fafb; font-size: 24px;'>🔬 Research Mode</h1>"
+        "<p style='color: #9ca3af; font-size: 14px; margin-top: 8px;'>"
+        "Deep, structured research on any topic.</p>"
+        "<p style='color: #6b7280; font-size: 12px; margin-top: 4px;'>"
+        "Enter a topic or question to begin a thorough analysis.</p>"
+        "</div>");
 }
 
-ResearchView::~ResearchView() {}
+void ResearchView::setupUi() {
+    m_mainLayout->setContentsMargins(0, 0, 0, 0);
+    m_mainLayout->setSpacing(0);
 
-void ResearchView::setupUI()
-{
-    auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(16, 16, 16, 16);
-    mainLayout->setSpacing(12);
+    m_scrollArea->setWidgetResizable(true);
+    m_scrollArea->setWidget(m_messagesContainer);
+    m_scrollArea->setFrameShape(QFrame::NoFrame);
+    m_scrollArea->setStyleSheet("QScrollArea { background: #0d1117; }");
 
-    // Header
-    auto *header = new QLabel("🔬  Deep Research");
-    header->setStyleSheet("font-size: 22px; font-weight: 700; color: #fff;");
+    m_messagesLayout->setContentsMargins(16, 16, 16, 16);
+    m_messagesLayout->setSpacing(12);
+    m_messagesLayout->addStretch();
 
-    auto *subtitle = new QLabel("Conduct comprehensive multi-source research with AI-powered analysis");
-    subtitle->setStyleSheet("font-size: 12px; color: #888;");
-    subtitle->setWordWrap(true);
+    m_mainLayout->addWidget(m_scrollArea, 1);
 
-    // Query input area
-    auto *inputContainer = new QWidget();
-    inputContainer->setStyleSheet("background: #1a1a1a; border-radius: 12px; padding: 16px;");
-    auto *inputLayout = new QVBoxLayout(inputContainer);
-    inputLayout->setSpacing(8);
+    m_statusLabel->setStyleSheet("color: #9ca3af; font-size: 11px; padding: 4px 16px;");
+    m_statusLabel->hide();
+    m_mainLayout->addWidget(m_statusLabel);
 
-    auto *queryLabel = new QLabel("Research Query");
-    queryLabel->setStyleSheet("font-size: 12px; font-weight: 600; color: #ccc;");
+    auto *inputBar = new QWidget(this);
+    inputBar->setStyleSheet("QWidget { background: #0d1117; border-top: 1px solid #1f2937; }");
+    auto *inputLayout = new QHBoxLayout(inputBar);
+    inputLayout->setContentsMargins(16, 12, 16, 16);
 
-    m_queryInput = new QTextEdit();
-    m_queryInput->setPlaceholderText("e.g., What are the latest breakthroughs in quantum computing as of 2026?");
-    m_queryInput->setMaximumHeight(100);
-    m_queryInput->setAcceptRichText(false);
-    m_queryInput->setStyleSheet(
-        "QTextEdit { background: #0d0d0d; border: 1px solid #333; border-radius: 8px;"
-        "  padding: 10px; font-size: 13px; color: #e0e0e0; }"
-        "QTextEdit:focus { border-color: #a78bfa; }"
-    );
+    m_input->setPlaceholderText("What would you like to research?");
+    m_input->setStyleSheet(
+        "QLineEdit { padding: 12px 16px; border: 1px solid #374151; border-radius: 12px; "
+        "background: #111827; color: #e5e7eb; font-size: 14px; }"
+        "QLineEdit:focus { border-color: #6366f1; }");
+    inputLayout->addWidget(m_input, 1);
 
-    // Controls
-    auto *controlsLayout = new QHBoxLayout();
-    controlsLayout->setSpacing(8);
+    m_sendBtn->setFixedSize(44, 44);
+    m_sendBtn->setStyleSheet(
+        "QPushButton { background: #6366f1; color: white; border: none; border-radius: 12px; "
+        "font-size: 18px; font-weight: bold; }"
+        "QPushButton:hover { background: #818cf8; }");
+    inputLayout->addWidget(m_sendBtn);
 
-    auto *depthLabel = new QLabel("Depth:");
-    depthLabel->setStyleSheet("font-size: 11px; color: #888;");
+    m_mainLayout->addWidget(inputBar);
 
-    m_depthCombo = new QComboBox();
-    m_depthCombo->addItems({"Quick (1 round)", "Standard (3 rounds)", "Deep (5 rounds)", "Exhaustive (10 rounds)"});
-    m_depthCombo->setCurrentIndex(1);
-    m_depthCombo->setStyleSheet(
-        "QComboBox { background: #0d0d0d; border: 1px solid #333; border-radius: 6px;"
-        "  padding: 6px 12px; font-size: 11px; color: #e0e0e0; min-width: 160px; }"
-        "QComboBox::drop-down { border: none; }"
-        "QComboBox::down-arrow { image: none; }"
-        "QComboBox:hover { border-color: #a78bfa; }"
-    );
-
-    m_researchBtn = new QPushButton("🔍  Start Research");
-    m_researchBtn->setCursor(Qt::PointingHandCursor);
-    m_researchBtn->setStyleSheet(
-        "QPushButton { background: #a78bfa; color: #fff; border: none; border-radius: 8px;"
-        "  padding: 10px 20px; font-size: 13px; font-weight: 600; }"
-        "QPushButton:hover { background: #8b6ff0; }"
-        "QPushButton:disabled { background: #333; color: #666; }"
-    );
-
-    m_clearBtn = new QPushButton("✕  Clear");
-    m_clearBtn->setCursor(Qt::PointingHandCursor);
-    m_clearBtn->setStyleSheet(
-        "QPushButton { background: transparent; color: #888; border: 1px solid #333; border-radius: 8px;"
-        "  padding: 10px 16px; font-size: 12px; }"
-        "QPushButton:hover { color: #ccc; border-color: #555; }"
-    );
-
-    controlsLayout->addWidget(depthLabel);
-    controlsLayout->addWidget(m_depthCombo);
-    controlsLayout->addStretch();
-    controlsLayout->addWidget(m_clearBtn);
-    controlsLayout->addWidget(m_researchBtn);
-
-    inputLayout->addWidget(queryLabel);
-    inputLayout->addWidget(m_queryInput);
-    inputLayout->addLayout(controlsLayout);
-
-    // Progress bar
-    m_progressBar = new QProgressBar();
-    m_progressBar->setVisible(false);
-    m_progressBar->setRange(0, 0); // Indeterminate
-    m_progressBar->setStyleSheet(
-        "QProgressBar { background: #1a1a1a; border: none; border-radius: 4px; height: 6px; text-align: center; font-size: 10px; color: transparent; }"
-        "QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #a78bfa, stop:1 #51cf66); border-radius: 4px; }"
-    );
-
-    // Results area
-    m_resultScroll = new QScrollArea();
-    m_resultScroll->setWidgetResizable(true);
-    m_resultScroll->setStyleSheet("QScrollArea { background: transparent; border: none; }");
-
-    m_resultContainer = new QWidget();
-    m_resultLayout = new QVBoxLayout(m_resultContainer);
-    m_resultLayout->setContentsMargins(0, 0, 0, 0);
-    m_resultLayout->setSpacing(16);
-
-    auto *placeholder = new QLabel("Enter a research query above and click \"Start Research\"");
-    placeholder->setAlignment(Qt::AlignCenter);
-    placeholder->setStyleSheet("font-size: 13px; color: #555; padding: 60px;");
-    m_resultLayout->addWidget(placeholder);
-
-    m_resultScroll->setWidget(m_resultContainer);
-
-    // Status
-    m_statusLabel = new QLabel();
-    m_statusLabel->setStyleSheet("font-size: 11px; color: #666;");
-
-    // Assemble
-    mainLayout->addWidget(header);
-    mainLayout->addWidget(subtitle);
-    mainLayout->addWidget(inputContainer);
-    mainLayout->addWidget(m_progressBar);
-    mainLayout->addWidget(m_resultScroll, 1);
-    mainLayout->addWidget(m_statusLabel);
-
-    // Connections
-    connect(m_researchBtn, &QPushButton::clicked, this, &ResearchView::onStartResearch);
-    connect(m_clearBtn, &QPushButton::clicked, this, &ResearchView::onClearResearch);
+    connect(m_sendBtn, &QPushButton::clicked, this, &ResearchView::onSendClicked);
+    connect(m_input, &QLineEdit::returnPressed, this, &ResearchView::onSendClicked);
+    connect(m_client, &ConvexClient::streamChunk, this, &ResearchView::onStreamChunk);
+    connect(m_client, &ConvexClient::streamDone, this, &ResearchView::onStreamDone);
+    connect(m_client, &ConvexClient::streamError, this, &ResearchView::onStreamError);
 }
 
-void ResearchView::onStartResearch()
-{
-    QString query = m_queryInput->toPlainText().trimmed();
-    if (query.isEmpty() || m_isResearching) return;
-
-    m_isResearching = true;
-    m_researchBtn->setEnabled(false);
-    m_progressBar->setVisible(true);
-    m_statusLabel->setText("Researching...");
-
-    // Clear previous results and store query for callback
-    m_researchQuery = query;
-    m_currentResearchResponse.clear();
-    onClearResearch();
-
-    QString depthLabel = m_depthCombo->currentText();
-
-    QString systemPrompt = QString(
-        "You are a deep research assistant. Conduct thorough research on the following query. "
-        "Investigate from multiple angles, find supporting evidence, consider counterarguments, "
-        "and provide a comprehensive, well-structured report with citations where possible.\n\n"
-        "Research depth: %1\n"
-        "Current date: %2"
-    ).arg(depthLabel, QDateTime::currentDateTime().toString("MMMM d, yyyy"));
-
-    // Send via streaming chat with "research" mode
-    QJsonArray history;
-
-    m_client->streamChat(
-        query,
-        "research",
-        history,
-        systemPrompt,
-        "",
-        m_client->authToken(),
-        [this](const QString &chunk) {
-            if (!chunk.isEmpty()) {
-                m_currentResearchResponse += chunk;
-            }
-        },
-        [this](const QString &text, bool success) {
-            m_isResearching = false;
-            m_researchBtn->setEnabled(true);
-            m_progressBar->setVisible(false);
-
-            if (success && !text.isEmpty()) {
-                appendResult("Research Report: " + m_researchQuery, text);
-                m_statusLabel->setText("Research complete");
-            } else {
-                m_statusLabel->setText("Research failed. Please try again.");
-            }
-        }
-    );
-}
-
-void ResearchView::appendResult(const QString &title, const QString &content)
-{
-    auto *resultWidget = new QWidget();
-    resultWidget->setStyleSheet("background: #1a1a1a; border-radius: 12px; padding: 16px;");
-    auto *layout = new QVBoxLayout(resultWidget);
-    layout->setContentsMargins(16, 12, 16, 12);
-    layout->setSpacing(8);
-
-    auto *titleLabel = new QLabel(title);
-    titleLabel->setStyleSheet("font-size: 15px; font-weight: 700; color: #a78bfa;");
-    titleLabel->setWordWrap(true);
-
-    auto *contentLabel = new QLabel(m_mdRenderer->renderToHtml(content));
-    contentLabel->setTextFormat(Qt::RichText);
-    contentLabel->setWordWrap(true);
-    contentLabel->setMinimumWidth(400);
-    contentLabel->setStyleSheet("font-size: 13px; color: #e0e0e0;");
-
-    layout->addWidget(titleLabel);
-    layout->addWidget(contentLabel);
-
-    // Remove placeholder if exists
-    if (m_resultLayout->count() == 1) {
-        QLayoutItem *item = m_resultLayout->takeAt(0);
-        if (item->widget()) item->widget()->deleteLater();
-        delete item;
+void ResearchView::onSendClicked() {
+    QString text = m_input->text().trimmed();
+    if (!text.isEmpty() && !m_streaming) {
+        m_input->clear();
+        startResearch(text);
     }
-
-    m_resultLayout->addWidget(resultWidget);
-
-    QTimer::singleShot(50, this, [this]() {
-        m_resultScroll->verticalScrollBar()->setValue(
-            m_resultScroll->verticalScrollBar()->maximum()
-        );
-    });
 }
 
-void ResearchView::onClearResearch()
-{
-    while (m_resultLayout->count() > 0) {
-        QLayoutItem *item = m_resultLayout->takeAt(0);
-        if (item->widget()) delete item->widget();
-        delete item;
-    }
+void ResearchView::startResearch(const QString &topic) {
+    m_streaming = true;
+    m_input->setEnabled(false);
+    m_sendBtn->setEnabled(false);
+    m_statusLabel->setText("🔬 Researching...");
+    m_statusLabel->show();
 
-    auto *placeholder = new QLabel("Enter a research query above and click \"Start Research\"");
-    placeholder->setAlignment(Qt::AlignCenter);
-    placeholder->setStyleSheet("font-size: 13px; color: #555; padding: 60px;");
-    m_resultLayout->addWidget(placeholder);
+    appendMessage("user", QString("<div style='color: #e5e7eb;'>%1</div>").arg(topic.toHtmlEscaped()));
+    m_history.append(QJsonObject{{"role", "user"}, {"content", topic}});
+
+    m_client->streamChat(topic, "research", m_history, RESEARCH_SYSTEM_PROMPT);
+}
+
+void ResearchView::appendMessage(const QString &role, const QString &html) {
+    auto *msgWidget = new QWidget();
+    auto *msgLayout = new QVBoxLayout(msgWidget);
+    msgLayout->setContentsMargins(0, 0, 0, 0);
+
+    auto *browser = new QTextBrowser();
+    browser->setOpenExternalLinks(true);
+    browser->setFrameShape(QFrame::NoFrame);
+    browser->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    browser->document()->setDefaultStyleSheet(
+        "body { font-family: 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.7; }"
+        "h1, h2, h3 { color: #f9fafb; }"
+        "p { color: #d1d5db; }"
+        "code { background: #1f2937; color: #34d399; padding: 2px 6px; border-radius: 4px; font-family: monospace; }"
+        "pre { background: #111827; color: #34d399; padding: 12px; border-radius: 8px; }"
+        "a { color: #60a5fa; }"
+        "blockquote { border-left: 3px solid #6366f1; padding-left: 12px; color: #c4b5fd; }"
+        "ul, ol { margin: 4px 0; padding-left: 20px; color: #d1d5db; }"
+    );
+
+    if (role == "assistant") m_currentAssistant = browser;
+
+    browser->setHtml(html);
+    msgLayout->addWidget(browser);
+
+    int count = m_messagesLayout->count();
+    m_messagesLayout->insertWidget(count - 1, msgWidget);
+}
+
+void ResearchView::scrollToBottom() {
+    QScrollBar *sb = m_scrollArea->verticalScrollBar();
+    sb->setValue(sb->maximum());
+}
+
+void ResearchView::onStreamChunk(const QString &chunk) {
+    m_currentResponse += chunk;
+    if (m_currentAssistant) {
+        m_currentAssistant->setHtml(
+            QString("<div style='color: #d1d5db;'>%1</div>").arg(m_currentResponse));
+        scrollToBottom();
+    }
+}
+
+void ResearchView::onStreamDone(const QString &fullText) {
+    m_currentResponse = fullText;
+    m_history.append(QJsonObject{{"role", "assistant"}, {"content", fullText}});
+    m_streaming = false;
+    m_input->setEnabled(true);
+    m_sendBtn->setEnabled(true);
+    m_statusLabel->hide();
+    scrollToBottom();
+}
+
+void ResearchView::onStreamError(const QString &error) {
+    m_streaming = false;
+    m_input->setEnabled(true);
+    m_sendBtn->setEnabled(true);
+    m_statusLabel->setText("Error: " + error);
+    m_statusLabel->setStyleSheet("color: #ef4444; font-size: 11px;");
+    m_statusLabel->show();
 }

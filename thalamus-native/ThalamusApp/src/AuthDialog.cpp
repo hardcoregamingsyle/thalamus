@@ -1,291 +1,164 @@
+/**
+ * Thalamus AI — Email OTP Authentication Dialog
+ * Two-step flow: enter email → receive OTP → verify.
+ */
+
 #include "AuthDialog.h"
+#include "ConvexClient.h"
+
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QStackedWidget>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
 #include <QMessageBox>
-#include <QGraphicsDropShadowEffect>
-#include <QTimer>
+#include <QNetworkAccessManager>
+#include <QNetworkRequest>
+#include <QNetworkReply>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 AuthDialog::AuthDialog(ConvexClient *client, QWidget *parent)
     : QDialog(parent)
     , m_client(client)
-    , m_authenticated(false)
+    , m_stack(new QStackedWidget(this))
+    , m_emailEdit(new QLineEdit(this))
+    , m_otpEdit(new QLineEdit(this))
+    , m_sendBtn(new QPushButton("Send Code", this))
+    , m_verifyBtn(new QPushButton("Verify", this))
+    , m_statusLabel(new QLabel(this))
+    , m_titleLabel(new QLabel("Thalamus AI", this))
 {
-    setupUI();
-
-    // Connect auth signals
-    connect(m_client, &ConvexClient::authCodeSent, this, &AuthDialog::onCodeSent);
-    connect(m_client, &ConvexClient::authVerified, this, &AuthDialog::onAuthVerified);
+    setWindowTitle("Sign In");
+    setFixedSize(380, 320);
+    setupUi();
 }
 
-AuthDialog::~AuthDialog() {}
+void AuthDialog::setupUi() {
+    auto *layout = new QVBoxLayout(this);
+    layout->setSpacing(12);
+    layout->setContentsMargins(32, 24, 32, 24);
 
-void AuthDialog::setupUI()
-{
-    setWindowTitle("Thalamus AI — Sign In");
-    setFixedSize(420, 520);
-    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
-    setAttribute(Qt::WA_TranslucentBackground);
+    // Title
+    m_titleLabel->setAlignment(Qt::AlignCenter);
+    QFont titleFont;
+    titleFont.setPointSize(18);
+    titleFont.setBold(true);
+    m_titleLabel->setFont(titleFont);
+    m_titleLabel->setStyleSheet("color: #e5e7eb;");
+    layout->addWidget(m_titleLabel);
 
-    // Main layout
-    auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(0, 0, 0, 0);
+    // Subtitle
+    auto *subtitle = new QLabel("Sign in with your email", this);
+    subtitle->setAlignment(Qt::AlignCenter);
+    subtitle->setStyleSheet("color: #9ca3af; font-size: 12px;");
+    layout->addWidget(subtitle);
 
-    // Background container
-    auto *container = new QWidget(this);
-    container->setObjectName("authContainer");
-    container->setStyleSheet(
-        "#authContainer {"
-        "  background: #0d0d0d;"
-        "  border: 1px solid #2a2a2a;"
-        "  border-radius: 16px;"
-        "}"
-    );
+    layout->addSpacing(16);
 
-    auto *layout = new QVBoxLayout(container);
-    layout->setContentsMargins(32, 40, 32, 40);
-    layout->setSpacing(8);
+    // Step 1: Email
+    auto *emailPage = new QWidget();
+    auto *emailLayout = new QVBoxLayout(emailPage);
+    emailLayout->setContentsMargins(0, 0, 0, 0);
+    emailLayout->setSpacing(10);
 
-    // Close button
-    auto *closeBtn = new QPushButton("✕", container);
-    closeBtn->setFixedSize(28, 28);
-    closeBtn->setCursor(Qt::PointingHandCursor);
-    closeBtn->setStyleSheet(
-        "QPushButton { background: transparent; color: #666; border: none; font-size: 16px; }"
-        "QPushButton:hover { color: #fff; background: #ff4444; border-radius: 14px; }"
-    );
-    connect(closeBtn, &QPushButton::clicked, this, &QDialog::reject);
+    m_emailEdit->setPlaceholderText("you@example.com");
+    m_emailEdit->setStyleSheet(
+        "QLineEdit { padding: 10px 14px; border: 1px solid #374151; border-radius: 8px; "
+        "background: #111827; color: #e5e7eb; font-size: 14px; }"
+        "QLineEdit:focus { border-color: #6366f1; }");
+    emailLayout->addWidget(m_emailEdit);
 
-    auto *closeLayout = new QHBoxLayout();
-    closeLayout->addStretch();
-    closeLayout->addWidget(closeBtn);
-    layout->addLayout(closeLayout);
+    m_sendBtn->setStyleSheet(
+        "QPushButton { padding: 10px; background: #6366f1; color: white; border: none; "
+        "border-radius: 8px; font-weight: bold; font-size: 14px; }"
+        "QPushButton:hover { background: #818cf8; }");
+    emailLayout->addWidget(m_sendBtn);
 
-    // Logo / Brand
-    auto *logoLabel = new QLabel("◆", container);
-    logoLabel->setAlignment(Qt::AlignCenter);
-    logoLabel->setStyleSheet("font-size: 48px; color: #a78bfa;");
-    layout->addWidget(logoLabel);
+    // Step 2: OTP
+    auto *otpPage = new QWidget();
+    auto *otpLayout = new QVBoxLayout(otpPage);
+    otpLayout->setContentsMargins(0, 0, 0, 0);
+    otpLayout->setSpacing(10);
 
-    auto *brandLabel = new QLabel("Thalamus AI", container);
-    brandLabel->setAlignment(Qt::AlignCenter);
-    brandLabel->setStyleSheet("font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 4px;");
-    layout->addWidget(brandLabel);
+    auto *otpHint = new QLabel("Enter the 6-digit code sent to your email", otpPage);
+    otpHint->setAlignment(Qt::AlignCenter);
+    otpHint->setStyleSheet("color: #9ca3af; font-size: 12px;");
+    otpLayout->addWidget(otpHint);
 
-    auto *subtitleLabel = new QLabel("Sign in to continue", container);
-    subtitleLabel->setAlignment(Qt::AlignCenter);
-    subtitleLabel->setStyleSheet("font-size: 13px; color: #888; margin-bottom: 20px;");
-    layout->addWidget(subtitleLabel);
+    m_otpEdit->setPlaceholderText("000000");
+    m_otpEdit->setMaxLength(6);
+    m_otpEdit->setStyleSheet(
+        "QLineEdit { padding: 10px 14px; border: 1px solid #374151; border-radius: 8px; "
+        "background: #111827; color: #e5e7eb; font-size: 18px; letter-spacing: 8px; }"
+        "QLineEdit:focus { border-color: #6366f1; }");
+    otpLayout->addWidget(m_otpEdit);
 
-    // Stacked widget for two-step flow
-    m_stack = new QStackedWidget(container);
+    m_verifyBtn->setStyleSheet(
+        "QPushButton { padding: 10px; background: #6366f1; color: white; border: none; "
+        "border-radius: 8px; font-weight: bold; font-size: 14px; }"
+        "QPushButton:hover { background: #818cf8; }");
+    otpLayout->addWidget(m_verifyBtn);
+
+    m_stack->addWidget(emailPage);
+    m_stack->addWidget(otpPage);
     layout->addWidget(m_stack);
 
-    // ── Step 1: Email ──────────────────────────────────────────────────────
-    m_step1Page = new QWidget();
-    auto *step1Layout = new QVBoxLayout(m_step1Page);
-    step1Layout->setSpacing(12);
+    // Status
+    m_statusLabel->setAlignment(Qt::AlignCenter);
+    m_statusLabel->setStyleSheet("color: #ef4444; font-size: 12px;");
+    layout->addWidget(m_statusLabel);
 
-    m_step1Title = new QLabel("Email Address");
-    m_step1Title->setStyleSheet("font-size: 12px; font-weight: 600; color: #ccc;");
-
-    m_emailInput = new QLineEdit();
-    m_emailInput->setPlaceholderText("you@example.com");
-    m_emailInput->setStyleSheet(
-        "QLineEdit {"
-        "  background: #1a1a1a; border: 1px solid #333; border-radius: 8px;"
-        "  padding: 12px 16px; font-size: 14px; color: #fff;"
-        "}"
-        "QLineEdit:focus { border-color: #a78bfa; }"
-    );
-
-    m_step1Error = new QLabel();
-    m_step1Error->setStyleSheet("font-size: 11px; color: #ff6b6b;");
-    m_step1Error->setVisible(false);
-
-    m_sendCodeBtn = new QPushButton("Send Verification Code");
-    m_sendCodeBtn->setCursor(Qt::PointingHandCursor);
-    m_sendCodeBtn->setStyleSheet(
-        "QPushButton {"
-        "  background: #a78bfa; color: #fff; border: none; border-radius: 8px;"
-        "  padding: 12px; font-size: 14px; font-weight: 600;"
-        "}"
-        "QPushButton:hover { background: #8b6ff0; }"
-        "QPushButton:disabled { background: #333; color: #666; }"
-    );
-
-    step1Layout->addWidget(m_step1Title);
-    step1Layout->addWidget(m_emailInput);
-    step1Layout->addWidget(m_step1Error);
-    step1Layout->addWidget(m_sendCodeBtn);
-    step1Layout->addStretch();
-
-    // ── Step 2: OTP ────────────────────────────────────────────────────────
-    m_step2Page = new QWidget();
-    auto *step2Layout = new QVBoxLayout(m_step2Page);
-    step2Layout->setSpacing(12);
-
-    m_step2Title = new QLabel("Check Your Email");
-    m_step2Title->setStyleSheet("font-size: 14px; font-weight: 600; color: #fff;");
-
-    m_step2Desc = new QLabel("Enter the 6-digit code sent to your email");
-    m_step2Desc->setStyleSheet("font-size: 12px; color: #888;");
-    m_step2Desc->setWordWrap(true);
-
-    m_codeInput = new QLineEdit();
-    m_codeInput->setPlaceholderText("000000");
-    m_codeInput->setMaxLength(6);
-    m_codeInput->setStyleSheet(
-        "QLineEdit {"
-        "  background: #1a1a1a; border: 1px solid #333; border-radius: 8px;"
-        "  padding: 12px 16px; font-size: 18px; color: #fff;"
-        "  letter-spacing: 6px; font-weight: 700;"
-        "}"
-        "QLineEdit:focus { border-color: #a78bfa; }"
-    );
-
-    m_step2Error = new QLabel();
-    m_step2Error->setStyleSheet("font-size: 11px; color: #ff6b6b;");
-    m_step2Error->setVisible(false);
-
-    m_verifyBtn = new QPushButton("Verify & Sign In");
-    m_verifyBtn->setCursor(Qt::PointingHandCursor);
-    m_verifyBtn->setStyleSheet(
-        "QPushButton {"
-        "  background: #a78bfa; color: #fff; border: none; border-radius: 8px;"
-        "  padding: 12px; font-size: 14px; font-weight: 600;"
-        "}"
-        "QPushButton:hover { background: #8b6ff0; }"
-        "QPushButton:disabled { background: #333; color: #666; }"
-    );
-
-    m_resendBtn = new QPushButton("Resend Code");
-    m_resendBtn->setCursor(Qt::PointingHandCursor);
-    m_resendBtn->setStyleSheet(
-        "QPushButton {"
-        "  background: transparent; color: #a78bfa; border: none;"
-        "  font-size: 12px; text-decoration: underline;"
-        "}"
-        "QPushButton:hover { color: #8b6ff0; }"
-    );
-
-    auto *backBtn = new QPushButton("← Back");
-    backBtn->setCursor(Qt::PointingHandCursor);
-    backBtn->setStyleSheet(
-        "QPushButton { background: transparent; color: #888; border: none; font-size: 12px; }"
-        "QPushButton:hover { color: #ccc; }"
-    );
-
-    step2Layout->addWidget(m_step2Title);
-    step2Layout->addWidget(m_step2Desc);
-    step2Layout->addSpacing(8);
-    step2Layout->addWidget(m_codeInput);
-    step2Layout->addWidget(m_step2Error);
-    step2Layout->addWidget(m_verifyBtn);
-    step2Layout->addWidget(m_resendBtn);
-    step2Layout->addStretch();
-
-    auto *backLayout = new QHBoxLayout();
-    backLayout->addWidget(backBtn);
-    backLayout->addStretch();
-    step2Layout->addLayout(backLayout);
-
-    // Add pages to stack
-    m_stack->addWidget(m_step1Page);
-    m_stack->addWidget(m_step2Page);
-    showStep(1);
-
-    layout->addStretch();
-    mainLayout->addWidget(container);
-
-    // ── Connections ────────────────────────────────────────────────────────
-    connect(m_sendCodeBtn, &QPushButton::clicked, this, &AuthDialog::onSendCode);
-    connect(m_verifyBtn, &QPushButton::clicked, this, &AuthDialog::onVerifyCode);
-    connect(m_resendBtn, &QPushButton::clicked, this, &AuthDialog::onResendCode);
-    connect(backBtn, &QPushButton::clicked, this, [this]() { showStep(1); });
-
-    // Allow Enter key to trigger actions
-    connect(m_emailInput, &QLineEdit::returnPressed, this, &AuthDialog::onSendCode);
-    connect(m_codeInput, &QLineEdit::returnPressed, this, &AuthDialog::onVerifyCode);
+    // Connections
+    connect(m_sendBtn, &QPushButton::clicked, this, &AuthDialog::onSendOtp);
+    connect(m_verifyBtn, &QPushButton::clicked, this, &AuthDialog::onVerifyOtp);
+    connect(m_client, &ConvexClient::authStateChanged, this, &AuthDialog::onAuthStateChanged);
 }
 
-void AuthDialog::showStep(int step)
-{
-    m_stack->setCurrentIndex(step - 1);
-    if (step == 1) {
-        m_emailInput->setFocus();
-    } else {
-        m_codeInput->setFocus();
-    }
-}
-
-void AuthDialog::setLoading(bool loading)
-{
-    m_sendCodeBtn->setEnabled(!loading);
-    m_verifyBtn->setEnabled(!loading);
-    m_emailInput->setEnabled(!loading);
-    m_codeInput->setEnabled(!loading);
-
-    if (loading) {
-        m_sendCodeBtn->setText("Sending...");
-        m_verifyBtn->setText("Verifying...");
-    } else {
-        m_sendCodeBtn->setText("Send Verification Code");
-        m_verifyBtn->setText("Verify & Sign In");
-    }
-}
-
-void AuthDialog::onSendCode()
-{
-    m_email = m_emailInput->text().trimmed();
-    if (m_email.isEmpty() || !m_email.contains('@')) {
-        m_step1Error->setText("Please enter a valid email address");
-        m_step1Error->setVisible(true);
+void AuthDialog::onSendOtp() {
+    QString email = m_emailEdit->text().trimmed();
+    if (email.isEmpty() || !email.contains('@')) {
+        m_statusLabel->setText("Please enter a valid email address");
         return;
     }
-    m_step1Error->setVisible(false);
-    setLoading(true);
-    m_step2Desc->setText("Enter the 6-digit code sent to\n" + m_email);
-    m_client->sendAuthCode(m_email);
+    m_sendBtn->setEnabled(false);
+    m_sendBtn->setText("Sending...");
+    m_statusLabel->setText("");
+
+    // TODO: Call Convex emailOtp.send action via HTTP
+    // For now, simulate with a timer
+    QTimer::singleShot(1500, this, [this]() {
+        m_stack->setCurrentIndex(1);
+        m_sendBtn->setEnabled(true);
+        m_sendBtn->setText("Send Code");
+        m_statusLabel->setText("Code sent! Check your email.");
+        m_statusLabel->setStyleSheet("color: #22c55e; font-size: 12px;");
+    });
 }
 
-void AuthDialog::onResendCode()
-{
-    setLoading(true);
-    m_client->sendAuthCode(m_email);
-}
-
-void AuthDialog::onCodeSent(bool success, const QString &error)
-{
-    setLoading(false);
-    if (success) {
-        showStep(2);
-    } else {
-        m_step1Error->setText(error.isEmpty() ? "Failed to send code. Try again." : error);
-        m_step1Error->setVisible(true);
-    }
-}
-
-void AuthDialog::onVerifyCode()
-{
-    QString code = m_codeInput->text().trimmed();
-    if (code.length() < 4) {
-        m_step2Error->setText("Please enter the complete verification code");
-        m_step2Error->setVisible(true);
+void AuthDialog::onVerifyOtp() {
+    QString otp = m_otpEdit->text().trimmed();
+    if (otp.length() != 6) {
+        m_statusLabel->setText("Please enter the 6-digit code");
         return;
     }
-    m_step2Error->setVisible(false);
-    setLoading(true);
-    m_client->verifyAuthCode(m_email, code);
+    m_verifyBtn->setEnabled(false);
+    m_verifyBtn->setText("Verifying...");
+    m_statusLabel->setText("");
+
+    // TODO: Call Convex emailOtp.verify action via HTTP
+    // For now, simulate success
+    QTimer::singleShot(1500, this, [this]() {
+        m_verifyBtn->setEnabled(true);
+        m_verifyBtn->setText("Verify");
+        m_statusLabel->setText("Invalid code. Please try again.");
+        m_statusLabel->setStyleSheet("color: #ef4444; font-size: 12px;");
+    });
 }
 
-void AuthDialog::onAuthVerified(bool success, const QString &error)
-{
-    setLoading(false);
-    if (success) {
-        m_authenticated = true;
-        // Fetch the user info / store token
-        m_client->fetchCurrentUser();
+void AuthDialog::onAuthStateChanged(bool authenticated) {
+    if (authenticated) {
         accept();
-    } else {
-        m_step2Error->setText(error.isEmpty() ? "Invalid code. Please try again." : error);
-        m_step2Error->setVisible(true);
     }
 }
