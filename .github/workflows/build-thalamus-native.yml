@@ -1,0 +1,98 @@
+name: Build Thalamus Native Windows App
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'thalamus-native/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Qt 6.7
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.0'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          modules: 'qtwebsockets qtsvg qt5compat'
+          cache: true
+
+      - name: Setup Visual Studio shell
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Configure CMake
+        run: |
+          cd thalamus-native
+          mkdir build
+          cd build
+          cmake ..\ThalamusApp ^
+            -G "Visual Studio 17 2022" ^
+            -A x64 ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ^
+            -DBUILD_SHARED_LIBS=OFF
+        shell: cmd
+
+      - name: Build
+        run: |
+          cmake --build thalamus-native\build --config Release --parallel
+        shell: cmd
+
+      - name: Create dist directory
+        run: mkdir thalamus-native\dist
+        shell: cmd
+
+      - name: Copy executable
+        run: |
+          copy /Y thalamus-native\build\Release\Thalamus.exe thalamus-native\dist\Thalamus.exe
+        shell: cmd
+
+      - name: Install WiX Toolset
+        run: |
+          dotnet tool install --global wix --version 4.0.5
+        shell: cmd
+
+      - name: Build MSI Installer
+        run: |
+          cd thalamus-native
+          wix build installer\Product.wxs -o dist\Thalamus-Setup-v1.0.0.msi -arch x64
+        shell: cmd
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Thalamus-Native-v1.0.0
+          path: |
+            thalamus-native\dist\Thalamus.exe
+            thalamus-native\dist\Thalamus-Setup-v1.0.0.msi
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            thalamus-native\dist\Thalamus.exe
+            thalamus-native\dist\Thalamus-Setup-v1.0.0.msi
+          tag_name: ${{ github.ref_name }}
+          body: |
+            ## Thalamus AI v${{ github.ref_name }} — Native Windows Desktop
+            
+            ### What's included
+            - Thalamus.exe — Qt 6 C++ native desktop app
+            - Thalamus-Setup-v${{ github.ref_name }}.msi — WiX MSI installer
+            
+            ### Features
+            - Streaming AI Chat, Research, Study, and Code modes
+            - VM Sandbox with embedded RFB 3.8 VNC client
+            - Dark theme, system tray, auto-updater
+            - Email OTP authentication
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
