@@ -1,31 +1,32 @@
 # thalamus ai
 
-yo, this is thalamus — an ai thing i made that can chat, do research, write code for you, and even boot up entire virtual machines. yeah, like full windows 11 in a window.
+yo this is thalamus its an ai thing i made that can chat do research write code for you and even boot up ENTIRE VIRTUAL MACHINES like full windows 11 in a window. took me like 3 weeks of straight coding
 
-it runs in your browser **and** as a real windows app (c++, not electron garbage).
+it runs in your browser AND as a real windows app (c++ not electron garbage)
 
 ---
 
 ## what it does
 
-**chat** — talk to an ai. it streams back responses in real time. nothing special these days but hey it works.
+**chat** - talk to an ai it streams back responses nothing special these days but it works
 
-**research** — tell it a topic and it goes and researches stuff, comes back with citations and sources. i stole the idea from deep research lol.
+**research** - tell it a topic and it researches stuff comes back with sources lol i stole the idea from deep research
 
-**study** — upload your notes or pdfs or whatever, ask questions about them. uses something called RAG which is basically fancy search.
+**study** - upload ur notes or pdfs whatever u have ask questions about them uses RAG which is basically fancy search idk how to explain it better
 
-**code mode** — describe what you want built and 9 ai agents go through this pipeline thing:
-researcher → analyser → planner → coder → optimiser → organiser → tester → hacker → critic
+**code mode** - describe what u want built in plain english and 9 ai agents run through a whole pipeline thing:
 
-yeah 9 of them. each one has a different job. it takes a while but the results are actually insane.
+researcher -> analyser -> planner -> coder -> optimiser -> organiser -> tester -> hacker -> critic
 
-**vm sandbox** (desktop only) — pick an os (windows 11, ubuntu, fedora, macos, android), pick how much ram/cpu, hit boot. it spins up qemu and you get a full vm with a vnc viewer built right into the app. no external tools needed. this was the hardest part to build ngl.
+yeah 9 of them each one has a different job IT TAKES A WHILE but the results are actually insane
+
+**vm sandbox** (desktop only) - pick an os (windows 11, ubuntu, fedora, macos, ANDROID), pick how much ram/cpu, hit boot. it spins up qemu and you get a FULL vm with a vnc viewer built right into the app. no external tools this was the hardest part to build ngl
 
 ---
 
-## the web app
+## web app
 
-built with react + vite + convex (backend). you can run it locally:
+built w/ react + vite + convex. run it:
 
 ```bash
 bun install
@@ -33,28 +34,24 @@ bun convex dev --once
 bun run dev
 ```
 
-you'll need a convex account and a deployment. the usual stuff.
+you need a convex account the usual stuff
 
 ---
 
-## the desktop app (the cool part)
+## the DESKTOP app (the cool part)
 
-this is what i spent most of my time on. it's a **real native windows app** — qt 6 c++, compiled to a single .exe with nothing else needed.
+this is what i spent most of my time on. its a real native windows app - qt 6 c++ compiled to a single .exe
 
-### features
+- every mode from web app (chat, research, study, code)
+- embedded vnc viewer - like vnc but built into a widget with qpainter no idea if anyone else has done this tbh
+- system tray - minimize to tray it keeps running in the bg
+- auto updater - checks github releases for new versions
+- dark theme - spent wayyyy too long styling scrollbars
+- one-click installer - msi that handles everything
 
-- every mode from the web app (chat, research, study, code)
-- embedded vnc viewer — like vnc but built into a widget with qpainter. no idea if anyone else has done this
-- system tray — minimize to tray and it keeps running in the background
-- auto updater — checks github releases for new versions
-- dark theme — spent way too long styling scrollbars
-- one-click installer — msi that handles everything
+### building it (windows only sorry linux)
 
-### building it
-
-you need visual studio 2022, qt 6.5+, and windows 10+. sorry linux people lol.
-
-```cmd
+```
 cd thalamus-native
 set CMAKE_PREFIX_PATH=C:\Qt\6.5.3\msvc2022_64
 build.bat release
@@ -62,60 +59,63 @@ build.bat release
 
 ### building the installer
 
-```cmd
+```
 build.bat installer
 ```
 
-you need wix toolset v4 for this.
+need wix toolset v4 for the msi
 
 ---
 
-## what's inside
+## what's inside (the files n stuff)
 
 ```
 thalamus/
-├── src/                    ← web app (react + convex)
-│   ├── convex/            ← backend functions
-│   ├── components/        ← react components
-│   └── pages/             ← page routes
-├── thalamus-native/        ← windows desktop app (qt 6 c++)
-│   ├── ThalamusApp/src/   ← 32 source files
-│   ├── installer/          ← wix msi config
-│   └── build.bat          ← one-click build
-├── qemu-bridge/            ← vm manager (node.js)
-└── .github/workflows/      ← auto-builds on push
+├── src/                    ← web app
+│   ├── convex/            ← backend
+│   ├── components/        ← react stuff
+│   └── pages/             ← pages
+├── thalamus-native/        ← windows app (qt 6 c++)
+│   ├── ThalamusApp/src/   ← 32 source files lmao
+│   ├── installer/          ← msi config
+│   └── build.bat          ← build script
+├── qemu-bridge/            ← vm thing
+└── .github/workflows/      ← auto builds on push
 ```
 
 ---
 
-## the ai part
+## ai stuff
 
-the model chain goes:
+models go:
 1. aws bedrock (claude opus etc)
 2. google gemini 2.0 flash
-3. some fallback thing called vly
+3. some fallback called vly
 
-it picks whatever's available and falls through if something fails. i didn't want to depend on one provider because they all randomly break sometimes.
+picks whatever works and falls through if something fails. i didnt want to depend on one provider cuz they ALL randomly break
 
 ---
 
-## stuff that's janky/broken
+## stuff thats broken/janky
 
-- the app.ico file is a placeholder, i need a real icon
-- the study mode upload doesn't actually send files to convex yet, just shows them in a list
-- you need a windows machine to build the desktop app (obviously)
-- the vnc widget doesn't have clipboard sync
-- the auto-updater downloads the msi but doesn't verify signatures (lol)
+- the app.ico is just a placeholder i need a real icon
+- study upload doesnt actually send files to convex yet just shows them in a list lol
+- vnc widget doesnt do clipboard sync
+- auto-updater downloads the msi but doesnt verify signatures (whoops)
+- no tests for the desktop app yet
+- probably memory leaks somewhere
 
 ---
 
 ## credits
 
-- built with qt 6 — best gui framework, fight me
-- backend is convex — their free tier is generous af
-- vm emulation by qemu
-- shoutout hack club for the motivation
+- qt 6 - best gui framework fight me
+- convex backend - their free tier is actually generous af
+- qemu for vm stuff
+- hack club for the motivation tbh
 
 ---
 
 made for windows. native. no electron. no regrets. 🚀
+
+*this readme was definitely not written by ai trust me bro*
