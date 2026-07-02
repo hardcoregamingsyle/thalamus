@@ -83,6 +83,6 @@
         </UI>
 
         <!-- ── Icon ──────────────────────────────────────────────────── -->
-        <Icon Id="AppIcon.exe" SourceFile="..\dist\Thalamus.exe" />
+        <Icon Id="AppIcon.exe" SourceFile="..\ThalamusApp\resources\icons\app.ico" />
     </Package>
 </Wix>
