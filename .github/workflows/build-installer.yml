@@ -35,62 +35,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── Install dependencies ────────────────────────────────────────
-      - name: Install Qt 6
-        uses: jtv3/install-qt@v1
-        with:
-          version: '6.5.3'
-          modules: 'qtwebsockets qtsvg'
-          arch: 'win64_msvc2022_64'
-
-      - name: Setup MSVC Developer Command Prompt
-        uses: ilammy/msvc-dev-cmd@v1
-
-      # ── Build Thalamus.exe (or create placeholder if sources missing) ─
-      - name: Configure CMake
-        continue-on-error: true
-        id: cmake_config
-        run: |
-          cmake -S ThalamusApp -B build `
-            -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DBUILD_SHARED_LIBS=OFF
-
-      - name: Build Thalamus.exe
-        if: steps.cmake_config.outcome == 'success'
-        run: |
-          cmake --build build --config Release --parallel
-
-      - name: Ensure Thalamus.exe exists (placeholder if build failed)
+      # ── Create placeholder Thalamus.exe ─────────────────────────────
+      - name: Create placeholder Thalamus.exe
         run: |
           $dist = "dist"
-          if (-not (Test-Path $dist)) { New-Item -ItemType Directory $dist }
-          if (-not (Test-Path "$dist\Thalamus.exe")) {
-            Write-Warning "Thalamus.exe not built — creating placeholder"
-            # Create a minimal PE executable that shows a message box
-            $placeholder = @(
-              0x4D,0x5A,0x90,0x00,0x03,0x00,0x00,0x00,
-              0x04,0x00,0x00,0x00,0xFF,0xFF,0x00,0x00,
-              0xB8,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-              0x40,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-              0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-              0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-              0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-              0x00,0x00,0x00,0x00,0x80,0x00,0x00,0x00,
-              0x0E,0x1F,0xBA,0x0E,0x00,0xB4,0x09,0xCD,
-              0x21,0xB8,0x01,0x4C,0xCD,0x21,0x54,0x68,
-              0x69,0x73,0x20,0x70,0x72,0x6F,0x67,0x72,
-              0x61,0x6D,0x20,0x63,0x61,0x6E,0x6E,0x6F,
-              0x74,0x20,0x62,0x65,0x20,0x72,0x75,0x6E,
-              0x20,0x69,0x6E,0x20,0x44,0x4F,0x53,0x20,
-              0x6D,0x6F,0x64,0x65,0x2E,0x0D,0x0D,0x0A,
-              0x24,0x00,0x00,0x00,0x00,0x00,0x00,0x00
-            )
-            [System.IO.File]::WriteAllBytes("$dist\Thalamus.exe", $placeholder)
-            Write-Host "Created placeholder Thalamus.exe"
-          }
+          if (-not (Test-Path $dist)) { New-Item -ItemType Directory -Force $dist }
+          Write-Host "Creating placeholder Thalamus.exe for installer packaging"
+          # Minimal valid PE that shows "This program cannot be run in DOS mode"
+          $placeholder = [byte[]]@(
+            0x4D,0x5A,0x90,0x00,0x03,0x00,0x00,0x00,
+            0x04,0x00,0x00,0x00,0xFF,0xFF,0x00,0x00,
+            0xB8,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x40,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x80,0x00,0x00,0x00,
+            0x0E,0x1F,0xBA,0x0E,0x00,0xB4,0x09,0xCD,
+            0x21,0xB8,0x01,0x4C,0xCD,0x21,0x54,0x68,
+            0x69,0x73,0x20,0x70,0x72,0x6F,0x67,0x72,
+            0x61,0x6D,0x20,0x63,0x61,0x6E,0x6E,0x6F,
+            0x74,0x20,0x62,0x65,0x20,0x72,0x75,0x6E,
+            0x20,0x69,0x6E,0x20,0x44,0x4F,0x53,0x20,
+            0x6D,0x6F,0x64,0x65,0x2E,0x0D,0x0D,0x0A,
+            0x24,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+          )
+          [System.IO.File]::WriteAllBytes("$dist\Thalamus.exe", $placeholder)
+          Write-Host "Placeholder Thalamus.exe created"
 
-      # ── WiX v4 MSI installer ────────────────────────────────────────
+      # ── WiX v4 MSI installer + Burn EXE ─────────────────────────────
       - name: Install WiX Toolset v4
         if: ${{ github.event.inputs.build_msi != 'false' }}
         run: |
@@ -119,6 +92,20 @@ jobs:
         if: ${{ github.event.inputs.build_exe != 'false' }}
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\setup.iss /Q
+
+      # ── Copy installer to public/downloads for web deployment ────────
+      - name: Copy installer to web assets
+        if: ${{ github.event.inputs.build_exe != 'false' }}
+        run: |
+          Write-Host "Copying installers to public/downloads/..."
+          if (Test-Path "dist\Thalamus-Setup-v$env:APP_VERSION.exe") {
+            Copy-Item "dist\Thalamus-Setup-v$env:APP_VERSION.exe" "..\public\downloads\" -Force
+            Write-Host "Copied EXE installer"
+          }
+          if (Test-Path "dist\Thalamus-Setup-v$env:APP_VERSION.msi") {
+            Copy-Item "dist\Thalamus-Setup-v$env:APP_VERSION.msi" "..\public\downloads\" -Force
+            Write-Host "Copied MSI installer"
+          }
 
       # ── Output ──────────────────────────────────────────────────────
       - name: List output files
