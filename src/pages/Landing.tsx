@@ -332,7 +332,7 @@ function IntelligenceConsole({ onLaunch }: { onLaunch: () => void }) {
   );
 }
 
-const INSTALLER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/v1.0.0-native/Thalamus-Setup-v1.0.0.exe";
+const INSTALLER_URL = "/downloads/Thalamus-Setup-v1.0.0.msi";
 
 function isWindows(): boolean {
   if (typeof navigator === "undefined") return false;
