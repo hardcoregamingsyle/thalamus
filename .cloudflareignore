@@ -1,0 +1,5 @@
+# Exclude large installer binaries from Cloudflare Pages deployment
+# CF Pages has a 25 MiB per-file limit, and installers exceed that
+public/downloads/*.exe
+public/downloads/*.msi
+public/downloads/*.zip
