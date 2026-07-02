@@ -1,166 +1,93 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-    <Product Id="*"
-             Name="Thalamus AI"
-             Language="1033"
-             Version="1.0.0"
-             Manufacturer="Thalamus AI"
-             UpgradeCode="7A4C9F82-1E3B-4F6D-8C0A-5B2D7E9F1A3C">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+    <Package
+        Name="Thalamus AI"
+        Manufacturer="Thalamus AI"
+        Version="1.0.0"
+        UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+        Scope="perMachine">
 
-        <Package InstallerVersion="200"
-                 Compressed="yes"
-                 InstallScope="perMachine"
-                 Platform="x64" />
-
-        <MajorUpgrade DowngradeErrorMessage="A newer version of Thalamus AI is already installed."
-                      AllowSameVersionUpgrades="yes"
-                      Schedule="afterInstallValidate" />
+        <MajorUpgrade DowngradeErrorMessage="A newer version of Thalamus AI is already installed." />
 
         <MediaTemplate EmbedCab="yes" />
 
-        <!-- ── Directory Structure ────────────────────────────────────── -->
-        <Directory Id="TARGETDIR" Name="SourceDir">
-            <Directory Id="ProgramFiles64Folder">
-                <Directory Id="MANUFACTURERDIR" Name="Thalamus AI">
-                    <Directory Id="INSTALLDIR" Name="Thalamus AI">
+        <!-- ── Properties ──────────────────────────────────────────── -->
+        <Property Id="ARPPRODUCTICON" Value="AppIcon.exe" />
+        <Property Id="ARPHELPLINK" Value="https://thalamus.ai/support" />
+        <Property Id="ARPURLINFOABOUT" Value="https://thalamus.ai" />
+        <Property Id="ARPNOREPAIR" Value="1" />
+        <Property Id="ARPNOMODIFY" Value="1" />
 
-                        <!-- App files -->
-                        <Component Id="AppExecutable" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
-                            <File Id="ThalamusExe"
-                                  Name="Thalamus.exe"
-                                  Source="$(var.SourceDir)\Thalamus.exe"
-                                  KeyPath="yes"
-                                  Vital="yes" />
+        <!-- ── Install sequence ─────────────────────────────────────── -->
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="APPLICATIONFOLDER" Name="Thalamus AI">
+                <!-- Main executable -->
+                <Component Id="MainExecutable" Guid="B2C3D4E5-F6A7-8901-BCDE-F12345678901">
+                    <File Id="ThalamusExe" Name="Thalamus.exe" Source="..\dist\Thalamus.exe" KeyPath="yes">
+                        <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="Thalamus AI" Advertise="yes" />
+                        <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="Thalamus AI" Advertise="yes" />
+                    </File>
+                    <ProgId Id="Thalamus.Protocol" Description="Thalamus AI Protocol Handler">
+                        <Extension Id="thalamus" ContentType="application/x-thalamus">
+                            <Verb Id="open" CommandFile="[#ThalamusExe]" Argument="%1" />
+                        </Extension>
+                    </ProgId>
+                </Component>
 
-                            <Shortcut Id="StartMenuShortcut"
-                                      Directory="ProgramMenuDir"
-                                      Name="Thalamus AI"
-                                      WorkingDirectory="INSTALLDIR"
-                                      Icon="ThalamusIcon.exe"
-                                      Advertise="yes" />
-
-                            <Shortcut Id="DesktopShortcut"
-                                      Directory="DesktopFolder"
-                                      Name="Thalamus AI"
-                                      WorkingDirectory="INSTALLDIR"
-                                      Icon="ThalamusIcon.exe"
-                                      Advertise="yes" />
-                        </Component>
-
-                        <!-- VM Bridge -->
-                        <Component Id="VMBridge" Guid="B2C3D4E5-F6A7-8901-BCDE-F12345678901">
-                            <File Id="VMBridgeExe"
-                                  Name="thalamus-vm-bridge.exe"
-                                  Source="$(var.SourceDir)\thalamus-vm-bridge.exe"
-                                  Vital="yes" />
-                        </Component>
-
-                        <!-- VM Bridge auto-start -->
-                        <Component Id="VMBridgeAutoStart" Guid="C3D4E5F6-A7B8-9012-CDEF-123456789012">
-                            <RegistryValue Root="HKCU"
-                                           Key="Software\Microsoft\Windows\CurrentVersion\Run"
-                                           Name="ThalamusVMBridge"
-                                           Value="[INSTALLDIR]thalamus-vm-bridge.exe"
-                                           Type="string" />
-                        </Component>
-
-                        <!-- Data directory for VM disk images -->
-                        <Directory Id="DataDir" Name="data">
-                            <Component Id="DataDirComponent" Guid="D4E5F6A7-B8C9-0123-DEF1-234567890123">
-                                <CreateFolder />
-                            </Component>
-                        </Directory>
-                    </Directory>
-                </Directory>
-            </Directory>
-
-            <!-- Start Menu -->
-            <Directory Id="ProgramMenuFolder">
-                <Directory Id="ProgramMenuDir" Name="Thalamus AI">
-                    <Component Id="ProgramMenuDirComponent" Guid="E5F6A7B8-C9D0-1234-EF12-345678901234">
-                        <RemoveFolder Id="ProgramMenuDir" On="uninstall" />
-                        <RegistryValue Root="HKCU"
-                                       Key="Software\[Manufacturer]\[ProductName]"
-                                       Name="installed"
-                                       Type="integer"
-                                       Value="1" />
+                <!-- Data directory for VM disk images -->
+                <Directory Id="DataDirectory" Name="data">
+                    <Component Id="DataDirectoryComponent" Guid="C3D4E5F6-A7B8-9012-CDEF-123456789012">
+                        <CreateFolder />
+                        <IniFile Id="DataPathIni" Directory="DataDirectory" Name="settings.ini" Key="DataPath" Value="[DataDirectory]" />
                     </Component>
                 </Directory>
-            </Directory>
 
-            <!-- Desktop -->
-            <Directory Id="DesktopFolder" Name="Desktop" />
-        </Directory>
+                <!-- Registry entries -->
+                <Component Id="RegistryEntries" Guid="D4E5F6A7-B8C9-0123-DEF1-234567890123">
+                    <RegistryKey Root="HKLM" Key="SOFTWARE\Thalamus AI">
+                        <RegistryValue Name="InstallPath" Type="string" Value="[APPLICATIONFOLDER]" KeyPath="yes" />
+                        <RegistryValue Name="Version" Type="string" Value="1.0.0" />
+                        <RegistryValue Name="DataPath" Type="string" Value="[DataDirectory]" />
+                    </RegistryKey>
+                    <!-- URI scheme: thalamus:// -->
+                    <RegistryKey Root="HKCR" Key="thalamus">
+                        <RegistryValue Type="string" Value="URL:Thalamus AI Protocol" />
+                        <RegistryValue Name="URL Protocol" Type="string" Value="" />
+                        <RegistryKey Key="shell\open\command">
+                            <RegistryValue Type="string" Value="&quot;[APPLICATIONFOLDER]Thalamus.exe&quot; &quot;%1&quot;" />
+                        </RegistryKey>
+                    </RegistryKey>
+                </Component>
+            </Directory>
+        </StandardDirectory>
+
+        <!-- ── Start Menu folder ────────────────────────────────────── -->
+        <StandardDirectory Id="ProgramMenuFolder">
+            <Directory Id="ApplicationProgramsFolder" Name="Thalamus AI">
+                <Component Id="StartMenuEntries" Guid="E5F6A7B8-C9D0-1234-EF23-456789012345">
+                    <Shortcut Id="AppShortcut" Directory="ApplicationProgramsFolder" Name="Thalamus AI" Target="[APPLICATIONFOLDER]Thalamus.exe" WorkingDirectory="APPLICATIONFOLDER" />
+                    <Shortcut Id="UninstallShortcut" Directory="ApplicationProgramsFolder" Name="Uninstall Thalamus AI" Target="[System64Folder]msiexec.exe" Arguments="/x [ProductCode]" />
+                    <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall" />
+                    <RegistryValue Root="HKCU" Key="SOFTWARE\Thalamus AI" Name="Shortcuts" Type="integer" Value="1" KeyPath="yes" />
+                </Component>
+            </Directory>
+        </StandardDirectory>
 
         <!-- ── Features ──────────────────────────────────────────────── -->
-        <Feature Id="ProductFeature"
-                 Title="Thalamus AI"
-                 Level="1"
-                 ConfigurableDirectory="INSTALLDIR">
-
-            <ComponentRef Id="AppExecutable" />
-            <ComponentRef Id="VMBridge" />
-            <ComponentRef Id="VMBridgeAutoStart" />
-            <ComponentRef Id="DataDirComponent" />
-            <ComponentRef Id="ProgramMenuDirComponent" />
+        <Feature Id="MainFeature" Title="Thalamus AI" Level="1">
+            <ComponentRef Id="MainExecutable" />
+            <ComponentRef Id="DataDirectoryComponent" />
+            <ComponentRef Id="RegistryEntries" />
+            <ComponentRef Id="StartMenuEntries" />
         </Feature>
 
-        <!-- ── URI Scheme Registration ───────────────────────────────── -->
-        <CustomAction Id="RegisterUriScheme"
-                      Directory="INSTALLDIR"
-                      Execute="deferred"
-                      Impersonate="no"
-                      Return="check"
-                      ExeCommand="[SystemFolder]reg.exe add HKCR\thalamus /ve /d &quot;URL:Thalamus AI Protocol&quot; /f" />
+        <!-- ── UI ────────────────────────────────────────────────────── -->
+        <UI Id="WixUI">
+            <UIRef Id="WixUI_Minimal" />
+            <Property Id="WIXUI_INSTALLDIR" Value="APPLICATIONFOLDER" />
+        </UI>
 
-        <CustomAction Id="RegisterUriSchemeCommand"
-                      Directory="INSTALLDIR"
-                      Execute="deferred"
-                      Impersonate="no"
-                      Return="check"
-                      ExeCommand="[SystemFolder]reg.exe add HKCR\thalamus\shell\open\command /ve /d &quot;\&quot;[INSTALLDIR]Thalamus.exe\&quot; \&quot;%1\&quot;&quot; /f" />
-
-        <CustomAction Id="RegisterUrlProtocol"
-                      Directory="INSTALLDIR"
-                      Execute="deferred"
-                      Impersonate="no"
-                      Return="check"
-                      ExeCommand="[SystemFolder]reg.exe add HKCR\thalamus /v &quot;URL Protocol&quot; /d &quot;&quot; /f" />
-
-        <InstallExecuteSequence>
-            <Custom Action="RegisterUriScheme" After="InstallFiles" />
-            <Custom Action="RegisterUrlProtocol" After="RegisterUriScheme" />
-            <Custom Action="RegisterUriSchemeCommand" After="RegisterUrlProtocol" />
-        </InstallExecuteSequence>
-
-        <!-- ── UI ─────────────────────────────────────────────────────── -->
-        <UIRef Id="WixUI_Minimal" />
-
-        <WixVariable Id="WixUILicenseRtf" Value="$(var.SourceDir)\LICENSE.rtf" />
-
-        <!-- ── Remove Previous Version ───────────────────────────────── -->
-        <Property Id="PREVIOUSVERSIONSINSTALLED" Secure="yes" />
-        <Upgrade Id="7A4C9F82-1E3B-4F6D-8C0A-5B2D7E9F1A3C">
-            <UpgradeVersion Minimum="1.0.0"
-                            Maximum="99.0.0"
-                            Property="PREVIOUSVERSIONSINSTALLED"
-                            IncludeMinimum="yes"
-                            IncludeMaximum="no"
-                            OnlyDetect="no" />
-        </Upgrade>
-
-        <!-- Remove previous version's files -->
-        <CustomAction Id="CleanupPreviousInstall"
-                      Directory="INSTALLDIR"
-                      Execute="deferred"
-                      Impersonate="no"
-                      Return="ignore"
-                      ExeCommand="[SystemFolder]cmd.exe /c &quot;if exist [INSTALLDIR]Thalamus.exe del /f /q [INSTALLDIR]Thalamus.exe &amp; if exist [INSTALLDIR]thalamus-vm-bridge.exe del /f /q [INSTALLDIR]thalamus-vm-bridge.exe&quot;" />
-
-        <InstallExecuteSequence>
-            <Custom Action="CleanupPreviousInstall" Before="InstallFiles">
-                <![CDATA[PREVIOUSVERSIONSINSTALLED]]>
-            </Custom>
-        </InstallExecuteSequence>
-    </Product>
+        <!-- ── Icon ──────────────────────────────────────────────────── -->
+        <Icon Id="AppIcon.exe" SourceFile="..\dist\Thalamus.exe" />
+    </Package>
 </Wix>
