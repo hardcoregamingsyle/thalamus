@@ -70,6 +70,12 @@ jobs:
           dotnet tool install --global wix
           wix --version
 
+      - name: Install WiX Extensions
+        if: ${{ github.event.inputs.build_msi != 'false' }}
+        run: |
+          wix extension add WixToolset.UI.wixext
+          wix extension add WixToolset.Bal.wixext
+
       - name: Build MSI Installer (WiX v4)
         if: ${{ github.event.inputs.build_msi != 'false' }}
         shell: cmd
