@@ -27,11 +27,6 @@
                         <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="Thalamus AI" Advertise="yes" />
                         <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="Thalamus AI" Advertise="yes" />
                     </File>
-                    <ProgId Id="Thalamus.Protocol" Description="Thalamus AI Protocol Handler">
-                        <Extension Id="thalamus" ContentType="application/x-thalamus">
-                            <Verb Id="open" CommandFile="[#ThalamusExe]" Argument="%1" />
-                        </Extension>
-                    </ProgId>
                 </Component>
 
                 <!-- Data directory for VM disk images -->

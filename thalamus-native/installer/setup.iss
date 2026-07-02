@@ -18,7 +18,6 @@ AppUpdatesURL={#MyAppURL}/download
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-LicenseFile=
 PrivilegesRequired=admin
 OutputDir=..\dist
 OutputBaseFilename=Thalamus-Setup-v{#MyAppVersion}
