@@ -3,19 +3,15 @@ set -e
 
 cd "$(dirname "$0")"
 
-echo "=== Pushing fixes to GitHub ==="
+echo "=== Pushing WiX extension fix ==="
 
 git add -A
-git status --porcelain
+git commit -m "Fix WiX v4 extension resolution - add 'wix extension add' step
 
-git commit -m "Fix CI and Cloudflare Pages deployment issues
-
-- Remove Qt/CMake build from GitHub Actions workflow (C++ sources not ready)
-- Use placeholder Thalamus.exe for installer packaging instead
-- Add step to copy built installers back to public/downloads/
-- Remove oversized Thalamus-Setup-v1.0.0.exe (36MB) from public/downloads/
-- Add .cloudflareignore to exclude large binaries from CF Pages deployment
-  (CF Pages has a 25 MiB per-file limit)"
+WiX v4 requires extensions (WixToolset.UI.wixext, WixToolset.Bal.wixext)
+to be added to the extension cache via 'wix extension add' before
+they can be used in 'wix build' with the -ext flag.
+Without this step, the build fails with WIX0144."
 
 git push thalamus HEAD
 
