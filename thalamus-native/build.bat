@@ -1,90 +1,133 @@
 @echo off
-REM Thalamus AI — Build Script
-REM Usage: build.bat [release|installer]
-REM   (no arg)  = Debug build
-REM   release   = Release build (static linking)
-REM   installer = Release + MSI installer
-
 setlocal enabledelayedexpansion
+title Thalamus AI Build
 
-set SCRIPT_DIR=%~dp0
-set BUILD_DIR=%SCRIPT_DIR%build
-set DIST_DIR=%SCRIPT_DIR%dist
+:: ── Config ──────────────────────────────────────────────────────────────
+set "BUILD_DIR=%~dp0build"
+set "DIST_DIR=%~dp0dist"
+set "SOURCE_DIR=%~dp0ThalamusApp"
+set "INSTALLER_DIR=%~dp0installer"
+set "APP_VERSION=1.0.0"
 
-set BUILD_TYPE=Debug
-set GENERATOR="Visual Studio 17 2022"
+:: ── Parse arguments ─────────────────────────────────────────────────────
+set "CONFIG="
+if /I "%1"=="release" set "CONFIG=Release"
+if /I "%1"=="debug"   set "CONFIG=Debug"
+if /I "%1"=="installer" (
+    set "CONFIG=Release"
+    set "BUILD_INSTALLER=1"
+)
+if "%CONFIG%"=="" set "CONFIG=Debug"
 
-if /I "%1"=="release" set BUILD_TYPE=Release
-if /I "%1"=="installer" set BUILD_TYPE=Release
-
-set RUNTIME_LIB=MultiThreaded
-if "%BUILD_TYPE%"=="Debug" set RUNTIME_LIB=MultiThreadedDebug
-
-echo === Thalamus AI Build Script ===
-echo Build type: %BUILD_TYPE%
+echo ============================================
+echo  Thalamus AI - Windows Build Script
+echo ============================================
+echo  Configuration: %CONFIG%
+echo  Source:        %SOURCE_DIR%
+echo  Build:         %BUILD_DIR%
+echo  Dist:          %DIST_DIR%
+echo ============================================
 echo.
 
-REM Step 1: Configure CMake
-echo [1/3] Configuring CMake...
+:: ── Verify prerequisites ───────────────────────────────────────────────
+echo [1/4] Checking prerequisites...
+
+where cmake >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [ERROR] CMake not found. Install Visual Studio 2022 with C++ tools.
+    pause & exit /b 1
+)
+
+if not defined CMAKE_PREFIX_PATH (
+    if exist "C:\Qt\6.5.3\msvc2022_64" (
+        set "CMAKE_PREFIX_PATH=C:\Qt\6.5.3\msvc2022_64"
+    ) else (
+        echo [WARN] CMAKE_PREFIX_PATH not set. Searching for Qt...
+        if exist "C:\Qt" (
+            for /d %%q in ("C:\Qt\6.*") do (
+                if exist "%%q\msvc2022_64" set "CMAKE_PREFIX_PATH=%%q\msvc2022_64"
+            )
+        )
+        if not defined CMAKE_PREFIX_PATH (
+            echo [ERROR] Qt 6 not found. Set CMAKE_PREFIX_PATH or install Qt.
+            pause & exit /b 1
+        )
+    )
+)
+echo [1/4] CMake: OK
+echo [1/4] Qt:    %CMAKE_PREFIX_PATH%
+
+:: ── Configure CMake ────────────────────────────────────────────────────
+echo.
+echo [2/4] Configuring CMake...
+
 if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 
-cmake -S "%SCRIPT_DIR%ThalamusApp" -B "%BUILD_DIR%" ^
-    -G %GENERATOR% ^
+cmake -S "%SOURCE_DIR%" -B "%BUILD_DIR%" ^
+    -G "Visual Studio 17 2022" ^
     -A x64 ^
-    -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
-    -DCMAKE_MSVC_RUNTIME_LIBRARY=%RUNTIME_LIB% ^
+    -DCMAKE_BUILD_TYPE=%CONFIG% ^
+    -DCMAKE_PREFIX_PATH="%CMAKE_PREFIX_PATH%" ^
+    -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ^
     -DBUILD_SHARED_LIBS=OFF
 
-if %ERRORLEVEL% neq 0 (
-    echo ERROR: CMake configuration failed.
-    exit /b 1
+if %errorlevel% neq 0 (
+    echo [ERROR] CMake configuration failed.
+    pause & exit /b 1
 )
+echo [2/4] CMake configured successfully.
 
-REM Step 2: Build
-echo [2/3] Building...
-cmake --build "%BUILD_DIR%" --config %BUILD_TYPE% --parallel
+:: ── Build ───────────────────────────────────────────────────────────────
+echo.
+echo [3/4] Building %CONFIG%...
 
-if %ERRORLEVEL% neq 0 (
-    echo ERROR: Build failed.
-    exit /b 1
+cmake --build "%BUILD_DIR%" --config %CONFIG% --parallel
+
+if %errorlevel% neq 0 (
+    echo [ERROR] Build failed.
+    pause & exit /b 1
 )
+echo [3/4] Build succeeded.
 
-REM Step 3: Copy to dist
-echo [3/3] Copying output...
+:: ── Copy to dist ───────────────────────────────────────────────────────
+echo.
+echo [4/4] Copying output to dist...
+
 if not exist "%DIST_DIR%" mkdir "%DIST_DIR%"
-copy /Y "%BUILD_DIR%\%BUILD_TYPE%\Thalamus.exe" "%DIST_DIR%\Thalamus.exe" >nul
+
+copy /Y "%BUILD_DIR%\%CONFIG%\Thalamus.exe" "%DIST_DIR%\Thalamus.exe" >nul
+if exist "%BUILD_DIR%\%CONFIG%\Thalamus.pdb" (
+    copy /Y "%BUILD_DIR%\%CONFIG%\Thalamus.pdb" "%DIST_DIR%\Thalamus.pdb" >nul
+)
+
+echo [4/4] Output: %DIST_DIR%\Thalamus.exe
+echo.
+
+:: ── Build installer if requested ───────────────────────────────────────
+if defined BUILD_INSTALLER (
+    echo.
+    echo ============================================
+    echo  Building Installer
+    echo ============================================
+    
+    call "%INSTALLER_DIR%\create-installer.bat"
+    
+    if %errorlevel% neq 0 (
+        echo [ERROR] Installer build failed.
+        pause & exit /b 1
+    )
+    echo Installer built successfully.
+)
 
 echo.
-echo === Build complete! ===
-echo Output: %DIST_DIR%\Thalamus.exe
-
-REM Step 4: Build MSI installer (if requested)
-if /I "%1"=="installer" (
-    echo.
-    echo [4/4] Building MSI installer...
-    
-    where candle >nul 2>nul
-    if !ERRORLEVEL! neq 0 (
-        echo WARNING: WiX Toolset not found. Skipping installer build.
-        echo To build MSI, install WiX Toolset v4 from https://wixtoolset.org/
-        exit /b 0
-    )
-    
-    candle "%SCRIPT_DIR%installer\Product.wxs" -out "%BUILD_DIR%\Product.wixobj" -arch x64
-    if !ERRORLEVEL! neq 0 (
-        echo ERROR: WiX compilation failed.
-        exit /b 1
-    )
-    
-    light "%BUILD_DIR%\Product.wixobj" -out "%DIST_DIR%\Thalamus-Setup-v1.0.0.msi" -ext WixUIExtension
-    if !ERRORLEVEL! neq 0 (
-        echo ERROR: WiX linking failed.
-        exit /b 1
-    )
-    
-    echo Installer: %DIST_DIR%\Thalamus-Setup-v1.0.0.msi
-    echo.
-    echo === Full build + installer complete! ===
+echo ============================================
+echo  Build complete!
+echo  Binary:   %DIST_DIR%\Thalamus.exe
+if defined BUILD_INSTALLER (
+    echo  MSI:      %DIST_DIR%\Thalamus-Setup-v%APP_VERSION%.msi
+    echo  EXE:      %DIST_DIR%\Thalamus-Setup-v%APP_VERSION%.exe
 )
+echo ============================================
+echo.
 
-exit /b 0
+endlocal
