@@ -61,7 +61,7 @@ if not defined SKIP_MSI (
         set "MSI_FAILED=1"
     ) else (
         :: Link .wixobj to .msi
-        light "%DIST_DIR%\Product.wixobj" -out "%DIST_DIR%\Thalamus-Setup-v%APP_VERSION%.msi" -ext WixUIExtension
+        light "%DIST_DIR%\Product.wixobj" -out "%DIST_DIR%\Thalamus-Setup-v%APP_VERSION%.msi" -ext WixToolset.UI.wixext
         if %errorlevel% neq 0 (
             echo [ERROR] WiX linking (light) failed.
             set "MSI_FAILED=1"
@@ -73,7 +73,7 @@ if not defined SKIP_MSI (
                 echo [1/2] Building EXE bootstrapper (WiX Burn)...
                 candle "%INSTALLER_DIR%\Bundle.wxs" -out "%DIST_DIR%\Bundle.wixobj" -arch x64
                 if !errorlevel! equ 0 (
-                    light "%DIST_DIR%\Bundle.wixobj" -out "%DIST_DIR%\Thalamus-Setup-Burn-v%APP_VERSION%.exe" -ext WixBalExtension
+                    light "%DIST_DIR%\Bundle.wixobj" -out "%DIST_DIR%\Thalamus-Setup-Burn-v%APP_VERSION%.exe" -ext WixToolset.Bal.wixext
                     if !errorlevel! equ 0 (
                         echo [OK]   EXE (Burn): %DIST_DIR%\Thalamus-Setup-Burn-v%APP_VERSION%.exe
                     )
