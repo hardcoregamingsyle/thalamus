@@ -1,52 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
-     xmlns:bal="http://schemas.microsoft.com/wix/BalExtension">
-    <Bundle Name="Thalamus AI Installer"
-            Version="1.0.0"
-            Manufacturer="Thalamus AI"
-            UpgradeCode="8B5D0E93-2F4C-4A7E-9B1D-6C3A8E1F4B7D"
-            IconSourceFile="$(var.SourceDir)\Thalamus.exe"
-            AboutUrl="https://thalamus.ai"
-            Compressed="yes">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/bal">
 
-        <bal:Condition Message="This application requires Windows 10 or later.">
-            <![CDATA[VersionNT >= 1000]]>
+    <Bundle
+        Name="Thalamus AI Setup"
+        Version="1.0.0"
+        Manufacturer="Thalamus AI"
+        UpgradeCode="F6A7B8C9-D0E1-2345-EFAB-567890123456"
+        Copyright="Thalamus AI"
+        IconSourceFile="..\ThalamusApp\resources\icons\app.ico">
+
+        <bal:Condition Message="Thalamus AI Setup requires Windows 10 or later.">
+            VersionNT >= 100
         </bal:Condition>
 
-        <!-- ── VC++ Redistributable Prerequisite ─────────────────────── -->
+        <!-- ── VC++ Redistributable prerequisite ──────────────────── -->
         <Chain>
-            <PackageGroupRef Id="VCRedist" />
+            <ExePackage
+                Id="VCRedist"
+                Name="vc_redist.x64.exe"
+                DownloadUrl="https://aka.ms/vs/17/release/vc_redist.x64.exe"
+                InstallCommand="/install /quiet /norestart"
+                RepairCommand="/repair /quiet /norestart"
+                DetectCondition="MsiProductSearch({F2E1B3C4-D5E6-7890-ABCD-EF1234567890})"
+                PerMachine="yes"
+                Permanent="yes" />
 
-            <!-- Thalamus AI MSI -->
-            <MsiPackage Id="ThalamusMsi"
-                        SourceFile="$(var.SourceDir)\Thalamus-Setup-v1.0.0.msi"
-                        DisplayInternalUI="no"
-                        Vital="yes"
-                        Compressed="yes">
-                <MsiProperty Name="ALLUSERS" Value="1" />
-            </MsiPackage>
+            <!-- ── Thalamus MSI ───────────────────────────────────── -->
+            <MsiPackage
+                Id="ThalamusApp"
+                SourceFile="..\dist\Thalamus-Setup-v1.0.0.msi"
+                DisplayInternalUI="no"
+                Vital="yes" />
         </Chain>
-
-        <!-- ── VC++ Redistributable 2022 x64 ─────────────────────────── -->
-        <Fragment>
-            <PackageGroup Id="VCRedist">
-                <ExePackage Id="vc_redist_x64"
-                            Name="vc_redist.x64.exe"
-                            SourceFile="$(var.SourceDir)\vc_redist.x64.exe"
-                            InstallCommand="/install /quiet /norestart"
-                            RepairCommand="/repair /quiet /norestart"
-                            DetectCondition="VC_REDIST_INSTALLED"
-                            Permanent="yes"
-                            Vital="yes" />
-            </PackageGroup>
-        </Fragment>
-
-        <!-- ── Custom BA Theme ───────────────────────────────────────── -->
-        <BootstrapperApplicationRef Id="WixStandardBootstrapperApplication.RtfLicense">
-            <bal:WixStandardBootstrapperApplication
-                LicenseFile="$(var.SourceDir)\LICENSE.rtf"
-                SuppressOptionsUI="yes"
-                Theme="standard" />
-        </BootstrapperApplicationRef>
     </Bundle>
 </Wix>
