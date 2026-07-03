@@ -12,11 +12,12 @@ if git diff --cached --quiet; then
   exit 0
 fi
 
-git commit -m "fix: replace jurplel/install-qt-action with direct aqtinstall
+git commit -m "fix: use Qt 6.5.3 + direct aqtinstall + caching
 
-the action pins aqtinstall==3.3.* which can't handle Qt 6.7's new XML
-metadata format ('qt_base' package not found). replacing with direct
-pip install aqtinstall (unpinned) + python -m aqt install-qt steps."
+Qt 6.7's XML format dropped qt_base, breaking aqtinstall v3.3.
+Using Qt 6.5.3 which is fully supported. Also added actions/cache
+for the Qt install dir to avoid re-downloading on every run.
+Bumped cmake build step to use shell: cmd for cleaner env."
 
 git push thalamus HEAD:main --force
 

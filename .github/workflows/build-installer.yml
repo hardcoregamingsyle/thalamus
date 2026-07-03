@@ -29,12 +29,21 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Cache Qt
+        id: cache-qt
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\Qt
+          key: ${{ runner.os }}-Qt-6.5.3-msvc2022_64
+
       - name: Install aqtinstall
+        if: steps.cache-qt.outputs.cache-hit != 'true'
         run: pip install aqtinstall
 
-      - name: Install Qt
+      - name: Install Qt 6.5.3
+        if: steps.cache-qt.outputs.cache-hit != 'true'
         run: |
-          python -m aqt install-qt windows desktop 6.7 win64_msvc2022_64 --outputdir ${{ github.workspace }}\Qt
+          python -m aqt install-qt windows desktop 6.5.3 win64_msvc2022_64 --outputdir ${{ github.workspace }}\Qt
 
       - name: Set Qt environment
         shell: bash
@@ -49,11 +58,12 @@ jobs:
           arch: amd64
 
       - name: Build Thalamus.exe
+        shell: cmd
         run: |
           cd thalamus-native
-          if (-not (Test-Path build)) { New-Item -ItemType Directory -Force build }
+          if not exist build mkdir build
           cd build
-          cmake ../ThalamusApp -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+          cmake ..\ThalamusApp -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="%CMAKE_PREFIX_PATH%"
           cmake --build . --config Release --parallel
           cd ..
           if (-not (Test-Path dist)) { New-Item -ItemType Directory -Force dist }
