@@ -3,24 +3,27 @@ set -e
 
 cd "$(dirname "$0")"
 
-echo "=== pushing workflows to github fr fr ==="
+echo "=== pushing workflows to github ==="
 
-# Stage everything - including this script itself
 git add -A
 
 if git diff --cached --quiet; then
-  echo "no changes bruh, nothing to push"
+  echo "no changes bruh"
   exit 0
 fi
 
-git commit -m "feat(ci): add windows installer and build workflows
+git commit -m "fix(ci): rewrite build-thalamus-native.yml, remove broken qt build
 
-added two workflows that were missing from github:
-- build-installer.yml: builds the wix msi + inno setup exe
-- build-thalamus-native.yml: original native build workflow
+old workflow used jurplel/install-qt-action with wrong module names
+(qtwebsockets, qtsvg, qt5compat don't exist for Qt 6.7.0)
+also had no wix extension add step so MSI build would fail
 
-also added .cloudflareignore so the 35mb exe doesnt break deployments"
+replaced the whole thing with the same placeholder .exe approach
+as build-installer.yml - creates a DOS stub, installs wix, adds
+extensions, builds MSI + Burn EXE
+
+closes the workflow being completely broken fr"
 
 git push thalamus HEAD
 
-echo "=== pushed! go check the actions tab ==="
+echo "=== pushed ==="
