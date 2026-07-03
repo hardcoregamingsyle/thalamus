@@ -12,12 +12,11 @@ if git diff --cached --quiet; then
   exit 0
 fi
 
-git commit -m "fix: add missing QStyleFactory and QLabel includes, fix qt module names
+git commit -m "fix: replace jurplel/install-qt-action with direct aqtinstall
 
-MainWindow.cpp was missing QStyleFactory include (calls create())
-ChatView.cpp was missing QLabel include (uses QLabel widget)
-removed unused QFile and QMessageBox includes from MainWindow
-both workflows: removed 'qtnetwork' from modules (it's in qtbase)"
+the action pins aqtinstall==3.3.* which can't handle Qt 6.7's new XML
+metadata format ('qt_base' package not found). replacing with direct
+pip install aqtinstall (unpinned) + python -m aqt install-qt steps."
 
 git push thalamus HEAD:main --force
 
