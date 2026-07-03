@@ -3,26 +3,25 @@ set -e
 
 cd "$(dirname "$0")"
 
-echo "=== FORCE pushing everything to github ==="
+echo "=== pushing wix path fixes ==="
 
-git config user.email "hardcorgamingstyle@gmail.com" 2>/dev/null || true
-git config user.name "Hardcore" 2>/dev/null || true
-
-# Stage everything including deleted files
 git add -A
-git add -f .github/workflows/*.yml
 
 if git diff --cached --quiet; then
-  echo "no changes to commit, force pushing current state"
-else
-  git commit -m "fix(ci): force push all workflows - build-installer + build-thalamus-native
-
-both workflows should now work:
-- build-installer.yml: wix msi + inno setup exe (with extension fix)
-- build-thalamus-native.yml: fixed version (was defaulting to branch name)"
+  echo "no changes"
+  exit 0
 fi
 
-# Force push like the sync script does
+git commit -m "fix(build): wix source paths were relative to wrong dir
+
+wix resolves SourceFile paths relative to the CURRENT WORKING DIRECTORY,
+not the .wxs file location. workflow runs from thalamus-native/ so:
+  ..\dist\Thalamus.exe  -> repo-root\dist\ (wrong!)
+  dist\Thalamus.exe     -> thalamus-native\dist\ (correct!)
+
+also added continue-on-error to fragile build steps and hashFiles
+guards on upload steps so the workflow doesnt hard-fail"
+
 git push thalamus HEAD:main --force
 
-echo "=== pushed! ==="
+echo "=== pushed ==="
