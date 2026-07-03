@@ -18,34 +18,34 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── Install Qt 6 via aqtinstall ─────────────────────────────────
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      # ── Install Qt 6 via vcpkg ─────────────────────────────────────
+      - name: Export GitHub Actions cache env
+        uses: actions/github-script@v7
         with:
-          python-version: '3.12'
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
-      - name: Cache Qt
-        id: cache-qt
+      - name: Setup vcpkg
+        shell: pwsh
+        run: |
+          git clone https://github.com/Microsoft/vcpkg.git "$env:RUNNER_WORKSPACE/vcpkg"
+          & "$env:RUNNER_WORKSPACE/vcpkg/bootstrap-vcpkg.bat"
+          echo "VCPKG_ROOT=$env:RUNNER_WORKSPACE/vcpkg" >> "$env:GITHUB_ENV"
+
+      - name: Install Qt6 via vcpkg
+        shell: pwsh
+        run: |
+          & "$env:RUNNER_WORKSPACE/vcpkg/vcpkg" install "qtbase[core,gui,widgets,network]:x64-windows"
+
+      - name: Cache vcpkg binaries
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}\Qt
-          key: ${{ runner.os }}-Qt-6.5.3-msvc2022_64
-
-      - name: Install aqtinstall (latest dev)
-        if: steps.cache-qt.outputs.cache-hit != 'true'
-        run: pip install git+https://github.com/miurahr/aqtinstall.git
-
-      - name: Install Qt 6.5.3
-        if: steps.cache-qt.outputs.cache-hit != 'true'
-        run: |
-          python -m aqt install-qt windows desktop 6.5.3 win64_msvc2022_64 --outputdir ${{ github.workspace }}\Qt
-
-      - name: Set Qt environment
-        shell: bash
-        run: |
-          QtDir=$(ls -d "${{ github.workspace }}/Qt/"*/msvc2022_64 2>/dev/null | head -1)
-          echo "CMAKE_PREFIX_PATH=$QtDir" >> "$GITHUB_ENV"
-          echo "Qt installed at: $QtDir"
+          path: |
+            ${{ runner.workspace }}/vcpkg/installed
+            ${{ runner.workspace }}/vcpkg/packages
+            ${{ runner.workspace }}/vcpkg/downloads
+          key: ${{ runner.os }}-vcpkg-qtbase
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -59,7 +59,7 @@ jobs:
           cd thalamus-native
           if not exist build mkdir build
           cd build
-          cmake ..\ThalamusApp -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="%CMAKE_PREFIX_PATH%"
+          cmake ..\ThalamusApp -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake"
 
       - name: Build
         run: |
