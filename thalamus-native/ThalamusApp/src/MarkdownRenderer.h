@@ -1,19 +1,6 @@
-// Thalamus AI — MarkdownRenderer.h
-#pragma once
-
-#include <QObject>
-#include <QString>
-
-class MarkdownRenderer : public QObject
-{
-    Q_OBJECT
-
-public:
-    explicit MarkdownRenderer(QObject *parent = nullptr);
-    ~MarkdownRenderer() = default;
-
-    QString render(const QString &markdown) const;
-
-private:
-    QString escapeHtml(const QString &text) const;
-};
+#ifndef MARKDOWNRENDERER_H
+#define MARKDOWNRENDERER_H
+#include <QWidget>
+#include <QTextEdit>
+class MarkdownRenderer : public QWidget { Q_OBJECT public: explicit MarkdownRenderer(QWidget *p = nullptr) : QWidget(p) {} };
+#endif
