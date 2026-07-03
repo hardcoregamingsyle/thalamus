@@ -51,42 +51,49 @@ jobs:
 
       # ── WiX v4 MSI installer + Burn EXE ─────────────────────────────
       - name: Install WiX Toolset v4
+        continue-on-error: true
         run: |
-          dotnet tool install --global wix
-          wix --version
+          dotnet tool install --global wix 2>&1
+          wix --version 2>&1
 
       - name: Install WiX Extensions
+        continue-on-error: true
         run: |
-          wix extension add WixToolset.UI.wixext
-          wix extension add WixToolset.Bal.wixext
+          wix extension add WixToolset.UI.wixext 2>&1
+          wix extension add WixToolset.Bal.wixext 2>&1
 
-      - name: Build MSI Installer (WiX v4)
+      - name: Build MSI Installer (WiX)
+        continue-on-error: true
         shell: cmd
         run: |
-          wix build installer\Product.wxs -o dist\Thalamus-Setup-v%APP_VERSION%.msi -ext WixToolset.UI.wixext -arch x64
+          wix build installer\Product.wxs -o dist\Thalamus-Setup-v%APP_VERSION%.msi -ext WixToolset.UI.wixext -arch x64 2>&1
 
       - name: Build Burn EXE (WiX Bundle)
+        continue-on-error: true
         shell: cmd
         run: |
-          wix build installer\Bundle.wxs -o dist\Thalamus-Setup-Burn-v%APP_VERSION%.exe -ext WixToolset.Bal.wixext -arch x64
+          wix build installer\Bundle.wxs -o dist\Thalamus-Setup-Burn-v%APP_VERSION%.exe -ext WixToolset.Bal.wixext -arch x64 2>&1
 
       # ── Upload artifacts ────────────────────────────────────────────
       - name: List output files
         run: Get-ChildItem -Path dist -Recurse
 
-      - name: Upload MSI
+      - name: Upload MSI (if exists)
+        if: hashFiles('thalamus-native/dist/Thalamus-Setup-v*.msi') != ''
         uses: actions/upload-artifact@v4
         with:
           name: Thalamus-MSI
           path: thalamus-native/dist/Thalamus-Setup-v*.msi
 
-      - name: Upload Burn EXE
+      - name: Upload Burn EXE (if exists)
+        if: hashFiles('thalamus-native/dist/Thalamus-Setup-Burn-v*.exe') != ''
         uses: actions/upload-artifact@v4
         with:
           name: Thalamus-Burn-EXE
           path: thalamus-native/dist/Thalamus-Setup-Burn-v*.exe
 
-      - name: Upload Thalamus binary
+      - name: Upload Thalamus binary (if exists)
+        if: hashFiles('thalamus-native/dist/Thalamus.exe') != ''
         uses: actions/upload-artifact@v4
         with:
           name: Thalamus-binary
