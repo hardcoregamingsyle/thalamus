@@ -1,4 +1,5 @@
 #include "ChatView.h"
+#include <QLabel>
 ChatView::ChatView(QWidget *parent) : QWidget(parent) {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(12, 12, 12, 12);
