@@ -1,52 +1,75 @@
-// Thalamus AI — MainWindow.h
-#pragma once
+#ifndef MAINWINDOW_H
+#define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QTabWidget>
+#include <QStackedWidget>
+#include <QListWidget>
+#include <QLabel>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QSplitter>
+#include <QPushButton>
 #include <QSystemTrayIcon>
 #include <QMenu>
 #include <QCloseEvent>
 
+class ConvexClient;
+class AuthDialog;
 class ChatView;
 class ResearchView;
 class StudyView;
 class CodeModeView;
 class VMSandboxView;
 class Settings;
-class ConvexClient;
+class AutoUpdater;
+class NotificationManager;
 
-class MainWindow : public QMainWindow
-{
+class MainWindow : public QMainWindow {
     Q_OBJECT
 
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
-    void handleUri(const QString &uri);
+
+    void applyDarkTheme();
 
 protected:
     void closeEvent(QCloseEvent *event) override;
 
 private slots:
-    void onTabChanged(int index);
-    void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
+    void onNavigate(int index);
+    void showAuthDialog();
+    void onAuthSuccess(const QString &token);
+    void updateStatusBar(const QString &message);
 
 private:
-    void setupUi();
+    void setupUI();
     void setupTrayIcon();
-    void saveSettings();
-    void restoreSettings();
+    void createViews();
+    void setupConnections();
 
-    QTabWidget *m_tabWidget;
+    // Navigation
+    QListWidget *m_navList;
+    QStackedWidget *m_contentStack;
+
+    // Views
     ChatView *m_chatView;
     ResearchView *m_researchView;
     StudyView *m_studyView;
-    CodeModeView *m_codeModeView;
-    VMSandboxView *m_vmSandboxView;
+    CodeModeView *m_codeView;
+    VMSandboxView *m_vmView;
     Settings *m_settingsView;
-    QSystemTrayIcon *m_trayIcon;
-    QMenu *m_trayMenu;
-    QAction *m_showAction;
-    QAction *m_quitAction;
+
+    // Infrastructure
     ConvexClient *m_convexClient;
+    AutoUpdater *m_updater;
+    NotificationManager *m_notifier;
+    QSystemTrayIcon *m_trayIcon;
+    QLabel *m_statusLabel;
+
+    // State
+    QString m_authToken;
+    bool m_authenticated;
 };
+
+#endif // MAINWINDOW_H
