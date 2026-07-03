@@ -40,8 +40,9 @@ jobs:
         run: |
           $dist = "dist"
           if (-not (Test-Path $dist)) { New-Item -ItemType Directory -Force $dist }
+          # Also put it in installer/ so WiX can find it next to the .wxs
+          if (-not (Test-Path "installer")) { New-Item -ItemType Directory -Force "installer" }
           Write-Host "Creating placeholder Thalamus.exe for installer packaging"
-          # Minimal valid PE that shows "This program cannot be run in DOS mode"
           $placeholder = [byte[]]@(
             0x4D,0x5A,0x90,0x00,0x03,0x00,0x00,0x00,
             0x04,0x00,0x00,0x00,0xFF,0xFF,0x00,0x00,
@@ -61,7 +62,8 @@ jobs:
             0x24,0x00,0x00,0x00,0x00,0x00,0x00,0x00
           )
           [System.IO.File]::WriteAllBytes("$dist\Thalamus.exe", $placeholder)
-          Write-Host "Placeholder Thalamus.exe created"
+          [System.IO.File]::WriteAllBytes("installer\Thalamus.exe", $placeholder)
+          Write-Host "Placeholder Thalamus.exe created in dist/ and installer/"
 
       # ── WiX v4 MSI installer + Burn EXE ─────────────────────────────
       - name: Install WiX Toolset v4
