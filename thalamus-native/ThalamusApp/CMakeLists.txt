@@ -21,9 +21,6 @@ find_package(Qt6 REQUIRED COMPONENTS
     Widgets
     Network
     WebSockets
-    Svg
-    SvgWidgets
-    Concurrent
 )
 
 # ── Sources ──────────────────────────────────────────────────────────────────
@@ -85,9 +82,6 @@ target_link_libraries(ThalamusApp PRIVATE
     Qt6::Widgets
     Qt6::Network
     Qt6::WebSockets
-    Qt6::Svg
-    Qt6::SvgWidgets
-    Qt6::Concurrent
 )
 
 # ── Windows-specific ─────────────────────────────────────────────────────────
