@@ -36,9 +36,9 @@ jobs:
           path: ${{ github.workspace }}\Qt
           key: ${{ runner.os }}-Qt-6.5.3-msvc2022_64
 
-      - name: Install aqtinstall
+      - name: Install aqtinstall (latest dev)
         if: steps.cache-qt.outputs.cache-hit != 'true'
-        run: pip install aqtinstall
+        run: pip install git+https://github.com/miurahr/aqtinstall.git
 
       - name: Install Qt 6.5.3
         if: steps.cache-qt.outputs.cache-hit != 'true'
