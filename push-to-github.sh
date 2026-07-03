@@ -3,26 +3,20 @@ set -e
 
 cd "$(dirname "$0")"
 
-echo "=== pushing workflows to github ==="
+echo "=== pushing version fix ==="
 
 git add -A
 
 if git diff --cached --quiet; then
-  echo "no changes bruh"
+  echo "no changes"
   exit 0
 fi
 
-git commit -m "fix(ci): rewrite build-thalamus-native.yml, remove broken qt build
+git commit -m "fix(ci): APP_VERSION was defaulting to branch name 'main' instead of 1.0.0
 
-old workflow used jurplel/install-qt-action with wrong module names
-(qtwebsockets, qtsvg, qt5compat don't exist for Qt 6.7.0)
-also had no wix extension add step so MSI build would fail
-
-replaced the whole thing with the same placeholder .exe approach
-as build-installer.yml - creates a DOS stub, installs wix, adds
-extensions, builds MSI + Burn EXE
-
-closes the workflow being completely broken fr"
+github.ref_name resolves to 'main' on push events, so the MSI
+would come out as Thalamus-Setup-vmain.msi. hardcoded to 1.0.0
+like the original workflow had it"
 
 git push thalamus HEAD
 
