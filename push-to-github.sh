@@ -3,16 +3,26 @@ set -e
 
 cd "$(dirname "$0")"
 
-echo "=== Pushing WiX extension fix ==="
+echo "=== pushing all the sauce to github ==="
 
 git add -A
-git commit -m "Fix WiX v4 extension resolution - add 'wix extension add' step
 
-WiX v4 requires extensions (WixToolset.UI.wixext, WixToolset.Bal.wixext)
-to be added to the extension cache via 'wix extension add' before
-they can be used in 'wix build' with the -ext flag.
-Without this step, the build fails with WIX0144."
+# Check if there are changes to commit
+if git diff --cached --quiet; then
+  echo "no changes bruh, everything already pushed"
+  exit 0
+fi
+
+git commit -m "fix(ci): wix extensions not found error fr
+
+bro wix v4 needs u to run 'wix extension add' before 'wix build'
+otherwise it just cries about WIX0144 like a whole baby
+added the extension install step and now we chillin fr fr
+
+- added wix extension add WixToolset.UI.wixext
+- added wix extension add WixToolset.Bal.wixext
+- kept the -ext flags in the build cmd"
 
 git push thalamus HEAD
 
-echo "=== Done ==="
+echo "=== pushed that W fr ==="
