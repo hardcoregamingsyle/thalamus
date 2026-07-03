@@ -11,14 +11,6 @@ on:
         description: 'Installer version'
         required: true
         default: '1.0.0'
-      build_msi:
-        description: 'Build MSI installer (needs WiX)'
-        type: boolean
-        default: true
-      build_exe:
-        description: 'Build EXE installer (Inno Setup)'
-        type: boolean
-        default: true
 
 env:
   APP_VERSION: ${{ github.event.inputs.version || '1.0.0' }}
@@ -26,124 +18,98 @@ env:
 jobs:
   build-installers:
     runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: thalamus-native
-        shell: pwsh
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── Create placeholder Thalamus.exe ─────────────────────────────
-      - name: Create placeholder Thalamus.exe
-        run: |
-          $dist = "dist"
-          if (-not (Test-Path $dist)) { New-Item -ItemType Directory -Force $dist }
-          # Also put it in installer/ so WiX can find it next to the .wxs
-          if (-not (Test-Path "installer")) { New-Item -ItemType Directory -Force "installer" }
-          Write-Host "Creating placeholder Thalamus.exe for installer packaging"
-          $placeholder = [byte[]]@(
-            0x4D,0x5A,0x90,0x00,0x03,0x00,0x00,0x00,
-            0x04,0x00,0x00,0x00,0xFF,0xFF,0x00,0x00,
-            0xB8,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-            0x40,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-            0x00,0x00,0x00,0x00,0x80,0x00,0x00,0x00,
-            0x0E,0x1F,0xBA,0x0E,0x00,0xB4,0x09,0xCD,
-            0x21,0xB8,0x01,0x4C,0xCD,0x21,0x54,0x68,
-            0x69,0x73,0x20,0x70,0x72,0x6F,0x67,0x72,
-            0x61,0x6D,0x20,0x63,0x61,0x6E,0x6E,0x6F,
-            0x74,0x20,0x62,0x65,0x20,0x72,0x75,0x6E,
-            0x20,0x69,0x6E,0x20,0x44,0x4F,0x53,0x20,
-            0x6D,0x6F,0x64,0x65,0x2E,0x0D,0x0D,0x0A,
-            0x24,0x00,0x00,0x00,0x00,0x00,0x00,0x00
-          )
-          [System.IO.File]::WriteAllBytes("$dist\Thalamus.exe", $placeholder)
-          [System.IO.File]::WriteAllBytes("installer\Thalamus.exe", $placeholder)
-          Write-Host "Placeholder Thalamus.exe created in dist/ and installer/"
+      # ── Build Thalamus.exe from C++ source ─────────────────────────
+      - name: Install Qt 6.7
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.3'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          modules: 'qtwebsockets qtnetwork'
+          cache: true
 
-      # ── WiX v4 MSI installer + Burn EXE ─────────────────────────────
-      - name: Install WiX Toolset v4
-        continue-on-error: true
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+
+      - name: Build Thalamus.exe
         run: |
-          dotnet tool install --global wix 2>&1
-          wix --version 2>&1
+          cd thalamus-native
+          if (-not (Test-Path build)) { New-Item -ItemType Directory -Force build }
+          cd build
+          cmake ../ThalamusApp -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+          cmake --build . --config Release --parallel
+          cd ..
+          if (-not (Test-Path dist)) { New-Item -ItemType Directory -Force dist }
+          Copy-Item "build/Thalamus.exe" "dist/Thalamus.exe" -Force
+          Copy-Item "build/Thalamus.exe" "installer/Thalamus.exe" -Force
+          Write-Host "Thalamus.exe built successfully"
+
+      # ── WiX v4 MSI + Burn EXE ──────────────────────────────────────
+      - name: Install WiX
+        run: |
+          dotnet tool install --global wix
+          wix --version
 
       - name: Install WiX Extensions
-        continue-on-error: true
         run: |
-          wix extension add WixToolset.UI.wixext 2>&1
-          wix extension add WixToolset.Bal.wixext 2>&1
+          wix extension add WixToolset.UI.wixext
+          wix extension add WixToolset.Bal.wixext
 
-      - name: Build MSI Installer (WiX)
-        continue-on-error: true
+      - name: Build MSI Installer
+        working-directory: thalamus-native
         shell: cmd
         run: |
-          wix build installer\Product.wxs -o dist\Thalamus-Setup-v%APP_VERSION%.msi -ext WixToolset.UI.wixext -arch x64 2>&1
+          wix build installer\Product.wxs -o dist\Thalamus-Setup-v%APP_VERSION%.msi -ext WixToolset.UI.wixext -arch x64
 
-      - name: Build Burn EXE (WiX Bundle)
-        continue-on-error: true
+      - name: Build Burn EXE
+        working-directory: thalamus-native
         shell: cmd
         run: |
-          wix build installer\Bundle.wxs -o dist\Thalamus-Setup-Burn-v%APP_VERSION%.exe -ext WixToolset.Bal.wixext -arch x64 2>&1
+          wix build installer\Bundle.wxs -o dist\Thalamus-Setup-Burn-v%APP_VERSION%.exe -ext WixToolset.Bal.wixext -arch x64
 
-      # ── Inno Setup EXE installer ────────────────────────────────────
+      # ── Inno Setup EXE ─────────────────────────────────────────────
       - name: Install Inno Setup 6
-        continue-on-error: true
-        run: |
-          choco install innosetup --no-progress -y 2>&1 || echo "choco install failed, trying alternate path"
+        run: choco install innosetup --no-progress -y
 
       - name: Build EXE Installer (Inno Setup)
-        continue-on-error: true
         run: |
           $iscc = @(
             "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
-            "C:\Program Files\Inno Setup 6\ISCC.exe",
-            "C:\Program Files (x86)\Inno Setup\ISCC.exe"
+            "C:\Program Files\Inno Setup 6\ISCC.exe"
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
           if ($iscc) {
-            Write-Host "Found ISCC at: $iscc"
-            & $iscc installer\setup.iss /Q 2>&1
+            & $iscc thalamus-native\installer\setup.iss /Q
           } else {
-            Write-Host "ISCC.exe not found, Inno Setup may not be installed"
+            Write-Host "ISCC not found - skipping Inno Setup build"
           }
 
-      # ── Copy installer to public/downloads for web deployment ────────
-      - name: Copy installer to web assets
-        run: |
-          Write-Host "Copying installers to public/downloads/..."
-          if (Test-Path "dist\Thalamus-Setup-v$env:APP_VERSION.exe") {
-            Copy-Item "dist\Thalamus-Setup-v$env:APP_VERSION.exe" "..\public\downloads\" -Force
-            Write-Host "Copied EXE installer"
-          }
-          if (Test-Path "dist\Thalamus-Setup-v$env:APP_VERSION.msi") {
-            Copy-Item "dist\Thalamus-Setup-v$env:APP_VERSION.msi" "..\public\downloads\" -Force
-            Write-Host "Copied MSI installer"
-          }
+      # ── Upload artifacts ────────────────────────────────────────────
+      - name: List outputs
+        run: Get-ChildItem -Path thalamus-native\dist -Recurse
 
-      # ── Output ──────────────────────────────────────────────────────
-      - name: List output files
-        run: |
-          Get-ChildItem -Path dist -Recurse
-
-      - name: Upload MSI (if exists)
+      - name: Upload MSI
         if: hashFiles('thalamus-native/dist/Thalamus-Setup-v*.msi') != ''
         uses: actions/upload-artifact@v4
         with:
           name: Thalamus-MSI
           path: thalamus-native/dist/Thalamus-Setup-v*.msi
 
-      - name: Upload Burn EXE (if exists)
+      - name: Upload Burn EXE
         if: hashFiles('thalamus-native/dist/Thalamus-Setup-Burn-v*.exe') != ''
         uses: actions/upload-artifact@v4
         with:
           name: Thalamus-Burn-EXE
           path: thalamus-native/dist/Thalamus-Setup-Burn-v*.exe
 
-      - name: Upload Inno Setup EXE (if exists)
+      - name: Upload Inno Setup EXE
         if: hashFiles('thalamus-native/dist/Thalamus-Setup-v*.exe') != ''
         uses: actions/upload-artifact@v4
         with:
