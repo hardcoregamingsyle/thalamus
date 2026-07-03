@@ -1,38 +1,17 @@
-// Thalamus AI — ChatView.h
-#pragma once
-
+#ifndef CHATVIEW_H
+#define CHATVIEW_H
 #include <QWidget>
 #include <QTextEdit>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
-#include <QLabel>
-
-class ConvexClient;
-class MarkdownRenderer;
-
-class ChatView : public QWidget
-{
+class ChatView : public QWidget {
     Q_OBJECT
-
 public:
-    explicit ChatView(ConvexClient *client, QWidget *parent = nullptr);
-    void sendMessage(const QString &msg);
-
-private slots:
-    void onSendClicked();
-    void onStreamChunk(const QString &text);
-    void onStreamDone();
-
+    explicit ChatView(QWidget *parent = nullptr);
 private:
-    void setupUi();
-    void appendMessage(const QString &role, const QString &html);
-    void setInputEnabled(bool en);
-    ConvexClient *m_client;
-    MarkdownRenderer *m_mdRenderer;
-    QTextEdit *m_chatDisplay;
-    QLineEdit *m_messageInput;
-    QPushButton *m_sendButton, *m_stopButton;
-    bool m_isStreaming;
-    QString m_currentAssistantMessage;
+    QTextEdit *m_display;
+    QLineEdit *m_input;
+    QPushButton *m_sendBtn;
 };
+#endif
