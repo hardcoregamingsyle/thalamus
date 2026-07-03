@@ -8,7 +8,7 @@
         Manufacturer="Thalamus AI"
         UpgradeCode="F6A7B8C9-D0E1-2345-EFAB-567890123456"
         Copyright="Thalamus AI"
-        IconSourceFile="ThalamusApp\resources\icons\app.ico">
+        IconSourceFile="..\ThalamusApp\resources\icons\app.ico">
 
         <bal:Condition Message="Thalamus AI Setup requires Windows 10 or later.">
             VersionNT >= 100
@@ -29,7 +29,7 @@
             <!-- ── Thalamus MSI ───────────────────────────────────── -->
             <MsiPackage
                 Id="ThalamusApp"
-                SourceFile="dist\Thalamus-Setup-v1.0.0.msi"
+                SourceFile="..\dist\Thalamus-Setup-v1.0.0.msi"
                 DisplayInternalUI="no"
                 Vital="yes" />
         </Chain>
