@@ -23,7 +23,7 @@
             <Directory Id="APPLICATIONFOLDER" Name="Thalamus AI">
                 <!-- Main executable -->
                 <Component Id="MainExecutable" Guid="B2C3D4E5-F6A7-8901-BCDE-F12345678901">
-                    <File Id="ThalamusExe" Name="Thalamus.exe" Source="..\dist\Thalamus.exe" KeyPath="yes">
+                    <File Id="ThalamusExe" Name="Thalamus.exe" Source="Thalamus.exe" KeyPath="yes">
                         <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="Thalamus AI" Advertise="yes" />
                         <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="Thalamus AI" Advertise="yes" />
                     </File>

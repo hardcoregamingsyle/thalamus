@@ -3,7 +3,7 @@ set -e
 
 cd "$(dirname "$0")"
 
-echo "=== pushing wix path revert ==="
+echo "=== pushing the nuclear fix ==="
 
 git add -A
 
@@ -12,15 +12,12 @@ if git diff --cached --quiet; then
   exit 0
 fi
 
-git commit -m "fix(build): wix source paths are relative to .wxs dir not working dir
+git commit -m "fix(build): put placeholder exe next to .wxs so wix can find it
 
-wiX v4 resolves SourceFile paths relative to the .wxs FILE location
-(installer/ directory). so the paths need ..\ prefix:
-  ..\dist\Thalamus.exe  -> thalamus-native/dist/Thalamus.exe  (correct!)
-  ..\ThalamusApp\...\app.ico -> thalamus-native/ThalamusApp/... (correct!)
-
-was changing to dist\Thalamus.exe which resolved to
-installer/dist/Thalamus.exe which doesnt exist"
+wix v5 (5.1.21) has been failing to find the source file no matter
+what path we use (..\dist\ or dist\). putting Thalamus.exe directly
+in installer/ dir alongside Product.wxs and using bare filename
+'Thalamus.exe' as the Source - guaranteed to be found"
 
 git push thalamus HEAD:main --force
 
