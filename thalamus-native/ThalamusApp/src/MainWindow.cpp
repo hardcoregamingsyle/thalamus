@@ -10,11 +10,8 @@
 #include "NotificationManager.h"
 
 #include <QApplication>
-#include <QMessageBox>
-#include <QStyle>
-#include <QFont>
-#include <QFile>
 #include <QStyleFactory>
+#include <QFont>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
