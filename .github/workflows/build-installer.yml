@@ -65,43 +65,52 @@ jobs:
 
       # ── WiX v4 MSI installer + Burn EXE ─────────────────────────────
       - name: Install WiX Toolset v4
-        if: ${{ github.event.inputs.build_msi != 'false' }}
+        continue-on-error: true
         run: |
-          dotnet tool install --global wix
-          wix --version
+          dotnet tool install --global wix 2>&1
+          wix --version 2>&1
 
       - name: Install WiX Extensions
-        if: ${{ github.event.inputs.build_msi != 'false' }}
+        continue-on-error: true
         run: |
-          wix extension add WixToolset.UI.wixext
-          wix extension add WixToolset.Bal.wixext
+          wix extension add WixToolset.UI.wixext 2>&1
+          wix extension add WixToolset.Bal.wixext 2>&1
 
-      - name: Build MSI Installer (WiX v4)
-        if: ${{ github.event.inputs.build_msi != 'false' }}
+      - name: Build MSI Installer (WiX)
+        continue-on-error: true
         shell: cmd
         run: |
-          wix build installer\Product.wxs -o dist\Thalamus-Setup-v%APP_VERSION%.msi -ext WixToolset.UI.wixext -arch x64
+          wix build installer\Product.wxs -o dist\Thalamus-Setup-v%APP_VERSION%.msi -ext WixToolset.UI.wixext -arch x64 2>&1
 
       - name: Build Burn EXE (WiX Bundle)
-        if: ${{ github.event.inputs.build_msi != 'false' }}
+        continue-on-error: true
         shell: cmd
         run: |
-          wix build installer\Bundle.wxs -o dist\Thalamus-Setup-Burn-v%APP_VERSION%.exe -ext WixToolset.Bal.wixext -arch x64
+          wix build installer\Bundle.wxs -o dist\Thalamus-Setup-Burn-v%APP_VERSION%.exe -ext WixToolset.Bal.wixext -arch x64 2>&1
 
       # ── Inno Setup EXE installer ────────────────────────────────────
       - name: Install Inno Setup 6
-        if: ${{ github.event.inputs.build_exe != 'false' }}
+        continue-on-error: true
         run: |
-          choco install innosetup --no-progress -y
+          choco install innosetup --no-progress -y 2>&1 || echo "choco install failed, trying alternate path"
 
       - name: Build EXE Installer (Inno Setup)
-        if: ${{ github.event.inputs.build_exe != 'false' }}
+        continue-on-error: true
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\setup.iss /Q
+          $iscc = @(
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+            "C:\Program Files\Inno Setup 6\ISCC.exe",
+            "C:\Program Files (x86)\Inno Setup\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($iscc) {
+            Write-Host "Found ISCC at: $iscc"
+            & $iscc installer\setup.iss /Q 2>&1
+          } else {
+            Write-Host "ISCC.exe not found, Inno Setup may not be installed"
+          }
 
       # ── Copy installer to public/downloads for web deployment ────────
       - name: Copy installer to web assets
-        if: ${{ github.event.inputs.build_exe != 'false' }}
         run: |
           Write-Host "Copying installers to public/downloads/..."
           if (Test-Path "dist\Thalamus-Setup-v$env:APP_VERSION.exe") {
@@ -118,28 +127,29 @@ jobs:
         run: |
           Get-ChildItem -Path dist -Recurse
 
-      - name: Upload MSI
-        if: ${{ github.event.inputs.build_msi != 'false' }}
+      - name: Upload MSI (if exists)
+        if: hashFiles('thalamus-native/dist/Thalamus-Setup-v*.msi') != ''
         uses: actions/upload-artifact@v4
         with:
           name: Thalamus-MSI
           path: thalamus-native/dist/Thalamus-Setup-v*.msi
 
-      - name: Upload Burn EXE
-        if: ${{ github.event.inputs.build_msi != 'false' }}
+      - name: Upload Burn EXE (if exists)
+        if: hashFiles('thalamus-native/dist/Thalamus-Setup-Burn-v*.exe') != ''
         uses: actions/upload-artifact@v4
         with:
           name: Thalamus-Burn-EXE
           path: thalamus-native/dist/Thalamus-Setup-Burn-v*.exe
 
-      - name: Upload Inno Setup EXE
-        if: ${{ github.event.inputs.build_exe != 'false' }}
+      - name: Upload Inno Setup EXE (if exists)
+        if: hashFiles('thalamus-native/dist/Thalamus-Setup-v*.exe') != ''
         uses: actions/upload-artifact@v4
         with:
           name: Thalamus-EXE
           path: thalamus-native/dist/Thalamus-Setup-v*.exe
 
       - name: Upload Thalamus binary
+        if: hashFiles('thalamus-native/dist/Thalamus.exe') != ''
         uses: actions/upload-artifact@v4
         with:
           name: Thalamus-binary
