@@ -58,12 +58,11 @@ jobs:
           arch: amd64
 
       - name: Build Thalamus.exe
-        shell: cmd
         run: |
           cd thalamus-native
-          if not exist build mkdir build
+          if (-not (Test-Path build)) { New-Item -ItemType Directory -Force build }
           cd build
-          cmake ..\ThalamusApp -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="%CMAKE_PREFIX_PATH%"
+          cmake ../ThalamusApp -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$env:CMAKE_PREFIX_PATH"
           cmake --build . --config Release --parallel
           cd ..
           if (-not (Test-Path dist)) { New-Item -ItemType Directory -Force dist }
