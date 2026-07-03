@@ -20,7 +20,6 @@ find_package(Qt6 REQUIRED COMPONENTS
     Gui
     Widgets
     Network
-    WebSockets
 )
 
 # ── Sources ──────────────────────────────────────────────────────────────────
@@ -81,7 +80,6 @@ target_link_libraries(ThalamusApp PRIVATE
     Qt6::Gui
     Qt6::Widgets
     Qt6::Network
-    Qt6::WebSockets
 )
 
 # ── Windows-specific ─────────────────────────────────────────────────────────
