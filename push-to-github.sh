@@ -3,22 +3,29 @@ set -e
 
 cd "$(dirname "$0")"
 
-echo "=== switching to vcpkg for Qt install ==="
+echo "=== bruh lets gooo ==="
 
 git add -A
 
 if git diff --cached --quiet; then
-  echo "no changes"
+  echo "no changes ig"
   exit 0
 fi
 
-git commit -m "fix: replace aqtinstall with vcpkg for Qt install
+git commit -m "bruh i finally got the .exe to build
 
-aqtinstall v3.3.0 and GitHub master both fail to parse Qt's server XML
-format with 'The packages [qt_base] were not found' error.
-Switch to vcpkg which downloads+builds Qt from source, with GitHub
-Actions binary caching for fast subsequent runs."
+ok so like i spent LITERALLY forever trying to make this work
+on linux (cuz i dont have windows setup lol) and i had to:
+- install dotnet sdk from some script
+- fix a bunch of random c# errors
+- build the entire app with EnableWindowsTargeting or smth
+- msi didnt work cuz i was writing binary manually on linux 💀
+- added a download button for the .exe directly so ppl can actually use it
+
+thalamus.exe is 135mb of pure aura
+
+closes the whole 'make it work' saga"
 
 git push thalamus HEAD:main --force
 
-echo "=== pushed ==="
+echo "=== pushed (hopefully) ===
