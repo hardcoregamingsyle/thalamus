@@ -62,7 +62,7 @@ namespace ThalamusApp.Services
     {
         public System.Net.HttpStatusCode StatusCode { get; }
         public ConvexException(System.Net.HttpStatusCode code, string body)
-            : base($"Convex {(int)code}: {body.Length > 200 ? body[..200] : body}")
+            : base($"Convex {(int)code}: {(body.Length > 200 ? body[..200] : body)}")
         {
             StatusCode = code;
         }
