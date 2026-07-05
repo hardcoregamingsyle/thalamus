@@ -76,18 +76,29 @@ namespace ThalamusApp.Auth
             finally { SetBusy(false); }
         }
 
-        // ── Convex signIn action ──────────────────────────────────────────────
+        // ── Convex customAuth actions ─────────────────────────────────────────
+        // Matches the web app's use-auth.ts flow:
+        //   Step 1: customAuth.sendOtp({ email })           → { success: true }
+        //   Step 2: customAuth.verifyOtp({ email, code })   → { value: { token, userId, isNewUser, referralSpins } }
 
         private async System.Threading.Tasks.Task<string> CallSignIn(string email, string? code)
         {
-            object args = code == null
-                ? new { provider = "resend-otp", @params = new { email } }
-                : new { provider = "resend-otp", @params = new { email, code } };
-
-            var body = JsonSerializer.Serialize(new { path = "auth:signIn", args });
             using var resp = await _http.PostAsync(
                 CONVEX + "/api/action",
-                new StringContent(body, Encoding.UTF8, "application/json"));
+                new StringContent(
+                    code == null
+                        ? JsonSerializer.Serialize(new
+                        {
+                            path = "customAuth:sendOtp",
+                            args = new { email }
+                        })
+                        : JsonSerializer.Serialize(new
+                        {
+                            path = "customAuth:verifyOtp",
+                            args = new { email, code }
+                        }),
+                    Encoding.UTF8,
+                    "application/json"));
 
             var json = await resp.Content.ReadAsStringAsync();
             if (!resp.IsSuccessStatusCode)
@@ -95,7 +106,7 @@ namespace ThalamusApp.Auth
 
             var doc = JsonDocument.Parse(json);
 
-            // After sending OTP there is no token yet — result may be null or { status: "CodeSent" }
+            // After sending OTP there is no token yet
             if (code == null) return "";
 
             // After verifying — expect { value: { token: "..." } }
@@ -104,7 +115,6 @@ namespace ThalamusApp.Auth
                 if (val.TryGetProperty("token", out var t) && t.ValueKind == JsonValueKind.String)
                     return t.GetString()!;
 
-                // Some auth implementations return { value: null } on wrong code
                 if (val.ValueKind == JsonValueKind.Null)
                     throw new Exception("Invalid or expired code.");
             }
