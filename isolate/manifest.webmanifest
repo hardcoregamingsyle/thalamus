@@ -1,0 +1,17 @@
+{
+  "name": "Thalamus AI",
+  "short_name": "Thalamus",
+  "description": "Thalamus AI agent system",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020b1d",
+  "theme_color": "#020b1d",
+  "icons": [
+    {
+      "src": "/thalamus-logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

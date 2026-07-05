@@ -3,6 +3,7 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <AssemblyName>Thalamus</AssemblyName>
     <RootNamespace>ThalamusApp</RootNamespace>
     <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
@@ -17,11 +18,11 @@
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishReadyToRun>false</PublishReadyToRun>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="System.Text.Json" Version="10.0.0" />
+    
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Assets\icon.ico" />
