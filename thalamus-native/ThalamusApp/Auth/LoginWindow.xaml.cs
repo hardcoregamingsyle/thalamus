@@ -66,14 +66,15 @@ namespace ThalamusApp.Auth
                 AuthManager.SaveToken(_email, token);
                 Token  = token;
                 Email  = _email;
+                SetBusy(false);
                 DialogResult = true;
                 Close();
             }
             catch (Exception ex)
             {
+                SetBusy(false);
                 ShowOtpError(ex.Message);
             }
-            finally { SetBusy(false); }
         }
 
         // ── Convex customAuth actions ─────────────────────────────────────────
