@@ -220,8 +220,8 @@
                     <!-- User email (center) -->
                     <StackPanel Grid.Column="1" Orientation="Horizontal"
                                 HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <Border Width="6" Height="6" CornerRadius="3"
-                                Background="{StaticResource GreenBrush}"
+                        <Border x:Name="AuthDot" Width="6" Height="6" CornerRadius="3"
+                                Background="{StaticResource AmberBrush}"
                                 VerticalAlignment="Center" Margin="0,0,8,0"/>
                         <TextBlock x:Name="UserLabel" Text=""
                                    FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
@@ -298,7 +298,7 @@
                                 Margin="20,16,20,16"/>
 
                         <!-- Account section -->
-                        <StackPanel DockPanel.Dock="Top">
+                        <StackPanel DockPanel.Dock="Top" x:Name="AccountSection">
                             <Border Padding="20,0,20,8">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="ACCOUNT" FontSize="9" FontWeight="Bold"
