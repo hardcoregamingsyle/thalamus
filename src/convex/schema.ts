@@ -479,6 +479,16 @@ const schema = defineSchema(
       expiresAt: v.number(),
     }).index("by_state", ["state"]),
 
+    // Desktop auth codes: code-based auth flow for the native desktop app
+    desktopAuthCodes: defineTable({
+      code: v.string(),          // 8-char alphanumeric (no I,O,0,1)
+      userId: v.optional(v.id("users")),
+      email: v.optional(v.string()),
+      sessionToken: v.optional(v.string()),
+      status: v.union(v.literal("pending"), v.literal("authorized"), v.literal("consumed"), v.literal("expired")),
+      expiresAt: v.number(),
+    }).index("by_code", ["code"]),
+
     // DAU tracking: one record per user per UTC day
     dailyActiveUsers: defineTable({
       userId: v.id("users"),

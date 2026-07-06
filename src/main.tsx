@@ -13,6 +13,7 @@ import "./types/global.d.ts";
 // Lazy load route components for better code splitting
 const Landing = lazy(() => import("./pages/Landing"));
 const AuthPage = lazy(() => import("./pages/Auth"));
+const AuthDesktopPage = lazy(() => import("./pages/AuthDesktop"));
 const Portal = lazy(() => import("./pages/Portal"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const SyncPage = lazy(() => import("./pages/Sync"));
@@ -76,6 +77,7 @@ createRoot(document.getElementById("root")!).render(
                 {/* In desktop mode, skip landing page — go straight to auth */}
                 <Route path="/" element={isDesktopApp ? <Navigate to="/auth" replace /> : <Landing />} />
                 <Route path="/auth" element={<AuthPage redirectAfterAuth="/portal/chat" />} />
+                <Route path="/auth/desktop" element={<AuthDesktopPage />} />
                 {/* New Code Mode Routes */}
                 <Route path="/portal/code" element={<CodeProjects />} />
                 <Route path="/portal/code/:projectId" element={<CodeBranches />} />
