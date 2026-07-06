@@ -36,3 +36,4 @@ dist-ssr
 # Deployment scripts with secrets — never commit these
 deploy-convex.sh
 *.deploy.sh
+public/downloads/
