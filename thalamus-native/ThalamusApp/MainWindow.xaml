@@ -14,24 +14,67 @@
         Closing="OnClosing">
 
     <Window.Resources>
-        <SolidColorBrush x:Key="BgDark"      Color="#050a14"/>
-        <SolidColorBrush x:Key="BgDarker"    Color="#020b1d"/>
-        <SolidColorBrush x:Key="BorderColor" Color="#1e3a5f"/>
-        <SolidColorBrush x:Key="HoverBg"     Color="#1a2d4a"/>
-        <SolidColorBrush x:Key="ActiveBg"    Color="#1e3a5f"/>
-        <SolidColorBrush x:Key="TextPrimary" Color="#e2e8f0"/>
-        <SolidColorBrush x:Key="TextSecondary" Color="#64748b"/>
-        <SolidColorBrush x:Key="TextMuted"   Color="#334155"/>
-        <SolidColorBrush x:Key="PrimaryBrush" Color="#3b82f6"/>
-        <SolidColorBrush x:Key="GreenBrush"  Color="#10b981"/>
-        <SolidColorBrush x:Key="AmberBrush"  Color="#f59e0b"/>
+        <!-- ═══ COLOR PALETTE — Matching website dark theme ═══ -->
+        <Color x:Key="BgDark">#050a14</Color>
+        <Color x:Key="BgDarker">#020b1d</Color>
+        <Color x:Key="BgCard">#0a1628</Color>
+        <Color x:Key="BgHover">#1a2d4a</Color>
+        <Color x:Key="BgActive">#1e3a5f</Color>
+        <Color x:Key="BorderColor">#1e3a5f</Color>
+        <Color x:Key="TextPrimary">#e2e8f0</Color>
+        <Color x:Key="TextSecondary">#64748b</Color>
+        <Color x:Key="TextMuted">#334155</Color>
 
+        <!-- Electric blue primary -->
+        <Color x:Key="BlueAccent">#3b82f6</Color>
+        <Color x:Key="BlueGlow">#2563eb</Color>
+
+        <!-- Accent colors -->
+        <Color x:Key="GreenAccent">#10b981</Color>
+        <Color x:Key="AmberAccent">#f59e0b</Color>
+        <Color x:Key="PurpleAccent">#8b5cf6</Color>
+        <Color x:Key="RedAccent">#ef4444</Color>
+
+        <!-- Brushes -->
+        <SolidColorBrush x:Key="BgDarkBrush"      Color="{StaticResource BgDark}"/>
+        <SolidColorBrush x:Key="BgDarkerBrush"    Color="{StaticResource BgDarker}"/>
+        <SolidColorBrush x:Key="BgCardBrush"      Color="{StaticResource BgCard}"/>
+        <SolidColorBrush x:Key="BgHoverBrush"     Color="{StaticResource BgHover}"/>
+        <SolidColorBrush x:Key="BgActiveBrush"    Color="{StaticResource BgActive}"/>
+        <SolidColorBrush x:Key="BorderBrush"      Color="{StaticResource BorderColor}"/>
+        <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimary}"/>
+        <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondary}"/>
+        <SolidColorBrush x:Key="TextMutedBrush"   Color="{StaticResource TextMuted}"/>
+        <SolidColorBrush x:Key="BlueBrush"        Color="{StaticResource BlueAccent}"/>
+        <SolidColorBrush x:Key="GreenBrush"       Color="{StaticResource GreenAccent}"/>
+        <SolidColorBrush x:Key="AmberBrush"       Color="{StaticResource AmberAccent}"/>
+        <SolidColorBrush x:Key="PurpleBrush"      Color="{StaticResource PurpleAccent}"/>
+        <SolidColorBrush x:Key="RedBrush"         Color="{StaticResource RedAccent}"/>
+
+        <LinearGradientBrush x:Key="BlueGradient" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#3b82f6" Offset="0"/>
+            <GradientStop Color="#6366f1" Offset="1"/>
+        </LinearGradientBrush>
+
+        <LinearGradientBrush x:Key="ContentBgGradient" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#080f24" Offset="0"/>
+            <GradientStop Color="#050a14" Offset="1"/>
+        </LinearGradientBrush>
+
+        <LinearGradientBrush x:Key="StatusBarGradient" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#020b1d" Offset="0"/>
+            <GradientStop Color="#040818" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- ═══ STYLES ═══ -->
+
+        <!-- Title bar buttons -->
         <Style x:Key="TitleBarBtn" TargetType="Button">
             <Setter Property="Background"    Value="Transparent"/>
-            <Setter Property="Foreground"    Value="{StaticResource TextSecondary}"/>
+            <Setter Property="Foreground"    Value="{StaticResource TextSecondaryBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Width"         Value="46"/>
-            <Setter Property="Height"        Value="32"/>
+            <Setter Property="Height"        Value="38"/>
             <Setter Property="FontSize"      Value="13"/>
             <Setter Property="Cursor"        Value="Hand"/>
             <Setter Property="Template">
@@ -42,8 +85,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBg}"/>
-                                <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -54,21 +97,22 @@
         <Style x:Key="CloseBtn" TargetType="Button" BasedOn="{StaticResource TitleBarBtn}">
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#ef4444"/>
+                    <Setter Property="Background" Value="{StaticResource RedAccent}"/>
                     <Setter Property="Foreground" Value="White"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
 
+        <!-- Navigation button -->
         <Style x:Key="NavBtn" TargetType="Button">
             <Setter Property="Background"             Value="Transparent"/>
-            <Setter Property="Foreground"             Value="{StaticResource TextSecondary}"/>
+            <Setter Property="Foreground"             Value="{StaticResource TextSecondaryBrush}"/>
             <Setter Property="BorderThickness"        Value="0"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="Padding"                Value="14,0,12,0"/>
-            <Setter Property="Height"                 Value="42"/>
+            <Setter Property="Height"                 Value="40"/>
             <Setter Property="Cursor"                 Value="Hand"/>
-            <Setter Property="FontSize"               Value="13"/>
+            <Setter Property="FontSize"               Value="12.5"/>
             <Setter Property="Margin"                 Value="8,2,8,2"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -79,8 +123,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBg}"/>
-                                <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -88,171 +132,252 @@
             </Setter>
         </Style>
 
+        <!-- Active navigation button -->
         <Style x:Key="NavBtnActive" TargetType="Button" BasedOn="{StaticResource NavBtn}">
-            <Setter Property="Background" Value="{StaticResource ActiveBg}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="Background" Value="{StaticResource BgActiveBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        </Style>
+
+        <!-- Mode indicator pill -->
+        <Style x:Key="ModePill" TargetType="Border">
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Height" Value="22"/>
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <!-- User avatar -->
+        <Style x:Key="AvatarBorder" TargetType="Border">
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Background" Value="{StaticResource BlueGradient}"/>
         </Style>
     </Window.Resources>
 
+    <!-- ═══ AMBIENT GLOW OVERLAY ═══ -->
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="38"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="26"/>
-        </Grid.RowDefinitions>
+        <!-- Background glow effects -->
+        <Rectangle Fill="#050a14"/>
+        <Rectangle HorizontalAlignment="Left" VerticalAlignment="Top"
+                   Width="500" Height="500" Opacity="0.06">
+            <Rectangle.Fill>
+                <RadialGradientBrush>
+                    <GradientStop Color="#3b82f6" Offset="0"/>
+                    <GradientStop Color="Transparent" Offset="1"/>
+                </RadialGradientBrush>
+            </Rectangle.Fill>
+        </Rectangle>
+        <Rectangle HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                   Width="400" Height="400" Opacity="0.04">
+            <Rectangle.Fill>
+                <RadialGradientBrush>
+                    <GradientStop Color="#8b5cf6" Offset="0"/>
+                    <GradientStop Color="Transparent" Offset="1"/>
+                </RadialGradientBrush>
+            </Rectangle.Fill>
+        </Rectangle>
 
-        <!-- ═══ TITLE BAR ═══ -->
-        <Border Grid.Row="0" Background="{StaticResource BgDarker}"
-                BorderBrush="{StaticResource BorderColor}" BorderThickness="0,0,0,1"
-                MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="38"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="28"/>
+            </Grid.RowDefinitions>
 
-                <!-- Logo -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal"
-                            VerticalAlignment="Center" Margin="14,0,0,0">
-                    <Border Width="20" Height="20" CornerRadius="6" Margin="0,0,8,0">
-                        <Border.Background>
-                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Color="#3b82f6" Offset="0"/>
-                                <GradientStop Color="#6366f1" Offset="1"/>
-                            </LinearGradientBrush>
-                        </Border.Background>
-                        <TextBlock Text="T" FontSize="11" FontWeight="Black" Foreground="White"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
-                    <TextBlock Text="Thalamus AI" FontSize="13" FontWeight="SemiBold"
-                               Foreground="{StaticResource TextPrimary}"
-                               VerticalAlignment="Center" Margin="0,0,10,0"/>
-                    <Border CornerRadius="10" Background="#0d1f3c"
-                            BorderBrush="{StaticResource BorderColor}" BorderThickness="1" Padding="7,2">
-                        <TextBlock Text="L4.5" FontSize="9" FontWeight="Bold"
-                                   Foreground="{StaticResource PrimaryBrush}"/>
-                    </Border>
-                </StackPanel>
+            <!-- ═══ TITLE BAR ═══ -->
+            <Border Grid.Row="0"
+                    Background="{StaticResource BgDarkerBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
 
-                <!-- User info (center) -->
-                <TextBlock Grid.Column="1" x:Name="UserLabel"
-                           Text="" FontSize="11" Foreground="{StaticResource TextSecondary}"
-                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-
-                <!-- Window controls -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Style="{StaticResource TitleBarBtn}" Content="&#x2212;" Click="MinBtn_Click"/>
-                    <Button x:Name="MaxBtn" Style="{StaticResource TitleBarBtn}" Content="&#x25A1;" Click="MaxBtn_Click"/>
-                    <Button Style="{StaticResource CloseBtn}" Content="&#x2715;" Click="ClsBtn_Click"/>
-                </StackPanel>
-            </Grid>
-        </Border>
-
-        <!-- ═══ MAIN ═══ -->
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="210"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <!-- Sidebar -->
-            <Border Grid.Column="0" Background="{StaticResource BgDarker}"
-                    BorderBrush="{StaticResource BorderColor}" BorderThickness="0,0,1,0">
-                <DockPanel>
-                    <Border DockPanel.Dock="Top" Padding="16,16,16,8">
-                        <TextBlock Text="MODES" FontSize="10" FontWeight="Bold"
-                                   Foreground="{StaticResource TextMuted}"/>
-                    </Border>
-
-                    <StackPanel DockPanel.Dock="Top">
-                        <Button x:Name="BtnCode" Tag="Code" Click="Nav_Click" Style="{StaticResource NavBtnActive}">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#x26A1; " FontSize="14"/>
-                                <TextBlock Text="Code" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                        <Button x:Name="BtnChat" Tag="Chat" Click="Nav_Click" Style="{StaticResource NavBtn}">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#x1F4AC; " FontSize="14"/>
-                                <TextBlock Text="Chat" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                        <Button x:Name="BtnResearch" Tag="Research" Click="Nav_Click" Style="{StaticResource NavBtn}">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#x1F50D; " FontSize="14"/>
-                                <TextBlock Text="Research" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                        <Button x:Name="BtnStudy" Tag="Study" Click="Nav_Click" Style="{StaticResource NavBtn}">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#x1F4DA; " FontSize="14"/>
-                                <TextBlock Text="Study" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
-
-                    <Separator DockPanel.Dock="Top" Background="{StaticResource BorderColor}"
-                               Margin="16,12,16,12" Height="1"/>
-
-                    <StackPanel DockPanel.Dock="Top">
-                        <Border Padding="16,0,16,8">
-                            <TextBlock Text="ACCOUNT" FontSize="10" FontWeight="Bold"
-                                       Foreground="{StaticResource TextMuted}"/>
+                    <!-- Logo + branding -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal"
+                                VerticalAlignment="Center" Margin="14,0,0,0">
+                        <Border Width="20" Height="20" CornerRadius="6" Margin="0,0,8,0"
+                                Background="{StaticResource BlueGradient}">
+                            <TextBlock Text="T" FontSize="10" FontWeight="Black" Foreground="White"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
-                        <Button Tag="Logout" Click="Nav_Click" Style="{StaticResource NavBtn}">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#x21AA; " FontSize="14"/>
-                                <TextBlock Text="Sign Out" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
+                        <TextBlock Text="Thalamus AI" FontSize="12.5" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <Border CornerRadius="10" Background="#0d1f3c"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1" Padding="7,1.5">
+                            <TextBlock Text="L4.5" FontSize="9" FontWeight="Bold"
+                                       Foreground="{StaticResource BlueBrush}"/>
+                        </Border>
                     </StackPanel>
 
-                    <!-- Version + update -->
-                    <Border DockPanel.Dock="Bottom" Padding="16,12"
-                            BorderBrush="{StaticResource BorderColor}" BorderThickness="0,1,0,0">
-                        <StackPanel>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock x:Name="VersionLabel" Text="v1.0.0"
-                                           FontSize="11" Foreground="{StaticResource TextMuted}"/>
-                                <TextBlock Text=" · " FontSize="11" Foreground="{StaticResource TextMuted}"/>
-                                <TextBlock x:Name="UpdateLabel" Text="Up to date"
-                                           FontSize="11" Foreground="{StaticResource GreenBrush}"/>
-                            </StackPanel>
-                            <TextBlock x:Name="UpdateSubLabel" Text="" FontSize="10"
-                                       Foreground="{StaticResource TextMuted}"
-                                       Margin="0,2,0,0" TextWrapping="Wrap"/>
-                        </StackPanel>
-                    </Border>
+                    <!-- User email (center) -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Border Width="6" Height="6" CornerRadius="3"
+                                Background="{StaticResource GreenBrush}"
+                                VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock x:Name="UserLabel" Text=""
+                                   FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    </StackPanel>
 
-                    <Grid/>
-                </DockPanel>
+                    <!-- Window controls -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Style="{StaticResource TitleBarBtn}" Content="&#x2212;" Click="MinBtn_Click"/>
+                        <Button x:Name="MaxBtn" Style="{StaticResource TitleBarBtn}" Content="&#x25A1;" Click="MaxBtn_Click"/>
+                        <Button Style="{StaticResource CloseBtn}" Content="&#x2715;" Click="ClsBtn_Click"/>
+                    </StackPanel>
+                </Grid>
             </Border>
 
-            <!-- Content panels — only one visible at a time -->
-            <Grid Grid.Column="1">
-                <modes:CodeView     x:Name="CodePanel"     Visibility="Visible"/>
-                <modes:ChatView     x:Name="ChatPanel"     Visibility="Collapsed"/>
-                <modes:ResearchView x:Name="ResearchPanel" Visibility="Collapsed"/>
-                <modes:StudyView    x:Name="StudyPanel"    Visibility="Collapsed"/>
-            </Grid>
-        </Grid>
-
-        <!-- ═══ STATUS BAR ═══ -->
-        <Border Grid.Row="2" Background="{StaticResource BgDarker}"
-                BorderBrush="{StaticResource BorderColor}" BorderThickness="0,1,0,0"
-                Padding="14,0">
-            <Grid>
+            <!-- ═══ MAIN CONTENT ═══ -->
+            <Grid Grid.Row="1">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="220"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock x:Name="StatusText" Text="Ready" VerticalAlignment="Center"
-                           Foreground="{StaticResource TextSecondary}" FontSize="11"/>
-                <TextBlock x:Name="ModeLabel" Grid.Column="1" Text="Code Mode"
-                           VerticalAlignment="Center"
-                           Foreground="{StaticResource TextMuted}" FontSize="11"/>
+
+                <!-- ── SIDEBAR ── -->
+                <Border Grid.Column="0"
+                        Background="{StaticResource BgDarkerBrush}"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="0,0,1,0">
+                    <DockPanel>
+                        <!-- Top decorative accent -->
+                        <Border DockPanel.Dock="Top" Height="3"
+                                Background="{StaticResource BlueGradient}" Opacity="0.6"/>
+
+                        <!-- Modes section -->
+                        <Border DockPanel.Dock="Top" Padding="20,20,20,8">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="MODES" FontSize="9" FontWeight="Bold"
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           CharacterSpacing="200"/>
+                                <Ellipse Width="4" Height="4" Fill="{StaticResource TextMutedBrush}"
+                                         Opacity="0.5" Margin="6,3,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <StackPanel DockPanel.Dock="Top">
+                            <Button x:Name="BtnCode" Tag="Code" Click="Nav_Click" Style="{StaticResource NavBtnActive}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#x26A1;" FontSize="14" Foreground="{StaticResource BlueBrush}"
+                                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock Text="Code" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="BtnChat" Tag="Chat" Click="Nav_Click" Style="{StaticResource NavBtn}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#x1F4AC;" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock Text="Chat" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="BtnResearch" Tag="Research" Click="Nav_Click" Style="{StaticResource NavBtn}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#x1F50D;" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock Text="Research" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="BtnStudy" Tag="Study" Click="Nav_Click" Style="{StaticResource NavBtn}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#x1F4DA;" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock Text="Study" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+
+                        <!-- Divider -->
+                        <Border DockPanel.Dock="Top" Height="1"
+                                Background="{StaticResource BorderBrush}" Opacity="0.5"
+                                Margin="20,16,20,16"/>
+
+                        <!-- Account section -->
+                        <StackPanel DockPanel.Dock="Top">
+                            <Border Padding="20,0,20,8">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="ACCOUNT" FontSize="9" FontWeight="Bold"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               CharacterSpacing="200"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Button Tag="Logout" Click="Nav_Click" Style="{StaticResource NavBtn}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#x21AA;" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock Text="Sign Out" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+
+                        <!-- Spacer -->
+                        <Grid/>
+
+                        <!-- Version + update status -->
+                        <Border DockPanel.Dock="Bottom" Padding="16,14"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="0,1,0,0">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Width="6" Height="6" CornerRadius="3"
+                                            Background="{StaticResource GreenBrush}"
+                                            VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock x:Name="VersionLabel" Text="v1.0.0"
+                                               FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+                                    <TextBlock Text=" · " FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+                                    <TextBlock x:Name="UpdateLabel" Text="Up to date"
+                                               FontSize="10" Foreground="{StaticResource GreenBrush}"/>
+                                </StackPanel>
+                                <TextBlock x:Name="UpdateSubLabel" Text="" FontSize="9"
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           Margin="14,2,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                    </DockPanel>
+                </Border>
+
+                <!-- ── CONTENT PANELS ── -->
+                <Grid Grid.Column="1" Background="{StaticResource ContentBgGradient}">
+                    <modes:CodeView     x:Name="CodePanel"     Visibility="Visible"/>
+                    <modes:ChatView     x:Name="ChatPanel"     Visibility="Collapsed"/>
+                    <modes:ResearchView x:Name="ResearchPanel" Visibility="Collapsed"/>
+                    <modes:StudyView    x:Name="StudyPanel"    Visibility="Collapsed"/>
+                </Grid>
             </Grid>
-        </Border>
+
+            <!-- ═══ STATUS BAR ═══ -->
+            <Border Grid.Row="2"
+                    Background="{StaticResource StatusBarGradient}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,1,0,0"
+                    Padding="14,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Ellipse Width="5" Height="5" Fill="{StaticResource GreenBrush}"
+                                 VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock x:Name="StatusText" Text="Ready"
+                                   Foreground="{StaticResource TextSecondaryBrush}" FontSize="10"/>
+                    </StackPanel>
+                    <Border Grid.Column="1" CornerRadius="4"
+                            Background="#0d1f3c"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1" Padding="8,1,8,2"
+                            VerticalAlignment="Center">
+                        <TextBlock x:Name="ModeLabel" Text="Code Mode"
+                                   Foreground="{StaticResource BlueBrush}"
+                                   FontSize="9" FontWeight="SemiBold"/>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </Window>
