@@ -20,13 +20,14 @@ namespace ThalamusApp
             }
             base.OnStartup(e);
 
-            // ── Auth gate — web-based auth code flow ────────────────────
-            var stored = AuthManager.LoadToken();
+            // ── Auth gate: require sign-in before showing MainWindow ──
+            var handler = new LoginHandler();
             string token, email;
 
-            if (stored.HasValue)
+            if (handler.TryRestoreSession())
             {
-                (token, email) = stored.Value;
+                token = handler.Token;
+                email = handler.Email;
             }
             else
             {
@@ -35,12 +36,11 @@ namespace ThalamusApp
                 if (!login.LoginSucceeded) { Shutdown(); return; }
                 token = login.Token;
                 email = login.Email;
-                // Save the session token so user doesn't need to re-authorize
                 AuthManager.SaveToken(token, email);
             }
 
             var main = new MainWindow();
-            main.SetToken(token, email);
+            main.SetSession(token, email);
             main.Show();
         }
 
