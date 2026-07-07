@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useSearchParams } from "react-router";
-import { useAuthActions } from "@convex-dev/auth/react";
-import { useQuery, useMutation } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, XCircle, Loader2, Monitor, Shield, Clock, Terminal, Mail, Key } from "lucide-react";
@@ -11,8 +10,10 @@ type Step = "signin" | "otp" | "authorize" | "success" | "error";
 export default function AuthDesktop() {
   const [searchParams] = useSearchParams();
   const code = searchParams.get("code") ?? "";
-  const { signIn } = useAuthActions();
-  const user = useQuery(api.users.currentUser);
+
+  // Use the custom auth flow (same as Auth.tsx) instead of @convex-dev/auth
+  const sendOtp = useAction(api.customAuth.sendOtp);
+  const verifyOtp = useAction(api.customAuth.verifyOtp);
   const doAuthorize = useMutation(api.desktopAuth.authorizeCode);
 
   const [step, setStep] = useState<Step>("signin");
@@ -22,13 +23,6 @@ export default function AuthDesktop() {
   const [authorizing, setAuthorizing] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
 
-  // If user is already authenticated, skip to authorize step
-  useEffect(() => {
-    if (user) {
-      setStep("authorize");
-    }
-  }, [user]);
-
   const handleSendOtp = useCallback(async () => {
     if (!email || !email.includes("@")) {
       setErrorMsg("Enter a valid email address.");
@@ -37,14 +31,14 @@ export default function AuthDesktop() {
     setSendingOtp(true);
     setErrorMsg("");
     try {
-      await signIn("email-otp", { email });
+      await sendOtp({ email });
       setStep("otp");
     } catch (err: any) {
       setErrorMsg(err?.message ?? "Failed to send code. Try again.");
     } finally {
       setSendingOtp(false);
     }
-  }, [email, signIn]);
+  }, [email, sendOtp]);
 
   const handleVerifyOtp = useCallback(async () => {
     if (otpCode.length < 6) {
@@ -53,12 +47,14 @@ export default function AuthDesktop() {
     }
     setErrorMsg("");
     try {
-      await signIn("email-otp", { email, code: otpCode });
-      // Auth state will update via the user query — useEffect will transition to authorize step
+      await verifyOtp({ email, code: otpCode });
+      // OTP verified — move straight to authorize step
+      setStep("authorize");
+      setErrorMsg("");
     } catch (err: any) {
       setErrorMsg(err?.message ?? "Invalid code. Try again.");
     }
-  }, [email, otpCode, signIn]);
+  }, [email, otpCode, verifyOtp]);
 
   const handleAuthorize = useCallback(async () => {
     if (!code) {
@@ -78,14 +74,6 @@ export default function AuthDesktop() {
       setAuthorizing(false);
     }
   }, [code, doAuthorize]);
-
-  // If user is now authenticated (via OTP verify), move to authorize step
-  useEffect(() => {
-    if (user && step === "otp") {
-      setStep("authorize");
-      setErrorMsg("");
-    }
-  }, [user, step]);
 
   return (
     <div className="min-h-screen bg-[#050a14] flex items-center justify-center p-4 relative overflow-hidden">
