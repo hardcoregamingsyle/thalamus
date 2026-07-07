@@ -13,28 +13,38 @@ namespace ThalamusApp
     {
         private const string APP_VERSION = "1.0.0";
         private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
-        private string _token = "";
-        private string _email = "";
 
         public MainWindow()
         {
             InitializeComponent();
             VersionLabel.Text = $"v{APP_VERSION}";
+            _ = Task.Run(CheckForUpdatesAsync);
         }
 
-        // Called by App.xaml.cs after auth succeeds
-        public void SetToken(string token, string email)
+        /// <summary>
+        /// Called by App.xaml.cs after authentication is complete.
+        /// Sets the user session and populates the UI.
+        /// </summary>
+        public void SetSession(string token, string email)
         {
-            _token = token;
-            _email = email;
+            // Update auth state
             UserLabel.Text = email;
+            UserLabel.Foreground = (Brush)FindResource("TextSecondaryBrush");
+            StatusText.Text = "Ready";
+            ModeLabel.Text = "Code Mode";
 
+            // Update auth dot
+            AuthDot.Fill = (Brush)FindResource("GreenBrush");
+            AuthDot.ToolTip = email;
+
+            // Pass token to mode views
             CodePanel.SetToken(token);
             ChatPanel.SetToken(token);
             ResearchPanel.SetToken(token);
             StudyPanel.SetToken(token);
 
-            _ = Task.Run(CheckForUpdatesAsync);
+            // Navigate to Code mode by default
+            NavigateTo("Code");
         }
 
         // ── Navigation ────────────────────────────────────────────────────────
@@ -74,9 +84,18 @@ namespace ThalamusApp
         private void SignOut()
         {
             AuthManager.ClearToken();
-            var login = new Auth.LoginWindow();
-            login.Show();
-            Close();
+
+            // Show login window again
+            var login = new LoginWindow();
+            login.ShowDialog();
+            if (!login.LoginSucceeded)
+            {
+                Application.Current.Shutdown();
+                return;
+            }
+
+            AuthManager.SaveToken(login.Token, login.Email);
+            SetSession(login.Token, login.Email);
         }
 
         // ── Auto-update ───────────────────────────────────────────────────────
