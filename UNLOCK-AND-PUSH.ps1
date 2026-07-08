@@ -23,8 +23,9 @@ WPF build fixes (comprehensive audit - all XAML files checked):
 * MainWindow.xaml: SidebarBtn + SidebarBtnActive ControlTemplates - Border had two direct
   children (inner Border + ContentPresenter); Border only accepts one child - wrapped both
   in a Grid
-* ResearchView.xaml: TextTransform="Uppercase" is not a WPF property (it's CSS/web only)
-  replaced with CharacterCasing="Upper" which is the correct WPF TextBlock attribute
+* ResearchView.xaml: TextTransform="Uppercase" is not a WPF property (CSS/web only);
+  CharacterCasing is TextBox-only, not TextBlock — uppercased the string literal instead
+* LoginWindow.xaml: CharacterSpacing is UWP/WinUI-only, removed from TextBlock (cosmetic)
 * release.yml: fix Invalid AssemblyVersion when ref_name is a branch (e.g. "main")
   Version now validated as numeric, falls back to 2.0.0 if not a vX.Y.Z tag
 

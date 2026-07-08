@@ -3,6 +3,7 @@ import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { performSearch } from "./agentCore";
 
 // Gemini keys are loaded from the DB (admin-managed via Admin UI)
 async function getGeminiKeysFromDB(ctx: { runQuery: Function }): Promise<string[]> {
@@ -285,6 +286,23 @@ Use these HTML elements with inline styles:
 - <table>, <tr>, <th>, <td> for tables
 - <div> for sections with style="margin:0.5em 0"
 
+## WEB SEARCH TOOL
+You have access to a web search tool. When the user asks about current events, recent news, real-time data, or ANYTHING you are not 100% certain about from your training data, you MUST use the search tool.
+
+To search, include this EXACT syntax anywhere in your response:
+<<SEARCH-TOOL="your search query here">>
+
+Examples of when you MUST search:
+- Current events, news, or anything time-sensitive
+- Game updates, seasons, patches, changelogs
+- Recent releases, launches, or announcements
+- Sports scores, standings, results
+- Stock prices, crypto, market data
+- Weather, live status of services
+- Any question where the answer may have changed since your training
+
+You can use up to 3 searches per response. After you emit search tags, the system will execute the searches and ask you to provide a final answer with the results. Do NOT say "I cannot search" — you CAN search. Always search when uncertain.
+
 Be thorough, helpful, and well-structured. Use rich HTML formatting.`,
 
       research: `You are Thalamus AI Research Mode — a deep research assistant by Aphantic Corporations.
@@ -338,13 +356,56 @@ Always explain your code with clear HTML-formatted text before and after code bl
       : "";
 
     const modelName = args.model ?? "claude-haiku-4-5";
-    const { text: responseContent, inputTokens, outputTokens } = await callAI(
+    let { text: responseContent, inputTokens, outputTokens } = await callAI(
       ctx,
       systemPrompts[args.mode] + contextHeader,
       messages,
       4096,
       modelName,
     );
+
+    // --- Search tool loop: detect <<SEARCH-TOOL="...">> tags and execute searches ---
+    const searchPattern = /<<SEARCH-TOOL="([^"]+)">>/g;
+    const searchMatches = [...responseContent.matchAll(searchPattern)];
+
+    if (searchMatches.length > 0) {
+      // Execute searches (max 3)
+      const geminiKeys = await getGeminiKeysFromDB(ctx);
+      const searchResults: Array<{ query: string; result: string }> = [];
+      for (const match of searchMatches.slice(0, 3)) {
+        const query = match[1];
+        try {
+          const result = await performSearch(query, geminiKeys.length > 0 ? geminiKeys : undefined);
+          searchResults.push({ query, result: result.slice(0, 3000) });
+        } catch {
+          searchResults.push({ query, result: "[Search failed — no results available]" });
+        }
+      }
+
+      // Build search context and re-call AI for final answer
+      const searchContext = searchResults
+        .map((r, i) => `[SEARCH RESULT ${i + 1} for "${r.query}"]:\n${r.result}`)
+        .join("\n\n---\n\n");
+
+      const followUpMessages: Array<{ role: "user" | "assistant"; content: string }> = [
+        ...messages,
+        { role: "assistant", content: responseContent },
+        { role: "user", content: `Here are the search results you requested:\n\n${searchContext}\n\nNow provide your final, complete answer to the user using these search results. Respond in HTML only. Do NOT emit any more <<SEARCH-TOOL>> tags.` },
+      ];
+
+      const followUp = await callAI(
+        ctx,
+        systemPrompts[args.mode] + contextHeader,
+        followUpMessages,
+        4096,
+        modelName,
+      );
+
+      responseContent = followUp.text;
+      inputTokens += followUp.inputTokens;
+      outputTokens += followUp.outputTokens;
+    }
+    // --- End search tool loop ---
 
     const tokensUsed = inputTokens + outputTokens;
     const inputCostCents = (inputTokens / 1_000_000) * 60;
