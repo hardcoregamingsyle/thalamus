@@ -31,7 +31,7 @@ namespace ThalamusApp
         {
             _isAuthenticated = true;
             UserLabel.Text = email;
-            AuthDot.Fill = (Brush)FindResource("GreenBrush");
+            AuthDot.Background = (Brush)FindResource("GreenBrush");
             AuthDot.ToolTip = email;
 
             // Show sign out, hide sign in
@@ -56,7 +56,7 @@ namespace ThalamusApp
         {
             _isAuthenticated = false;
             UserLabel.Text = "Not signed in";
-            AuthDot.Fill = (Brush)FindResource("AmberBrush");
+            AuthDot.Background = (Brush)FindResource("AmberBrush");
             AuthDot.ToolTip = "Sign in to unlock all features";
 
             BtnSignIn.Visibility = Visibility.Visible;
@@ -128,7 +128,7 @@ namespace ThalamusApp
             // Reset to guest mode
             _isAuthenticated = false;
             UserLabel.Text = "Not signed in";
-            AuthDot.Fill = (Brush)FindResource("AmberBrush");
+            AuthDot.Background = (Brush)FindResource("AmberBrush");
             AuthDot.ToolTip = "Sign in to unlock all features";
 
             BtnSignIn.Visibility = Visibility.Visible;
