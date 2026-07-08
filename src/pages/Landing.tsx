@@ -332,8 +332,8 @@ function IntelligenceConsole({ onLaunch }: { onLaunch: () => void }) {
   );
 }
 
-const RELEASE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/v2.0.0";
-const EXE_URL = `${RELEASE_URL}/Thalamus.exe`;
+// Always points to the latest release — no hardcoded version tag that goes stale.
+const EXE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/latest/download/Thalamus.exe";
 
 function Hero({ onLaunch }: { onLaunch: () => void }) {
   return (
@@ -388,10 +388,11 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             </button>
             <a
               href={EXE_URL}
+              download="Thalamus.exe"
               className="group flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-6 py-3 text-sm font-bold text-primary backdrop-blur-xl transition-all hover:bg-primary/20 hover:border-primary/60"
             >
               <Download className="h-4 w-4" />
-              Download Thalamus v2.0.0
+              Download for Windows
             </a>
             <button onClick={() => document.getElementById("modes")?.scrollIntoView({ behavior: "smooth" })} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.035] px-6 py-3 text-sm font-bold text-foreground backdrop-blur-xl transition-all hover:border-white/20 hover:bg-white/[0.06]">
               See what it can do
