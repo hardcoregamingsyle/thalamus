@@ -10,20 +10,26 @@ if (Test-Path $lock) {
 # Stage all changes
 git add -A
 
-# Commit
-git commit -m "feat: streaming, L4.5 agent pipeline, admin model config, GravityAds, API keys, tool anti-hallucination, README v2.0.0
+# Commit — use a here-string so PowerShell doesn't parse '-' as an operator
+$msg = @"
+feat: dynamic pipeline dispatch, TS fix, streaming, L4.5 agents, admin model config
 
-- Streaming: codeBranches.streamingContent field + callModelWithStreaming drip-feed
-- L4.5 pipeline: Critic retry loop (2 retries), richer Coder context (file inventory,
-  completed tasks, Tester/Critic feedback), original user intent always recovered
-- Tool anti-hallucination: explicit 'COPY EXACTLY' syntax blocks in all agent prompts
-- Admin: ModelConfigTab (per-agent per-runMode overrides), GravityAdsTab with toggles
-- Backend: admin.listAgentModelConfigs, admin.saveAgentModelConfig, admin.getAgentModelConfig
-- Schema: agentModelConfig, gravityAdsConfig, userApiKeys tables + streaming fields
-- API page (/api-keys): SHA-256 hashed keys, one-time reveal, credit allocation/revoke
-- ThinkingPanel: Gemini-style collapsible pill with animated dots
-- Security: ADMIN_TOKEN server-side only, session key rotated
-- README: professional rewrite reflecting v2.0.0 features and architecture"
+Dynamic pipeline (Dispatcher agent):
+* New Dispatcher agent runs first, classifies task complexity (trivial/simple/medium/complex/full)
+* Chooses minimum agent set needed -- simple tasks skip Researcher/Analyser/Planner entirely
+* Coder and Critic always guaranteed; Hacker only added when explicitly requested
+* codeBranches: dispatchedAgentsJson field, setDispatchedAgents internalMutation
+* buildPlanningPipeline/buildTaskPipeline derive runtime pipelines from dispatched list
+* parseDispatcherOutput validates JSON and ensures Coder+Critic always present
+* Trivial/simple tasks get a synthetic single-task plan and jump straight to execution
+* schema.ts: dispatchedAgentsJson field on codeBranches
+
+Other fixes:
+* ApiPage.tsx: explicit type annotation on keys.map() callback (TS7006 fix)
+* agentCore.ts: Dispatcher system prompt + haiku tier in all MODE_MATRIX modes
+"@
+
+git commit -m $msg
 
 Write-Host ""
 Write-Host "Commit done. Now push with your PAT:"
