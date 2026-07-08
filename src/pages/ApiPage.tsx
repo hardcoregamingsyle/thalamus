@@ -225,7 +225,7 @@ export default function ApiPage() {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {keys.map((key) => (
+              {keys.map((key: NonNullable<typeof keys>[number]) => (
                 <div key={key._id} className="flex items-center gap-4 px-4 py-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
