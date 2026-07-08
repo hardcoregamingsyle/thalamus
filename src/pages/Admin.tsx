@@ -10,12 +10,8 @@ import {
   Plus, Trash2, Check, Edit2, Eye, EyeOff, Loader2,
   Coins, AlertCircle, CheckCircle, Star, TrendingDown, RefreshCw, Zap,
   Database, ExternalLink, Copy, Globe, BookOpen, Upload, FileText, X,
-  TrendingUp, Activity,
+  TrendingUp, Activity, Cpu, Settings2,
 } from "lucide-react";
-
-// ── Admin auth ────────────────────────────────────────────────────────────────
-const ADMIN_USER = "admin";
-const ADMIN_PASS = "Aphantic*123";
 
 // ── Default model pricing ─────────────────────────────────────────────────────
 const DEFAULT_MODELS = [
@@ -25,31 +21,47 @@ const DEFAULT_MODELS = [
   { modelId: "claude-opus-4-8", displayName: "Claude Opus 4.8", inputCentsPerMillion: 1200, outputCentsPerMillion: 6000, abMultiplier: 15000, isActive: true },
 ];
 
-type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex" | "study-materials" | "dau" | "aws" | "gemini";
+type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex" | "study-materials" | "dau" | "aws" | "gemini" | "models" | "gravity-ads";
 
-const ADMIN_SESSION_KEY = "thalamus_admin_session";
+const ADMIN_SESSION_KEY = "thalamus_admin_v2";
 
 export default function AdminPage() {
-  const [authed, setAuthed] = useState(() => {
-    try { return localStorage.getItem(ADMIN_SESSION_KEY) === ADMIN_PASS; } catch { return false; }
-  });
   const [adminToken, setAdminToken] = useState(() => {
-    try { return localStorage.getItem(ADMIN_SESSION_KEY) === ADMIN_PASS ? ADMIN_PASS : ""; } catch { return ""; }
+    try { return localStorage.getItem(ADMIN_SESSION_KEY) ?? ""; } catch { return ""; }
   });
-  const [loginUser, setLoginUser] = useState("");
+  const [authed, setAuthed] = useState(false);
   const [loginPass, setLoginPass] = useState("");
   const [showPass, setShowPass] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [tab, setTab] = useState<AdminTab>("users");
 
-  const handleLogin = () => {
-    if (loginUser === ADMIN_USER && loginPass === ADMIN_PASS) {
-      try { localStorage.setItem(ADMIN_SESSION_KEY, ADMIN_PASS); } catch {}
+  // Verify stored session by testing against a known admin query.
+  // We attempt to list promo codes — success means the token is valid.
+  const storedTokenValid = useQuery(
+    api.admin.verifyAdminToken,
+    adminToken ? { token: adminToken } : "skip"
+  );
+
+  useEffect(() => {
+    if (adminToken && storedTokenValid === true) {
       setAuthed(true);
-      setAdminToken(ADMIN_PASS);
-      toast.success("Welcome, Admin");
-    } else {
-      toast.error("Invalid credentials");
+      setIsVerifying(false);
     }
+    if (adminToken && storedTokenValid === false) {
+      setAdminToken("");
+      setIsVerifying(false);
+      try { localStorage.removeItem(ADMIN_SESSION_KEY); } catch {}
+      if (loginPass) toast.error("Invalid token");
+    }
+  }, [storedTokenValid, adminToken]);
+
+  const handleLogin = () => {
+    if (!loginPass.trim()) return;
+    setIsVerifying(true);
+    const token = loginPass.trim();
+    try { localStorage.setItem(ADMIN_SESSION_KEY, token); } catch {}
+    // Set token → triggers useQuery(verifyAdminToken) → useEffect handles result
+    setAdminToken(token);
   };
 
   if (!authed) {
@@ -71,36 +83,28 @@ export default function AdminPage() {
           </div>
           <div className="space-y-4">
             <div>
-              <label className="text-xs font-bold text-muted-foreground mb-1.5 block">USER ID</label>
-              <input
-                value={loginUser}
-                onChange={e => setLoginUser(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") handleLogin(); }}
-                placeholder="admin"
-                className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-muted-foreground mb-1.5 block">PASSWORD</label>
+              <label className="text-xs font-bold text-muted-foreground mb-1.5 block">ADMIN TOKEN</label>
               <div className="relative">
                 <input
                   type={showPass ? "text" : "password"}
                   value={loginPass}
                   onChange={e => setLoginPass(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter") handleLogin(); }}
-                  placeholder="••••••••"
+                  placeholder="Enter your admin token"
                   className="w-full bg-background border border-border rounded-xl px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
                 />
                 <button onClick={() => setShowPass(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
                   {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+              <p className="text-[10px] text-muted-foreground mt-1.5">Set via: <code className="bg-muted px-1 rounded">npx convex env set ADMIN_TOKEN &lt;token&gt;</code></p>
             </div>
             <button
               onClick={handleLogin}
-              className="w-full bg-primary text-primary-foreground py-2.5 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all"
+              disabled={isVerifying || !loginPass.trim()}
+              className="w-full bg-primary text-primary-foreground py-2.5 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              Sign In
+              {isVerifying ? <><Loader2 className="h-4 w-4 animate-spin" /> Verifying…</> : "Sign In"}
             </button>
           </div>
         </motion.div>
@@ -140,6 +144,8 @@ export default function AdminPage() {
             { id: "convex", label: "Convex", icon: Database },
             { id: "aws", label: "AWS Bedrock", icon: Zap },
             { id: "gemini", label: "Gemini Keys", icon: Activity },
+            { id: "models", label: "Model Config", icon: Cpu },
+            { id: "gravity-ads", label: "GravityAds", icon: Globe },
           ] as { id: AdminTab; label: string; icon: React.ElementType }[]).map(item => (
             <button
               key={item.id}
@@ -172,6 +178,8 @@ export default function AdminPage() {
               {tab === "study-materials" && <StudyMaterialsTab adminToken={adminToken} />}
               {tab === "aws" && <AwsBedrockTab adminToken={adminToken} />}
               {tab === "gemini" && <GeminiKeysTab adminToken={adminToken} />}
+              {tab === "models" && <ModelConfigTab adminToken={adminToken} />}
+              {tab === "gravity-ads" && <GravityAdsTab adminToken={adminToken} />}
             </motion.div>
           </AnimatePresence>
         </main>
@@ -1326,6 +1334,209 @@ function GeminiKeysTab({ adminToken }: { adminToken: string }) {
             <li>Keys rotate automatically on 429/403 errors</li>
           </ul>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Model Config Tab ──────────────────────────────────────────────────────────
+const AGENT_NAMES = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
+const RUN_MODES_LIST = ["cheap", "balanced", "powerful"] as const;
+const BEDROCK_MODELS = [
+  { id: "us.anthropic.claude-haiku-4-5-20251001-v1:0", label: "Claude Haiku 4.5" },
+  { id: "us.anthropic.claude-sonnet-4-6-20251001-v1:0", label: "Claude Sonnet 4.6" },
+  { id: "us.anthropic.claude-opus-4-6-20250514-v1:0", label: "Claude Opus 4.6" },
+  { id: "us.anthropic.claude-opus-4-8-20251101-v1:0", label: "Claude Opus 4.8" },
+];
+const GEMINI_MODELS_LIST = [
+  { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+  { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite" },
+  { id: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" },
+];
+
+function ModelConfigTab({ adminToken }: { adminToken: string }) {
+  const existingConfigs = useQuery(api.admin.listAgentModelConfigs, { adminToken });
+  const saveConfig = useMutation(api.admin.saveAgentModelConfig);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [configs, setConfigs] = useState<Record<string, { modelId: string; provider: string; customEndpoint?: string }>>({});
+
+  useEffect(() => {
+    if (existingConfigs) {
+      const map: typeof configs = {};
+      (existingConfigs as any[]).forEach((c) => {
+        map[`${c.agentName}::${c.runMode}`] = { modelId: c.modelId, provider: c.provider, customEndpoint: c.customEndpoint };
+      });
+      setConfigs(map);
+    }
+  }, [existingConfigs]);
+
+  const handleSave = async (agentName: string, runMode: string) => {
+    const key = `${agentName}::${runMode}`;
+    const cfg = configs[key];
+    if (!cfg) return;
+    setSaving(key);
+    try {
+      await saveConfig({ adminToken, agentName, runMode, modelId: cfg.modelId, provider: cfg.provider, customEndpoint: cfg.customEndpoint });
+      toast.success(`Saved ${agentName} (${runMode})`);
+    } catch { toast.error("Save failed"); }
+    finally { setSaving(null); }
+  };
+
+  const getConfig = (agentName: string, runMode: string) => configs[`${agentName}::${runMode}`] ?? { modelId: "", provider: "bedrock" };
+  const setConfig = (agentName: string, runMode: string, field: string, value: string) => {
+    const key = `${agentName}::${runMode}`;
+    setConfigs(prev => ({ ...prev, [key]: { ...getConfig(agentName, runMode), [field]: value } }));
+  };
+
+  return (
+    <div className="space-y-6 max-w-4xl">
+      <div>
+        <h2 className="text-lg font-bold text-foreground">Model Configuration</h2>
+        <p className="text-sm text-muted-foreground mt-1">Override the default model for each agent and run mode.</p>
+      </div>
+      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-xs text-amber-400">
+        <strong>Note:</strong> Changes take effect on the next pipeline run. Select "Custom Endpoint" for self-hosted or fine-tuned models.
+      </div>
+      <div className="space-y-3">
+        {AGENT_NAMES.map(agentName => (
+          <div key={agentName} className="bg-card border border-border rounded-xl overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-border bg-muted/30">
+              <span className="text-sm font-bold text-foreground">{agentName}</span>
+            </div>
+            <div className="grid grid-cols-3 divide-x divide-border">
+              {RUN_MODES_LIST.map(runMode => {
+                const key = `${agentName}::${runMode}`;
+                const cfg = getConfig(agentName, runMode);
+                return (
+                  <div key={runMode} className="p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-bold uppercase ${runMode === "cheap" ? "text-green-500" : runMode === "balanced" ? "text-blue-400" : "text-purple-400"}`}>{runMode}</span>
+                      <button onClick={() => handleSave(agentName, runMode)} disabled={saving === key || !cfg.modelId}
+                        className="text-[10px] px-2 py-0.5 rounded bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-40 flex items-center gap-1">
+                        {saving === key ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Check className="h-2.5 w-2.5" />}Save
+                      </button>
+                    </div>
+                    <select value={cfg.provider} onChange={e => setConfig(agentName, runMode, "provider", e.target.value)}
+                      className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none">
+                      <option value="bedrock">Bedrock (Claude)</option><option value="gemini">Gemini</option><option value="custom">Custom Endpoint</option>
+                    </select>
+                    {cfg.provider === "bedrock" && (
+                      <select value={cfg.modelId} onChange={e => setConfig(agentName, runMode, "modelId", e.target.value)}
+                        className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none">
+                        <option value="">— default —</option>
+                        {BEDROCK_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                      </select>
+                    )}
+                    {cfg.provider === "gemini" && (
+                      <select value={cfg.modelId} onChange={e => setConfig(agentName, runMode, "modelId", e.target.value)}
+                        className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none">
+                        <option value="">— default —</option>
+                        {GEMINI_MODELS_LIST.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                      </select>
+                    )}
+                    {cfg.provider === "custom" && (
+                      <input value={cfg.customEndpoint ?? ""} onChange={e => setConfig(agentName, runMode, "customEndpoint", e.target.value)}
+                        placeholder="https://your-model/v1" className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-[10px] font-mono text-foreground focus:outline-none" />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── GravityAds Tab ────────────────────────────────────────────────────────────
+function GravityAdsTab({ adminToken }: { adminToken: string }) {
+  const existing = useQuery(api.gravityAds.getGravityAdsConfig, { adminToken });
+  const saveConfig = useMutation(api.gravityAds.saveGravityAdsConfig);
+  const [apiKey, setApiKey] = useState("");
+  const [publisherId, setPublisherId] = useState("");
+  const [adUnitIds, setAdUnitIds] = useState("");
+  const [isEnabled, setIsEnabled] = useState(false);
+  const [showToGuests, setShowToGuests] = useState(true);
+  const [showToFreeUsers, setShowToFreeUsers] = useState(true);
+  const [showToPaidUsers, setShowToPaidUsers] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+
+  useEffect(() => {
+    if (existing) {
+      setApiKey(existing.apiKey ?? "");
+      setPublisherId(existing.publisherId ?? "");
+      setAdUnitIds((existing.adUnitIds ?? []).join("\n"));
+      setIsEnabled(existing.isEnabled ?? false);
+      setShowToGuests(existing.showToGuests ?? true);
+      setShowToFreeUsers(existing.showToFreeUsers ?? true);
+      setShowToPaidUsers(existing.showToPaidUsers ?? false);
+    }
+  }, [existing]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await saveConfig({ adminToken, apiKey, publisherId: publisherId || undefined,
+        adUnitIds: adUnitIds.trim() ? adUnitIds.split("\n").map(s => s.trim()).filter(Boolean) : undefined,
+        isEnabled, showToGuests, showToFreeUsers, showToPaidUsers });
+      toast.success("GravityAds config saved");
+    } catch (e: any) { toast.error(e.message ?? "Save failed"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h2 className="text-lg font-bold text-foreground">GravityAds Integration</h2>
+        <p className="text-sm text-muted-foreground mt-1">Once approved by GravityAds, enter your key here — ads go live immediately.</p>
+      </div>
+      <div className="bg-card border border-border rounded-xl p-6 space-y-5">
+        <div className="flex items-center justify-between">
+          <div><p className="text-sm font-semibold text-foreground">Ads Enabled</p><p className="text-xs text-muted-foreground">Master switch</p></div>
+          <button onClick={() => setIsEnabled(v => !v)} className={`relative w-10 h-5 rounded-full transition-all ${isEnabled ? "bg-primary" : "bg-muted"}`}>
+            <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${isEnabled ? "left-5" : "left-0.5"}`} />
+          </button>
+        </div>
+        <div>
+          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">GRAVITYADS API KEY</label>
+          <div className="relative">
+            <input type={showKey ? "text" : "password"} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Enter your GravityAds API key"
+              className="w-full bg-background border border-border rounded-xl px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors" />
+            <button onClick={() => setShowKey(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+              {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+        <div>
+          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">PUBLISHER ID <span className="font-normal">(optional)</span></label>
+          <input value={publisherId} onChange={e => setPublisherId(e.target.value)} placeholder="pub-xxxxxxxxxxxxxxxx"
+            className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors" />
+        </div>
+        <div>
+          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">AD UNIT IDs <span className="font-normal">(one per line)</span></label>
+          <textarea value={adUnitIds} onChange={e => setAdUnitIds(e.target.value)} placeholder={"ca-app-pub-xxx/yyy\nca-app-pub-xxx/zzz"} rows={3}
+            className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors resize-none" />
+        </div>
+        <div className="space-y-2.5">
+          <p className="text-xs font-bold text-muted-foreground">SHOW ADS TO</p>
+          {([["Guest users (not signed in)", showToGuests, setShowToGuests], ["Free signed-in users", showToFreeUsers, setShowToFreeUsers], ["Paid users", showToPaidUsers, setShowToPaidUsers]] as const).map(([label, val, set]) => (
+            <div key={label as string} className="flex items-center justify-between">
+              <span className="text-sm text-foreground">{label as string}</span>
+              <button onClick={() => (set as any)(v => !v)} className={`relative w-9 h-5 rounded-full transition-all ${val ? "bg-primary" : "bg-muted"}`}>
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${val ? "left-4" : "left-0.5"}`} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <button onClick={handleSave} disabled={saving}
+          className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+          {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : <><Check className="h-4 w-4" />Save Config</>}
+        </button>
+      </div>
+      <div className="bg-muted/30 border border-border rounded-xl p-4 text-xs text-muted-foreground">
+        The API key is stored encrypted — never sent to the browser. Ad display is controlled by the toggles above.
       </div>
     </div>
   );
