@@ -18,9 +18,44 @@ import {
   type TaskDifficulty,
 } from "./agentCore";
 
-// Pipeline definition
-const PLANNING_PIPELINE = ["Researcher", "Analyser", "Planner"];
-const TASK_PIPELINE = ["Researcher", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
+// All known agents in their natural order
+const ALL_PLANNING_AGENTS = ["Researcher", "Analyser", "Planner"] as const;
+const ALL_TASK_AGENTS     = ["Researcher", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"] as const;
+
+// The full fallback pipelines (used when no Dispatcher output exists)
+const DEFAULT_PLANNING_PIPELINE = ["Researcher", "Analyser", "Planner"];
+const DEFAULT_TASK_PIPELINE     = ["Researcher", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
+
+/** Build the actual planning pipeline from the Dispatcher's chosen agent list. */
+function buildPlanningPipeline(dispatched: string[]): string[] {
+  if (!dispatched || dispatched.length === 0) return DEFAULT_PLANNING_PIPELINE;
+  return ALL_PLANNING_AGENTS.filter(a => dispatched.includes(a));
+}
+
+/** Build the actual task pipeline from the Dispatcher's chosen agent list.
+ *  Coder and Critic are always guaranteed to appear (they were enforced at dispatch time). */
+function buildTaskPipeline(dispatched: string[]): string[] {
+  if (!dispatched || dispatched.length === 0) return DEFAULT_TASK_PIPELINE;
+  return ALL_TASK_AGENTS.filter(a => dispatched.includes(a));
+}
+
+/** Parse and validate the Dispatcher's JSON output. Returns null on failure. */
+function parseDispatcherOutput(text: string): { tier: string; agents: string[] } | null {
+  try {
+    // Strip markdown fences if the model wrapped them anyway
+    const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+    const parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed.agents) || parsed.agents.length === 0) return null;
+    const VALID = new Set(["Researcher","Analyser","Planner","Coder","Optimiser","Organizer","Tester","Hacker","Critic"]);
+    const agents = (parsed.agents as string[]).filter(a => VALID.has(a));
+    // Always guarantee Coder and Critic
+    if (!agents.includes("Coder"))  agents.push("Coder");
+    if (!agents.includes("Critic")) agents.push("Critic");
+    return { tier: parsed.tier ?? "medium", agents };
+  } catch {
+    return null;
+  }
+}
 
 const RESEARCH_SUB_AGENTS = ["ResearchPlanner", "DataTaker", "ResearchOrganiser"];
 const SECURITY_SUB_AGENTS = [
@@ -263,13 +298,21 @@ export const runPipelineAction = internalAction({
     const allMessages = await ctx.runQuery(internal.codeBranches.getMessagesInternal, { branchId }) as any[];
     const firstUserMessage = allMessages.find((m: any) => m.agent === "User");
     const task = args.userPrompt || firstUserMessage?.content || branch.description || "Continue working on the project";
-    let currentPhase = branch.phase ?? "Researcher";
+    let currentPhase = branch.phase ?? "Dispatcher";
     let round = branch.round ?? 0;
     let totalMessages = branch.totalMessages ?? 0;
-    let executionPhase = branch.executionPhase ?? "planning";
+    let executionPhase = branch.executionPhase ?? "dispatching";
     let currentTaskIndex = branch.currentTaskIndex ?? 0;
     let taskDifficulty: TaskDifficulty = branch.currentTaskDifficulty ?? "normal";
     const runMode: RunMode = (branch.runMode as RunMode) ?? "balanced";
+
+    // Parse the previously saved dispatched-agent list (set by Dispatcher phase).
+    let dispatchedAgents: string[] = [];
+    try {
+      if (branch.dispatchedAgentsJson) {
+        dispatchedAgents = JSON.parse(branch.dispatchedAgentsJson);
+      }
+    } catch { /* ignored */ }
 
     // Mark as running
     await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
@@ -289,9 +332,92 @@ export const runPipelineAction = internalAction({
       const context = buildContext(messages);
       const fileContext = buildFileContext(files);
 
-      // Determine pipeline
+      // ── Dispatcher phase ──────────────────────────────────────────────────
+      // Runs once at the very start to decide which agents are needed.
+      if (executionPhase === "dispatching" || currentPhase === "Dispatcher") {
+        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+          branchId,
+          status: "running",
+          currentAgent: "Dispatcher",
+          phase: "Dispatcher",
+        });
+
+        const dispatchPrompt = `## Task to analyse\n${task}\n\n## Existing project files\n${files.length > 0 ? files.map(f => `- ${f.filepath}`).join("\n") : "None (greenfield project)"}`;
+        const dispatchResult = await callModelWithStreaming(
+          ctx, dispatchPrompt, AGENT_SYSTEM_PROMPTS["Dispatcher"] ?? "", "haiku",
+          branchId, "Dispatcher", geminiKeys, dbCreds,
+        );
+        await ctx.runMutation(internal.codeBranches.clearStreamingContent, { branchId });
+
+        const dispatched = parseDispatcherOutput(dispatchResult.text);
+        const agents = dispatched?.agents ?? ["Analyser", "Planner", "Coder", "Tester", "Critic"];
+        const tier = dispatched?.tier ?? "medium";
+
+        // Persist so every subsequent pipeline invocation can read it
+        await ctx.runMutation(internal.codeBranches.setDispatchedAgents, {
+          branchId,
+          agentsJson: JSON.stringify(agents),
+        });
+        dispatchedAgents = agents;
+
+        // Post a visible message so the user can see the routing decision
+        totalMessages++;
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId,
+          agent: "Dispatcher",
+          content: `**Task complexity: ${tier}**\nRunning agents: ${agents.join(" → ")}`,
+          round,
+          messageIndex: totalMessages,
+        });
+
+        // Decide where to go next
+        const planningAgents = buildPlanningPipeline(agents);
+        if (planningAgents.length > 0) {
+          // At least one planning agent was selected — run the planning phase
+          const firstPlanningAgent = planningAgents[0];
+          round++;
+          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+            branchId,
+            status: "idle",
+            currentAgent: firstPlanningAgent,
+            phase: firstPlanningAgent,
+            executionPhase: "planning",
+            round,
+            totalMessages,
+          });
+          await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+          return;
+        } else {
+          // No planning agents (trivial/simple task) — go straight to execution
+          // with a single synthetic task so the Coder has a well-defined prompt.
+          const syntheticTask = JSON.stringify([{ title: task.slice(0, 120), description: task }]);
+          await ctx.runMutation(internal.codeBranches.updatePlannerTasks, {
+            branchId,
+            plannerTasksJson: syntheticTask,
+          });
+          const taskAgents = buildTaskPipeline(agents);
+          const firstTaskAgent = taskAgents[0] ?? "Coder";
+          round++;
+          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+            branchId,
+            status: "idle",
+            currentAgent: firstTaskAgent,
+            phase: firstTaskAgent,
+            executionPhase: "executing",
+            round,
+            totalMessages,
+          });
+          await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+          return;
+        }
+      }
+
+      // ── Normal pipeline phases ────────────────────────────────────────────
+      // Determine which pipeline list applies for the current phase.
       const isPlanning = executionPhase === "planning";
-      const currentPipeline = isPlanning ? PLANNING_PIPELINE : TASK_PIPELINE;
+      const currentPipeline = isPlanning
+        ? buildPlanningPipeline(dispatchedAgents)
+        : buildTaskPipeline(dispatchedAgents);
       const phaseIndex = currentPipeline.indexOf(currentPhase);
 
       if (phaseIndex === -1) {
@@ -479,7 +605,6 @@ export const runPipelineAction = internalAction({
         const retryCount = (branch.criticRetryCount as number) ?? 0;
         if (retryCount < MAX_CRITIC_RETRIES) {
           // Save a fix-request context message and requeue from Coder
-          const coderIndex = TASK_PIPELINE.indexOf("Coder");
           round++;
           await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
             branchId,
@@ -527,12 +652,15 @@ export const runPipelineAction = internalAction({
         const plannerTasks = parsedPlannerTasks;
 
         if (plannerTasks.length > 0) {
+          // Start at the first agent in the dynamic task pipeline
+          const taskPipeline = buildTaskPipeline(dispatchedAgents);
+          const firstTaskAgent = taskPipeline[0] ?? "Coder";
           round++;
           await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
             branchId,
             status: "idle",
-            currentAgent: "Researcher",
-            phase: "Researcher",
+            currentAgent: firstTaskAgent,
+            phase: firstTaskAgent,
             executionPhase: "executing",
             round,
             totalMessages,
@@ -559,13 +687,15 @@ export const runPipelineAction = internalAction({
 
           const nextTaskIndex = currentTaskIndex + 1;
           if (nextTaskIndex < plannerTasks.length) {
-            // More tasks
+            // More tasks — restart task pipeline from first agent
+            const taskPipeline = buildTaskPipeline(dispatchedAgents);
+            const firstTaskAgent = taskPipeline[0] ?? "Coder";
             round++;
             await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
               branchId,
               status: "idle",
-              currentAgent: "Researcher",
-              phase: "Researcher",
+              currentAgent: firstTaskAgent,
+              phase: firstTaskAgent,
               executionPhase: "executing",
               round,
               totalMessages,
