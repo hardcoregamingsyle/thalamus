@@ -117,6 +117,10 @@ const schema = defineSchema(
       vmCores: v.optional(v.number()),
       vmOs: v.optional(v.string()),
       runMode: v.optional(v.union(v.literal("cheap"), v.literal("balanced"), v.literal("powerful"))),
+      // Dynamic pipeline — Dispatcher chooses which agents to run for this task.
+      // Stored as a JSON array of agent names, e.g. '["Coder","Tester","Critic"]'.
+      // Null/missing means "full pipeline" (first-time backwards compat).
+      dispatchedAgentsJson: v.optional(v.string()),
       // Real-time streaming state — updated frequently during agent generation
       streamingContent: v.optional(v.string()),
       streamingAgent: v.optional(v.string()),

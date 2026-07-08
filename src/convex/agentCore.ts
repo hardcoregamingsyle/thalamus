@@ -64,6 +64,8 @@ export type RunMode = "cheap" | "balanced" | "powerful";
 // Agents not in the pipeline are kept as haiku fallback.
 const MODE_MATRIX: Record<RunMode, Record<string, ModelTier>> = {
   cheap: {
+    // Dispatcher always uses haiku — it's a routing call, not a coding call
+    Dispatcher:         "haiku",
     // Research cluster
     Researcher:         "gemini",   // ResearchDataExtractor — Gemini 2.0 Flash Lite
     ResearchPlanner:    "gemini",
@@ -93,6 +95,7 @@ const MODE_MATRIX: Record<RunMode, Record<string, ModelTier>> = {
     Critic:             "sonnet",   // deepseek-v4-pro
   },
   balanced: {
+    Dispatcher:         "haiku",
     // Research cluster
     Researcher:         "gemini",   // ResearchDataExtractor stays on Flash Lite
     ResearchPlanner:    "gemini",
@@ -122,6 +125,7 @@ const MODE_MATRIX: Record<RunMode, Record<string, ModelTier>> = {
     Critic:             "sonnet",   // deepseek-v4-pro
   },
   powerful: {
+    Dispatcher:         "haiku",
     // Research cluster
     Researcher:         "gemini",   // Even in Powerful, scraping stays fast
     ResearchPlanner:    "sonnet",
@@ -159,6 +163,8 @@ export function getAgentTier(agentName: string, mode: RunMode = "balanced"): Mod
 
 // Default model per agent (Code Mode) — used as fallback when no mode is set
 export const AGENT_MODEL_MAP: Record<string, ModelTier> = {
+  // Dispatcher — classifies task complexity, always runs on the cheapest model
+  Dispatcher: "haiku",
   // Planning phase
   Researcher: "haiku",
   Analyser: "haiku",
@@ -1146,6 +1152,50 @@ export function parseDifficultyFromPlannerOutput(content: string): TaskDifficult
 }
 
 export const AGENT_SYSTEM_PROMPTS: Record<string, string> = {
+  // ── Dispatcher ────────────────────────────────────────────────────────────
+  // Runs ONCE before the pipeline to decide which agents are actually needed.
+  // Output is a JSON array of agent names from the approved set.
+  Dispatcher: `You are the Pipeline Dispatcher for an AI coding system. Your ONLY job is to analyse the user's task and decide the minimum set of agents needed to complete it well.
+
+Available agents (in pipeline order):
+- Researcher   — web search, docs, API reference lookup
+- Analyser     — architecture analysis, deep tech breakdown
+- Planner      — task decomposition into atomic steps
+- Coder        — writes production-ready code (ALWAYS required)
+- Optimiser    — performance and code quality improvements
+- Organizer    — documentation, README, file structure cleanup
+- Tester       — writes and evaluates tests
+- Hacker       — dedicated security/penetration testing (only when explicitly asked)
+- Critic       — final quality gate, rejects bad output (ALWAYS required)
+
+RULES:
+1. Coder and Critic are ALWAYS included.
+2. Include Researcher ONLY if the task needs current docs, third-party APIs, or info not in the codebase.
+3. Include Analyser ONLY for tasks requiring architectural decisions or analysis of a complex existing system.
+4. Include Planner ONLY if the task has multiple independent sub-components (3+ files, a full feature, a new module).
+5. Include Optimiser ONLY if performance, bundle size, or code quality is explicitly mentioned.
+6. Include Organizer ONLY if the task involves documentation, README, or a major refactor of project structure.
+7. Include Tester ONLY if the task involves business logic, API endpoints, or the user asks for tests.
+8. Include Hacker ONLY if the user explicitly asks for a security audit, pen test, or vulnerability scan.
+9. Security-by-default is ALREADY built into the Coder — do NOT add Hacker just because the task touches auth or data.
+
+TASK TIERS (use as guidance, not strict rules):
+- Trivial   (rename, typo, add a prop, one-liner): ["Coder","Critic"]
+- Simple    (add a UI component, fix a bug, small config): ["Coder","Tester","Critic"]
+- Medium    (multi-file feature, new endpoint, refactor): ["Planner","Coder","Tester","Critic"]
+- Complex   (new module, full integration, architecture change): ["Analyser","Planner","Coder","Optimiser","Tester","Critic"]
+- Research  (third-party API, new library, external docs needed): add Researcher to any of the above
+- Full      (greenfield app, security audit requested): all agents
+
+OUTPUT FORMAT — output ONLY a valid JSON object, no markdown fences, no explanation:
+{
+  "tier": "trivial|simple|medium|complex|full",
+  "reasoning": "one sentence explaining why this tier was chosen",
+  "agents": ["Agent1", "Agent2", ...]
+}
+
+Be LEAN. Every unnecessary agent wastes time and money. When in doubt, pick fewer agents — the Critic will catch issues.`,
+
   // Research Team (3 sub-agents that run under the "Researcher" slot)
   ResearchPlanner: `You are the Research Planner — the FIRST step in the Research Team pipeline.
 

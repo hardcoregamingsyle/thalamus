@@ -59,8 +59,8 @@ export const createBranch = mutation({
       createdAt: now,
       lastActivityAt: now,
       status: "idle",
-      phase: "Researcher",
-      executionPhase: "planning",
+      phase: "Dispatcher",
+      executionPhase: "dispatching",
       currentTaskIndex: 0,
       totalMessages: 0,
       round: 0,
@@ -464,6 +464,22 @@ export const setStreamingContent = internalMutation({
       streamingAgent: args.agentName,
       streamingAt: Date.now(),
     });
+  },
+});
+
+// Store the Dispatcher's chosen agent list for this branch
+export const setDispatchedAgents = internalMutation({
+  args: {
+    branchId: v.string(),
+    agentsJson: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const branch = await ctx.db
+      .query("codeBranches")
+      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (!branch) return;
+    await ctx.db.patch(branch._id, { dispatchedAgentsJson: args.agentsJson });
   },
 });
 
