@@ -11,7 +11,7 @@ namespace ThalamusApp
 {
     public partial class MainWindow : Window
     {
-        private const string APP_VERSION = "1.2.0";
+        private const string APP_VERSION = "2.0.0";
         private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
         private bool _isAuthenticated;
 
