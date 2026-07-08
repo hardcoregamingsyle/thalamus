@@ -10,44 +10,42 @@ if (Test-Path $lock) {
 # Stage all changes
 git add -A
 
-# Commit — use a here-string so PowerShell doesn't parse '-' as an operator
+# Commit
 $msg = @"
-fix: WPF build errors, download links, dynamic pipeline dispatch
+fix: WPF build errors, download links, dynamic pipeline, chat search
 
-WPF build fixes (comprehensive audit - all XAML files checked):
-* LoginWindow.xaml: remove invalid CornerRadius setter on Button (not a Button property)
-  CornerRadius is now hardcoded on the Border inside the ControlTemplate instead
-* LoginWindow.xaml: move Grid.RowDefinitions to before child content (property elements
-  must precede child elements in XAML or the parser throws)
-* MainWindow.xaml: same CornerRadius fix for PrimaryBtn and GhostBtn styles
-* MainWindow.xaml: SidebarBtn + SidebarBtnActive ControlTemplates - Border had two direct
-  children (inner Border + ContentPresenter); Border only accepts one child - wrapped both
-  in a Grid
-* ResearchView.xaml: TextTransform="Uppercase" is not a WPF property (CSS/web only);
-  CharacterCasing is TextBox-only, not TextBlock — uppercased the string literal instead
-* LoginWindow.xaml: CharacterSpacing is UWP/WinUI-only, removed from TextBlock (cosmetic)
-* release.yml: fix Invalid AssemblyVersion when ref_name is a branch (e.g. "main")
-  Version now validated as numeric, falls back to 2.0.0 if not a vX.Y.Z tag
+WPF XAML fixes:
+* LoginWindow.xaml: remove CornerRadius setter on Button, move Grid.RowDefinitions
+  before child content, remove UWP-only CharacterSpacing from TextBlock
+* MainWindow.xaml: CornerRadius fix, SidebarBtn Border wrapped children in Grid
+* ResearchView.xaml: remove TextTransform (CSS-only), uppercase string literal
+* release.yml: fix AssemblyVersion when ref_name is branch name
+
+WPF C# fixes:
+* MainWindow.xaml.cs: AuthDot is Border not Ellipse, use .Background not .Fill
+* CodeView.xaml.cs, ResearchView.xaml.cs, ChatView.xaml.cs, StudyView.xaml.cs:
+  Thickness(x,y) requires 4 args in WPF, expanded to Thickness(x,y,x,y)
+* SandboxView.xaml.cs: nullable annotations on fields initialized later
+* VncIntegration.cs: nullable annotations on fields and events
 
 Download link fixes:
-* Landing.tsx: switch from hardcoded v2.0.0 tag to releases/latest/download/ redirect
-* Landing.tsx: add download attribute so browser saves file instead of navigating
-* vmLauncher.ts: same latest-redirect fix for INSTALLER_URL and BRIDGE_URL
-* VMSetupDialog.tsx: same latest-redirect fix + download attribute
+* Landing.tsx, vmLauncher.ts, VMSetupDialog.tsx: releases/latest/download redirect
 
 Dynamic pipeline (Dispatcher agent):
-* New Dispatcher agent classifies task complexity and selects minimum needed agents
-* Coder and Critic always guaranteed; Hacker only added when explicitly requested
-* codeBranches: dispatchedAgentsJson field, setDispatchedAgents internalMutation
-* schema.ts: dispatchedAgentsJson field on codeBranches
+* New Dispatcher agent selects minimum needed agents per task complexity
+* schema.ts + codeBranches: dispatchedAgentsJson field and mutation
+
+Chat mode web search:
+* ai.ts: chat mode system prompt now includes SEARCH-TOOL syntax
+* ai.ts: search loop executes queries via performSearch then re-calls AI
 
 Other:
-* ApiPage.tsx: explicit type annotation on keys.map() callback (TS7006 fix)
-* agentCore.ts: Dispatcher system prompt + haiku tier in all MODE_MATRIX modes
+* ApiPage.tsx: TS7006 type annotation fix
+* agentCore.ts: Dispatcher system prompt and model mapping
 "@
 
 git commit -m $msg
 
 Write-Host ""
-Write-Host "Commit done. Now push with your PAT:"
-Write-Host 'git push origin main'
+Write-Host "Commit done. Now push with:"
+Write-Host "git push origin main"

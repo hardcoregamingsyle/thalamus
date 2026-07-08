@@ -26,14 +26,14 @@ namespace ThalamusApp
 
         public class UpdateInfo
         {
-            public string Version { get; set; }
-            public string DownloadUrl { get; set; }
-            public string Changelog { get; set; }
-            public string Checksum { get; set; }
+            public string Version { get; set; } = string.Empty;
+            public string DownloadUrl { get; set; } = string.Empty;
+            public string Changelog { get; set; } = string.Empty;
+            public string Checksum { get; set; } = string.Empty;
             public long Size { get; set; }
             public DateTime ReleaseDate { get; set; }
             public bool IsDelta { get; set; }
-            public string DeltaFrom { get; set; }
+            public string? DeltaFrom { get; set; }
         }
 
         public class UpdateProgress
@@ -41,13 +41,13 @@ namespace ThalamusApp
             public long BytesDownloaded { get; set; }
             public long TotalBytes { get; set; }
             public int PercentComplete => (int)((BytesDownloaded * 100) / Math.Max(TotalBytes, 1));
-            public string Status { get; set; }
+            public string Status { get; set; } = string.Empty;
         }
 
-        public event EventHandler<UpdateProgress> ProgressChanged;
-        public event EventHandler<string> UpdateAvailable;
-        public event EventHandler<string> UpdateInstalled;
-        public event EventHandler<string> UpdateFailed;
+        public event EventHandler<UpdateProgress>? ProgressChanged;
+        public event EventHandler<string>? UpdateAvailable;
+        public event EventHandler<string>? UpdateInstalled;
+        public event EventHandler<string>? UpdateFailed;
 
         public AutoUpdateSystem(string installDir, string currentVersion)
         {
