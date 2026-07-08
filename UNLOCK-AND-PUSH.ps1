@@ -14,10 +14,17 @@ git add -A
 $msg = @"
 fix: WPF build errors, download links, dynamic pipeline dispatch
 
-WPF build fixes:
+WPF build fixes (comprehensive audit - all XAML files checked):
 * LoginWindow.xaml: remove invalid CornerRadius setter on Button (not a Button property)
   CornerRadius is now hardcoded on the Border inside the ControlTemplate instead
-* MainWindow.xaml: same fix for PrimaryBtn and GhostBtn styles
+* LoginWindow.xaml: move Grid.RowDefinitions to before child content (property elements
+  must precede child elements in XAML or the parser throws)
+* MainWindow.xaml: same CornerRadius fix for PrimaryBtn and GhostBtn styles
+* MainWindow.xaml: SidebarBtn + SidebarBtnActive ControlTemplates - Border had two direct
+  children (inner Border + ContentPresenter); Border only accepts one child - wrapped both
+  in a Grid
+* ResearchView.xaml: TextTransform="Uppercase" is not a WPF property (it's CSS/web only)
+  replaced with CharacterCasing="Upper" which is the correct WPF TextBlock attribute
 * release.yml: fix Invalid AssemblyVersion when ref_name is a branch (e.g. "main")
   Version now validated as numeric, falls back to 2.0.0 if not a vX.Y.Z tag
 
