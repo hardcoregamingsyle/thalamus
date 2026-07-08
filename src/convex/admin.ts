@@ -1,16 +1,25 @@
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
+
 // Admin auth helper
-// ⚠️  SECURITY: The previous hardcoded token was committed to a public repo.
-// Set a new token via: npx convex env set ADMIN_TOKEN <strong-random-password>
-// Until the env var is set, the old value is used as fallback for backward
-// compatibility — but you MUST rotate it.
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "Aphantic*123";
+// Set the token via: npx convex env set ADMIN_TOKEN <strong-random-password>
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";
 
 async function requireAdmin(_ctx: unknown, adminToken: string) {
+  if (!ADMIN_TOKEN) throw new Error("ADMIN_TOKEN not configured on server");
   if (!adminToken || adminToken !== ADMIN_TOKEN) throw new Error("Unauthorized");
 }
+
+// Used by the frontend login form to validate the token without exposing it in
+// the client bundle. Returns true/false — never exposes the token value.
+export const verifyAdminToken = query({
+  args: { token: v.string() },
+  handler: async (_ctx, args) => {
+    if (!ADMIN_TOKEN) return false;
+    return args.token === ADMIN_TOKEN;
+  },
+});
 
 // Promo Codes
 export const listPromoCodes = query({
@@ -599,5 +608,61 @@ export const getGeminiKeysInternal = internalQuery({
     const record = await ctx.db.query("geminiKeys").take(1);
     if (record.length === 0) return [];
     return record[0].keys;
+  },
+});
+
+// Agent Model Config
+export const listAgentModelConfigs = query({
+  args: { adminToken: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    return await ctx.db.query("agentModelConfig").take(200);
+  },
+});
+
+export const saveAgentModelConfig = mutation({
+  args: {
+    adminToken: v.string(),
+    agentName: v.string(),
+    runMode: v.string(),
+    modelId: v.string(),
+    provider: v.string(),
+    customEndpoint: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const existing = await ctx.db
+      .query("agentModelConfig")
+      .withIndex("by_agent_and_mode", (q) =>
+        q.eq("agentName", args.agentName).eq("runMode", args.runMode)
+      )
+      .first();
+    const data = {
+      agentName: args.agentName,
+      runMode: args.runMode,
+      modelId: args.modelId,
+      provider: args.provider,
+      customEndpoint: args.customEndpoint,
+      updatedAt: Date.now(),
+      updatedBy: "admin",
+    };
+    if (existing) {
+      await ctx.db.patch(existing._id, data);
+    } else {
+      await ctx.db.insert("agentModelConfig", data);
+    }
+  },
+});
+
+// Internal: get model override for a specific agent+mode
+export const getAgentModelConfig = internalQuery({
+  args: { agentName: v.string(), runMode: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("agentModelConfig")
+      .withIndex("by_agent_and_mode", (q) =>
+        q.eq("agentName", args.agentName).eq("runMode", args.runMode)
+      )
+      .first();
   },
 });
