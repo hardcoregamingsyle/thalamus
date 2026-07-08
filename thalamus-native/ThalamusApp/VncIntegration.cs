@@ -16,18 +16,18 @@ namespace ThalamusApp
     {
         private readonly string _host;
         private readonly int    _port;
-        private TcpClient    _tcp;
-        private NetworkStream _stream;
+        private TcpClient?    _tcp;
+        private NetworkStream? _stream;
         private int  _width, _height;
         private bool _connected;
         private CancellationTokenSource _cts = new();
 
-        public event EventHandler<FrameUpdateEventArgs> FrameUpdated;
-        public event EventHandler<ConnectionEventArgs>  ConnectionChanged;
+        public event EventHandler<FrameUpdateEventArgs>? FrameUpdated;
+        public event EventHandler<ConnectionEventArgs>?  ConnectionChanged;
 
         public class FrameUpdateEventArgs : EventArgs
         {
-            public byte[] FrameData { get; set; }   // BGRA pixels for the dirty rect
+            public byte[] FrameData { get; set; } = Array.Empty<byte>();   // BGRA pixels for the dirty rect
             public int FullWidth  { get; set; }
             public int FullHeight { get; set; }
             public int X { get; set; }
@@ -39,7 +39,7 @@ namespace ThalamusApp
         public class ConnectionEventArgs : EventArgs
         {
             public bool   IsConnected { get; set; }
-            public string Message     { get; set; }
+            public string Message     { get; set; } = string.Empty;
         }
 
         public EmbeddedVncClient(string host, int port)
