@@ -25,9 +25,9 @@ namespace ThalamusApp
 
         public class VMInstance
         {
-            public string Id { get; set; }
-            public Process Process { get; set; }
-            public string OS { get; set; }
+            public string Id { get; set; } = string.Empty;
+            public Process? Process { get; set; }
+            public string OS { get; set; } = string.Empty;
             public int VncPort { get; set; }
             public int RAM { get; set; }
             public int Cores { get; set; }
@@ -37,10 +37,10 @@ namespace ThalamusApp
         public class BootResult
         {
             public bool Success { get; set; }
-            public string VmId { get; set; }
+            public string VmId { get; set; } = string.Empty;
             public int VncPort { get; set; }
-            public string Error { get; set; }
-            public string IsoNeeded { get; set; }
+            public string? Error { get; set; }
+            public string? IsoNeeded { get; set; }
         }
 
         public QemuBridgeManager(string installDir)
