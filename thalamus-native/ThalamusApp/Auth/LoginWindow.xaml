@@ -270,8 +270,7 @@
                                        FontSize="38" FontWeight="Bold"
                                        FontFamily="Consolas"
                                        Foreground="{StaticResource BlueBrush}"
-                                       HorizontalAlignment="Center"
-                                       CharacterSpacing="8"/>
+                                       HorizontalAlignment="Center"/>
                         </Border>
                     </Border>
 

@@ -180,10 +180,10 @@
                         </TextBlock>
 
                         <!-- Example prompts -->
-                        <TextBlock Text="Try asking about…"
+                        <TextBlock Text="TRY ASKING ABOUT…"
                                    FontSize="10.5" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextMutedBrush}"
-                                   CharacterCasing="Upper" Margin="0,0,0,10"/>
+                                   Margin="0,0,0,10"/>
                         <WrapPanel>
                             <Border x:Name="Ex1" Background="#0d1f3c" BorderBrush="#1e3a5f" BorderThickness="1"
                                     CornerRadius="8" Padding="11,7" Margin="0,0,8,8" Cursor="Hand"
