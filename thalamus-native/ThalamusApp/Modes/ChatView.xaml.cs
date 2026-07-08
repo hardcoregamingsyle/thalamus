@@ -161,7 +161,7 @@ namespace ThalamusApp.Modes
             var bubble = new Border
             {
                 CornerRadius = new CornerRadius(12, 4, 12, 12),
-                Padding = new Thickness(14, 10),
+                Padding = new Thickness(14, 10, 14, 10),
                 MaxWidth = 520,
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Background = grad,
@@ -237,7 +237,7 @@ namespace ThalamusApp.Modes
                 BorderBrush = new SolidColorBrush(Color.FromRgb(0x1e, 0x3a, 0x5f)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(4, 12, 12, 12),
-                Padding = new Thickness(14, 10),
+                Padding = new Thickness(14, 10, 14, 10),
                 Child = tb
             };
             Grid.SetColumn(bubble, 2);
@@ -274,7 +274,7 @@ namespace ThalamusApp.Modes
                 BorderBrush = new SolidColorBrush(Color.FromRgb(0x4a, 0x10, 0x10)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(4, 12, 12, 12),
-                Padding = new Thickness(14, 10),
+                Padding = new Thickness(14, 10, 14, 10),
                 Child = new TextBlock
                 {
                     Text = msg, FontSize = 12.5, TextWrapping = TextWrapping.Wrap,

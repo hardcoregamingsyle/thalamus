@@ -11,14 +11,14 @@ namespace ThalamusApp
 {
     public partial class SandboxView : UserControl
     {
-        private QemuBridgeManager _bridge;
-        private EmbeddedVncClient _vnc;
-        private WriteableBitmap  _vncBitmap;
+        private QemuBridgeManager? _bridge;
+        private EmbeddedVncClient? _vnc;
+        private WriteableBitmap?   _vncBitmap;
 
-        private string _selectedOsId   = null;
-        private Button _selectedOsBtn  = null;
-        private string _currentVmId    = null;
-        private int    _currentVncPort = 0;
+        private string? _selectedOsId   = null;
+        private Button? _selectedOsBtn  = null;
+        private string? _currentVmId    = null;
+        private int     _currentVncPort = 0;
 
         // OS definitions — (id, display name, category)
         private static readonly (string id, string name, string cat)[] _osList =
