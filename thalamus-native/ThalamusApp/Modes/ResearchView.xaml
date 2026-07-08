@@ -2,10 +2,284 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              Background="{StaticResource ContentBgGradient}">
+
+    <UserControl.Resources>
+        <!-- Thin scrollbar -->
+        <Style x:Key="ThinScrollBar" TargetType="ScrollBar">
+            <Setter Property="Width" Value="4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Track x:Name="PART_Track" IsDirectionReversed="true">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.LineUpCommand" Opacity="0" Height="0"/>
+                            </Track.DecreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb>
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Border Background="#1e3a5f" CornerRadius="2" Opacity="0.7"/>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.LineDownCommand" Opacity="0" Height="0"/>
+                            </Track.IncreaseRepeatButton>
+                        </Track>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Search button -->
+        <Style x:Key="SearchBtn" TargetType="Button">
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="Padding" Value="18,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" CornerRadius="10">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#3b82f6" Offset="0"/>
+                                    <GradientStop Color="#6366f1" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.7"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.3"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Input style -->
+        <Style x:Key="ResearchInputStyle" TargetType="TextBox">
+            <Setter Property="Background" Value="#080f22"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="CaretBrush" Value="{StaticResource BlueBrush}"/>
+            <Setter Property="BorderBrush" Value="#1e3a5f"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="14,10"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                BorderBrush="{TemplateBinding BorderBrush}" CornerRadius="10">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Padding="{TemplateBinding Padding}" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#3b82f6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
     <Grid>
-        <TextBlock Text="Research Mode"
-                   Foreground="{StaticResource TextMutedBrush}"
-                   FontSize="14" FontWeight="SemiBold"
-                   VerticalAlignment="Center" HorizontalAlignment="Center"/>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="56"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ═══ HEADER ═══ -->
+        <Border Grid.Row="0" Background="#040b1e"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+            <Grid Margin="22,0">
+                <StackPanel VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <Border Width="20" Height="20" CornerRadius="5" VerticalAlignment="Center" Margin="0,0,9,0">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#b45309" Offset="0"/>
+                                    <GradientStop Color="#d97706" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Path Data="M21 21 L15 15 M17 11 A6 6 0 1 1 5 11 A6 6 0 0 1 17 11 Z"
+                                  Stroke="White" StrokeThickness="1.5" StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round" Width="10" Height="10" Stretch="Uniform"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Text="Research" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="Deep research with live web search and source citations"
+                               FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}" Margin="29,2,0,0"/>
+                </StackPanel>
+
+                <Border HorizontalAlignment="Right" VerticalAlignment="Center"
+                        CornerRadius="6" Background="#1a1200"
+                        BorderBrush="#3a2800" BorderThickness="1" Padding="10,4">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="5" Height="5"
+                                 Fill="{StaticResource AmberBrush}"
+                                 VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock x:Name="ResearchStatusLabel" Text="Ready"
+                                   FontSize="9.5" Foreground="{StaticResource AmberBrush}"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- ═══ RESULTS AREA ═══ -->
+        <ScrollViewer Grid.Row="1" x:Name="ResearchScroll"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Padding="22,16,6,8">
+            <ScrollViewer.Resources>
+                <Style TargetType="ScrollBar" BasedOn="{StaticResource ThinScrollBar}"/>
+            </ScrollViewer.Resources>
+            <StackPanel x:Name="ResearchPanel" Margin="0,0,12,0">
+
+                <!-- Welcome card -->
+                <Border x:Name="WelcomeCard"
+                        Background="#0a1628" BorderBrush="#1e3a5f" BorderThickness="1"
+                        CornerRadius="14" Padding="32,28" Margin="0,20,0,0">
+                    <StackPanel>
+                        <Border Width="48" Height="48" CornerRadius="12"
+                                HorizontalAlignment="Left" Margin="0,0,0,16">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#92400e" Offset="0"/>
+                                    <GradientStop Color="#b45309" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Path Data="M21 21 L15 15 M17 11 A6 6 0 1 1 5 11 A6 6 0 0 1 17 11 Z"
+                                  Stroke="White" StrokeThickness="1.8" StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round" Width="20" Height="20" Stretch="Uniform"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Text="What would you like to research?"
+                                   FontSize="18" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                        <TextBlock TextWrapping="Wrap" FontSize="12.5"
+                                   Foreground="{StaticResource TextSecondaryBrush}" LineHeight="20"
+                                   Margin="0,0,0,24">
+                            Thalamus searches the web in real time, synthesizes information from multiple sources, and delivers a structured report with citations.
+                        </TextBlock>
+
+                        <!-- Example prompts -->
+                        <TextBlock Text="Try asking about…"
+                                   FontSize="10.5" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   TextTransform="Uppercase" Margin="0,0,0,10"/>
+                        <WrapPanel>
+                            <Border x:Name="Ex1" Background="#0d1f3c" BorderBrush="#1e3a5f" BorderThickness="1"
+                                    CornerRadius="8" Padding="11,7" Margin="0,0,8,8" Cursor="Hand"
+                                    MouseLeftButtonDown="Example_Click">
+                                <TextBlock Text="Latest AI model benchmarks" FontSize="11.5"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                            </Border>
+                            <Border x:Name="Ex2" Background="#0d1f3c" BorderBrush="#1e3a5f" BorderThickness="1"
+                                    CornerRadius="8" Padding="11,7" Margin="0,0,8,8" Cursor="Hand"
+                                    MouseLeftButtonDown="Example_Click">
+                                <TextBlock Text="Best programming languages 2025" FontSize="11.5"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                            </Border>
+                            <Border x:Name="Ex3" Background="#0d1f3c" BorderBrush="#1e3a5f" BorderThickness="1"
+                                    CornerRadius="8" Padding="11,7" Margin="0,0,8,8" Cursor="Hand"
+                                    MouseLeftButtonDown="Example_Click">
+                                <TextBlock Text="How does quantum computing work" FontSize="11.5"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                            </Border>
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Progress bar (hidden by default) -->
+                <Border x:Name="ProgressCard" Visibility="Collapsed"
+                        Background="#0a1628" BorderBrush="#1e3a5f" BorderThickness="1"
+                        CornerRadius="12" Padding="20,16" Margin="0,16,0,0">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock x:Name="ProgressStepLabel" Text="Searching the web…"
+                                       FontSize="12.5" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                        </StackPanel>
+                        <Border Height="3" CornerRadius="2" Background="#0d1f3c">
+                            <Border x:Name="ProgressFill" Height="3" CornerRadius="2"
+                                    HorizontalAlignment="Left" Width="0">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                        <GradientStop Color="#3b82f6" Offset="0"/>
+                                        <GradientStop Color="#6366f1" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <!-- Results (filled dynamically) -->
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- ═══ INPUT ═══ -->
+        <Border Grid.Row="2" Background="#030912"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
+                Padding="20,12,20,16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Grid Grid.Column="0">
+                    <TextBox x:Name="ResearchInputBox"
+                             Style="{StaticResource ResearchInputStyle}"
+                             Height="40"
+                             KeyDown="ResearchInput_KeyDown"/>
+                    <TextBlock Text="Search any topic, compare options, get a deep report…"
+                               IsHitTestVisible="False" FontSize="12.5" Foreground="#253858"
+                               Margin="15,0,0,0" VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Text, ElementName=ResearchInputBox}" Value="">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
+
+                <Button Grid.Column="2" x:Name="ResearchButton"
+                        Style="{StaticResource SearchBtn}"
+                        Foreground="White"
+                        Click="Research_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Data="M21 21 L15 15 M17 11 A6 6 0 1 1 5 11 A6 6 0 0 1 17 11 Z"
+                              Stroke="White" StrokeThickness="1.8" StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round" Width="13" Height="13" Stretch="Uniform"
+                              Margin="0,0,6,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Research" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Border>
     </Grid>
 </UserControl>
