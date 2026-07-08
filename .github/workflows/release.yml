@@ -1,0 +1,102 @@
+name: Build & Release Thalamus
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v2.0.0)'
+        required: true
+        default: 'v2.0.0'
+
+jobs:
+  build-wpf:
+    name: Build WPF Desktop App
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Get version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if (-not $tag -or $tag -eq "") { $tag = "${{ github.event.inputs.version }}" }
+          if (-not $tag) { $tag = "v2.0.0" }
+          $ver = $tag.TrimStart('v')
+          echo "tag=$tag" >> $env:GITHUB_OUTPUT
+          echo "ver=$ver" >> $env:GITHUB_OUTPUT
+          echo "Building version: $ver"
+
+      - name: Restore dependencies
+        working-directory: thalamus-native/ThalamusApp
+        run: dotnet restore ThalamusApp.csproj
+
+      - name: Build & Publish (self-contained single-file)
+        working-directory: thalamus-native/ThalamusApp
+        shell: pwsh
+        run: |
+          dotnet publish ThalamusApp.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:AssemblyVersion=${{ steps.version.outputs.ver }} `
+            -p:FileVersion=${{ steps.version.outputs.ver }} `
+            -o ./publish
+
+      - name: Rename output
+        working-directory: thalamus-native/ThalamusApp/publish
+        shell: pwsh
+        run: |
+          if (Test-Path "ThalamusApp.exe") {
+            Rename-Item "ThalamusApp.exe" "Thalamus.exe"
+          }
+          Get-ChildItem -Name
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Thalamus-exe
+          path: thalamus-native/ThalamusApp/publish/Thalamus.exe
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Thalamus ${{ steps.version.outputs.tag }}
+          body: |
+            ## Thalamus ${{ steps.version.outputs.tag }}
+
+            ### What's new in v2.0.0
+            - **Completely rebuilt desktop UI** — All 4 mode views (Chat, Build, Research, Study) rebuilt from scratch with premium WPF design
+            - **Chat mode** — Message bubbles, model selector (Sonnet/Opus/Haiku/Gemini), animated typing indicator, SSE streaming
+            - **Build mode** — Live 9-agent pipeline progress, real-time code output, example project chips
+            - **Research mode** — Animated progress bar, streaming results, amber theme
+            - **Study mode** — Tutor / Quiz / Step-by-Step / Summarise modes, subject chips, purple theme
+            - **Sidebar** — Vector icons replacing emoji, cleaner navigation
+            - **Website auth fix** — Login flow now works correctly on desktop browsers
+
+            ### Installation
+            Download `Thalamus.exe` below and run it — no installer required.
+
+            **Requirements:** Windows 10/11 x64, .NET 8 Runtime (bundled in this build)
+          files: |
+            thalamus-native/ThalamusApp/publish/Thalamus.exe
+          generate_release_notes: false
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
