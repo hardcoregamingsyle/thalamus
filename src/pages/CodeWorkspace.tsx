@@ -420,6 +420,50 @@ export default function CodeWorkspace() {
                   </motion.div>
                 ))
               )}
+              {/* Streaming indicator — shows real-time output while the agent generates */}
+              {branch?.status === "running" && branch?.streamingContent && (
+                <motion.div
+                  key="streaming"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex gap-3 p-4 rounded-lg bg-primary/5 border border-primary/20"
+                >
+                  <div className="flex-shrink-0">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold bg-primary/20 text-primary">
+                      {(branch.streamingAgent ?? "AI").slice(0, 2).toUpperCase()}
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-semibold text-sm text-primary">{branch.streamingAgent ?? "Agent"}</span>
+                      <span className="flex items-center gap-1 text-xs text-primary/60">
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse inline-block" />
+                        generating…
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap font-mono max-h-64 overflow-y-auto">
+                      {branch.streamingContent}
+                      <span className="inline-block w-0.5 h-3 bg-primary ml-0.5 animate-pulse" />
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+              {/* Show typing indicator when running but no streaming content yet */}
+              {branch?.status === "running" && !branch?.streamingContent && (
+                <div className="flex gap-3 p-4 rounded-lg bg-muted/30">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold bg-muted-foreground/20 text-muted-foreground">
+                    {(branch.currentAgent ?? "AI").slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">{branch.currentAgent ?? "Agent"} is thinking…</span>
+                    <span className="flex gap-1">
+                      {[0,1,2].map(i => (
+                        <span key={i} className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+                      ))}
+                    </span>
+                  </div>
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
 
