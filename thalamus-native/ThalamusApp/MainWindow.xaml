@@ -112,17 +112,20 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
+                        <!-- Border can only have one child — use a Grid to stack the accent bar and content -->
                         <Border x:Name="Bd" Background="{TemplateBinding Background}"
                                 CornerRadius="8" Padding="{TemplateBinding Padding}">
-                            <Border x:Name="ActiveBar"
-                                    Width="3" Height="0"
-                                    CornerRadius="2"
-                                    Background="{StaticResource BlueGradient}"
-                                    HorizontalAlignment="Left"
-                                    VerticalAlignment="Center"
-                                    Margin="-16,0,0,0"
-                                    Opacity="0"/>
-                            <ContentPresenter VerticalAlignment="Center"/>
+                            <Grid>
+                                <Border x:Name="ActiveBar"
+                                        Width="3" Height="0"
+                                        CornerRadius="2"
+                                        Background="{StaticResource BlueGradient}"
+                                        HorizontalAlignment="Left"
+                                        VerticalAlignment="Center"
+                                        Margin="-16,0,0,0"
+                                        Opacity="0"/>
+                                <ContentPresenter VerticalAlignment="Center"/>
+                            </Grid>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -143,14 +146,16 @@
                     <ControlTemplate TargetType="Button">
                         <Border Background="{StaticResource BgActiveBrush}"
                                 CornerRadius="8" Padding="{TemplateBinding Padding}">
-                            <Border Width="3" Height="20"
-                                    CornerRadius="2"
-                                    Background="{StaticResource BlueGradient}"
-                                    HorizontalAlignment="Left"
-                                    VerticalAlignment="Center"
-                                    Margin="-16,0,0,0"
-                                    Opacity="1"/>
-                            <ContentPresenter VerticalAlignment="Center"/>
+                            <Grid>
+                                <Border Width="3" Height="20"
+                                        CornerRadius="2"
+                                        Background="{StaticResource BlueGradient}"
+                                        HorizontalAlignment="Left"
+                                        VerticalAlignment="Center"
+                                        Margin="-16,0,0,0"
+                                        Opacity="1"/>
+                                <ContentPresenter VerticalAlignment="Center"/>
+                            </Grid>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
