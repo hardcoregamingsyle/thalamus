@@ -4,11 +4,10 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
 
 namespace ThalamusApp.Auth
 {
-    public class LoginHandler
+    public class LoginHandler : IDisposable
     {
         private const string CONVEX_SITE = "https://glad-ermine-937.convex.cloud";
         private const string SITE_URL = "https://leadshello-agent-ai.hf.space";
@@ -38,55 +37,10 @@ namespace ThalamusApp.Auth
         }
 
         /// <summary>
-        /// Start the web-based auth flow:
-        /// 1. Generate an auth code via Convex action
-        /// 2. Open browser to website with the code
-        /// 3. Poll for authorization
-        /// 4. Return the session token and email
+        /// Step 1: Generate an auth code via Convex action.
+        /// Returns (code, expiresAt).
         /// </summary>
-        public async Task<(bool success, string token, string email)> StartWebAuthAsync(
-            CancellationToken cancellationToken)
-        {
-            try
-            {
-                // Step 1: Generate auth code via Convex
-                var (code, expiresAt) = await GenerateAuthCodeAsync(cancellationToken);
-                if (string.IsNullOrEmpty(code))
-                    return (false, "", "");
-
-                // Step 2: Open browser to website with the code
-                var authUrl = $"{SITE_URL}/auth/desktop?code={code}";
-                OpenBrowser(authUrl);
-
-                // Step 3: Poll for authorization
-                var result = await PollForAuthorizationAsync(code, cancellationToken);
-
-                if (result.success)
-                {
-                    Token = result.token;
-                    Email = result.email;
-                    IsAuthenticated = true;
-                    AuthManager.SaveToken(Token, Email);
-                }
-
-                return result;
-            }
-            catch (OperationCanceledException)
-            {
-                return (false, "", "");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"WebAuth error: {ex.Message}");
-                return (false, "", "");
-            }
-        }
-
-        /// <summary>
-        /// Call the Convex action to create an auth code
-        /// POST /api/action/{componentPath}:{actionName}
-        /// </summary>
-        private async Task<(string code, long expiresAt)> GenerateAuthCodeAsync(CancellationToken ct)
+        public async Task<(string code, long expiresAt)> GenerateAuthCodeAsync(CancellationToken ct)
         {
             var url = $"{CONVEX_SITE}/api/action?componentPath=%2F&actionName=desktopAuthActions%3AcreateCode";
             var payload = JsonSerializer.Serialize(new { args = new { } });
@@ -103,10 +57,30 @@ namespace ThalamusApp.Auth
         }
 
         /// <summary>
-        /// Poll the Convex mutation until the code is authorized or expires
-        /// POST /api/mutation/{componentPath}:{mutationName}
+        /// Step 2: Open browser to the website auth page with the code.
         /// </summary>
-        private async Task<(bool success, string token, string email)> PollForAuthorizationAsync(
+        public void OpenBrowserWithCode(string code)
+        {
+            var authUrl = $"{SITE_URL}/auth/desktop?code={code}";
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = authUrl,
+                    UseShellExecute = true
+                });
+            }
+            catch
+            {
+                try { Process.Start("explorer.exe", authUrl); }
+                catch { Debug.WriteLine("Failed to open browser."); }
+            }
+        }
+
+        /// <summary>
+        /// Step 3: Poll the Convex mutation until the code is authorized or expires.
+        /// </summary>
+        public async Task<(bool success, string token, string email)> PollForAuthorizationAsync(
             string code, CancellationToken ct)
         {
             var url = $"{CONVEX_SITE}/api/mutation?componentPath=%2F&mutationName=desktopAuth%3ApollCode";
@@ -134,6 +108,9 @@ namespace ThalamusApp.Auth
                     {
                         var token = doc.RootElement.GetProperty("token").GetString() ?? "";
                         var email = doc.RootElement.GetProperty("email").GetString() ?? "";
+                        Token = token;
+                        Email = email;
+                        IsAuthenticated = true;
                         return (true, token, email);
                     }
 
@@ -151,27 +128,7 @@ namespace ThalamusApp.Auth
         }
 
         /// <summary>
-        /// Open a URL in the default browser
-        /// </summary>
-        private static void OpenBrowser(string url)
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = url,
-                    UseShellExecute = true
-                });
-            }
-            catch
-            {
-                // Fallback
-                Process.Start("explorer.exe", url);
-            }
-        }
-
-        /// <summary>
-        /// Sign out: clear saved token and reset state
+        /// Sign out: clear saved token and reset state.
         /// </summary>
         public void SignOut()
         {
@@ -184,6 +141,7 @@ namespace ThalamusApp.Auth
         public void Dispose()
         {
             _http.Dispose();
+            GC.SuppressFinalize(this);
         }
     }
 }
