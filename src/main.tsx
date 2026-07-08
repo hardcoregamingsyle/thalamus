@@ -23,6 +23,7 @@ const AdminPage = lazy(() => import("./pages/Admin"));
 const CodeProjects = lazy(() => import("./pages/CodeProjects"));
 const CodeBranches = lazy(() => import("./pages/CodeBranches"));
 const CodeWorkspace = lazy(() => import("./pages/CodeWorkspace"));
+const ApiPage = lazy(() => import("./pages/ApiPage"));
 
 // Simple loading fallback for route transitions
 function RouteLoading() {
@@ -90,6 +91,7 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="/team" element={<TeamPortal />} />
                 <Route path="/sync" element={<SyncPage />} />
                 <Route path="/refer" element={<ReferPage />} />
+                <Route path="/api-keys" element={<ApiPage />} />
                 {/* Admin hidden in desktop mode */}
                 {!isDesktopApp && <Route path="/admin" element={<AdminPage />} />}
                 <Route path="*" element={<NotFound />} />

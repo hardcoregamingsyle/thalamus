@@ -109,9 +109,9 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
                         protocol, and starts the bridge automatically.
                       </p>
                       <Button asChild size="sm" className="gap-2 w-full">
-                        <a href="https://github.com/hardcoregamingsyle/thalamus/releases/download/v1.0.0-native/Thalamus-Setup-v1.0.0.exe" target="_blank" rel="noopener noreferrer">
+                        <a href="https://github.com/hardcoregamingsyle/thalamus/releases/download/v2.0.0/Thalamus.exe" target="_blank" rel="noopener noreferrer">
                           <Download className="h-3.5 w-3.5" />
-                          Download Thalamus AI Native (v1.0.0)
+                          Download Thalamus v2.0.0
                           <ExternalLink className="h-3 w-3 ml-auto opacity-60" />
                         </a>
                       </Button>
