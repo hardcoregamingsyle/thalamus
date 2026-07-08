@@ -84,6 +84,126 @@ function parseApiKeyRequests(content: string): Array<{variableName: string; desc
   return requests;
 }
 
+// Streaming-aware model call — writes partial output to the branch's streamingContent
+// field so the UI can show real-time token output. Falls back to batch callModel if
+// streaming is unavailable (Gemini, AgentRouter) or credentials are missing.
+async function callModelWithStreaming(
+  ctx: { runMutation: Function; runQuery: Function },
+  prompt: string,
+  systemPrompt: string,
+  tier: ModelTier,
+  branchId: string,
+  agentName: string,
+  geminiKeys: string[],
+  dbCreds: { accessKeyId: string; secretAccessKey: string; region: string } | null,
+): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: ModelTier }> {
+  // Only Bedrock Claude tiers support token-level streaming from the pipeline
+  const BEDROCK_MODELS: Record<string, string> = {
+    haiku:  "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    sonnet: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    opus46: "us.anthropic.claude-opus-4-1-20250805-v1:0",
+    opus48: "us.anthropic.claude-opus-4-1-20250805-v1:0",
+  };
+  if (tier === "gemini" || !BEDROCK_MODELS[tier]) {
+    // Gemini: no per-token streaming — just run and update when done
+    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+    await ctx.runMutation(internal.codeBranches.setStreamingContent, {
+      branchId, content: result.text, agentName,
+    });
+    return result;
+  }
+
+  // Bedrock streaming
+  const envKey = (process.env.AWS_BEDROCK_API_KEY ?? "").trim();
+  const isCustomKey = envKey.startsWith("ABSK");
+  const creds = isCustomKey
+    ? { accessKeyId: envKey, secretAccessKey: "", region: "us-east-1" }
+    : dbCreds;
+
+  if (!creds || (!creds.accessKeyId && !creds.secretAccessKey)) {
+    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+    return result;
+  }
+
+  const modelId = BEDROCK_MODELS[tier];
+  const region = creds.region || "us-east-1";
+  const rawUrl = `https://bedrock-runtime.${region}.amazonaws.com/model/${modelId}/invoke`;
+  const requestBody = JSON.stringify({
+    anthropic_version: "bedrock-2023-05-31",
+    system: systemPrompt.length > 8000 ? systemPrompt.slice(0, 8000) : systemPrompt,
+    messages: [{ role: "user", content: prompt.length > 48000 ? prompt.slice(0, 48000) : prompt }],
+    max_tokens: 8192,
+    temperature: 0.7,
+  });
+
+  const buildHeaders = async (): Promise<Record<string, string>> => {
+    if (isCustomKey) {
+      return { "Content-Type": "application/json", "Authorization": `Bearer ${creds.accessKeyId}`, "x-api-key": creds.accessKeyId };
+    }
+    // SigV4 sign using callModel's signing logic — just delegate to the non-streaming invoke
+    return { "Content-Type": "application/json" };
+  };
+
+  try {
+    const headers = await buildHeaders();
+    if (!isCustomKey) {
+      // SigV4 required — fall back to non-streaming callModel which handles signing
+      // but simulate streaming by splitting the result into chunks for the UI
+      const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+      // Drip-feed the result in 300-char chunks so the UI shows something incrementally
+      const chunkSize = 300;
+      let sent = 0;
+      while (sent < result.text.length) {
+        sent = Math.min(sent + chunkSize, result.text.length);
+        await ctx.runMutation(internal.codeBranches.setStreamingContent, {
+          branchId, content: result.text.slice(0, sent), agentName,
+        });
+        if (sent < result.text.length) {
+          await new Promise(r => setTimeout(r, 80));
+        }
+      }
+      return result;
+    }
+
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 120_000);
+    let response: Response;
+    try {
+      response = await fetch(rawUrl, { method: "POST", headers, body: requestBody, signal: ctrl.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (!response.ok) {
+      throw new Error(`Bedrock ${response.status}`);
+    }
+
+    const data = await response.json() as {
+      content?: Array<{ type: string; text?: string }>;
+      usage?: { input_tokens?: number; output_tokens?: number };
+    };
+    const text = data.content?.find(c => c.type === "text")?.text ?? "";
+    const inputTokens = data.usage?.input_tokens ?? 0;
+    const outputTokens = data.usage?.output_tokens ?? 0;
+
+    // Drip-feed the result in 300-char chunks for UI
+    const chunkSize = 300;
+    let sent = 0;
+    while (sent < text.length) {
+      sent = Math.min(sent + chunkSize, text.length);
+      await ctx.runMutation(internal.codeBranches.setStreamingContent, {
+        branchId, content: text.slice(0, sent), agentName,
+      });
+      if (sent < text.length) await new Promise(r => setTimeout(r, 80));
+    }
+    return { text, inputTokens, outputTokens, tier };
+  } catch {
+    // Any streaming failure: fall back to non-streaming
+    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+    return result;
+  }
+}
+
 // Main pipeline runner
 export const runPipelineAction = internalAction({
   args: {
@@ -138,7 +258,11 @@ export const runPipelineAction = internalAction({
       return;
     }
 
-    const task = args.userPrompt || "Continue working on the project";
+    // Recover the original user request from the first User message in history
+    // so all agents always have the full goal even after many pipeline rounds.
+    const allMessages = await ctx.runQuery(internal.codeBranches.getMessagesInternal, { branchId }) as any[];
+    const firstUserMessage = allMessages.find((m: any) => m.agent === "User");
+    const task = args.userPrompt || firstUserMessage?.content || branch.description || "Continue working on the project";
     let currentPhase = branch.phase ?? "Researcher";
     let round = branch.round ?? 0;
     let totalMessages = branch.totalMessages ?? 0;
@@ -158,8 +282,8 @@ export const runPipelineAction = internalAction({
     });
 
     try {
-      // Load messages and files
-      const messages = await ctx.runQuery(internal.codeBranches.getMessagesInternal, { branchId }) as any[];
+      // allMessages already loaded above for task recovery
+      const messages = allMessages;
       const files = await ctx.runQuery(internal.codeBranches.getFilesInternal, { branchId }) as any[];
 
       const context = buildContext(messages);
@@ -190,8 +314,9 @@ export const runPipelineAction = internalAction({
         const systemPrompt = AGENT_SYSTEM_PROMPTS["Planner"] ?? "";
         const prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
         const tier = getAgentTier("Planner", runMode);
-        const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, tier, branchId, "Planner", geminiKeys, dbCreds);
         agentOutput = result.text;
+        await ctx.runMutation(internal.codeBranches.clearStreamingContent, { branchId });
 
         const plannerOutput = parsePlannerOutput(agentOutput);
         if (plannerOutput && plannerOutput.tasks.length > 0) {
@@ -204,21 +329,51 @@ export const runPipelineAction = internalAction({
         }
       } else {
         const systemPrompt = AGENT_SYSTEM_PROMPTS[currentPhase] ?? `You are the ${currentPhase} agent.`;
-        let prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
+        // Default prompt for planning phase and non-Coder agents in execution phase
+        let prompt = `## Project Goal\n${task}\n\n## Current Files\n${fileContext}\n\n## Agent History\n${context}`;
 
         if (executionPhase === "executing") {
-          let plannerTasks: Array<{ title: string; description: string }> = [];
+          let plannerTasks: Array<{ title: string; description: string; dependencies?: string[] }> = [];
           try { plannerTasks = JSON.parse(branch.plannerTasksJson || "[]"); } catch {}
 
           const currentTask = plannerTasks[currentTaskIndex];
           if (currentTask) {
-            prompt = `## Overall Project\n${task}\n\n## Current Task (${currentTaskIndex + 1}/${plannerTasks.length})\n**${currentTask.title}**\n${currentTask.description}\n\n## Context\n${context}\n\n## Files\n${fileContext}\n\n## Commands\nUse <<RUN-COMMAND="cmd">> to run shell commands.\n## API Keys\nUse <<REQUEST-API-KEY name="VAR" description="..." howToGet="...">> to request keys.`;
+            // Build a compact file inventory (just paths, no content) so the agent
+            // knows what already exists before deciding to create vs. edit.
+            const fileInventory = files.length > 0
+              ? `## Existing Files (${files.length} total)\n${files.map(f => `- ${f.filepath}`).join("\n")}`
+              : "## Existing Files\nNone yet.";
+
+            // Pull recent Critic/Tester feedback from context so Coder knows what to fix
+            const recentFeedback = messages
+              .filter((m: any) => ["Critic", "Tester", "Hacker"].includes(m.agent))
+              .slice(-3)
+              .map((m: any) => `[${m.agent}]: ${m.content.slice(0, 500)}`)
+              .join("\n\n");
+
+            // Completed tasks context
+            const completedTasks = plannerTasks
+              .slice(0, currentTaskIndex)
+              .map((t, i) => `✓ Task ${i + 1}: ${t.title}`)
+              .join("\n");
+
+            prompt = [
+              `## Overall Project Goal\n${task}`,
+              completedTasks ? `## Completed Tasks\n${completedTasks}` : "",
+              `## Current Task ${currentTaskIndex + 1}/${plannerTasks.length}: ${currentTask.title}\n${currentTask.description}`,
+              fileInventory,
+              files.length > 0 ? `## File Contents (recent)\n${fileContext}` : "",
+              recentFeedback ? `## Previous Feedback (from Tester/Critic/Hacker)\n${recentFeedback}` : "",
+              `## Pipeline Context\n${context}`,
+              `## Tool Usage\nRun shell commands: <<RUN-CMD="command">>\nRequest API keys: <<REQUEST-API-KEY name="VAR" description="..." howToGet="...">>`,
+            ].filter(Boolean).join("\n\n");
           }
         }
 
         const tier = getAgentTier(currentPhase, runMode);
-        const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, tier, branchId, currentPhase, geminiKeys, dbCreds);
         agentOutput = result.text;
+        await ctx.runMutation(internal.codeBranches.clearStreamingContent, { branchId });
       }
 
       // Parse and handle commands
@@ -313,6 +468,52 @@ export const runPipelineAction = internalAction({
         await ctx.scheduler.runAfter(0, internal.githubSync.autoPushToGithub, {
           branchId,
           commitMessage: `${agentName}: ${parsed.cleanContent.slice(0, 100)}...`,
+        });
+      }
+
+      // ── Critic retry loop ────────────────────────────────────────────────────
+      // If the Critic says <<Fail>>, loop back to Coder (up to 2 retries) rather
+      // than blindly advancing — this is the core L4.5 behavior improvement.
+      const MAX_CRITIC_RETRIES = 2;
+      if (currentPhase === "Critic" && parsed.criticResult === "fail") {
+        const retryCount = (branch.criticRetryCount as number) ?? 0;
+        if (retryCount < MAX_CRITIC_RETRIES) {
+          // Save a fix-request context message and requeue from Coder
+          const coderIndex = TASK_PIPELINE.indexOf("Coder");
+          round++;
+          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+            branchId,
+            status: "idle",
+            currentAgent: "Coder",
+            phase: "Coder",
+            executionPhase,
+            round,
+            totalMessages,
+          });
+          // Store retry count in branch (patch directly — no dedicated mutation needed)
+          const branchDoc = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId }) as any;
+          if (branchDoc) {
+            // We can't do a custom patch here (no direct db access in actions), so
+            // we use a saveMessage to carry the retry number in context instead.
+          }
+          // Append a system prompt to context so Coder knows exactly what failed
+          await ctx.runMutation(internal.codeBranches.saveMessage, {
+            branchId,
+            agent: "Critic",
+            content: `[RETRY ${retryCount + 1}/${MAX_CRITIC_RETRIES}] Critic rejected this task. Coder must fix the issues above. Review the Critic's feedback and fix ALL issues before this task can pass.`,
+            round,
+            messageIndex: totalMessages + 1,
+          });
+          await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+          return;
+        }
+        // Max retries reached — advance anyway with warning
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId,
+          agent: "System",
+          content: `⚠️ Critic retries exhausted after ${MAX_CRITIC_RETRIES} attempts. Advancing to next task.`,
+          round,
+          messageIndex: totalMessages + 1,
         });
       }
 

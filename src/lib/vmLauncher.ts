@@ -26,9 +26,9 @@ export class VMLauncher {
   private readonly bridgeUrl = "ws://localhost:5900";
 
   /** Installer URL — native C# app with integrated QEMU/VNC (v1.0.0) */
-  static readonly INSTALLER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/v1.0.0-native/Thalamus-Setup-v1.0.0.exe";
+  static readonly INSTALLER_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/v2.0.0/Thalamus.exe";
   /** Bridge URL — included in native installer, kept for legacy compatibility */
-  static readonly BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/v1.0.0-native/Thalamus-Setup-v1.0.0.exe";
+  static readonly BRIDGE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/download/v2.0.0/Thalamus.exe";
 
   async checkStatus(): Promise<VMStatus> {
     if (typeof WebSocket === "undefined") {

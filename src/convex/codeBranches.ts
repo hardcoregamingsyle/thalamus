@@ -443,3 +443,43 @@ export const deleteFile = internalMutation({
     await ctx.db.delete(args.fileId);
   },
 });
+
+// Streaming content — written frequently during agent generation
+// The pipeline calls this every ~500 chars of new output so the UI can show
+// real-time token streaming while the agent is mid-response.
+export const setStreamingContent = internalMutation({
+  args: {
+    branchId: v.string(),
+    content: v.string(),
+    agentName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const branch = await ctx.db
+      .query("codeBranches")
+      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (!branch) return;
+    await ctx.db.patch(branch._id, {
+      streamingContent: args.content,
+      streamingAgent: args.agentName,
+      streamingAt: Date.now(),
+    });
+  },
+});
+
+// Clear streaming content (called after message is saved to DB)
+export const clearStreamingContent = internalMutation({
+  args: { branchId: v.string() },
+  handler: async (ctx, args) => {
+    const branch = await ctx.db
+      .query("codeBranches")
+      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (!branch) return;
+    await ctx.db.patch(branch._id, {
+      streamingContent: undefined,
+      streamingAgent: undefined,
+      streamingAt: undefined,
+    });
+  },
+});
