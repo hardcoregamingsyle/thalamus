@@ -117,6 +117,10 @@ const schema = defineSchema(
       vmCores: v.optional(v.number()),
       vmOs: v.optional(v.string()),
       runMode: v.optional(v.union(v.literal("cheap"), v.literal("balanced"), v.literal("powerful"))),
+      // Real-time streaming state — updated frequently during agent generation
+      streamingContent: v.optional(v.string()),
+      streamingAgent: v.optional(v.string()),
+      streamingAt: v.optional(v.number()),
     })
       .index("by_project", ["projectId"])
       .index("by_branch_id", ["branchId"])
@@ -542,6 +546,51 @@ const schema = defineSchema(
     })
       .index("by_structure_hash", ["structureHash"])
       .index("by_project", ["projectId"]),
+
+    // User-facing API keys for external integrations (Cursor, Claude Code, Codex, etc.)
+    userApiKeys: defineTable({
+      userId: v.id("users"),
+      keyId: v.string(),        // Public identifier: "thal_" prefix + 16 chars
+      keyHash: v.string(),      // SHA-256 hash of the full key (never stored in plaintext after creation)
+      keyPrefix: v.string(),    // First 8 chars of key for display (e.g. "thal_abc")
+      name: v.string(),         // User-given name
+      creditsAllocated: v.number(), // AgentBucks allocated to this key
+      creditsUsed: v.number(),
+      isActive: v.boolean(),
+      lastUsedAt: v.optional(v.number()),
+      createdAt: v.number(),
+      expiresAt: v.optional(v.number()),
+    })
+      .index("by_user", ["userId"])
+      .index("by_key_id", ["keyId"])
+      .index("by_key_hash", ["keyHash"]),
+
+    // Agent model config — per-agent model overrides (admin-managed)
+    agentModelConfig: defineTable({
+      agentName: v.string(),     // e.g. "Coder", "Researcher"
+      runMode: v.string(),       // "cheap" | "balanced" | "powerful" | "default"
+      modelId: v.string(),       // Bedrock model ID or "gemini-flash" etc.
+      provider: v.string(),      // "bedrock" | "gemini" | "custom"
+      customEndpoint: v.optional(v.string()),  // For future self-trained models
+      customApiKey: v.optional(v.string()),     // Encrypted key for custom endpoint
+      updatedAt: v.number(),
+      updatedBy: v.optional(v.string()),
+    })
+      .index("by_agent", ["agentName"])
+      .index("by_agent_and_mode", ["agentName", "runMode"]),
+
+    // GravityAds configuration (admin-managed)
+    gravityAdsConfig: defineTable({
+      apiKey: v.string(),           // GravityAds API key
+      publisherId: v.optional(v.string()),
+      adUnitIds: v.optional(v.array(v.string())),
+      isEnabled: v.boolean(),
+      showToGuests: v.boolean(),    // Show ads to unauthenticated users
+      showToFreeUsers: v.boolean(), // Show ads to authenticated free-tier users
+      showToPaidUsers: v.boolean(), // Show ads to paid users
+      updatedAt: v.number(),
+      updatedBy: v.optional(v.string()),
+    }),
   },
   {
     schemaValidation: false,
