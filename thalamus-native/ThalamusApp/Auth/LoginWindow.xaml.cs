@@ -1,9 +1,8 @@
 using System;
 using System.ComponentModel;
-using System.Diagnostics;
+using System.Threading;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
 namespace ThalamusApp.Auth
@@ -11,11 +10,7 @@ namespace ThalamusApp.Auth
     public partial class LoginWindow : Window
     {
         private readonly LoginHandler _login = new();
-        private readonly DispatcherTimer _animTimer = new()
-        {
-            Interval = TimeSpan.FromMilliseconds(400)
-        };
-        private int _animTick;
+        private CancellationTokenSource? _pollCts;
 
         public bool LoginSucceeded { get; private set; }
         public string Token { get; private set; } = "";
@@ -24,43 +19,77 @@ namespace ThalamusApp.Auth
         public LoginWindow()
         {
             InitializeComponent();
-            _animTimer.Tick += AnimateDots;
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            // Start the web auth flow immediately
             _ = StartAuthAsync();
         }
 
+        /// <summary>
+        /// Starts the web-based auth flow:
+        /// 1. Generate auth code via Convex action
+        /// 2. Show the code and open browser
+        /// 3. Poll for authorization
+        /// 4. Return token on success
+        /// </summary>
         private async System.Threading.Tasks.Task StartAuthAsync()
         {
             ShowLoading();
+            _pollCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
 
-            var result = await _login.StartWebAuthAsync(
-                new System.Threading.CancellationTokenSource(TimeSpan.FromMinutes(5)).Token);
-
-            if (result.success)
+            try
             {
-                Token = result.token;
-                Email = result.email;
-                LoginSucceeded = true;
-                ShowSuccess();
-                // Auto-close after brief success display
-                await System.Threading.Tasks.Task.Delay(800);
-                DialogResult = true;
-                Close();
+                // Step 1: Generate auth code
+                var (code, _) = await _login.GenerateAuthCodeAsync(_pollCts.Token);
+
+                if (string.IsNullOrEmpty(code))
+                {
+                    Dispatcher.Invoke(() => ShowError("Failed to generate auth code."));
+                    return;
+                }
+
+                // Step 2: Show code and open browser
+                Dispatcher.Invoke(() => ShowCode(code));
+                _login.OpenBrowserWithCode(code);
+
+                // Step 3: Poll for authorization
+                var result = await _login.PollForAuthorizationAsync(code, _pollCts.Token);
+
+                if (result.success)
+                {
+                    Token = result.token;
+                    Email = result.email;
+                    LoginSucceeded = true;
+                    Dispatcher.Invoke(ShowSuccess);
+                    await System.Threading.Tasks.Task.Delay(1000);
+                    Dispatcher.Invoke(() => { DialogResult = true; Close(); });
+                }
+                else
+                {
+                    Dispatcher.Invoke(() => ShowError("Authorization timed out or was declined."));
+                }
             }
-            else
+            catch (OperationCanceledException)
             {
-                ShowError("Authorization failed or timed out.");
+                Dispatcher.Invoke(() => ShowError("Authorization cancelled or timed out."));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Auth error: {ex.Message}");
+                Dispatcher.Invoke(() => ShowError("Connection error. Please try again."));
             }
         }
 
         private void OpenBrowser_Click(object sender, RoutedEventArgs e)
         {
-            // Re-open browser with the auth code
-            _ = StartAuthAsync();
+            // Re-open browser with the same code
+            if (!string.IsNullOrEmpty(CodeLabel.Text.Replace(" ", "")))
+            {
+                var code = CodeLabel.Text.Replace(" ", "");
+                _login.OpenBrowserWithCode(code);
+                StatusLabel.Text = "Waiting for authorization...";
+            }
         }
 
         private void Retry_Click(object sender, RoutedEventArgs e)
@@ -82,23 +111,24 @@ namespace ThalamusApp.Auth
             CodePanel.Visibility = Visibility.Collapsed;
             SuccessPanel.Visibility = Visibility.Collapsed;
             ErrorPanel.Visibility = Visibility.Collapsed;
-            _animTimer.Start();
+
+            // Start dot animation
+            _ = AnimateDotsAsync();
         }
 
-        public void ShowCode(string code)
+        private void ShowCode(string code)
         {
             // Insert space in the middle for readability
             var display = code.Length > 4
                 ? code[..4] + " " + code[4..]
                 : code;
             CodeLabel.Text = display;
-            StatusLabel.Text = "Waiting for authorization...";
+            StatusLabel.Text = "Waiting for authorization in browser...";
 
             LoadingPanel.Visibility = Visibility.Collapsed;
             CodePanel.Visibility = Visibility.Visible;
             SuccessPanel.Visibility = Visibility.Collapsed;
             ErrorPanel.Visibility = Visibility.Collapsed;
-            _animTimer.Stop();
         }
 
         private void ShowSuccess()
@@ -107,7 +137,6 @@ namespace ThalamusApp.Auth
             CodePanel.Visibility = Visibility.Collapsed;
             SuccessPanel.Visibility = Visibility.Visible;
             ErrorPanel.Visibility = Visibility.Collapsed;
-            _animTimer.Stop();
         }
 
         private void ShowError(string message)
@@ -117,24 +146,27 @@ namespace ThalamusApp.Auth
             CodePanel.Visibility = Visibility.Collapsed;
             SuccessPanel.Visibility = Visibility.Collapsed;
             ErrorPanel.Visibility = Visibility.Visible;
-            _animTimer.Stop();
         }
 
-        // ── Loading animation ─────────────────────────────────────────────────
+        // ── Animated dots ─────────────────────────────────────────────────────
 
-        private void AnimateDots(object? sender, EventArgs e)
+        private async System.Threading.Tasks.Task AnimateDotsAsync()
         {
-            _animTick++;
-            var phase = _animTick % 6;
-            SetDotOpacity(Dot1Rotate, phase == 1 || phase == 2 || phase == 3 ? 1.0 : 0.3);
-            SetDotOpacity(Dot2Rotate, phase == 2 || phase == 3 || phase == 4 ? 1.0 : 0.3);
-            SetDotOpacity(Dot3Rotate, phase == 3 || phase == 4 || phase == 5 ? 1.0 : 0.3);
-        }
+            var dots = new[] { Dot1, Dot2, Dot3 };
+            int tick = 0;
 
-        private static void SetDotOpacity(RotateTransform t, double opacity)
-        {
-            if (t.VisualParent is System.Windows.UIElement el)
-                el.Opacity = opacity;
+            while (LoadingPanel.Visibility == Visibility.Visible)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    var active = (tick + i) % 6 < 3;
+                    await Dispatcher.InvokeAsync(() =>
+                        dots[i].Opacity = active ? 1.0 : 0.25
+                    );
+                }
+                tick++;
+                await System.Threading.Tasks.Task.Delay(350);
+            }
         }
 
         // ── Window chrome ─────────────────────────────────────────────────────
@@ -146,7 +178,8 @@ namespace ThalamusApp.Auth
 
         private void OnClosing(object sender, CancelEventArgs e)
         {
-            _animTimer.Stop();
+            _pollCts?.Cancel();
+            _pollCts?.Dispose();
             _login.Dispose();
         }
     }

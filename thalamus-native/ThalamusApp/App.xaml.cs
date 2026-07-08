@@ -20,27 +20,13 @@ namespace ThalamusApp
             }
             base.OnStartup(e);
 
-            // ── Auth gate: require sign-in before showing MainWindow ──
+            // ── No auth gate — open MainWindow directly (guest mode) ──
+            var main = new MainWindow();
             var handler = new LoginHandler();
-            string token, email;
 
             if (handler.TryRestoreSession())
-            {
-                token = handler.Token;
-                email = handler.Email;
-            }
-            else
-            {
-                var login = new LoginWindow();
-                login.ShowDialog();
-                if (!login.LoginSucceeded) { Shutdown(); return; }
-                token = login.Token;
-                email = login.Email;
-                AuthManager.SaveToken(token, email);
-            }
+                main.SetSession(handler.Token, handler.Email);
 
-            var main = new MainWindow();
-            main.SetSession(token, email);
             main.Show();
         }
 
@@ -57,7 +43,7 @@ namespace ThalamusApp
             {
                 var hwnd = FindThalamusHwnd();
                 if (hwnd == IntPtr.Zero) return;
-                ShowWindow(hwnd, 9);   // SW_RESTORE
+                ShowWindow(hwnd, 9);
                 SetForegroundWindow(hwnd);
             }
             catch { }

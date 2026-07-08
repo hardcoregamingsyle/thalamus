@@ -11,31 +11,33 @@ namespace ThalamusApp
 {
     public partial class MainWindow : Window
     {
-        private const string APP_VERSION = "1.0.0";
+        private const string APP_VERSION = "1.2.0";
         private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
+        private bool _isAuthenticated;
 
         public MainWindow()
         {
             InitializeComponent();
             VersionLabel.Text = $"v{APP_VERSION}";
+            SetGuestMode();
             _ = Task.Run(CheckForUpdatesAsync);
         }
 
         /// <summary>
-        /// Called by App.xaml.cs after authentication is complete.
-        /// Sets the user session and populates the UI.
+        /// Called by App.xaml.cs after restoring a saved session.
+        /// Enables full access with the user's email shown.
         /// </summary>
         public void SetSession(string token, string email)
         {
-            // Update auth state
+            _isAuthenticated = true;
             UserLabel.Text = email;
-            UserLabel.Foreground = (Brush)FindResource("TextSecondaryBrush");
-            StatusText.Text = "Ready";
-            ModeLabel.Text = "Code Mode";
-
-            // Update auth dot
             AuthDot.Fill = (Brush)FindResource("GreenBrush");
             AuthDot.ToolTip = email;
+
+            // Show sign out, hide sign in
+            BtnSignIn.Visibility = Visibility.Collapsed;
+            BtnSignOut.Visibility = Visibility.Visible;
+            SectionLabel.Text = email.Length > 18 ? email[..16] + "..." : email;
 
             // Pass token to mode views
             CodePanel.SetToken(token);
@@ -43,8 +45,26 @@ namespace ThalamusApp
             ResearchPanel.SetToken(token);
             StudyPanel.SetToken(token);
 
-            // Navigate to Code mode by default
+            StatusText.Text = "Ready — Signed in";
             NavigateTo("Code");
+        }
+
+        /// <summary>
+        /// Guest mode — limited features, sign-in button visible.
+        /// </summary>
+        private void SetGuestMode()
+        {
+            _isAuthenticated = false;
+            UserLabel.Text = "Not signed in";
+            AuthDot.Fill = (Brush)FindResource("AmberBrush");
+            AuthDot.ToolTip = "Sign in to unlock all features";
+
+            BtnSignIn.Visibility = Visibility.Visible;
+            BtnSignOut.Visibility = Visibility.Collapsed;
+            SectionLabel.Text = "ACCOUNT";
+
+            StatusText.Text = "Ready — Guest";
+            NavigateTo("Chat");
         }
 
         // ── Navigation ────────────────────────────────────────────────────────
@@ -57,10 +77,14 @@ namespace ThalamusApp
 
         private void NavigateTo(string mode)
         {
-            if (mode == "Logout")
+            switch (mode)
             {
-                SignOut();
-                return;
+                case "SignIn":
+                    _ = SignInAsync();
+                    return;
+                case "Logout":
+                    SignOut();
+                    return;
             }
 
             // Toggle panel visibility
@@ -70,32 +94,55 @@ namespace ThalamusApp
             StudyPanel.Visibility    = mode == "Study"    ? Visibility.Visible : Visibility.Collapsed;
 
             // Update nav highlights
-            var inactive = (System.Windows.Style)FindResource("NavBtn");
-            var active   = (System.Windows.Style)FindResource("NavBtnActive");
+            var inactive = (Style)FindResource("SidebarBtn");
+            var active   = (Style)FindResource("SidebarBtnActive");
             BtnCode.Style     = mode == "Code"     ? active : inactive;
             BtnChat.Style     = mode == "Chat"     ? active : inactive;
             BtnResearch.Style = mode == "Research" ? active : inactive;
             BtnStudy.Style    = mode == "Study"    ? active : inactive;
 
-            ModeLabel.Text = mode + " Mode";
-            StatusText.Text = "Ready";
+            ModeLabel.Text = mode == "Code" ? "Build Mode" : mode + " Mode";
+            StatusText.Text = _isAuthenticated ? $"Ready — {mode}" : "Ready — Guest";
+        }
+
+        /// <summary>
+        /// Show the login dialog for web-based auth (opens browser to website).
+        /// </summary>
+        private async System.Threading.Tasks.Task SignInAsync()
+        {
+            var login = new LoginWindow();
+            login.Owner = this;
+            login.ShowDialog();
+
+            if (login.LoginSucceeded)
+            {
+                AuthManager.SaveToken(login.Token, login.Email);
+                SetSession(login.Token, login.Email);
+            }
         }
 
         private void SignOut()
         {
             AuthManager.ClearToken();
 
-            // Show login window again
-            var login = new LoginWindow();
-            login.ShowDialog();
-            if (!login.LoginSucceeded)
-            {
-                Application.Current.Shutdown();
-                return;
-            }
+            // Reset to guest mode
+            _isAuthenticated = false;
+            UserLabel.Text = "Not signed in";
+            AuthDot.Fill = (Brush)FindResource("AmberBrush");
+            AuthDot.ToolTip = "Sign in to unlock all features";
 
-            AuthManager.SaveToken(login.Token, login.Email);
-            SetSession(login.Token, login.Email);
+            BtnSignIn.Visibility = Visibility.Visible;
+            BtnSignOut.Visibility = Visibility.Collapsed;
+            SectionLabel.Text = "ACCOUNT";
+
+            // Clear tokens from mode views
+            CodePanel.SetToken("");
+            ChatPanel.SetToken("");
+            ResearchPanel.SetToken("");
+            StudyPanel.SetToken("");
+
+            StatusText.Text = "Ready — Guest";
+            NavigateTo("Chat");
         }
 
         // ── Auto-update ───────────────────────────────────────────────────────
