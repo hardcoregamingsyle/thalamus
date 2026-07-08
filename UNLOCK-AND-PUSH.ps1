@@ -12,7 +12,13 @@ git add -A
 
 # Commit — use a here-string so PowerShell doesn't parse '-' as an operator
 $msg = @"
-feat: dynamic pipeline dispatch, TS fix, streaming, L4.5 agents, admin model config
+fix: download links, dynamic pipeline dispatch, TS fix
+
+Download link fixes (4 files):
+* Landing.tsx: switch from hardcoded v2.0.0 tag to releases/latest/download/ redirect
+* Landing.tsx: add download attribute so browser saves file instead of navigating
+* vmLauncher.ts: same latest-redirect fix for INSTALLER_URL and BRIDGE_URL
+* VMSetupDialog.tsx: same latest-redirect fix + download attribute
 
 Dynamic pipeline (Dispatcher agent):
 * New Dispatcher agent runs first, classifies task complexity (trivial/simple/medium/complex/full)
