@@ -213,7 +213,7 @@ namespace ThalamusApp.Modes
                 BorderBrush = new SolidColorBrush(Color.FromRgb(0x0a, 0x30, 0x18)),
                 BorderThickness = new Thickness(0, 0, 0, 1),
                 CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(16, 12),
+                Padding = new Thickness(16, 12, 16, 12),
                 Margin = new Thickness(0, 0, 0, 12)
             };
             var sp = new StackPanel { Orientation = Orientation.Horizontal };
@@ -244,7 +244,7 @@ namespace ThalamusApp.Modes
                 BorderBrush = new SolidColorBrush(Color.FromRgb(0x0a, 0x30, 0x18)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(12),
-                Padding = new Thickness(20, 16),
+                Padding = new Thickness(20, 16, 20, 16),
                 Margin = new Thickness(0, 0, 0, 16)
             };
 
@@ -269,7 +269,7 @@ namespace ThalamusApp.Modes
                 BorderBrush = new SolidColorBrush(Color.FromRgb(0x10, 0x5c, 0x2a)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(16, 12),
+                Padding = new Thickness(16, 12, 16, 12),
                 Margin = new Thickness(0, 12, 0, 16)
             };
             var sp = new StackPanel { Orientation = Orientation.Horizontal };
@@ -299,7 +299,7 @@ namespace ThalamusApp.Modes
                 BorderBrush = new SolidColorBrush(Color.FromRgb(0x4a, 0x10, 0x10)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(16, 12),
+                Padding = new Thickness(16, 12, 16, 12),
                 Margin = new Thickness(0, 0, 0, 12),
                 Child = new TextBlock
                 {
