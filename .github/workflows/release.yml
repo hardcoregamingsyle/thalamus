@@ -30,12 +30,23 @@ jobs:
         shell: pwsh
         run: |
           $tag = "${{ github.ref_name }}"
-          if (-not $tag -or $tag -eq "") { $tag = "${{ github.event.inputs.version }}" }
-          if (-not $tag) { $tag = "v2.0.0" }
+          # On workflow_dispatch the ref_name is the branch name (e.g. "main"), not a tag.
+          # Use the manually supplied version input in that case.
+          if ($tag -notmatch '^v\d') {
+            $tag = "${{ github.event.inputs.version }}"
+          }
+          if (-not $tag -or $tag -notmatch '^v\d') {
+            $tag = "v2.0.0"
+          }
           $ver = $tag.TrimStart('v')
+          # Ensure the version is a valid AssemblyVersion (must be numeric, e.g. 2.0.0)
+          if ($ver -notmatch '^\d+(\.\d+)*$') {
+            $ver = "2.0.0"
+            $tag = "v2.0.0"
+          }
           echo "tag=$tag" >> $env:GITHUB_OUTPUT
           echo "ver=$ver" >> $env:GITHUB_OUTPUT
-          echo "Building version: $ver"
+          Write-Host "Building version: $ver (tag: $tag)"
 
       - name: Restore dependencies
         working-directory: thalamus-native/ThalamusApp
