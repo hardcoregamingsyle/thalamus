@@ -13,62 +13,8 @@
         Closing="OnClosing">
 
     <Window.Resources>
-        <!-- ═══ PREMIUM COLOR PALETTE — Website dark theme exact match ═══ -->
-        <Color x:Key="BgDeep">#050a14</Color>
-        <Color x:Key="BgDarker">#020b1d</Color>
-        <Color x:Key="BgCard">#0a1628</Color>
-        <Color x:Key="BgHover">#162a4a</Color>
-        <Color x:Key="BgActive">#1a3055</Color>
-        <Color x:Key="BorderColor">#1e3a5f</Color>
-        <Color x:Key="BorderDim">#142a48</Color>
-        <Color x:Key="TextPrimary">#e2e8f0</Color>
-        <Color x:Key="TextSecondary">#8899aa</Color>
-        <Color x:Key="TextMuted">#3a506a</Color>
-        <Color x:Key="BlueAccent">#3b82f6</Color>
-        <Color x:Key="BlueGlow">#2563eb</Color>
-        <Color x:Key="GreenAccent">#10b981</Color>
-        <Color x:Key="AmberAccent">#f59e0b</Color>
-        <Color x:Key="PurpleAccent">#8b5cf6</Color>
-        <Color x:Key="RedAccent">#ef4444</Color>
-
-        <!-- Brushes -->
-        <SolidColorBrush x:Key="BgDeepBrush"      Color="{StaticResource BgDeep}"/>
-        <SolidColorBrush x:Key="BgDarkerBrush"    Color="{StaticResource BgDarker}"/>
-        <SolidColorBrush x:Key="BgCardBrush"      Color="{StaticResource BgCard}"/>
-        <SolidColorBrush x:Key="BgHoverBrush"     Color="{StaticResource BgHover}"/>
-        <SolidColorBrush x:Key="BgActiveBrush"    Color="{StaticResource BgActive}"/>
-        <SolidColorBrush x:Key="BorderBrush"      Color="{StaticResource BorderColor}"/>
-        <SolidColorBrush x:Key="BorderDimBrush"   Color="{StaticResource BorderDim}"/>
-        <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimary}"/>
-        <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondary}"/>
-        <SolidColorBrush x:Key="TextMutedBrush"   Color="{StaticResource TextMuted}"/>
-        <SolidColorBrush x:Key="BlueBrush"        Color="{StaticResource BlueAccent}"/>
-        <SolidColorBrush x:Key="GreenBrush"       Color="{StaticResource GreenAccent}"/>
-        <SolidColorBrush x:Key="AmberBrush"       Color="{StaticResource AmberAccent}"/>
-        <SolidColorBrush x:Key="PurpleBrush"      Color="{StaticResource PurpleAccent}"/>
-        <SolidColorBrush x:Key="RedBrush"         Color="{StaticResource RedAccent}"/>
-
-        <!-- Gradients -->
-        <LinearGradientBrush x:Key="BlueGradient" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#3b82f6" Offset="0"/>
-            <GradientStop Color="#6366f1" Offset="1"/>
-        </LinearGradientBrush>
-
-        <LinearGradientBrush x:Key="SidebarGradient" StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#030815" Offset="0"/>
-            <GradientStop Color="#060d20" Offset="0.5"/>
-            <GradientStop Color="#040a18" Offset="1"/>
-        </LinearGradientBrush>
-
-        <LinearGradientBrush x:Key="ContentBgGradient" StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#070e22" Offset="0"/>
-            <GradientStop Color="#050a14" Offset="1"/>
-        </LinearGradientBrush>
-
-        <LinearGradientBrush x:Key="StatusBarGradient" StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#020b1d" Offset="0"/>
-            <GradientStop Color="#030612" Offset="1"/>
-        </LinearGradientBrush>
+        <!-- Shared colors/brushes/gradients are in App.xaml Application.Resources -->
+        <!-- Only window-specific styles remain here -->
 
         <!-- Traffic light button style -->
         <Style x:Key="TrafficLightBtn" TargetType="Button">
