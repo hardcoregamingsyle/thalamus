@@ -11,6 +11,16 @@ namespace ThalamusApp
 
         protected override void OnStartup(StartupEventArgs e)
         {
+            // Global exception handler — shows error instead of silently crashing
+            DispatcherUnhandledException += (_, ex) =>
+            {
+                MessageBox.Show(
+                    $"Thalamus crashed:\n\n{ex.Exception.Message}\n\n{ex.Exception.StackTrace}",
+                    "Thalamus Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                ex.Handled = true;
+                Shutdown(1);
+            };
+
             _mutex = new Mutex(true, "ThalamusAI_v1_SingleInstance", out bool created);
             if (!created)
             {
@@ -20,14 +30,24 @@ namespace ThalamusApp
             }
             base.OnStartup(e);
 
-            // ── No auth gate — open MainWindow directly (guest mode) ──
-            var main = new MainWindow();
-            var handler = new LoginHandler();
+            try
+            {
+                // ── No auth gate — open MainWindow directly (guest mode) ──
+                var main = new MainWindow();
+                var handler = new LoginHandler();
 
-            if (handler.TryRestoreSession())
-                main.SetSession(handler.Token, handler.Email);
+                if (handler.TryRestoreSession())
+                    main.SetSession(handler.Token, handler.Email);
 
-            main.Show();
+                main.Show();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Failed to start:\n\n{ex.Message}\n\n{ex.StackTrace}",
+                    "Thalamus Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown(1);
+            }
         }
 
         protected override void OnExit(ExitEventArgs e)
