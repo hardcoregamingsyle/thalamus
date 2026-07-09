@@ -64,7 +64,7 @@ namespace ThalamusApp
         /// <summary>
         /// Check for available updates
         /// </summary>
-        public async Task<UpdateInfo> CheckForUpdatesAsync()
+        public async Task<UpdateInfo?> CheckForUpdatesAsync()
         {
             try
             {
@@ -76,8 +76,8 @@ namespace ThalamusApp
                 var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
-                var latestVersion = root.GetProperty("version").GetString();
-                
+                var latestVersion = root.GetProperty("version").GetString() ?? "";
+
                 // Check if update is available
                 if (CompareVersions(latestVersion, _currentVersion) <= 0)
                     return null;
@@ -85,11 +85,11 @@ namespace ThalamusApp
                 var updateInfo = new UpdateInfo
                 {
                     Version = latestVersion,
-                    DownloadUrl = root.GetProperty("downloadUrl").GetString(),
-                    Changelog = root.TryGetProperty("changelog", out var cl) ? cl.GetString() : "",
-                    Checksum = root.TryGetProperty("checksum", out var cs) ? cs.GetString() : "",
+                    DownloadUrl = root.GetProperty("downloadUrl").GetString() ?? "",
+                    Changelog = root.TryGetProperty("changelog", out var cl) ? (cl.GetString() ?? "") : "",
+                    Checksum = root.TryGetProperty("checksum", out var cs) ? (cs.GetString() ?? "") : "",
                     Size = root.TryGetProperty("size", out var sz) ? sz.GetInt64() : 0,
-                    ReleaseDate = root.TryGetProperty("releaseDate", out var rd) ? DateTime.Parse(rd.GetString()) : DateTime.Now,
+                    ReleaseDate = root.TryGetProperty("releaseDate", out var rd) ? DateTime.Parse(rd.GetString() ?? "") : DateTime.Now,
                     IsDelta = root.TryGetProperty("isDelta", out var id) && id.GetBoolean(),
                     DeltaFrom = root.TryGetProperty("deltaFrom", out var df) ? df.GetString() : null
                 };
