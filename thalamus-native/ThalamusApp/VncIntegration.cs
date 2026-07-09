@@ -277,6 +277,7 @@ namespace ThalamusApp
 
         private async Task<byte[]> ReadExactAsync(int count, CancellationToken token = default)
         {
+            if (_stream == null) throw new InvalidOperationException("Not connected");
             var buf  = new byte[count];
             int read = 0;
             while (read < count)
@@ -290,6 +291,7 @@ namespace ThalamusApp
 
         private async Task WriteAsync(byte[] data)
         {
+            if (_stream == null) throw new InvalidOperationException("Not connected");
             await _stream.WriteAsync(data, 0, data.Length);
             await _stream.FlushAsync();
         }
