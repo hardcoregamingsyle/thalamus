@@ -8,6 +8,19 @@
  * 3b. If not running: try thalamus:// URI scheme (launches bridge if installed)
  * 4. If URI scheme fails (not installed): show installer download dialog
  * 5. After install, bridge starts automatically and future boots just work
+ *
+ * Bridge protocol (JSON over WebSocket, ws://localhost:5900):
+ * - Requests:  { action: "ping" | "boot" | "stop" | "list", ...params }
+ *   boot takes { os, ram, cores }; stop takes { vmId }.
+ * - Responses: keyed by `status` — "booting" (ack, not terminal), "success",
+ *   or "error" (with `message`). ping replies with { version, platform,
+ *   activeVMs } and no status field.
+ * - There are NO request IDs: responses are correlated purely by listener
+ *   order/timing, which is why each call installs its own message handler,
+ *   ignores statuses it doesn't recognise, and removes itself on the first
+ *   terminal message or timeout.
+ * Port note: 5900 is the bridge's own WebSocket endpoint; actual VM VNC
+ * displays are allocated from 5901 upward (see QemuBridgeManager).
  */
 
 interface VMStatus {
@@ -57,6 +70,8 @@ export class VMLauncher {
             const data = JSON.parse(event.data);
             clearTimeout(responseTimeout);
             ws.close();
+            // "Functional" requires a real ping payload — merely accepting the
+            // connection isn't enough (another service could be squatting :5900).
             const functional = Boolean(data.version || data.platform || data.activeVMs !== undefined);
             resolve({
               running: functional,

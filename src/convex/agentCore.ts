@@ -35,6 +35,9 @@ export function calcClaudeCost(model: ClaudeModel, inputTokens: number, outputTo
        + (outputTokens / 1_000_000) * pricing.outputCentsPerMillion;
 }
 
+// AgentBucks conversion: cost rates here are USD per million tokens, and
+// 1 USD of provider cost = 1,500,000 AgentBucks (the platform markup/exchange
+// rate). Math.ceil so we never undercharge on fractional amounts.
 export function calcAgentBucksFromTokens(
   inputTokens: number,
   outputTokens: number,
@@ -51,7 +54,7 @@ export function calcClaudeAgentBucks(model: ClaudeModel, inputTokens: number, ou
   return calcAgentBucksFromTokens(
     inputTokens,
     outputTokens,
-    pricing.inputCentsPerMillion / 100,
+    pricing.inputCentsPerMillion / 100, // cents → USD, which is what calcAgentBucksFromTokens expects
     pricing.outputCentsPerMillion / 100,
   );
 }
@@ -372,6 +375,9 @@ function parseBedrockCredentials(): { accessKeyId: string; secretAccessKey: stri
 }
 
 // SigV4 signing implementation using Web Crypto API (works in all Convex runtimes)
+// Hand-rolled because the official AWS SDK cannot run inside Convex's default
+// JS runtime; only used for access-key/secret credentials (ABSK bearer tokens
+// skip signing entirely — see buildHeaders in callClaude).
 async function signBedrockRequest(
   method: string,
   url: string,
@@ -505,6 +511,9 @@ export function calcAgentBucksForTier(
   inputTokens: number,
   outputTokens: number,
 ): number {
+  // USD per million tokens. Claude tiers mirror CLAUDE_PRICING (cents/100);
+  // keep the two in sync when pricing changes. Gemini has no direct entry in
+  // CLAUDE_PRICING, so it gets its own nominal rate here.
   const TIER_PRICING: Record<ModelTier, { input: number; output: number }> = {
     gemini: { input: 0.60, output: 2.40 },
     haiku: { input: 1.80, output: 7.20 },
@@ -524,7 +533,8 @@ export async function callClaude(
   dbCreds?: { accessKeyId: string; secretAccessKey: string; region: string } | null,
   geminiKeys?: string[],
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
-  // Increased context limit for long reports — 32k chars
+  // Hard caps on prompt/system size — long agent contexts (file dumps, reports)
+  // otherwise blow past Bedrock limits and inflate cost. 48k chars ≈ 12k tokens.
   const trimmedPrompt = prompt.length > 48000 ? prompt.slice(0, 48000) + "\n...[context trimmed for efficiency]" : prompt;
   const trimmedSystem = systemPrompt.length > 8000 ? systemPrompt.slice(0, 8000) + "\n...[system trimmed]" : systemPrompt;
 
@@ -881,6 +891,11 @@ export interface ParsedOutput {
   changeMode?: "Code" | "Chat" | "Minor"; // AI-requested mode switch
 }
 
+// Agents "call tools" by emitting inline <<TAG>> markers in their text output
+// (there is no native tool-use API in this path). This parser extracts every
+// operation and replaces each marker in cleanContent with a human-readable
+// placeholder, because cleanContent is what gets stored and shown in the chat
+// UI — raw markers (which can embed entire file bodies) must never reach it.
 export function parseAgentOutput(content: string): ParsedOutput {
   const fileOps: FileOp[] = [];
   const searchOps: SearchOp[] = [];
@@ -896,6 +911,8 @@ export function parseAgentOutput(content: string): ParsedOutput {
     cleanContent = cleanContent.replace(match[0], `[FILE CREATED: ${match[1]}]`);
   }
 
+  // Intentional: EDITFILE blocks close with END.CREATEFILE — that is the tag
+  // the agent prompts specify for both block types. Do not "fix" to END.EDITFILE.
   const editRegex = /(?:<<<<<|<<)EDITFILE="([^"]+)"(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.CREATEFILE(?:>>>>>|>>)/g;
   while ((match = editRegex.exec(content)) !== null) {
     fileOps.push({ type: "edit", filepath: match[1], content: match[2].trim() });
@@ -935,6 +952,9 @@ export function parseAgentOutput(content: string): ParsedOutput {
     cleanContent = cleanContent.replace(testerFailMatch[0], `[TEST: FAILED - ${testerFailReason}]`);
   }
 
+  // Hacker and Critic share the same <<pass>>/<<Fail>> markers, so both results
+  // are derived from one scan. A fail marker anywhere overrides a pass marker —
+  // agents sometimes emit both when quoting their own instructions.
   let hackerResult: "pass" | "fail" | undefined;
   const hasPass = content.match(/(?:<<<<<|<<)pass(?:>>>>>|>>)/i);
   const hasFail = content.match(/(?:<<<<<|<<)[Ff]ail(?:>>>>>|>>)/);
@@ -1068,6 +1088,8 @@ export function parsePlannerOutput(content: string): PlannerOutput | null {
   const jsonStart = content.indexOf("{");
   if (jsonStart === -1) return null;
 
+  // No code fence — models often append prose after the JSON object. Walk the
+  // closing braces backwards until a substring parses as valid task JSON.
   for (let end = content.length; end > jsonStart; end = content.lastIndexOf("}", end - 1)) {
     if (end === -1) break;
     try {
@@ -1093,6 +1115,13 @@ export function parseDifficultyFromPlannerOutput(content: string): TaskDifficult
   return "normal"; // default to normal (cheapest)
 }
 
+// System prompts for every agent. Shared conventions across all prompts:
+// - Tool calls are inline <<TAG>> markers (see parseAgentOutput) — the prompts
+//   and the parser regexes must stay in lockstep.
+// - Each agent starts its report with a fixed "## Header" line so the UI can
+//   group and label output per stage.
+// - Verdict agents (Tester/Hacker/Critic) signal via <<test.success>>,
+//   <<test.failed="...">> and <<pass>>/<<Fail>>, which gate pipeline retries.
 export const AGENT_SYSTEM_PROMPTS: Record<string, string> = {
   // ── Dispatcher ────────────────────────────────────────────────────────────
   // Runs ONCE before the pipeline to decide which agents are actually needed.

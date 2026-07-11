@@ -128,8 +128,8 @@ AI calls route through `agentCore.ts`.
 
 ### Desktop & Native Apps
 
-* **Neutralinojs Desktop App:** Built using `neutralino.config.json`. Pre-built binaries live in `dist-desktop/`. To rebuild: build Vite first, then package via the Neutralino toolchain. Runtime detection relies on `window.NL_PORT`.
-* **Native C# App (`thalamus-native/`):** A strictly independent WPF application (`ThalamusApp.csproj`) and installer (`ThalamusInstaller.csproj`), both on `net8.0-windows`, published self-contained/single-file. Build via `thalamus-native/build.ps1` (`dotnet publish` + optional Inno Setup `installer.iss`). Full instructions in `thalamus-native/BUILD.md`.
+* **Native C# App (`thalamus-native/`):** The desktop app. A strictly independent WPF application (`ThalamusApp.csproj`) and installer (`ThalamusInstaller.csproj`), both on `net8.0-windows`, published self-contained/single-file. Build via `thalamus-native/build.ps1` (`dotnet publish` + optional Inno Setup `installer.iss`). Full instructions in `thalamus-native/BUILD.md`.
+* **Legacy Neutralino detection:** An earlier Neutralino-based desktop shell no longer exists in the repo, but `src/main.tsx` / `DesktopTitlebar.tsx` still check `window.NL_PORT` so any legacy installs loading the live site keep working.
 
 ### Platform Credits (AgentBucks)
 
