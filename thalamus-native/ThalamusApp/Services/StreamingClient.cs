@@ -9,6 +9,11 @@ using System.Threading.Tasks;
 
 namespace ThalamusApp.Services
 {
+    // Consumes the /stream-chat SSE endpoint (src/convex/http.ts). Events arrive
+    // as "data: {json}" lines with a {type, chunk} payload; "thinking" chunks are
+    // status notes, "answer" chunks are response text, and the final "done" event
+    // carries the authoritative fullText. Note the session token is sent in the
+    // request BODY — this endpoint does not read the Authorization header.
     public class StreamingClient
     {
         private readonly ConvexClient _convex;
@@ -50,6 +55,8 @@ namespace ThalamusApp.Services
                 Content = new StringContent(bodyJson, Encoding.UTF8, "application/json"),
             };
 
+            // ResponseHeadersRead is essential: the default would buffer the whole
+            // SSE body before returning, defeating the point of streaming.
             using var resp = await _convex.HttpClient.SendAsync(
                 req, HttpCompletionOption.ResponseHeadersRead, ct);
             resp.EnsureSuccessStatusCode();
@@ -73,6 +80,8 @@ namespace ThalamusApp.Services
 
                     if (type == "done")
                     {
+                        // Prefer the server's fullText over our accumulated chunks —
+                        // it is what was persisted, and survives any dropped events.
                         if (doc.RootElement.TryGetProperty("fullText", out var ft))
                             fullText = ft.GetString() ?? fullText;
                         onChunk("done", fullText);

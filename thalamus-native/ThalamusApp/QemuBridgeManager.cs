@@ -105,6 +105,8 @@ namespace ThalamusApp
                 try
                 {
                     var qemuImg = GetQemuImgBinary();
+                    // qcow2 is sparse — "60G" is a ceiling, not preallocated space,
+                    // so creating a disk per OS is cheap on the user's drive.
                     var psi = new ProcessStartInfo(qemuImg, $"create -f qcow2 \"{diskPath}\" 60G")
                     {
                         UseShellExecute = false,
@@ -129,6 +131,9 @@ namespace ThalamusApp
 
         /// <summary>
         /// Find an available VNC port.
+        /// VNC display N maps to TCP port 5900+N. Allocation starts at 5901
+        /// (display :1) because port 5900 is reserved for the VM bridge's own
+        /// WebSocket endpoint that the web app connects to.
         /// </summary>
         private int FindAvailableVncPort()
         {
@@ -170,7 +175,9 @@ namespace ThalamusApp
             await Task.Yield();
             try
             {
-                // Check if VM is already running
+                // Check if VM is already running — at most one VM per OS. A repeat
+                // boot request returns the existing instance so the UI reconnects
+                // to the same VNC port instead of spawning a duplicate QEMU.
                 var existing = _activeVMs.Values.FirstOrDefault(vm => vm.OS == osId);
                 if (existing != null)
                 {
@@ -237,7 +244,10 @@ namespace ThalamusApp
 
                 _activeVMs[vmId] = instance;
 
-                // Monitor process for exit
+                // Monitor process for exit on a background task: the user can shut
+                // the guest down (or QEMU can crash) at any time, and blocking here
+                // would stall the boot response. Self-removal keeps ListActiveVMs
+                // accurate and frees the VNC port for reuse.
                 _ = Task.Run(() =>
                 {
                     process.WaitForExit();
@@ -328,6 +338,15 @@ namespace ThalamusApp
         /// </summary>
         private string BuildQemuArgs(string osId, int ram, int cores, string diskPath, string isoPath, int vncPort)
         {
+            // Argument choices favour compatibility over raw speed:
+            // - q35: modern chipset required by Windows 10/11 and macOS installers
+            // - qemu64: generic CPU model that works under pure emulation (no
+            //   hardware acceleration is assumed on Windows hosts)
+            // - e1000 NIC: recognised by stock guest drivers, unlike virtio-net
+            //   which needs extra drivers on Windows guests
+            // - user-mode networking: no admin rights or TAP adapter needed
+            // - -vnc takes a DISPLAY number, not a port (display = port - 5900)
+            // - -boot d: boot from CD-ROM so a fresh disk runs the OS installer
             var args = new List<string>
             {
                 "-m", ram.ToString(),

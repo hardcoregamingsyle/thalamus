@@ -1,4 +1,24 @@
 "use node";
+// Code Mode pipeline (the NEW codeProjects/codeBranches system — not TeamPortal).
+//
+// Execution model: one invocation of runPipelineAction runs exactly ONE agent
+// step, persists all progress onto the codeBranches doc, then re-schedules
+// itself via scheduler.runAfter(0, ...). This keeps each Convex action well
+// under the runtime limit and makes every step resumable — the branch doc is
+// the single source of truth, never in-memory state.
+//
+// Branch fields that drive the state machine:
+// - executionPhase: "dispatching" → "planning" → "executing" → "completed"
+// - phase:          the agent currently (or next) running within that phase
+// - currentTaskIndex: which Planner task the executing pipeline is on
+// - round:          monotonically increasing counter, bumped on every agent
+//                   hand-off (used for message grouping in the UI)
+//
+// Pause/resume: when an agent emits <<RUN-CMD>> or <<REQUEST-API-KEY>>, the
+// pipeline queues the request, sets status "paused", and returns WITHOUT
+// re-scheduling. codeCommands.ts / codeApiKeys.ts re-schedule runPipelineAction
+// once the user submits results; the pending-check at the top of the handler
+// keeps the pipeline parked if anything is still outstanding.
 import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
@@ -108,6 +128,9 @@ function parseApiKeyRequests(content: string): Array<{variableName: string; desc
 // Streaming-aware model call — writes partial output to the branch's streamingContent
 // field so the UI can show real-time token output. Falls back to batch callModel if
 // streaming is unavailable (Gemini, AgentRouter) or credentials are missing.
+// NOTE: "streaming" here is simulated — the full response is fetched first, then
+// drip-fed to streamingContent in 300-char chunks. True token streaming from
+// Bedrock proved unreliable inside Convex actions (see callClaude in agentCore).
 async function callModelWithStreaming(
   ctx: { runMutation: ActionCtx["runMutation"]; runQuery: ActionCtx["runQuery"] },
   prompt: string,
@@ -258,6 +281,8 @@ export const runPipelineAction = internalAction({
     if (!branch) return;
 
     // Check if paused for commands
+    // (These gates also make re-scheduling idempotent: a spurious extra
+    // invocation while the user hasn't answered simply re-parks the branch.)
     const pendingCommands = await ctx.runQuery(internal.codeCommands.getPendingCommands, { branchId });
     if (pendingCommands.length > 0) {
       // Still waiting for commands to complete
@@ -405,6 +430,8 @@ export const runPipelineAction = internalAction({
         : buildTaskPipeline(dispatchedAgents);
       const phaseIndex = currentPipeline.indexOf(currentPhase);
 
+      // Phase not in the dispatched pipeline (e.g. Dispatcher dropped it, or a
+      // stale phase from a previous run) — treat as done rather than erroring.
       if (phaseIndex === -1) {
         await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
           branchId,
@@ -515,7 +542,11 @@ export const runPipelineAction = internalAction({
           messageIndex: totalMessages,
         });
 
-        return; // Exit and wait for commands to complete
+        // Exit and wait for commands to complete. `phase` is left unchanged, so
+        // this SAME agent runs again on resume — with the command results now in
+        // its context. File ops in this partial output are intentionally not
+        // applied; the re-run is expected to re-emit them.
+        return;
       }
 
       // Parse and handle API key requests
@@ -586,6 +617,9 @@ export const runPipelineAction = internalAction({
       // than blindly advancing — this is the core L4.5 behavior improvement.
       const MAX_CRITIC_RETRIES = 2;
       if (currentPhase === "Critic" && parsed.criticResult === "fail") {
+        // KNOWN LIMITATION: criticRetryCount is read here but never persisted
+        // anywhere (see the abandoned patch attempt below), so this is always 0
+        // and the MAX_CRITIC_RETRIES cap is not actually enforced yet.
         const retryCount = (branch as { criticRetryCount?: number }).criticRetryCount ?? 0;
         if (retryCount < MAX_CRITIC_RETRIES) {
           // Save a fix-request context message and requeue from Coder

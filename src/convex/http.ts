@@ -37,6 +37,11 @@ function corsHeaders() {
 }
 
 // SigV4 signing for Bedrock streaming
+// Manual implementation (like agentCore.signBedrockRequest) because the AWS SDK
+// can't run in the Convex runtime. This variant differs in one crucial way: the
+// caller passes the canonical path explicitly. The streaming model path contains
+// ":" (e.g. ...-v1:0), which fetch sends raw but AWS canonicalizes as %3A — the
+// signature must be computed over the encoded form or Bedrock rejects it.
 function toAB(data: Uint8Array): ArrayBuffer {
   const ab = new ArrayBuffer(data.byteLength);
   new Uint8Array(ab).set(data);
@@ -85,6 +90,9 @@ async function signBedrockRequestWithPath(
 }
 
 // Parse Bedrock credentials (env var fallback)
+// Trimmed copy of agentCore.parseBedrockCredentials. Deliberately does NOT
+// support ABSK bearer tokens: the streaming endpoint here is called with SigV4
+// only, which requires a real access-key/secret pair.
 function parseBedrockCredsFromEnv(): { accessKeyId: string; secretAccessKey: string; region: string } | null {
   const raw = process.env.AWS_BEDROCK_API_KEY;
   if (!raw) return null;
@@ -149,8 +157,12 @@ async function streamClaudeWithCreds(
     throw new Error(`Bedrock streaming error ${response.status}: ${err.slice(0, 200)}`);
   }
 
-  // Bedrock streaming uses a binary framing protocol (event stream)
-  // Each event is: 4-byte total length, 4-byte headers length, 4-byte CRC, headers, payload, 4-byte CRC
+  // Bedrock streaming uses AWS's binary event-stream framing, not plain SSE.
+  // Each frame is: 4-byte total length, 4-byte headers length, 4-byte prelude
+  // CRC, headers, payload, 4-byte message CRC (all big-endian). The payload is
+  // a JSON envelope whose "bytes" field is the base64-encoded Anthropic event
+  // (content_block_delta etc.) — so decoding is two-level: frame → envelope →
+  // inner event. CRCs are not verified here; malformed frames are just skipped.
   const reader = response.body.getReader();
   let fullText = "";
   let inputTokens = 0;

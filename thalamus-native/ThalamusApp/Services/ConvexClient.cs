@@ -8,6 +8,10 @@ using System.Threading.Tasks;
 
 namespace ThalamusApp.Services
 {
+    // Thin wrapper over Convex's public HTTP function API. Two hosts matter:
+    // .convex.cloud serves /api/query|mutation|action (function calls), while
+    // .convex.site serves custom HTTP routes (the SSE /stream-chat endpoint) —
+    // hence the separate SiteUrl exposed below.
     public class ConvexClient
     {
         private const string CLOUD_URL  = "https://glad-ermine-937.convex.cloud";
@@ -34,11 +38,15 @@ namespace ThalamusApp.Services
 
         private async Task<JsonNode?> CallAsync(string endpoint, string path, object args, string? token)
         {
+            // Convex function-call envelope: { path: "module:function", args }.
             var body = JsonSerializer.Serialize(new { path, args });
             using var req = new HttpRequestMessage(HttpMethod.Post, CLOUD_URL + endpoint)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json"),
             };
+            // Custom session token (customSessions table) as Bearer. Most backend
+            // functions also take the token as an explicit arg — the header alone
+            // is not sufficient for functions that validate via args.token.
             if (token != null)
                 req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
@@ -48,6 +56,8 @@ namespace ThalamusApp.Services
             if (!resp.IsSuccessStatusCode)
                 throw new ConvexException(resp.StatusCode, json);
 
+            // Successful responses are wrapped: { status: "success", value: ... }.
+            // Callers only ever want the value.
             var doc = JsonNode.Parse(json);
             return doc?["value"];
         }

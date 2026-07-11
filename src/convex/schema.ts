@@ -15,6 +15,19 @@ export const roleValidator = v.union(
 );
 export type Role = Infer<typeof roleValidator>;
 
+// Table groups, in rough order below:
+// - Auth & identity: users, otpCodes, customSessions, desktopAuthCodes
+// - Chat portal: conversations, messages (plain chat/research/study — no agents)
+// - NEW code system: codeProjects/codeBranches/codeMessages/codeFiles/
+//   codeCommands/codeApiKeys/codeApiKeyRequests (+githubConfigs) — driven by
+//   codePipeline.ts, served at /portal/code
+// - OLD code system: teamSessions/agentMessages/projectFiles/sessionBranchGroups
+//   (+sandboxes) — driven by agentPipeline.ts, served at /team. Still live;
+//   both systems share the same 9-agent pipeline but different data models.
+// - Platform economy & admin: creditBatches, promoCodes, modelPricing,
+//   platformBudget, awsCredentials, geminiKeys, agentModelConfig, userApiKeys
+// - Study mode / RAG: studyResources, adminStudyMaterials, ragChunks,
+//   graphNodes, graphEdges, graphHealthChecks
 const schema = defineSchema(
   {
     ...authTables,
@@ -81,6 +94,8 @@ const schema = defineSchema(
       .index("by_custom_id", ["customId"]),
 
     // Code Mode — projects, branches, files, commands, API keys
+    // This is the NEWER of the two code systems (see header above). A "branch"
+    // here is the unit of pipeline execution — all agent state lives on it.
     codeProjects: defineTable({
       userId: v.id("users"),
       projectId: v.string(), // 10 character ID, all caps, letters and numbers
@@ -200,6 +215,8 @@ const schema = defineSchema(
       .index("by_project", ["projectId"])
       .index("by_branch", ["branchId"]),
 
+    // Messages for `conversations` above (plain chat portal) — not related to
+    // codeMessages or agentMessages.
     messages: defineTable({
       conversationId: v.id("conversations"),
       userId: v.id("users"),
@@ -211,6 +228,11 @@ const schema = defineSchema(
       .index("by_conversation", ["conversationId"])
       .index("by_user", ["userId"]),
 
+    // ── OLD Team Portal code system ─────────────────────────────────────────
+    // teamSessions + agentMessages + projectFiles (+sessionBranchGroups,
+    // sandboxes). Superseded by the code* tables above but still in production
+    // for the /team route. Existing rows depend on the deprecated fields below —
+    // do not remove optional fields without a data migration.
     teamSessions: defineTable({
       userId: v.id("users"),
       title: v.string(),
@@ -242,7 +264,8 @@ const schema = defineSchema(
       // NEW: True branch system fields
       currentBranch: v.optional(v.string()),    // Current active branch name (default: "main")
       branchesJson: v.optional(v.string()),     // JSON array of branch metadata [{name, createdAt, createdFrom, gitBranch}]
-      // OLD: Branch group fields (deprecated, keep for migration)
+      // OLD: Branch group fields (deprecated, keep for migration — existing
+      // sessions created under the branch-group model still carry these)
       branchGroupId: v.optional(v.string()),   // ID of the branch group this session belongs to
       branchNumber: v.optional(v.number()),     // 1 = main, 2+ = branches
       branchName: v.optional(v.string()),       // e.g. "Main Branch", "Android APK", "Windows EXE"
@@ -308,6 +331,7 @@ const schema = defineSchema(
       .index("by_user", ["userId"])
       .index("by_user_and_expiry", ["userId", "expiresAt"]),
 
+    // Cloud sandboxes tied to the OLD teamSessions system.
     sandboxes: defineTable({
       userId: v.id("users"),
       sessionId: v.optional(v.id("teamSessions")),
@@ -330,6 +354,8 @@ const schema = defineSchema(
       .index("by_session", ["sessionId"])
       .index("by_sandbox_id", ["sandboxId"]),
 
+    // Part of the deprecated branch-group model (OLD system) — see the
+    // "OLD: Branch group fields" on teamSessions. Kept for existing rows.
     sessionBranchGroups: defineTable({
       userId: v.id("users"),
       groupName: v.string(),          // AI-decided group name
@@ -597,6 +623,8 @@ const schema = defineSchema(
     }),
   },
   {
+    // Validation is off so rows written under earlier schema revisions (notably
+    // old teamSessions/branch-group era documents) don't block deploys.
     schemaValidation: false,
   },
 );
