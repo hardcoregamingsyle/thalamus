@@ -91,7 +91,7 @@ export default function CreditModal({ open, onClose, totalAB, dailyAB, purchased
   const navigate = useNavigate();
   const [promoCode, setPromoCode] = useState("");
   const [showBuyModal, setShowBuyModal] = useState(false);
-  const [selectedPack, setSelectedPack] = useState<typeof CREDIT_PACKS[0] | null>(null);
+  const [, setSelectedPack] = useState<typeof CREDIT_PACKS[0] | null>(null);
   const [isApplyingPromo, setIsApplyingPromo] = useState(false);
   const applyPromoMutation = useMutation(api.customAuthHelpers.applyPromoCode);
 

@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router";
 import { useAuth } from "@/hooks/use-auth";
-import { Gift, Copy, Share2, Users, Zap, ArrowLeft, CheckCircle, RotateCcw } from "lucide-react";
+import { Copy, Share2, Users, Zap, ArrowLeft, CheckCircle, RotateCcw } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useQuery, useMutation } from "convex/react";
@@ -109,7 +109,7 @@ function SpinWheel({ spinning, rotation, onSpinEnd }: { spinning: boolean; rotat
 }
 
 export default function ReferPage() {
-  const { user, isLoading, isAuthenticated, token } = useAuth();
+  const { isLoading, isAuthenticated, token } = useAuth();
   const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
   const [spinning, setSpinning] = useState(false);
@@ -119,7 +119,7 @@ export default function ReferPage() {
 
   const referralInfo = useQuery(api.customAuthHelpers.getReferralInfo, token ? { token } : "skip");
   const ensureReferralCode = useMutation(api.customAuthHelpers.ensureReferralCode);
-  const useSpinMutation = useMutation(api.customAuthHelpers.useSpin);
+  const spinMutation = useMutation(api.customAuthHelpers.useSpin);
 
   // Ensure existing users have a referral code
   useEffect(() => {
@@ -146,7 +146,7 @@ export default function ReferPage() {
     setLastWon(null);
 
     try {
-      const result = await useSpinMutation({ token });
+      const result = await spinMutation({ token });
       // Calculate which segment to land on based on won amount
       const segmentIndex = WHEEL_SEGMENTS.findIndex(s => s.prize === result.won);
       const targetSegment = segmentIndex >= 0 ? segmentIndex : 0;

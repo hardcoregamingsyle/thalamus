@@ -2,7 +2,7 @@
 
 ## Overview
 
-The native Windows desktop app is a WPF application targeting .NET 8. It provides the same core modes as the web app (Chat, Research, Study, Code) plus a VM Sandbox with embedded VNC viewer for running full OS instances locally.
+The native Windows desktop app is a WPF application targeting .NET 8. It provides the same core modes as the web app (Chat, Research, Study, Code). A VM Sandbox UserControl with an embedded VNC viewer also exists for running full OS instances locally via QEMU (not currently wired into the main window navigation).
 
 ## Project Structure
 
@@ -13,10 +13,10 @@ thalamus-native/
 │   ├── App.xaml / App.xaml.cs    # Application resources + global exception handler
 │   ├── MainWindow.xaml / .cs     # Shell: sidebar navigation + mode panels
 │   ├── AssemblyInfo.cs           # Assembly metadata
-│   ├── AutoUpdateSystem.cs       # GitHub Releases update checker
-│   ├── QemuBridgeManager.cs      # WebSocket bridge to local QEMU process
-│   ├── VncIntegration.cs         # RFB 3.8 VNC protocol client
-│   ├── VncViewerControl.cs       # WPF control rendering VNC framebuffer
+│   ├── AutoUpdateSystem.cs       # Update checker (polls thalamus.dev/api/latest-version)
+│   ├── QemuBridgeManager.cs      # Launches/manages qemu-system-x86_64.exe directly
+│   ├── VncIntegration.cs         # EmbeddedVncClient — RFB 3.8 VNC protocol client
+│   ├── VncViewerControl.cs       # ExternalVncViewer — TightVNC launcher fallback
 │   ├── Auth/
 │   │   ├── LoginWindow.xaml/.cs  # OTP login UI
 │   │   ├── AuthManager.cs        # Token management + session persistence
@@ -31,13 +31,15 @@ thalamus-native/
 │   ├── Services/
 │   │   ├── ConvexClient.cs       # HTTP client for Convex mutations/queries
 │   │   └── StreamingClient.cs    # SSE client for real-time AI responses
-│   ├── SandboxView.xaml/.cs      # VM Sandbox: OS selector + VNC display
+│   ├── SandboxView.xaml/.cs      # VM Sandbox: OS selector + embedded VNC display
 │   └── Assets/
 │       ├── icon.ico              # App icon
 │       └── logo.png              # Logo image
-├── ThalamusInstaller/            # WiX installer project
+├── ThalamusInstaller/            # WPF installer project (ThalamusSetup.exe)
+├── build.ps1                     # One-shot build: publish both projects + optional Inno Setup
+├── installer.iss                 # Inno Setup script (optional wrapper installer)
 ├── BUILD.md                      # Full build instructions
-└── global.json                   # .NET SDK version lock (8.0)
+└── global.json                   # .NET SDK version pin (8.0, rollForward latestMajor)
 ```
 
 ## Build Configuration (ThalamusApp.csproj)
@@ -53,7 +55,7 @@ thalamus-native/
 | Nullable | enable |
 | AllowUnsafeBlocks | true (for VNC framebuffer) |
 
-No NuGet dependencies — the app is pure WPF with hand-rolled HTTP/WebSocket/VNC clients.
+The app itself has zero NuGet dependencies — pure WPF with hand-rolled HTTP/SSE/VNC clients. The installer project pulls in one package (`System.Text.Json`). `AssemblyName` is `Thalamus`, so publish output is `Thalamus.exe` directly.
 
 ## Application Architecture
 
@@ -61,7 +63,7 @@ No NuGet dependencies — the app is pure WPF with hand-rolled HTTP/WebSocket/VN
 
 All colors, brushes, and gradients are defined in `Application.Resources` (NOT Window.Resources) so that child UserControls can resolve them at parse time. This is critical — putting them in Window.Resources causes `StaticResourceExtension` crashes because child controls parse before the window is ready.
 
-Key resources: `BgDeep`, `BgDark`, `BgCard`, `AccentBlue`, `TextPrimary`, `TextMuted`, `SidebarGradient`, `ContentBgGradient`, and many more.
+Key resources: `BgDeep`, `BgDarker`, `BgCard`, `TextPrimary`, `TextMuted`, `SidebarGradient`, `ContentBgGradient`, and many more (plus matching `*Brush` entries).
 
 ### App.xaml.cs — Startup & Error Handling
 
@@ -74,13 +76,12 @@ The MainWindow has a horizontal layout:
 2. **Content Area** — Shows the active mode's UserControl
 
 Sidebar modes:
-- Chat (default)
-- Code
+- Code (default active)
+- Chat
 - Research
 - Study
-- Sandbox (VM)
 
-Navigation switches visibility of mode panels. An `AuthDot` Border in the sidebar footer indicates auth status (green = logged in, red = not).
+Navigation (`Nav_Click`) toggles visibility of the four mode panels. Sign In / Sign Out buttons live in the sidebar footer, along with an `AuthDot` Border indicating auth status. There is no Sandbox nav item — `SandboxView` exists as a UserControl but isn't mounted in the shell.
 
 ### Modes
 
@@ -95,45 +96,55 @@ Each mode is a UserControl loaded into the content area:
 
 **ConvexClient** — HTTP client calling the Convex deployment (`https://glad-ermine-937.convex.cloud`). Makes POST requests to Convex HTTP actions for mutations and queries. Handles auth token header injection.
 
-**StreamingClient** — SSE (Server-Sent Events) client connecting to the `/stream-chat` endpoint. Parses `event:` and `data:` lines, dispatches `thinking`, `text`, and `done` events to the UI.
+**StreamingClient** — SSE (Server-Sent Events) client connecting to the `/stream-chat` endpoint. Parses `data:` lines, dispatches `thinking`, `answer`, and `done` chunks to the UI.
 
 ### VM Sandbox
 
-**QemuBridgeManager** — Connects via WebSocket to a local VM bridge process on port 5900. Sends JSON commands: `boot`, `stop`, `list`, `ping`. Manages VM lifecycle.
+**QemuBridgeManager** — Launches and manages `qemu-system-x86_64.exe` directly as a child process (native C# — it replaced the old Node.js bridge the web app uses). Builds the QEMU argument list including `-vnc :N` for display.
 
-**VncIntegration** — Raw TCP implementation of the RFB 3.8 protocol. Handles handshake, authentication (none), framebuffer updates. Fires `FrameUpdated` events with pixel data.
+**VncIntegration (`EmbeddedVncClient`)** — Raw TCP implementation of the RFB 3.8 protocol. Handles handshake, authentication (none), framebuffer updates. Fires `FrameUpdated` events with pixel data.
 
-**VncViewerControl** — WPF control that takes VNC frame data and renders it to a `WriteableBitmap` displayed in an `Image` element.
+**VncViewerControl (`ExternalVncViewer`)** — Static helper that launches an external TightVNC viewer (`tvnviewer.exe`) if present; retained as a fallback. The embedded rendering path lives in `SandboxView`, which writes VNC frames into a `WriteableBitmap` shown in an `Image` element.
 
-**SandboxView** — UI for selecting an OS (Windows 11, Ubuntu, Fedora, macOS, Android), configuring RAM/CPU, and viewing the running VM through the embedded VNC display.
+**SandboxView** — UI for picking an OS (grouped Windows / Linux / macOS / Android), setting RAM/cores via sliders, and viewing the running VM through the embedded VNC display. Not currently reachable from the MainWindow sidebar.
 
 ### Auto-Update
 
-`AutoUpdateSystem.cs` checks GitHub Releases API (`https://api.github.com/repos/hardcoregamingsyle/thalamus/releases/latest`) on startup. If a newer version tag is found, shows a notification with download link.
+`AutoUpdateSystem.cs` polls `https://thalamus.dev/api/latest-version`. The response carries version, download URL, SHA-256 checksum, and optional delta-update metadata; downloads are verified before install.
 
 ## Building
 
 ### Prerequisites
-- .NET 8 SDK
-- Visual Studio 2022 with "Desktop development with C++" workload (for native deps)
+- .NET 8 SDK (the only hard requirement — `global.json` rolls forward to newer majors)
+- Inno Setup 6 (optional, only for the wrapped `Thalamus-Setup-*.exe`)
 - Windows 10+ (x64)
 
 ### Commands
 
-```bash
-# Restore
-dotnet restore thalamus-native/ThalamusApp/ThalamusApp.csproj
+The whole build is one script:
 
-# Build (debug)
-dotnet build thalamus-native/ThalamusApp/ThalamusApp.csproj
+```powershell
+cd thalamus-native
+.\build.ps1                    # publishes app + installer, runs Inno Setup if installed
+.\build.ps1 -Version "1.3.0"   # stamp a version
+.\build.ps1 -SkipInno          # skip the Inno wrapper
+```
+
+Or by hand:
+
+```powershell
+# Build (debug, quick dev loop)
+dotnet build thalamus-native/ThalamusApp/ThalamusApp.csproj -c Debug
 
 # Publish (release, single-file)
-dotnet publish thalamus-native/ThalamusApp/ThalamusApp.csproj \
-  -c Release -r win-x64 --self-contained \
+dotnet publish thalamus-native/ThalamusApp/ThalamusApp.csproj `
+  -c Release -r win-x64 --self-contained `
   -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
 
 # Output: thalamus-native/ThalamusApp/bin/Release/net8.0-windows/win-x64/publish/Thalamus.exe
 ```
+
+See `thalamus-native/BUILD.md` for the full story, including the `_wpftmp` gotcha when publishing the installer project.
 
 ### CI Build (GitHub Actions)
 

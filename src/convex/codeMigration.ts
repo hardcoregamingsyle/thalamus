@@ -79,9 +79,9 @@ export const migrateOldSessions = internalMutation({
         round: session.round || 0,
         plannerTasksJson: session.plannerTasksJson,
         currentTaskDifficulty: session.currentTaskDifficulty,
-        vmOs: (session as any).vmOS || "windows11_pro",
-        vmRam: (session as any).vmRam,
-        vmCores: (session as any).vmCores,
+        vmOs: session.vmOS || "windows11_pro",
+        vmRam: session.vmRam,
+        vmCores: session.vmCores,
       });
 
       // Migrate messages

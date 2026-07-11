@@ -1,13 +1,13 @@
-import { mutation, query, action } from "./_generated/server";
+import { mutation, query, action, internalQuery, internalMutation, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function getUserIdByToken(ctx: any, token: string) {
+async function getUserIdByToken(ctx: { db: QueryCtx["db"] }, token: string) {
   const session = await ctx.db
     .query("customSessions")
-    .withIndex("by_token", (q: any) => q.eq("token", token))
+    .withIndex("by_token", (q) => q.eq("token", token))
     .first();
   if (!session || session.expiresAt < Date.now()) return null;
   return session.userId;
@@ -45,7 +45,8 @@ export const createApiKey = action({
     expiresInDays: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<{ keyId: string; fullKey: string; keyPrefix: string }> => {
-    const userId = await getUserIdByToken(ctx, args.token);
+    // Actions have no ctx.db — resolve the session through a query.
+    const userId = await ctx.runQuery(internal.userApiKeys.getSessionUserId, { token: args.token });
     if (!userId) throw new Error("Unauthorized");
 
     const user = await ctx.runQuery(internal.userApiKeys.getUserBalance, { userId });
@@ -119,7 +120,7 @@ export const deductCredits = mutation({
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     if (!user) return;
-    const current = (user as any).agentBucksBalance ?? 0;
+    const current = user.agentBucksBalance ?? 0;
     await ctx.db.patch(args.userId, {
       agentBucksBalance: Math.max(0, current - args.amount),
     });
@@ -131,7 +132,7 @@ export const getUserBalance = query({
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     if (!user) return null;
-    return { agentBucksBalance: (user as any).agentBucksBalance ?? 0 };
+    return { agentBucksBalance: user.agentBucksBalance ?? 0 };
   },
 });
 
@@ -178,7 +179,7 @@ export const revokeApiKey = mutation({
       const user = await ctx.db.get(userId);
       if (user) {
         await ctx.db.patch(userId, {
-          agentBucksBalance: ((user as any).agentBucksBalance ?? 0) + unused,
+          agentBucksBalance: (user.agentBucksBalance ?? 0) + unused,
         });
       }
     }
@@ -187,13 +188,44 @@ export const revokeApiKey = mutation({
   },
 });
 
-// ── API key auth for external calls ──────────────────────────────────────────
+// ── API key auth for external calls (/api/v1 in http.ts) ─────────────────────
 
-export const authenticateApiKey = query({
-  args: { rawKey: v.string() },
+// Session token → userId, callable from actions (which have no ctx.db).
+export const getSessionUserId = internalQuery({
+  args: { token: v.string() },
+  handler: async (ctx, args) => getUserIdByToken(ctx, args.token),
+});
+
+// Hashing happens in the HTTP action (SubtleCrypto); this just looks up the hash
+// and applies the validity gates so the route handler stays dumb.
+export const getKeyByHash = internalQuery({
+  args: { keyHash: v.string() },
   handler: async (ctx, args) => {
-    // We can't hash in a query (no SubtleCrypto) — this is handled in http.ts action
-    // This is a placeholder; actual auth happens in /api/v1/* HTTP routes
-    return null;
+    const key = await ctx.db
+      .query("userApiKeys")
+      .withIndex("by_key_hash", (q) => q.eq("keyHash", args.keyHash))
+      .first();
+    if (!key || !key.isActive) return null;
+    if (key.expiresAt && key.expiresAt < Date.now()) return null;
+    return {
+      _id: key._id,
+      keyId: key.keyId,
+      userId: key.userId,
+      creditsRemaining: key.creditsAllocated - key.creditsUsed,
+    };
+  },
+});
+
+// Meter usage against the key's own allocation (pre-paid from the user's balance
+// at creation time — see createApiKey).
+export const recordKeyUsage = internalMutation({
+  args: { id: v.id("userApiKeys"), credits: v.number() },
+  handler: async (ctx, args) => {
+    const key = await ctx.db.get(args.id);
+    if (!key) return;
+    await ctx.db.patch(args.id, {
+      creditsUsed: key.creditsUsed + args.credits,
+      lastUsedAt: Date.now(),
+    });
   },
 });

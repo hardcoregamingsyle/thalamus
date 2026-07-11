@@ -1,208 +1,173 @@
 # Thalamus
 
-**AI-powered coding platform with a 9-agent pipeline, VM sandbox, and native desktop app.**
+One backend, two faces: a React + Convex web app and a native Windows desktop app. Chat, live-web research, study-from-your-own-files, and a nine-agent pipeline that takes a plain-English request and turns it into planned, written, tested code. There's also a VM sandbox that boots actual operating systems, because apparently I don't believe in small scopes.
 
-Built by Aphantic Corporation. Two surfaces, one backend: a React/Convex web app and a self-contained Windows desktop application.
-
----
-
-## What it does
-
-Thalamus gives you a full agentic coding environment in the browser or as a native app. Describe what you want to build. A sequential team of nine specialized AI agents — Researcher, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, and Critic — plans, implements, tests, and secures your project in an isolated VM sandbox. Files are written directly, shell commands are executed, and results flow back to the agents for iteration.
-
-Alongside code mode, there are chat, research, and study modes powered by the same model stack.
+Built and maintained by one person. Yes, all of it.
 
 ---
 
-## Architecture
+## The four modes
 
-### Web app (`src/`)
-
-React 19 + Vite + Convex. The frontend is a single-page app; all backend logic lives in Convex serverless functions.
-
-```
-src/
-├── convex/                   ← backend (Convex serverless)
-│   ├── schema.ts             ← full database schema and indexes
-│   ├── agentCore.ts          ← model routing: Bedrock → Gemini → fallback
-│   ├── agentPipeline.ts      ← 9-agent pipeline for Team Portal
-│   ├── codePipeline.ts       ← 9-agent pipeline for Code Mode
-│   ├── ai.ts                 ← chat / research / study request handlers
-│   ├── admin.ts              ← admin portal: users, credits, model config
-│   ├── userApiKeys.ts        ← external API key management
-│   ├── gravityAds.ts         ← ad config (server-side only)
-│   ├── auth.ts               ← email OTP auth via @convex-dev/auth
-│   └── github.ts             ← GitHub OAuth + repo sync
-├── components/
-│   ├── ui/                   ← shadcn/ui base components (do not modify)
-│   ├── code-workspace/       ← code mode workspace panels
-│   └── ThinkingPanel.tsx     ← Gemini-style collapsible thinking panel
-└── pages/
-    ├── Landing.tsx           ← public landing page
-    ├── Portal.tsx            ← chat / research / study mode
-    ├── CodeWorkspace.tsx     ← code mode workspace
-    ├── Admin.tsx             ← admin portal
-    └── ApiPage.tsx           ← external API key management
-```
-
-### Native Windows app (`thalamus-native/`)
-
-A WPF (.NET 8) application that embeds the web app in a WebView2 control. It adds native window chrome, system tray integration, and an auto-updater that checks GitHub Releases.
-
-```
-thalamus-native/
-├── ThalamusApp/
-│   ├── MainWindow.xaml(.cs)  ← main window, WebView2 host
-│   ├── TrayIcon.cs           ← system tray
-│   └── AutoUpdater.cs        ← GitHub Releases update check
-├── ThalamusInstaller/
-│   ├── Product.wxs           ← WiX MSI definition
-│   └── Bundle.wxs            ← bootstrapper bundle
-└── BUILD.md                  ← complete Windows build instructions
-```
+| Mode | What happens when you use it |
+|---|---|
+| **Chat** | Streaming conversation over SSE. Markdown renders live as tokens arrive. |
+| **Research** | The backend searches the web, reads sources, and returns a report with citations — not vibes, sources. |
+| **Study** | Upload PDFs and notes. Answers come grounded in *your* material (vector search over `ragChunks`), not generic model memory. |
+| **Build** | Nine agents in sequence. Plan, write, test, attack, review. Files get written, commands get executed, results feed the next agent. |
 
 ---
 
-## Model routing
-
-AI calls route through `agentCore.ts` in priority order:
-
-1. **AWS Bedrock** — Claude Haiku 4.5 / Sonnet 4.6 / Opus 4.6 / Opus 4.8
-2. **Google Gemini** — 2.0 Flash / 3.1 Flash Lite (DB-managed keys via Admin panel)
-3. **AgentRouter** — fallback gateway (AGENTROUTER_API_KEY env var)
-
-Each agent in the pipeline has a default model tier. The Admin panel exposes a Model Config tab to override any agent's model per run mode (Cheap / Balanced / Powerful).
-
----
-
-## Agent pipeline
+## The pipeline
 
 Both pipeline systems (Team Portal and Code Mode) run the same nine agents:
 
-| Agent | Role |
+| Agent | Job |
 |---|---|
-| Researcher | Searches the web and scrapes docs for context |
-| Analyser | Produces a detailed architecture and implementation plan |
-| Planner | Decomposes the project into atomic tasks with difficulty ratings |
-| Coder | Writes complete, production-ready file implementations |
-| Optimiser | Reviews and improves code for performance and security |
-| Organizer | Adds documentation, improves structure, creates README |
-| Tester | Writes and runs tests; reports pass/fail |
-| Hacker | Security audit; fixes critical vulnerabilities |
-| Critic | Final gatekeeper; triggers retry loops on failures |
+| Researcher | Pulls web context and docs before anyone writes a line |
+| Analyser | Turns the request into an architecture |
+| Planner | Decomposes it into atomic tasks with difficulty ratings |
+| Coder | Writes the complete implementation |
+| Optimiser | Performance and security review pass |
+| Organizer | Structure, docs, readme |
+| Tester | Writes and runs tests, reports pass/fail |
+| Hacker | Attacks the code looking for vulnerabilities, then fixes them |
+| Critic | Final gate. Rejects substandard work and sends it back with specific feedback (up to two retry passes) |
 
-The Critic agent triggers up to two retry passes if it rejects a task — the Coder receives the Critic's specific feedback and must fix all issues before the task advances.
+The Hacker's whole job is to break what the Coder wrote before you ever see it. Adversarial by design — trusting one model's first draft is how you ship bugs.
 
 ---
 
-## Development setup
+## Repo tour
 
-Both the Vite dev server and the Convex backend must run simultaneously.
+```
+src/                    web app (React 19 + Vite + TypeScript + Tailwind)
+├── convex/             the entire backend — Convex serverless functions
+│   ├── schema.ts       database schema + indexes (standard and vector)
+│   ├── agentCore.ts    model routing, credit metering, agent prompts
+│   ├── codePipeline.ts 9-agent pipeline (Code Mode)
+│   ├── agentPipeline.ts 9-agent pipeline (Team Portal — older twin)
+│   ├── ai.ts           chat / research / study handlers
+│   ├── auth.ts         email OTP auth (@convex-dev/auth)
+│   ├── github.ts       GitHub OAuth + repo sync
+│   └── http.ts         HTTP routes: /stream-chat, /github/*
+├── components/         feature components (ui/ = vendored shadcn, hands off)
+└── pages/              routes — Landing, Portal, CodeWorkspace, Admin, …
 
-**Prerequisites:** Node.js 20+, Bun, a Convex account.
+thalamus-native/        Windows desktop app — WPF on .NET 8. Native XAML views,
+├── ThalamusApp/        no web wrapper. Thalamus.exe, self-contained single file
+├── ThalamusInstaller/  the installer (ThalamusSetup.exe)
+└── build.ps1           one script, builds everything
+
+qemu-bridge/            local Node bridge for QEMU VM control (web sandbox)
+docs/                   reference docs per subsystem
+```
+
+Deep-dive docs live in [docs/](docs/). Desktop build: [thalamus-native/BUILD.md](thalamus-native/BUILD.md). Full handover context: [HANDOVER.md](HANDOVER.md).
+
+---
+
+## Running it
+
+You need [Bun](https://bun.sh) and a [Convex](https://convex.dev) deployment. Two terminals:
 
 ```bash
-# 1. Install dependencies
 bun install
-
-# 2. Configure environment
-cp .env.local.example .env.local
-# Fill in CONVEX_DEPLOYMENT and VITE_CONVEX_URL
-
-# 3. Start the Convex backend (separate terminal)
-npx convex dev
-
-# 4. Start the frontend dev server
-bun run dev
+npx convex dev        # backend — keep it running
+bun run dev           # frontend
 ```
 
-**Other commands:**
-
-```bash
-bun run build        # TypeScript check + production build → dist/
-bun run type-check   # TypeScript only, no emit
-bun run lint         # ESLint
-bun run format       # Prettier (writes files)
-bun test             # Run tests
-```
-
----
-
-## Environment variables
-
-**Required in `.env.local`:**
+`.env.local`:
 
 ```env
 CONVEX_DEPLOYMENT=your-deployment-name
 VITE_CONVEX_URL=https://your-deployment.convex.cloud
 ```
 
-**Server-side secrets (set via Convex Dashboard or Admin panel):**
+Everything else that matters:
 
-| Variable | Description |
+```bash
+bun run build         # type-check + production build → dist/
+bun run type-check    # tsc only
+bun run lint          # eslint
+bun run format        # prettier
+bun test              # tests
+```
+
+Desktop app, one command (details in [BUILD.md](thalamus-native/BUILD.md)):
+
+```powershell
+cd thalamus-native; .\build.ps1
+```
+
+---
+
+## Model routing
+
+Every model call funnels through `agentCore.ts`:
+
+1. **AWS Bedrock** — Claude Haiku 4.5 / Sonnet 4.6 / Opus 4.6 / Opus 4.8
+2. **AgentRouter** — relief gateway when Bedrock is unavailable
+3. **Google Gemini** — gemini-tier tasks try Gemini first (DB-managed keys via the Admin panel) and fall back to Bedrock Haiku if every key is down
+
+Each pipeline agent is pinned to a model tier appropriate to its job — the Organizer doesn't need Opus, and paying Opus prices for it would be malpractice. The Admin panel's **Model Config** tab can override any agent's model per run mode (Cheap / Balanced / Powerful).
+
+### Credits
+
+Usage is metered in **AgentBucks**: per-token deduction against the `modelPricing` table, balances on `users`, a free daily allocation reset by cron, and platform-wide spend tracked in `platformBudget`. `/admin` manages keys, pricing, and budgets.
+
+User-supplied provider keys (deploys, integrations) are encrypted at rest — AES-256-GCM — and the write path refuses to store anything if `API_KEY_ENCRYPTION_SECRET` isn't configured. Plaintext keys in a database is a rookie move; we don't do that here.
+
+---
+
+## Environment & secrets
+
+Server-side secrets live in the **Convex dashboard**, never in files:
+
+| Variable | What it's for |
 |---|---|
-| `AWS_BEDROCK_API_KEY` | AWS Bedrock credentials (key:secret:region or ABSK token) |
-| `ADMIN_TOKEN` | Admin portal access token |
+| `AWS_BEDROCK_API_KEY` | Bedrock credentials (`key:secret:region` or ABSK token) |
+| `AGENTROUTER_API_KEY` | Fallback model gateway |
+| `API_KEY_ENCRYPTION_SECRET` | AES-256-GCM key for encrypting user provider keys at rest |
+| `ADMIN_TOKEN` | Admin portal access |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | GitHub OAuth app |
 | `JWKS` / `JWT_PRIVATE_KEY` | Auth token signing |
-| `BREVO_EMAIL_SENDER` | Transactional email for OTP |
-| `AGENTROUTER_API_KEY` | Fallback model gateway |
-| `SITE_URL` | Public URL (used in OAuth callbacks) |
+| `BREVO_EMAIL_SENDER` | OTP transactional email |
+| `SITE_URL` | Public URL for OAuth callbacks |
 
-Gemini API keys and AWS credentials can also be managed through the Admin panel and are stored in the database, which takes priority over environment variables.
-
----
-
-## Admin panel
-
-Access at `/admin` (web only — hidden in desktop mode). Requires the `ADMIN_TOKEN` server env var.
-
-Tabs: Users · DAU · Credits · Promo Codes · Suggestions · Study Materials · AWS Bedrock · Gemini Keys · **Model Config** · **GravityAds**
+Gemini keys and AWS credentials can also be managed in the Admin panel (stored in the DB, which takes priority over env vars).
 
 ---
 
-## External API
+## Admin panel & external API
 
-Users can create API keys at `/api-keys`. Keys are prefixed `thal_`, SHA-256 hashed before storage, and scoped to a credit allocation drawn from the user's AgentBucks balance. The API is OpenAI-compatible and can be used as a custom endpoint in Cursor, Claude Code, Codex, and similar tools.
+`/admin` (web only, needs `ADMIN_TOKEN`): Users · DAU · Credits · Promo Codes · Suggestions · Study Materials · AWS Bedrock · Gemini Keys · Model Config · GravityAds.
 
----
-
-## Desktop app (v2.0.0)
-
-The desktop app is a self-contained `.exe` (no installer required). Download from the latest GitHub Release:
-
-```
-https://github.com/hardcoregamingsyle/thalamus/releases/latest
-```
-
-Builds are produced automatically by `.github/workflows/release.yml` when a `v*` tag is pushed. The workflow compiles the WPF project with `dotnet publish` as a single-file self-contained binary targeting `win-x64`.
+Users can mint their own API keys at `/api-keys` — prefixed `thal_`, SHA-256 hashed before storage, scoped to a credit allocation. The API is OpenAI-compatible, so it drops into Cursor, Claude Code, Codex, or anything else that takes a custom endpoint.
 
 ---
 
 ## VM sandbox
 
-Code Mode can execute shell commands in an isolated sandbox environment. Two backends are supported:
+Code Mode can execute commands in an isolated sandbox. Two backends:
 
-- **Browser VMs** — `v86` npm package, x86 WebAssembly emulation, no external setup
-- **QEMU VMs** — requires the local VM Bridge (Node.js, port 5900). Controlled via `src/lib/vmLauncher.ts`
+- **Browser VMs** — `v86` (x86 in WebAssembly), zero setup
+- **QEMU VMs** — real virtualization via the local bridge (`qemu-bridge/`, port 5900)
 
----
-
-## CI/CD
-
-| Workflow | Trigger | Output |
-|---|---|---|
-| `release.yml` | Push `v*` tag or manual dispatch | `Thalamus.exe` GitHub Release |
+The desktop app goes further: it launches QEMU directly and renders the VM display with a built-in RFB 3.8 VNC client. No external viewer.
 
 ---
 
-## Tech stack
+## Releases
 
-| Layer | Technologies |
-|---|---|
-| Frontend | React 19, Vite, TypeScript, Tailwind CSS, shadcn/ui, Framer Motion |
-| Backend | Convex (serverless functions + reactive DB) |
-| AI | AWS Bedrock (Claude), Google Gemini, AgentRouter |
-| Auth | Convex Auth (email OTP) |
-| Desktop | WPF (.NET 8), WebView2, WiX Toolset |
-| VM | v86 (WASM), QEMU |
+Push a `v*` tag and `.github/workflows/release.yml` builds the WPF app (`dotnet publish`, single-file, self-contained, win-x64) and attaches it to a GitHub Release. Manual builds: `thalamus-native/build.ps1`, which also produces the Inno Setup installer and SHA-256 checksums. After a release, update the website's download links — no stale endpoints.
+
+---
+
+## Quality bar
+
+- `tsc -b --noEmit` → clean
+- `vite build` → clean
+- ThalamusApp + ThalamusInstaller → **0 warnings, 0 errors**
+- TODO/FIXME markers in source → **0**
+
+If you add a warning, you fix a warning. If you leave a TODO, you finish it. That's the whole policy.

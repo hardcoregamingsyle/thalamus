@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import {
   MessageSquare, Search, Plus, Trash2, LogOut,
   Send, Loader2, Menu, X, Users, Zap, BookOpen,
-  FileText, Globe, Image, Upload, Sparkles, ChevronRight,
+  FileText, Globe, Image, Upload, Sparkles,
   Hash, Lightbulb, Lock, ArrowRight, Sun, Moon, GraduationCap,
 } from "lucide-react";
 import TeamPortalInline from "./TeamPortalInline";
@@ -583,78 +583,6 @@ const SUGGESTIONS_BY_MODE: Record<string, { icon: string; title: string; prompt:
   ],
 };
 
-function SuggestionsPanel({
-  mode,
-  onClose,
-  onSelect,
-}: {
-  mode: string;
-  onClose: () => void;
-  onSelect: (prompt: string) => void;
-}) {
-  const suggestions = SUGGESTIONS_BY_MODE[mode] || SUGGESTIONS_BY_MODE.chat;
-  const modeColors: Record<string, string> = {
-    chat: "text-primary border-primary/30 bg-primary/10",
-    research: "text-accent border-accent/30 bg-accent/10",
-    study: "text-indigo-400 border-indigo-400/30 bg-indigo-400/10",
-    code: "text-violet-400 border-violet-400/30 bg-violet-400/10",
-  };
-  const color = modeColors[mode] || modeColors.chat;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-end p-3 pt-14 pointer-events-none">
-      <motion.div
-        initial={{ opacity: 0, x: 20, scale: 0.95 }}
-        animate={{ opacity: 1, x: 0, scale: 1 }}
-        exit={{ opacity: 0, x: 20, scale: 0.95 }}
-        transition={{ duration: 0.2 }}
-        className="pointer-events-auto w-80 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <div className="flex items-center gap-2">
-            <Lightbulb className="h-4 w-4 text-amber-400" />
-            <span className="text-xs font-bold text-foreground">SUGGESTIONS</span>
-            <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-bold ${color}`}>
-              {mode.toUpperCase()}
-            </span>
-          </div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-
-        {/* Suggestions list */}
-        <div className="p-2 space-y-1 max-h-[70vh] overflow-y-auto">
-          {suggestions.map((s, i) => (
-            <motion.button
-              key={i}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.04 }}
-              onClick={() => { onSelect(s.prompt); onClose(); }}
-              className="w-full text-left px-3 py-2.5 rounded-xl border border-border hover:border-primary/40 hover:bg-primary/5 transition-all group"
-            >
-              <div className="flex items-start gap-2.5">
-                <span className="text-base shrink-0 mt-0.5">{s.icon}</span>
-                <div className="min-w-0">
-                  <p className="text-[11px] font-bold text-foreground group-hover:text-primary transition-colors">{s.title}</p>
-                  <p className="text-[10px] text-muted-foreground leading-relaxed mt-0.5 line-clamp-2">{s.prompt}</p>
-                </div>
-                <ChevronRight className="h-3 w-3 text-muted-foreground/40 group-hover:text-primary/60 shrink-0 mt-1 transition-colors" />
-              </div>
-            </motion.button>
-          ))}
-        </div>
-
-        <div className="px-4 py-2 border-t border-border">
-          <p className="text-[9px] text-muted-foreground/60 text-center">Click any suggestion to use it as your prompt</p>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
 // ── Suggestion Form Modal ─────────────────────────────────────────────────────
 function SuggestionFormModal({
   onClose,
@@ -786,7 +714,7 @@ function SuggestionFormModal({
 }
 
 // ── Mode Selection Screen ─────────────────────────────────────────────────────
-function ModeSelection({ user, signOut, theme, toggleTheme }: { user: unknown; signOut: () => void; theme: string; toggleTheme: () => void }) {
+function ModeSelection({ signOut, theme, toggleTheme }: { user: unknown; signOut: () => void; theme: string; toggleTheme: () => void }) {
   const navigate = useNavigate();
 
   const modeCards = [
@@ -957,7 +885,6 @@ function PortalDesktop() {
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const attachFileInputRef = useRef<HTMLInputElement>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
-  const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showStudyProfile, setShowStudyProfile] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1020,6 +947,7 @@ function PortalDesktop() {
   useEffect(() => {
     if (urlSessionId && conversations && activeMode !== "code") {
       const conv = conversations.find((c: Conversation) => c.customId === urlSessionId);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs conversation selection from the URL param once data loads; safe refactor not obvious since activeConvId is also set by user actions
       if (conv) setActiveConvId(conv._id);
     }
   }, [urlSessionId, conversations, activeMode]);

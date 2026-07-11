@@ -462,12 +462,6 @@ export const isDomainBlacklisted = internalMutation({
 export const checkAndBlacklistDomain = internalMutation({
   args: { domain: v.string(), newUserId: v.string() },
   handler: async (ctx, args): Promise<{ shouldBlacklist: boolean; userCount: number }> => {
-    // Count users with this domain
-    const allUsers = await ctx.db
-      .query("users")
-      .withIndex("email", (q) => q.eq("email", `@${args.domain}`))
-      .take(10);
-
     // Use a broader search since email index is exact match
     // Instead, count by checking all users (limited to 100 for performance)
     const recentUsers = await ctx.db.query("users").take(500);

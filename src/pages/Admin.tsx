@@ -1,25 +1,16 @@
-// @ts-nocheck
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
+import { Doc, Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
   Shield, Users, Tag, Lightbulb, DollarSign, LogOut, ChevronRight,
   Plus, Trash2, Check, Edit2, Eye, EyeOff, Loader2,
   Coins, AlertCircle, CheckCircle, Star, TrendingDown, RefreshCw, Zap,
-  Database, ExternalLink, Copy, Globe, BookOpen, Upload, FileText, X,
-  TrendingUp, Activity, Cpu, Settings2,
+  Database, Globe, BookOpen, Upload, FileText,
+  TrendingUp, Activity, Cpu,
 } from "lucide-react";
-
-// ── Default model pricing ─────────────────────────────────────────────────────
-const DEFAULT_MODELS = [
-  { modelId: "claude-haiku-4-5", displayName: "Claude Haiku 4.5", inputCentsPerMillion: 180, outputCentsPerMillion: 720, abMultiplier: 15000, isActive: true },
-  { modelId: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6", inputCentsPerMillion: 540, outputCentsPerMillion: 2650, abMultiplier: 15000, isActive: true },
-  { modelId: "claude-opus-4-6", displayName: "Claude Opus 4.6", inputCentsPerMillion: 744, outputCentsPerMillion: 4200, abMultiplier: 15000, isActive: true },
-  { modelId: "claude-opus-4-8", displayName: "Claude Opus 4.8", inputCentsPerMillion: 1200, outputCentsPerMillion: 6000, abMultiplier: 15000, isActive: true },
-];
 
 type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex" | "study-materials" | "dau" | "aws" | "gemini" | "models" | "gravity-ads";
 
@@ -44,22 +35,23 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (adminToken && storedTokenValid === true) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- auth state reacts to the async Convex token verification result; not derivable at render time without changing the login flow
       setAuthed(true);
       setIsVerifying(false);
     }
     if (adminToken && storedTokenValid === false) {
       setAdminToken("");
       setIsVerifying(false);
-      try { localStorage.removeItem(ADMIN_SESSION_KEY); } catch {}
+      try { localStorage.removeItem(ADMIN_SESSION_KEY); } catch { /* ignore */ }
       if (loginPass) toast.error("Invalid token");
     }
-  }, [storedTokenValid, adminToken]);
+  }, [storedTokenValid, adminToken, loginPass]);
 
   const handleLogin = () => {
     if (!loginPass.trim()) return;
     setIsVerifying(true);
     const token = loginPass.trim();
-    try { localStorage.setItem(ADMIN_SESSION_KEY, token); } catch {}
+    try { localStorage.setItem(ADMIN_SESSION_KEY, token); } catch { /* ignore */ }
     // Set token → triggers useQuery(verifyAdminToken) → useEffect handles result
     setAdminToken(token);
   };
@@ -124,7 +116,7 @@ export default function AdminPage() {
             <span className="text-xs text-muted-foreground">Aphantic Corporation</span>
           </div>
           <button
-            onClick={() => { try { localStorage.removeItem(ADMIN_SESSION_KEY); } catch {} setAuthed(false); setAdminToken(""); }}
+            onClick={() => { try { localStorage.removeItem(ADMIN_SESSION_KEY); } catch { /* ignore */ } setAuthed(false); setAdminToken(""); }}
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive transition-colors"
           >
             <LogOut className="h-3.5 w-3.5" />Sign Out
@@ -189,6 +181,18 @@ export default function AdminPage() {
 }
 
 // ── Users Tab ─────────────────────────────────────────────────────────────────
+// Shape returned by api.admin.listUsers
+type AdminUser = {
+  _id: Id<"users">;
+  email?: string;
+  name?: string;
+  dailyAgentBucks: number;
+  purchasedAgentBucks: number;
+  isBanned: boolean;
+  warningCount: number;
+  _creationTime: number;
+};
+
 function UsersTab({ adminToken }: { adminToken: string }) {
   const users = useQuery(api.admin.listUsers, { adminToken });
   const setDailyAllowance = useMutation(api.admin.setDailyAllowance);
@@ -198,7 +202,7 @@ function UsersTab({ adminToken }: { adminToken: string }) {
   const [addAmount, setAddAmount] = useState("");
   const [search, setSearch] = useState("");
 
-  const filtered = (users ?? []).filter(u =>
+  const filtered = (users ?? []).filter((u: AdminUser) =>
     !search || (u.email ?? "").toLowerCase().includes(search.toLowerCase()) || (u.name ?? "").toLowerCase().includes(search.toLowerCase())
   );
 
@@ -242,7 +246,7 @@ function UsersTab({ adminToken }: { adminToken: string }) {
         <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : (
         <div className="space-y-3">
-          {filtered.map(user => (
+          {filtered.map((user: AdminUser) => (
             <motion.div
               key={user._id}
               initial={{ opacity: 0 }}
@@ -336,7 +340,7 @@ function DauTab({ adminToken }: { adminToken: string }) {
   const dauStats = useQuery(api.admin.getDauStats, { adminToken, days });
   const todayDau = useQuery(api.admin.getTodayDau, { adminToken });
 
-  const maxDau = dauStats ? Math.max(...dauStats.map(d => d.dau), 1) : 1;
+  const maxDau = dauStats ? Math.max(...dauStats.map((d: { date: string; dau: number }) => d.dau), 1) : 1;
 
   return (
     <div className="space-y-6">
@@ -403,7 +407,7 @@ function DauTab({ adminToken }: { adminToken: string }) {
                 <Activity className="h-3 w-3 text-primary" />
                 <span className="text-muted-foreground">Avg:</span>
                 <span className="font-bold text-primary">
-                  {dauStats.length > 0 ? Math.round(dauStats.reduce((sum, d) => sum + d.dau, 0) / dauStats.length).toLocaleString() : 0}
+                  {dauStats.length > 0 ? Math.round(dauStats.reduce((sum: number, d: { date: string; dau: number }) => sum + d.dau, 0) / dauStats.length).toLocaleString() : 0}
                 </span>
               </div>
             </div>
@@ -411,7 +415,7 @@ function DauTab({ adminToken }: { adminToken: string }) {
 
           {/* Bar chart */}
           <div className="space-y-1">
-            {dauStats.map((stat, idx) => {
+            {dauStats.map((stat: { date: string; dau: number }, idx: number) => {
               const pct = maxDau > 0 ? (stat.dau / maxDau) * 100 : 0;
               const isToday = stat.date === new Date().toISOString().slice(0, 10);
               const dateObj = new Date(stat.date + "T00:00:00Z");
@@ -483,7 +487,7 @@ function DauTab({ adminToken }: { adminToken: string }) {
               <p className="text-xs font-bold text-muted-foreground">AVERAGE DAU</p>
             </div>
             <p className="text-2xl font-bold text-primary">
-              {Math.round(dauStats.reduce((sum, d) => sum + d.dau, 0) / dauStats.length).toLocaleString()}
+              {Math.round(dauStats.reduce((sum: number, d: { date: string; dau: number }) => sum + d.dau, 0) / dauStats.length).toLocaleString()}
             </p>
             <p className="text-[10px] text-muted-foreground mt-1">Mean across {days} days</p>
           </div>
@@ -727,6 +731,8 @@ function PromoCodesTab({ adminToken }: { adminToken: string }) {
   const [form, setForm] = useState({
     code: "", purchasedCredits: "", spins: "", expiresAt: "", maxUses: "",
   });
+  // Captured once so render stays pure (react-hooks/purity)
+  const [now] = useState(() => Date.now());
 
   const handleCreate = async () => {
     if (!form.code.trim() || !form.expiresAt) { toast.error("Code and expiry are required"); return; }
@@ -814,7 +820,7 @@ function PromoCodesTab({ adminToken }: { adminToken: string }) {
         <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : (
         <div className="space-y-3">
-          {promoCodes.map(code => (
+          {promoCodes.map((code: Doc<"promoCodes">) => (
             <div key={code._id} className="bg-card border border-border rounded-xl p-4 flex items-center justify-between gap-4">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -822,7 +828,7 @@ function PromoCodesTab({ adminToken }: { adminToken: string }) {
                   {code.maxUses != null && code.usedCount >= code.maxUses && (
                     <span className="text-[10px] bg-destructive/15 text-destructive border border-destructive/30 px-1.5 py-0.5 rounded-full font-bold">EXHAUSTED</span>
                   )}
-                  {code.expiresAt < Date.now() && (
+                  {code.expiresAt < now && (
                     <span className="text-[10px] bg-muted text-muted-foreground border border-border px-1.5 py-0.5 rounded-full font-bold">EXPIRED</span>
                   )}
                 </div>
@@ -943,7 +949,7 @@ function StudyMaterialsTab({ adminToken }: { adminToken: string }) {
           </div>
         ) : (
           <div className="space-y-3">
-            {materials.map(m => (
+            {materials.map((m: Doc<"adminStudyMaterials">) => (
               <div key={m._id} className="bg-card border border-border rounded-xl p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
@@ -981,7 +987,7 @@ function SuggestionsTab({ adminToken }: { adminToken: string }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
 
-  const filtered = (suggestions ?? []).filter(s => filter === "all" || s.status === filter);
+  const filtered = (suggestions ?? []).filter((s: Doc<"suggestions">) => filter === "all" || s.status === filter);
 
   const STATUS_COLORS: Record<string, string> = {
     new: "bg-primary/15 text-primary border-primary/30",
@@ -1019,7 +1025,7 @@ function SuggestionsTab({ adminToken }: { adminToken: string }) {
         <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : (
         <div className="space-y-3">
-          {filtered.map(s => (
+          {filtered.map((s: Doc<"suggestions">) => (
             <div key={s._id} className="bg-card border border-border rounded-xl overflow-hidden">
               <div
                 className="flex items-start justify-between gap-4 p-4 cursor-pointer hover:bg-muted/20 transition-colors"
@@ -1096,6 +1102,7 @@ function AwsBedrockTab({ adminToken }: { adminToken: string }) {
 
   // Sync region from DB when credentials load
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- seeds the editable region field from the DB once credentials load; the field is also user-editable so it cannot be derived during render
     if (existing?.region) setRegion(existing.region);
   }, [existing?.region]);
 
@@ -1288,7 +1295,7 @@ function GeminiKeysTab({ adminToken }: { adminToken: string }) {
           <div className="mt-2 space-y-1 text-xs text-muted-foreground">
             <p>Last updated: <span className="text-foreground">{existing.updatedAt ? new Date(existing.updatedAt).toLocaleString() : "—"}</span></p>
             <div className="mt-2 flex flex-wrap gap-1">
-              {existing.maskedKeys.slice(0, 6).map((k, i) => (
+              {existing.maskedKeys.slice(0, 6).map((k: string, i: number) => (
                 <span key={i} className="font-mono bg-muted/50 border border-border rounded px-1.5 py-0.5 text-[10px]">{k}</span>
               ))}
               {existing.maskedKeys.length > 6 && (
@@ -1363,9 +1370,10 @@ function ModelConfigTab({ adminToken }: { adminToken: string }) {
   useEffect(() => {
     if (existingConfigs) {
       const map: typeof configs = {};
-      (existingConfigs as any[]).forEach((c) => {
+      existingConfigs.forEach((c: Doc<"agentModelConfig">) => {
         map[`${c.agentName}::${c.runMode}`] = { modelId: c.modelId, provider: c.provider, customEndpoint: c.customEndpoint };
       });
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- seeds the editable config form from the DB once configs load; the form is also user-editable so it cannot be derived during render
       setConfigs(map);
     }
   }, [existingConfigs]);
@@ -1465,6 +1473,7 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
 
   useEffect(() => {
     if (existing) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- seeds the editable ads config form from the DB once it loads; the form is also user-editable so it cannot be derived during render
       setApiKey(existing.apiKey ?? "");
       setPublisherId(existing.publisherId ?? "");
       setAdUnitIds((existing.adUnitIds ?? []).join("\n"));
@@ -1482,7 +1491,7 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
         adUnitIds: adUnitIds.trim() ? adUnitIds.split("\n").map(s => s.trim()).filter(Boolean) : undefined,
         isEnabled, showToGuests, showToFreeUsers, showToPaidUsers });
       toast.success("GravityAds config saved");
-    } catch (e: any) { toast.error(e.message ?? "Save failed"); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed"); }
     finally { setSaving(false); }
   };
 
@@ -1524,7 +1533,7 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
           {([["Guest users (not signed in)", showToGuests, setShowToGuests], ["Free signed-in users", showToFreeUsers, setShowToFreeUsers], ["Paid users", showToPaidUsers, setShowToPaidUsers]] as const).map(([label, val, set]) => (
             <div key={label as string} className="flex items-center justify-between">
               <span className="text-sm text-foreground">{label as string}</span>
-              <button onClick={() => (set as any)(v => !v)} className={`relative w-9 h-5 rounded-full transition-all ${val ? "bg-primary" : "bg-muted"}`}>
+              <button onClick={() => set(v => !v)} className={`relative w-9 h-5 rounded-full transition-all ${val ? "bg-primary" : "bg-muted"}`}>
                 <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${val ? "left-4" : "left-0.5"}`} />
               </button>
             </div>

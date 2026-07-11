@@ -10,29 +10,35 @@ Before the pipeline runs, a **Dispatcher** agent classifies the task:
 
 - **Model**: Always Haiku (cheapest)
 - **Input**: User's task description + file inventory
-- **Output**: JSON `{ tier: "trivial"|"simple"|"medium"|"complex"|"full", agents: [...] }`
+- **Output**: JSON `{ tier: "trivial"|"simple"|"medium"|"complex"|"full", reasoning: "...", agents: [...] }`
 - **Rules**:
-  - Coder and Critic are ALWAYS included
-  - Hacker is ONLY included if user explicitly asks for security audit
-  - Trivial tasks skip planning entirely (synthetic single-task created)
+  - Coder and Critic are ALWAYS included (enforced again after parsing, in case the model forgets)
+  - Hacker is ONLY included if user explicitly asks for a security audit / pen test / vuln scan
+  - If no planning agents are selected (trivial/simple), planning is skipped entirely and a synthetic single-task plan is created so the Coder still gets a well-defined prompt
 
 ### Complexity Tiers & Agent Selection
+
+From the Dispatcher system prompt (guidance, not strict rules):
 
 | Tier | Typical Task | Agents Selected |
 |------|-------------|-----------------|
 | trivial | Fix a typo, rename variable | Coder, Critic |
-| simple | Add a button, change color | Coder, Tester, Critic |
-| medium | New feature, refactor module | Researcher, Coder, Tester, Critic |
-| complex | Multi-file feature, architecture change | Researcher, Analyser, Planner, Coder, Optimiser, Tester, Critic |
-| full | Major system, security-sensitive | All 9 agents |
+| simple | Add a UI component, fix a bug | Coder, Tester, Critic |
+| medium | Multi-file feature, new endpoint, refactor | Planner, Coder, Tester, Critic |
+| complex | New module, full integration, architecture change | Analyser, Planner, Coder, Optimiser, Tester, Critic |
+| full | Greenfield app, security audit requested | All 9 agents |
+
+Researcher isn't a tier of its own — it gets added to any tier when the task needs third-party APIs, new libraries, or external docs.
 
 ## Pipeline Phases
 
 ### Phase 1: Planning (if selected)
 
-| Agent | Role | Model Tier |
+Model tiers shown are for the default "balanced" run mode (see `MODE_MATRIX` in `agentCore.ts`):
+
+| Agent | Role | Model Tier (balanced) |
 |-------|------|-----------|
-| Researcher | Gathers context, reads docs, searches web | gemini/haiku |
+| Researcher | Gathers context, reads docs, searches web | gemini |
 | Analyser | Understands the codebase, identifies dependencies | sonnet |
 | Planner | Creates a structured task list as JSON | sonnet |
 
@@ -60,12 +66,14 @@ For each task in the plan, the selected execution agents run in order:
 |-------|------|-----------|
 | Researcher | Looks up relevant docs/APIs for this specific task | gemini |
 | Analyser | Analyzes which files need changing | sonnet |
-| **Coder** | Writes the actual code (creates/edits files) | **sonnet/opus** |
+| **Coder** | Writes the actual code (creates/edits files) | **sonnet** (opus48 in "powerful" mode) |
 | Optimiser | Improves performance, removes redundancy | sonnet |
 | Organizer | Ensures file structure is clean | haiku |
 | Tester | Writes and validates tests | sonnet |
 | Hacker | Security audit (only if explicitly requested) | sonnet |
 | **Critic** | Validates everything, passes or fails | sonnet |
+
+In the legacy pipeline (`agentPipeline.ts`), the Hacker slot expands into a Red Team of security sub-agents (VulnerabilitySpotter/Fixer, DataCorruptor/Fixer, ZeroDayExploiter/Remover, FrameworkAuditor/Refiner, RedTeamOrchestrator), and the Researcher slot into a Research Team (ResearchPlanner, DataTaker, ResearchOrganiser). All have entries in `AGENT_MODEL_MAP`.
 
 ### Critic Retry Loop
 
@@ -110,13 +118,13 @@ export const Button = () => <button>Click me</button>;
 <<REQUEST-API-KEY name="STRIPE_SECRET" description="Stripe API key for payments" howToGet="Get from stripe.com/dashboard">>
 ```
 
-Commands and API key requests **pause the pipeline** until the user responds.
+Commands and API key requests **pause the pipeline** until the user responds. When the last pending command finishes (`codeCommands.ts`) or the last requested key is supplied (`codeApiKeys.ts`), the pipeline is automatically resumed via a scheduled `runPipelineAction`. User-supplied provider keys are encrypted at rest (AES-256-GCM, keyed by the `API_KEY_ENCRYPTION_SECRET` deployment secret — storage fails closed if it's missing).
 
 ## Model Configuration
 
 ### Run Modes
 
-Users can select a "run mode" per project that controls which models each agent uses:
+Each branch has a `runMode` field (default "balanced") that selects a column of `MODE_MATRIX` in `agentCore.ts`:
 
 | Mode | Coder Model | Cost | Speed |
 |------|-------------|------|-------|
@@ -124,33 +132,42 @@ Users can select a "run mode" per project that controls which models each agent 
 | balanced | Sonnet | $$ | Medium |
 | powerful | Opus 4.8 | $$$$ | Slow |
 
-### Difficulty Override
+If no mode matrix entry exists for an agent, `AGENT_MODEL_MAP` is the fallback (Coder: opus46, Critic: haiku, most others sonnet/haiku).
 
-The Planner marks tasks with difficulty. Hard/extreme tasks override the Coder to use Opus regardless of run mode:
+### Difficulty Override (legacy pipeline only)
+
+The Planner marks tasks with a difficulty. In the legacy pipeline (`agentPipeline.ts`), `DIFFICULTY_CODER_MODEL` overrides the Coder model per task:
 
 | Difficulty | Coder Model |
 |-----------|-------------|
-| normal | Mode default (sonnet or opus46) |
+| normal | opus46 |
 | hard | opus46 |
 | extreme | opus48 |
 
+The newer `codePipeline.ts` does not apply this override — it uses the run-mode matrix only.
+
 ### AWS Bedrock Model IDs
 
-| Internal Name | Bedrock Model ID |
+The internal names map to older Bedrock IDs in the pipeline (`agentCore.ts` / `codePipeline.ts`):
+
+| Internal Name | Bedrock Model ID (pipeline) |
 |--------------|-----------------|
 | claude-haiku-4-5 | us.anthropic.claude-haiku-4-5-20251001-v1:0 |
 | claude-sonnet-4-6 | us.anthropic.claude-sonnet-4-5-20250929-v1:0 |
 | claude-opus-4-6 | us.anthropic.claude-opus-4-1-20250805-v1:0 |
 | claude-opus-4-8 | us.anthropic.claude-opus-4-1-20250805-v1:0 |
 
-### Model Pricing (per million tokens)
+Chat mode (`ai.ts`) maps the same internal names to newer IDs (e.g. `claude-sonnet-4-6` → `us.anthropic.claude-sonnet-4-6-20251101-v1:0`). Yes, the same name resolves to different models depending on the code path — check the file you're touching.
 
-| Model | Input | Output |
+### Model Pricing (AgentBucks per million tokens, `TIER_PRICING` in agentCore.ts)
+
+| Tier | Input | Output |
 |-------|-------|--------|
-| Haiku 4.5 | $1.80 | $7.20 |
-| Sonnet 4.6 | $5.40 | $26.50 |
-| Opus 4.6 | $7.44 | $42.00 |
-| Opus 4.8 | $12.00 | $60.00 |
+| gemini | 0.60 | 2.40 |
+| haiku | 1.80 | 7.20 |
+| sonnet | 5.40 | 26.50 |
+| opus46 | 7.44 | 42.00 |
+| opus48 | 12.00 | 60.00 |
 
 ## Chat Mode Search (ai.ts)
 
@@ -173,12 +190,13 @@ Research mode uses 3 specialized sub-agents:
 ```
 Dispatching → Planning → Executing → Completed
                                   ↘ Paused (waiting for user input)
-                                  ↘ Failed (unrecoverable error)
+                                  ↘ Idle (stopped / error surfaced to user)
 ```
 
-Branch status fields:
-- `phase`: Current phase name (e.g., "Coder", "Tester")
+Branch status fields (see `codeBranches` in `schema.ts`):
+- `phase`: Current agent name (e.g., "Coder", "Tester")
 - `executionPhase`: "dispatching" | "planning" | "executing" | "completed"
-- `status`: "active" | "paused" | "completed" | "failed"
+- `status`: "running" | "paused" | "completed" | "idle"
 - `currentTaskIndex`: Which task in the plan is currently running
-- `streamingContent`: Live agent output (updated in chunks for UI)
+- `dispatchedAgentsJson`: JSON array of agent names the Dispatcher selected
+- `streamingContent` / `streamingAgent` / `streamingAt`: Live agent output (updated in chunks for UI)

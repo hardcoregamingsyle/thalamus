@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated api types are self-referential here and exceed TS instantiation depth (TS2589); checked builds require this suppression. */
 // @ts-nocheck
 "use node";
 import { action } from "./_generated/server";
@@ -21,7 +22,7 @@ export const startQemuVM = action({
       // This would integrate with actual QEMU infrastructure
       // For now, return configuration for client-side handling
 
-      const osConfigs: Record<string, any> = {
+      const osConfigs: Record<string, { iso: string; diskSize: string; bootTime: number }> = {
         "windows-11": {
           iso: "windows-11-pro-x64.iso",
           diskSize: "50G",

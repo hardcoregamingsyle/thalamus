@@ -21,6 +21,7 @@ export interface FileTreeNode {
 }
 
 // ── Build tree from flat file list ────────────────────────────────────────────
+// eslint-disable-next-line react-refresh/only-export-components -- pure helper co-located with the tree components; moving it would split tightly coupled code
 export function buildFileTree(files: FileTreeFile[]): FileTreeNode[] {
   const rootMap = new Map<string, FileTreeNode>();
 

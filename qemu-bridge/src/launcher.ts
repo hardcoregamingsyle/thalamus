@@ -14,7 +14,6 @@ import { spawn, ChildProcess } from "child_process";
 import * as os from "os";
 import * as path from "path";
 import * as fs from "fs";
-import * as https from "https";
 import { execSync } from "child_process";
 
 const VERSION = "1.0.0";

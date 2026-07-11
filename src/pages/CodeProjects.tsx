@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { Doc } from "@/convex/_generated/dataModel";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -72,9 +73,10 @@ export default function CodeProjects() {
     }
   };
 
+  // Captured once so render stays pure (react-hooks/purity)
+  const [now] = useState(() => Date.now());
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp);
-    const now = Date.now();
     const diff = now - timestamp;
 
     if (diff < 60000) return "Just now";
@@ -146,7 +148,7 @@ export default function CodeProjects() {
           </motion.div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {projects.map((project: any, index: number) => (
+            {projects.map((project: Doc<"codeProjects">, index: number) => (
               <motion.div
                 key={project._id}
                 initial={{ opacity: 0, y: 20 }}

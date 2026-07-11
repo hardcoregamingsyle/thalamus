@@ -28,11 +28,11 @@ export function detectSystemResources(): SystemResources {
   // Try to detect RAM
   if ('deviceMemory' in navigator) {
     // Navigator.deviceMemory returns GB (approximate, rounded)
-    totalRAM = (navigator as any).deviceMemory * 1024;
+    totalRAM = (navigator as Navigator & { deviceMemory: number }).deviceMemory * 1024;
     isAccurate = true;
-  } else if ('memory' in performance && (performance as any).memory) {
+  } else if ('memory' in performance && (performance as Performance & { memory?: { jsHeapSizeLimit?: number } }).memory) {
     // Chrome/Edge only: performance.memory gives more accurate values
-    const memory = (performance as any).memory;
+    const memory = (performance as Performance & { memory: { jsHeapSizeLimit?: number } }).memory;
     if (memory.jsHeapSizeLimit) {
       // Estimate total RAM from heap limit (heap is typically ~25% of RAM)
       totalRAM = Math.round((memory.jsHeapSizeLimit / 1024 / 1024) * 4);
@@ -58,7 +58,7 @@ export function detectSystemResources(): SystemResources {
  * Calculate recommended VM resources for v86 (32-bit, lighter)
  */
 export function getV86Recommendations(systemResources: SystemResources): VMResourceRecommendation {
-  const { availableRAM, cpuCores } = systemResources;
+  const { availableRAM } = systemResources;
 
   // v86 is single-threaded, but we can recommend based on OS type
   // For 32-bit OSes, we don't need much RAM

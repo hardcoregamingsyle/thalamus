@@ -558,7 +558,7 @@ export default function Landing() {
   const { theme, toggleTheme } = useTheme();
 
   const handleLaunch = () => navigate("/portal");
-  const handleModeSelect = (_mode: ModeId) => navigate(`/portal`);
+  const handleModeSelect = () => navigate(`/portal`);
 
   const handleSuggestionSubmit = async (title: string, description: string, files: SuggestionFile[]) => {
     setIsSuggestionSubmitting(true);

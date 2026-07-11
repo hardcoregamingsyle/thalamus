@@ -117,7 +117,7 @@ The codebase currently maintains two overlapping systems. Be highly conscious of
 
 AI calls route through `agentCore.ts`.
 
-* **Priority Chain:** AWS Bedrock (Claude Opus 4.8/4.6, Sonnet, Haiku) → VLY gateway → Google Gemini 2.0 Flash → Gemini Flash Lite.
+* **Priority Chain:** Claude tiers go AWS Bedrock (Opus 4.8/4.6, Sonnet, Haiku) → AgentRouter fallback. The `gemini` tier tries Google Gemini first (DB-managed keys) and falls back to Bedrock Haiku. See `callModel`/`callClaude` in `agentCore.ts`.
 * Each agent in the pipeline uses a specific, hardcoded model tier (refer to `README` for the exact mapping).
 
 ### VM & Sandbox Environments
@@ -137,4 +137,4 @@ User balances (`agentBucksBalance`) are stored on the `users` table and deducted
 
 ## Things to change and update
 
-### Automatically update the readme.md file and Handover Docs, auto commit to GitHub from time to time, with the personality trait of the docs and GitHub messages of a 14yr old(teen) professional solo developer who claims to be the tech god, Prevent/avoid AI Slop and wordings and the personality trait of a professional corporate developer
+### Automatically update the readme.md file and Handover Docs, auto commit to GitHub from time to time, with the personality trait of the docs and GitHub messages of a 14yr old(teen) professional solo developer who claims to be the tech god, Prevent/avoid AI Slop and wordings and the personality trait of a professional corporate developer. The commits should be regular in between tasks and avoid 1 commit with a large change, like thousand lines of changes combined in 1 commit, it makes it look highly AI/non-human

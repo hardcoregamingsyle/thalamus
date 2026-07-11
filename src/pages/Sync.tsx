@@ -17,25 +17,13 @@ interface LogLine {
   type: "info" | "success" | "error" | "cmd";
 }
 
-// Safe base64 encode that handles unicode
-function safeBase64(str: string): string {
-  try {
-    const bytes = new TextEncoder().encode(str);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    return btoa(binary);
-  } catch {
-    return btoa(unescape(encodeURIComponent(str)));
-  }
-}
-
 export default function SyncPage() {
   const navigate = useNavigate();
   const { token } = useAuth();
   const [repoName, setRepoName] = useState("");
   const [status, setStatus] = useState<SyncStatus>("idle");
   const [logs, setLogs] = useState<LogLine[]>([]);
-  const [repoUrl, setRepoUrl] = useState("");
+  const [repoUrl] = useState("");
   const [step, setStep] = useState<Step>(1);
   const [collectedFiles, setCollectedFiles] = useState<{ path: string; content: string }[]>([]);
   const [zipBlob, setZipBlob] = useState<Blob | null>(null);

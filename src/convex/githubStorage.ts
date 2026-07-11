@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated api types are self-referential here and exceed TS instantiation depth (TS2589); checked builds require this suppression. */
 // @ts-nocheck
 "use node";
 import { internalAction } from "./_generated/server";
@@ -54,13 +55,13 @@ export const getFileFromGithub = internalAction({
           const content = Buffer.from(data.content, "base64").toString("utf-8");
           return { filepath: args.filepath, content, source: "github" };
         }
-      } catch (err) {
+      } catch {
         // File not found on GitHub, check Convex as fallback
         const file = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
           branchId: args.branchId,
         });
 
-        const matchingFile = file.find((f: any) => f.filepath === args.filepath);
+        const matchingFile = file.find((f) => f.filepath === args.filepath);
         if (matchingFile) {
           return {
             filepath: matchingFile.filepath,
@@ -151,7 +152,7 @@ export const cleanupConvexFiles = internalAction({
       });
 
       // Keep only the most recent N files in Convex
-      const sorted = files.sort((a: any, b: any) => b._creationTime - a._creationTime);
+      const sorted = files.sort((a, b) => b._creationTime - a._creationTime);
       const toDelete = sorted.slice(args.keepRecent);
 
       // Delete via internal mutation in codeBranches

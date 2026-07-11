@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Download, Monitor, Terminal, Send, Loader2, Maximize2, Minimize2, Power, RotateCcw, Settings } from "lucide-react";
+import { Monitor, Terminal, Send, Loader2, Maximize2, Minimize2, Power, RotateCcw, Settings } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -39,9 +39,28 @@ interface VMConfig {
   is64Bit?: boolean;
 }
 
+interface V86Emulator {
+  stop: () => void;
+  restart: () => void;
+  serial0_send: (data: string) => void;
+}
+
+interface V86Options {
+  wasm_path: string;
+  memory_size: number;
+  vga_memory_size: number;
+  screen_container: HTMLDivElement | null;
+  bios: { url: string };
+  vga_bios: { url: string };
+  autostart: boolean;
+  cdrom?: { url: string };
+  hda?: { url: string; async?: boolean; size?: number };
+  fda?: { url: string; async?: boolean };
+}
+
 declare global {
   interface Window {
-    V86?: any;
+    V86?: new (options: V86Options) => V86Emulator;
   }
 }
 
@@ -180,6 +199,7 @@ const OS_CONFIGS: Record<string, VMConfig> = {
   },
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- branchId is part of the component's public API; the caller in src/pages passes it
 export function SandboxView({ branchId }: SandboxViewProps) {
   const [command, setCommand] = useState("");
   const [commandLogs, setCommandLogs] = useState<CommandLog[]>([]);
@@ -198,7 +218,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
   const [currentVncPort, setCurrentVncPort] = useState<number>(5901);
   const [isoNeededPath, setIsoNeededPath] = useState<string | null>(null);
   const [showSetupDialog, setShowSetupDialog] = useState(false);
-  const emulatorRef = useRef<any>(null);
+  const emulatorRef = useRef<V86Emulator | null>(null);
   const screenContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -266,8 +286,6 @@ export function SandboxView({ branchId }: SandboxViewProps) {
       clearInterval(interval);
     };
   }, []);
-
-  const downloadUrl = vmLauncher.getDownloadUrl();
 
   const handleLaunchVNC = () => {
     // Try to open VNC viewer via installer's HTTP endpoint (localhost:7891)
@@ -372,7 +390,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
     toast.info(`Booting ${config.name}...`);
 
     try {
-      const vmConfig: any = {
+      const vmConfig: V86Options = {
         wasm_path: "https://copy.sh/v86/v86.wasm",
         memory_size: customRam * 1024 * 1024,
         vga_memory_size: 8 * 1024 * 1024,
@@ -489,7 +507,7 @@ export function SandboxView({ branchId }: SandboxViewProps) {
           toast.success("Command sent");
         }, 500);
       }
-    } catch (err) {
+    } catch {
       setCommandLogs((prev) =>
         prev.map((log) =>
           log.id === logId

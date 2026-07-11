@@ -145,14 +145,14 @@ function MyComponent() {
 
 ### Modifying the AI Pipeline
 
-The pipeline agents are defined in `src/convex/codePipeline.ts`. Each agent:
-1. Has a system prompt (in `agentCore.ts`)
+The pipeline agents are orchestrated in `src/convex/codePipeline.ts`. Each agent:
+1. Has a system prompt (`AGENT_SYSTEM_PROMPTS` in `agentCore.ts`)
 2. Receives context (files, plan, previous output)
 3. Produces output parsed for tool markers (`<<CREATEFILE>>`, `<<SEARCH-TOOL>>`, etc.)
 4. Results stored in the branch document
 
 To add a new tool marker:
-1. Define the regex pattern in `codePipeline.ts`
+1. Define the regex pattern (file/search/scrape/command markers live in `agentCore.ts`; `<<REQUEST-API-KEY>>` parsing lives in `codePipeline.ts`)
 2. Add extraction logic after the AI call
 3. Implement the handler (file write, API call, etc.)
 
@@ -185,10 +185,10 @@ The build command (`bun run build`) runs type-check automatically before buildin
 See [desktop-app.md](./desktop-app.md) for the full WPF development guide.
 
 Quick start:
-```bash
+```powershell
 cd thalamus-native
-dotnet build ThalamusApp/ThalamusApp.csproj
-dotnet run --project ThalamusApp/ThalamusApp.csproj
+dotnet build ThalamusApp/ThalamusApp.csproj -c Debug   # dev loop
+.\build.ps1                                            # full release build (both projects + installer)
 ```
 
 ## Common Issues

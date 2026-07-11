@@ -7,7 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 interface DeployViewProps {
@@ -125,19 +124,19 @@ export function DeployView({ projectId, branchId }: DeployViewProps) {
     }
   };
 
-  const handleGenerateConfig = async (platformId: string) => {
+  const handleGenerateConfig = async (platformId: "vercel" | "netlify" | "cloudflare") => {
     setIsGeneratingConfig(platformId);
     try {
       const result = await generateConfig({
         token,
         branchId,
-        platform: platformId as any,
+        platform: platformId,
       });
 
       if (result.success) {
         toast.success(`Created ${result.filesCreated.join(", ")}`);
       }
-    } catch (err) {
+    } catch {
       toast.error("Failed to generate config");
     } finally {
       setIsGeneratingConfig(null);

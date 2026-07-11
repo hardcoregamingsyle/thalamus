@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Doc } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Code2, FileText, Save, X } from "lucide-react";
@@ -20,13 +20,13 @@ export function EditorView({ branchId }: EditorViewProps) {
   const [editContent, setEditContent] = useState("");
   const [isDirty, setIsDirty] = useState(false);
 
-  const currentFile = files?.find((f: any) => f.filepath === selectedFile);
+  const currentFile = files?.find((f: Doc<"codeFiles">) => f.filepath === selectedFile);
 
   const handleSelectFile = (filepath: string) => {
     if (isDirty && !confirm("You have unsaved changes. Discard them?")) {
       return;
     }
-    const file = files?.find((f: any) => f.filepath === filepath);
+    const file = files?.find((f: Doc<"codeFiles">) => f.filepath === filepath);
     setSelectedFile(filepath);
     setEditContent(file?.content || "");
     setIsDirty(false);
@@ -69,7 +69,7 @@ export function EditorView({ branchId }: EditorViewProps) {
             <div className="p-4 text-sm text-muted-foreground">No files yet</div>
           ) : (
             <div className="p-2 space-y-1">
-              {files.map((file: any) => (
+              {files.map((file: Doc<"codeFiles">) => (
                 <button
                   key={file._id}
                   onClick={() => handleSelectFile(file.filepath)}

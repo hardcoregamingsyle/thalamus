@@ -1,12 +1,12 @@
 "use node";
-import { action, internalAction } from "./_generated/server";
+import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { performSearch } from "./agentCore";
 
 // Gemini keys are loaded from the DB (admin-managed via Admin UI)
-async function getGeminiKeysFromDB(ctx: { runQuery: Function }): Promise<string[]> {
+async function getGeminiKeysFromDB(ctx: { runQuery: ActionCtx["runQuery"] }): Promise<string[]> {
   try {
     const keys = await ctx.runQuery(internal.admin.getGeminiKeysInternal, {}) as string[];
     if (keys && keys.length > 0) return keys;
@@ -116,7 +116,7 @@ const BEDROCK_MAX_TOKENS: Record<string, number> = {
 
 // Bedrock Claude call
 async function callBedrockClaude(
-  ctx: { runQuery: Function },
+  ctx: { runQuery: ActionCtx["runQuery"] },
   systemPrompt: string,
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   maxTokens = 4096,
@@ -162,7 +162,7 @@ async function callBedrockClaude(
 
 // Gemini chat call
 async function callGeminiChat(
-  ctx: { runQuery: Function },
+  ctx: { runQuery: ActionCtx["runQuery"] },
   systemPrompt: string,
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   maxTokens = 4096
@@ -211,7 +211,7 @@ async function callGeminiChat(
 
 // Primary AI call: Bedrock first, Gemini fallback
 async function callAI(
-  ctx: { runQuery: Function },
+  ctx: { runQuery: ActionCtx["runQuery"] },
   systemPrompt: string,
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   maxTokens = 4096,

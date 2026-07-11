@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated api types are self-referential here and exceed TS instantiation depth (TS2589); checked builds require this suppression. */
 // @ts-nocheck
 import { httpAction, internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -6,7 +7,6 @@ import { v } from "convex/values";
 // Webhook endpoint for GitHub push events
 export const handlePushWebhook = httpAction(async (ctx, request) => {
   try {
-    const signature = request.headers.get("x-hub-signature-256");
     const event = request.headers.get("x-github-event");
 
     if (event !== "push") {

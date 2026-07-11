@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated data-model types exceed TS instantiation depth (TS2589) in this module; checked builds require this suppression. */
 // @ts-nocheck
 import { internalMutation, internalQuery, mutation } from "./_generated/server";
 import { v } from "convex/values";
@@ -131,13 +132,11 @@ export const deductFromBatches = internalMutation({
     const activeBatches = batches.filter(b => b.expiresAt > now && b.remaining > 0);
 
     // Deduct from batches (closest expiry first)
-    let totalDeductedFromBatches = 0;
     for (const batch of activeBatches) {
       if (remaining <= 0) break;
       const deduct = Math.min(batch.remaining, remaining);
       await ctx.db.patch(batch._id, { remaining: batch.remaining - deduct });
       remaining -= deduct;
-      totalDeductedFromBatches += deduct;
     }
 
     // If still remaining, deduct from daily credits

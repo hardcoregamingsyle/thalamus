@@ -1,7 +1,7 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated data-model types exceed TS instantiation depth (TS2589) in this module; checked builds require this suppression. */
 // @ts-nocheck
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, query } from "./_generated/server";
 import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
 
 // Internal: Insert RAG chunk
 export const insertChunk = internalMutation({

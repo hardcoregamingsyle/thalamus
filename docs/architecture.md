@@ -16,7 +16,7 @@ All three clients talk to the same Convex backend.
 thalamus/
 ├── src/
 │   ├── main.tsx                 # App entry, routing, auth provider
-│   ├── pages/                   # Route-level page components (15 pages)
+│   ├── pages/                   # Route-level page components (14 pages)
 │   ├── components/              # Feature components + Shadcn UI
 │   │   ├── ui/                  # Shadcn primitives (DO NOT customize)
 │   │   ├── code/                # Code project management UI
@@ -42,9 +42,11 @@ thalamus/
 │   │   ├── Auth/                # Login window + handler
 │   │   ├── Services/            # ConvexClient, StreamingClient
 │   │   └── Controls/            # Reusable controls (MessageBubble)
-│   └── ThalamusInstaller/       # Installer project
-├── .github/workflows/           # CI/CD (release.yml)
-├── dist-desktop/                # Pre-built Neutralinojs binaries
+│   ├── ThalamusInstaller/       # WPF installer project (ThalamusSetup.exe)
+│   ├── build.ps1                # One-shot build script (publish both + Inno Setup)
+│   └── installer.iss            # Optional Inno Setup wrapper
+├── .github/workflows/           # CI/CD (release.yml is the live one)
+├── scripts/                     # deploy-selfhosted.sh and friends
 └── CLAUDE.md                    # AI agent instructions for this repo
 ```
 
@@ -87,7 +89,8 @@ User enters a coding task
 Browser → POST /stream-chat (HTTP route in http.ts)
   → SigV4-signed request to Bedrock streaming endpoint
   → Binary event-stream response parsed chunk by chunk
-  → SSE events sent to browser: { type: "thinking" | "text" | "done" }
+  → SSE events sent to browser:
+    { type: "thinking" | "answer_start" | "answer" | "done" }
 ```
 
 ## Two Parallel Code Systems
@@ -97,21 +100,21 @@ The codebase has TWO overlapping code-mode implementations. Be careful which one
 | | Original System | Newer System |
 |---|---|---|
 | **Tables** | teamSessions, agentMessages, projectFiles | codeProjects, codeBranches, codeMessages, codeFiles |
-| **Route** | `/team` (TeamPortal) | `/portal/code/*` (CodeWorkspace) |
+| **UI** | `TeamPortalInline` (rendered inside Portal) | `/portal/code/*` (CodeWorkspace) |
 | **Pipeline** | agentPipeline.ts | codePipeline.ts |
 | **Status** | Legacy, still functional | Active development |
 
-The newer system is what users interact with. The original system powers the "Team Portal" which is a separate interface.
+The newer system is what users interact with. The original system's UI lives in `src/pages/TeamPortalInline.tsx` and is rendered inside the Portal — the standalone `/team` route was removed.
 
 ## Model Routing
 
 All AI calls go through `agentCore.ts`. The fallback chain:
 
 ```
-AWS Bedrock (Claude) → VLY Gateway → Google Gemini Flash → Gemini Flash Lite
+AWS Bedrock (Claude, with region retry) → Google Gemini (gemini-3.1-flash-lite, rotating key pool) → AgentRouter (agentrouter.org, last resort)
 ```
 
-Each agent in the pipeline uses a specific model tier based on the "run mode" (cheap/balanced/powerful) configured per-project. The Dispatcher always runs on the cheapest model (Haiku). The Coder runs on the most expensive (Opus).
+Each agent in the pipeline uses a specific model tier based on the "run mode" (cheap/balanced/powerful) stored per-branch. The Dispatcher always runs on the cheapest Claude model (Haiku). In "powerful" mode the Coder runs on Opus.
 
 ## Real-Time Updates
 

@@ -1,5 +1,6 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Doc } from "@/convex/_generated/dataModel";
 import { GitBranch, FileText, Clock } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,11 +11,17 @@ interface VersionViewProps {
   branchId: string;
 }
 
+interface Snapshot {
+  timestamp: number;
+  agent: string;
+  files: Doc<"codeFiles">[];
+}
+
 export function VersionView({ branchId }: VersionViewProps) {
   const files = useQuery(api.codeBranches.watchFiles, { branchId });
 
   // Group files by last modified time to simulate snapshots
-  const snapshots = files?.reduce((acc: any[], file: any) => {
+  const snapshots = files?.reduce((acc: Snapshot[], file: Doc<"codeFiles">) => {
     const existing = acc.find(s => Math.abs(s.timestamp - file.lastModifiedAt) < 60000); // Within 1 minute
     if (existing) {
       existing.files.push(file);
@@ -26,7 +33,7 @@ export function VersionView({ branchId }: VersionViewProps) {
       });
     }
     return acc;
-  }, []).sort((a: any, b: any) => b.timestamp - a.timestamp) || [];
+  }, []).sort((a: Snapshot, b: Snapshot) => b.timestamp - a.timestamp) || [];
 
   return (
     <div className="h-full flex flex-col p-6 space-y-6">
@@ -64,7 +71,7 @@ export function VersionView({ branchId }: VersionViewProps) {
               </div>
             ) : (
               <div className="space-y-4">
-                {snapshots.map((snapshot: any, idx: number) => (
+                {snapshots.map((snapshot: Snapshot, idx: number) => (
                   <motion.div
                     key={snapshot.timestamp}
                     initial={{ opacity: 0, y: 20 }}
@@ -87,7 +94,7 @@ export function VersionView({ branchId }: VersionViewProps) {
                       <Badge variant="outline">{snapshot.files.length} files</Badge>
                     </div>
                     <div className="space-y-2">
-                      {snapshot.files.map((file: any) => (
+                      {snapshot.files.map((file: Doc<"codeFiles">) => (
                         <div
                           key={file._id}
                           className="flex items-center gap-3 text-sm bg-muted/30 rounded px-3 py-2"

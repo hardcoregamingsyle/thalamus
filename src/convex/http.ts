@@ -4,6 +4,7 @@ import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
+import { callModel, calcAgentBucksForTier } from "./agentCore";
 
 const http = httpRouter();
 
@@ -458,6 +459,148 @@ http.route({
         headers: { Location: `${origin}/portal/code?github_error=${encodeURIComponent(msg)}` },
       });
     }
+  }),
+});
+
+// ── /api/v1/chat/completions — OpenAI-compatible endpoint for thal_ API keys ──
+// Advertised on the /api-keys page. Bearer auth against the SHA-256 key hash;
+// usage is metered against the key's own pre-paid allocation (see userApiKeys).
+
+function apiCorsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  };
+}
+
+function apiError(status: number, message: string, type: string): Response {
+  // OpenAI-style error envelope so client SDKs surface the message properly.
+  return new Response(JSON.stringify({ error: { message, type } }), {
+    status,
+    headers: { "Content-Type": "application/json", ...apiCorsHeaders() },
+  });
+}
+
+// Requested model string → internal tier. Accepts our tier names as well as
+// familiar aliases (e.g. "gpt-4o" from generic OpenAI clients → sonnet).
+function modelToTier(model: string | undefined): "gemini" | "haiku" | "sonnet" | "opus46" | "opus48" {
+  const m = (model ?? "").toLowerCase();
+  if (m.includes("opus")) return m.includes("4-6") || m.includes("4.6") ? "opus46" : "opus48";
+  if (m.includes("sonnet") || m.includes("gpt-4")) return "sonnet";
+  if (m.includes("gemini") || m.includes("flash")) return "gemini";
+  return "haiku";
+}
+
+http.route({
+  path: "/api/v1/chat/completions",
+  method: "OPTIONS",
+  handler: httpAction(async () => new Response(null, { status: 204, headers: apiCorsHeaders() })),
+});
+
+http.route({
+  path: "/api/v1/chat/completions",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    // 1. Authenticate: Bearer thal_... → SHA-256 → key row
+    const authHeader = request.headers.get("Authorization") ?? "";
+    const rawKey = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    if (!rawKey.startsWith("thal_")) {
+      return apiError(401, "Missing or malformed API key. Pass it as: Authorization: Bearer thal_...", "invalid_request_error");
+    }
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(rawKey));
+    const keyHash = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    const key = await ctx.runQuery(internal.userApiKeys.getKeyByHash, { keyHash });
+    if (!key) return apiError(401, "Invalid, revoked, or expired API key.", "invalid_request_error");
+    if (key.creditsRemaining <= 0) {
+      return apiError(402, "This API key has exhausted its AgentBucks allocation.", "insufficient_quota");
+    }
+
+    // 2. Parse the OpenAI-format request
+    let body: {
+      model?: string;
+      messages?: Array<{ role: string; content: string }>;
+      stream?: boolean;
+    };
+    try {
+      body = await request.json();
+    } catch {
+      return apiError(400, "Request body must be valid JSON.", "invalid_request_error");
+    }
+    if (!Array.isArray(body.messages) || body.messages.length === 0) {
+      return apiError(400, "\"messages\" must be a non-empty array.", "invalid_request_error");
+    }
+
+    const systemPrompt = body.messages
+      .filter((m) => m.role === "system")
+      .map((m) => m.content)
+      .join("\n");
+    const conversation = body.messages
+      .filter((m) => m.role !== "system")
+      .map((m) => `${m.role === "assistant" ? "Assistant" : "User"}: ${m.content}`)
+      .join("\n\n");
+    const tier = modelToTier(body.model);
+
+    // 3. Call the model through the same routing every other surface uses
+    const dbCreds = await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {});
+    const geminiKeys = await ctx.runQuery(internal.admin.getGeminiKeysInternal, {});
+    let result: { text: string; inputTokens: number; outputTokens: number };
+    try {
+      result = await callModel(conversation, systemPrompt, tier, geminiKeys, dbCreds ?? parseBedrockCredsFromEnv());
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Upstream model call failed";
+      return apiError(502, msg, "api_error");
+    }
+
+    // 4. Meter actual usage against the key's allocation
+    const cost = calcAgentBucksForTier(tier, result.inputTokens, result.outputTokens);
+    await ctx.runMutation(internal.userApiKeys.recordKeyUsage, { id: key._id, credits: cost });
+
+    // 5. Respond in OpenAI format
+    const completionId = `chatcmpl-${key.keyId.slice(5)}${Date.now().toString(36)}`;
+    const created = Math.floor(Date.now() / 1000);
+    const modelName = body.model ?? tier;
+    const usage = {
+      prompt_tokens: result.inputTokens,
+      completion_tokens: result.outputTokens,
+      total_tokens: result.inputTokens + result.outputTokens,
+    };
+
+    if (body.stream) {
+      // SSE with the full answer as one delta chunk, then the finish chunk and
+      // [DONE]. Spec-compliant for clients; incremental deltas can come later.
+      const enc = new TextEncoder();
+      const chunk = (payload: unknown) => enc.encode(`data: ${JSON.stringify(payload)}\n\n`);
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(chunk({
+            id: completionId, object: "chat.completion.chunk", created, model: modelName,
+            choices: [{ index: 0, delta: { role: "assistant", content: result.text }, finish_reason: null }],
+          }));
+          controller.enqueue(chunk({
+            id: completionId, object: "chat.completion.chunk", created, model: modelName,
+            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+            usage,
+          }));
+          controller.enqueue(enc.encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+      return new Response(stream, {
+        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", ...apiCorsHeaders() },
+      });
+    }
+
+    return new Response(JSON.stringify({
+      id: completionId,
+      object: "chat.completion",
+      created,
+      model: modelName,
+      choices: [{ index: 0, message: { role: "assistant", content: result.text }, finish_reason: "stop" }],
+      usage,
+    }), {
+      headers: { "Content-Type": "application/json", ...apiCorsHeaders() },
+    });
   }),
 });
 

@@ -1,9 +1,9 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import {
-  Cpu, MessageSquare, Search, Code2, BookOpen,
-  Zap, ChevronRight, ChevronLeft, X, Sparkles,
-  Globe, Users, Brain, Star, ArrowRight, Check,
+  Cpu, MessageSquare, Code2, BookOpen,
+  ChevronRight, ChevronLeft, X, Sparkles,
+  Globe, Brain, Check,
 } from "lucide-react";
 
 interface OnboardingModalProps {

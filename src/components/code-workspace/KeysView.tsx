@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -8,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Key, Plus, Eye, EyeOff, Trash2, AlertCircle } from "lucide-react";
+import { Key, Plus, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 
@@ -26,39 +27,23 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyValue, setNewKeyValue] = useState("");
-  const [isAdding, setIsAdding] = useState(false);
-  const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
+  const [isAdding] = useState(false);
 
   const handleAddKey = async () => {
     toast.info("Manual API key addition coming soon. Use pending requests for now.");
     setIsAddOpen(false);
   };
 
-  const handleFulfillRequest = async (requestId: string, variableName: string) => {
+  const handleFulfillRequest = async (requestId: Id<"codeApiKeyRequests">, variableName: string) => {
     const value = prompt(`Enter value for ${variableName}:`);
     if (!value) return;
 
     try {
-      await fulfillRequest({ token, requestId: requestId as any, value });
+      await fulfillRequest({ token, requestId, value });
       toast.success(`${variableName} added!`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to fulfill request");
     }
-  };
-
-  const toggleKeyVisibility = (keyId: string) => {
-    const newVisible = new Set(visibleKeys);
-    if (newVisible.has(keyId)) {
-      newVisible.delete(keyId);
-    } else {
-      newVisible.add(keyId);
-    }
-    setVisibleKeys(newVisible);
-  };
-
-  const maskKey = (key: string) => {
-    if (key.length <= 8) return "********";
-    return key.slice(0, 4) + "•".repeat(key.length - 8) + key.slice(-4);
   };
 
   return (
@@ -134,7 +119,7 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {pendingRequests.map((req: any, idx: number) => (
+              {pendingRequests.map((req: Doc<"codeApiKeyRequests">, idx: number) => (
                 <motion.div
                   key={req._id}
                   initial={{ opacity: 0, x: -20 }}
@@ -182,7 +167,7 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
               </div>
             ) : (
               <div className="space-y-3">
-                {keys.map((key: any, idx: number) => (
+                {keys.map((key: Doc<"codeApiKeys">, idx: number) => (
                   <motion.div
                     key={key._id}
                     initial={{ opacity: 0, y: 10 }}
