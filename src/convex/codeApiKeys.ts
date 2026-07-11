@@ -1,5 +1,31 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
+
+// Third-party provider keys are encrypted at rest with AES-256-GCM. The key is
+// derived from the API_KEY_ENCRYPTION_SECRET deployment secret, so raw keys never
+// land in the database in plaintext. We fail closed: if the secret isn't set we
+// refuse to write rather than silently storing a readable key.
+async function encryptSecret(plaintext: string): Promise<string> {
+  const secret = process.env.API_KEY_ENCRYPTION_SECRET;
+  if (!secret) {
+    throw new Error(
+      "API_KEY_ENCRYPTION_SECRET is not configured — refusing to store a provider key in plaintext. " +
+        "Set it in the Convex dashboard under Settings → Environment Variables.",
+    );
+  }
+  const keyMaterial = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  const key = await crypto.subtle.importKey("raw", keyMaterial, { name: "AES-GCM" }, false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = new Uint8Array(
+    await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plaintext)),
+  );
+  // Pack iv + ciphertext into one base64 blob stored in the existing string column.
+  const packed = new Uint8Array(iv.length + ciphertext.length);
+  packed.set(iv, 0);
+  packed.set(ciphertext, iv.length);
+  return btoa(String.fromCharCode(...packed));
+}
 
 // Request API key
 export const requestApiKey = internalMutation({
@@ -82,15 +108,16 @@ export const fulfillApiKeyRequest = mutation({
       )
       .first();
 
+    const encryptedValue = await encryptSecret(args.value);
     if (existing) {
       await ctx.db.patch(existing._id, {
-        value: args.value, // TODO: Encrypt this
+        value: encryptedValue,
       });
     } else {
       await ctx.db.insert("codeApiKeys", {
         projectId: branch.projectId,
         variableName: request.variableName,
-        value: args.value, // TODO: Encrypt this
+        value: encryptedValue,
         description: request.description,
         howToGet: request.howToGet,
         createdAt: Date.now(),
@@ -111,8 +138,10 @@ export const fulfillApiKeyRequest = mutation({
       .first();
 
     if (!pending) {
-      // Resume pipeline
-      // TODO: Trigger pipeline continuation
+      // Every requested key has now been supplied — resume the paused build pipeline.
+      await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, {
+        branchId: request.branchId,
+      });
     }
   },
 });

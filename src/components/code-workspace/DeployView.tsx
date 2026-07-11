@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 interface DeployViewProps {
+  projectId: string;
   branchId: string;
 }
 
@@ -44,7 +45,7 @@ const deployPlatforms = [
   },
 ];
 
-export function DeployView({ branchId }: DeployViewProps) {
+export function DeployView({ projectId, branchId }: DeployViewProps) {
   const token = localStorage.getItem("agentai_session_token") || "";
   const [selectedPlatform, setSelectedPlatform] = useState<typeof deployPlatforms[number] | null>(null);
   const [apiToken, setApiToken] = useState("");
@@ -75,7 +76,7 @@ export function DeployView({ branchId }: DeployViewProps) {
         case "vercel":
           result = await deployToVercel({
             token,
-            projectId: "PROJECT_ID", // TODO: Get from props
+            projectId,
             branchId,
             vercelToken: apiToken,
             projectName: projectName || undefined,
@@ -85,7 +86,7 @@ export function DeployView({ branchId }: DeployViewProps) {
         case "netlify":
           result = await deployToNetlify({
             token,
-            projectId: "PROJECT_ID",
+            projectId,
             branchId,
             netlifyToken: apiToken,
             siteName: projectName || undefined,
@@ -100,7 +101,7 @@ export function DeployView({ branchId }: DeployViewProps) {
           }
           result = await deployToCloudflare({
             token,
-            projectId: "PROJECT_ID",
+            projectId,
             branchId,
             cloudflareToken: apiToken,
             accountId: accountId,

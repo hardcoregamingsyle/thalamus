@@ -20,7 +20,6 @@ namespace ThalamusApp
         private readonly string _installDir;
         private readonly string _dataDir;
         private readonly Dictionary<string, VMInstance> _activeVMs = new();
-        private int _nextVncPort = 5901;
         private const int MAX_VNC_PORTS = 100;
 
         public class VMInstance
@@ -167,6 +166,8 @@ namespace ThalamusApp
         /// </summary>
         public async Task<BootResult> BootVMAsync(string osId, int ram = 4096, int cores = 4)
         {
+            // Launch QEMU off the UI thread; Process.Start itself is synchronous.
+            await Task.Yield();
             try
             {
                 // Check if VM is already running
@@ -265,6 +266,7 @@ namespace ThalamusApp
         /// </summary>
         public async Task<bool> StopVMAsync(string vmId)
         {
+            await Task.Yield();
             try
             {
                 if (_activeVMs.TryGetValue(vmId, out var instance))

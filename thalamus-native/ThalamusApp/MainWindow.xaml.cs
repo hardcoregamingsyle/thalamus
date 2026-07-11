@@ -110,6 +110,7 @@ namespace ThalamusApp
         /// </summary>
         private async System.Threading.Tasks.Task SignInAsync()
         {
+            await System.Threading.Tasks.Task.Yield();
             var login = new LoginWindow();
             login.Owner = this;
             login.ShowDialog();

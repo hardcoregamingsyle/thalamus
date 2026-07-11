@@ -72,7 +72,7 @@ VITE_CONVEX_URL=https://your-deployment.convex.cloud
 
 ```
 
-**Server-side Secrets:** Managed strictly via the Convex Dashboard, *not* `.env`. These include: `AWS_BEDROCK_API_KEY`, `AGENTROUTER_API_KEY`, `ADMIN_TOKEN`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `JWKS`, `JWT_PRIVATE_KEY`, `SITE_URL`, and `BREVO_EMAIL_SENDER`.
+**Server-side Secrets:** Managed strictly via the Convex Dashboard, *not* `.env`. These include: `AWS_BEDROCK_API_KEY`, `AGENTROUTER_API_KEY`, `ADMIN_TOKEN`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `JWKS`, `JWT_PRIVATE_KEY`, `SITE_URL`, `BREVO_EMAIL_SENDER`, and `API_KEY_ENCRYPTION_SECRET` (AES-256-GCM key material for encrypting user-supplied provider keys at rest in `codeApiKeys`; `fulfillApiKeyRequest` fails closed if it is unset).
 *Note:* AWS Bedrock credentials can also be managed through the `/admin` panel and stored in the `awsCredentials` table (the database takes priority over environment variables). Gemini keys are managed through the `/admin` → Gemini Keys tab and stored in the `geminiKeys` table.
 
 ---
