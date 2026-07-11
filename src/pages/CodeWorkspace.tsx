@@ -359,7 +359,7 @@ export default function CodeWorkspace() {
       case "github":
         return <GitSyncView projectId={projectId} branchId={branchId} />;
       case "deploy":
-        return <DeployView branchId={branchId} />;
+        return <DeployView projectId={projectId} branchId={branchId} />;
       case "sandbox":
         return <SandboxView branchId={branchId} />;
       case "keys":

@@ -37,3 +37,8 @@ dist-ssr
 deploy-convex.sh
 *.deploy.sh
 public/downloads/
+
+# Core dumps (a 70MB one got committed once — never again)
+core
+core.*
+*.core

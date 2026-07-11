@@ -27,7 +27,7 @@ namespace ThalamusInstaller
         private readonly HttpClient _http = new() { Timeout = TimeSpan.FromMinutes(30) };
         private string _installDir;
         private int    _page = 0;
-        private CancellationTokenSource _installCts;
+        private CancellationTokenSource _installCts = new();
 
         // Step display models
         private record StepItem(string Label, TextBlock StatusEl);
@@ -353,7 +353,7 @@ namespace ThalamusInstaller
 
         // ── Download helper ───────────────────────────────────────────────────
 
-        private async Task DownloadAsync(string url, string dest, CancellationToken ct, Action<int> onProgress = null)
+        private async Task DownloadAsync(string url, string dest, CancellationToken ct, Action<int>? onProgress = null)
         {
             using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
             response.EnsureSuccessStatusCode();
@@ -438,7 +438,10 @@ namespace ThalamusInstaller
         private static void CreateShortcut(string lnkPath, string targetPath)
         {
             // Use WScript.Shell COM to create .lnk without third-party deps
-            dynamic shell  = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!);
+            var shellType = Type.GetTypeFromProgID("WScript.Shell");
+            if (shellType == null) return;
+            dynamic? shell = Activator.CreateInstance(shellType);
+            if (shell == null) return;
             dynamic link   = shell.CreateShortcut(lnkPath);
             link.TargetPath       = targetPath;
             link.WorkingDirectory = Path.GetDirectoryName(targetPath);

@@ -92,12 +92,12 @@ export const runPipelineAction = internalAction({
     if (!session) return;
 
     const task = session.task;
-    let currentPhase = session.phase ?? "Researcher";
+    const currentPhase = session.phase ?? "Researcher";
     let round = session.round ?? 0;
     let loopCount = session.loopCount ?? 0;
     let totalMessages = session.totalMessages ?? 1;
     let executionPhase = session.executionPhase ?? "planning";
-    let currentTaskIndex = session.currentTaskIndex ?? 0;
+    const currentTaskIndex = session.currentTaskIndex ?? 0;
     let taskDifficulty: TaskDifficulty = (session as Record<string, unknown>).currentTaskDifficulty as TaskDifficulty ?? "normal";
 
     // Mark session as running

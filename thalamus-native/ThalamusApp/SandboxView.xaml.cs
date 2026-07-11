@@ -111,6 +111,8 @@ namespace ThalamusApp
                 return;
             }
 
+            if (_bridge == null) return;
+
             BootButton.IsEnabled = false;
             SetVmStatus("Booting…", Colors.Goldenrod);
             DisplayText.Text = $"Starting {_selectedOsBtn?.Content}…";
@@ -173,6 +175,7 @@ namespace ThalamusApp
             VncFrame.Visibility = Visibility.Collapsed;
             DisplayPlaceholder.Visibility = Visibility.Visible;
 
+            if (_bridge == null || _currentVmId == null) return;
             var ok = await _bridge.StopVMAsync(_currentVmId);
 
             if (ok)
@@ -215,7 +218,7 @@ namespace ThalamusApp
             }
         }
 
-        private void OnVncConnectionChanged(object sender, EmbeddedVncClient.ConnectionEventArgs e)
+        private void OnVncConnectionChanged(object? sender, EmbeddedVncClient.ConnectionEventArgs e)
         {
             Dispatcher.Invoke(() =>
             {
@@ -228,7 +231,7 @@ namespace ThalamusApp
             });
         }
 
-        private void OnVncFrameUpdated(object sender, EmbeddedVncClient.FrameUpdateEventArgs e)
+        private void OnVncFrameUpdated(object? sender, EmbeddedVncClient.FrameUpdateEventArgs e)
         {
             Dispatcher.Invoke(() =>
             {
@@ -286,6 +289,7 @@ namespace ThalamusApp
 
         private void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
+            if (_bridge == null) return;
             var vms = _bridge.ListActiveVMs();
             AppendConsole($"── Active VMs: {vms.Count} ──");
 
@@ -312,7 +316,7 @@ namespace ThalamusApp
         {
             if (e.Key == System.Windows.Input.Key.Return)
             {
-                SendCommand_Click(null, null);
+                SendCommand_Click(this, new RoutedEventArgs());
                 e.Handled = true;
             }
         }

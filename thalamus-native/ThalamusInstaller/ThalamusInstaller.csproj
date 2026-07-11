@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <AssemblyName>ThalamusSetup</AssemblyName>
     <RootNamespace>ThalamusInstaller</RootNamespace>
@@ -21,7 +21,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="System.Text.Json" Version="10.0.0"/>
+    <PackageReference Include="System.Text.Json" Version="8.0.5"/>
   </ItemGroup>
   <ItemGroup>
     <Resource Include="..\ThalamusApp\Assets\icon.ico"/>

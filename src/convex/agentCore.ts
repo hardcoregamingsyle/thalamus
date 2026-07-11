@@ -668,7 +668,7 @@ const GEMINI_KEYS: string[] = [
   // Add keys via the Admin panel → Gemini Keys tab.
 ];
 
-let keyIndex = 0;
+const keyIndex = 0;
 
 interface GeminiTeamResponse {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
