@@ -93,7 +93,7 @@ export default function CodeProjects() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold tracking-tight">Thalamus Code</h1>
-              <p className="text-muted-foreground mt-1">Build anything with AI-powered development</p>
+              <p className="text-muted-foreground mt-1">Build software with a multi-agent pipeline</p>
             </div>
             <Button size="lg" className="gap-2" onClick={() => setIsCreateOpen(true)}>
               <Plus className="h-5 w-5" />
@@ -137,7 +137,7 @@ export default function CodeProjects() {
             </div>
             <h2 className="text-2xl font-semibold mb-2">No projects yet</h2>
             <p className="text-muted-foreground mb-6 text-center max-w-md">
-              Create your first project to start building with AI-powered development
+              Create your first project to start building
             </p>
             <Button size="lg" onClick={() => setIsCreateOpen(true)} className="gap-2">
               <Plus className="h-5 w-5" />

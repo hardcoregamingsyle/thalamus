@@ -177,7 +177,7 @@
                         <TextBlock Text="Study" FontSize="14" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
                     </StackPanel>
-                    <TextBlock Text="Adaptive tutor — explanations, quizzes, and step-by-step solutions"
+                    <TextBlock Text="Explanations, quizzes, and step-by-step solutions"
                                FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}" Margin="29,2,0,0"/>
                 </StackPanel>
 
@@ -258,25 +258,25 @@
                             <Border Background="#12082a" BorderBrush="#280e50" BorderThickness="1"
                                     CornerRadius="7" Padding="10,6" Margin="0,0,8,8" Cursor="Hand"
                                     MouseLeftButtonDown="StudyExample_Click">
-                                <TextBlock Text="🔢  Mathematics" FontSize="11.5"
+                                <TextBlock Text="Mathematics" FontSize="11.5"
                                            Foreground="{StaticResource TextSecondaryBrush}"/>
                             </Border>
                             <Border Background="#12082a" BorderBrush="#280e50" BorderThickness="1"
                                     CornerRadius="7" Padding="10,6" Margin="0,0,8,8" Cursor="Hand"
                                     MouseLeftButtonDown="StudyExample_Click">
-                                <TextBlock Text="⚗️  Chemistry" FontSize="11.5"
+                                <TextBlock Text="Chemistry" FontSize="11.5"
                                            Foreground="{StaticResource TextSecondaryBrush}"/>
                             </Border>
                             <Border Background="#12082a" BorderBrush="#280e50" BorderThickness="1"
                                     CornerRadius="7" Padding="10,6" Margin="0,0,8,8" Cursor="Hand"
                                     MouseLeftButtonDown="StudyExample_Click">
-                                <TextBlock Text="💻  Computer Science" FontSize="11.5"
+                                <TextBlock Text="Computer Science" FontSize="11.5"
                                            Foreground="{StaticResource TextSecondaryBrush}"/>
                             </Border>
                             <Border Background="#12082a" BorderBrush="#280e50" BorderThickness="1"
                                     CornerRadius="7" Padding="10,6" Margin="0,0,8,8" Cursor="Hand"
                                     MouseLeftButtonDown="StudyExample_Click">
-                                <TextBlock Text="🌍  History" FontSize="11.5"
+                                <TextBlock Text="History" FontSize="11.5"
                                            Foreground="{StaticResource TextSecondaryBrush}"/>
                             </Border>
                         </WrapPanel>

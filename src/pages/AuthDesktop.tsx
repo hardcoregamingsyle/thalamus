@@ -102,7 +102,7 @@ export default function AuthDesktop() {
               <div className="w-3 h-3 rounded-full bg-red-500/80" />
               <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
               <div className="w-3 h-3 rounded-full bg-green-500/80" />
-              <span className="text-[#64748b] text-xs ml-2 font-mono">thalamus://auth/desktop</span>
+              <span className="text-[#64748b] text-xs ml-2 font-mono">Thalamus Desktop</span>
             </div>
 
             <div className="p-6 sm:p-8">
@@ -294,7 +294,7 @@ export default function AuthDesktop() {
               {/* Footer */}
               <div className="mt-6 pt-4 border-t border-[#1e3a5f] text-center">
                 <p className="text-xs text-[#334155] font-mono">
-                  {`// AUTHENTICATION_GATE v1.0`}
+                  Secured by Thalamus AI
                 </p>
               </div>
             </div>

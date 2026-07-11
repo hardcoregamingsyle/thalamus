@@ -66,7 +66,7 @@ dotnet publish $appProject `
     --nologo -q
 if ($LASTEXITCODE -ne 0) { Fail "dotnet publish failed for ThalamusApp" }
 
-$appExe = Join-Path $Root "ThalamusApp\bin\Release\net10.0-windows\win-x64\publish\Thalamus.exe"
+$appExe = Join-Path $Root "ThalamusApp\bin\Release\net8.0-windows\win-x64\publish\Thalamus.exe"
 if (-not (Test-Path $appExe)) { Fail "Expected output not found: $appExe" }
 $size = [math]::Round((Get-Item $appExe).Length / 1MB, 1)
 Ok "Thalamus.exe  ($size MB)"
@@ -94,7 +94,7 @@ if (-not $SkipInstaller) {
         --nologo
     if ($LASTEXITCODE -ne 0) { Fail "dotnet publish failed for ThalamusInstaller" }
 
-    $instExe = Join-Path $Root "ThalamusInstaller\bin\Release\net10.0-windows\win-x64\publish\ThalamusSetup.exe"
+    $instExe = Join-Path $Root "ThalamusInstaller\bin\Release\net8.0-windows\win-x64\publish\ThalamusSetup.exe"
     if (-not (Test-Path $instExe)) { Fail "Expected output not found: $instExe" }
     $size = [math]::Round((Get-Item $instExe).Length / 1MB, 1)
     Ok "ThalamusSetup.exe  ($size MB)"
