@@ -20,7 +20,6 @@ interface NewBranchDialogProps {
 export function NewBranchDialog({
   open,
   onOpenChange,
-  projectId,
   onCreateScratch,
   onImportGitHub,
 }: NewBranchDialogProps) {

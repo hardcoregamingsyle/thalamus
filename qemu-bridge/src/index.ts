@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -64,6 +64,26 @@ interface VMInstance {
   status: 'booting' | 'running' | 'stopped';
 }
 
+interface BootMessage {
+  action: 'boot';
+  os: string;
+  ram?: number;
+  cores?: number;
+}
+
+interface StopMessage {
+  action: 'stop';
+  vmId: string;
+}
+
+interface CommandMessage {
+  action: 'command';
+  vmId: string;
+  command: string;
+}
+
+type BridgeMessage = BootMessage | StopMessage | CommandMessage;
+
 const activeVMs: Map<string, VMInstance> = new Map();
 
 // Ensure data directory exists
@@ -99,7 +119,7 @@ wss.on('connection', (ws) => {
 
   ws.on('message', async (data) => {
     try {
-      const message = JSON.parse(data.toString());
+      const message = JSON.parse(data.toString()) as BridgeMessage;
 
       if (message.action === 'boot') {
         await handleBootVM(ws, message);
@@ -120,7 +140,7 @@ wss.on('connection', (ws) => {
   });
 });
 
-async function handleBootVM(ws: any, message: any) {
+async function handleBootVM(ws: WebSocket, message: BootMessage) {
   const { os, ram, cores } = message;
 
   if (!OS_IMAGES[os]) {
@@ -153,7 +173,7 @@ async function handleBootVM(ws: any, message: any) {
   const qemuBinary = `qemu-system-${osConfig.arch}`;
   try {
     await runCommand(qemuBinary, ['--version']);
-  } catch (err) {
+  } catch {
     ws.send(JSON.stringify({
       error: `QEMU not found. Please install: ${getInstallCommand()}`
     }));
@@ -223,7 +243,7 @@ async function handleBootVM(ws: any, message: any) {
   }, 5000);
 }
 
-async function handleStopVM(ws: any, message: any) {
+async function handleStopVM(ws: WebSocket, message: StopMessage) {
   const { vmId } = message;
   const vm = activeVMs.get(vmId);
 
@@ -239,8 +259,8 @@ async function handleStopVM(ws: any, message: any) {
   console.log(`VM ${vmId} stopped`);
 }
 
-async function handleCommand(ws: any, message: any) {
-  const { vmId, command } = message;
+async function handleCommand(ws: WebSocket, message: CommandMessage) {
+  const { vmId } = message;
   const vm = activeVMs.get(vmId);
 
   if (!vm) {

@@ -155,7 +155,7 @@ export const runPipelineAction = internalAction({
             securityTask = `## Overall Project\n${task}\n\n## Current Task (${currentTaskIndex + 1}/${plannerTasks.length})\n**${currentTask.title}**\n${currentTask.description}\n\nSecurity review specifically for this task's changes.`;
           }
         }
-        agentOutput = await runSecurityTeam(ctx, sessionId, userId, securityTask, context, fileContext, geminiKeys, dbCreds, taskDifficulty);
+        agentOutput = await runSecurityTeam(ctx, sessionId, userId, securityTask, context, fileContext, geminiKeys, dbCreds);
         agentName = "Hacker";
       } else if (currentPhase === "Planner") {
         const systemPrompt = AGENT_SYSTEM_PROMPTS["Planner"] ?? "";
@@ -413,7 +413,6 @@ async function runSecurityTeam(
   fileContext: string,
   geminiKeys: string[],
   dbCreds: { accessKeyId: string; secretAccessKey: string; region: string } | null,
-  difficulty: TaskDifficulty,
 ): Promise<string> {
   let securityContext = context;
   let finalOutput = "";

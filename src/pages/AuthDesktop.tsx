@@ -33,8 +33,8 @@ export default function AuthDesktop() {
     try {
       await sendOtp({ email });
       setStep("otp");
-    } catch (err: any) {
-      setErrorMsg(err?.message ?? "Failed to send code. Try again.");
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to send code. Try again.");
     } finally {
       setSendingOtp(false);
     }
@@ -51,8 +51,8 @@ export default function AuthDesktop() {
       // OTP verified — move straight to authorize step
       setStep("authorize");
       setErrorMsg("");
-    } catch (err: any) {
-      setErrorMsg(err?.message ?? "Invalid code. Try again.");
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Invalid code. Try again.");
     }
   }, [email, otpCode, verifyOtp]);
 
@@ -67,8 +67,8 @@ export default function AuthDesktop() {
     try {
       await doAuthorize({ code: code.toUpperCase() });
       setStep("success");
-    } catch (err: any) {
-      setErrorMsg(err?.message ?? "Authorization failed. Try again.");
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Authorization failed. Try again.");
       setStep("error");
     } finally {
       setAuthorizing(false);

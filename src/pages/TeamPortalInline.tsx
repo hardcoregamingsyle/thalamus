@@ -1,17 +1,17 @@
-import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
 import { useAction, useQuery, useMutation } from "convex/react";
-import { Id } from "@/convex/_generated/dataModel";
+import { Doc, Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
   Loader2, Plus, CheckCircle, Terminal, Box, Globe, ExternalLink,
   Play, Square, Send, FileCode, Monitor, ChevronRight, ChevronLeft, Activity,
-  MessageSquare, StopCircle, ListPlus, Cpu, Shield, Search, Code2,
-  CheckSquare, AlertCircle, RefreshCw, Upload, Menu, X, PanelLeftClose, PanelLeftOpen,
-  Github, Database, ClipboardList, GitBranch, Network, Lightbulb, FileText,
-  ChevronDown, Zap, Edit3, Bot, Wrench, GitMerge, Trash2,
+  MessageSquare, ListPlus, Cpu, Code2,
+  RefreshCw, Upload, Menu, X,
+  Github, Database, ClipboardList, GitBranch, Lightbulb, FileText,
+  ChevronDown, Edit3, Bot, Wrench, GitMerge, Trash2,
 } from "lucide-react";
 import { FileTreeView, FileTreeFile, FileTreeNode } from "@/components/FileTree";
 import ReactMarkdown from "react-markdown";
@@ -91,12 +91,6 @@ interface QueuedMessage {
   timestamp: number;
 }
 
-interface TeamPortalInlineProps {
-  token: string;
-  sessionId?: string;
-  initialSessionCustomId?: string | null;
-  onSessionChange?: (customId: string | null) => void;
-}
 
 // ── Agent config ───────────────────────────────────────────────────────────────
 const AGENT_COLORS: Record<string, string> = {
@@ -518,104 +512,6 @@ function SuggestionFormModalInline({
             {isSubmitting ? "Submitting..." : "Submit Suggestion"}
           </button>
           <p className="text-[9px] text-muted-foreground/60 text-center">Your feedback goes directly to the Thalamus AI team. We read every submission.</p>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-// ── Branch Modal ──────────────────────────────────────────────────────────────
-function BranchModal({
-  session,
-  onClose,
-  onBranch,
-  isBranching,
-}: {
-  session: TeamSession;
-  onClose: () => void;
-  onBranch: (purpose: string) => Promise<void>;
-  isBranching: boolean;
-}) {
-  const [purpose, setPurpose] = useState("");
-  const BRANCH_PRESETS = [
-    { icon: "📱", label: "Android APK", desc: "Build an Android app from this project" },
-    { icon: "🖥️", label: "Windows EXE", desc: "Package as a Windows executable" },
-    { icon: "🍎", label: "macOS App", desc: "Build a native macOS application" },
-    { icon: "🐳", label: "Docker Container", desc: "Containerize with Docker" },
-    { icon: "☁️", label: "Cloud Deploy", desc: "Deploy to cloud (AWS/GCP/Azure)" },
-    { icon: "🔌", label: "API Service", desc: "Extract as a standalone API" },
-    { icon: "🧩", label: "Plugin/Extension", desc: "Build as a browser extension or plugin" },
-    { icon: "📦", label: "NPM Package", desc: "Publish as an npm package" },
-  ];
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="relative z-10 bg-card border border-border rounded-2xl p-6 max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto"
-      >
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <GitBranch className="h-5 w-5 text-violet-400" />
-            <h3 className="text-sm font-bold text-foreground">Create Branch</h3>
-          </div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="mb-4 p-3 bg-violet-400/5 border border-violet-400/20 rounded-xl">
-          <p className="text-[10px] text-violet-400 font-bold">MAIN BRANCH</p>
-          <p className="text-xs text-foreground truncate">{session.title}</p>
-          <p className="text-[9px] text-muted-foreground mt-0.5">This session becomes Branch-1 (Main). A new branch will be created for your target.</p>
-        </div>
-
-        <div className="mb-4">
-          <p className="text-[10px] font-bold text-muted-foreground mb-2">QUICK PRESETS</p>
-          <div className="grid grid-cols-2 gap-1.5">
-            {BRANCH_PRESETS.map(preset => (
-              <button
-                key={preset.label}
-                onClick={() => setPurpose(preset.desc)}
-                className={`text-left px-3 py-2 rounded-xl border text-[10px] transition-all ${
-                  purpose === preset.desc
-                    ? "border-violet-400/50 bg-violet-400/15 text-violet-400"
-                    : "border-border hover:border-violet-400/30 hover:bg-violet-400/5 text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <span className="mr-1">{preset.icon}</span>
-                <span className="font-bold">{preset.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mb-4">
-          <label className="text-[10px] font-bold text-muted-foreground block mb-1">OR DESCRIBE YOUR BRANCH PURPOSE</label>
-          <textarea
-            value={purpose}
-            onChange={e => setPurpose(e.target.value)}
-            placeholder="e.g. Build a React Native mobile version of this app..."
-            rows={3}
-            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-violet-400/60 transition-colors resize-none"
-          />
-        </div>
-
-        <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 py-2 border border-border text-muted-foreground text-xs rounded-xl hover:bg-muted/50 transition-all">
-            Cancel
-          </button>
-          <button
-            onClick={() => onBranch(purpose)}
-            disabled={isBranching || !purpose.trim()}
-            className="flex-1 py-2 bg-violet-400/15 border border-violet-400/30 text-violet-400 text-xs rounded-xl hover:bg-violet-400/25 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-2"
-          >
-            {isBranching ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitBranch className="h-3 w-3" />}
-            {isBranching ? "Creating..." : "Create Branch"}
-          </button>
         </div>
       </motion.div>
     </div>
@@ -1750,18 +1646,16 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
   const [activeSessionId, setActiveSessionId] = useState<Id<"teamSessions"> | null>(null);
   const [task, setTask] = useState("");
   const [isRunning, setIsRunning] = useState(false);
-  const [currentAgent, setCurrentAgent] = useState<string | null>(null);
+  const [currentAgent] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"chat" | "files" | "sandbox" | "preview">("chat");
   const [selectedFile, setSelectedFile] = useState<ProjectFile | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>([]);
   const [userMessages, setUserMessages] = useState<AgentMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const autoRunRef = useRef(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // Sandbox state
-  const [sandboxes, setSandboxes] = useState<SandboxRow[]>([]);
   const [activeSandboxId, setActiveSandboxId] = useState<Id<"sandboxes"> | null>(null);
   const [activeSandbox, setActiveSandbox] = useState<SandboxRow | null>(null);
   const [sandboxCommand, setSandboxCommand] = useState("");
@@ -1773,7 +1667,6 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
   // Deploy commands state
   const [deployCommands, setDeployCommands] = useState<string[]>([]);
   const [isDeploying, setIsDeploying] = useState(false);
-  const [deployLog, setDeployLog] = useState<Array<{ cmd: string; output: string; exitCode: number }>>([]);
 
   // Branch state
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
@@ -1820,17 +1713,19 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
     return (liveSession as Record<string, unknown> | null)?.currentBranch as string | undefined || "main";
   }, [liveSession]);
 
+  // Fallback branch timestamp captured once so render stays pure (react-hooks/purity)
+  const [mountedAt] = useState(() => Date.now());
   const branches = useMemo(() => {
     const branchesJson = (liveSession as Record<string, unknown> | null)?.branchesJson as string | undefined;
-    if (!branchesJson) return [{ name: "main", createdAt: Date.now(), createdFrom: "" }];
+    if (!branchesJson) return [{ name: "main", createdAt: mountedAt, createdFrom: "" }];
     try {
       return JSON.parse(branchesJson) as Array<{ name: string; createdAt: number; createdFrom: string; gitBranch?: string }>;
     } catch {
-      return [{ name: "main", createdAt: Date.now(), createdFrom: "" }];
+      return [{ name: "main", createdAt: mountedAt, createdFrom: "" }];
     }
-  }, [liveSession]);
+  }, [liveSession, mountedAt]);
 
-  const agentMessages: AgentMessage[] = useMemo(() => (liveMessages ?? []).map((m: any) => ({
+  const agentMessages: AgentMessage[] = useMemo(() => (liveMessages ?? []).map((m: Doc<"agentMessages">) => ({
     _id: m._id as string, agent: m.agent, content: m.content, round: m.round, messageIndex: m.messageIndex,
     modelUsed: (m as Record<string, unknown>).modelUsed as string | undefined,
     agentBucksDeducted: (m as Record<string, unknown>).agentBucksDeducted as number | undefined,
@@ -1858,19 +1753,21 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
   }, [agentMessages, userMessages]);
 
   // File tree uses metadata only (no content) for performance — memoized
-  const projectFiles: ProjectFile[] = useMemo(() => (liveFilesMetadata ?? []).map((f: any) => ({
+  const projectFiles: ProjectFile[] = useMemo(() => (liveFilesMetadata ?? []).map((f: { filepath: string; lastModifiedBy: string }) => ({
     filepath: f.filepath, content: "", lastModifiedBy: f.lastModifiedBy,
   })), [liveFilesMetadata]);
 
   // When selected file content loads from DB, update selectedFile state
   useEffect(() => {
     if (liveSelectedFileContent && selectedFile) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs the selected file with content loaded on-demand from Convex; selectedFile is also set directly by user clicks
       setSelectedFile({
         filepath: liveSelectedFileContent.filepath,
         content: liveSelectedFileContent.content,
         lastModifiedBy: liveSelectedFileContent.lastModifiedBy,
       });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- adding selectedFile would retrigger the effect from its own setSelectedFile; content/filepath deps are sufficient
   }, [liveSelectedFileContent?.content, liveSelectedFileContent?.filepath]);
 
   // Actions
@@ -1880,20 +1777,16 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
   const resetSessionLimitAction = useMutation(api.agentTeamHelpers.resetSessionLimitPublic);
   const listSessionsAction = useMutation(api.agentTeamHelpers.listSessionsPublic);
   const continueSessionAction = useMutation(api.agentTeamHelpers.continueSessionPublic);
-  const branchGroups = useQuery(api.agentTeamHelpers.watchBranchGroups, token ? { token } : "skip");
   const createSandboxAction = useAction(api.sandbox.createSandbox);
   const executeCommandAction = useAction(api.sandbox.executeCommand);
   const stopSandboxAction = useAction(api.sandbox.stopSandbox);
   const listSandboxesAction = useAction(api.sandbox.listSandboxes);
   const getPreviewUrlAction = useAction(api.sandbox.getPreviewUrl);
   const autoDeployAndStartAction = useAction(api.sandbox.autoDeployAndStart);
-  const testFileWriteAction = useAction(api.sandbox.testFileWrite);
   const syncSandboxFilesAction = useAction(api.sandbox.syncSandboxFiles);
   const runDeployCommandsAction = useAction(api.sandbox.runDeployCommands);
   const chatModeMessageAction = useMutation(api.agentTeamHelpers.chatModeMessagePublic);
   const minorEditMessageAction = useMutation(api.agentTeamHelpers.minorEditMessagePublic);
-
-  useEffect(() => { if (token) { loadSessions(); loadSandboxes(); } }, [token]);
 
   // Auto-select session from URL when sessions load
   useEffect(() => {
@@ -1902,6 +1795,7 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
       const raw = s as unknown as Record<string, unknown>;
       return raw.customId === initialSessionCustomId;
     });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs session selection from the URL once sessions load; activeSessionId is also set by user actions
     if (match) setActiveSessionId(match._id);
   }, [initialSessionCustomId, sessions, activeSessionId]);
 
@@ -1935,7 +1829,6 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
     try {
       const data = await listSandboxesAction({ token });
       const rows = data as SandboxRow[];
-      setSandboxes(rows);
       const running = rows.find(s => s.status === "running");
       if (running && !activeSandboxId) {
         setActiveSandboxId(running._id as Id<"sandboxes">);
@@ -1944,6 +1837,9 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
       }
     } catch { /* ignore */ }
   };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect -- initial data fetch when the token becomes available; loadSessions/loadSandboxes are recreated each render and set state only after their async requests resolve
+  useEffect(() => { if (token) { loadSessions(); loadSandboxes(); } }, [token]);
 
   const handleSelectSession = (sessionId: Id<"teamSessions">) => {
     setActiveSessionId(sessionId);
@@ -1993,10 +1889,12 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
     if (sessionInfo.status === "completed" || sessionInfo.totalMessages >= MAX_MESSAGES) {
       if (messageQueue.length > 0) {
         const next = messageQueue[0];
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- dequeues exactly one message when the session completes; the queue is external work to dispatch, not derived state
         setMessageQueue(prev => prev.slice(1));
         setTimeout(() => handleQueuedMessage(next.text, activeSessionId), 500);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- must fire only on completion-status changes; adding messageQueue/handleQueuedMessage would dispatch queued messages more than once
   }, [sessionInfo?.status, sessionInfo?.totalMessages, activeSessionId]);
 
   const [showProjectCreationModal, setShowProjectCreationModal] = useState(false);
@@ -2048,8 +1946,6 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
     }
   };
 
-  const setManualUpgradeMutation = useMutation(api.agentTeamHelpers.setManualUpgrade);
-  const forceActivateUpgradeMutation = useMutation(api.agentTeamHelpers.forceActivateUpgrade);
   const handleAutoRun = async () => {
     if (!activeSessionId || !token) return;
     setIsRunning(true);
@@ -2110,24 +2006,6 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
     } finally {
       setIsRunning(false);
     }
-  };
-
-  const handleToggleManualUpgrade = async () => {
-    if (!activeSessionId || !token) return;
-    const current = (sessionInfo as unknown as Record<string, unknown>)?.manualUpgradeEnabled as boolean | undefined;
-    const newVal = !current;
-    try {
-      await setManualUpgradeMutation({ sessionId: activeSessionId, enabled: newVal, token });
-      toast.success(newVal ? "⚡ Upgrade armed — activates on next rejection" : "Upgrade disarmed");
-    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to toggle upgrade"); }
-  };
-
-  const handleForceUpgrade = async () => {
-    if (!activeSessionId || !token) return;
-    try {
-      await forceActivateUpgradeMutation({ sessionId: activeSessionId, token });
-      toast.success("⚡ Force Upgrade activated — all agents now running at Opus tier");
-    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to force upgrade"); }
   };
 
   const handleSaveGithubConfig = async (repo: string, branch: string) => {
@@ -2430,10 +2308,10 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
   };
 
   // Auto-sync every 5 minutes if GitHub is configured (reduced from 60s to avoid rate limits)
+  const liveGithubRepo = (liveSession as Record<string, unknown> | null)?.githubRepo as string | undefined;
   useEffect(() => {
     if (!activeSessionId || !token) return;
-    const githubRepo = (liveSession as Record<string, unknown> | null)?.githubRepo as string | undefined;
-    if (!githubRepo) return;
+    if (!liveGithubRepo) return;
     const interval = setInterval(() => {
       syncGithubAction({ sessionId: activeSessionId, token }).catch((err) => {
         // Only log rate limit errors, ignore others
@@ -2443,7 +2321,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
       });
     }, 5 * 60_000); // 5 minutes
     return () => clearInterval(interval);
-  }, [activeSessionId, token, (liveSession as Record<string, unknown> | null)?.githubRepo]);
+  }, [activeSessionId, token, liveGithubRepo, syncGithubAction]);
 
   const handleSendMessage = async () => {
     const text = messageInput.trim();
@@ -2636,17 +2514,6 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
     finally { setIsSandboxLoading(false); }
   };
 
-  const handleTestFileWrite = async () => {
-    if (!activeSandboxId || !token) return;
-    setIsSandboxLoading(true);
-    try {
-      const result = await testFileWriteAction({ token, sandboxDbId: activeSandboxId });
-      toast[result.success ? "success" : "error"](result.success ? "✓ File write OK" : "✗ File write FAILED");
-      setSandboxOutput(prev => [...prev, { cmd: "TEST WRITE", out: result.output, code: result.success ? 0 : 1 }]);
-    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Test failed"); }
-    finally { setIsSandboxLoading(false); }
-  };
-
   // Sync deploy commands from session
   useEffect(() => {
     if (sessionInfo) {
@@ -2654,6 +2521,7 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
       if (raw) {
         try {
           const cmds = JSON.parse(raw) as string[];
+          // eslint-disable-next-line react-hooks/set-state-in-effect -- seeds deploy commands from the session's JSON payload when it loads; also user-runnable state, not purely derived
           if (Array.isArray(cmds)) setDeployCommands(cmds);
         } catch { /* ignore */ }
       }
@@ -2677,12 +2545,10 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
   const handleRunDeployCommands = async () => {
     if (!activeSandboxId || !token || deployCommands.length === 0) return;
     setIsDeploying(true);
-    setDeployLog([]);
     setActiveTab("sandbox");
     try {
       const result = await runDeployCommandsAction({ token, sandboxDbId: activeSandboxId, commands: deployCommands });
-      setDeployLog(result.results);
-      const failed = result.results.find((r: any) => r.exitCode !== 0);
+      const failed = result.results.find((r: { cmd: string; output: string; exitCode: number }) => r.exitCode !== 0);
       if (failed) {
         toast.error(`Deploy failed at: ${failed.cmd}`);
       } else {

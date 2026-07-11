@@ -12,7 +12,7 @@ import ThinkingPanel from "@/components/ThinkingPanel";
 import {
   MessageSquare, Search, BookOpen, Users, Plus, Send, Loader2,
   Trash2, Zap, LogOut, Cpu, ChevronRight,
-  ArrowLeft, Paperclip, Settings, Sparkles, Moon, Sun, GraduationCap,
+  ArrowLeft, Paperclip, Settings, Moon, Sun, GraduationCap,
 } from "lucide-react";
 import TeamPortalInline from "./TeamPortalInline";
 
@@ -32,15 +32,6 @@ interface Message {
   content: string;
   tokensUsed?: number;
   costCents?: number;
-}
-
-interface StudyResource {
-  _id: Id<"studyResources">;
-  title: string;
-  content: string;
-  sourceType: string;
-  fileName?: string;
-  createdAt: number;
 }
 
 const MODES: { id: Mode; label: string; icon: typeof MessageSquare; color: string; bg: string; emoji: string; desc: string; accentColor: string }[] = [
@@ -141,6 +132,7 @@ function MobileChatView({
   useEffect(() => {
     if (urlSessionId && conversations && mode !== "code") {
       const conv = conversations.find((c: Conversation) => c.customId === urlSessionId);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs conversation selection from the URL param once data loads; safe refactor not obvious since activeConvId is also set by user actions
       if (conv) setActiveConvId(conv._id);
     }
   }, [urlSessionId, conversations, mode]);

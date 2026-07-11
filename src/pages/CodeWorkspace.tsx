@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { Doc } from "@/convex/_generated/dataModel";
 import { useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -384,7 +385,7 @@ export default function CodeWorkspace() {
                   </p>
                 </div>
               ) : (
-                messages.map((msg: any, idx: number) => (
+                messages.map((msg: Doc<"codeMessages">, idx: number) => (
                   <motion.div
                     key={idx}
                     initial={{ opacity: 0, y: 10 }}

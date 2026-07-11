@@ -25,6 +25,7 @@ const CodeWorkspace = lazy(() => import("./pages/CodeWorkspace"));
 const ApiPage = lazy(() => import("./pages/ApiPage"));
 
 // Simple loading fallback for route transitions
+// eslint-disable-next-line react-refresh/only-export-components -- app entry point; HMR component boundaries don't apply here
 function RouteLoading() {
   return (
     <div className="min-h-screen flex items-center justify-center">
@@ -36,8 +37,9 @@ function RouteLoading() {
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
 
 // Detect if running as Neutralinojs desktop app
-const isDesktopApp = typeof window !== "undefined" && !!(window as any).NL_PORT;
+const isDesktopApp = typeof window !== "undefined" && !!window.NL_PORT;
 
+// eslint-disable-next-line react-refresh/only-export-components -- app entry point; HMR component boundaries don't apply here
 function RouteSyncer() {
   const location = useLocation();
   useEffect(() => {

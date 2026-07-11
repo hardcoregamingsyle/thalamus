@@ -30,9 +30,9 @@ Desktop detection: `window.NL_PORT` exists = Neutralinojs desktop wrapper.
 | `/portal/code` | CodeProjects | List of user's coding projects |
 | `/portal/code/:projectId` | CodeBranches | Branches (builds) within a project |
 | `/portal/code/:projectId/:branchId` | CodeWorkspace | Full build workspace with live agent output |
-| `/portal` or `/portal/:mode` | Portal | Chat, Research, Study modes |
-| `/team` | TeamPortal | Legacy team code mode |
-| `/admin` | Admin | API keys, model config, budget (admin only) |
+| `/portal/code/:projectId/:branchId/:subpage` | CodeWorkspace | Workspace sub-views (editor, deploy, logs, ...) |
+| `/portal`, `/portal/:mode`, `/portal/:mode/:sessionId` | Portal | Chat, Research, Study modes (+ legacy team code mode via TeamPortalInline) |
+| `/admin` | Admin | API keys, model config, budget (admin only, hidden in desktop mode) |
 | `/api-keys` | ApiPage | External API key management |
 | `/sync` | Sync | GitHub sync status |
 | `/refer` | Refer | Referral program |
@@ -51,7 +51,7 @@ The main build mode UI. Contains:
 - Git sync controls
 
 ### Portal (`src/pages/Portal.tsx`)
-Unified page for Chat, Research, and Study modes. Mode determined by route parameter.
+Unified page for Chat, Research, and Study modes. Mode determined by route parameter. The legacy team code mode UI (`src/pages/TeamPortalInline.tsx`, backed by teamSessions/agentMessages/projectFiles) renders inside the Portal — its old standalone `/team` route no longer exists.
 
 ### Code Workspace Sub-Views (`src/components/code-workspace/`)
 
@@ -59,7 +59,7 @@ Unified page for Chat, Research, and Study modes. Mode determined by route param
 |-----------|---------|
 | EditorView | Code file viewer/editor |
 | DataView | Database/state viewer |
-| DeployView | Deployment management |
+| DeployView | Deployment management (requires a projectId — no orphan deploys) |
 | GitSyncView | GitHub sync status |
 | SandboxView | Browser-based VM (v86) |
 | VMSetupDialog | Native VM setup instructions |
@@ -80,7 +80,7 @@ The frontend uses Convex's React hooks for real-time data:
 const branch = useQuery(api.codeBranches.getBranch, { branchId });
 
 // Call a mutation
-const createProject = useMutation(api.codeProjects.create);
+const createProject = useMutation(api.codeProjects.createProject);
 
 // Call an action
 const sendMsg = useAction(api.ai.sendMessage);
@@ -91,9 +91,9 @@ Subscriptions are the killer feature — when any agent writes to a branch docum
 ## VM Integration
 
 ### Browser VMs (v86)
-- Uses the `v86` npm package for x86 WebAssembly emulation
+- x86 WebAssembly emulation via v86 (`libv86.js` is loaded from the copy.sh CDN at runtime; the `v86` npm package is in package.json but the workspace loads the CDN build)
 - No server-side bridge needed
-- Component: `src/components/QEMUScreen.tsx`
+- Component: `src/components/code-workspace/SandboxView.tsx` (the old standalone QEMUScreen/VMScreen components were removed)
 
 ### Native QEMU VMs
 - Requires local VM Bridge running on port 5900

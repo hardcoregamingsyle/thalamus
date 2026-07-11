@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Minus, Square, X, Maximize2 } from "lucide-react";
+import { Minus, Square, X } from "lucide-react";
 
 declare global {
   interface Window {
@@ -32,7 +32,6 @@ declare global {
 
 export function DesktopTitlebar() {
   const [isMaximized, setIsMaximized] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
 
   const isDesktop = typeof window !== "undefined" && !!window.Neutralino;
 
@@ -42,7 +41,9 @@ export function DesktopTitlebar() {
       try {
         const maximized = await window.Neutralino!.window.isMaximized();
         setIsMaximized(maximized);
-      } catch {}
+      } catch {
+        // Neutralino API unavailable; ignore
+      }
     };
     checkMaximized();
     const interval = setInterval(checkMaximized, 1000);
@@ -52,7 +53,7 @@ export function DesktopTitlebar() {
   if (!isDesktop) return null;
 
   const handleMinimize = async () => {
-    try { await window.Neutralino!.window.minimize(); } catch {}
+    try { await window.Neutralino!.window.minimize(); } catch { /* ignore */ }
   };
 
   const handleMaximize = async () => {
@@ -64,11 +65,11 @@ export function DesktopTitlebar() {
         await window.Neutralino!.window.maximize();
         setIsMaximized(true);
       }
-    } catch {}
+    } catch { /* ignore */ }
   };
 
   const handleClose = async () => {
-    try { await window.Neutralino!.app.exit(0); } catch {}
+    try { await window.Neutralino!.app.exit(0); } catch { /* ignore */ }
   };
 
   return (

@@ -1,21 +1,16 @@
 "use node";
-import { action, internalAction } from "./_generated/server";
+import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { Id } from "./_generated/dataModel";
+import type { Doc } from "./_generated/dataModel";
 import {
   callModel,
   parseAgentOutput,
   parsePlannerOutput,
-  parseDifficultyFromPlannerOutput,
   AGENT_SYSTEM_PROMPTS,
-  AGENT_MODEL_MAP,
-  DIFFICULTY_CODER_MODEL,
-  calcAgentBucksForTier,
   getAgentTier,
   type ModelTier,
   type RunMode,
-  type TaskDifficulty,
 } from "./agentCore";
 
 // All known agents in their natural order
@@ -56,15 +51,6 @@ function parseDispatcherOutput(text: string): { tier: string; agents: string[] }
     return null;
   }
 }
-
-const RESEARCH_SUB_AGENTS = ["ResearchPlanner", "DataTaker", "ResearchOrganiser"];
-const SECURITY_SUB_AGENTS = [
-  "VulnerabilitySpotter", "VulnerabilityFixer",
-  "DataCorruptor", "DataFixer",
-  "ZeroDayExploiter", "ZeroDayRemover",
-  "FrameworkAuditor", "FrameworkRefiner",
-  "RedTeamOrchestrator",
-];
 
 function buildContext(messages: Array<{ agent: string; content: string }>, maxChars = 12000): string {
   const recent = messages.slice(-12);
@@ -123,7 +109,7 @@ function parseApiKeyRequests(content: string): Array<{variableName: string; desc
 // field so the UI can show real-time token output. Falls back to batch callModel if
 // streaming is unavailable (Gemini, AgentRouter) or credentials are missing.
 async function callModelWithStreaming(
-  ctx: { runMutation: Function; runQuery: Function },
+  ctx: { runMutation: ActionCtx["runMutation"]; runQuery: ActionCtx["runQuery"] },
   prompt: string,
   systemPrompt: string,
   tier: ModelTier,
@@ -268,11 +254,11 @@ export const runPipelineAction = internalAction({
     }
 
     // Load branch
-    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId }) as any;
+    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
     if (!branch) return;
 
     // Check if paused for commands
-    const pendingCommands = await ctx.runQuery(internal.codeCommands.getPendingCommands, { branchId }) as any[];
+    const pendingCommands = await ctx.runQuery(internal.codeCommands.getPendingCommands, { branchId });
     if (pendingCommands.length > 0) {
       // Still waiting for commands to complete
       await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
@@ -283,7 +269,7 @@ export const runPipelineAction = internalAction({
     }
 
     // Check if paused for API keys
-    const pendingKeyRequests = await ctx.runQuery(internal.codeApiKeys.getPendingRequests, { branchId }) as any[];
+    const pendingKeyRequests = await ctx.runQuery(internal.codeApiKeys.getPendingRequests, { branchId });
     if (pendingKeyRequests.length > 0) {
       // Still waiting for API keys
       await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
@@ -295,15 +281,14 @@ export const runPipelineAction = internalAction({
 
     // Recover the original user request from the first User message in history
     // so all agents always have the full goal even after many pipeline rounds.
-    const allMessages = await ctx.runQuery(internal.codeBranches.getMessagesInternal, { branchId }) as any[];
-    const firstUserMessage = allMessages.find((m: any) => m.agent === "User");
+    const allMessages = await ctx.runQuery(internal.codeBranches.getMessagesInternal, { branchId }) as Doc<"codeMessages">[];
+    const firstUserMessage = allMessages.find((m) => m.agent === "User");
     const task = args.userPrompt || firstUserMessage?.content || branch.description || "Continue working on the project";
     const currentPhase = branch.phase ?? "Dispatcher";
     let round = branch.round ?? 0;
     let totalMessages = branch.totalMessages ?? 0;
     const executionPhase = branch.executionPhase ?? "dispatching";
     const currentTaskIndex = branch.currentTaskIndex ?? 0;
-    let taskDifficulty: TaskDifficulty = branch.currentTaskDifficulty ?? "normal";
     const runMode: RunMode = (branch.runMode as RunMode) ?? "balanced";
 
     // Parse the previously saved dispatched-agent list (set by Dispatcher phase).
@@ -327,7 +312,7 @@ export const runPipelineAction = internalAction({
     try {
       // allMessages already loaded above for task recovery
       const messages = allMessages;
-      const files = await ctx.runQuery(internal.codeBranches.getFilesInternal, { branchId }) as any[];
+      const files = await ctx.runQuery(internal.codeBranches.getFilesInternal, { branchId }) as Doc<"codeFiles">[];
 
       const context = buildContext(messages);
       const fileContext = buildFileContext(files);
@@ -451,7 +436,6 @@ export const runPipelineAction = internalAction({
             branchId,
             plannerTasksJson: JSON.stringify(plannerOutput.tasks),
           });
-          taskDifficulty = parseDifficultyFromPlannerOutput(agentOutput);
         }
       } else {
         const systemPrompt = AGENT_SYSTEM_PROMPTS[currentPhase] ?? `You are the ${currentPhase} agent.`;
@@ -460,7 +444,7 @@ export const runPipelineAction = internalAction({
 
         if (executionPhase === "executing") {
           let plannerTasks: Array<{ title: string; description: string; dependencies?: string[] }> = [];
-          try { plannerTasks = JSON.parse(branch.plannerTasksJson || "[]"); } catch {}
+          try { plannerTasks = JSON.parse(branch.plannerTasksJson || "[]"); } catch { /* ignore */ }
 
           const currentTask = plannerTasks[currentTaskIndex];
           if (currentTask) {
@@ -472,9 +456,9 @@ export const runPipelineAction = internalAction({
 
             // Pull recent Critic/Tester feedback from context so Coder knows what to fix
             const recentFeedback = messages
-              .filter((m: any) => ["Critic", "Tester", "Hacker"].includes(m.agent))
+              .filter((m) => ["Critic", "Tester", "Hacker"].includes(m.agent))
               .slice(-3)
-              .map((m: any) => `[${m.agent}]: ${m.content.slice(0, 500)}`)
+              .map((m) => `[${m.agent}]: ${m.content.slice(0, 500)}`)
               .join("\n\n");
 
             // Completed tasks context
@@ -602,7 +586,7 @@ export const runPipelineAction = internalAction({
       // than blindly advancing — this is the core L4.5 behavior improvement.
       const MAX_CRITIC_RETRIES = 2;
       if (currentPhase === "Critic" && parsed.criticResult === "fail") {
-        const retryCount = (branch.criticRetryCount as number) ?? 0;
+        const retryCount = (branch as { criticRetryCount?: number }).criticRetryCount ?? 0;
         if (retryCount < MAX_CRITIC_RETRIES) {
           // Save a fix-request context message and requeue from Coder
           round++;
@@ -616,7 +600,7 @@ export const runPipelineAction = internalAction({
             totalMessages,
           });
           // Store retry count in branch (patch directly — no dedicated mutation needed)
-          const branchDoc = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId }) as any;
+          const branchDoc = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
           if (branchDoc) {
             // We can't do a custom patch here (no direct db access in actions), so
             // we use a saveMessage to carry the retry number in context instead.
@@ -680,10 +664,10 @@ export const runPipelineAction = internalAction({
       } else if (nextPhaseIndex >= currentPipeline.length) {
         // Pipeline complete for this task
         if (!isPlanning) {
-          let plannerTasks: Array<any> = [];
+          let plannerTasks: Array<{ title: string; description: string }> = [];
           try {
             plannerTasks = JSON.parse(branch.plannerTasksJson || "[]");
-          } catch {}
+          } catch { /* ignore */ }
 
           const nextTaskIndex = currentTaskIndex + 1;
           if (nextTaskIndex < plannerTasks.length) {
@@ -760,7 +744,7 @@ export const startPipeline = action({
   args: { token: v.string(), branchId: v.string(), userPrompt: v.optional(v.string()) },
   handler: async (ctx, args): Promise<void> => {
     // Verify authentication and ownership
-    const sessions = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token }) as any;
+    const sessions = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
     if (!sessions) throw new Error("Not authenticated");
 
     // Save user message if provided

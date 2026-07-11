@@ -1,6 +1,5 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 
 function generateBranchId(): string {

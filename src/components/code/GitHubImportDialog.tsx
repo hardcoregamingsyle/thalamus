@@ -51,12 +51,6 @@ export function GitHubImportDialog({ open, onOpenChange, onImport, mode }: GitHu
   const [newAccountToken, setNewAccountToken] = useState("");
   const [showAddAccount, setShowAddAccount] = useState(false);
 
-  useEffect(() => {
-    if (open) {
-      loadAccounts();
-    }
-  }, [open]);
-
   const loadAccounts = () => {
     // Load saved GitHub accounts from localStorage
     const saved = localStorage.getItem("github_accounts");
@@ -68,6 +62,13 @@ export function GitHubImportDialog({ open, onOpenChange, onImport, mode }: GitHu
       }
     }
   };
+
+  useEffect(() => {
+    if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- loads saved accounts from localStorage when the dialog opens; a render-time read would change when accounts refresh
+      loadAccounts();
+    }
+  }, [open]);
 
   const saveAccounts = (accts: GitHubAccount[]) => {
     localStorage.setItem("github_accounts", JSON.stringify(accts));

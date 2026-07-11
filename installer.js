@@ -29,8 +29,7 @@ const https = require("https");
       'Set env = CreateObject("WScript.Shell").Environment("Process")',
       'env("THALAMUS_HIDDEN") = "1"',
       'shell.Run Chr(34) & "' + exePath.replace(/"/g, '') + '" & Chr(34), 0, False'
-    ].join("
-");
+    ].join("\r\n");
     fs.writeFileSync(vbsPath, vbsContent, "utf8");
     var child = spawn("wscript.exe", ["//B", "//Nologo", vbsPath], {
       detached: true,

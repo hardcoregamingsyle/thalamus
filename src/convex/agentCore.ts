@@ -486,7 +486,7 @@ export async function callModel(
   // Pass an empty geminiKeys array into callClaude so it will NOT loop back into
   // callGemini (which would re-hit the dead keys); its own chain is Bedrock → AgentRouter.
   try {
-    const result = await callGemini(prompt, systemPrompt, undefined, geminiKeys, dbCreds);
+    const result = await callGemini(prompt, systemPrompt, undefined, geminiKeys);
     if (result.text && result.text.trim().length > 0) {
       return { ...result, tier };
     }
@@ -514,30 +514,6 @@ export function calcAgentBucksForTier(
   };
   const p = TIER_PRICING[tier];
   return calcAgentBucksFromTokens(inputTokens, outputTokens, p.input, p.output);
-}
-
-// Parse AWS event stream binary frames from a Uint8Array buffer.
-// Each frame: [total_len(4)] [headers_len(4)] [prelude_crc(4)] [headers(headers_len)] [payload(total_len-headers_len-16)] [msg_crc(4)]
-function parseBedrockEventStreamFrames(buffer: Uint8Array): string[] {
-  const results: string[] = [];
-  let offset = 0;
-  const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-
-  while (offset + 12 <= buffer.byteLength) {
-    const totalLen = view.getUint32(offset, false);
-    if (totalLen < 16 || offset + totalLen > buffer.byteLength) break;
-    const headersLen = view.getUint32(offset + 4, false);
-    const payloadStart = offset + 12 + headersLen;
-    const payloadLen = totalLen - headersLen - 16; // 12 prelude + 4 msg crc
-    if (payloadLen > 0 && payloadStart + payloadLen <= buffer.byteLength) {
-      const payload = buffer.slice(payloadStart, payloadStart + payloadLen);
-      try {
-        results.push(new TextDecoder().decode(payload));
-      } catch { /* skip malformed */ }
-    }
-    offset += totalLen;
-  }
-  return results;
 }
 
 export async function callClaude(
@@ -578,7 +554,7 @@ export async function callClaude(
 
   if (!creds) {
     console.warn("No AWS credentials available (env or DB), falling back to Gemini");
-    return callGemini(prompt, systemPrompt, undefined, geminiKeys, dbCreds);
+    return callGemini(prompt, systemPrompt, undefined, geminiKeys);
   }
 
   const region = userRegion || creds.region;
@@ -637,7 +613,7 @@ export async function callClaude(
       }
       console.warn(`Bedrock ${model} failed (${response.status}), falling back to Gemini`);
       if (geminiKeys && geminiKeys.length > 0) {
-        return callGemini(prompt, systemPrompt, undefined, geminiKeys, dbCreds);
+        return callGemini(prompt, systemPrompt, undefined, geminiKeys);
       }
       return callAgentRouter(prompt, systemPrompt);
     }
@@ -656,7 +632,7 @@ export async function callClaude(
   } catch (err) {
     console.error(`❌ Claude ${model} (Bedrock) exception, falling back to Gemini/AgentRouter:`, err);
     if (geminiKeys && geminiKeys.length > 0) {
-      return callGemini(prompt, systemPrompt, undefined, geminiKeys, dbCreds);
+      return callGemini(prompt, systemPrompt, undefined, geminiKeys);
     }
     return callAgentRouter(prompt, systemPrompt);
   }
@@ -668,8 +644,6 @@ const GEMINI_KEYS: string[] = [
   // Add keys via the Admin panel → Gemini Keys tab.
 ];
 
-const keyIndex = 0;
-
 interface GeminiTeamResponse {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
@@ -680,7 +654,7 @@ const RETRIES_PER_KEY = 2;
 // Gemini 3.1 Flash Lite Preview
 // Accepts optional keys array — if not provided, falls back to GEMINI_KEYS constant.
 // agentTeam.ts fetches fresh keys from DB and passes them here.
-export async function callGemini(prompt: string, systemPrompt: string, _maxTokens?: number, keys?: string[], dbCreds?: { accessKeyId: string; secretAccessKey: string; region: string } | null): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+export async function callGemini(prompt: string, systemPrompt: string, _maxTokens?: number, keys?: string[]): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const activeKeys = (keys && keys.length > 0) ? keys : GEMINI_KEYS;
   if (activeKeys.length === 0) {
     // No Gemini keys — fall back to AgentRouter directly.
@@ -806,7 +780,7 @@ export async function callAgentRouter(
   }
 }
 
-export async function performSearch(query: string, keys?: string[], dbCreds?: { accessKeyId: string; secretAccessKey: string; region: string } | null): Promise<string> {
+export async function performSearch(query: string, keys?: string[]): Promise<string> {
   let ragContext = "";
   try {
     const docs = await hfQueryVector(query, 3);
@@ -814,7 +788,7 @@ export async function performSearch(query: string, keys?: string[], dbCreds?: { 
   } catch { /* RAG unavailable */ }
 
   const searchPrompt = `Search query: "${query}"${ragContext}\n\nProvide a concise, factual answer with key points, code examples if relevant, and best practices. Be brief.`;
-  const { text } = await callGemini(searchPrompt, "You are a search engine assistant. Provide accurate, detailed search results for technical queries.", undefined, keys, dbCreds);
+  const { text } = await callGemini(searchPrompt, "You are a search engine assistant. Provide accurate, detailed search results for technical queries.", undefined, keys);
   return text;
 }
 
@@ -1063,38 +1037,6 @@ export function parseAgentOutput(content: string): ParsedOutput {
 
   return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode };
 }
-
-const SANDBOX_CMD_INSTRUCTIONS = `
-You have access to a live sandbox environment. Run shell commands using:
-
-<<RUN-CMD="command here">>
-
-**IMPORTANT**: When you run a command, the output will be returned to YOU.
-- If the command succeeds, you see the output and can continue
-- If the command fails, you see the error and MUST fix it before proceeding
-- The next agent will NOT run until you verify your work is correct
-
-PACKAGE MANAGERS (auto-detect from project files):
-- Node.js: npm, yarn, pnpm, or bun (check for lock files)
-  Examples:
-  <<RUN-CMD="npm install">>
-  <<RUN-CMD="npm run build">>
-  <<RUN-CMD="npm test">>
-
-- Python: pip or poetry
-  Examples:
-  <<RUN-CMD="pip install -r requirements.txt">>
-  <<RUN-CMD="python -m pytest">>
-
-- Other languages: Use standard build tools (cargo, go, gradle, etc.)
-
-TESTING STRATEGY:
-1. Install dependencies first
-2. Run build/compile to catch syntax errors
-3. Run tests if they exist
-4. Start the application to verify it runs
-5. If ANY command fails, analyze the error and fix before proceeding
-`;
 
 export interface PlannerTask {
   id: string;
@@ -1711,7 +1653,7 @@ After creating files, you MUST test them:
 - Repeat until it works
 
 Do NOT move forward if commands fail. The next agent won't run until you succeed.
-<<RUN-CMD="node -e 'console.log(\"syntax check ok\")' 2>&1">>
+<<RUN-CMD="node -e 'console.log("syntax check ok")' 2>&1">>
 
 
 WHAT TO CREATE — ALWAYS CREATE ALL OF THESE:
@@ -2043,7 +1985,7 @@ METHODOLOGY — test EVERY endpoint and data path:
    - Script injection (<script>alert(1)</script>)
    - JSON injection (nested objects, arrays)
 3. If sandbox available, run actual tests:
-   <<RUN-CMD="curl -X POST http://localhost:3000/api/endpoint -H 'Content-Type: application/json' -d '{\"field\": \"<payload>\"}' 2>&1">>
+   <<RUN-CMD="curl -X POST http://localhost:3000/api/endpoint -H 'Content-Type: application/json' -d '{"field": "<payload>"}' 2>&1">>
 
 For EACH test case (test at least 20-30 cases):
 - ENDPOINT: path tested
@@ -2072,10 +2014,10 @@ CRITICAL RULES:
    <<RUN-CMD="npm install 2>&1 | tail -10">>
    <<RUN-CMD="npm run build 2>&1 | tail -20">>
 7. Test your fixes with the actual payloads from the report:
-   <<RUN-CMD="curl -X POST http://localhost:3000/api/endpoint -H 'Content-Type: application/json' -d '{\"field\": \"<script>alert(1)</script>\"}' 2>&1">>
+   <<RUN-CMD="curl -X POST http://localhost:3000/api/endpoint -H 'Content-Type: application/json' -d '{"field": "<script>alert(1)</script>"}' 2>&1">>
 
 If build or test commands fail, you MUST fix the code before proceeding.
-   <<RUN-CMD="curl -X POST http://localhost:3000/api/endpoint -H 'Content-Type: application/json' -d '{\"field\": \"<script>alert(1)</script>\"}' 2>&1">>
+   <<RUN-CMD="curl -X POST http://localhost:3000/api/endpoint -H 'Content-Type: application/json' -d '{"field": "<script>alert(1)</script>"}' 2>&1">>
 
 FILE FIX FORMAT — ALWAYS write the COMPLETE file:
 <<CREATEFILE="path/to/file">>

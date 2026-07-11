@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { Doc } from "@/convex/_generated/dataModel";
 import { useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,8 +64,6 @@ export default function CodeBranches() {
 
     // Navigate to first imported branch
     if (branches.length > 0) {
-      const firstBranch = branches[0];
-      const matchingBranch = await branches.find((b: any) => b.name === firstBranch);
       navigate(`/portal/code/${projectId}`);
     }
   };
@@ -82,9 +81,10 @@ export default function CodeBranches() {
     }
   };
 
+  // Captured once so render stays pure (react-hooks/purity)
+  const [now] = useState(() => Date.now());
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp);
-    const now = Date.now();
     const diff = now - timestamp;
 
     if (diff < 60000) return "Just now";
@@ -171,7 +171,7 @@ export default function CodeBranches() {
           </motion.div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {branches.map((branch: any, index: number) => (
+            {branches.map((branch: Doc<"codeBranches">, index: number) => (
               <motion.div
                 key={branch._id}
                 initial={{ opacity: 0, y: 20 }}

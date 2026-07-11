@@ -5,9 +5,9 @@ import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import {
-  Key, Plus, Trash2, Copy, Eye, EyeOff, ExternalLink,
-  Zap, Code2, Terminal, ChevronRight, Shield, Check, X,
-  Loader2, BookOpen, Cpu,
+  Key, Plus, Trash2, Copy,
+  Terminal, Shield, Check, X,
+  Loader2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -25,6 +25,8 @@ export default function ApiPage() {
   const [creating, setCreating] = useState(false);
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // Captured once so render stays pure (react-hooks/purity)
+  const [now] = useState(() => Date.now());
 
   if (isLoading) {
     return (
@@ -67,8 +69,8 @@ export default function ApiPage() {
       setShowCreate(false);
       setNewKeyName("");
       toast.success("API key created");
-    } catch (err: any) {
-      toast.error(err.message ?? "Failed to create key");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create key");
     } finally {
       setCreating(false);
     }
@@ -233,7 +235,7 @@ export default function ApiPage() {
                       {!key.isActive && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/20 text-destructive font-medium">revoked</span>
                       )}
-                      {key.expiresAt && key.expiresAt < Date.now() && (
+                      {key.expiresAt && key.expiresAt < now && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500 font-medium">expired</span>
                       )}
                     </div>

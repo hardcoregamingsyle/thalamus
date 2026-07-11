@@ -1,6 +1,5 @@
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
 
 // Admin auth helper
 // Set the token via: npx convex env set ADMIN_TOKEN <strong-random-password>

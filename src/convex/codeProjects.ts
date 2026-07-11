@@ -1,6 +1,5 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
 
 function makeId(len = 10): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -9,9 +8,9 @@ function makeId(len = 10): string {
   return out;
 }
 
-async function uniqueProjectId(ctx: any): Promise<string> {
+async function uniqueProjectId(ctx: MutationCtx): Promise<string> {
   let id = makeId();
-  while (await ctx.db.query("codeProjects").withIndex("by_project_id", (q: any) => q.eq("projectId", id)).first()) {
+  while (await ctx.db.query("codeProjects").withIndex("by_project_id", (q) => q.eq("projectId", id)).first()) {
     id = makeId();
   }
   return id;

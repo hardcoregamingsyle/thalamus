@@ -9,9 +9,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Download, CheckCircle2, Loader2, Terminal, Monitor, Apple, ExternalLink, Package, Zap, RefreshCw } from "lucide-react";
+import { Download, CheckCircle2, Loader2, Terminal, Apple, ExternalLink, Package, Zap, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { vmLauncher, VMLauncher } from "@/lib/vmLauncher";
+import { vmLauncher } from "@/lib/vmLauncher";
 
 interface VMSetupDialogProps {
   open: boolean;
@@ -41,6 +41,7 @@ export function VMSetupDialog({ open, onOpenChange, onComplete }: VMSetupDialogP
 
   useEffect(() => {
     if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- checkStatus polls the external VM bridge when the dialog opens; refactoring the check-on-open flow is not behavior-preserving
     void checkStatus();
   }, [open, checkStatus]);
 

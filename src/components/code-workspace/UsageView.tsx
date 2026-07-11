@@ -1,5 +1,6 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Doc } from "@/convex/_generated/dataModel";
 import { BarChart3, Database, FileText, MessageSquare, Terminal, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { motion } from "framer-motion";
@@ -16,7 +17,7 @@ export function UsageView({ branchId }: UsageViewProps) {
   const totalFiles = files?.length || 0;
   const totalMessages = messages?.length || 0;
   const totalCommands = commands?.length || 0;
-  const totalChars = files?.reduce((sum: number, f: any) => sum + f.content.length, 0) || 0;
+  const totalChars = files?.reduce((sum: number, f: Doc<"codeFiles">) => sum + f.content.length, 0) || 0;
   const storageKB = (totalChars / 1024).toFixed(1);
 
   const stats = [
@@ -95,7 +96,7 @@ export function UsageView({ branchId }: UsageViewProps) {
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Message Content</span>
                 <span className="text-sm text-muted-foreground">
-                  {((messages?.reduce((sum: number, m: any) => sum + m.content.length, 0) || 0) / 1024).toFixed(1)} KB
+                  {((messages?.reduce((sum: number, m: Doc<"codeMessages">) => sum + m.content.length, 0) || 0) / 1024).toFixed(1)} KB
                 </span>
               </div>
             </div>

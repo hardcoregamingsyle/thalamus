@@ -21,8 +21,8 @@ Thalamus AI is a full-stack AI coding assistant platform built by Aphantic Corpo
 ┌─────────────────────────────────────────────────────────────┐
 │                        USERS                                 │
 ├─────────────┬──────────────────┬────────────────────────────┤
-│  Web App    │  Desktop App     │  API (external developers) │
-│  (React)    │  (WPF/C#)       │  (REST via Convex HTTP)    │
+│  Web App    │  Desktop App     │  API keys for external     │
+│  (React)    │  (WPF/C#)       │  tools (/api-keys page)    │
 ├─────────────┴──────────────────┴────────────────────────────┤
 │                    Convex Backend                            │
 │  ┌──────────┐ ┌───────────┐ ┌────────────┐ ┌───────────┐  │
@@ -33,8 +33,8 @@ Thalamus AI is a full-stack AI coding assistant platform built by Aphantic Corpo
 │         ┌──────────────┼──────────────┐                    │
 │         ▼              ▼              ▼                    │
 │  ┌────────────┐ ┌───────────┐ ┌───────────┐              │
-│  │ AWS Bedrock│ │  Gemini   │ │ VLY/Agent │              │
-│  │ (Claude)   │ │  (Flash)  │ │  Router   │              │
+│  │ AWS Bedrock│ │  Gemini   │ │AgentRouter│              │
+│  │ (Claude)   │ │  (Flash)  │ │(last rsrt)│              │
 │  └────────────┘ └───────────┘ └───────────┘              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -45,7 +45,7 @@ Thalamus AI is a full-stack AI coding assistant platform built by Aphantic Corpo
 |-------|-----------|
 | Frontend | React 19, Vite 7, TailwindCSS 4, Shadcn UI, Framer Motion |
 | Backend | Convex (serverless functions + database) |
-| AI Models | AWS Bedrock (Claude Opus/Sonnet/Haiku), Google Gemini Flash |
+| AI Models | AWS Bedrock (Claude Opus/Sonnet/Haiku), Google Gemini Flash Lite, AgentRouter fallback |
 | Desktop | WPF (.NET 8), C#, self-contained single-file exe |
 | Auth | Email OTP via Brevo, GitHub OAuth |
 | Package Manager | Bun |

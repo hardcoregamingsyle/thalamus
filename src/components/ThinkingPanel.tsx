@@ -17,12 +17,6 @@ export default function ThinkingPanel({
 
   if (!content.trim() && !active) return null;
 
-  // Extract a one-line summary from the thinking content
-  const lines = content.trim().split("\n").filter(l => l.trim());
-  const summary = lines.length > 0
-    ? lines[0].slice(0, 80) + (lines[0].length > 80 ? "…" : "")
-    : "Preparing response…";
-
   const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
 
   return (

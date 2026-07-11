@@ -1,5 +1,6 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Doc } from "@/convex/_generated/dataModel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -75,7 +76,7 @@ export function LogsView({ branchId }: LogsViewProps) {
               <div className="text-center text-muted-foreground py-8">No commands yet</div>
             ) : (
               <div className="space-y-3">
-                {commands.map((cmd: any, idx: number) => (
+                {commands.map((cmd: Doc<"codeCommands">, idx: number) => (
                   <motion.div
                     key={cmd._id}
                     initial={{ opacity: 0, y: 10 }}
@@ -129,7 +130,7 @@ export function LogsView({ branchId }: LogsViewProps) {
               <div className="text-center text-muted-foreground py-8">No activity yet</div>
             ) : (
               <div className="space-y-2">
-                {messages.slice(-10).reverse().map((msg: any, idx: number) => (
+                {messages.slice(-10).reverse().map((msg: Doc<"codeMessages">, idx: number) => (
                   <motion.div
                     key={msg._id}
                     initial={{ opacity: 0, x: -20 }}

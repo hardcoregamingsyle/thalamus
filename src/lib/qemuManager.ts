@@ -2,11 +2,27 @@
 // Uses container2wasm QEMU WebAssembly port for x86_64 emulation
 // https://github.com/ktock/container2wasm
 
-type QEMUInstance = any;
+interface QEMUInstance {
+  start: () => Promise<void>;
+  stop: () => Promise<void>;
+  pause: () => Promise<void>;
+  resume: () => Promise<void>;
+  exec: (command: string) => Promise<{ stdout?: string; stderr?: string; exitCode?: number }>;
+  destroy: () => Promise<void>;
+  saveState: () => Promise<ArrayBuffer>;
+  restoreState: (state: ArrayBuffer) => Promise<void>;
+}
+
+type QEMUConstructor = new (options: {
+  memory: string;
+  cpus: number;
+  container: HTMLElement;
+  image: string;
+}) => QEMUInstance;
 
 // Lazy load QEMU Wasm to avoid bundling issues
-const QEMU: any = null;
-let qemuLoading: Promise<any> | null = null;
+const QEMU: QEMUConstructor | null = null;
+let qemuLoading: Promise<QEMUConstructor> | null = null;
 
 async function loadQEMU() {
   if (QEMU) {

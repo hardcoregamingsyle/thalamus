@@ -47,6 +47,21 @@ git push origin v2.1.0
 # GitHub Actions auto-builds and creates release
 ```
 
+### Local Desktop Build
+
+CI only publishes the bare `Thalamus.exe`. For the installer (`ThalamusSetup.exe` and the optional Inno Setup wrapper), build locally:
+
+```powershell
+cd thalamus-native
+.\build.ps1 -Version "2.1.0"
+```
+
+See `thalamus-native/BUILD.md` for details.
+
+### Stale Workflows Warning
+
+`.github/workflows/build-installer.yml` and `build-thalamus-native.yml` still reference the old Qt 6 C++ build (vcpkg/CMake) that no longer exists. They trigger on pushes touching `thalamus-native/**` and fail. `release.yml` is the live workflow; the other two should be deleted or rewritten.
+
 ## Convex Backend Deployment
 
 ### Production Deploy
@@ -71,7 +86,8 @@ Managed in the Convex Dashboard (NOT `.env` files):
 | `JWKS` | JSON Web Key Set (legacy) |
 | `JWT_PRIVATE_KEY` | JWT signing (legacy) |
 | `SITE_URL` | Base URL for OAuth callbacks |
-| `BREVO_EMAIL_SENDER` | Email sending key |
+| `BREVO_EMAIL_SENDER` | Brevo API key for OTP emails |
+| `API_KEY_ENCRYPTION_SECRET` | AES-256-GCM key for user-supplied provider keys at rest (storage fails closed without it) |
 
 Additionally, AWS credentials and Gemini keys can be managed through the `/admin` panel and stored in database tables (`awsCredentials`, `geminiKeys`). Database values take priority over environment variables.
 
@@ -120,4 +136,4 @@ VITE_CONVEX_URL=https://glad-ermine-937.convex.cloud
 3. `bun run build` + deploy frontend
 4. If desktop changes: `git tag v2.x.x && git push origin v2.x.x` (triggers CI)
 5. Verify GitHub Release has the new .exe
-6. Update download links on the website if needed
+6. Update the website download links AND the update endpoint the desktop app polls (`https://thalamus.dev/api/latest-version`) — otherwise auto-update never sees the new version

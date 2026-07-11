@@ -3,7 +3,7 @@ import { api } from "@/convex/_generated/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Github, CheckCircle2, XCircle, AlertCircle, RefreshCw } from "lucide-react";
+import { Github, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -47,6 +47,7 @@ export function GitHubSyncStatus({ projectId, branchId }: GitHubSyncStatusProps)
   }
 
   const lastSyncDate = new Date(githubConfig.lastSync);
+  // eslint-disable-next-line react-hooks/purity -- intentional: elapsed time is recomputed on each render for display only
   const timeSinceSync = Date.now() - githubConfig.lastSync;
   const isRecent = timeSinceSync < 300000; // 5 minutes
 

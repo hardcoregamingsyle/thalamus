@@ -6,7 +6,7 @@ import tseslint from "typescript-eslint";
 import eslintConfigPrettier from "eslint-config-prettier/flat";
 
 export default tseslint.config(
-  { ignores: ["dist"] },
+  { ignores: ["dist", ".claude", "isolate"] },
   {
     extends: [
       js.configs.recommended,
@@ -28,6 +28,16 @@ export default tseslint.config(
         "warn",
         { allowConstantExport: true },
       ],
+    },
+  },
+  {
+    // Vendored Shadcn UI primitives — stock upstream patterns (variant exports,
+    // context hooks). Not ours to rewrite; see CLAUDE.md "do not customize".
+    files: ["src/components/ui/**/*.{ts,tsx}"],
+    rules: {
+      "react-refresh/only-export-components": "off",
+      "react-hooks/purity": "off",
+      "react-hooks/set-state-in-effect": "off",
     },
   },
 );

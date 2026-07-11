@@ -1,5 +1,6 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Doc } from "@/convex/_generated/dataModel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -49,7 +50,7 @@ export function DataView({ branchId }: DataViewProps) {
               <div className="text-center text-muted-foreground py-8">No files yet</div>
             ) : (
               <div className="space-y-2">
-                {files.map((file: any, idx: number) => (
+                {files.map((file: Doc<"codeFiles">, idx: number) => (
                   <motion.div
                     key={file._id}
                     initial={{ opacity: 0, x: -20 }}
@@ -101,7 +102,7 @@ export function DataView({ branchId }: DataViewProps) {
               <div className="text-center text-muted-foreground py-8">No messages yet</div>
             ) : (
               <div className="space-y-2">
-                {messages.map((msg: any, idx: number) => (
+                {messages.map((msg: Doc<"codeMessages">, idx: number) => (
                   <motion.div
                     key={msg._id}
                     initial={{ opacity: 0, x: -20 }}

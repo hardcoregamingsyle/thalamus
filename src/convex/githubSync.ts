@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated api types are self-referential here and exceed TS instantiation depth (TS2589); checked builds require this suppression. */
 // @ts-nocheck
 "use node";
 import { action, internalAction } from "./_generated/server";
@@ -37,7 +38,7 @@ export const cloneRepository = action({
     if (!userId) throw new Error("Not authenticated");
 
     try {
-      const urlMatch = args.repoUrl.match(/github\.com\/([^\/]+)\/([^\/\.]+)/);
+      const urlMatch = args.repoUrl.match(/github\.com\/([^/]+)\/([^/.]+)/);
       if (!urlMatch) throw new Error("Invalid GitHub URL");
 
       const [, owner, repo] = urlMatch;
