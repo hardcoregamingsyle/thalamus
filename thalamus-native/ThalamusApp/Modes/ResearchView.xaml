@@ -124,7 +124,7 @@
                         <TextBlock Text="Research" FontSize="14" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
                     </StackPanel>
-                    <TextBlock Text="Deep research with live web search and source citations"
+                    <TextBlock Text="Research with live web search and source citations"
                                FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}" Margin="29,2,0,0"/>
                 </StackPanel>
 
@@ -176,7 +176,7 @@
                         <TextBlock TextWrapping="Wrap" FontSize="12.5"
                                    Foreground="{StaticResource TextSecondaryBrush}" LineHeight="20"
                                    Margin="0,0,0,24">
-                            Thalamus searches the web in real time, synthesizes information from multiple sources, and delivers a structured report with citations.
+                            Thalamus searches the web, pulls together multiple sources, and returns a structured report with citations.
                         </TextBlock>
 
                         <!-- Example prompts -->
@@ -251,7 +251,7 @@
                              Style="{StaticResource ResearchInputStyle}"
                              Height="40"
                              KeyDown="ResearchInput_KeyDown"/>
-                    <TextBlock Text="Search any topic, compare options, get a deep report…"
+                    <TextBlock Text="Search a topic, compare options, get a report…"
                                IsHitTestVisible="False" FontSize="12.5" Foreground="#253858"
                                Margin="15,0,0,0" VerticalAlignment="Center">
                         <TextBlock.Style>

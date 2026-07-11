@@ -445,7 +445,7 @@ namespace ThalamusInstaller
             dynamic link   = shell.CreateShortcut(lnkPath);
             link.TargetPath       = targetPath;
             link.WorkingDirectory = Path.GetDirectoryName(targetPath);
-            link.Description      = "Thalamus AI — World's First L4.5 Agent";
+            link.Description      = "Thalamus AI desktop app";
             link.Save();
         }
 

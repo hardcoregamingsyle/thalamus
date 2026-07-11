@@ -46,7 +46,7 @@ interface StudyResource {
 const MODES: { id: Mode; label: string; icon: typeof MessageSquare; color: string; bg: string; emoji: string; desc: string; accentColor: string }[] = [
   { id: "chat", label: "Chat", icon: MessageSquare, color: "text-blue-400", bg: "bg-blue-500/15", emoji: "💬", desc: "Ask anything, get instant answers", accentColor: "#60a5fa" },
   { id: "research", label: "Research", icon: Search, color: "text-amber-400", bg: "bg-amber-500/15", emoji: "🔬", desc: "Deep research with live web data", accentColor: "#fbbf24" },
-  { id: "study", label: "Study", icon: BookOpen, color: "text-indigo-400", bg: "bg-indigo-500/15", emoji: "📚", desc: "Study smarter with AI grounding", accentColor: "#818cf8" },
+  { id: "study", label: "Study", icon: BookOpen, color: "text-indigo-400", bg: "bg-indigo-500/15", emoji: "📚", desc: "Study with explanations and practice", accentColor: "#818cf8" },
   { id: "code", label: "Code", icon: Users, color: "text-violet-400", bg: "bg-violet-500/15", emoji: "⚡", desc: "9-agent software development", accentColor: "#a78bfa" },
 ];
 

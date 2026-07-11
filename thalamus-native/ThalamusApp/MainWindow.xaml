@@ -275,7 +275,7 @@
                         <Border CornerRadius="8" Background="#0d1f3c"
                                 BorderBrush="{StaticResource BorderBrush}"
                                 BorderThickness="1" Padding="6,1,6,2" Margin="8,0,0,0">
-                            <TextBlock Text="L4.5" FontSize="8" FontWeight="Bold"
+                            <TextBlock Text="Desktop" FontSize="8" FontWeight="Bold"
                                        Foreground="{StaticResource BlueBrush}"/>
                         </Border>
                     </StackPanel>

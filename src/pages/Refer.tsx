@@ -312,7 +312,7 @@ export default function ReferPage() {
                 <button
                   onClick={() => {
                     if (navigator.share) {
-                      navigator.share({ title: "Thalamus AI", text: "Try Thalamus AI — the world's first L4.5 agent!", url: referLink });
+                      navigator.share({ title: "Thalamus AI", text: "Try Thalamus AI — an AI workspace for chat, research, study, and building.", url: referLink });
                     } else {
                       handleCopy(referLink);
                     }

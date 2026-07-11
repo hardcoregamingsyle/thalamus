@@ -390,10 +390,10 @@ function GuestPortal() {
             <div className="text-center">
               <h2 className={`text-xl font-bold ${currentMode.color} mb-2`}>{currentMode.label} Mode</h2>
               <p className="text-sm text-muted-foreground mb-1">
-                {activeMode === "chat" && "Ask anything — fast, accurate, context-aware"}
-                {activeMode === "study" && "Study with AI-powered explanations"}
-                {activeMode === "research" && "Deep research with live web search"}
-                {activeMode === "code" && "9-agent system for full software development"}
+                {activeMode === "chat" && "Ask anything and get clear, accurate answers"}
+                {activeMode === "study" && "Study with clear explanations and practice"}
+                {activeMode === "research" && "Research with live web search"}
+                {activeMode === "code" && "9 agents that build software from your description"}
               </p>
               <p className="text-xs text-muted-foreground/60">{GUEST_LIMIT} free prompts · No sign-up required</p>
             </div>
@@ -880,7 +880,7 @@ function ModeSelection({ user, signOut, theme, toggleTheme }: { user: unknown; s
             transition={{ delay: 0.1 }}
             className="text-muted-foreground max-w-2xl mx-auto"
           >
-            Select a mode to get started. Each mode is optimized for different types of tasks.
+            Select a mode to get started. Each mode is built for a different kind of task.
           </motion.p>
         </div>
 

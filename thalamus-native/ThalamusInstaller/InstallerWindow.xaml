@@ -175,7 +175,7 @@
                         </Border>
                         <TextBlock Text="Thalamus AI" FontSize="17" FontWeight="Bold"
                                    Foreground="{StaticResource TextMain}"/>
-                        <TextBlock Text="World's First L4.5 Agent" FontSize="11"
+                        <TextBlock Text="AI workspace for your desktop" FontSize="11"
                                    Foreground="{StaticResource TextSec}" Margin="0,3,0,0"/>
                     </StackPanel>
 
@@ -199,8 +199,8 @@
                                    LineHeight="22" Margin="0,0,0,28">
                             This wizard will install Thalamus AI on your computer.<LineBreak/>
                             <LineBreak/>
-                            Thalamus is the world's first L4.5 agent — capable of autonomous research,
-                            coding, studying, and running full operating systems in a secure VM sandbox.
+                            Thalamus is an AI workspace for research, coding, and studying, with a
+                            secure VM sandbox for running full operating systems.
                         </TextBlock>
 
                         <Border Background="{StaticResource BgPanel}" CornerRadius="10"
