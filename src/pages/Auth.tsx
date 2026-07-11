@@ -104,7 +104,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
               <div className="flex items-center gap-2 mb-1">
                 <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
                 <span className="text-[10px] text-muted-foreground font-bold tracking-widest">
-                  {step === "signIn" ? "AUTHENTICATION REQUIRED" : "OTP VERIFICATION"}
+                  {step === "signIn" ? "Sign in" : "Verify your email"}
                 </span>
               </div>
               <h1 className="text-xl font-bold text-primary">
@@ -139,7 +139,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
                   {error && (
                     <p className="text-xs text-destructive font-mono bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2">
-                      ⚠ {error}
+                      {error}
                     </p>
                   )}
 
@@ -194,7 +194,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
                   {error && (
                     <p className="text-xs text-destructive font-mono text-center bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2">
-                      ⚠ {error}
+                      {error}
                     </p>
                   )}
 

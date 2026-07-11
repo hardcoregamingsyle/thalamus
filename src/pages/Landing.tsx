@@ -351,7 +351,7 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur-xl"
           >
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-            World's First L4.5 Agent · By Aphantic Corporations
+            AI workspace · By Aphantic Corporations
           </motion.div>
 
           <motion.h1
@@ -360,9 +360,9 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             transition={{ duration: 0.65 }}
             className="mx-auto max-w-5xl text-balance text-5xl font-semibold leading-[0.94] tracking-normal text-foreground/80 sm:text-7xl lg:text-8xl"
           >
-            <span className="block text-foreground/55">World's most powerful</span>
+            <span className="block text-foreground/55">Everything you need</span>
             <span className="block bg-[linear-gradient(110deg,#f8fafc_0%,#93c5fd_32%,#fcd34d_66%,#d9f99d_100%)] bg-clip-text text-transparent drop-shadow-[0_0_28px_rgba(147,197,253,0.18)]">
-              all-purpose AI.
+              in one AI workspace.
             </span>
           </motion.h1>
 
@@ -539,7 +539,7 @@ function Footer() {
           <span className="text-[10px] text-muted-foreground">by Aphantic Corporations</span>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-3 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-          <span>All-purpose AI</span>
+          <span>AI workspace</span>
           <span>Build help</span>
           <span>Live research</span>
           <span>Study help</span>

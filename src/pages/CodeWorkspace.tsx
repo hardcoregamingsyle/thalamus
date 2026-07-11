@@ -380,7 +380,7 @@ export default function CodeWorkspace() {
                   </div>
                   <h2 className="text-2xl font-semibold mb-2">Start Building</h2>
                   <p className="text-muted-foreground max-w-md">
-                    Describe what you want to build and the AI team will handle the rest
+                    Describe what you want to build and the agents will plan, write, and test it
                   </p>
                 </div>
               ) : (

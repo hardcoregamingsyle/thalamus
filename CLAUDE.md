@@ -82,7 +82,7 @@ VITE_CONVEX_URL=https://your-deployment.convex.cloud
 ### Frontend (React + Vite)
 
 * **`src/main.tsx`:** Entry point. Sets up routing, Convex auth provider, and desktop app detection (`window.NL_PORT` = Neutralinojs).
-* **`src/pages/`:** Route-level components (`Portal`, `TeamPortal`, `CodeProjects`, `CodeBranches`, `CodeWorkspace`, `Admin`, `Auth`, `Landing`).
+* **`src/pages/`:** Route-level components (`Portal`, `CodeProjects`, `CodeBranches`, `CodeWorkspace`, `Admin`, `Auth`, `Landing`).
 * **`src/components/`:** Feature components. The `src/components/ui/` folder contains the Shadcn UI layer—**do not customize these directly**.
 * **`src/lib/vmLauncher.ts`:** WebSocket client communicating with the local VM Bridge on `ws://localhost:5900`.
 
@@ -109,7 +109,7 @@ All backend logic lives here as Convex functions. The `convex.json` file points 
 
 The codebase currently maintains two overlapping systems. Be highly conscious of which one you are modifying:
 
-1. **Original System:** `teamSessions` / `agentMessages` / `projectFiles` (Used in "Team Portal", `/team` route, `src/pages/TeamPortal.tsx`).
+1. **Original System:** `teamSessions` / `agentMessages` / `projectFiles` (Rendered inline by `src/pages/TeamPortalInline.tsx` inside `Portal`/`MobilePortal`; the standalone `/team` page and `TeamPortal.tsx` have been removed).
 2. **Newer System:** `codeProjects` / `codeBranches` / `codeMessages` / `codeFiles` (Used in `/portal/code` routes, `src/pages/CodeWorkspace.tsx`, and powered by `codePipeline.ts`, `codeBranches.ts`, `codeCommands.ts`).
 *Both use the 9-agent pipeline but rely on different entry points and data models.*
 
@@ -124,13 +124,17 @@ AI calls route through `agentCore.ts`.
 
 * **Browser VMs:** Utilizes the `v86` npm package for x86 WebAssembly emulation (no bridge needed).
 * **QEMU VMs:** Requires the local Node.js VM Bridge running on port 5900. Controlled via `src/lib/vmLauncher.ts` (`boot`, `stop`, `list`, `ping`).
-* **UI Components:** Sandbox UI is handled in `src/components/code-workspace/SandboxView.tsx`. Display views are handled by `QEMUScreen.tsx` and `VMScreen.tsx`.
+* **UI Components:** Sandbox UI is handled in `src/components/code-workspace/SandboxView.tsx`. (The old standalone `QEMUScreen.tsx` / `VMScreen.tsx` display components were removed as dead code.)
 
 ### Desktop & Native Apps
 
 * **Neutralinojs Desktop App:** Built using `neutralino.config.json`. Pre-built binaries live in `dist-desktop/`. To rebuild: build Vite first, then package via the Neutralino toolchain. Runtime detection relies on `window.NL_PORT`.
-* **Native C# App (`thalamus-native/`):** A strictly independent WPF application (`ThalamusApp.csproj`) and installer (`ThalamusInstaller.csproj`). Build instructions are isolated in `thalamus-native/BUILD.md`.
+* **Native C# App (`thalamus-native/`):** A strictly independent WPF application (`ThalamusApp.csproj`) and installer (`ThalamusInstaller.csproj`), both on `net8.0-windows`, published self-contained/single-file. Build via `thalamus-native/build.ps1` (`dotnet publish` + optional Inno Setup `installer.iss`). Full instructions in `thalamus-native/BUILD.md`.
 
 ### Platform Credits (AgentBucks)
 
 User balances (`agentBucksBalance`) are stored on the `users` table and deducted per-token in `agentCore.ts` according to the `modelPricing` table. Total platform spending is tracked via `platformBudget`. The admin panel (`/admin`) manages API keys, pricing, and budgets.
+
+## Things to change and update
+
+### Automatically update the readme.md file and Handover Docs, auto commit to GitHub from time to time, with the personality trait of the docs and GitHub messages of a 14yr old(teen) professional solo developer who claims to be the tech god, Prevent/avoid AI Slop and wordings and the personality trait of a professional corporate developer

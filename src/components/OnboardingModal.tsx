@@ -15,25 +15,25 @@ const STEPS = [
   {
     id: "welcome",
     title: "Welcome to Thalamus AI",
-    subtitle: "World's First L4.5 Agent System",
+    subtitle: "An AI workspace for chat, research, study, and building",
     content: null,
   },
   {
     id: "modes",
-    title: "Four Powerful Modes",
-    subtitle: "Each mode is purpose-built for a different kind of work",
+    title: "Four Modes",
+    subtitle: "Each mode is built for a different kind of work",
     content: null,
   },
   {
     id: "code",
     title: "Code Mode — 9-Agent System",
-    subtitle: "The most advanced AI coding system ever built",
+    subtitle: "Nine agents that build software together",
     content: null,
   },
   {
     id: "economy",
     title: "Agent Bucks",
-    subtitle: "Your daily AI fuel — free, every day",
+    subtitle: "Free credits, refreshed every day",
     content: null,
   },
   {
@@ -51,7 +51,7 @@ const MODES = [
     label: "Chat",
     color: "text-emerald-400",
     accent: "bg-emerald-400/10 border-emerald-400/30",
-    desc: "Fast, context-aware conversations. Ask anything — get precise, intelligent answers instantly.",
+    desc: "Ask questions and get clear answers, with your conversation kept in context.",
     badge: "Free for guests",
   },
   {
@@ -60,7 +60,7 @@ const MODES = [
     label: "Research",
     color: "text-blue-400",
     accent: "bg-blue-400/10 border-blue-400/30",
-    desc: "Live web search + deep synthesis. Get comprehensive research reports with real-time data.",
+    desc: "Live web search that pulls current sources into a structured report.",
     badge: "Requires account",
   },
   {
@@ -78,7 +78,7 @@ const MODES = [
     label: "Study",
     color: "text-indigo-400",
     accent: "bg-indigo-400/10 border-indigo-400/30",
-    desc: "Upload PDFs, add resources, and get AI-powered study sessions grounded in your materials.",
+    desc: "Upload PDFs and notes, then get explanations and practice based on them.",
     badge: "Free for guests",
   },
 ];
@@ -86,7 +86,7 @@ const MODES = [
 const CODE_AGENTS = [
   { name: "Researcher", role: "Gathers context and requirements", color: "text-blue-400" },
   { name: "Planner", role: "Breaks task into structured steps", color: "text-amber-400" },
-  { name: "Coder", role: "Writes production-ready code", color: "text-violet-400" },
+  { name: "Coder", role: "Writes the application code", color: "text-violet-400" },
   { name: "Optimiser", role: "Improves performance & security", color: "text-emerald-400" },
   { name: "Tester", role: "Writes and runs test suites", color: "text-cyan-400" },
   { name: "Red Team", role: "Finds vulnerabilities & edge cases", color: "text-red-400" },
@@ -214,14 +214,14 @@ export default function OnboardingModal({ onComplete, userName }: OnboardingModa
                       {userName ? `Welcome, ${userName.split(" ")[0]}!` : "Welcome to Thalamus AI"}
                     </h2>
                     <p className="text-sm text-muted-foreground max-w-md">
-                      You're about to experience the world's first <span className="text-primary font-bold">L4.5 Agent System</span> — a multi-agent AI platform that thinks, researches, codes, and studies alongside you.
+                      Thalamus brings chat, research, study, and <span className="text-primary font-bold">software building</span> together in one workspace.
                     </p>
                   </div>
                   <div className="grid grid-cols-3 gap-3 w-full max-w-sm">
                     {[
-                      { icon: "🧠", label: "9 Specialized Agents" },
-                      { icon: "⚡", label: "Real-time Streaming" },
-                      { icon: "🌐", label: "Live Web Grounding" },
+                      { icon: "", label: "9 specialized agents" },
+                      { icon: "", label: "Real-time responses" },
+                      { icon: "", label: "Live web search" },
                     ].map((item, i) => (
                       <motion.div
                         key={i}
@@ -295,7 +295,7 @@ export default function OnboardingModal({ onComplete, userName }: OnboardingModa
                   <div className="flex items-center gap-2 bg-violet-400/5 border border-violet-400/20 rounded-xl p-3">
                     <Sparkles className="h-4 w-4 text-violet-400 shrink-0" />
                     <p className="text-[10px] text-muted-foreground">
-                      Agents collaborate in rounds, each reviewing and improving the previous agent's work. The result is <span className="text-violet-400 font-bold">production-ready, deployable code</span>.
+                      Agents work in sequence, each reviewing and improving the previous agent's work, and hand back <span className="text-violet-400 font-bold">code you can run and deploy</span>.
                     </p>
                   </div>
                 </div>
@@ -311,25 +311,25 @@ export default function OnboardingModal({ onComplete, userName }: OnboardingModa
                   <div className="grid grid-cols-1 gap-3">
                     {[
                       {
-                        icon: "⚡",
+                        icon: "",
                         title: "Daily Free Allocation",
                         desc: "Every day you get a fresh allocation of Agent Bucks — no credit card needed.",
                         color: "border-amber-400/30 bg-amber-400/5",
                       },
                       {
-                        icon: "🎯",
+                        icon: "",
                         title: "Pay Per Use",
                         desc: "Agent Bucks are deducted based on the AI model used. Lighter models cost less; powerful models cost more.",
                         color: "border-blue-400/30 bg-blue-400/5",
                       },
                       {
-                        icon: "🎁",
+                        icon: "",
                         title: "Earn More",
                         desc: "Refer friends to earn bonus spins. Each spin can award extra Agent Bucks.",
                         color: "border-emerald-400/30 bg-emerald-400/5",
                       },
                       {
-                        icon: "💎",
+                        icon: "",
                         title: "Purchase Credits",
                         desc: "Need more? Purchase additional Agent Bucks anytime from the Credits panel.",
                         color: "border-primary/30 bg-primary/5",
@@ -367,7 +367,7 @@ export default function OnboardingModal({ onComplete, userName }: OnboardingModa
                   <div>
                     <h2 className="text-2xl font-bold text-foreground mb-2">You're All Set!</h2>
                     <p className="text-sm text-muted-foreground max-w-md">
-                      Thalamus AI is ready to work with you. Start with a simple chat, dive into deep research, build something with Code Mode, or upload your study materials.
+                      Thalamus is ready. Start a chat, run some research, build something in Code Mode, or upload your study materials.
                     </p>
                   </div>
                   <div className="grid grid-cols-2 gap-2 w-full max-w-sm">

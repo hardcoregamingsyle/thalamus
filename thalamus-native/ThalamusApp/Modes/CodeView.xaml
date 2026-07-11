@@ -137,7 +137,7 @@
                                        Foreground="{StaticResource GreenBrush}"/>
                         </Border>
                     </StackPanel>
-                    <TextBlock Text="Describe what you want to build — 9 AI agents build it autonomously"
+                    <TextBlock Text="Describe what you want to build and 9 agents build it in sequence"
                                FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}" Margin="29,2,0,0"/>
                 </StackPanel>
 
@@ -189,7 +189,7 @@
                         <TextBlock TextWrapping="Wrap" FontSize="12.5"
                                    Foreground="{StaticResource TextSecondaryBrush}" LineHeight="20"
                                    Margin="0,0,0,20">
-                            Thalamus deploys 9 specialized AI agents in sequence — Researcher, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, and Critic — to autonomously build your project.
+                            Thalamus runs 9 specialized agents in sequence — Researcher, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, and Critic — to build your project.
                         </TextBlock>
 
                         <!-- 9 agent badges -->
