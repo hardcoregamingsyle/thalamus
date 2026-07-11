@@ -403,13 +403,6 @@ export const upsertFile = internalMutation({
         lastModifiedBy: args.agent,
       });
     }
-    // Auto-vectorize this file into RAG in the background (non-blocking)
-    // TODO: Re-enable when vectorizeFile is implemented
-    // await ctx.scheduler.runAfter(0, internal.agentTeam.vectorizeFile, {
-    //   sessionId: args.sessionId,
-    //   filepath: args.filepath,
-    //   content: args.content,
-    // });
   },
 });
 

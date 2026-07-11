@@ -5,7 +5,7 @@
 type QEMUInstance = any;
 
 // Lazy load QEMU Wasm to avoid bundling issues
-let QEMU: any = null;
+const QEMU: any = null;
 let qemuLoading: Promise<any> | null = null;
 
 async function loadQEMU() {

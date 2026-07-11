@@ -298,11 +298,11 @@ export const runPipelineAction = internalAction({
     const allMessages = await ctx.runQuery(internal.codeBranches.getMessagesInternal, { branchId }) as any[];
     const firstUserMessage = allMessages.find((m: any) => m.agent === "User");
     const task = args.userPrompt || firstUserMessage?.content || branch.description || "Continue working on the project";
-    let currentPhase = branch.phase ?? "Dispatcher";
+    const currentPhase = branch.phase ?? "Dispatcher";
     let round = branch.round ?? 0;
     let totalMessages = branch.totalMessages ?? 0;
-    let executionPhase = branch.executionPhase ?? "dispatching";
-    let currentTaskIndex = branch.currentTaskIndex ?? 0;
+    const executionPhase = branch.executionPhase ?? "dispatching";
+    const currentTaskIndex = branch.currentTaskIndex ?? 0;
     let taskDifficulty: TaskDifficulty = branch.currentTaskDifficulty ?? "normal";
     const runMode: RunMode = (branch.runMode as RunMode) ?? "balanced";
 
@@ -431,7 +431,7 @@ export const runPipelineAction = internalAction({
 
       // Run the current agent
       let agentOutput = "";
-      let agentName = currentPhase;
+      const agentName = currentPhase;
       // Tasks parsed from the Planner this run (the stale `branch` object loaded
       // at the top does NOT reflect tasks the Planner just saved — use this).
       let parsedPlannerTasks: Array<{ title: string; description: string }> = [];

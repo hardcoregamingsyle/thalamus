@@ -1,4 +1,5 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
 // Queue a command for execution
@@ -81,8 +82,10 @@ export const completeCommand = mutation({
       .first();
 
     if (!pending) {
-      // Resume pipeline
-      // TODO: Trigger pipeline continuation
+      // All queued commands for this branch have finished — resume the build pipeline.
+      await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, {
+        branchId: command.branchId,
+      });
     }
   },
 });
