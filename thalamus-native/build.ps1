@@ -67,9 +67,10 @@ $appObj = Join-Path (Split-Path $appProject) "obj"
 if (Test-Path $appBin) { Remove-Item $appBin -Recurse -Force }
 if (Test-Path $appObj) { Remove-Item $appObj -Recurse -Force }
 
-dotnet restore $appProject --nologo -q
-if ($LASTEXITCODE -ne 0) { Fail "dotnet restore failed for ThalamusApp" }
-
+# Let `dotnet publish` do its own restore. A SEPARATE `dotnet restore` first
+# populates obj\*.nuget.g.* which WPF's single-file publish then tries to copy
+# into its generated _wpftmp project — and that copy intermittently fails.
+# Publishing straight from a clean obj is the reliable path.
 dotnet publish $appProject `
     -c Release `
     -r win-x64 `
