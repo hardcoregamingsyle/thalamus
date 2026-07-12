@@ -867,7 +867,7 @@ interface GravityAd {
   impUrl?: string;
 }
 
-function SponsoredAdCard({ ad }: { ad: GravityAd }) {
+function SponsoredAdCard({ ad, rail = false }: { ad: GravityAd; rail?: boolean }) {
   // Fire the impression pixel exactly once PER AD — the card stays mounted
   // across timed refreshes, so track the last-fired impUrl rather than a
   // lifetime boolean (which would swallow refreshed ads' impressions).
@@ -885,7 +885,7 @@ function SponsoredAdCard({ ad }: { ad: GravityAd }) {
         href={ad.clickUrl ?? ad.url}
         target="_blank"
         rel="noopener noreferrer sponsored"
-        className="block max-w-[82%] rounded-2xl px-4 py-3 text-xs leading-relaxed bg-card border border-border text-foreground hover:border-primary/40 transition-colors"
+        className={`block rounded-2xl px-4 py-3 text-xs leading-relaxed bg-card border border-border text-foreground hover:border-primary/40 transition-colors ${rail ? "w-full" : "max-w-[82%]"}`}
       >
         <p className="text-[9px] font-bold text-muted-foreground/60 tracking-widest uppercase mb-1">Sponsored</p>
         <div className="flex items-start gap-2">
@@ -956,6 +956,10 @@ function PortalDesktop() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showStudyProfile, setShowStudyProfile] = useState(false);
   const [sponsoredAd, setSponsoredAd] = useState<GravityAd | null>(null);
+  const [railAds, setRailAds] = useState<GravityAd[]>([]);
+  // Rail slots by viewport: <1280 none, 1280+ one, 1536+ two, 1920+ three.
+  // Total ads = 1 in-chat + rail. Small screens stay ad-light on purpose.
+  const [railCount, setRailCount] = useState(0);
   const adRequestedRef = useRef(false);
   // Ad refresh machinery: context of the latest completed exchange (so
   // refreshed ads stay contextual), when we last swapped the ad, and the
@@ -992,6 +996,21 @@ function PortalDesktop() {
 
   // Track user activity for the ad-refresh cadence. Passive listeners, ref
   // writes only — zero re-renders.
+  useEffect(() => {
+    const calc = () => setRailCount(window.innerWidth >= 1920 ? 3 : window.innerWidth >= 1536 ? 2 : window.innerWidth >= 1280 ? 1 : 0);
+    calc();
+    window.addEventListener("resize", calc, { passive: true });
+    return () => window.removeEventListener("resize", calc);
+  }, []);
+
+  // Split a requestAd result (single ad or array) into in-chat + rail slots.
+  const applyAds = (result: unknown) => {
+    const list = (Array.isArray(result) ? result : [result]).filter(Boolean) as GravityAd[];
+    if (list.length === 0) return;
+    setSponsoredAd(list[0]);
+    setRailAds(list.slice(1));
+  };
+
   useEffect(() => {
     const mark = () => { lastActivityRef.current = Date.now(); };
     mark(); // opening the portal counts as activity
@@ -1055,12 +1074,14 @@ function PortalDesktop() {
         token: localStorage.getItem("agentai_session_token") ?? undefined,
         messages: adContextRef.current.messages,
         sessionId: adContextRef.current.sessionId,
+        count: 1 + railCount,
       })
-        .then(ad => { if (ad) setSponsoredAd(ad as GravityAd); })
+        .then(ad => { if (ad) applyAds(ad); })
         .catch(() => {});
     }, 15_000);
     return () => clearInterval(id);
-  }, [sponsoredAd, isThinking, streamingContent, requestAd]);
+     
+  }, [sponsoredAd, isThinking, streamingContent, requestAd, railCount]);
   const addTextResource = useMutation(api.studyHelpers.addTextResource);
   const deleteResource = useMutation(api.studyHelpers.deleteResource);
   const searchAndAddResource = useAction(api.study.searchAndAddResource);
@@ -1152,6 +1173,7 @@ function PortalDesktop() {
     prevMessageCountRef.current = 0;
     adRequestedRef.current = false;
     setSponsoredAd(null);
+    setRailAds([]);
     navigate(`/portal/${mode}`, { replace: false });
     // Show study profile setup if entering study mode without a profile
     if (mode === "study" && !studyGrade && !studyBoard) {
@@ -1163,6 +1185,7 @@ function PortalDesktop() {
     if (!token) return;
     adRequestedRef.current = false;
     setSponsoredAd(null);
+    setRailAds([]);
     try {
       const result = await createConversation({ title: `${(activeMode ?? "chat").toUpperCase()}_${Date.now().toString(36).toUpperCase()}`, mode: activeMode ?? "chat", token }) as { id: Id<"conversations">; customId: string } | Id<"conversations">;
       const id = typeof result === "object" && "id" in result ? result.id : result as Id<"conversations">;
@@ -1179,6 +1202,7 @@ function PortalDesktop() {
     prevMessageCountRef.current = 0;
     adRequestedRef.current = false;
     setSponsoredAd(null);
+    setRailAds([]);
     setActiveConvId(conv._id);
     if (conv.customId) navigate(`/portal/${activeMode}/${conv.customId}`, { replace: false });
   };
@@ -1388,8 +1412,9 @@ function PortalDesktop() {
         token: localStorage.getItem("agentai_session_token") ?? undefined,
         messages: adMessages,
         sessionId: convId ?? undefined,
+        count: 1 + railCount,
       })
-        .then(ad => { if (ad) { setSponsoredAd(ad as GravityAd); lastAdRefreshRef.current = Date.now(); } })
+        .then(ad => { if (ad) { applyAds(ad); lastAdRefreshRef.current = Date.now(); } })
         .catch(() => {});
     }
 
@@ -1709,7 +1734,8 @@ function PortalDesktop() {
                 )}
               </div>
 
-              {/* Messages */}
+              {/* Messages + sponsored rail (rail only on 1280px+ viewports) */}
+              <div className="flex-1 min-h-0 flex">
               <div className="flex-1 overflow-y-auto min-h-0">
                 <div className="p-4 space-y-4 max-w-4xl mx-auto">
                   {(thinkingContent || isThinking) && (
@@ -1813,6 +1839,14 @@ function PortalDesktop() {
                   )}
                   <div ref={messagesEndRef} />
                 </div>
+              </div>
+              {railAds.length > 0 && activeConvId && (
+                <aside className="hidden xl:flex flex-col gap-3 w-64 shrink-0 p-4 overflow-y-auto border-l border-border/40">
+                  {railAds.slice(0, railCount).map((ad, i) => (
+                    <SponsoredAdCard key={ad.impUrl ?? `rail-${i}`} ad={ad} rail />
+                  ))}
+                </aside>
+              )}
               </div>
 
               {/* Input */}
