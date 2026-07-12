@@ -15,7 +15,6 @@ namespace ThalamusApp.Modes
     public partial class ChatView : UserControl
     {
         private string? _token;
-        private string _model = "sonnet";
         private readonly ConvexClient _convex = new();
         private StreamingClient? _streaming;
         private readonly List<(string role, string text)> _history = new();
@@ -36,18 +35,6 @@ namespace ThalamusApp.Modes
             _token = token;
             _adRequested = false;   // sign-in/out is the session boundary — allow a fresh ad
             ChatCreditsLabel.Text = "Signed in";
-        }
-
-        private void Pill_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is not Button btn || btn.Tag is not string tag) return;
-            _model = tag;
-            var inactive = (Style)FindResource("ModelPill");
-            var active   = (Style)FindResource("ModelPillActive");
-            PillSonnet.Style = tag == "sonnet" ? active : inactive;
-            PillOpus.Style   = tag == "opus"   ? active : inactive;
-            PillHaiku.Style  = tag == "haiku"  ? active : inactive;
-            PillGemini.Style = tag == "gemini" ? active : inactive;
         }
 
         private void ChatInput_KeyDown(object sender, KeyEventArgs e)
@@ -77,23 +64,15 @@ namespace ThalamusApp.Modes
 
             _isStreaming = true;
             SendButton.IsEnabled = false;
-            StreamingLabel.Text = "Thinking…";
             _cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
             _liveText = "";
             _liveBlock = null;
 
-            var modeStr = _model switch
-            {
-                "opus"   => "chat-opus",
-                "haiku"  => "chat-haiku",
-                "gemini" => "chat-gemini",
-                _        => "chat"
-            };
-
             try
             {
+                // "chat" mode → the backend's default model routing picks the model.
                 await _streaming!.StreamChatAsync(
-                    text, modeStr, _history,
+                    text, "chat", _history,
                     "You are Thalamus AI, a highly capable and helpful AI assistant. Be concise, clear, and accurate.",
                     _token, null,
                     (type, chunk) =>
@@ -112,7 +91,6 @@ namespace ThalamusApp.Modes
                                 {
                                     TypingRow.Visibility = Visibility.Collapsed;
                                     AppendAiBubbleStart(out _liveBlock);
-                                    StreamingLabel.Text = "Generating…";
                                 }
                                 _liveBlock.Text = _liveText;
                                 ScrollToBottom();
@@ -131,7 +109,6 @@ namespace ThalamusApp.Modes
                         : "Something went wrong. Please try again.");
                     _isStreaming = false;
                     SendButton.IsEnabled = true;
-                    StreamingLabel.Text = "";
                 });
             }
         }
@@ -143,7 +120,6 @@ namespace ThalamusApp.Modes
                 _history.Add(("assistant", fullText));
             _isStreaming = false;
             SendButton.IsEnabled = true;
-            StreamingLabel.Text = "";
             ScrollToBottom();
 
             // First real reply of the session → try to surface one sponsored card.

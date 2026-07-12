@@ -1,9 +1,11 @@
 using System;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using ThalamusApp.Auth;
 using ThalamusApp.Controls;
@@ -12,7 +14,7 @@ namespace ThalamusApp
 {
     public partial class MainWindow : Window
     {
-        private const string APP_VERSION = "2.2.0";
+        private const string APP_VERSION = "2.2.1";
         private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
         private bool _isAuthenticated;
 
@@ -24,7 +26,6 @@ namespace ThalamusApp
         {
             InitializeComponent();
             VersionLabel.Text = $"v{APP_VERSION}";
-            SetGuestMode();
             _ = Task.Run(CheckForUpdatesAsync);
         }
 
@@ -41,8 +42,7 @@ namespace ThalamusApp
             AuthDot.Background = (Brush)FindResource("GreenBrush");
             AuthDot.ToolTip = email;
 
-            // Show sign out + buy credits, hide sign in
-            BtnSignIn.Visibility = Visibility.Collapsed;
+            // Signed in — show sign out + buy credits
             BtnSignOut.Visibility = Visibility.Visible;
             BtnBuyCredits.Visibility = Visibility.Visible;
             SectionLabel.Text = email.Length > 18 ? email[..16] + "..." : email;
@@ -57,27 +57,6 @@ namespace ThalamusApp
             NavigateTo("Code");
         }
 
-        /// <summary>
-        /// Guest mode — limited features, sign-in button visible.
-        /// </summary>
-        private void SetGuestMode()
-        {
-            _isAuthenticated = false;
-            _sessionToken = "";
-            _sessionEmail = "";
-            UserLabel.Text = "Not signed in";
-            AuthDot.Background = (Brush)FindResource("AmberBrush");
-            AuthDot.ToolTip = "Sign in to unlock all features";
-
-            BtnSignIn.Visibility = Visibility.Visible;
-            BtnSignOut.Visibility = Visibility.Collapsed;
-            BtnBuyCredits.Visibility = Visibility.Collapsed;
-            SectionLabel.Text = "ACCOUNT";
-
-            StatusText.Text = "Ready — Guest";
-            NavigateTo("Chat");
-        }
-
         // ── Navigation ────────────────────────────────────────────────────────
 
         private void Nav_Click(object sender, RoutedEventArgs e)
@@ -88,14 +67,10 @@ namespace ThalamusApp
 
         private void NavigateTo(string mode)
         {
-            switch (mode)
+            if (mode == "Logout")
             {
-                case "SignIn":
-                    _ = SignInAsync();
-                    return;
-                case "Logout":
-                    SignOut();
-                    return;
+                SignOut();
+                return;
             }
 
             // Toggle panel visibility
@@ -115,42 +90,19 @@ namespace ThalamusApp
             BtnSandbox.Style  = mode == "Sandbox"  ? active : inactive;
 
             ModeLabel.Text = mode == "Code" ? "Build Mode" : mode + " Mode";
-            StatusText.Text = _isAuthenticated ? $"Ready — {mode}" : "Ready — Guest";
+            StatusText.Text = $"Ready — {mode}";
         }
 
         /// <summary>
-        /// Show the login dialog for web-based auth (opens browser to website).
+        /// Sign out, then require a fresh sign-in. There is no guest mode, so
+        /// cancelling the login exits the app rather than dropping to a guest UI.
         /// </summary>
-        private async System.Threading.Tasks.Task SignInAsync()
-        {
-            await System.Threading.Tasks.Task.Yield();
-            var login = new LoginWindow();
-            login.Owner = this;
-            login.ShowDialog();
-
-            if (login.LoginSucceeded)
-            {
-                AuthManager.SaveToken(login.Token, login.Email);
-                SetSession(login.Token, login.Email);
-            }
-        }
-
         private void SignOut()
         {
             AuthManager.ClearToken();
-
-            // Reset to guest mode
             _isAuthenticated = false;
             _sessionToken = "";
             _sessionEmail = "";
-            UserLabel.Text = "Not signed in";
-            AuthDot.Background = (Brush)FindResource("AmberBrush");
-            AuthDot.ToolTip = "Sign in to unlock all features";
-
-            BtnSignIn.Visibility = Visibility.Visible;
-            BtnSignOut.Visibility = Visibility.Collapsed;
-            BtnBuyCredits.Visibility = Visibility.Collapsed;
-            SectionLabel.Text = "ACCOUNT";
 
             // Clear tokens from mode views
             CodePanel.SetToken("");
@@ -158,8 +110,16 @@ namespace ThalamusApp
             ResearchPanel.SetToken("");
             StudyPanel.SetToken("");
 
-            StatusText.Text = "Ready — Guest";
-            NavigateTo("Chat");
+            var login = new LoginWindow { Owner = this };
+            if (login.ShowDialog() == true && login.LoginSucceeded)
+            {
+                AuthManager.SaveToken(login.Token, login.Email);
+                SetSession(login.Token, login.Email);
+            }
+            else
+            {
+                Application.Current.Shutdown();
+            }
         }
 
         /// <summary>
@@ -233,5 +193,87 @@ namespace ThalamusApp
         {
             _http.Dispose();
         }
+
+        // ── Borderless maximize fix ───────────────────────────────────────────
+        // A WindowStyle="None" window maximizes over the entire monitor, spilling
+        // past the screen edge and pushing the custom titlebar (and its buttons)
+        // off-screen so the window can't be closed. Hook WM_GETMINMAXINFO and clamp
+        // the maximized bounds to the monitor WORK AREA so the taskbar and titlebar
+        // stay on-screen.
+
+        protected override void OnSourceInitialized(EventArgs e)
+        {
+            base.OnSourceInitialized(e);
+            var hwnd = new WindowInteropHelper(this).Handle;
+            HwndSource.FromHwnd(hwnd)?.AddHook(WndProc);
+        }
+
+        private const int WM_GETMINMAXINFO = 0x0024;
+        private const int MONITOR_DEFAULTTONEAREST = 0x00000002;
+
+        private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (msg != WM_GETMINMAXINFO) return IntPtr.Zero;
+
+            var monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            if (monitor != IntPtr.Zero)
+            {
+                var mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam);
+                var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+                GetMonitorInfo(monitor, ref mi);
+                RECT work = mi.rcWork, screen = mi.rcMonitor;
+
+                // Maximized size/position, in coordinates relative to the monitor,
+                // using the work area (taskbar excluded) instead of the full screen.
+                mmi.ptMaxPosition.x = work.left - screen.left;
+                mmi.ptMaxPosition.y = work.top - screen.top;
+                mmi.ptMaxSize.x = work.right - work.left;
+                mmi.ptMaxSize.y = work.bottom - work.top;
+
+                // Our hook suppresses WPF's own WM_GETMINMAXINFO handling, so carry
+                // the window's minimum size across (converted to device pixels).
+                var src = HwndSource.FromHwnd(hwnd);
+                double dpiX = src?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+                double dpiY = src?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+                mmi.ptMinTrackSize.x = (int)(MinWidth * dpiX);
+                mmi.ptMinTrackSize.y = (int)(MinHeight * dpiY);
+
+                Marshal.StructureToPtr(mmi, lParam, true);
+            }
+
+            handled = true;
+            return IntPtr.Zero;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT { public int x; public int y; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT { public int left; public int top; public int right; public int bottom; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MINMAXINFO
+        {
+            public POINT ptReserved;
+            public POINT ptMaxSize;
+            public POINT ptMaxPosition;
+            public POINT ptMinTrackSize;
+            public POINT ptMaxTrackSize;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MONITORINFO
+        {
+            public int cbSize;
+            public RECT rcMonitor;
+            public RECT rcWork;
+            public uint dwFlags;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromWindow(IntPtr hwnd, int dwFlags);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
     }
 }

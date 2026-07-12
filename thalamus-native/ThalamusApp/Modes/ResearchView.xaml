@@ -19,8 +19,8 @@
                         <Border x:Name="Bd" CornerRadius="10">
                             <Border.Background>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                    <GradientStop Color="#3b82f6" Offset="0"/>
-                                    <GradientStop Color="#6366f1" Offset="1"/>
+                                    <GradientStop Color="#0088f1" Offset="0"/>
+                                    <GradientStop Color="#0073d2" Offset="1"/>
                                 </LinearGradientBrush>
                             </Border.Background>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -168,8 +168,8 @@
                                     HorizontalAlignment="Left" Width="0">
                                 <Border.Background>
                                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                        <GradientStop Color="#3b82f6" Offset="0"/>
-                                        <GradientStop Color="#6366f1" Offset="1"/>
+                                        <GradientStop Color="#0088f1" Offset="0"/>
+                                        <GradientStop Color="#0073d2" Offset="1"/>
                                     </LinearGradientBrush>
                                 </Border.Background>
                             </Border>
