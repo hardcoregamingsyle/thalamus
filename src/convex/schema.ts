@@ -609,6 +609,26 @@ const schema = defineSchema(
       .index("by_agent", ["agentName"])
       .index("by_agent_and_mode", ["agentName", "runMode"]),
 
+    // Payment ledger (Gumroad). One row per sale — the sale_id is the replay
+    // guard: a sale can only ever credit AgentBucks once, no matter how many
+    // pings/claims arrive. "unclaimed" rows exist when we couldn't match the
+    // buyer to an account; the license-key claim flow resolves them.
+    payments: defineTable({
+      provider: v.string(),            // "gumroad"
+      saleId: v.string(),              // Gumroad sale_id — unique per purchase
+      licenseKeyHash: v.optional(v.string()), // SHA-256 of the license key
+      email: v.string(),               // buyer email as reported by provider
+      userId: v.optional(v.id("users")),
+      priceCents: v.number(),
+      bucksCredited: v.number(),
+      status: v.string(),              // "credited" | "unclaimed"
+      createdAt: v.number(),
+      claimedAt: v.optional(v.number()),
+    })
+      .index("by_sale_id", ["saleId"])
+      .index("by_user", ["userId"])
+      .index("by_email", ["email"]),
+
     // Short-lived OAuth login states (CSRF protection + redirect binding for
     // Google/GitHub sign-in). Rows are deleted on consumption; stale rows are
     // ignored via createdAt TTL.
