@@ -855,6 +855,51 @@ function ModeSelection({ signOut, theme, toggleTheme }: { user: unknown; signOut
   );
 }
 
+// ── Sponsored ad card (Gravity) ───────────────────────────────────────────────
+interface GravityAd {
+  adText?: string;
+  title?: string;
+  brandName?: string;
+  cta?: string;
+  url?: string;
+  favicon?: string;
+  clickUrl?: string;
+  impUrl?: string;
+}
+
+function SponsoredAdCard({ ad }: { ad: GravityAd }) {
+  const impressionFiredRef = useRef(false);
+
+  // Fire the impression pixel exactly once when the card first renders
+  useEffect(() => {
+    if (impressionFiredRef.current || !ad.impUrl) return;
+    impressionFiredRef.current = true;
+    // window.Image — the DOM constructor (lucide-react's Image icon shadows the global here)
+    new window.Image().src = ad.impUrl;
+  }, [ad.impUrl]);
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex justify-start">
+      <a
+        href={ad.clickUrl ?? ad.url}
+        target="_blank"
+        rel="noopener noreferrer sponsored"
+        className="block max-w-[82%] rounded-2xl px-4 py-3 text-xs leading-relaxed bg-card border border-border text-foreground hover:border-primary/40 transition-colors"
+      >
+        <p className="text-[9px] font-bold text-muted-foreground/60 tracking-widest uppercase mb-1">Sponsored</p>
+        <div className="flex items-start gap-2">
+          {ad.favicon && <img src={ad.favicon} alt="" className="w-4 h-4 rounded shrink-0 mt-0.5" />}
+          <div className="min-w-0">
+            <p className="font-bold text-foreground">{ad.title ?? ad.brandName}</p>
+            {ad.adText && <p className="text-muted-foreground mt-0.5">{ad.adText}</p>}
+            {ad.cta && <span className="inline-block mt-1.5 text-primary font-bold">{ad.cta} →</span>}
+          </div>
+        </div>
+      </a>
+    </motion.div>
+  );
+}
+
 function PortalDesktop() {
   const { isLoading, isAuthenticated, user, signOut, token } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -887,6 +932,8 @@ function PortalDesktop() {
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showStudyProfile, setShowStudyProfile] = useState(false);
+  const [sponsoredAd, setSponsoredAd] = useState<GravityAd | null>(null);
+  const adRequestedRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -934,6 +981,7 @@ function PortalDesktop() {
   const sendMessage = useAction(api.ai.sendMessage);
   const sendStudyMessage = useAction(api.study.sendStudyMessage);
   const generateTitle = useAction(api.ai.generateConversationTitle);
+  const requestAd = useAction(api.gravityAds.requestAd);
   const addTextResource = useMutation(api.studyHelpers.addTextResource);
   const deleteResource = useMutation(api.studyHelpers.deleteResource);
   const searchAndAddResource = useAction(api.study.searchAndAddResource);
@@ -1023,6 +1071,8 @@ function PortalDesktop() {
     setThinkingContent("");
     setInFlightUserContent(null);
     prevMessageCountRef.current = 0;
+    adRequestedRef.current = false;
+    setSponsoredAd(null);
     navigate(`/portal/${mode}`, { replace: false });
     // Show study profile setup if entering study mode without a profile
     if (mode === "study" && !studyGrade && !studyBoard) {
@@ -1032,6 +1082,8 @@ function PortalDesktop() {
 
   const handleNewConversation = async () => {
     if (!token) return;
+    adRequestedRef.current = false;
+    setSponsoredAd(null);
     try {
       const result = await createConversation({ title: `${(activeMode ?? "chat").toUpperCase()}_${Date.now().toString(36).toUpperCase()}`, mode: activeMode ?? "chat", token }) as { id: Id<"conversations">; customId: string } | Id<"conversations">;
       const id = typeof result === "object" && "id" in result ? result.id : result as Id<"conversations">;
@@ -1046,6 +1098,8 @@ function PortalDesktop() {
     setThinkingContent("");
     setInFlightUserContent(null);
     prevMessageCountRef.current = 0;
+    adRequestedRef.current = false;
+    setSponsoredAd(null);
     setActiveConvId(conv._id);
     if (conv.customId) navigate(`/portal/${activeMode}/${conv.customId}`, { replace: false });
   };
@@ -1128,6 +1182,7 @@ function PortalDesktop() {
     setThinkingContent("");
     setStreamingContent(null);
 
+    let finalAssistantText = "";
     try {
       const response = await fetch(`${siteUrl}/stream-chat`, {
         method: "POST",
@@ -1196,6 +1251,7 @@ function PortalDesktop() {
         }
       }
       console.log("Stream read complete. accumulated length:", accumulated.length);
+      finalAssistantText = accumulated;
       // The stream endpoint saves the assistant response before streaming it
       // back for UX, so clear the temporary bubble after the stream finishes.
       setStreamingContent(null);
@@ -1216,6 +1272,24 @@ function PortalDesktop() {
       } finally {
         setIsThinking(false);
       }
+    }
+
+    // Request a contextual sponsored card after the first completed response in
+    // this conversation session. Fire-and-forget — ads must never break chat.
+    if (!adRequestedRef.current) {
+      adRequestedRef.current = true;
+      const adMessages = [
+        ...historyMsgs,
+        { role: "user", content: msg },
+        ...(finalAssistantText ? [{ role: "assistant", content: finalAssistantText }] : []),
+      ].map(m => ({ role: m.role, content: m.content.slice(0, 1000) }));
+      requestAd({
+        token: localStorage.getItem("agentai_session_token") ?? undefined,
+        messages: adMessages,
+        sessionId: convId ?? undefined,
+      })
+        .then(ad => { if (ad) setSponsoredAd(ad as GravityAd); })
+        .catch(() => {});
     }
 
     if (!activeConvId) {
@@ -1616,6 +1690,9 @@ function PortalDesktop() {
                         )}
                       </div>
                     </motion.div>
+                  )}
+                  {sponsoredAd && activeConvId && streamingContent === null && !isThinking && (
+                    <SponsoredAdCard ad={sponsoredAd} />
                   )}
                   {isThinking && streamingContent === null && (
                     <motion.div

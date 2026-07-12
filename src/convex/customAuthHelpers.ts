@@ -1,5 +1,6 @@
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 
 // Generate a random 6-char alphanumeric code (all caps)
 function generateReferralCode(): string {
@@ -9,6 +10,40 @@ function generateReferralCode(): string {
     code += chars[Math.floor(Math.random() * chars.length)];
   }
   return code;
+}
+
+// Single source of truth for session issuance — used by OTP verification and
+// the OAuth (Google/GitHub) callbacks so token format, expiry, and the
+// max-10-sessions policy can never drift apart.
+async function issueSession(ctx: MutationCtx, userId: Id<"users">, email: string): Promise<{ token: string; referralSpins: number }> {
+  const token = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
+
+  // Clean up expired sessions for this user (keep up to 10 active sessions for multi-device)
+  const existingSessions = await ctx.db
+    .query("customSessions")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .take(50);
+
+  const now = Date.now();
+  const expiredSessions = existingSessions.filter(s => s.expiresAt < now);
+  await Promise.all(expiredSessions.map(s => ctx.db.delete(s._id)));
+
+  // If still too many active sessions, delete the oldest ones (keep 9, add 1 new = 10 max)
+  const activeSessions = existingSessions.filter(s => s.expiresAt >= now);
+  if (activeSessions.length >= 10) {
+    const toDelete = activeSessions.slice(0, activeSessions.length - 9);
+    await Promise.all(toDelete.map(s => ctx.db.delete(s._id)));
+  }
+
+  await ctx.db.insert("customSessions", { userId, token, email, expiresAt });
+
+  const finalUser = await ctx.db.get(userId);
+  const referralSpins = (finalUser as { referralSpins?: number } | null)?.referralSpins ?? 0;
+  return { token, referralSpins };
 }
 
 // Store OTP code
@@ -122,43 +157,84 @@ export const verifyAndCreateSession = internalMutation({
       }
     }
 
-    // Generate session token
-    const token = Array.from(crypto.getRandomValues(new Uint8Array(32)))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    const { token, referralSpins } = await issueSession(ctx, userId as Id<"users">, args.email);
+    return { token, userId, isNewUser, referralSpins };
+  },
+});
 
-    const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
+// ── OAuth sign-in (Google / GitHub) — see http.ts /auth/* routes ─────────────
 
-    // Clean up expired sessions for this user (keep up to 10 active sessions for multi-device)
-    const existingSessions = await ctx.db
-      .query("customSessions")
-      .withIndex("by_user", (q) => q.eq("userId", userId as never))
-      .take(50);
-    
-    // Delete expired sessions
-    const now = Date.now();
-    const expiredSessions = existingSessions.filter(s => s.expiresAt < now);
-    await Promise.all(expiredSessions.map(s => ctx.db.delete(s._id)));
-    
-    // If still too many active sessions, delete the oldest ones (keep 9, add 1 new = 10 max)
-    const activeSessions = existingSessions.filter(s => s.expiresAt >= now);
-    if (activeSessions.length >= 10) {
-      const toDelete = activeSessions.slice(0, activeSessions.length - 9);
-      await Promise.all(toDelete.map(s => ctx.db.delete(s._id)));
+export const createOAuthState = internalMutation({
+  args: { state: v.string(), redirect: v.string(), provider: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("oauthStates", { ...args, createdAt: Date.now() });
+  },
+});
+
+export const consumeOAuthState = internalMutation({
+  args: { state: v.string() },
+  handler: async (ctx, args): Promise<{ redirect: string; provider: string } | null> => {
+    const row = await ctx.db
+      .query("oauthStates")
+      .withIndex("by_state", (q) => q.eq("state", args.state))
+      .first();
+    if (!row) return null;
+    await ctx.db.delete(row._id); // single-use, always
+    if (Date.now() - row.createdAt > 10 * 60 * 1000) return null; // 10-minute TTL
+    return { redirect: row.redirect, provider: row.provider };
+  },
+});
+
+// Get-or-create a user from a verified OAuth identity, then issue a session.
+// The email MUST already be verified by the provider — callers enforce that.
+export const createOAuthSession = internalMutation({
+  args: { email: v.string(), name: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<{ token: string; isNewUser: boolean }> => {
+    const email = args.email.toLowerCase().trim();
+
+    const existingUsers = await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", email))
+      .take(1);
+
+    let userId: Id<"users">;
+    let isNewUser = false;
+
+    if (existingUsers.length > 0) {
+      userId = existingUsers[0]._id;
+    } else {
+      isNewUser = true;
+      let newReferralCode = generateReferralCode();
+      for (let i = 0; i < 5; i++) {
+        const existing = await ctx.db
+          .query("users")
+          .withIndex("by_referral_code", (q) => q.eq("referralCode", newReferralCode))
+          .take(1);
+        if (existing.length === 0) break;
+        newReferralCode = generateReferralCode();
+      }
+
+      // Same school-account detection as the OTP path
+      const emailDomain = email.split("@")[1] ?? "";
+      const emailUsername = email.split("@")[0] ?? "";
+      const isSchoolAccount = emailDomain === "stkabir.co.in";
+      const isTeacher = isSchoolAccount && /^[a-zA-Z]/.test(emailUsername);
+
+      userId = await ctx.db.insert("users", {
+        email,
+        name: args.name?.trim() || email.split("@")[0],
+        totalUsageCents: 0,
+        dailyAgentBucks: 10_000_000,
+        purchasedAgentBucks: 0,
+        referralCode: newReferralCode,
+        referralSpins: 0,
+        ...(isSchoolAccount ? { isStudyFree: true } : {}),
+        ...(isTeacher ? { isTeacher: true } : {}),
+      });
     }
 
-    // Create new session
-    await ctx.db.insert("customSessions", {
-      userId: userId as never,
-      token,
-      email: args.email,
-      expiresAt,
-    });
-
-    // Get referralSpins for the user
-    const finalUser = await ctx.db.get(userId as never);
-    const referralSpins = (finalUser as { referralSpins?: number } | null)?.referralSpins ?? 0;
-    return { token, userId, isNewUser, referralSpins };
+    const { token } = await issueSession(ctx, userId, email);
+    return { token, isNewUser };
   },
 });
 
