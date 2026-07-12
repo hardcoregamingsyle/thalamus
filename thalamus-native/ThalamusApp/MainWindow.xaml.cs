@@ -14,7 +14,7 @@ namespace ThalamusApp
 {
     public partial class MainWindow : Window
     {
-        private const string APP_VERSION = "2.3.2";
+        private const string APP_VERSION = "2.3.3";
         private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
         private bool _isAuthenticated;
 
@@ -25,6 +25,16 @@ namespace ThalamusApp
         public MainWindow()
         {
             InitializeComponent();
+            // A borderless CenterScreen window that is taller/wider than the monitor
+            // work area gets centered with its top above y=0, which pushes the custom
+            // 38px titlebar (min/max/close) off the top edge — the header "disappears".
+            // The login window is short enough to fit, so the header only vanishes once signed in.
+            // Clamp the startup size to the work area (both are DIPs) so CenterScreen
+            // always lands the window fully on-screen. Maximize is handled separately
+            // by the WM_GETMINMAXINFO hook below.
+            var wa = SystemParameters.WorkArea;
+            if (Height > wa.Height) Height = wa.Height;
+            if (Width > wa.Width) Width = wa.Width;
             VersionLabel.Text = $"v{APP_VERSION}";
             _ = Task.Run(CheckForUpdatesAsync);
         }
