@@ -1469,6 +1469,7 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
   const [showToGuests, setShowToGuests] = useState(true);
   const [showToFreeUsers, setShowToFreeUsers] = useState(true);
   const [showToPaidUsers, setShowToPaidUsers] = useState(false);
+  const [restrictedCategories, setRestrictedCategories] = useState("");
   const [saving, setSaving] = useState(false);
   const [showKey, setShowKey] = useState(false);
 
@@ -1482,6 +1483,7 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
       setShowToGuests(existing.showToGuests ?? true);
       setShowToFreeUsers(existing.showToFreeUsers ?? true);
       setShowToPaidUsers(existing.showToPaidUsers ?? false);
+      setRestrictedCategories((existing.restrictedCategories ?? []).join("\n"));
     }
   }, [existing]);
 
@@ -1490,7 +1492,8 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
     try {
       await saveConfig({ adminToken, apiKey, publisherId: publisherId || undefined,
         adUnitIds: adUnitIds.trim() ? adUnitIds.split("\n").map(s => s.trim()).filter(Boolean) : undefined,
-        isEnabled, showToGuests, showToFreeUsers, showToPaidUsers });
+        isEnabled, showToGuests, showToFreeUsers, showToPaidUsers,
+        restrictedCategories: restrictedCategories.trim() ? restrictedCategories.split("\n").map(s => s.trim()).filter(Boolean) : undefined });
       toast.success("GravityAds config saved");
     } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed"); }
     finally { setSaving(false); }
@@ -1528,6 +1531,11 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
           <label className="text-xs font-bold text-muted-foreground mb-1.5 block">AD UNIT IDs <span className="font-normal">(one per line)</span></label>
           <textarea value={adUnitIds} onChange={e => setAdUnitIds(e.target.value)} placeholder={"ca-app-pub-xxx/yyy\nca-app-pub-xxx/zzz"} rows={3}
             className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors resize-none" />
+        </div>
+        <div>
+          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">RESTRICTED ADVERTISER CATEGORIES <span className="font-normal">(one per line — never serve ads from these)</span></label>
+          <textarea value={restrictedCategories} onChange={e => setRestrictedCategories(e.target.value)} placeholder={"AI coding assistants\nThalamus alternatives"} rows={4}
+            className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors resize-none" />
         </div>
         <div className="space-y-2.5">
           <p className="text-xs font-bold text-muted-foreground">SHOW ADS TO</p>

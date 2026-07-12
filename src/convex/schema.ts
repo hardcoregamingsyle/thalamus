@@ -618,6 +618,10 @@ const schema = defineSchema(
       showToGuests: v.boolean(),    // Show ads to unauthenticated users
       showToFreeUsers: v.boolean(), // Show ads to authenticated free-tier users
       showToPaidUsers: v.boolean(), // Show ads to paid users
+      // Advertiser categories we refuse to serve (competitors: AI coding
+      // platforms, assistants, Thalamus alternatives). Applied when ad
+      // requests are made to the GravityAds API.
+      restrictedCategories: v.optional(v.array(v.string())),
       updatedAt: v.number(),
       updatedBy: v.optional(v.string()),
     }),
