@@ -4,33 +4,7 @@
              Background="{StaticResource ContentBgGradient}">
 
     <UserControl.Resources>
-
-        <Style x:Key="ThinScrollBar" TargetType="ScrollBar">
-            <Setter Property="Width" Value="4"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ScrollBar">
-                        <Track x:Name="PART_Track" IsDirectionReversed="true">
-                            <Track.DecreaseRepeatButton>
-                                <RepeatButton Command="ScrollBar.LineUpCommand" Opacity="0" Height="0"/>
-                            </Track.DecreaseRepeatButton>
-                            <Track.Thumb>
-                                <Thumb>
-                                    <Thumb.Template>
-                                        <ControlTemplate TargetType="Thumb">
-                                            <Border Background="#1e3a5f" CornerRadius="2" Opacity="0.7"/>
-                                        </ControlTemplate>
-                                    </Thumb.Template>
-                                </Thumb>
-                            </Track.Thumb>
-                            <Track.IncreaseRepeatButton>
-                                <RepeatButton Command="ScrollBar.LineDownCommand" Opacity="0" Height="0"/>
-                            </Track.IncreaseRepeatButton>
-                        </Track>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <!-- ThinScrollBar, Card etc. come from Styles/Theme.xaml -->
 
         <Style x:Key="BuildBtn" TargetType="Button">
             <Setter Property="Height" Value="40"/>
@@ -66,11 +40,12 @@
             </Setter>
         </Style>
 
+        <!-- Shared ThemedInput with the Build mode's green caret/focus accent -->
         <Style x:Key="CodeInputStyle" TargetType="TextBox">
-            <Setter Property="Background" Value="#080f22"/>
+            <Setter Property="Background" Value="{StaticResource BgInputBrush}"/>
             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
             <Setter Property="CaretBrush" Value="{StaticResource GreenBrush}"/>
-            <Setter Property="BorderBrush" Value="#1e3a5f"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="Padding" Value="14,10"/>
@@ -85,7 +60,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsFocused" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="#10b981"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource GreenBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -167,9 +142,8 @@
             <StackPanel x:Name="BuildPanel" Margin="0,0,12,0">
 
                 <!-- Welcome card -->
-                <Border x:Name="BuildWelcomeCard"
-                        Background="#0a1628" BorderBrush="#1e3a5f" BorderThickness="1"
-                        CornerRadius="14" Padding="28,22">
+                <Border x:Name="BuildWelcomeCard" Style="{StaticResource Card}"
+                        Padding="28,22">
                     <StackPanel>
                         <Border Width="44" Height="44" CornerRadius="11"
                                 HorizontalAlignment="Left" Margin="0,0,0,14">

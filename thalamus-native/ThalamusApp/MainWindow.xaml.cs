@@ -92,6 +92,7 @@ namespace ThalamusApp
             ChatPanel.Visibility     = mode == "Chat"     ? Visibility.Visible : Visibility.Collapsed;
             ResearchPanel.Visibility = mode == "Research" ? Visibility.Visible : Visibility.Collapsed;
             StudyPanel.Visibility    = mode == "Study"    ? Visibility.Visible : Visibility.Collapsed;
+            SandboxPanel.Visibility  = mode == "Sandbox"  ? Visibility.Visible : Visibility.Collapsed;
 
             // Update nav highlights
             var inactive = (Style)FindResource("SidebarBtn");
@@ -100,6 +101,7 @@ namespace ThalamusApp
             BtnChat.Style     = mode == "Chat"     ? active : inactive;
             BtnResearch.Style = mode == "Research" ? active : inactive;
             BtnStudy.Style    = mode == "Study"    ? active : inactive;
+            BtnSandbox.Style  = mode == "Sandbox"  ? active : inactive;
 
             ModeLabel.Text = mode == "Code" ? "Build Mode" : mode + " Mode";
             StatusText.Text = _isAuthenticated ? $"Ready — {mode}" : "Ready — Guest";

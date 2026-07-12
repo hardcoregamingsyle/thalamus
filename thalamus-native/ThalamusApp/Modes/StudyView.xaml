@@ -4,32 +4,7 @@
              Background="{StaticResource ContentBgGradient}">
 
     <UserControl.Resources>
-        <Style x:Key="ThinScrollBar" TargetType="ScrollBar">
-            <Setter Property="Width" Value="4"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ScrollBar">
-                        <Track x:Name="PART_Track" IsDirectionReversed="true">
-                            <Track.DecreaseRepeatButton>
-                                <RepeatButton Command="ScrollBar.LineUpCommand" Opacity="0" Height="0"/>
-                            </Track.DecreaseRepeatButton>
-                            <Track.Thumb>
-                                <Thumb>
-                                    <Thumb.Template>
-                                        <ControlTemplate TargetType="Thumb">
-                                            <Border Background="#1e3a5f" CornerRadius="2" Opacity="0.7"/>
-                                        </ControlTemplate>
-                                    </Thumb.Template>
-                                </Thumb>
-                            </Track.Thumb>
-                            <Track.IncreaseRepeatButton>
-                                <RepeatButton Command="ScrollBar.LineDownCommand" Opacity="0" Height="0"/>
-                            </Track.IncreaseRepeatButton>
-                        </Track>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <!-- ThinScrollBar, Card etc. come from Styles/Theme.xaml -->
 
         <Style x:Key="StudyBtn" TargetType="Button">
             <Setter Property="Height" Value="40"/>
@@ -65,11 +40,12 @@
             </Setter>
         </Style>
 
+        <!-- Shared ThemedInput with the Study mode's purple caret/focus accent -->
         <Style x:Key="StudyInputStyle" TargetType="TextBox">
-            <Setter Property="Background" Value="#080f22"/>
+            <Setter Property="Background" Value="{StaticResource BgInputBrush}"/>
             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-            <Setter Property="CaretBrush" Value="#8b5cf6"/>
-            <Setter Property="BorderBrush" Value="#1e3a5f"/>
+            <Setter Property="CaretBrush" Value="{StaticResource PurpleBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="Padding" Value="14,10"/>
@@ -84,7 +60,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsFocused" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="#8b5cf6"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource PurpleBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -230,9 +206,8 @@
             <StackPanel x:Name="StudyPanel" Margin="0,0,12,0">
 
                 <!-- Welcome card -->
-                <Border x:Name="StudyWelcomeCard"
-                        Background="#0a1628" BorderBrush="#1e3a5f" BorderThickness="1"
-                        CornerRadius="14" Padding="28,22">
+                <Border x:Name="StudyWelcomeCard" Style="{StaticResource Card}"
+                        Padding="28,22">
                     <StackPanel>
                         <Border Width="44" Height="44" CornerRadius="11" HorizontalAlignment="Left" Margin="0,0,0,14">
                             <Border.Background>
@@ -300,7 +275,8 @@
                         <TextBlock Text="T" FontSize="13" FontWeight="Black" Foreground="White"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
-                    <Border Grid.Column="2" Background="#0a1628" BorderBrush="#1e3a5f" BorderThickness="1"
+                    <Border Grid.Column="2" Background="{StaticResource BgCardBrush}"
+                            BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1"
                             CornerRadius="4,12,12,12" Padding="14,12"
                             HorizontalAlignment="Left" Width="70">
                         <StackPanel Orientation="Horizontal">
