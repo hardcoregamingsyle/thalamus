@@ -4,7 +4,7 @@
              Background="{StaticResource ContentBgGradient}">
 
     <UserControl.Resources>
-        <!-- ThinScrollBar, ThemedInput, Card etc. come from Styles/Theme.xaml -->
+        <!-- ThinScrollBar, ThemedInput, ExampleChip etc. come from Styles/Theme.xaml -->
 
         <!-- Send button -->
         <Style x:Key="SendBtn" TargetType="Button">
@@ -43,7 +43,7 @@
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="56"/>   <!-- Header -->
+            <RowDefinition Height="52"/>   <!-- Header -->
             <RowDefinition Height="*"/>    <!-- Messages -->
             <RowDefinition Height="Auto"/> <!-- Input -->
         </Grid.RowDefinitions>
@@ -62,20 +62,21 @@
                                     <GradientStop Color="#0073d2" Offset="1"/>
                                 </LinearGradientBrush>
                             </Border.Background>
-                            <Path Data="M8 4 C8 4 12 6 12 10 C12 14 8 16 8 16 C8 16 4 14 4 10 C4 6 8 4 8 4 Z"
-                                  Fill="White" Width="9" Height="9" Stretch="Uniform"
+                            <Path Data="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                                  Stroke="White" StrokeThickness="1.6" Fill="Transparent"
+                                  Width="10" Height="10" Stretch="Uniform"
                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <TextBlock Text="Chat" FontSize="14" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextPrimaryBrush}"
                                    VerticalAlignment="Center"/>
                     </StackPanel>
-                    <TextBlock Text="Ask anything — get clear, accurate answers"
-                               FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}"
+                    <TextBlock Text="Ask anything — clear, accurate answers"
+                               FontSize="10.5" Foreground="{StaticResource TextMutedBrush}"
                                Margin="29,2,0,0"/>
                 </StackPanel>
 
-                <!-- Session info badge -->
+                <!-- Status pill -->
                 <Border HorizontalAlignment="Right" VerticalAlignment="Center"
                         CornerRadius="6" Background="#0d1f3c"
                         BorderBrush="#1e3a5f" BorderThickness="1" Padding="10,4">
@@ -83,129 +84,109 @@
                         <Ellipse Width="5" Height="5" Fill="{StaticResource GreenBrush}"
                                  VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <TextBlock x:Name="ChatCreditsLabel" Text="Ready"
-                                   FontSize="9.5" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                   FontSize="9.5" FontFamily="{StaticResource MonoFontFamily}"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
                     </StackPanel>
                 </Border>
             </Grid>
         </Border>
 
         <!-- ═══ MESSAGES ═══ -->
-        <ScrollViewer Grid.Row="1" x:Name="MessagesScroll"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled"
-                      Padding="22,16,6,8">
-            <ScrollViewer.Resources>
-                <Style TargetType="ScrollBar" BasedOn="{StaticResource ThinScrollBar}"/>
-            </ScrollViewer.Resources>
-            <StackPanel x:Name="MessagesPanel" Margin="0,0,12,0">
+        <Grid Grid.Row="1">
+            <ScrollViewer x:Name="MessagesScroll"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Padding="24,18,12,10">
+                <ScrollViewer.Resources>
+                    <Style TargetType="ScrollBar" BasedOn="{StaticResource ThinScrollBar}"/>
+                </ScrollViewer.Resources>
+                <!-- Bounded, centered conversation column (mirrors the site's max-w-4xl) -->
+                <StackPanel x:Name="MessagesPanel" MaxWidth="820" Margin="0,0,4,0">
 
-                <!-- Welcome message -->
-                <Grid x:Name="WelcomeMsg" Margin="0,0,0,18">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="32"/>
-                        <ColumnDefinition Width="10"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" VerticalAlignment="Top">
-                        <Border.Background>
-                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Color="#0088f1" Offset="0"/>
-                                <GradientStop Color="#0073d2" Offset="1"/>
-                            </LinearGradientBrush>
-                        </Border.Background>
-                        <TextBlock Text="T" FontSize="13" FontWeight="Black"
-                                   Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
-                    <Border Grid.Column="2"
-                            Background="{StaticResource BgCardBrush}"
-                            BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1"
-                            CornerRadius="4,12,12,12" Padding="14,10">
-                        <StackPanel>
-                            <TextBlock Text="Hello! I'm Thalamus AI."
-                                       FontSize="13" FontWeight="SemiBold"
-                                       Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,4"/>
-                            <TextBlock TextWrapping="Wrap" FontSize="12.5"
-                                       Foreground="{StaticResource TextSecondaryBrush}" LineHeight="19">
-                                I can help with anything — questions, writing, planning, code, or just conversation. What would you like to do?
-                            </TextBlock>
-                        </StackPanel>
-                    </Border>
-                </Grid>
+                    <!-- Typing indicator (no avatar, left-aligned dots) -->
+                    <StackPanel x:Name="TypingRow" Orientation="Horizontal"
+                                Visibility="Collapsed" Margin="2,4,0,16">
+                        <Ellipse Width="6" Height="6" Fill="{StaticResource TextMutedBrush}" Margin="0,0,4,0">
+                            <Ellipse.Triggers>
+                                <EventTrigger RoutedEvent="Loaded">
+                                    <BeginStoryboard>
+                                        <Storyboard RepeatBehavior="Forever">
+                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                             From="0.3" To="1" Duration="0:0:0.5"
+                                                             AutoReverse="True"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </EventTrigger>
+                            </Ellipse.Triggers>
+                        </Ellipse>
+                        <Ellipse Width="6" Height="6" Fill="{StaticResource TextMutedBrush}" Margin="0,0,4,0" Opacity="0.3">
+                            <Ellipse.Triggers>
+                                <EventTrigger RoutedEvent="Loaded">
+                                    <BeginStoryboard>
+                                        <Storyboard RepeatBehavior="Forever" BeginTime="0:0:0.17">
+                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                             From="0.3" To="1" Duration="0:0:0.5"
+                                                             AutoReverse="True"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </EventTrigger>
+                            </Ellipse.Triggers>
+                        </Ellipse>
+                        <Ellipse Width="6" Height="6" Fill="{StaticResource TextMutedBrush}" Opacity="0.3">
+                            <Ellipse.Triggers>
+                                <EventTrigger RoutedEvent="Loaded">
+                                    <BeginStoryboard>
+                                        <Storyboard RepeatBehavior="Forever" BeginTime="0:0:0.34">
+                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                             From="0.3" To="1" Duration="0:0:0.5"
+                                                             AutoReverse="True"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </EventTrigger>
+                            </Ellipse.Triggers>
+                        </Ellipse>
+                    </StackPanel>
 
-                <!-- Typing indicator (hidden by default) -->
-                <Grid x:Name="TypingRow" Visibility="Collapsed" Margin="0,0,0,18">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="32"/>
-                        <ColumnDefinition Width="10"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" VerticalAlignment="Top">
-                        <Border.Background>
-                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Color="#0088f1" Offset="0"/>
-                                <GradientStop Color="#0073d2" Offset="1"/>
-                            </LinearGradientBrush>
-                        </Border.Background>
-                        <TextBlock Text="T" FontSize="13" FontWeight="Black"
-                                   Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
-                    <Border Grid.Column="2"
-                            Background="{StaticResource BgCardBrush}"
-                            BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1"
-                            CornerRadius="4,12,12,12" Padding="14,12"
-                            HorizontalAlignment="Left" Width="70">
-                        <StackPanel Orientation="Horizontal">
-                            <Ellipse x:Name="TDot1" Width="6" Height="6" Fill="{StaticResource TextMutedBrush}" Margin="0,0,4,0">
-                                <Ellipse.Triggers>
-                                    <EventTrigger RoutedEvent="Loaded">
-                                        <BeginStoryboard>
-                                            <Storyboard RepeatBehavior="Forever">
-                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                                 From="0.3" To="1" Duration="0:0:0.5"
-                                                                 AutoReverse="True"/>
-                                            </Storyboard>
-                                        </BeginStoryboard>
-                                    </EventTrigger>
-                                </Ellipse.Triggers>
-                            </Ellipse>
-                            <Ellipse x:Name="TDot2" Width="6" Height="6" Fill="{StaticResource TextMutedBrush}" Margin="0,0,4,0" Opacity="0.3">
-                                <Ellipse.Triggers>
-                                    <EventTrigger RoutedEvent="Loaded">
-                                        <BeginStoryboard>
-                                            <Storyboard RepeatBehavior="Forever" BeginTime="0:0:0.17">
-                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                                 From="0.3" To="1" Duration="0:0:0.5"
-                                                                 AutoReverse="True"/>
-                                            </Storyboard>
-                                        </BeginStoryboard>
-                                    </EventTrigger>
-                                </Ellipse.Triggers>
-                            </Ellipse>
-                            <Ellipse x:Name="TDot3" Width="6" Height="6" Fill="{StaticResource TextMutedBrush}" Opacity="0.3">
-                                <Ellipse.Triggers>
-                                    <EventTrigger RoutedEvent="Loaded">
-                                        <BeginStoryboard>
-                                            <Storyboard RepeatBehavior="Forever" BeginTime="0:0:0.34">
-                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                                 From="0.3" To="1" Duration="0:0:0.5"
-                                                                 AutoReverse="True"/>
-                                            </Storyboard>
-                                        </BeginStoryboard>
-                                    </EventTrigger>
-                                </Ellipse.Triggers>
-                            </Ellipse>
-                        </StackPanel>
-                    </Border>
-                </Grid>
+                </StackPanel>
+            </ScrollViewer>
 
+            <!-- ═══ EMPTY STATE — centered icon + one line + prompt chips ═══ -->
+            <StackPanel x:Name="EmptyState" MaxWidth="440"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Margin="0,0,0,32">
+                <Border Width="52" Height="52" CornerRadius="14"
+                        HorizontalAlignment="Center" Margin="0,0,0,18"
+                        Background="#0d1f3c" BorderBrush="#1e3a5f" BorderThickness="1">
+                    <Path Data="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                          Stroke="{StaticResource BlueBrush}" StrokeThickness="1.6" Fill="Transparent"
+                          Width="22" Height="22" Stretch="Uniform"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <TextBlock Text="Ask anything." HorizontalAlignment="Center"
+                           FontSize="13.5" Foreground="{StaticResource TextMutedBrush}"
+                           Margin="0,0,0,22"/>
+                <WrapPanel HorizontalAlignment="Center">
+                    <Border Style="{StaticResource ExampleChip}" MouseLeftButtonDown="Example_Click">
+                        <TextBlock Text="Explain a concept simply" Style="{StaticResource ExampleChipText}"/>
+                    </Border>
+                    <Border Style="{StaticResource ExampleChip}" MouseLeftButtonDown="Example_Click">
+                        <TextBlock Text="Draft a professional email" Style="{StaticResource ExampleChipText}"/>
+                    </Border>
+                    <Border Style="{StaticResource ExampleChip}" MouseLeftButtonDown="Example_Click">
+                        <TextBlock Text="Debug a code snippet" Style="{StaticResource ExampleChipText}"/>
+                    </Border>
+                    <Border Style="{StaticResource ExampleChip}" MouseLeftButtonDown="Example_Click">
+                        <TextBlock Text="Plan my week" Style="{StaticResource ExampleChipText}"/>
+                    </Border>
+                </WrapPanel>
             </StackPanel>
-        </ScrollViewer>
+        </Grid>
 
         <!-- ═══ INPUT AREA ═══ -->
         <Border Grid.Row="2" Background="#030912"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
                 Padding="20,12,20,16">
-            <Grid>
+            <Grid MaxWidth="820">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="10"/>
@@ -219,7 +200,7 @@
                              KeyDown="ChatInput_KeyDown"/>
                     <TextBlock Text="Ask anything…"
                                IsHitTestVisible="False"
-                               FontSize="13" Foreground="#253858"
+                               FontSize="13" Foreground="#3a4654"
                                Margin="15,0,0,0" VerticalAlignment="Center">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">

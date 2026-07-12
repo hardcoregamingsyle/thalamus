@@ -59,15 +59,14 @@ namespace ThalamusApp.Modes
 
         private void Study_Click(object sender, RoutedEventArgs e) => _ = SendStudyAsync();
 
+        // Chips prefill the input (matching the website) rather than auto-sending.
         private void StudyExample_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
             if (sender is Border b && b.Child is TextBlock tb)
             {
-                // Strip emoji
-                var text = tb.Text;
-                var parts = text.Split("  ");
-                StudyInputBox.Text = parts.Length > 1 ? $"Explain {parts[1]} to me" : text;
-                _ = SendStudyAsync();
+                StudyInputBox.Text = tb.Text;
+                StudyInputBox.Focus();
+                StudyInputBox.CaretIndex = tb.Text.Length;
             }
         }
 
@@ -77,7 +76,7 @@ namespace ThalamusApp.Modes
             if (string.IsNullOrEmpty(text) || _isStreaming) return;
 
             StudyInputBox.Text = "";
-            StudyWelcomeCard.Visibility = Visibility.Collapsed;
+            EmptyState.Visibility = Visibility.Collapsed;
 
             AppendUserBubble(text);
             _history.Add(("user", text));
@@ -156,150 +155,50 @@ namespace ThalamusApp.Modes
             StudyScroll.ScrollToBottom();
         }
 
+        // User turn — right-aligned neutral card, no avatar.
         private void AppendUserBubble(string text)
         {
-            var row = new Grid { Margin = new Thickness(0, 16, 0, 0) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
-
-            var grad = new LinearGradientBrush
-            {
-                StartPoint = new System.Windows.Point(0, 0),
-                EndPoint = new System.Windows.Point(1, 1)
-            };
-            grad.GradientStops.Add(new GradientStop(Color.FromRgb(0x1a, 0x0c, 0x3e), 0));
-            grad.GradientStops.Add(new GradientStop(Color.FromRgb(0x14, 0x08, 0x32), 1));
-
             var bubble = new Border
             {
-                CornerRadius = new CornerRadius(12, 4, 12, 12),
+                CornerRadius = new CornerRadius(12),
                 Padding = new Thickness(14, 10, 14, 10),
-                MaxWidth = 520,
+                MaxWidth = 560,
                 HorizontalAlignment = HorizontalAlignment.Right,
-                Background = grad,
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x3d, 0x1a, 0x78)),
+                Margin = new Thickness(0, 16, 0, 0),
+                Background = (Brush)FindResource("BgCardBrush"),
+                BorderBrush = (Brush)FindResource("BorderSubtleBrush"),
                 BorderThickness = new Thickness(1),
                 Child = new TextBlock
                 {
-                    Text = text, FontSize = 12.5, TextWrapping = TextWrapping.Wrap,
-                    Foreground = (Brush)FindResource("TextPrimaryBrush"), LineHeight = 19
+                    Text = text, FontSize = 13, TextWrapping = TextWrapping.Wrap,
+                    Foreground = (Brush)FindResource("TextPrimaryBrush"), LineHeight = 20
                 }
             };
-            Grid.SetColumn(bubble, 0);
-            row.Children.Add(bubble);
-
-            var avatar = new Border
-            {
-                Width = 28, Height = 28, CornerRadius = new CornerRadius(7),
-                VerticalAlignment = VerticalAlignment.Top,
-                Background = new SolidColorBrush(Color.FromRgb(0x1a, 0x0c, 0x3e)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x3d, 0x1a, 0x78)),
-                BorderThickness = new Thickness(1),
-                Child = new TextBlock
-                {
-                    Text = "U", FontSize = 11, FontWeight = FontWeights.Bold,
-                    Foreground = (Brush)FindResource("PurpleBrush"),
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            };
-            Grid.SetColumn(avatar, 2);
-            row.Children.Add(avatar);
-
-            StudyPanel.Children.Insert(StudyPanel.Children.Count - 1, row);
+            StudyPanel.Children.Insert(StudyPanel.Children.Count - 1, bubble);
             StudyScroll.ScrollToBottom();
         }
 
+        // Assistant turn — left-aligned formatted text, no card, no avatar.
         private void AppendAiBubbleStart(out TextBlock liveBlock)
         {
-            var row = new Grid { Margin = new Thickness(0, 16, 0, 0) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-            var avatarGrad = new LinearGradientBrush
-            {
-                StartPoint = new System.Windows.Point(0, 0),
-                EndPoint = new System.Windows.Point(1, 1)
-            };
-            avatarGrad.GradientStops.Add(new GradientStop(Color.FromRgb(0x43, 0x38, 0xca), 0));
-            avatarGrad.GradientStops.Add(new GradientStop(Color.FromRgb(0x8b, 0x5c, 0xf6), 1));
-
-            var avatarBorder = new Border
-            {
-                Width = 32, Height = 32, CornerRadius = new CornerRadius(8),
-                VerticalAlignment = VerticalAlignment.Top, Background = avatarGrad,
-                Child = new TextBlock
-                {
-                    Text = "T", FontSize = 13, FontWeight = FontWeights.Black, Foreground = Brushes.White,
-                    HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
-                }
-            };
-            Grid.SetColumn(avatarBorder, 0);
-            row.Children.Add(avatarBorder);
-
             var tb = new TextBlock
             {
-                FontSize = 12.5, TextWrapping = TextWrapping.Wrap,
-                Foreground = (Brush)FindResource("TextSecondaryBrush"), LineHeight = 19
+                FontSize = 13, TextWrapping = TextWrapping.Wrap,
+                Foreground = (Brush)FindResource("TextPrimaryBrush"),
+                LineHeight = 21, Margin = new Thickness(0, 16, 0, 2)
             };
             liveBlock = tb;
-
-            var bubble = new Border
-            {
-                Background = new SolidColorBrush(Color.FromRgb(0x0a, 0x16, 0x28)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x1e, 0x3a, 0x5f)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(4, 12, 12, 12),
-                Padding = new Thickness(14, 10, 14, 10),
-                Child = tb
-            };
-            Grid.SetColumn(bubble, 2);
-            row.Children.Add(bubble);
-
-            StudyPanel.Children.Insert(StudyPanel.Children.Count - 1, row);
+            StudyPanel.Children.Insert(StudyPanel.Children.Count - 1, tb);
         }
 
         private void AppendAiError(string msg)
         {
-            var row = new Grid { Margin = new Thickness(0, 16, 0, 0) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-            var avatarBorder = new Border
+            StudyPanel.Children.Insert(StudyPanel.Children.Count - 1, new TextBlock
             {
-                Width = 32, Height = 32, CornerRadius = new CornerRadius(8),
-                VerticalAlignment = VerticalAlignment.Top,
-                Background = new SolidColorBrush(Color.FromRgb(0x2a, 0x10, 0x10)),
-                Child = new TextBlock
-                {
-                    Text = "!", FontSize = 14, FontWeight = FontWeights.Bold,
-                    Foreground = (Brush)FindResource("RedBrush"),
-                    HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
-                }
-            };
-            Grid.SetColumn(avatarBorder, 0);
-            row.Children.Add(avatarBorder);
-
-            var bubble = new Border
-            {
-                Background = new SolidColorBrush(Color.FromRgb(0x1a, 0x08, 0x08)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x4a, 0x10, 0x10)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(4, 12, 12, 12),
-                Padding = new Thickness(14, 10, 14, 10),
-                Child = new TextBlock
-                {
-                    Text = msg, FontSize = 12.5, TextWrapping = TextWrapping.Wrap,
-                    Foreground = (Brush)FindResource("RedBrush"), LineHeight = 19
-                }
-            };
-            Grid.SetColumn(bubble, 2);
-            row.Children.Add(bubble);
-
-            StudyPanel.Children.Insert(StudyPanel.Children.Count - 1, row);
+                Text = msg, FontSize = 12.5, TextWrapping = TextWrapping.Wrap,
+                Foreground = (Brush)FindResource("RedBrush"),
+                LineHeight = 20, Margin = new Thickness(0, 16, 0, 2)
+            });
             StudyScroll.ScrollToBottom();
         }
     }
