@@ -48,33 +48,34 @@
   --radius: 0.625rem;
   --terminal-font: 'Inter', 'JetBrains Mono', system-ui, sans-serif;
 
-  /* Deep space background with subtle blue tint */
-  --background: oklch(0.07 0.010 240);
-  --foreground: oklch(0.94 0.008 240);
+  /* Neutral near-black surfaces (Claude Code dark) — chroma 0, no blue tint.
+     Only the primary/accent carry color. */
+  --background: oklch(0.10 0 0);
+  --foreground: oklch(0.95 0 0);
 
-  --card: oklch(0.11 0.010 240);
-  --card-foreground: oklch(0.94 0.008 240);
-  --popover: oklch(0.11 0.010 240);
-  --popover-foreground: oklch(0.94 0.008 240);
+  --card: oklch(0.13 0 0);
+  --card-foreground: oklch(0.95 0 0);
+  --popover: oklch(0.13 0 0);
+  --popover-foreground: oklch(0.95 0 0);
 
-  /* Primary — Electric Blue */
+  /* Primary — Electric Blue (kept; it's the brand accent) */
   --primary: oklch(0.62 0.20 250);
   --primary-foreground: oklch(0.99 0 0);
 
-  --secondary: oklch(0.16 0.012 240);
-  --secondary-foreground: oklch(0.80 0.010 240);
+  --secondary: oklch(0.17 0 0);
+  --secondary-foreground: oklch(0.82 0 0);
 
-  --muted: oklch(0.15 0.010 240);
-  --muted-foreground: oklch(0.52 0.018 240);
+  --muted: oklch(0.16 0 0);
+  --muted-foreground: oklch(0.58 0 0);
 
   /* Accent — Warm amber/gold */
   --accent: oklch(0.72 0.16 65);
-  --accent-foreground: oklch(0.08 0.008 240);
+  --accent-foreground: oklch(0.08 0 0);
 
   --destructive: oklch(0.58 0.22 15);
 
-  --border: oklch(0.28 0.015 240);
-  --input: oklch(0.14 0.010 240);
+  --border: oklch(0.26 0 0);
+  --input: oklch(0.15 0 0);
   --ring: oklch(0.62 0.20 250);
 
   --chart-1: oklch(0.62 0.20 250);
@@ -83,13 +84,13 @@
   --chart-4: oklch(0.68 0.16 300);
   --chart-5: oklch(0.60 0.18 120);
 
-  --sidebar: oklch(0.09 0.008 240);
-  --sidebar-foreground: oklch(0.80 0.010 240);
+  --sidebar: oklch(0.11 0 0);
+  --sidebar-foreground: oklch(0.82 0 0);
   --sidebar-primary: oklch(0.62 0.20 250);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.15 0.012 240);
-  --sidebar-accent-foreground: oklch(0.80 0.010 240);
-  --sidebar-border: oklch(0.18 0.012 240);
+  --sidebar-accent: oklch(0.17 0 0);
+  --sidebar-accent-foreground: oklch(0.82 0 0);
+  --sidebar-border: oklch(0.22 0 0);
   --sidebar-ring: oklch(0.62 0.20 250);
 
   --scanline-opacity: 0;
@@ -145,10 +146,10 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     background-color: var(--color-background);
+    /* Flat near-black. A whisper of azure at the very top edge only — no
+       full-screen blue/amber/purple washes (that's what read as "blue"). */
     background-image:
-      radial-gradient(ellipse 100% 60% at 50% 0%, oklch(0.62 0.20 250 / 0.12) 0%, transparent 55%),
-      radial-gradient(ellipse 60% 40% at 100% 50%, oklch(0.72 0.16 65 / 0.06) 0%, transparent 55%),
-      radial-gradient(ellipse 50% 35% at 0% 80%, oklch(0.65 0.18 280 / 0.06) 0%, transparent 55%);
+      radial-gradient(ellipse 90% 35% at 50% 0%, oklch(0.62 0.20 250 / 0.05) 0%, transparent 60%);
     background-attachment: fixed;
   }
   .light body, body.light {
