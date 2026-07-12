@@ -669,6 +669,28 @@ const schema = defineSchema(
       updatedAt: v.number(),
       updatedBy: v.optional(v.string()),
     }),
+
+    // Desktop app VM sandbox — admin-managed OS download catalog. The native
+    // app's built-in list (Windows own-key, Ubuntu, Debian, Kali, Android-x86,
+    // BlissOS) ships in IsoLibrary.cs; this table lets the admin add or remove
+    // entries from /admin without a rebuild. No URL vetting happens here —
+    // whatever direct-download link the admin enters is what the app offers.
+    desktopIsoCatalog: defineTable({
+      name: v.string(),
+      category: v.string(),           // windows | android | linux | custom | other
+      downloadUrl: v.string(),
+      fileName: v.optional(v.string()), // derived from the URL if omitted
+      sizeBytes: v.optional(v.number()),
+      infoUrl: v.optional(v.string()),
+      note: v.optional(v.string()),
+      // Hide this entry on the client when the host machine is already running
+      // this Windows version — no reason to offer a Windows 11 VM image to
+      // someone already on Windows 11. "10" | "11" | undefined (never hidden).
+      hostSkipVersion: v.optional(v.string()),
+      isEnabled: v.boolean(),
+      createdAt: v.number(),
+      updatedBy: v.optional(v.string()),
+    }),
   },
   {
     // Validation is off so rows written under earlier schema revisions (notably

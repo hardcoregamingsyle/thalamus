@@ -83,6 +83,10 @@
                     </ScrollViewer.Resources>
                     <StackPanel Margin="12,10,12,0">
 
+                        <CheckBox x:Name="ShowAllOsCheck" Content="Show all OS options"
+                                  Style="{StaticResource ThemedCheck}" Margin="4,0,0,2"
+                                  Checked="ShowAllOsCheck_Changed" Unchecked="ShowAllOsCheck_Changed"/>
+
                         <TextBlock Text="WINDOWS" Style="{StaticResource SectionHeader}" Margin="4,6,0,4"/>
                         <StackPanel x:Name="OsWindows"/>
 

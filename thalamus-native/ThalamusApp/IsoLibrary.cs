@@ -1,13 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using ThalamusApp.Services;
 
 namespace ThalamusApp
 {
@@ -37,7 +40,8 @@ namespace ThalamusApp
             string? DownloadUrl,   // null = no direct download (manual or custom)
             string? InfoUrl,       // official page to open in the browser
             string? FileName,      // target file name inside the ISO directory
-            string Note);          // one-line hint shown under the entry name
+            string Note,           // one-line hint shown under the entry name
+            string? HostSkipVersion = null);  // "10"/"11" — hide by default when the host runs this Windows version
 
         /// <summary>
         /// Verified 2026-07-12. Direct URLs were checked end-to-end (HTTP 200,
@@ -45,26 +49,31 @@ namespace ThalamusApp
         /// The Windows 11 eval has no stable direct URL — Microsoft gates it
         /// behind a registration form — so that entry links the official
         /// Evaluation Center page and the user picks the downloaded file.
+        /// The "Custom ISO…" sentinel lives separately as <see cref="CustomEntry"/>
+        /// so it can be appended after the admin-managed catalog is merged in.
         /// </summary>
-        public static readonly IReadOnlyList<IsoEntry> Catalog = new IsoEntry[]
+        public static readonly IReadOnlyList<IsoEntry> BuiltInCatalog = new IsoEntry[]
         {
             new("windows-11-pro", "Windows 11 Pro", "windows",
                 0, null,
                 "https://www.microsoft.com/software-download/windows11",
                 "windows-11.iso",
-                "Official Microsoft ISO — download it, then activate the VM with your own Windows license key"),
+                "Official Microsoft ISO — download it, then activate the VM with your own Windows license key",
+                HostSkipVersion: "11"),
 
             new("windows-10-pro", "Windows 10 Pro", "windows",
                 0, null,
                 "https://www.microsoft.com/software-download/windows10",
                 "windows-10.iso",
-                "Official Microsoft ISO — download it, then activate the VM with your own Windows license key"),
+                "Official Microsoft ISO — download it, then activate the VM with your own Windows license key",
+                HostSkipVersion: "10"),
 
             new("windows-11-eval", "Windows 11 Enterprise Evaluation", "windows",
                 0, null,
                 "https://www.microsoft.com/en-us/evalcenter/evaluate-windows-11-enterprise",
                 "windows-11-enterprise-eval.iso",
-                "Official 90-day eval — no key needed. Download from Microsoft, then locate the ISO"),
+                "Official 90-day eval — no key needed. Download from Microsoft, then locate the ISO",
+                HostSkipVersion: "11"),
 
             new("android-x86-9", "Android-x86 9.0-r2 (64-bit)", "android",
                 965_738_496,
@@ -99,11 +108,28 @@ namespace ThalamusApp
                 "https://www.kali.org/get-kali/",
                 "kali-linux-2026.2-installer-amd64.iso",
                 "Official image from cdimage.kali.org"),
-
-            new("custom", "Custom ISO…", "custom",
-                0, null, null, null,
-                "Boot any ISO you already own — pick the file from disk"),
         };
+
+        /// <summary>The "bring your own ISO" sentinel — always rendered last.</summary>
+        private static readonly IsoEntry CustomEntry = new("custom", "Custom ISO…", "custom",
+            0, null, null, null,
+            "Boot any ISO you already own — pick the file from disk");
+
+        /// <summary>
+        /// Built-ins + sentinel, no admin entries. Used as the instance
+        /// <see cref="Catalog"/>'s value until <see cref="LoadCatalogAsync"/>
+        /// completes, and as the permanent fallback if Convex is unreachable.
+        /// </summary>
+        private static readonly IReadOnlyList<IsoEntry> DefaultCatalog =
+            BuiltInCatalog.Append(CustomEntry).ToList();
+
+        /// <summary>
+        /// The catalog actually shown by the UI — built-ins plus any
+        /// admin-managed entries merged in by <see cref="LoadCatalogAsync"/>.
+        /// Starts as <see cref="DefaultCatalog"/> so nothing throws before
+        /// that completes (or if it never runs).
+        /// </summary>
+        public IReadOnlyList<IsoEntry> Catalog { get; private set; } = DefaultCatalog;
 
         private readonly string _isoDir;
         private readonly string _legacyIsoDir;   // <installDir>\isos from older installs
@@ -208,11 +234,81 @@ namespace ThalamusApp
             return File.Exists(partial) ? new FileInfo(partial).Length : 0;
         }
 
-        public static IsoEntry? Find(string id)
+        public IsoEntry? Find(string id)
         {
             foreach (var e in Catalog)
                 if (e.Id == id) return e;
             return null;
+        }
+
+        // ── Admin-managed catalog (Convex) ────────────────────────────────────
+
+        /// <summary>
+        /// Merge the admin-managed catalog (desktopIsoCatalog table, via the
+        /// public listIsoEntriesPublic query) into the built-in list and store
+        /// the result on <see cref="Catalog"/>. Additive only — any failure
+        /// (offline, backend down, bad JSON) leaves <see cref="Catalog"/> at
+        /// <see cref="DefaultCatalog"/> so the app works identically to today
+        /// with zero backend reachable.
+        /// </summary>
+        public async Task<IReadOnlyList<IsoEntry>> LoadCatalogAsync(ConvexClient convexClient)
+        {
+            try
+            {
+                var result = await convexClient.CallQueryAsync("desktopIsoCatalog:listIsoEntriesPublic", new { });
+                var adminEntries = new List<IsoEntry>();
+                if (result is JsonArray rows)
+                {
+                    foreach (var row in rows)
+                    {
+                        if (row == null) continue;
+                        adminEntries.Add(new IsoEntry(
+                            Id: row["id"]!.GetValue<string>(),
+                            Name: row["name"]!.GetValue<string>(),
+                            Category: row["category"]!.GetValue<string>(),
+                            SizeBytes: row["sizeBytes"]?.GetValue<long>() ?? 0,
+                            DownloadUrl: row["downloadUrl"]?.GetValue<string>(),
+                            InfoUrl: row["infoUrl"]?.GetValue<string>(),
+                            FileName: row["fileName"]?.GetValue<string>(),
+                            Note: row["note"]?.GetValue<string>() ?? "",
+                            HostSkipVersion: row["hostSkipVersion"]?.GetValue<string>()));
+                    }
+                }
+                Catalog = BuiltInCatalog.Concat(adminEntries).Append(CustomEntry).ToList();
+            }
+            catch
+            {
+                // Offline, backend down, or malformed response — the admin
+                // catalog is additive, never load-bearing, so just keep the
+                // built-in list intact rather than surface an error.
+                Catalog = DefaultCatalog;
+            }
+            return Catalog;
+        }
+
+        /// <summary>
+        /// The host's Windows version ("10"/"11"), or null when not on
+        /// Windows or on a build old enough that neither applies.
+        /// </summary>
+        public static string? DetectHostWindowsVersion()
+        {
+            if (!OperatingSystem.IsWindows()) return null;
+            var build = Environment.OSVersion.Version.Build;
+            if (build >= 22000) return "11";
+            if (build >= 10240) return "10";
+            return null;
+        }
+
+        /// <summary>
+        /// Catalog entries to render. By default, Windows entries matching the
+        /// host's own Windows version are hidden (little value in booting a
+        /// Windows-11 VM to install Windows 11 you're already running).
+        /// </summary>
+        public IEnumerable<IsoEntry> VisibleCatalog(bool includeHostSkipped)
+        {
+            if (includeHostSkipped) return Catalog;
+            var hostVersion = DetectHostWindowsVersion();
+            return Catalog.Where(e => e.HostSkipVersion == null || e.HostSkipVersion != hostVersion);
         }
 
         // ── Download with resume ──────────────────────────────────────────────

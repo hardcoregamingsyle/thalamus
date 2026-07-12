@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using ThalamusApp.Services;
 
 namespace ThalamusApp
 {
@@ -15,8 +16,10 @@ namespace ThalamusApp
     {
         private QemuBridgeManager? _bridge;
         private IsoLibrary?        _isos;
+        private readonly ConvexClient _convex = new();
         private EmbeddedVncClient? _vnc;
         private WriteableBitmap?   _vncBitmap;
+        private bool _showAllOs;
 
         private CatalogRow? _selectedRow;
         private string?     _currentVmId    = null;
@@ -47,7 +50,7 @@ namespace ThalamusApp
             Unloaded += OnUnloaded;
         }
 
-        private void OnLoaded(object sender, RoutedEventArgs e)
+        private async void OnLoaded(object sender, RoutedEventArgs e)
         {
             // Re-entry guard — the view is unloaded/reloaded when the user
             // switches modes, but catalog rows only need building once.
@@ -62,6 +65,12 @@ namespace ThalamusApp
 
             BuildOsList();
             AppendConsole("VM Sandbox ready. Images download on demand into " + _isos.IsoDirectory);
+
+            // Admin-managed catalog merges in once Convex answers. Additive
+            // only — if this fails or the app is offline, the list already
+            // built above (the built-in catalog) stands as-is.
+            await _isos.LoadCatalogAsync(_convex);
+            BuildOsList();
         }
 
         private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -73,7 +82,18 @@ namespace ThalamusApp
 
         private void BuildOsList()
         {
-            foreach (var entry in IsoLibrary.Catalog)
+            // Rebuilt whenever the catalog changes (admin entries merge in) or
+            // the "show all" toggle flips — remember the selection so a
+            // background catalog merge doesn't silently drop the user's pick.
+            var previousSelectionId = _selectedRow?.Entry.Id;
+
+            OsWindows.Children.Clear();
+            OsAndroid.Children.Clear();
+            OsLinux.Children.Clear();
+            OsCustom.Children.Clear();
+            _selectedRow = null;
+
+            foreach (var entry in _isos!.VisibleCatalog(_showAllOs))
             {
                 var row = BuildRow(entry);
                 var host = entry.Category switch
@@ -85,7 +105,16 @@ namespace ThalamusApp
                 };
                 host.Children.Add(row.Root);
                 RefreshRow(row);
+
+                if (entry.Id == previousSelectionId)
+                    SelectRow(row);
             }
+        }
+
+        private void ShowAllOsCheck_Changed(object sender, RoutedEventArgs e)
+        {
+            _showAllOs = ShowAllOsCheck.IsChecked == true;
+            if (_isos != null) BuildOsList();
         }
 
         private CatalogRow BuildRow(IsoLibrary.IsoEntry entry)
