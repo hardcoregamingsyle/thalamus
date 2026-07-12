@@ -8,20 +8,21 @@
          Shared by ThalamusApp and ThalamusInstaller (linked as a Page).
          ═════════════════════════════════════════════════════════════════════ -->
 
-    <!-- ── Colors — hex conversions of src/index.css :root oklch tokens ── -->
-    <Color x:Key="BgDeep">#010304</Color>        <!-- css sidebar        oklch(0.09 .008 240) -->
-    <Color x:Key="BgDarker">#000102</Color>      <!-- css background     oklch(0.07 .010 240) -->
-    <Color x:Key="BgCard">#020507</Color>        <!-- css card           oklch(0.11 .010 240) -->
-    <Color x:Key="BgInput">#060a0d</Color>       <!-- css input          oklch(0.14 .010 240) -->
-    <Color x:Key="BgHover">#0d1216</Color>       <!-- css sidebar-border  oklch(0.18 .012 240) -->
-    <Color x:Key="BgActive">#11171b</Color>      <!-- active nav, one step above hover, hue 240 -->
-    <Color x:Key="BorderColor">#222a30</Color>   <!-- css border          oklch(0.28 .015 240) -->
-    <Color x:Key="BorderDim">#0d1216</Color>     <!-- css sidebar-border  oklch(0.18 .012 240) -->
+    <!-- ── Colors — neutral soft-black (Claude Code dark), chroma 0. Matches
+         src/index.css after the blue tint was removed. Only accents carry hue. -->
+    <Color x:Key="BgDeep">#181818</Color>        <!-- css sidebar        oklch(0.11 0 0) -->
+    <Color x:Key="BgDarker">#141414</Color>      <!-- css background     oklch(0.10 0 0) -->
+    <Color x:Key="BgCard">#1e1e1e</Color>        <!-- css card           oklch(0.13 0 0) -->
+    <Color x:Key="BgInput">#1c1c1c</Color>       <!-- css input          oklch(0.15 0 0) -->
+    <Color x:Key="BgHover">#242424</Color>       <!-- hover surface -->
+    <Color x:Key="BgActive">#2c2c2c</Color>      <!-- active nav, one step above hover -->
+    <Color x:Key="BorderColor">#3a3a3a</Color>   <!-- css border          oklch(0.26 0 0) -->
+    <Color x:Key="BorderDim">#2a2a2a</Color>     <!-- css sidebar-border  oklch(0.22 0 0) -->
     <!-- rgba(255,255,255,0.10) — the website's dominant border-white/10 hairline -->
     <Color x:Key="BorderSubtle">#1AFFFFFF</Color>
-    <Color x:Key="TextPrimary">#e7ecf0</Color>   <!-- css foreground      oklch(0.94 .008 240) -->
-    <Color x:Key="TextSecondary">#b8bfc4</Color> <!-- css secondary-fg    oklch(0.80 .010 240) -->
-    <Color x:Key="TextMuted">#606b72</Color>     <!-- css muted-fg        oklch(0.52 .018 240) -->
+    <Color x:Key="TextPrimary">#ececec</Color>   <!-- css foreground      oklch(0.95 0 0) -->
+    <Color x:Key="TextSecondary">#c4c4c4</Color> <!-- css secondary-fg    oklch(0.82 0 0) -->
+    <Color x:Key="TextMuted">#8a8a8a</Color>     <!-- css muted-fg        oklch(0.58 0 0) -->
     <Color x:Key="BlueAccent">#0088f1</Color>    <!-- css primary         oklch(0.62 .20 250) -->
     <Color x:Key="BlueGlow">#0073d2</Color>      <!-- deeper primary for glows/gradients -->
     <Color x:Key="GreenAccent">#10b981</Color>
@@ -58,30 +59,30 @@
     <!-- ── Gradients ── -->
     <LinearGradientBrush x:Key="BlueGradient" StartPoint="0,0" EndPoint="1,1">
         <GradientStop Color="#0088f1" Offset="0"/>
-        <GradientStop Color="#6366f1" Offset="1"/>
+        <GradientStop Color="#0073d2" Offset="1"/>
     </LinearGradientBrush>
 
-    <!-- Background surfaces stay at/below card (#020507) so cards read as
-         elevated, matching the website's near-black elevation order. -->
+    <!-- Neutral near-black gradient stops (no blue channel bump). Surfaces stay
+         at/below card (#1e1e1e) so cards read as elevated. -->
     <LinearGradientBrush x:Key="SidebarGradient" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#010305" Offset="0"/>
-        <GradientStop Color="#020610" Offset="0.5"/>
-        <GradientStop Color="#010305" Offset="1"/>
+        <GradientStop Color="#181818" Offset="0"/>
+        <GradientStop Color="#1a1a1a" Offset="0.5"/>
+        <GradientStop Color="#181818" Offset="1"/>
     </LinearGradientBrush>
 
     <LinearGradientBrush x:Key="ContentBgGradient" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#010305" Offset="0"/>
-        <GradientStop Color="#000102" Offset="1"/>
+        <GradientStop Color="#161616" Offset="0"/>
+        <GradientStop Color="#141414" Offset="1"/>
     </LinearGradientBrush>
 
     <LinearGradientBrush x:Key="StatusBarGradient" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#010304" Offset="0"/>
-        <GradientStop Color="#000102" Offset="1"/>
+        <GradientStop Color="#161616" Offset="0"/>
+        <GradientStop Color="#141414" Offset="1"/>
     </LinearGradientBrush>
 
     <LinearGradientBrush x:Key="CardGlow" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#050a12" Offset="0"/>
-        <GradientStop Color="#020507" Offset="1"/>
+        <GradientStop Color="#212121" Offset="0"/>
+        <GradientStop Color="#1e1e1e" Offset="1"/>
     </LinearGradientBrush>
 
     <!-- ── Card — dark surface, ~16px corners, hairline border ── -->
