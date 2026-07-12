@@ -17,9 +17,10 @@ const CREDIT_PACKS = [
 ];
 
 // All payments run through Buy Me a Coffee: UPI, GPay, cards — no buyer
-// account needed. BMAC can't thread a user id through checkout, so payments
-// are matched to accounts strictly by email; the UI warns hard about this.
-const BMAC_PAGE_URL = "https://buymeacoffee.com/hardcoregamingsyle";
+// account needed. The page URL and master switch are admin-managed
+// (/admin → Payments); purchases stay hidden until enabled there. BMAC can't
+// thread a user id through checkout, so payments are matched to accounts
+// strictly by email; the UI warns hard about this.
 
 interface CreditModalProps {
   open: boolean;
@@ -31,6 +32,7 @@ interface CreditModalProps {
 
 function BuyCreditsModal({ onClose, token }: { onClose: () => void; token?: string }) {
   const user = useQuery(api.customAuthHelpers.getUserByToken, token ? { token } : "skip");
+  const payments = useQuery(api.payments.getPublicPaymentsConfig, {});
   const [showEmailWarning, setShowEmailWarning] = useState(false);
   const [emailCopied, setEmailCopied] = useState(false);
 
@@ -59,7 +61,16 @@ function BuyCreditsModal({ onClose, token }: { onClose: () => void; token?: stri
         </button>
       </div>
 
-      {showEmailWarning ? (
+      {!payments?.isEnabled ? (
+        <div className="bg-muted/30 border border-border rounded-xl p-4 space-y-2">
+          <p className="text-sm font-bold text-foreground">Purchases are temporarily unavailable</p>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {payments === undefined
+              ? "Checking availability…"
+              : "Credit purchases are currently disabled. Your daily free AgentBucks keep refilling as usual — check back soon."}
+          </p>
+        </div>
+      ) : showEmailWarning ? (
         <div className="space-y-4">
           <div className="bg-amber-400/10 border-2 border-amber-400/50 rounded-xl p-4 space-y-3">
             <p className="text-sm font-bold text-amber-400">⚠ Read this before you pay</p>
@@ -87,7 +98,7 @@ function BuyCreditsModal({ onClose, token }: { onClose: () => void; token?: stri
               Back
             </button>
             <a
-              href={BMAC_PAGE_URL}
+              href={payments.bmacPageUrl}
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => setShowEmailWarning(false)}

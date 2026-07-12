@@ -1,11 +1,64 @@
-import { internalMutation } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 
-// $1 = 1.5M AgentBucks, and the platform pegs ₹100 = $1 — so 1 rupee = 1 USD
-// cent = 15,000 AB. Must match the packs shown in CreditModal.tsx. Crediting
-// is amount-based, so any amount paid credits proportionally.
-const AB_PER_CENT = 15_000;
+// Default rate: $1 = 1.5M AgentBucks, and the platform pegs ₹100 = $1 — so
+// 1 rupee = 1 USD cent = 15,000 AB. Overridable from the admin Payments tab.
+const DEFAULT_AB_PER_CENT = 15_000;
+
+// ── Admin-managed config (singleton row; payments ship disabled) ─────────────
+
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";
+function requireAdmin(token: string) {
+  if (!ADMIN_TOKEN || token !== ADMIN_TOKEN) throw new Error("Unauthorized");
+}
+
+export const savePaymentsConfig = mutation({
+  args: {
+    adminToken: v.string(),
+    isEnabled: v.boolean(),
+    bmacPageUrl: v.string(),
+    webhookSecret: v.optional(v.string()),
+    abPerCent: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    requireAdmin(args.adminToken);
+    const existing = await ctx.db.query("paymentsConfig").first();
+    const data = {
+      isEnabled: args.isEnabled,
+      bmacPageUrl: args.bmacPageUrl.trim(),
+      webhookSecret: args.webhookSecret?.trim() || undefined,
+      abPerCent: args.abPerCent,
+      updatedAt: Date.now(),
+      updatedBy: "admin",
+    };
+    if (existing) await ctx.db.patch(existing._id, data);
+    else await ctx.db.insert("paymentsConfig", data);
+  },
+});
+
+export const getPaymentsConfig = query({
+  args: { adminToken: v.string() },
+  handler: async (ctx, args) => {
+    requireAdmin(args.adminToken);
+    return await ctx.db.query("paymentsConfig").first();
+  },
+});
+
+export const getPaymentsConfigInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => await ctx.db.query("paymentsConfig").first(),
+});
+
+// What the buy modal needs — never the webhook secret.
+export const getPublicPaymentsConfig = query({
+  args: {},
+  handler: async (ctx) => {
+    const config = await ctx.db.query("paymentsConfig").first();
+    if (!config || !config.isEnabled) return { isEnabled: false as const, bmacPageUrl: "" };
+    return { isEnabled: true as const, bmacPageUrl: config.bmacPageUrl };
+  },
+});
 
 // The single write path for crediting a sale (Buy Me a Coffee webhook — see
 // /bmac/webhook in http.ts). Idempotent on saleId:
@@ -21,7 +74,9 @@ export const recordPayment = internalMutation({
     provider: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ credited: boolean; bucks: number; alreadyProcessed: boolean }> => {
-    const bucks = Math.max(0, Math.floor(args.priceCents * AB_PER_CENT));
+    const config = await ctx.db.query("paymentsConfig").first();
+    const rate = config?.abPerCent ?? DEFAULT_AB_PER_CENT;
+    const bucks = Math.max(0, Math.floor(args.priceCents * rate));
 
     const existing = await ctx.db
       .query("payments")

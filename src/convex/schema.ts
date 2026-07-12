@@ -628,6 +628,18 @@ const schema = defineSchema(
       .index("by_user", ["userId"])
       .index("by_email", ["email"]),
 
+    // Payments configuration (admin-managed, singleton). Payments ship DISABLED
+    // until the admin flips the switch. The BMAC webhook secret lives here
+    // (same precedent as geminiKeys/awsCredentials: DB beats env vars).
+    paymentsConfig: defineTable({
+      isEnabled: v.boolean(),
+      bmacPageUrl: v.string(),
+      webhookSecret: v.optional(v.string()),
+      abPerCent: v.optional(v.number()), // AgentBucks per ₹1 (= per USD cent); default 15,000
+      updatedAt: v.number(),
+      updatedBy: v.optional(v.string()),
+    }),
+
     // Short-lived OAuth login states (CSRF protection + redirect binding for
     // Google/GitHub sign-in). Rows are deleted on consumption; stale rows are
     // ignored via createdAt TTL.
