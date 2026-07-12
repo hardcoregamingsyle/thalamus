@@ -50,12 +50,14 @@ namespace ThalamusApp.Modes
 
         private void Build_Click(object sender, RoutedEventArgs e) => _ = StartBuildAsync();
 
+        // Chips prefill the input (matching the website) rather than auto-building.
         private void BuildExample_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
             if (sender is Border b && b.Child is TextBlock tb)
             {
-                BuildInputBox.Text = "Build a " + tb.Text.ToLower();
-                _ = StartBuildAsync();
+                BuildInputBox.Text = tb.Text;
+                BuildInputBox.Focus();
+                BuildInputBox.CaretIndex = tb.Text.Length;
             }
         }
 
@@ -65,7 +67,7 @@ namespace ThalamusApp.Modes
             if (string.IsNullOrEmpty(prompt) || _isBuilding) return;
 
             BuildInputBox.Text = "";
-            BuildWelcomeCard.Visibility = Visibility.Collapsed;
+            EmptyState.Visibility = Visibility.Collapsed;
 
             // Show project brief
             AppendProjectBrief(prompt);
@@ -169,7 +171,7 @@ namespace ThalamusApp.Modes
                 var container = new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
-                    Margin = new Thickness(0, 0, 6, 0),
+                    Margin = new Thickness(0, 0, 10, 4),
                     VerticalAlignment = VerticalAlignment.Center
                 };
 
@@ -205,46 +207,41 @@ namespace ThalamusApp.Modes
             }
         }
 
+        // The build request — right-aligned neutral card, no avatar.
         private void AppendProjectBrief(string prompt)
         {
-            var border = new Border
+            var bubble = new Border
             {
-                Background = new SolidColorBrush(Color.FromRgb(0x06, 0x14, 0x0e)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x0a, 0x30, 0x18)),
-                BorderThickness = new Thickness(0, 0, 0, 1),
-                CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(16, 12, 16, 12),
-                Margin = new Thickness(0, 0, 0, 12)
+                Background = (Brush)FindResource("BgCardBrush"),
+                BorderBrush = (Brush)FindResource("BorderSubtleBrush"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(14, 10, 14, 10),
+                MaxWidth = 560,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 0, 0, 16),
+                Child = new TextBlock
+                {
+                    Text = prompt,
+                    FontSize = 13, FontWeight = FontWeights.SemiBold,
+                    Foreground = (Brush)FindResource("TextPrimaryBrush"),
+                    TextWrapping = TextWrapping.Wrap
+                }
             };
-            var sp = new StackPanel { Orientation = Orientation.Horizontal };
-            sp.Children.Add(new TextBlock
-            {
-                Text = "Building: ",
-                FontSize = 11.5, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("TextMutedBrush"),
-                VerticalAlignment = VerticalAlignment.Center
-            });
-            sp.Children.Add(new TextBlock
-            {
-                Text = prompt,
-                FontSize = 12.5, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("TextPrimaryBrush"),
-                TextWrapping = TextWrapping.Wrap,
-                VerticalAlignment = VerticalAlignment.Center
-            });
-            border.Child = sp;
-            BuildPanel.Children.Add(border);
+            BuildPanel.Children.Add(bubble);
         }
 
+        // The pipeline output is code — keep it in a monospace "output" panel that
+        // reads like a build log rather than a chat bubble.
         private void AppendOutputStart(out TextBlock liveBlock)
         {
             var border = new Border
             {
-                Background = new SolidColorBrush(Color.FromRgb(0x03, 0x0a, 0x05)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x0a, 0x30, 0x18)),
+                Background = (Brush)FindResource("BgInputBrush"),
+                BorderBrush = (Brush)FindResource("BorderSubtleBrush"),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(12),
-                Padding = new Thickness(20, 16, 20, 16),
+                Padding = new Thickness(18, 14, 18, 14),
                 Margin = new Thickness(0, 0, 0, 16)
             };
 
@@ -253,8 +250,8 @@ namespace ThalamusApp.Modes
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = new SolidColorBrush(Color.FromRgb(0x6e, 0xe7, 0xb7)),
-                LineHeight = 20,
-                FontFamily = new FontFamily("Consolas, Courier New, monospace")
+                LineHeight = 19,
+                FontFamily = (FontFamily)FindResource("MonoFontFamily")
             };
             liveBlock = tb;
             border.Child = tb;

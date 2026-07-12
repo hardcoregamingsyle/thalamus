@@ -4,7 +4,7 @@
              Background="{StaticResource ContentBgGradient}">
 
     <UserControl.Resources>
-        <!-- ThinScrollBar, Card etc. come from Styles/Theme.xaml -->
+        <!-- ThinScrollBar, Card, ExampleChip etc. come from Styles/Theme.xaml -->
 
         <Style x:Key="BuildBtn" TargetType="Button">
             <Setter Property="Height" Value="40"/>
@@ -67,21 +67,11 @@
                 </Setter.Value>
             </Setter>
         </Style>
-
-        <!-- Agent stage pill -->
-        <Style x:Key="AgentPill" TargetType="Border">
-            <Setter Property="Background" Value="#080f22"/>
-            <Setter Property="BorderBrush" Value="#1a3050"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="12"/>
-            <Setter Property="Padding" Value="10,5"/>
-            <Setter Property="Margin" Value="0,0,6,0"/>
-        </Style>
     </UserControl.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="56"/>
+            <RowDefinition Height="52"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -109,11 +99,12 @@
                                 BorderBrush="#0a3018" BorderThickness="1"
                                 Padding="7,2" Margin="10,0,0,0" VerticalAlignment="Center">
                             <TextBlock Text="9-Agent Pipeline" FontSize="8.5" FontWeight="SemiBold"
+                                       FontFamily="{StaticResource MonoFontFamily}"
                                        Foreground="{StaticResource GreenBrush}"/>
                         </Border>
                     </StackPanel>
-                    <TextBlock Text="Describe what you want to build and 9 agents build it in sequence"
-                               FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}" Margin="29,2,0,0"/>
+                    <TextBlock Text="Describe a project — 9 agents build it in sequence"
+                               FontSize="10.5" Foreground="{StaticResource TextMutedBrush}" Margin="29,2,0,0"/>
                 </StackPanel>
 
                 <Border HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -124,138 +115,85 @@
                                  Fill="{StaticResource GreenBrush}"
                                  VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <TextBlock x:Name="BuildStatusLabel" Text="Ready"
-                                   FontSize="9.5" Foreground="{StaticResource GreenBrush}"/>
+                                   FontSize="9.5" FontFamily="{StaticResource MonoFontFamily}"
+                                   Foreground="{StaticResource GreenBrush}"/>
                     </StackPanel>
                 </Border>
             </Grid>
         </Border>
 
         <!-- ═══ CONTENT AREA ═══ -->
-        <ScrollViewer Grid.Row="1" x:Name="BuildScroll"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled"
-                      Padding="22,16,6,8">
-            <ScrollViewer.Resources>
-                <Style TargetType="ScrollBar" BasedOn="{StaticResource ThinScrollBar}"/>
-            </ScrollViewer.Resources>
+        <Grid Grid.Row="1">
+            <ScrollViewer x:Name="BuildScroll"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Padding="24,18,12,10">
+                <ScrollViewer.Resources>
+                    <Style TargetType="ScrollBar" BasedOn="{StaticResource ThinScrollBar}"/>
+                </ScrollViewer.Resources>
 
-            <StackPanel x:Name="BuildPanel" Margin="0,0,12,0">
+                <StackPanel x:Name="BuildPanel" MaxWidth="820" Margin="0,0,4,0">
 
-                <!-- Welcome card -->
-                <Border x:Name="BuildWelcomeCard" Style="{StaticResource Card}"
-                        Padding="28,22">
-                    <StackPanel>
-                        <Border Width="44" Height="44" CornerRadius="11"
-                                HorizontalAlignment="Left" Margin="0,0,0,14">
-                            <Border.Background>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                    <GradientStop Color="#047857" Offset="0"/>
-                                    <GradientStop Color="#10b981" Offset="1"/>
-                                </LinearGradientBrush>
-                            </Border.Background>
-                            <Path Data="M13 10V3L4 14h7v7l9-11h-7z"
-                                  Fill="White" Width="20" Height="20" Stretch="Uniform"
-                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <TextBlock Text="Describe any software project"
-                                   FontSize="18" FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,6"/>
-                        <TextBlock TextWrapping="Wrap" FontSize="12.5"
-                                   Foreground="{StaticResource TextSecondaryBrush}" LineHeight="20"
-                                   Margin="0,0,0,20">
-                            Thalamus runs 9 specialized agents in sequence — Researcher, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, and Critic — to build your project.
-                        </TextBlock>
-
-                        <!-- 9 agent badges -->
-                        <WrapPanel Margin="0,0,0,20">
-                            <Border Style="{StaticResource AgentPill}">
-                                <TextBlock Text="1  Researcher" FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            </Border>
-                            <Border Style="{StaticResource AgentPill}">
-                                <TextBlock Text="2  Analyser" FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            </Border>
-                            <Border Style="{StaticResource AgentPill}">
-                                <TextBlock Text="3  Planner" FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            </Border>
-                            <Border Style="{StaticResource AgentPill}">
-                                <TextBlock Text="4  Coder" FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            </Border>
-                            <Border Style="{StaticResource AgentPill}">
-                                <TextBlock Text="5  Optimiser" FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            </Border>
-                            <Border Style="{StaticResource AgentPill}" Margin="0,4,6,0">
-                                <TextBlock Text="6  Organizer" FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            </Border>
-                            <Border Style="{StaticResource AgentPill}" Margin="0,4,6,0">
-                                <TextBlock Text="7  Tester" FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            </Border>
-                            <Border Style="{StaticResource AgentPill}" Margin="0,4,6,0">
-                                <TextBlock Text="8  Hacker" FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            </Border>
-                            <Border Style="{StaticResource AgentPill}" Margin="0,4,6,0">
-                                <TextBlock Text="9  Critic" FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            </Border>
-                        </WrapPanel>
-
-                        <!-- Example projects -->
-                        <TextBlock Text="Example projects"
-                                   FontSize="10.5" FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextMutedBrush}"
-                                   Margin="0,0,0,10"/>
-                        <WrapPanel>
-                            <Border Background="#061a10" BorderBrush="#0a3018" BorderThickness="1"
-                                    CornerRadius="7" Padding="10,6" Margin="0,0,8,8" Cursor="Hand"
-                                    MouseLeftButtonDown="BuildExample_Click">
-                                <TextBlock Text="REST API with auth" FontSize="11.5"
+                    <!-- Agent pipeline progress (hidden initially) -->
+                    <Border x:Name="AgentProgressCard" Visibility="Collapsed"
+                            Background="#080f22" BorderBrush="#0a3018" BorderThickness="1"
+                            CornerRadius="12" Padding="18,14" Margin="0,0,0,16">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <TextBlock Text="Pipeline Running" FontSize="11.5" FontWeight="SemiBold"
+                                           Foreground="{StaticResource GreenBrush}" Margin="0,0,10,0"/>
+                                <TextBlock x:Name="AgentStageLabel" Text="Initializing…"
+                                           FontSize="11.5" FontFamily="{StaticResource MonoFontFamily}"
                                            Foreground="{StaticResource TextSecondaryBrush}"/>
-                            </Border>
-                            <Border Background="#061a10" BorderBrush="#0a3018" BorderThickness="1"
-                                    CornerRadius="7" Padding="10,6" Margin="0,0,8,8" Cursor="Hand"
-                                    MouseLeftButtonDown="BuildExample_Click">
-                                <TextBlock Text="React dashboard with charts" FontSize="11.5"
-                                           Foreground="{StaticResource TextSecondaryBrush}"/>
-                            </Border>
-                            <Border Background="#061a10" BorderBrush="#0a3018" BorderThickness="1"
-                                    CornerRadius="7" Padding="10,6" Margin="0,0,8,8" Cursor="Hand"
-                                    MouseLeftButtonDown="BuildExample_Click">
-                                <TextBlock Text="Python data pipeline" FontSize="11.5"
-                                           Foreground="{StaticResource TextSecondaryBrush}"/>
-                            </Border>
-                        </WrapPanel>
-                    </StackPanel>
-                </Border>
-
-                <!-- Agent pipeline progress (hidden initially) -->
-                <Border x:Name="AgentProgressCard" Visibility="Collapsed"
-                        Background="#080f22" BorderBrush="#0a3018" BorderThickness="1"
-                        CornerRadius="12" Padding="18,14" Margin="0,16,0,0">
-                    <StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                            <TextBlock Text="Pipeline Running" FontSize="11.5" FontWeight="SemiBold"
-                                       Foreground="{StaticResource GreenBrush}" Margin="0,0,10,0"/>
-                            <TextBlock x:Name="AgentStageLabel" Text="Initializing…"
-                                       FontSize="11.5" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            </StackPanel>
+                            <!-- Stage dots -->
+                            <ItemsControl x:Name="AgentDots">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
                         </StackPanel>
-                        <!-- Stage dots -->
-                        <ItemsControl x:Name="AgentDots">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Horizontal"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
+                    </Border>
 
-                <!-- Output messages populate here -->
+                    <!-- Output messages populate here -->
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ═══ EMPTY STATE ═══ -->
+            <StackPanel x:Name="EmptyState" MaxWidth="460"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Margin="0,0,0,32">
+                <Border Width="52" Height="52" CornerRadius="14"
+                        HorizontalAlignment="Center" Margin="0,0,0,18"
+                        Background="#061a10" BorderBrush="#0a3018" BorderThickness="1">
+                    <Path Data="M13 10V3L4 14h7v7l9-11h-7z"
+                          Fill="{StaticResource GreenBrush}" Width="22" Height="22" Stretch="Uniform"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <TextBlock Text="Describe something to build." HorizontalAlignment="Center"
+                           FontSize="13.5" Foreground="{StaticResource TextMutedBrush}"
+                           Margin="0,0,0,22"/>
+                <WrapPanel HorizontalAlignment="Center">
+                    <Border Style="{StaticResource ExampleChip}" MouseLeftButtonDown="BuildExample_Click">
+                        <TextBlock Text="Build a REST API with JWT auth" Style="{StaticResource ExampleChipText}"/>
+                    </Border>
+                    <Border Style="{StaticResource ExampleChip}" MouseLeftButtonDown="BuildExample_Click">
+                        <TextBlock Text="Build a React dashboard with charts" Style="{StaticResource ExampleChipText}"/>
+                    </Border>
+                    <Border Style="{StaticResource ExampleChip}" MouseLeftButtonDown="BuildExample_Click">
+                        <TextBlock Text="Build a Python data pipeline" Style="{StaticResource ExampleChipText}"/>
+                    </Border>
+                </WrapPanel>
             </StackPanel>
-        </ScrollViewer>
+        </Grid>
 
         <!-- ═══ INPUT ═══ -->
         <Border Grid.Row="2" Background="#030912"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
                 Padding="20,12,20,16">
-            <Grid>
+            <Grid MaxWidth="820">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="10"/>
@@ -268,7 +206,7 @@
                              Height="40"
                              KeyDown="BuildInput_KeyDown"/>
                     <TextBlock Text="Describe your project in plain English…"
-                               IsHitTestVisible="False" FontSize="12.5" Foreground="#1e3828"
+                               IsHitTestVisible="False" FontSize="12.5" Foreground="#3a4654"
                                Margin="15,0,0,0" VerticalAlignment="Center">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">

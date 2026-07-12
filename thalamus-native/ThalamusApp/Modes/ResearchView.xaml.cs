@@ -44,12 +44,14 @@ namespace ThalamusApp.Modes
 
         private void Research_Click(object sender, RoutedEventArgs e) => _ = DoResearchAsync();
 
+        // Chips prefill the query (matching the website) — the user runs it themselves.
         private void Example_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
             if (sender is Border b && b.Child is TextBlock tb)
             {
                 ResearchInputBox.Text = tb.Text;
-                _ = DoResearchAsync();
+                ResearchInputBox.Focus();
+                ResearchInputBox.CaretIndex = tb.Text.Length;
             }
         }
 
@@ -59,7 +61,7 @@ namespace ThalamusApp.Modes
             if (string.IsNullOrEmpty(query) || _isResearching) return;
 
             ResearchInputBox.Text = "";
-            WelcomeCard.Visibility = Visibility.Collapsed;
+            EmptyState.Visibility = Visibility.Collapsed;
 
             // Show progress card
             ProgressCard.Visibility = Visibility.Visible;
@@ -152,78 +154,53 @@ namespace ThalamusApp.Modes
             ProgressFill.BeginAnimation(WidthProperty, anim);
         }
 
+        // The query the user asked — right-aligned neutral card, no avatar.
         private void AppendQueryHeader(string query)
         {
-            var border = new Border
+            var bubble = new Border
             {
-                Background = new SolidColorBrush(Color.FromRgb(0x08, 0x14, 0x28)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x1e, 0x3a, 0x5f)),
-                BorderThickness = new Thickness(0, 0, 0, 1),
-                CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(16, 12, 16, 12),
-                Margin = new Thickness(0, 0, 0, 12)
-            };
-            var sp = new StackPanel { Orientation = Orientation.Horizontal };
-            sp.Children.Add(new TextBlock
-            {
-                Text = "Research: ",
-                FontSize = 11.5, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("TextMutedBrush"),
-                VerticalAlignment = VerticalAlignment.Center
-            });
-            sp.Children.Add(new TextBlock
-            {
-                Text = query,
-                FontSize = 12.5, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("TextPrimaryBrush"),
-                TextWrapping = TextWrapping.Wrap,
-                VerticalAlignment = VerticalAlignment.Center
-            });
-            border.Child = sp;
-            ResearchPanel.Children.Add(border);
-        }
-
-        private void AppendResultStart(out TextBlock liveBlock)
-        {
-            var border = new Border
-            {
-                Background = new SolidColorBrush(Color.FromRgb(0x0a, 0x16, 0x28)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x1e, 0x3a, 0x5f)),
+                Background = (Brush)FindResource("BgCardBrush"),
+                BorderBrush = (Brush)FindResource("BorderSubtleBrush"),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(12),
-                Padding = new Thickness(20, 16, 20, 16),
-                Margin = new Thickness(0, 0, 0, 16)
+                Padding = new Thickness(14, 10, 14, 10),
+                MaxWidth = 560,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 0, 0, 16),
+                Child = new TextBlock
+                {
+                    Text = query,
+                    FontSize = 13, FontWeight = FontWeights.SemiBold,
+                    Foreground = (Brush)FindResource("TextPrimaryBrush"),
+                    TextWrapping = TextWrapping.Wrap
+                }
             };
+            ResearchPanel.Children.Add(bubble);
+        }
+
+        // The report — left-aligned prose, no card, no avatar.
+        private void AppendResultStart(out TextBlock liveBlock)
+        {
             var tb = new TextBlock
             {
-                FontSize = 12.5,
+                FontSize = 13,
                 TextWrapping = TextWrapping.Wrap,
-                Foreground = (Brush)FindResource("TextSecondaryBrush"),
-                LineHeight = 20,
-                FontFamily = new FontFamily("Segoe UI")
+                Foreground = (Brush)FindResource("TextPrimaryBrush"),
+                LineHeight = 21,
+                Margin = new Thickness(0, 0, 0, 18)
             };
             liveBlock = tb;
-            border.Child = tb;
-            ResearchPanel.Children.Add(border);
+            ResearchPanel.Children.Add(tb);
         }
 
         private void AppendError(string msg)
         {
-            var border = new Border
+            ResearchPanel.Children.Add(new TextBlock
             {
-                Background = new SolidColorBrush(Color.FromRgb(0x1a, 0x08, 0x08)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x4a, 0x10, 0x10)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(16, 12, 16, 12),
-                Margin = new Thickness(0, 0, 0, 12),
-                Child = new TextBlock
-                {
-                    Text = msg, FontSize = 12.5, TextWrapping = TextWrapping.Wrap,
-                    Foreground = (Brush)FindResource("RedBrush")
-                }
-            };
-            ResearchPanel.Children.Add(border);
+                Text = msg, FontSize = 12.5, TextWrapping = TextWrapping.Wrap,
+                Foreground = (Brush)FindResource("RedBrush"),
+                LineHeight = 20, Margin = new Thickness(0, 0, 0, 18)
+            });
         }
     }
 }

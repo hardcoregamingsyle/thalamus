@@ -6,7 +6,7 @@
     <AssemblyName>ThalamusSetup</AssemblyName>
     <RootNamespace>ThalamusInstaller</RootNamespace>
     <ApplicationIcon>..\ThalamusApp\Assets\icon.ico</ApplicationIcon>
-    <Version>2.2.1</Version>
+    <Version>2.3.0</Version>
     <Company>Aphantic Corporations</Company>
     <Product>Thalamus AI Setup</Product>
     <Description>Thalamus AI Installer</Description>

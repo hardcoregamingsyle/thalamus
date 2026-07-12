@@ -50,6 +50,10 @@
 
     <!-- ── Typography — native stand-in for the site's Inter ── -->
     <FontFamily x:Key="AppFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>
+    <!-- Monospace for the status strip, code blocks, and technical labels —
+         reads like a dev tool, not a chat app. Cascadia Code ships with Windows
+         Terminal / recent Windows; Consolas is the always-present fallback. -->
+    <FontFamily x:Key="MonoFontFamily">Cascadia Code, Consolas</FontFamily>
 
     <!-- ── Gradients ── -->
     <LinearGradientBrush x:Key="BlueGradient" StartPoint="0,0" EndPoint="1,1">
@@ -86,6 +90,30 @@
         <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="16"/>
+    </Style>
+
+    <!-- ── Example-prompt chip — rounded bordered button that prefills the input.
+         Mirrors the website's empty-state suggestion chips (bg-card border). ── -->
+    <Style x:Key="ExampleChip" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource BgCardBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="9"/>
+        <Setter Property="Padding" Value="12,8"/>
+        <Setter Property="Margin" Value="0,0,8,8"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Chip label — quiet secondary text sitting inside an ExampleChip. -->
+    <Style x:Key="ExampleChipText" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11.5"/>
+        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
     </Style>
 
     <!-- ── Section header — muted uppercase label ── -->

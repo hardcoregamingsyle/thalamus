@@ -423,7 +423,8 @@
                                     <Ellipse Width="5" Height="5" Fill="{StaticResource GreenBrush}"
                                              VerticalAlignment="Center" Margin="0,0,8,0"/>
                                     <TextBlock x:Name="VersionLabel" Text="v1.0.0"
-                                               FontSize="9.5" Foreground="{StaticResource TextMutedBrush}"/>
+                                               FontSize="9.5" FontFamily="{StaticResource MonoFontFamily}"
+                                               Foreground="{StaticResource TextMutedBrush}"/>
                                     <TextBlock Text="  ·  " FontSize="9.5"
                                                Foreground="{StaticResource TextMutedBrush}"/>
                                     <TextBlock x:Name="UpdateLabel" Text="Up to date"
@@ -472,6 +473,7 @@
                                  VerticalAlignment="Center" Margin="0,0,7,0"/>
                         <TextBlock x:Name="StatusText" Text="Ready"
                                    Foreground="{StaticResource TextSecondaryBrush}"
+                                   FontFamily="{StaticResource MonoFontFamily}"
                                    FontSize="9.5"/>
                     </StackPanel>
                     <Border Grid.Column="1" CornerRadius="4"
@@ -481,6 +483,7 @@
                             Padding="8,1,8,2" VerticalAlignment="Center">
                         <TextBlock x:Name="ModeLabel" Text="Code Mode"
                                    Foreground="{StaticResource BlueBrush}"
+                                   FontFamily="{StaticResource MonoFontFamily}"
                                    FontSize="8.5" FontWeight="SemiBold"/>
                     </Border>
                 </Grid>
