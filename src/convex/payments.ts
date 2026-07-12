@@ -70,6 +70,7 @@ export const recordPayment = internalMutation({
     email: v.string(),
     priceCents: v.number(),
     userId: v.optional(v.id("users")),
+    provider: v.optional(v.string()), // defaults to "gumroad"
   },
   handler: async (ctx, args): Promise<{ credited: boolean; bucks: number; alreadyProcessed: boolean }> => {
     const bucks = Math.max(0, Math.floor(args.priceCents * AB_PER_CENT));
@@ -118,7 +119,7 @@ export const recordPayment = internalMutation({
     }
 
     await ctx.db.insert("payments", {
-      provider: "gumroad",
+      provider: args.provider ?? "gumroad",
       saleId: args.saleId,
       licenseKeyHash: args.licenseKeyHash,
       email: args.email,
