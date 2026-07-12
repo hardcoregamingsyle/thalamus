@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using ThalamusApp.Controls;
 using ThalamusApp.Services;
 
 namespace ThalamusApp.Modes
@@ -21,6 +23,7 @@ namespace ThalamusApp.Modes
         private bool _isStreaming;
         private TextBlock? _liveBlock;
         private string _liveText = "";
+        private bool _adRequested;   // one sponsored card per session (mirrors web adRequestedRef)
 
         public ChatView()
         {
@@ -31,6 +34,7 @@ namespace ThalamusApp.Modes
         public void SetToken(string token)
         {
             _token = token;
+            _adRequested = false;   // sign-in/out is the session boundary — allow a fresh ad
             ChatCreditsLabel.Text = "Signed in";
         }
 
@@ -141,6 +145,49 @@ namespace ThalamusApp.Modes
             SendButton.IsEnabled = true;
             StreamingLabel.Text = "";
             ScrollToBottom();
+
+            // First real reply of the session → try to surface one sponsored card.
+            // Fire-and-forget and fully guarded, so ads can never stall or break chat.
+            if (!string.IsNullOrEmpty(fullText))
+                _ = MaybeRequestAdAsync();
+        }
+
+        // ── Sponsored ad (Gravity) ───────────────────────────────────────────
+
+        private async Task MaybeRequestAdAsync()
+        {
+            if (_adRequested) return;
+            _adRequested = true;
+
+            try
+            {
+                // Last ~6 turns, each capped ~1000 chars — the same window the backend
+                // trims to, so we never ship a whole transcript for ad context.
+                var recent = _history.Count > 6
+                    ? _history.GetRange(_history.Count - 6, 6)
+                    : _history;
+                var messages = new List<object>();
+                foreach (var (role, text) in recent)
+                    messages.Add(new { role, content = text.Length > 1000 ? text[..1000] : text });
+
+                // count:1 → the action returns a single ad object, or null on no-fill.
+                var result = await _convex.CallActionAsync(
+                    "gravityAds:requestAd",
+                    new { token = _token, messages, sessionId = (string?)null, count = 1 },
+                    _token);
+
+                if (result is not JsonObject ad) return;
+
+                Dispatcher.Invoke(() =>
+                {
+                    var card = new SponsoredAdCard();
+                    card.Populate(ad);
+                    // Insert before the (hidden) typing row so the card sits under the reply.
+                    MessagesPanel.Children.Insert(MessagesPanel.Children.Count - 1, card);
+                    ScrollToBottom();
+                });
+            }
+            catch { /* ads must never break chat — any failure just shows no card */ }
         }
 
         // ── Message builder helpers ──────────────────────────────────────────
