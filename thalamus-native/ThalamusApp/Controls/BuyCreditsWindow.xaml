@@ -1,0 +1,340 @@
+<Window x:Class="ThalamusApp.Controls.BuyCreditsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Buy AgentBucks"
+        Width="440" Height="560"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        Background="{StaticResource BgDarkerBrush}"
+        FontFamily="{StaticResource AppFontFamily}"
+        UseLayoutRounding="True"
+        AllowsTransparency="False"
+        Loaded="Window_Loaded">
+
+    <Window.Resources>
+        <!-- Palette, gradients, PrimaryBtn/GhostBtn come from Styles/Theme.xaml -->
+
+        <!-- Traffic light dots — same terminal chrome as LoginWindow -->
+        <Style x:Key="TrafficLight" TargetType="Ellipse">
+            <Setter Property="Width" Value="10"/>
+            <Setter Property="Height" Value="10"/>
+            <Setter Property="StrokeThickness" Value="0.5"/>
+        </Style>
+
+        <!-- Close button -->
+        <Style x:Key="CloseBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Width" Value="40"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Credit pack card — bordered, hover lifts the border to blue -->
+        <Style x:Key="PackBtn" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource BgInputBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10" Padding="12,10">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource BlueBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Popular pack — faint blue fill + blue border to draw the eye -->
+        <Style x:Key="PackBtnPopular" TargetType="Button" BasedOn="{StaticResource PackBtn}">
+            <Setter Property="Background" Value="#12244a"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BlueBrush}"/>
+        </Style>
+
+        <!-- Copyable email field — looks like an input, acts like a button -->
+        <Style x:Key="CopyFieldBtn" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Background" Value="{StaticResource BgDarkerBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{StaticResource AmberBrush}" BorderThickness="1"
+                                CornerRadius="8" Padding="12,10">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Background -->
+        <Rectangle Fill="{StaticResource BgDarkerBrush}"/>
+
+        <!-- Ambient glow -->
+        <Rectangle HorizontalAlignment="Center" VerticalAlignment="Top"
+                   Width="420" Height="320" Opacity="0.07">
+            <Rectangle.Fill>
+                <RadialGradientBrush>
+                    <GradientStop Color="#f59e0b" Offset="0"/>
+                    <GradientStop Color="Transparent" Offset="1"/>
+                </RadialGradientBrush>
+            </Rectangle.Fill>
+        </Rectangle>
+
+        <!-- ═══ TITLE BAR ═══ -->
+        <Border Grid.Row="0" Background="{StaticResource BgDarkerBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,0,0,1"
+                MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Grid>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                    <Ellipse Style="{StaticResource TrafficLight}" Fill="#ff5f57" Stroke="#e04844"/>
+                    <Ellipse Style="{StaticResource TrafficLight}" Fill="#febc2e" Stroke="#dda020" Margin="8,0,0,0"/>
+                    <Ellipse Style="{StaticResource TrafficLight}" Fill="#28c840" Stroke="#20a830" Margin="8,0,0,0"/>
+                    <TextBlock Text="  thalamus://credits" FontSize="10" FontFamily="Consolas"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               VerticalAlignment="Center" Margin="12,0,0,0"/>
+                </StackPanel>
+                <Button HorizontalAlignment="Right" Style="{StaticResource CloseBtn}"
+                        Content="&#x2715;" Click="CloseBtn_Click"/>
+            </Grid>
+        </Border>
+
+        <!-- ═══ CONTENT ═══ -->
+        <Border Grid.Row="1" Padding="24,20,24,24">
+            <DockPanel>
+                <!-- Header (always visible) -->
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,16">
+                    <Path Data="M13 10V3L4 14h7v7l9-11h-7z"
+                          Fill="{StaticResource AmberBrush}"
+                          Width="14" Height="14" Stretch="Uniform"
+                          VerticalAlignment="Center"/>
+                    <TextBlock Text="Buy AgentBucks" FontSize="14" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               VerticalAlignment="Center" Margin="8,0,0,0"/>
+                </StackPanel>
+
+                <!-- Switching content -->
+                <Grid>
+                    <!-- ═══ LOADING ═══ -->
+                    <StackPanel x:Name="LoadingPanel" VerticalAlignment="Center"
+                                Visibility="Visible">
+                        <TextBlock Text="Checking availability…"
+                                   FontSize="12.5" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   HorizontalAlignment="Center"/>
+                        <TextBlock Text="Contacting the store"
+                                   FontSize="10.5"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                    </StackPanel>
+
+                    <!-- ═══ UNAVAILABLE ═══ -->
+                    <StackPanel x:Name="UnavailablePanel" VerticalAlignment="Center"
+                                Visibility="Collapsed">
+                        <Border Style="{StaticResource Card}" Padding="18">
+                            <StackPanel>
+                                <TextBlock Text="Purchases are temporarily unavailable"
+                                           FontSize="13" FontWeight="Bold"
+                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock x:Name="UnavailableText"
+                                           Text="Credit purchases are currently disabled. Your daily free AgentBucks keep refilling as usual — check back soon."
+                                           FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
+                                           TextWrapping="Wrap" Margin="0,8,0,0" LineHeight="17"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ═══ PACKS ═══ -->
+                    <StackPanel x:Name="PacksPanel" Visibility="Collapsed">
+                        <TextBlock x:Name="BalanceText" Text="" FontSize="10.5" FontWeight="Bold"
+                                   Foreground="{StaticResource AmberBrush}"
+                                   Margin="0,0,0,10" Visibility="Collapsed"/>
+
+                        <TextBlock Text="Pay with UPI, GPay, or card via Buy Me a Coffee — no account needed. Credits are added automatically within a minute of payment."
+                                   FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
+                                   TextWrapping="Wrap" LineHeight="17" Margin="0,0,0,12"/>
+
+                        <!-- 2×2 pack grid. Every pack routes to the same email
+                             warning: BMAC is amount-based, so the pack is only a
+                             suggested amount, not a distinct checkout. -->
+                        <UniformGrid Rows="2" Columns="2" Margin="-4,0">
+                            <Button Style="{StaticResource PackBtn}" Click="Pack_Click">
+                                <StackPanel>
+                                    <TextBlock Text="Starter" FontWeight="Bold" FontSize="12"
+                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="₹100" FontWeight="Bold" FontSize="14"
+                                               Foreground="{StaticResource BlueBrush}" Margin="0,3,0,0"/>
+                                    <TextBlock Text="1.5M AB — great for trying out"
+                                               FontSize="9.5" Foreground="{StaticResource TextSecondaryBrush}"
+                                               TextWrapping="Wrap" Margin="0,3,0,0" LineHeight="13"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource PackBtnPopular}" Click="Pack_Click">
+                                <StackPanel>
+                                    <TextBlock Text="POPULAR" FontWeight="Bold" FontSize="8"
+                                               Foreground="{StaticResource BlueBrush}" Margin="0,0,0,2"/>
+                                    <TextBlock Text="Builder" FontWeight="Bold" FontSize="12"
+                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="₹500" FontWeight="Bold" FontSize="14"
+                                               Foreground="{StaticResource BlueBrush}" Margin="0,3,0,0"/>
+                                    <TextBlock Text="7.5M AB — for regular builders"
+                                               FontSize="9.5" Foreground="{StaticResource TextSecondaryBrush}"
+                                               TextWrapping="Wrap" Margin="0,3,0,0" LineHeight="13"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource PackBtn}" Click="Pack_Click">
+                                <StackPanel>
+                                    <TextBlock Text="Pro" FontWeight="Bold" FontSize="12"
+                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="₹1100" FontWeight="Bold" FontSize="14"
+                                               Foreground="{StaticResource BlueBrush}" Margin="0,3,0,0"/>
+                                    <TextBlock Text="16.5M AB — for daily drivers"
+                                               FontSize="9.5" Foreground="{StaticResource TextSecondaryBrush}"
+                                               TextWrapping="Wrap" Margin="0,3,0,0" LineHeight="13"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource PackBtn}" Click="Pack_Click">
+                                <StackPanel>
+                                    <TextBlock Text="Studio" FontWeight="Bold" FontSize="12"
+                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="₹3000" FontWeight="Bold" FontSize="14"
+                                               Foreground="{StaticResource BlueBrush}" Margin="0,3,0,0"/>
+                                    <TextBlock Text="45M AB — for power users"
+                                               FontSize="9.5" Foreground="{StaticResource TextSecondaryBrush}"
+                                               TextWrapping="Wrap" Margin="0,3,0,0" LineHeight="13"/>
+                                </StackPanel>
+                            </Button>
+                        </UniformGrid>
+
+                        <!-- Persistent email warning -->
+                        <Border Background="#1a1405" BorderBrush="#5a4410" BorderThickness="1"
+                                CornerRadius="10" Padding="12" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="⚠ IMPORTANT — payments are verified by email."
+                                           FontSize="11" FontWeight="Bold"
+                                           Foreground="{StaticResource AmberBrush}" TextWrapping="Wrap"/>
+                                <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
+                                           TextWrapping="Wrap" Margin="0,4,0,0" LineHeight="16">
+                                    <Run Text="On the payment page you must use "/>
+                                    <Run x:Name="PacksEmailText" Text="your account email" FontFamily="Consolas"
+                                         FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <Run Text=" or our system will not be able to verify that it was you who paid."/>
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ═══ EMAIL WARNING (blocking, before BMAC opens) ═══ -->
+                    <StackPanel x:Name="WarningPanel" VerticalAlignment="Center"
+                                Visibility="Collapsed">
+                        <Border Background="#1a1405" BorderBrush="{StaticResource AmberBrush}"
+                                BorderThickness="2" CornerRadius="12" Padding="16">
+                            <StackPanel>
+                                <TextBlock Text="⚠ Read this before you pay"
+                                           FontSize="13" FontWeight="Bold"
+                                           Foreground="{StaticResource AmberBrush}"/>
+                                <TextBlock FontSize="11.5" Foreground="{StaticResource TextPrimaryBrush}"
+                                           TextWrapping="Wrap" Margin="0,10,0,0" LineHeight="17">
+                                    <Run Text="On the Buy Me a Coffee page, you "/>
+                                    <Run Text="must enter this exact email" FontWeight="Bold"/>
+                                    <Run Text=":"/>
+                                </TextBlock>
+
+                                <!-- Copyable account email -->
+                                <Button Style="{StaticResource CopyFieldBtn}" Click="CopyEmail_Click"
+                                        Margin="0,10,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="WarnEmailText" Grid.Column="0" Text="…"
+                                                   FontFamily="Consolas" FontWeight="Bold" FontSize="11.5"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="WarnCopyLabel" Grid.Column="1" Text="TAP TO COPY"
+                                                   FontSize="9" FontWeight="Bold"
+                                                   Foreground="{StaticResource AmberBrush}"
+                                                   VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                    </Grid>
+                                </Button>
+
+                                <TextBlock FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}"
+                                           TextWrapping="Wrap" Margin="0,10,0,0" LineHeight="16">
+                                    <Run Text="Payments are matched to your account "/>
+                                    <Run Text="by email only" FontWeight="Bold"
+                                         Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <Run Text=". If you enter a different email there, our system "/>
+                                    <Run Text="cannot verify that it was you who paid" FontWeight="Bold"
+                                         Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <Run Text=" and your credits will not appear automatically."/>
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Action row -->
+                        <Grid Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="10"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0" Content="Back" Style="{StaticResource GhostBtn}"
+                                    Height="40" Click="Back_Click"/>
+                            <Button Grid.Column="2" Content="I understand — continue"
+                                    Style="{StaticResource PrimaryBtn}"
+                                    Background="{StaticResource AmberBrush}" Foreground="Black"
+                                    FontSize="11.5" Click="Continue_Click"/>
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

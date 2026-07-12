@@ -6,14 +6,19 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using ThalamusApp.Auth;
+using ThalamusApp.Controls;
 
 namespace ThalamusApp
 {
     public partial class MainWindow : Window
     {
-        private const string APP_VERSION = "2.1.0";
+        private const string APP_VERSION = "2.2.0";
         private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
         private bool _isAuthenticated;
+
+        // Kept so the Buy Credits dialog can be handed the live session identity.
+        private string _sessionToken = "";
+        private string _sessionEmail = "";
 
         public MainWindow()
         {
@@ -30,13 +35,16 @@ namespace ThalamusApp
         public void SetSession(string token, string email)
         {
             _isAuthenticated = true;
+            _sessionToken = token;
+            _sessionEmail = email;
             UserLabel.Text = email;
             AuthDot.Background = (Brush)FindResource("GreenBrush");
             AuthDot.ToolTip = email;
 
-            // Show sign out, hide sign in
+            // Show sign out + buy credits, hide sign in
             BtnSignIn.Visibility = Visibility.Collapsed;
             BtnSignOut.Visibility = Visibility.Visible;
+            BtnBuyCredits.Visibility = Visibility.Visible;
             SectionLabel.Text = email.Length > 18 ? email[..16] + "..." : email;
 
             // Pass token to mode views
@@ -55,12 +63,15 @@ namespace ThalamusApp
         private void SetGuestMode()
         {
             _isAuthenticated = false;
+            _sessionToken = "";
+            _sessionEmail = "";
             UserLabel.Text = "Not signed in";
             AuthDot.Background = (Brush)FindResource("AmberBrush");
             AuthDot.ToolTip = "Sign in to unlock all features";
 
             BtnSignIn.Visibility = Visibility.Visible;
             BtnSignOut.Visibility = Visibility.Collapsed;
+            BtnBuyCredits.Visibility = Visibility.Collapsed;
             SectionLabel.Text = "ACCOUNT";
 
             StatusText.Text = "Ready — Guest";
@@ -130,12 +141,15 @@ namespace ThalamusApp
 
             // Reset to guest mode
             _isAuthenticated = false;
+            _sessionToken = "";
+            _sessionEmail = "";
             UserLabel.Text = "Not signed in";
             AuthDot.Background = (Brush)FindResource("AmberBrush");
             AuthDot.ToolTip = "Sign in to unlock all features";
 
             BtnSignIn.Visibility = Visibility.Visible;
             BtnSignOut.Visibility = Visibility.Collapsed;
+            BtnBuyCredits.Visibility = Visibility.Collapsed;
             SectionLabel.Text = "ACCOUNT";
 
             // Clear tokens from mode views
@@ -146,6 +160,16 @@ namespace ThalamusApp
 
             StatusText.Text = "Ready — Guest";
             NavigateTo("Chat");
+        }
+
+        /// <summary>
+        /// Open the Buy AgentBucks dialog. Only meaningful while signed in — it
+        /// needs the session token to look up the account email a payment must use.
+        /// </summary>
+        private void BuyCredits_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_isAuthenticated || string.IsNullOrEmpty(_sessionToken)) return;
+            new BuyCreditsWindow(_sessionToken, _sessionEmail) { Owner = this }.ShowDialog();
         }
 
         // ── Auto-update ───────────────────────────────────────────────────────

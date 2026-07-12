@@ -391,6 +391,26 @@
                             </StackPanel>
                         </Button>
 
+                        <!-- Buy Credits button (visible when authenticated) -->
+                        <Button x:Name="BtnBuyCredits"
+                                Click="BuyCredits_Click" Style="{StaticResource SidebarBtn}"
+                                Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal">
+                                <Border Width="22" Height="22" CornerRadius="6"
+                                        Background="#1f1705" Margin="0,0,12,0"
+                                        BorderBrush="{StaticResource BorderBrush}"
+                                        BorderThickness="1">
+                                    <!-- Lightning bolt — echoes the AgentBucks/credits accent -->
+                                    <Path Data="M13 10V3L4 14h7v7l9-11h-7z"
+                                          Fill="{StaticResource AmberBrush}"
+                                          Width="11" Height="11" Stretch="Uniform"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock Text="Buy Credits" VerticalAlignment="Center"
+                                           Foreground="{StaticResource AmberBrush}"/>
+                            </StackPanel>
+                        </Button>
+
                         <!-- Sign out button (visible when authenticated) -->
                         <Button x:Name="BtnSignOut" Tag="Logout"
                                 Click="Nav_Click" Style="{StaticResource SidebarBtn}"
