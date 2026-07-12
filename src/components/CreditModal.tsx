@@ -21,6 +21,11 @@ const CREDIT_PACKS = [
 // this product: the key is how the backend authenticates the purchase.
 const GUMROAD_PRODUCT_URL = "https://hardcoregamingsyle.gumroad.com/l/agentbucks";
 
+// The UPI rail: Buy Me a Coffee supports UPI for Indian buyers (Gumroad
+// doesn't). BMAC can't thread a user id through checkout, so payments are
+// matched to accounts strictly by email — the UI warns hard about this.
+const BMAC_PAGE_URL = "https://buymeacoffee.com/hardcoregamingsyle";
+
 interface CreditModalProps {
   open: boolean;
   onClose: () => void;
@@ -34,6 +39,16 @@ function BuyCreditsModal({ onClose, token }: { onClose: () => void; token?: stri
   const claimLicense = useAction(api.payments.claimLicense);
   const [licenseKey, setLicenseKey] = useState("");
   const [claiming, setClaiming] = useState(false);
+  const [showUpiWarning, setShowUpiWarning] = useState(false);
+  const [emailCopied, setEmailCopied] = useState(false);
+
+  const copyAccountEmail = () => {
+    if (!user?.email) return;
+    navigator.clipboard.writeText(user.email).then(() => {
+      setEmailCopied(true);
+      setTimeout(() => setEmailCopied(false), 2000);
+    });
+  };
 
   // Threads identity through Gumroad checkout: uid comes back in the payment
   // webhook so credits land on this account automatically; email prefills the
@@ -82,6 +97,46 @@ function BuyCreditsModal({ onClose, token }: { onClose: () => void; token?: stri
         </button>
       </div>
 
+      {showUpiWarning ? (
+        <div className="space-y-4">
+          <div className="bg-amber-400/10 border-2 border-amber-400/50 rounded-xl p-4 space-y-3">
+            <p className="text-sm font-bold text-amber-400">⚠ Read this before you pay</p>
+            <p className="text-xs text-foreground leading-relaxed">
+              On the Buy Me a Coffee page, you <span className="font-bold">must enter this exact email</span>:
+            </p>
+            <button
+              onClick={copyAccountEmail}
+              className="w-full flex items-center justify-between gap-2 bg-background border border-amber-400/40 rounded-lg px-3 py-2.5 hover:bg-amber-400/5 transition-colors"
+            >
+              <span className="text-xs font-mono font-bold text-foreground truncate">{user?.email ?? "…"}</span>
+              <span className="text-[10px] font-bold text-amber-400 shrink-0">{emailCopied ? "COPIED ✓" : "TAP TO COPY"}</span>
+            </button>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              Payments are matched to your account <span className="font-bold text-foreground">by email only</span>. If you enter a
+              different email there, our system <span className="font-bold text-foreground">cannot verify that it was you who paid</span> and
+              your credits will not appear automatically.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowUpiWarning(false)}
+              className="flex-1 py-2.5 bg-muted text-foreground rounded-xl text-xs font-bold hover:bg-muted/70 transition-all"
+            >
+              Back
+            </button>
+            <a
+              href={BMAC_PAGE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setShowUpiWarning(false)}
+              className="flex-1 py-2.5 bg-amber-400 text-black rounded-xl text-xs font-bold hover:bg-amber-300 transition-all text-center"
+            >
+              I understand — pay with UPI
+            </a>
+          </div>
+        </div>
+      ) : (
+      <>
       <p className="text-xs text-muted-foreground leading-relaxed">
         Pay by card or PayPal — no account needed. Credits are added to this account automatically within seconds of payment.
       </p>
@@ -103,6 +158,23 @@ function BuyCreditsModal({ onClose, token }: { onClose: () => void; token?: stri
             <p className="text-[10px] text-muted-foreground mt-0.5">{pack.desc}</p>
           </a>
         ))}
+      </div>
+
+      <div className="space-y-2">
+        <button
+          onClick={() => setShowUpiWarning(true)}
+          className="w-full flex items-center justify-between p-3 rounded-xl border border-amber-400/40 bg-amber-400/10 hover:bg-amber-400/20 transition-all group"
+        >
+          <div className="text-left">
+            <p className="text-xs font-bold text-amber-400">Prefer UPI? Pay via Buy Me a Coffee</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">UPI · GPay · cards — for buyers in India</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-amber-400/60 group-hover:text-amber-400 transition-colors shrink-0" />
+        </button>
+        <p className="text-[10px] text-amber-400/90 leading-relaxed px-1">
+          ⚠ UPI payments are verified by email. You must use <span className="font-mono font-bold">{user?.email ?? "your account email"}</span> on
+          the payment page or we cannot confirm the payment was yours.
+        </p>
       </div>
 
       <div className="space-y-2">
@@ -129,6 +201,8 @@ function BuyCreditsModal({ onClose, token }: { onClose: () => void; token?: stri
           The license key is in your Gumroad receipt email. Use it if credits didn't appear automatically.
         </p>
       </div>
+      </>
+      )}
     </motion.div>
   );
 }
