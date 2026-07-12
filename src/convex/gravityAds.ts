@@ -23,6 +23,7 @@ export const saveGravityAdsConfig = mutation({
     showToFreeUsers: v.boolean(),
     showToPaidUsers: v.boolean(),
     restrictedCategories: v.optional(v.array(v.string())),
+    testAdMode: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     requireAdmin(args.adminToken);
@@ -36,6 +37,7 @@ export const saveGravityAdsConfig = mutation({
       showToFreeUsers: args.showToFreeUsers,
       showToPaidUsers: args.showToPaidUsers,
       restrictedCategories: args.restrictedCategories,
+      testAdMode: args.testAdMode ?? false,
       updatedAt: Date.now(),
       updatedBy: "admin",
     };
@@ -96,6 +98,9 @@ export const requestAd = action({
     // How many ads the client can display (1 in-chat + N right-rail slots on
     // wide screens). Server-clamped to 4 — more just cannibalizes attention.
     count: v.optional(v.number()),
+    // Client device signals (real browser/app UA) forwarded to Gravity so our
+    // proxied requests aren't filtered as bot traffic.
+    device: v.optional(v.object({ ua: v.optional(v.string()), country: v.optional(v.string()) })),
   },
   handler: async (ctx, args) => {
     const config = await ctx.runQuery(internal.gravityAds.getGravityAdsConfigInternal, {});
@@ -124,15 +129,25 @@ export const requestAd = action({
     if (messages.length === 0) return null;
 
     const count = Math.max(1, Math.min(4, Math.floor(args.count ?? 1)));
+    // Placement names MUST be from Gravity's fixed vocabulary (below_response,
+    // right_response, …). An unknown value like "sidebar" gets the whole
+    // request rejected — the in-chat card is below the reply, rail cards are
+    // to the right.
     const placements = Array.from({ length: count }, (_, i) => ({
-      placement: i === 0 ? "below_response" : "sidebar",
+      placement: i === 0 ? "below_response" : "right_response",
       placement_id: config.adUnitIds?.[i] ?? (i === 0 ? "main" : `rail_${i}`),
     }));
-    const body = {
+    const body: Record<string, unknown> = {
       messages,
       sessionId: args.sessionId ?? `anon_${Date.now().toString(36)}`,
       placements,
       ...(config.restrictedCategories?.length ? { excludedTopics: config.restrictedCategories } : {}),
+      // Forward the client's device signals when supplied. Without a real UA,
+      // Gravity filters datacenter-originated requests as bots and 204s.
+      ...(args.device ? { device: args.device } : {}),
+      // Admin "test ads" toggle → Gravity returns a sample creative regardless
+      // of demand or bot-filtering, so the whole render pipeline is verifiable.
+      ...(config.testAdMode ? { testAd: true } : {}),
     };
 
     const controller = new AbortController();

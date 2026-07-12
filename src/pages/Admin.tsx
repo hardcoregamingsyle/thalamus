@@ -1519,6 +1519,7 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
   const [showToFreeUsers, setShowToFreeUsers] = useState(true);
   const [showToPaidUsers, setShowToPaidUsers] = useState(false);
   const [restrictedCategories, setRestrictedCategories] = useState("");
+  const [testAdMode, setTestAdMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showKey, setShowKey] = useState(false);
 
@@ -1533,6 +1534,7 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
       setShowToFreeUsers(existing.showToFreeUsers ?? true);
       setShowToPaidUsers(existing.showToPaidUsers ?? false);
       setRestrictedCategories((existing.restrictedCategories ?? []).join("\n"));
+      setTestAdMode(existing.testAdMode ?? false);
     }
   }, [existing]);
 
@@ -1542,7 +1544,8 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
       await saveConfig({ adminToken, apiKey, publisherId: publisherId || undefined,
         adUnitIds: adUnitIds.trim() ? adUnitIds.split("\n").map(s => s.trim()).filter(Boolean) : undefined,
         isEnabled, showToGuests, showToFreeUsers, showToPaidUsers,
-        restrictedCategories: restrictedCategories.trim() ? restrictedCategories.split("\n").map(s => s.trim()).filter(Boolean) : undefined });
+        restrictedCategories: restrictedCategories.trim() ? restrictedCategories.split("\n").map(s => s.trim()).filter(Boolean) : undefined,
+        testAdMode });
       toast.success("GravityAds config saved");
     } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed"); }
     finally { setSaving(false); }
@@ -1559,6 +1562,12 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
           <div><p className="text-sm font-semibold text-foreground">Ads Enabled</p><p className="text-xs text-muted-foreground">Master switch</p></div>
           <button onClick={() => setIsEnabled(v => !v)} className={`relative w-10 h-5 rounded-full transition-all ${isEnabled ? "bg-primary" : "bg-muted"}`}>
             <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${isEnabled ? "left-5" : "left-0.5"}`} />
+          </button>
+        </div>
+        <div className="flex items-center justify-between">
+          <div><p className="text-sm font-semibold text-amber-400">Test Ads</p><p className="text-xs text-muted-foreground">Show Gravity sample creatives (no billing) — use to verify placements render before real ads fill</p></div>
+          <button onClick={() => setTestAdMode(v => !v)} className={`relative w-10 h-5 rounded-full transition-all ${testAdMode ? "bg-amber-500" : "bg-muted"}`}>
+            <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${testAdMode ? "left-5" : "left-0.5"}`} />
           </button>
         </div>
         <div>
