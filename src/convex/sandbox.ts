@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated api types are self-referential here and exceed TS instantiation depth (TS2589); checked builds require this suppression. */
 // @ts-nocheck
 "use node";
-import { action } from "./_generated/server";
+import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
@@ -293,6 +293,61 @@ export const createSandbox = action({
     });
 
     return { sandboxDbId: sandboxDbId as string, sandboxId: sandbox.id };
+  },
+});
+
+// Web command executor for the NEW code system (codeBranches). Without this,
+// an agent that emits <<RUN-CMD>> queues the command and the pipeline pauses
+// forever — nothing else runs it. This runs every queued command in a Daytona
+// cloud sandbox (the path that works with NO desktop app installed), records
+// results, and resumes the pipeline. Fails safe: if Daytona isn't configured
+// or a command errors, the command is marked failed and the pipeline still
+// resumes, so a build can never hang.
+export const executeBranchCommands = internalAction({
+  args: { branchId: v.string() },
+  handler: async (ctx, args): Promise<void> => {
+    const resume = () => ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId: args.branchId });
+
+    const pending = await ctx.runQuery(internal.codeCommands.getPendingCommands, { branchId: args.branchId });
+    if (!pending || pending.length === 0) { await resume(); return; }
+
+    // Ensure a sandbox exists for this branch (created lazily, cached on the branch).
+    let sandboxId: string | null = await ctx.runQuery(internal.codeCommands.getBranchSandboxId, { branchId: args.branchId });
+    if (!sandboxId) {
+      try {
+        const sandbox = await daytonaFetch("/sandbox", {
+          method: "POST",
+          body: JSON.stringify({ language: "typescript", envVars: { NODE_ENV: "development" } }),
+        });
+        sandboxId = sandbox.id;
+        await ctx.runMutation(internal.codeCommands.setBranchSandboxId, { branchId: args.branchId, sandboxId });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Sandbox unavailable";
+        for (const cmd of pending) {
+          await ctx.runMutation(internal.codeCommands.recordCommandResult, {
+            commandId: cmd._id, status: "failed", output: `Sandbox error: ${msg}`, exitCode: 1,
+          });
+        }
+        await resume();
+        return;
+      }
+    }
+
+    for (const cmd of pending) {
+      try {
+        const { output, exitCode } = await executeCommandWithRetry(sandboxId, cmd.command);
+        await ctx.runMutation(internal.codeCommands.recordCommandResult, {
+          commandId: cmd._id, status: "completed", output: (output ?? "").slice(0, 20000), exitCode,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Command failed";
+        await ctx.runMutation(internal.codeCommands.recordCommandResult, {
+          commandId: cmd._id, status: "failed", output: msg.slice(0, 20000), exitCode: 1,
+        });
+      }
+    }
+
+    await resume();
   },
 });
 

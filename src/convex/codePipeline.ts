@@ -342,6 +342,15 @@ export const runPipelineAction = internalAction({
       const context = buildContext(messages);
       const fileContext = buildFileContext(files);
 
+      // Results of shell commands run since this agent last spoke — so on a
+      // post-command resume the agent can actually see what its commands did.
+      const commandResults = await ctx.runQuery(internal.codeCommands.getRecentCommandResults, { branchId }) as Array<{ command: string; output: string; exitCode: number; status: string }>;
+      const commandContext = commandResults.length > 0
+        ? "## Recent Command Results\n" + commandResults
+            .map((c) => `$ ${c.command}\n[${c.status}, exit ${c.exitCode}]\n${c.output.slice(0, 1500)}`)
+            .join("\n\n")
+        : "";
+
       // ── Dispatcher phase ──────────────────────────────────────────────────
       // Runs once at the very start to decide which agents are needed.
       if (executionPhase === "dispatching" || currentPhase === "Dispatcher") {
@@ -467,7 +476,7 @@ export const runPipelineAction = internalAction({
       } else {
         const systemPrompt = AGENT_SYSTEM_PROMPTS[currentPhase] ?? `You are the ${currentPhase} agent.`;
         // Default prompt for planning phase and non-Coder agents in execution phase
-        let prompt = `## Project Goal\n${task}\n\n## Current Files\n${fileContext}\n\n## Agent History\n${context}`;
+        let prompt = [`## Project Goal\n${task}`, `## Current Files\n${fileContext}`, commandContext, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
 
         if (executionPhase === "executing") {
           let plannerTasks: Array<{ title: string; description: string; dependencies?: string[] }> = [];
@@ -501,6 +510,7 @@ export const runPipelineAction = internalAction({
               fileInventory,
               files.length > 0 ? `## File Contents (recent)\n${fileContext}` : "",
               recentFeedback ? `## Previous Feedback (from Tester/Critic/Hacker)\n${recentFeedback}` : "",
+              commandContext,
               `## Pipeline Context\n${context}`,
               `## Tool Usage\nRun shell commands: <<RUN-CMD="command">>\nRequest API keys: <<REQUEST-API-KEY name="VAR" description="..." howToGet="...">>`,
             ].filter(Boolean).join("\n\n");
@@ -542,10 +552,13 @@ export const runPipelineAction = internalAction({
           messageIndex: totalMessages,
         });
 
-        // Exit and wait for commands to complete. `phase` is left unchanged, so
-        // this SAME agent runs again on resume — with the command results now in
-        // its context. File ops in this partial output are intentionally not
-        // applied; the re-run is expected to re-emit them.
+        // Execute the queued commands on the web (Daytona sandbox — works with
+        // no desktop app). This runs them and re-schedules runPipelineAction
+        // when done. `phase` is left unchanged, so this SAME agent runs again
+        // on resume — with the command results now in its context. File ops in
+        // this partial output are intentionally not applied; the re-run
+        // re-emits them.
+        await ctx.scheduler.runAfter(0, internal.sandbox.executeBranchCommands, { branchId });
         return;
       }
 
