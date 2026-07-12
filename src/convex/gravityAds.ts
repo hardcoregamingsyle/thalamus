@@ -21,6 +21,7 @@ export const saveGravityAdsConfig = mutation({
     showToGuests: v.boolean(),
     showToFreeUsers: v.boolean(),
     showToPaidUsers: v.boolean(),
+    restrictedCategories: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     requireAdmin(args.adminToken);
@@ -33,6 +34,7 @@ export const saveGravityAdsConfig = mutation({
       showToGuests: args.showToGuests,
       showToFreeUsers: args.showToFreeUsers,
       showToPaidUsers: args.showToPaidUsers,
+      restrictedCategories: args.restrictedCategories,
       updatedAt: Date.now(),
       updatedBy: "admin",
     };
@@ -67,6 +69,7 @@ export const getPublicAdsConfig = query({
       showToPaidUsers: config.showToPaidUsers,
       publisherId: config.publisherId,
       adUnitIds: config.adUnitIds,
+      restrictedCategories: config.restrictedCategories,
       // API key is server-side only — ad requests are proxied through our backend
     };
   },
