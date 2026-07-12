@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useSearchParams } from "react-router";
 import { useAction, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
@@ -22,6 +22,33 @@ export default function AuthDesktop() {
   const [errorMsg, setErrorMsg] = useState("");
   const [authorizing, setAuthorizing] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
+  // The custom-session token identifies the signed-in user to authorizeCode.
+  // It comes from OTP verification OR from an OAuth round-trip (?token= param).
+  const [sessionToken, setSessionToken] = useState(() => searchParams.get("token") ?? "");
+
+  // OAuth (Google/GitHub) redirects back here as ?token=…&code=… — adopt the
+  // token and jump straight to the authorize step so the user only confirms.
+  useEffect(() => {
+    // One-shot adoption of OAuth redirect params on mount; not derivable during render.
+    const urlToken = searchParams.get("token");
+    const urlError = searchParams.get("oauth_error");
+    if (urlToken) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reacting to a URL param present only after an OAuth round-trip
+      setStep("authorize");
+    } else if (urlError) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- surfacing an error passed back via the redirect URL
+      setErrorMsg(urlError);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- read URL params once on mount
+  }, []);
+
+  // Kick off browser OAuth, sending the user back to THIS page (code preserved)
+  // so the returned token can authorize the pending desktop code.
+  const startOAuth = (provider: "google" | "github") => {
+    const site = (import.meta.env.VITE_CONVEX_URL as string).replace(".convex.cloud", ".convex.site");
+    const back = `${window.location.origin}/auth/desktop?code=${encodeURIComponent(code)}`;
+    window.location.href = `${site}/auth/${provider}?redirect=${encodeURIComponent(back)}`;
+  };
 
   const handleSendOtp = useCallback(async () => {
     if (!email || !email.includes("@")) {
@@ -47,8 +74,9 @@ export default function AuthDesktop() {
     }
     setErrorMsg("");
     try {
-      await verifyOtp({ email, code: otpCode });
-      // OTP verified — move straight to authorize step
+      const result = await verifyOtp({ email, code: otpCode });
+      // Capture the session token so authorizeCode can identify this user.
+      setSessionToken(result.token);
       setStep("authorize");
       setErrorMsg("");
     } catch (err) {
@@ -65,7 +93,7 @@ export default function AuthDesktop() {
     setAuthorizing(true);
     setErrorMsg("");
     try {
-      await doAuthorize({ code: code.toUpperCase() });
+      await doAuthorize({ code: code.toUpperCase(), token: sessionToken || undefined });
       setStep("success");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Authorization failed. Try again.");
@@ -73,7 +101,7 @@ export default function AuthDesktop() {
     } finally {
       setAuthorizing(false);
     }
-  }, [code, doAuthorize]);
+  }, [code, doAuthorize, sessionToken]);
 
   return (
     <div className="min-h-screen bg-[#050a14] flex items-center justify-center p-4 relative overflow-hidden">
@@ -161,6 +189,33 @@ export default function AuthDesktop() {
                         <><Mail className="w-4 h-4" /> Send Login Code</>
                       )}
                     </button>
+
+                    <div className="flex items-center gap-3 pt-1">
+                      <div className="h-px flex-1 bg-[#1e3a5f]" />
+                      <span className="text-[10px] text-[#64748b] font-bold">OR</span>
+                      <div className="h-px flex-1 bg-[#1e3a5f]" />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => startOAuth("google")}
+                        className="flex items-center justify-center gap-2 bg-[#0d1f3c] border border-[#1e3a5f] hover:border-blue-500/50 text-[#e2e8f0] font-semibold py-2.5 rounded-lg text-xs transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true">
+                          <path fill="currentColor" d="M21.35 11.1H12v2.9h5.35c-.5 2.5-2.6 4.3-5.35 4.3a5.8 5.8 0 1 1 0-11.6c1.5 0 2.8.55 3.85 1.45l2.15-2.15A8.65 8.65 0 1 0 12 20.65c5 0 8.65-3.5 8.65-8.65 0-.3-.1-.6-.3-.9Z" />
+                        </svg>
+                        Google
+                      </button>
+                      <button
+                        onClick={() => startOAuth("github")}
+                        className="flex items-center justify-center gap-2 bg-[#0d1f3c] border border-[#1e3a5f] hover:border-blue-500/50 text-[#e2e8f0] font-semibold py-2.5 rounded-lg text-xs transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true">
+                          <path fill="currentColor" d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.9-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.58 9.58 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85V21c0 .27.18.58.69.48A10 10 0 0 0 12 2Z" />
+                        </svg>
+                        GitHub
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
