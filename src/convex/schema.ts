@@ -140,6 +140,9 @@ const schema = defineSchema(
       streamingContent: v.optional(v.string()),
       streamingAgent: v.optional(v.string()),
       streamingAt: v.optional(v.number()),
+      // Daytona sandbox that runs this branch's shell commands on the web (no
+      // desktop app required). Created lazily on the first command.
+      sandboxId: v.optional(v.string()),
     })
       .index("by_project", ["projectId"])
       .index("by_branch_id", ["branchId"])
