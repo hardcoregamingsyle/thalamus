@@ -17,6 +17,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# WPF single-file publish spins up a generated *_wpftmp project for markup
+# compilation. Run against it with MSBuild multi-proc + reused build nodes and
+# the two builds race over the same obj\ files (nuget asset copies, AssemblyInfo
+# generation) and fail non-deterministically. Force single-proc + fresh nodes so
+# every publish is reproducible.
+$env:MSBUILDDISABLENODEREUSE = "1"
+dotnet build-server shutdown 2>&1 | Out-Null
+
 $Root = $PSScriptRoot   # thalamus-native\
 
 Write-Host ""
@@ -78,6 +86,7 @@ dotnet publish $appProject `
     -p:PublishSingleFile=true `
     -p:IncludeNativeLibrariesForSelfExtract=true `
     -p:Version=$Version `
+    -m:1 `
     --nologo -q
 if ($LASTEXITCODE -ne 0) { Fail "dotnet publish failed for ThalamusApp" }
 
@@ -106,6 +115,7 @@ if (-not $SkipInstaller) {
         -p:PublishSingleFile=true `
         -p:IncludeNativeLibrariesForSelfExtract=true `
         -p:Version=$Version `
+        -m:1 `
         --nologo
     if ($LASTEXITCODE -ne 0) { Fail "dotnet publish failed for ThalamusInstaller" }
 
