@@ -20,7 +20,8 @@ namespace ThalamusApp.Modes
         private readonly List<(string role, string text)> _history = new();
         private CancellationTokenSource? _cts;
         private bool _isStreaming;
-        private TextBlock? _liveBlock;
+        private StackPanel? _liveContent;      // assistant bubble content host (HTML rendered on "done")
+        private TextBlock? _liveStreamBlock;   // live plaintext preview shown while streaming
         private string _liveText = "";
         private bool _adRequested;   // one sponsored card per session (mirrors web adRequestedRef)
 
@@ -78,14 +79,20 @@ namespace ThalamusApp.Modes
             SendButton.IsEnabled = false;
             _cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
             _liveText = "";
-            _liveBlock = null;
+            _liveContent = null;
+            _liveStreamBlock = null;
 
             try
             {
                 // "chat" mode → the backend's default model routing picks the model.
+                // Same HTML-forcing system prompt the website sends (Portal.tsx), so the
+                // model returns semantic HTML we render, instead of raw Markdown.
                 await _streaming!.StreamChatAsync(
                     text, "chat", _history,
-                    "You are Thalamus AI, a highly capable and helpful AI assistant. Be concise, clear, and accurate.",
+                    "You are Thalamus AI, an advanced AI assistant. CRITICAL: respond in clean, " +
+                    "semantic HTML only — no Markdown, no plain text, no code fences around the whole reply. " +
+                    "Use <h2>/<h3>, <p>, <ul>/<ol>/<li>, <strong>, <em>, <code>, <pre><code>, <blockquote>, " +
+                    "<a>, and <table> where appropriate. Be clear, accurate, and well-structured.",
                     _token, null,
                     (type, chunk) =>
                     {
@@ -93,18 +100,21 @@ namespace ThalamusApp.Modes
                         {
                             if (type == "done")
                             {
-                                FinishStream(_liveText);
+                                // chunk is the server's authoritative fullText.
+                                FinishStream(chunk);
                                 return;
                             }
                             if (type == "answer")
                             {
                                 _liveText += chunk;
-                                if (_liveBlock == null)
+                                if (_liveContent == null)
                                 {
                                     TypingRow.Visibility = Visibility.Collapsed;
-                                    AppendAiBubbleStart(out _liveBlock);
+                                    AppendAiBubbleStart(out _liveContent, out _liveStreamBlock);
                                 }
-                                _liveBlock.Text = _liveText;
+                                // Show a plain-text preview while streaming; the HTML can't be
+                                // rendered mid-stream (unclosed tags), so we format it on "done".
+                                _liveStreamBlock!.Text = HtmlToWpf.PlainText(_liveText);
                                 ScrollToBottom();
                             }
                         });
@@ -129,7 +139,14 @@ namespace ThalamusApp.Modes
         {
             TypingRow.Visibility = Visibility.Collapsed;
             if (!string.IsNullOrEmpty(fullText))
+            {
+                // Ensure a bubble exists (e.g. a stream that delivered only a final fullText),
+                // then replace the live plaintext preview with the rendered HTML.
+                if (_liveContent == null)
+                    AppendAiBubbleStart(out _liveContent, out _liveStreamBlock);
+                HtmlToWpf.Populate(_liveContent, fullText);
                 _history.Add(("assistant", fullText));
+            }
             _isStreaming = false;
             SendButton.IsEnabled = true;
             ScrollToBottom();
@@ -207,17 +224,34 @@ namespace ThalamusApp.Modes
             ScrollToBottom();
         }
 
-        // Assistant turn — left-aligned formatted text, no card, no avatar.
-        private void AppendAiBubbleStart(out TextBlock liveBlock)
+        // Assistant turn — left-aligned card matching the website's assistant bubble
+        // (rounded, bg-card, hairline border). Its content StackPanel holds a live
+        // plaintext preview during streaming, replaced by rendered HTML on "done".
+        private void AppendAiBubbleStart(out StackPanel content, out TextBlock streamBlock)
         {
-            var tb = new TextBlock
+            streamBlock = new TextBlock
             {
-                FontSize = 13, TextWrapping = TextWrapping.Wrap,
+                FontSize = 13.5, TextWrapping = TextWrapping.Wrap,
                 Foreground = (Brush)FindResource("TextPrimaryBrush"),
-                LineHeight = 21, Margin = new Thickness(0, 0, 0, 18)
+                LineHeight = 21
             };
-            liveBlock = tb;
-            MessagesPanel.Children.Insert(MessagesPanel.Children.Count - 1, tb);
+            var panel = new StackPanel();
+            panel.Children.Add(streamBlock);
+            content = panel;
+
+            var bubble = new Border
+            {
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(14, 10, 14, 10),
+                MaxWidth = 620,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 0, 0, 16),
+                Background = (Brush)FindResource("BgCardBrush"),
+                BorderBrush = (Brush)FindResource("BorderSubtleBrush"),
+                BorderThickness = new Thickness(1),
+                Child = panel
+            };
+            MessagesPanel.Children.Insert(MessagesPanel.Children.Count - 1, bubble);
         }
 
         private void AppendAiError(string msg)
