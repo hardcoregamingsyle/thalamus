@@ -59,6 +59,7 @@ export default function AdminPage() {
   if (!authed) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <meta name="robots" content="noindex" />
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

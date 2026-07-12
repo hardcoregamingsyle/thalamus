@@ -1871,7 +1871,10 @@ export default function Portal() {
   const isMobile = useIsMobile();
   const { isLoading, isAuthenticated } = useAuth();
 
-  if (isMobile) return <MobilePortal />;
-  if (!isLoading && !isAuthenticated) return <GuestPortal />;
-  return <PortalDesktop />;
+  return (
+    <>
+      <meta name="robots" content="noindex" />
+      {isMobile ? <MobilePortal /> : !isLoading && !isAuthenticated ? <GuestPortal /> : <PortalDesktop />}
+    </>
+  );
 }

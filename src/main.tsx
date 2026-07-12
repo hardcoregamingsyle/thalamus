@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { InstrumentationProvider } from "@/instrumentation.tsx";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
-import { StrictMode, useEffect, lazy, Suspense } from "react";
+import { StrictMode, Component, useEffect, lazy, Suspense, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation, Navigate } from "react-router";
 import { DauTracker } from "@/components/DauTracker";
@@ -24,6 +24,39 @@ const CodeBranches = lazy(() => import("./pages/CodeBranches"));
 const CodeWorkspace = lazy(() => import("./pages/CodeWorkspace"));
 const ApiPage = lazy(() => import("./pages/ApiPage"));
 
+// Without a boundary, a failed lazy-route chunk (typical after a deploy purges
+// old hashed assets while a stale index.html is still cached) unmounts the whole
+// tree and leaves a blank page. Chunk failures get one automatic reload — that
+// fetches the fresh shell — before falling back to a visible error screen.
+class RouteErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: Error) {
+    const isChunkError = /Failed to fetch dynamically imported module|Loading chunk|error loading dynamically imported/i.test(error.message);
+    if (isChunkError && !sessionStorage.getItem("chunk-reload")) {
+      sessionStorage.setItem("chunk-reload", "1");
+      window.location.reload();
+    }
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 p-6 text-center">
+        <p className="text-foreground font-semibold">Something went wrong loading this page.</p>
+        <p className="text-muted-foreground text-sm">A new version may have been deployed.</p>
+        <button
+          onClick={() => { sessionStorage.removeItem("chunk-reload"); window.location.reload(); }}
+          className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium"
+        >
+          Reload
+        </button>
+      </div>
+    );
+  }
+}
+
 // Simple loading fallback for route transitions
 // eslint-disable-next-line react-refresh/only-export-components -- app entry point; HMR component boundaries don't apply here
 function RouteLoading() {
@@ -34,7 +67,22 @@ function RouteLoading() {
   );
 }
 
-const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
+// A build without VITE_CONVEX_URL used to throw here at module scope — before
+// React mounted — leaving a silent blank page on every route. Fail loudly instead.
+const convexUrl = import.meta.env.VITE_CONVEX_URL as string | undefined;
+const convex = convexUrl ? new ConvexReactClient(convexUrl) : null;
+
+// eslint-disable-next-line react-refresh/only-export-components -- app entry point; HMR component boundaries don't apply here
+function ConfigError() {
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#020b1d", color: "#e2e8f0", fontFamily: "system-ui", padding: 24, textAlign: "center" }}>
+      <div>
+        <h1 style={{ fontSize: 18, marginBottom: 8 }}>Deployment configuration error</h1>
+        <p style={{ fontSize: 14, opacity: 0.7 }}>VITE_CONVEX_URL was not set when this build was produced.<br />Set it in the build environment and redeploy.</p>
+      </div>
+    </div>
+  );
+}
 
 // Detect if running as Neutralinojs desktop app
 const isDesktopApp = typeof window !== "undefined" && !!window.NL_PORT;
@@ -42,6 +90,10 @@ const isDesktopApp = typeof window !== "undefined" && !!window.NL_PORT;
 // eslint-disable-next-line react-refresh/only-export-components -- app entry point; HMR component boundaries don't apply here
 function RouteSyncer() {
   const location = useLocation();
+  // App booted fine — re-arm the one-shot chunk-failure auto-reload
+  useEffect(() => {
+    sessionStorage.removeItem("chunk-reload");
+  }, []);
   useEffect(() => {
     window.parent.postMessage(
       { type: "iframe-route-change", path: location.pathname },
@@ -64,6 +116,7 @@ function RouteSyncer() {
 }
 
 createRoot(document.getElementById("root")!).render(
+  !convex ? <ConfigError /> :
   <StrictMode>
     <InstrumentationProvider>
       <ConvexAuthProvider client={convex}>
@@ -74,6 +127,7 @@ createRoot(document.getElementById("root")!).render(
           <DesktopTitlebar />
           {/* Add top padding when titlebar is shown */}
           <div className={isDesktopApp ? "pt-10" : ""}>
+            <RouteErrorBoundary>
             <Suspense fallback={<RouteLoading />}>
               <Routes>
                 {/* In desktop mode, skip landing page — go straight to auth */}
@@ -97,6 +151,7 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>
+            </RouteErrorBoundary>
           </div>
         </BrowserRouter>
         <Toaster />

@@ -89,6 +89,7 @@ export default function CodeProjects() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
+      <meta name="robots" content="noindex" />
       {/* Header */}
       <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-6 py-6">

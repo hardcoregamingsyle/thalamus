@@ -39,6 +39,9 @@ export default function ApiPage() {
   if (!user) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <title>Thalamus API — OpenAI-compatible API keys</title>
+        <meta name="description" content="Create Thalamus API keys and use them in Cursor, Claude Code, or any OpenAI-compatible client. Pay-as-you-go with AgentBucks credits." />
+        <link rel="canonical" href="https://thalamus.aphantic.skinticals.com/api-keys" />
         <div className="text-center max-w-sm">
           <div className="w-16 h-16 rounded-2xl bg-primary/15 border border-primary/30 flex items-center justify-center mx-auto mb-4">
             <Shield className="h-8 w-8 text-primary" />
@@ -96,6 +99,9 @@ export default function ApiPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      <title>Thalamus API — OpenAI-compatible API keys</title>
+      <meta name="description" content="Create Thalamus API keys and use them in Cursor, Claude Code, or any OpenAI-compatible client. Pay-as-you-go with AgentBucks credits." />
+      <link rel="canonical" href="https://thalamus.aphantic.skinticals.com/api-keys" />
       {/* Header */}
       <div className="border-b border-border bg-card/60 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">

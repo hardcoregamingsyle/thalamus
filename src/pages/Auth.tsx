@@ -69,6 +69,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
   return (
     <div className="min-h-screen bg-background font-mono flex flex-col">
+      <meta name="robots" content="noindex" />
       {/* Background grid */}
       <div className="fixed inset-0 opacity-[0.03] pointer-events-none" style={{
         backgroundImage: "linear-gradient(oklch(0.60 0.22 25) 1px, transparent 1px), linear-gradient(90deg, oklch(0.60 0.22 25) 1px, transparent 1px)",

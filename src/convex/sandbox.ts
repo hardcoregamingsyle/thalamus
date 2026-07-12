@@ -9,11 +9,12 @@ import { Id } from "./_generated/dataModel";
 // $0.075 per hour = 7.5 cents per hour
 const COST_CENTS_PER_HOUR = 7.5;
 const DAYTONA_API = "https://app.daytona.io/api";
-// Hardcoded API key (primary)
-const DAYTONA_API_KEY = "dtn_7f36b63fc707555bd843029875fb29caf44e4607c2b3ab29a28c73c737e450b5";
 
+// The key lives in the Convex dashboard env, never in source — this repo is public.
 function getApiKey(): string {
-  return process.env.DAYTONA_API_KEY || DAYTONA_API_KEY;
+  const key = process.env.DAYTONA_API_KEY;
+  if (!key) throw new Error("DAYTONA_API_KEY is not configured in the Convex dashboard");
+  return key;
 }
 
 function daytonaHeaders(apiKey: string) {

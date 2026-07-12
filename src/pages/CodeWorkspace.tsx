@@ -557,6 +557,7 @@ export default function CodeWorkspace() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      <meta name="robots" content="noindex" />
       {/* Persistent Sidebar */}
       <div className={cn(
         "shrink-0 border-r bg-muted/20 flex flex-col transition-all duration-200",
