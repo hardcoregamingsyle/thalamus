@@ -18,11 +18,26 @@ Plus the quiet stuff that makes it feel finished: system-tray minimize, and an a
 
 ---
 
+## VM images: official sources only, downloaded on demand
+
+The sandbox ships **zero** operating systems. The catalog points exclusively at official, legally free images, and each one downloads on demand — with pause/resume — into `%LocalAppData%\Thalamus\ISOs`:
+
+- **Windows 11 Enterprise Evaluation** — Microsoft's own 90-day eval. Microsoft gates the ISO behind a registration form, so the app opens the [Evaluation Center](https://www.microsoft.com/en-us/evalcenter/evaluate-windows-11-enterprise) and you point Thalamus at the file you downloaded. (Microsoft retired the Windows 10 eval, so it's gone from the catalog too.)
+- **Android-x86 9.0-r2** — the latest stable the [Android-x86 project](https://www.android-x86.org/) actually publishes, pulled from their official SourceForge mirror.
+- **Ubuntu 24.04 LTS**, **Debian 12**, **Kali Linux** — straight from `releases.ubuntu.com`, `cdimage.debian.org`, and `cdimage.kali.org`.
+- **Custom ISO** — anything you already own. Browse to the file, boot it.
+
+No "preactivated" Windows, no macOS, no sketchy mirrors — those are piracy or licence violations and they're not coming back. Every downloaded ISO shows its size and has its own delete button, and VM disks are sparse qcow2, so the sandbox only ever costs the space you actually use.
+
+---
+
 ## Just run it
 
 1. Download the latest `Thalamus-Setup-*.exe` from Releases.
 2. Run it. It installs under `%LocalAppData%\Thalamus`.
 3. Open Thalamus, sign in with your email, done.
+
+Uninstalling is just as clean: **Settings → Apps → Thalamus AI → Uninstall** (or run `ThalamusSetup.exe /uninstall` from the install folder). It removes the app, shortcuts, and registry entries, and asks before touching your VM disks and ISOs — leave the box unchecked and your VMs survive a reinstall.
 
 ## Build it yourself
 
