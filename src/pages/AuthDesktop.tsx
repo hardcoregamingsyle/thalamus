@@ -36,7 +36,7 @@ export default function AuthDesktop() {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reacting to a URL param present only after an OAuth round-trip
       setStep("authorize");
     } else if (urlError) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- surfacing an error passed back via the redirect URL
+       
       setErrorMsg(urlError);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- read URL params once on mount

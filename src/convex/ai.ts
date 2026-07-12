@@ -522,6 +522,11 @@ export const vlyFallbackCompletion = internalAction({
   },
 });
 
+// Guest free-prompt daily cap — mirrors GUEST_LIMIT in src/pages/Portal.tsx and
+// GUEST_DAILY_LIMIT in aiHelpers.ts. Kept as a local literal because this file
+// runs in the Node runtime ("use node") and can't share the DB helpers' module.
+const GUEST_DAILY_LIMIT = 3;
+
 export const guestSendMessage = action({
   args: {
     content: v.string(),
@@ -531,8 +536,17 @@ export const guestSendMessage = action({
       datetime: v.string(),
       timezone: v.string(),
     })),
+    guestId: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<string> => {
+    // Server-side enforcement of the guest daily prompt cap. Keyed by a
+    // persistent client guestId + the current UTC day, so closing the tab (the
+    // old sessionStorage bug) no longer grants a fresh set of free prompts.
+    if (args.guestId) {
+      const used: number = await ctx.runQuery(internal.aiHelpers.getGuestUsageCount, { guestId: args.guestId });
+      if (used >= GUEST_DAILY_LIMIT) throw new Error("GUEST_LIMIT_REACHED");
+    }
+
     const systemPrompts: Record<string, string> = {
       chat: `You are Thalamus AI, an advanced AI assistant by Aphantic Corporations. Be helpful, accurate, and concise.
 
@@ -568,6 +582,11 @@ Key facts: style="border-left:3px solid #f59e0b;padding:0.4em 0.8em;color:#fcd34
       messages,
       2048
     );
+
+    // Count this prompt against the daily cap only after a successful generation.
+    if (args.guestId) {
+      await ctx.runMutation(internal.aiHelpers.incrementGuestUsage, { guestId: args.guestId });
+    }
 
     return text;
   },

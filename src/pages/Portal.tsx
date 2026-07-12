@@ -64,7 +64,11 @@ interface SuggestionFile {
 
 // ── Guest limit constants ─────────────────────────────────────────────────────
 const GUEST_LIMIT = 3;
+// Guest history + counter live in localStorage (was sessionStorage) so they
+// persist across tab-closes; the server enforces the real 3/day cap keyed by
+// GUEST_ID_KEY (see api.ai.guestSendMessage).
 const GUEST_STORAGE_KEY = "thalamus_guest_session";
+const GUEST_ID_KEY = "thalamus_guest_id";
 
 interface GuestMessage {
   role: "user" | "assistant";
@@ -76,22 +80,50 @@ interface GuestSession {
   messages: GuestMessage[];
   promptsUsed: number;
   mode: string;
+  date: string; // YYYY-MM-DD (UTC) the counter belongs to
+}
+
+function todayUTC(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Stable per-browser guest identifier. Persisted in localStorage so it survives
+// tab-closes and reloads — this is what makes the server-side daily cap stick.
+function getOrCreateGuestId(): string {
+  try {
+    let id = localStorage.getItem(GUEST_ID_KEY);
+    if (!id) {
+      id = typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem(GUEST_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
 }
 
 function loadGuestSession(mode: string): GuestSession {
+  const today = todayUTC();
   try {
-    const raw = sessionStorage.getItem(GUEST_STORAGE_KEY);
+    const raw = localStorage.getItem(GUEST_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as GuestSession;
-      if (parsed.mode === mode) return parsed;
+      if (parsed.mode === mode) {
+        // Mirror the server's per-UTC-day reset: a returning guest keeps their
+        // prior conversation but gets their free prompts back the next day.
+        if (parsed.date !== today) return { ...parsed, promptsUsed: 0, date: today };
+        return parsed;
+      }
     }
   } catch { /* ignore */ }
-  return { messages: [], promptsUsed: 0, mode };
+  return { messages: [], promptsUsed: 0, mode, date: today };
 }
 
 function saveGuestSession(session: GuestSession) {
   try {
-    sessionStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(session));
+    localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(session));
   } catch { /* ignore */ }
 }
 
@@ -203,10 +235,11 @@ function GuestPortal() {
     setInput("");
     const userMsg: GuestMessage = { role: "user", content: msg, id: Date.now().toString() };
     const streamingId = (Date.now() + 1).toString();
-    const newSession = {
+    const newSession: GuestSession = {
       ...session,
       messages: [...session.messages, userMsg],
       promptsUsed: session.promptsUsed + 1,
+      date: todayUTC(),
     };
     setSession(newSession);
     saveGuestSession(newSession);
@@ -214,7 +247,7 @@ function GuestPortal() {
     setIsThinking(true);
     setThinkingContent("");
 
-    // Add a streaming placeholder message
+    // Add a placeholder assistant message (renders the typing dots)
     const streamingMsg: GuestMessage = { role: "assistant", content: "", id: streamingId };
     setSession(s => ({ ...s, messages: [...s.messages, streamingMsg] }));
 
@@ -225,97 +258,42 @@ function GuestPortal() {
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       };
 
-      const systemPrompts: Record<string, string> = {
-        chat: `You are Thalamus AI, an advanced AI assistant. Be helpful, accurate, and concise.\n\nCRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.\nUse: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <code>, <pre><code>, <blockquote>\nHeadings: style="font-size:1.2em;font-weight:bold;margin:0.5em 0;color:#e5e7eb"\nParagraphs: style="margin:0.5em 0;line-height:1.6;color:#d1d5db"\nLists: style="margin:0.3em 0 0.3em 1.2em;color:#d1d5db"\nCode blocks: style="background:#111827;color:#34d399;padding:1em;border-radius:8px;overflow-x:auto;display:block;margin:0.5em 0;font-family:monospace;font-size:0.8em"\nInline code: style="background:#1f2937;color:#34d399;padding:0.1em 0.4em;border-radius:4px;font-family:monospace;font-size:0.85em"`,
-        study: `You are Thalamus AI Study Mode — a precision study assistant. Give dense, accurate, exam-ready information.\n\nCRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.\nUse: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <blockquote>\nHeadings: style="font-size:1.1em;font-weight:bold;margin:0.5em 0 0.3em;color:#e5e7eb;border-left:3px solid #6366f1;padding-left:0.6em"\nLists: style="margin:0.2em 0 0.2em 1em;color:#d1d5db;font-size:0.9em"`,
-      };
-
-      const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
-      const siteUrl = convexUrl.replace(".convex.cloud", ".convex.site");
-
-      const response = await fetch(`${siteUrl}/stream-chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: msg,
-          mode: activeMode,
-          history,
-          systemPrompt: systemPrompts[activeMode] ?? systemPrompts.chat,
-          userContext,
-        }),
+      // Route through the enforced action so the server (not just the client
+      // counter) caps guests at 3 prompts/day, keyed by the persistent guestId.
+      const response = await guestSendMessage({
+        content: msg,
+        mode: activeMode as "chat" | "study",
+        history,
+        userContext,
+        guestId: getOrCreateGuestId(),
       });
+      const finalSession: GuestSession = {
+        ...newSession,
+        messages: [...newSession.messages, { role: "assistant", content: response, id: streamingId }],
+      };
+      setSession(finalSession);
+      saveGuestSession(finalSession);
 
-      if (!response.ok || !response.body) throw new Error("Stream failed");
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let accumulated = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const jsonStr = line.slice(6).trim();
-          if (!jsonStr) continue;
-          try {
-            const parsed = JSON.parse(jsonStr) as { type?: string; chunk?: string; done?: boolean; fullText?: string };
-            if (parsed.type === "thinking" && parsed.chunk) {
-              setThinkingContent(prev => prev + parsed.chunk);
-            }
-            if (parsed.type === "answer_start") {
-              setIsThinking(false);
-            }
-            if ((!parsed.type || parsed.type === "answer") && parsed.chunk) {
-              setIsThinking(false);
-              accumulated += parsed.chunk;
-              setSession(s => ({
-                ...s,
-                messages: s.messages.map(m => m.id === streamingId ? { ...m, content: accumulated } : m),
-              }));
-            }
-            if (parsed.done) {
-              setIsThinking(false);
-              const finalText = parsed.fullText ?? accumulated;
-              const finalSession: GuestSession = {
-                ...newSession,
-                messages: [...newSession.messages, { role: "assistant", content: finalText, id: streamingId }],
-              };
-              setSession(finalSession);
-              saveGuestSession(finalSession);
-            }
-          } catch { /* skip */ }
-        }
-      }
-
-      // Show sign up prompt after last free message
+      // Nudge sign-up once the free prompts are used up.
       if (newSession.promptsUsed >= GUEST_LIMIT) {
         setTimeout(() => setShowSignUp({ reason: "limit" }), 1500);
       }
-    } catch {
-      // Fallback to non-streaming
-      setIsThinking(true);
-      try {
-        const history = session.messages.map(m => ({ role: m.role, content: m.content }));
-        const userContext = {
-          datetime: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }),
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        };
-        const response = await guestSendMessage({ content: msg, mode: activeMode as "chat" | "study", history, userContext });
-        const finalSession: GuestSession = {
-          ...newSession,
-          messages: [...newSession.messages, { role: "assistant", content: response, id: streamingId }],
-        };
-        setSession(finalSession);
-        saveGuestSession(finalSession);
-      } catch {
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("GUEST_LIMIT_REACHED")) {
+        // Server rejected — roll back the optimistic message + counter, pin the
+        // local counter to the cap, and surface the sign-up modal.
+        const reverted: GuestSession = { ...session, promptsUsed: GUEST_LIMIT, date: todayUTC() };
+        setSession(reverted);
+        saveGuestSession(reverted);
+        setInput(msg);
+        setShowSignUp({ reason: "limit", pendingMessage: msg });
+      } else {
+        // Generation failed — roll back to the pre-send state (the server only
+        // counts successful prompts) and let the user retry.
         toast.error("Failed to get response. Try again.");
-        setSession(s => ({ ...s, messages: s.messages.filter(m => m.id !== streamingId) }));
+        setSession(session);
+        saveGuestSession(session);
+        setInput(msg);
       }
     } finally {
       setIsThinking(false);
@@ -1090,6 +1068,8 @@ function PortalDesktop() {
   const [isSuggestionSubmitting, setIsSuggestionSubmitting] = useState(false);
   const saveUserMessage = useMutation(api.conversations.saveUserMessage);
   const saveStudyProfile = useMutation(api.users.saveStudyProfile);
+  const importGuestConversation = useMutation(api.conversations.importGuestConversation);
+  const guestMigratedRef = useRef(false);
 
   // Resolve conversation from URL session ID
   useEffect(() => {
@@ -1103,6 +1083,37 @@ function PortalDesktop() {
   useEffect(() => {
     if (!isLoading && !isAuthenticated) navigate("/auth");
   }, [isLoading, isAuthenticated, navigate]);
+
+  // Migrate a guest's local conversation into the account on the guest→authed
+  // transition. Runs once: the guest session is cleared up front so a refresh
+  // (or React re-invocation) can't re-import.
+  useEffect(() => {
+    if (!token || !isAuthenticated || guestMigratedRef.current) return;
+    let raw: string | null = null;
+    try { raw = localStorage.getItem(GUEST_STORAGE_KEY); } catch { return; }
+    if (!raw) return;
+    guestMigratedRef.current = true;
+
+    let parsed: GuestSession | null = null;
+    try { parsed = JSON.parse(raw) as GuestSession; } catch { parsed = null; }
+    const guestMsgs = (parsed?.messages ?? []).filter(m => m.content.trim().length > 0);
+    // Clear immediately — whether or not there's anything to migrate.
+    try { localStorage.removeItem(GUEST_STORAGE_KEY); } catch { /* ignore */ }
+    if (!parsed || guestMsgs.length === 0) return;
+
+    const mode = (VALID_MODES.includes(parsed.mode as Mode) ? parsed.mode : "chat") as Mode;
+    importGuestConversation({
+      token,
+      mode,
+      messages: guestMsgs.map(m => ({ role: m.role, content: m.content })),
+    })
+      .then((res) => {
+        const r = res as { conversationId: Id<"conversations">; customId: string };
+        setActiveConvId(r.conversationId);
+        navigate(`/portal/${mode}/${r.customId}`, { replace: true });
+      })
+      .catch(() => { /* best-effort — a failed migration just leaves a fresh account */ });
+  }, [token, isAuthenticated, importGuestConversation, navigate]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
