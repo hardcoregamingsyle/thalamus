@@ -1,18 +1,25 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Zap, Gift, Tag, MessageCircle, Mail, ExternalLink, ChevronRight } from "lucide-react";
+import { X, Zap, Gift, Tag, ExternalLink, ChevronRight, KeyRound, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
-import { useMutation } from "convex/react";
+import { useMutation, useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
-// Credit packs — price in ₹ ($1 = ₹100)
+// Credit packs — price in ₹ ($1 = ₹100). Crediting is server-side and
+// price-based ($1 = 1.5M AB, see convex/payments.ts), so any amount paid on
+// Gumroad credits correctly even outside these suggested packs.
 const CREDIT_PACKS = [
-  { name: "Starter", ab: 1_500_000, usd: 1, inr: 100, desc: "1M AB — great for trying out" },
+  { name: "Starter", ab: 1_500_000, usd: 1, inr: 100, desc: "1.5M AB — great for trying out" },
   { name: "Builder", ab: 7_500_000, usd: 5, inr: 500, desc: "7.5M AB — for regular builders", popular: true },
-  { name: "Pro", ab: 16_500_000, usd: 11, inr: 1100, desc: "16.5M AB — 10% bonus included" },
+  { name: "Pro", ab: 16_500_000, usd: 11, inr: 1100, desc: "16.5M AB — for daily drivers" },
   { name: "Studio", ab: 45_000_000, usd: 30, inr: 3000, desc: "45M AB — for power users" },
 ];
+
+// The Gumroad product for AgentBucks. Buyers pay by card/PayPal in the
+// overlay — no Gumroad account needed. "Generate license keys" must be ON for
+// this product: the key is how the backend authenticates the purchase.
+const GUMROAD_PRODUCT_URL = "https://hardcoregamingsyle.gumroad.com/l/agentbucks";
 
 interface CreditModalProps {
   open: boolean;
@@ -22,7 +29,42 @@ interface CreditModalProps {
   purchasedAB: number;
 }
 
-function BuyCreditsModal({ onClose }: { onClose: () => void }) {
+function BuyCreditsModal({ onClose, token }: { onClose: () => void; token?: string }) {
+  const user = useQuery(api.customAuthHelpers.getUserByToken, token ? { token } : "skip");
+  const claimLicense = useAction(api.payments.claimLicense);
+  const [licenseKey, setLicenseKey] = useState("");
+  const [claiming, setClaiming] = useState(false);
+
+  // Threads identity through Gumroad checkout: uid comes back in the payment
+  // webhook so credits land on this account automatically; email prefills the
+  // checkout so the receipt (and its license key) reaches the right inbox.
+  const buyUrl = (usd: number) => {
+    const params = new URLSearchParams({ wanted: "true" });
+    if (user?._id) params.set("uid", user._id);
+    if (user?.email) params.set("email", user.email);
+    params.set("price", String(usd));
+    return `${GUMROAD_PRODUCT_URL}?${params}`;
+  };
+
+  const handleClaim = async () => {
+    if (!licenseKey.trim() || !token) return;
+    setClaiming(true);
+    try {
+      const result = await claimLicense({ token, licenseKey: licenseKey.trim() });
+      if (result.success) {
+        toast.success(result.message);
+        setLicenseKey("");
+        onClose();
+      } else {
+        toast.error(result.message);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Claim failed");
+    } finally {
+      setClaiming(false);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
@@ -33,7 +75,7 @@ function BuyCreditsModal({ onClose }: { onClose: () => void }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Zap className="h-4 w-4 text-amber-400" />
-          <span className="text-sm font-bold text-foreground">Contact to Buy Credits</span>
+          <span className="text-sm font-bold text-foreground">Buy AgentBucks</span>
         </div>
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted/50">
           <X className="h-4 w-4" />
@@ -41,44 +83,52 @@ function BuyCreditsModal({ onClose }: { onClose: () => void }) {
       </div>
 
       <p className="text-xs text-muted-foreground leading-relaxed">
-        To purchase AgentBucks, contact the owner directly via WhatsApp or email. Payments are processed manually and credits are added within minutes.
+        Pay by card or PayPal — no account needed. Credits are added to this account automatically within seconds of payment.
       </p>
 
-      <div className="space-y-3">
-        <a
-          href="https://wa.me/917009205057"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-3 p-4 bg-green-400/10 border border-green-400/30 rounded-xl hover:bg-green-400/20 transition-all group"
-        >
-          <div className="w-10 h-10 rounded-xl bg-green-400/20 flex items-center justify-center shrink-0">
-            <MessageCircle className="h-5 w-5 text-green-400" />
-          </div>
-          <div className="flex-1">
-            <p className="text-sm font-bold text-green-400">WhatsApp</p>
-            <p className="text-[11px] text-muted-foreground">+91 7009205057</p>
-          </div>
-          <ExternalLink className="h-3.5 w-3.5 text-green-400/60 group-hover:text-green-400 transition-colors" />
-        </a>
-
-        <a
-          href="mailto:hardcorgamingstyle@gmail.com?subject=Thalamus AI - Buy AgentBucks"
-          className="flex items-center gap-3 p-4 bg-primary/10 border border-primary/30 rounded-xl hover:bg-primary/20 transition-all group"
-        >
-          <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center shrink-0">
-            <Mail className="h-5 w-5 text-primary" />
-          </div>
-          <div className="flex-1">
-            <p className="text-sm font-bold text-primary">Email</p>
-            <p className="text-[11px] text-muted-foreground">hardcorgamingstyle@gmail.com</p>
-          </div>
-          <ExternalLink className="h-3.5 w-3.5 text-primary/60 group-hover:text-primary transition-colors" />
-        </a>
+      <div className="grid grid-cols-2 gap-2">
+        {CREDIT_PACKS.map((pack) => (
+          <a
+            key={pack.name}
+            href={buyUrl(pack.usd)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`p-3 rounded-xl border transition-all group ${pack.popular ? "border-primary/50 bg-primary/10 hover:bg-primary/20" : "border-border bg-background hover:bg-muted/30"}`}
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-foreground">{pack.name}</p>
+              <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-foreground transition-colors" />
+            </div>
+            <p className="text-sm font-bold text-primary mt-1">${pack.usd}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">{pack.desc}</p>
+          </a>
+        ))}
       </div>
 
-      <p className="text-[10px] text-muted-foreground text-center">
-        Mention your account email and the credit pack you want.
-      </p>
+      <div className="space-y-2">
+        <p className="text-[10px] font-bold text-muted-foreground flex items-center gap-1.5">
+          <KeyRound className="h-3 w-3" />
+          ALREADY PAID? CLAIM WITH YOUR LICENSE KEY
+        </p>
+        <div className="flex gap-2">
+          <input
+            value={licenseKey}
+            onChange={(e) => setLicenseKey(e.target.value)}
+            placeholder="XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX"
+            className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-[11px] font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
+          />
+          <button
+            onClick={handleClaim}
+            disabled={claiming || !licenseKey.trim()}
+            className="px-3 py-2 bg-primary text-primary-foreground rounded-lg text-[11px] font-bold hover:bg-primary/90 disabled:opacity-50 transition-all"
+          >
+            {claiming ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Claim"}
+          </button>
+        </div>
+        <p className="text-[10px] text-muted-foreground">
+          The license key is in your Gumroad receipt email. Use it if credits didn't appear automatically.
+        </p>
+      </div>
     </motion.div>
   );
 }
@@ -132,6 +182,7 @@ export default function CreditModal({ open, onClose, totalAB, dailyAB, purchased
               <div className="relative z-10">
                 <BuyCreditsModal
                   onClose={() => setShowBuyModal(false)}
+                  token={token}
                 />
               </div>
             )}

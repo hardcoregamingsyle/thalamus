@@ -44,6 +44,7 @@ import type * as gravityAds from "../gravityAds.js";
 import type * as hfRagSpace from "../hfRagSpace.js";
 import type * as http from "../http.js";
 import type * as obscureRepoGenerator from "../obscureRepoGenerator.js";
+import type * as payments from "../payments.js";
 import type * as qemuSandbox from "../qemuSandbox.js";
 import type * as rag from "../rag.js";
 import type * as ragHelpers from "../ragHelpers.js";
@@ -98,6 +99,7 @@ declare const fullApi: ApiFromModules<{
   hfRagSpace: typeof hfRagSpace;
   http: typeof http;
   obscureRepoGenerator: typeof obscureRepoGenerator;
+  payments: typeof payments;
   qemuSandbox: typeof qemuSandbox;
   rag: typeof rag;
   ragHelpers: typeof ragHelpers;
