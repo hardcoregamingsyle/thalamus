@@ -200,6 +200,12 @@ function GuestPortal() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const guestSendMessage = useAction(api.ai.guestSendMessage);
+  const requestAd = useAction(api.gravityAds.requestAd);
+  // One sponsored card for guests (no rail — the guest layout is a single
+  // centered column). Requested once per session after the first reply; the
+  // server still gates on the admin `showToGuests` toggle.
+  const [sponsoredAd, setSponsoredAd] = useState<GravityAd | null>(null);
+  const adRequestedRef = useRef(false);
 
   const currentMode = MODES.find(m => m.id === activeMode)!;
   const isGuestMode = activeMode === "chat" || activeMode === "study";
@@ -273,6 +279,18 @@ function GuestPortal() {
       };
       setSession(finalSession);
       saveGuestSession(finalSession);
+
+      // Request one sponsored card for this guest session (fire-and-forget —
+      // ads must never break chat). Guests carry no token, so the server keys
+      // gating on `showToGuests`. Only the first successful reply triggers it.
+      if (!adRequestedRef.current) {
+        adRequestedRef.current = true;
+        const adMessages = [...history, { role: "user", content: msg }, { role: "assistant", content: response }]
+          .map(m => ({ role: m.role, content: m.content.slice(0, 1000) }));
+        requestAd({ messages: adMessages, count: 1 })
+          .then(ad => { if (ad) setSponsoredAd(Array.isArray(ad) ? ad[0] : ad); })
+          .catch(() => {});
+      }
 
       // Nudge sign-up once the free prompts are used up.
       if (newSession.promptsUsed >= GUEST_LIMIT) {
@@ -454,6 +472,7 @@ function GuestPortal() {
                 </div>
               </div>
             )}
+            {sponsoredAd && !isThinking && <SponsoredAdCard ad={sponsoredAd} />}
             <div ref={messagesEndRef} />
           </div>
         )}
