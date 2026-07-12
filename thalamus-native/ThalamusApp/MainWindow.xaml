@@ -128,7 +128,7 @@
                    Width="600" Height="500" Opacity="0.07">
             <Rectangle.Fill>
                 <RadialGradientBrush>
-                    <GradientStop Color="#3b82f6" Offset="0"/>
+                    <GradientStop Color="#0088f1" Offset="0"/>
                     <GradientStop Color="Transparent" Offset="1"/>
                 </RadialGradientBrush>
             </Rectangle.Fill>
@@ -155,7 +155,7 @@
                                 <RectangleGeometry Rect="0,0,40,40"/>
                             </GeometryDrawing.Geometry>
                             <GeometryDrawing.Pen>
-                                <Pen Thickness="0.5" Brush="#3b82f6"/>
+                                <Pen Thickness="0.5" Brush="#0088f1"/>
                             </GeometryDrawing.Pen>
                         </GeometryDrawing>
                     </DrawingBrush.Drawing>
@@ -369,28 +369,6 @@
                                        Foreground="{StaticResource TextMutedBrush}"/>
                         </Border>
 
-                        <!-- Sign in button (visible when guest) -->
-                        <Button x:Name="BtnSignIn" Tag="SignIn"
-                                Click="Nav_Click" Style="{StaticResource SidebarBtn}"
-                                Visibility="Visible">
-                            <StackPanel Orientation="Horizontal">
-                                <Border Width="22" Height="22" CornerRadius="6"
-                                        Background="#0d1f3c" Margin="0,0,12,0"
-                                        BorderBrush="{StaticResource BorderBrush}"
-                                        BorderThickness="1">
-                                    <!-- Lock icon path -->
-                                    <Path Data="M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2z M7 11V7a5 5 0 0 1 10 0v4"
-                                          Stroke="{StaticResource BlueBrush}"
-                                          StrokeThickness="1.5" Fill="Transparent"
-                                          StrokeLineJoin="Round" StrokeStartLineCap="Round"
-                                          Width="11" Height="11" Stretch="Uniform"
-                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                                <TextBlock Text="Sign In" VerticalAlignment="Center"
-                                           Foreground="{StaticResource BlueBrush}"/>
-                            </StackPanel>
-                        </Button>
-
                         <!-- Buy Credits button (visible when authenticated) -->
                         <Button x:Name="BtnBuyCredits"
                                 Click="BuyCredits_Click" Style="{StaticResource SidebarBtn}"
@@ -466,7 +444,7 @@
                                Width="300" Height="300" Opacity="0.05">
                         <Rectangle.Fill>
                             <RadialGradientBrush>
-                                <GradientStop Color="#3b82f6" Offset="0"/>
+                                <GradientStop Color="#0088f1" Offset="0"/>
                                 <GradientStop Color="Transparent" Offset="1"/>
                             </RadialGradientBrush>
                         </Rectangle.Fill>

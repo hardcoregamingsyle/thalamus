@@ -17,8 +17,8 @@
                         <Border x:Name="Bd" CornerRadius="10">
                             <Border.Background>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                    <GradientStop Color="#3b82f6" Offset="0"/>
-                                    <GradientStop Color="#6366f1" Offset="1"/>
+                                    <GradientStop Color="#0088f1" Offset="0"/>
+                                    <GradientStop Color="#0073d2" Offset="1"/>
                                 </LinearGradientBrush>
                             </Border.Background>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -39,67 +39,11 @@
             </Setter>
         </Style>
 
-        <!-- Model pill -->
-        <Style x:Key="ModelPill" TargetType="Button">
-            <Setter Property="Background" Value="#0d1f3c"/>
-            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
-            <Setter Property="BorderBrush" Value="#1a3050"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Height" Value="26"/>
-            <Setter Property="Padding" Value="11,0"/>
-            <Setter Property="FontSize" Value="10.5"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="13"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#162a4a"/>
-                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="ModelPillActive" TargetType="Button" BasedOn="{StaticResource ModelPill}">
-            <Setter Property="Foreground" Value="{StaticResource BlueBrush}"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" CornerRadius="13" BorderThickness="1" Padding="{TemplateBinding Padding}">
-                            <Border.Background>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                    <GradientStop Color="#0f2448" Offset="0"/>
-                                    <GradientStop Color="#0d1f3c" Offset="1"/>
-                                </LinearGradientBrush>
-                            </Border.Background>
-                            <Border.BorderBrush>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                    <GradientStop Color="#3b82f6" Offset="0"/>
-                                    <GradientStop Color="#6366f1" Offset="1"/>
-                                </LinearGradientBrush>
-                            </Border.BorderBrush>
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
     </UserControl.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="56"/>   <!-- Header -->
-            <RowDefinition Height="42"/>   <!-- Model pills -->
             <RowDefinition Height="*"/>    <!-- Messages -->
             <RowDefinition Height="Auto"/> <!-- Input -->
         </Grid.RowDefinitions>
@@ -115,7 +59,7 @@
                             <Border.Background>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                                     <GradientStop Color="#1d4ed8" Offset="0"/>
-                                    <GradientStop Color="#4f46e5" Offset="1"/>
+                                    <GradientStop Color="#0073d2" Offset="1"/>
                                 </LinearGradientBrush>
                             </Border.Background>
                             <Path Data="M8 4 C8 4 12 6 12 10 C12 14 8 16 8 16 C8 16 4 14 4 10 C4 6 8 4 8 4 Z"
@@ -145,38 +89,8 @@
             </Grid>
         </Border>
 
-        <!-- ═══ MODEL PILLS ═══ -->
-        <Border Grid.Row="1" Background="#030912"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1"
-                Padding="18,0">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <Button x:Name="PillSonnet" Style="{StaticResource ModelPillActive}"
-                        Click="Pill_Click" Tag="sonnet" Margin="0,0,6,0">
-                    <TextBlock Text="Sonnet 4.5" FontSize="10.5"/>
-                </Button>
-                <Button x:Name="PillOpus" Style="{StaticResource ModelPill}"
-                        Click="Pill_Click" Tag="opus" Margin="0,0,6,0">
-                    <TextBlock Text="Opus 4" FontSize="10.5"/>
-                </Button>
-                <Button x:Name="PillHaiku" Style="{StaticResource ModelPill}"
-                        Click="Pill_Click" Tag="haiku" Margin="0,0,6,0">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="Haiku 3.5" FontSize="10.5"/>
-                        <TextBlock Text=" ⚡" FontSize="9.5" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-                <Button x:Name="PillGemini" Style="{StaticResource ModelPill}"
-                        Click="Pill_Click" Tag="gemini">
-                    <TextBlock Text="Gemini Flash" FontSize="10.5"/>
-                </Button>
-                <TextBlock x:Name="StreamingLabel" Text=""
-                           FontSize="9.5" Foreground="{StaticResource TextMutedBrush}"
-                           VerticalAlignment="Center" Margin="14,0,0,0"/>
-            </StackPanel>
-        </Border>
-
         <!-- ═══ MESSAGES ═══ -->
-        <ScrollViewer Grid.Row="2" x:Name="MessagesScroll"
+        <ScrollViewer Grid.Row="1" x:Name="MessagesScroll"
                       VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled"
                       Padding="22,16,6,8">
@@ -195,8 +109,8 @@
                     <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" VerticalAlignment="Top">
                         <Border.Background>
                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Color="#3b82f6" Offset="0"/>
-                                <GradientStop Color="#6366f1" Offset="1"/>
+                                <GradientStop Color="#0088f1" Offset="0"/>
+                                <GradientStop Color="#0073d2" Offset="1"/>
                             </LinearGradientBrush>
                         </Border.Background>
                         <TextBlock Text="T" FontSize="13" FontWeight="Black"
@@ -228,8 +142,8 @@
                     <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" VerticalAlignment="Top">
                         <Border.Background>
                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Color="#3b82f6" Offset="0"/>
-                                <GradientStop Color="#6366f1" Offset="1"/>
+                                <GradientStop Color="#0088f1" Offset="0"/>
+                                <GradientStop Color="#0073d2" Offset="1"/>
                             </LinearGradientBrush>
                         </Border.Background>
                         <TextBlock Text="T" FontSize="13" FontWeight="Black"
@@ -288,7 +202,7 @@
         </ScrollViewer>
 
         <!-- ═══ INPUT AREA ═══ -->
-        <Border Grid.Row="3" Background="#030912"
+        <Border Grid.Row="2" Background="#030912"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
                 Padding="20,12,20,16">
             <Grid>

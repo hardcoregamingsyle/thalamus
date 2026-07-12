@@ -32,14 +32,31 @@ namespace ThalamusApp
 
             try
             {
-                // ── No auth gate — open MainWindow directly (guest mode) ──
-                var main = new MainWindow();
+                // ── Auth gate — the desktop app requires sign-in, no guest mode ──
                 var handler = new LoginHandler();
 
                 if (handler.TryRestoreSession())
+                {
+                    var main = new MainWindow();
                     main.SetSession(handler.Token, handler.Email);
-
-                main.Show();
+                    main.Show();
+                }
+                else
+                {
+                    // No saved session — force sign-in before revealing the app.
+                    var login = new LoginWindow();
+                    if (login.ShowDialog() == true && login.LoginSucceeded)
+                    {
+                        AuthManager.SaveToken(login.Token, login.Email);
+                        var main = new MainWindow();
+                        main.SetSession(login.Token, login.Email);
+                        main.Show();
+                    }
+                    else
+                    {
+                        Shutdown();
+                    }
+                }
             }
             catch (Exception ex)
             {
