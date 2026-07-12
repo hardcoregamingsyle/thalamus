@@ -5,7 +5,6 @@ import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
 import { callModel, calcAgentBucksForTier } from "./agentCore";
-import { verifyGumroadLicense } from "./payments";
 
 const http = httpRouter();
 
@@ -649,62 +648,10 @@ http.route({
   }),
 });
 
-// ── Gumroad payment webhook ───────────────────────────────────────────────────
-// Gumroad "Ping" fires on every sale as a form-encoded POST. Pings are NOT
-// signed, so we treat them purely as a hint: the license key inside is
-// verified server-to-server with Gumroad before anything is credited, and the
-// ledger's sale_id uniqueness makes replays a no-op. Golden path: the buy
-// button threads ?uid=<userId> through checkout, so the sale credits the
-// right account within seconds of payment with zero user effort.
-http.route({
-  path: "/gumroad/ping",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    let form: FormData;
-    try {
-      form = await request.formData();
-    } catch {
-      return new Response("Bad request", { status: 400 });
-    }
-    const saleId = String(form.get("sale_id") ?? "");
-    const licenseKey = String(form.get("license_key") ?? "");
-    const uid = String(form.get("url_params[uid]") ?? "");
-
-    // Without a license key we cannot authenticate the ping — ignore it.
-    // (Requires "Generate license keys" enabled on the Gumroad product.)
-    if (!saleId || !licenseKey) return new Response("ignored", { status: 200 });
-
-    const verified = await verifyGumroadLicense(licenseKey, false);
-    if (!verified.ok || verified.saleId !== saleId) {
-      // Failed authentication — do not credit, do not retry-loop Gumroad.
-      return new Response("verification failed", { status: 200 });
-    }
-
-    // Validate uid actually resolves to a user before trusting it.
-    let userId: Id<"users"> | undefined;
-    if (uid) {
-      const check = await ctx.runQuery(internal.githubHelpers.getUserById, { userId: uid as Id<"users"> }).catch(() => null);
-      if (check) userId = uid as Id<"users">;
-    }
-
-    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(licenseKey));
-    const licenseKeyHash = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
-
-    await ctx.runMutation(internal.payments.recordPayment, {
-      saleId: verified.saleId,
-      licenseKeyHash,
-      email: verified.email ?? "",
-      priceCents: verified.priceCents ?? 0,
-      userId,
-    });
-    return new Response("ok", { status: 200 });
-  }),
-});
-
-// ── Buy Me a Coffee webhook (the UPI rail) ────────────────────────────────────
-// BMAC supports UPI for Indian buyers, which Gumroad doesn't. Unlike Gumroad's
-// unsigned ping, BMAC webhooks ARE authenticated: X-Signature-Sha256 is an
-// HMAC-SHA256 of the raw body with the webhook secret. We verify it before
+// ── Buy Me a Coffee payment webhook ──────────────────────────────────────────
+// The payment rail: BMAC takes UPI, GPay, and cards with no buyer account.
+// Webhooks are authenticated: X-Signature-Sha256 is an HMAC-SHA256 of the raw
+// body with the webhook secret. We verify it before
 // touching anything. Buyer→account matching is by email only (BMAC can't
 // thread a user id through checkout) — hence the loud "use your account
 // email" warnings in the buy modal. Non-matching payments land as

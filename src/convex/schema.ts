@@ -609,14 +609,13 @@ const schema = defineSchema(
       .index("by_agent", ["agentName"])
       .index("by_agent_and_mode", ["agentName", "runMode"]),
 
-    // Payment ledger (Gumroad). One row per sale — the sale_id is the replay
-    // guard: a sale can only ever credit AgentBucks once, no matter how many
-    // pings/claims arrive. "unclaimed" rows exist when we couldn't match the
-    // buyer to an account; the license-key claim flow resolves them.
+    // Payment ledger (Buy Me a Coffee). One row per sale — the sale_id is the
+    // replay guard: a sale can only ever credit AgentBucks once, no matter how
+    // many webhook deliveries arrive. "unclaimed" rows exist when the buyer's
+    // email didn't match an account.
     payments: defineTable({
-      provider: v.string(),            // "gumroad"
-      saleId: v.string(),              // Gumroad sale_id — unique per purchase
-      licenseKeyHash: v.optional(v.string()), // SHA-256 of the license key
+      provider: v.string(),            // "buymeacoffee"
+      saleId: v.string(),              // provider sale/support id — unique per purchase
       email: v.string(),               // buyer email as reported by provider
       userId: v.optional(v.id("users")),
       priceCents: v.number(),

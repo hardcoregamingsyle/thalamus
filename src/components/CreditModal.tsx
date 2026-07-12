@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Zap, Gift, Tag, ExternalLink, ChevronRight, KeyRound, Loader2 } from "lucide-react";
+import { X, Zap, Gift, Tag, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
-import { useMutation, useAction, useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
 // Credit packs — price in ₹ ($1 = ₹100). Crediting is server-side and
-// price-based ($1 = 1.5M AB, see convex/payments.ts), so any amount paid on
-// Gumroad credits correctly even outside these suggested packs.
+// amount-based (₹1 = 15,000 AB, see convex/payments.ts), so any amount paid
+// credits correctly even outside these suggested packs.
 const CREDIT_PACKS = [
   { name: "Starter", ab: 1_500_000, usd: 1, inr: 100, desc: "1.5M AB — great for trying out" },
   { name: "Builder", ab: 7_500_000, usd: 5, inr: 500, desc: "7.5M AB — for regular builders", popular: true },
@@ -16,14 +16,9 @@ const CREDIT_PACKS = [
   { name: "Studio", ab: 45_000_000, usd: 30, inr: 3000, desc: "45M AB — for power users" },
 ];
 
-// The Gumroad product for AgentBucks. Buyers pay by card/PayPal in the
-// overlay — no Gumroad account needed. "Generate license keys" must be ON for
-// this product: the key is how the backend authenticates the purchase.
-const GUMROAD_PRODUCT_URL = "https://hardcoregamingsyle.gumroad.com/l/agentbucks";
-
-// The UPI rail: Buy Me a Coffee supports UPI for Indian buyers (Gumroad
-// doesn't). BMAC can't thread a user id through checkout, so payments are
-// matched to accounts strictly by email — the UI warns hard about this.
+// All payments run through Buy Me a Coffee: UPI, GPay, cards — no buyer
+// account needed. BMAC can't thread a user id through checkout, so payments
+// are matched to accounts strictly by email; the UI warns hard about this.
 const BMAC_PAGE_URL = "https://buymeacoffee.com/hardcoregamingsyle";
 
 interface CreditModalProps {
@@ -36,10 +31,7 @@ interface CreditModalProps {
 
 function BuyCreditsModal({ onClose, token }: { onClose: () => void; token?: string }) {
   const user = useQuery(api.customAuthHelpers.getUserByToken, token ? { token } : "skip");
-  const claimLicense = useAction(api.payments.claimLicense);
-  const [licenseKey, setLicenseKey] = useState("");
-  const [claiming, setClaiming] = useState(false);
-  const [showUpiWarning, setShowUpiWarning] = useState(false);
+  const [showEmailWarning, setShowEmailWarning] = useState(false);
   const [emailCopied, setEmailCopied] = useState(false);
 
   const copyAccountEmail = () => {
@@ -48,36 +40,6 @@ function BuyCreditsModal({ onClose, token }: { onClose: () => void; token?: stri
       setEmailCopied(true);
       setTimeout(() => setEmailCopied(false), 2000);
     });
-  };
-
-  // Threads identity through Gumroad checkout: uid comes back in the payment
-  // webhook so credits land on this account automatically; email prefills the
-  // checkout so the receipt (and its license key) reaches the right inbox.
-  const buyUrl = (usd: number) => {
-    const params = new URLSearchParams({ wanted: "true" });
-    if (user?._id) params.set("uid", user._id);
-    if (user?.email) params.set("email", user.email);
-    params.set("price", String(usd));
-    return `${GUMROAD_PRODUCT_URL}?${params}`;
-  };
-
-  const handleClaim = async () => {
-    if (!licenseKey.trim() || !token) return;
-    setClaiming(true);
-    try {
-      const result = await claimLicense({ token, licenseKey: licenseKey.trim() });
-      if (result.success) {
-        toast.success(result.message);
-        setLicenseKey("");
-        onClose();
-      } else {
-        toast.error(result.message);
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Claim failed");
-    } finally {
-      setClaiming(false);
-    }
   };
 
   return (
@@ -97,7 +59,7 @@ function BuyCreditsModal({ onClose, token }: { onClose: () => void; token?: stri
         </button>
       </div>
 
-      {showUpiWarning ? (
+      {showEmailWarning ? (
         <div className="space-y-4">
           <div className="bg-amber-400/10 border-2 border-amber-400/50 rounded-xl p-4 space-y-3">
             <p className="text-sm font-bold text-amber-400">⚠ Read this before you pay</p>
@@ -119,7 +81,7 @@ function BuyCreditsModal({ onClose, token }: { onClose: () => void; token?: stri
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => setShowUpiWarning(false)}
+              onClick={() => setShowEmailWarning(false)}
               className="flex-1 py-2.5 bg-muted text-foreground rounded-xl text-xs font-bold hover:bg-muted/70 transition-all"
             >
               Back
@@ -128,80 +90,46 @@ function BuyCreditsModal({ onClose, token }: { onClose: () => void; token?: stri
               href={BMAC_PAGE_URL}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={() => setShowUpiWarning(false)}
+              onClick={() => setShowEmailWarning(false)}
               className="flex-1 py-2.5 bg-amber-400 text-black rounded-xl text-xs font-bold hover:bg-amber-300 transition-all text-center"
             >
-              I understand — pay with UPI
+              I understand — continue
             </a>
           </div>
         </div>
       ) : (
-      <>
-      <p className="text-xs text-muted-foreground leading-relaxed">
-        Pay by card or PayPal — no account needed. Credits are added to this account automatically within seconds of payment.
-      </p>
+        <>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Pay with UPI, GPay, or card via Buy Me a Coffee — no account needed. Credits are added automatically within a minute of payment.
+          </p>
 
-      <div className="grid grid-cols-2 gap-2">
-        {CREDIT_PACKS.map((pack) => (
-          <a
-            key={pack.name}
-            href={buyUrl(pack.usd)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`p-3 rounded-xl border transition-all group ${pack.popular ? "border-primary/50 bg-primary/10 hover:bg-primary/20" : "border-border bg-background hover:bg-muted/30"}`}
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-bold text-foreground">{pack.name}</p>
-              <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-foreground transition-colors" />
-            </div>
-            <p className="text-sm font-bold text-primary mt-1">${pack.usd}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">{pack.desc}</p>
-          </a>
-        ))}
-      </div>
-
-      <div className="space-y-2">
-        <button
-          onClick={() => setShowUpiWarning(true)}
-          className="w-full flex items-center justify-between p-3 rounded-xl border border-amber-400/40 bg-amber-400/10 hover:bg-amber-400/20 transition-all group"
-        >
-          <div className="text-left">
-            <p className="text-xs font-bold text-amber-400">Prefer UPI? Pay via Buy Me a Coffee</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">UPI · GPay · cards — for buyers in India</p>
+          <div className="grid grid-cols-2 gap-2">
+            {CREDIT_PACKS.map((pack) => (
+              <button
+                key={pack.name}
+                onClick={() => setShowEmailWarning(true)}
+                className={`p-3 rounded-xl border transition-all group text-left ${pack.popular ? "border-primary/50 bg-primary/10 hover:bg-primary/20" : "border-border bg-background hover:bg-muted/30"}`}
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-foreground">{pack.name}</p>
+                  <ChevronRight className="h-3 w-3 text-muted-foreground group-hover:text-foreground transition-colors" />
+                </div>
+                <p className="text-sm font-bold text-primary mt-1">₹{pack.inr}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{pack.desc}</p>
+              </button>
+            ))}
           </div>
-          <ChevronRight className="h-4 w-4 text-amber-400/60 group-hover:text-amber-400 transition-colors shrink-0" />
-        </button>
-        <p className="text-[10px] text-amber-400/90 leading-relaxed px-1">
-          ⚠ UPI payments are verified by email. You must use <span className="font-mono font-bold">{user?.email ?? "your account email"}</span> on
-          the payment page or we cannot confirm the payment was yours.
-        </p>
-      </div>
 
-      <div className="space-y-2">
-        <p className="text-[10px] font-bold text-muted-foreground flex items-center gap-1.5">
-          <KeyRound className="h-3 w-3" />
-          ALREADY PAID? CLAIM WITH YOUR LICENSE KEY
-        </p>
-        <div className="flex gap-2">
-          <input
-            value={licenseKey}
-            onChange={(e) => setLicenseKey(e.target.value)}
-            placeholder="XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX"
-            className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-[11px] font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
-          />
-          <button
-            onClick={handleClaim}
-            disabled={claiming || !licenseKey.trim()}
-            className="px-3 py-2 bg-primary text-primary-foreground rounded-lg text-[11px] font-bold hover:bg-primary/90 disabled:opacity-50 transition-all"
-          >
-            {claiming ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Claim"}
-          </button>
-        </div>
-        <p className="text-[10px] text-muted-foreground">
-          The license key is in your Gumroad receipt email. Use it if credits didn't appear automatically.
-        </p>
-      </div>
-      </>
+          <div className="bg-amber-400/10 border border-amber-400/40 rounded-xl p-3">
+            <p className="text-[11px] text-amber-400 font-bold leading-relaxed">
+              ⚠ IMPORTANT — payments are verified by email.
+            </p>
+            <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">
+              On the payment page you must use <span className="font-mono font-bold text-foreground">{user?.email ?? "your account email"}</span> or
+              our system will not be able to verify that it was you who paid.
+            </p>
+          </div>
+        </>
       )}
     </motion.div>
   );
