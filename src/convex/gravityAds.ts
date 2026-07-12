@@ -93,6 +93,9 @@ export const requestAd = action({
     token: v.optional(v.string()),
     messages: v.array(v.object({ role: v.string(), content: v.string() })),
     sessionId: v.optional(v.string()),
+    // How many ads the client can display (1 in-chat + N right-rail slots on
+    // wide screens). Server-clamped to 4 — more just cannibalizes attention.
+    count: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const config = await ctx.runQuery(internal.gravityAds.getGravityAdsConfigInternal, {});
@@ -120,10 +123,15 @@ export const requestAd = action({
     }));
     if (messages.length === 0) return null;
 
+    const count = Math.max(1, Math.min(4, Math.floor(args.count ?? 1)));
+    const placements = Array.from({ length: count }, (_, i) => ({
+      placement: i === 0 ? "below_response" : "sidebar",
+      placement_id: config.adUnitIds?.[i] ?? (i === 0 ? "main" : `rail_${i}`),
+    }));
     const body = {
       messages,
       sessionId: args.sessionId ?? `anon_${Date.now().toString(36)}`,
-      placements: [{ placement: "below_response", placement_id: config.adUnitIds?.[0] ?? "main" }],
+      placements,
       ...(config.restrictedCategories?.length ? { excludedTopics: config.restrictedCategories } : {}),
     };
 
@@ -143,7 +151,8 @@ export const requestAd = action({
       if (res.status === 204 || !res.ok) return null;
       const ads = await res.json();
       if (!Array.isArray(ads) || ads.length === 0) return null;
-      return ads[0];
+      // Backwards compatible: count omitted/1 → single ad object; else array.
+      return count === 1 ? ads[0] : ads.slice(0, count);
     } catch {
       return null;
     } finally {
