@@ -5,7 +5,13 @@
 param(
     [string]$Version    = "1.0.0",
     [switch]$SkipInno,
-    [switch]$SkipInstaller
+    [switch]$SkipInstaller,
+    # Staging gate (Task 2): relative paths under installer-build\ that MUST be
+    # present before the final installer is compiled. Empty by default because
+    # the bridge/QEMU/tools are downloaded by the installer at runtime; pass e.g.
+    #   -RequireMedia bridge\thalamus-vm-bridge.exe,qemu\qemu-system-x86_64.exe
+    # to fail the build if a component you intend to pre-bundle is missing.
+    [string[]]$RequireMedia = @()
 )
 
 Set-StrictMode -Version Latest
@@ -142,6 +148,22 @@ if (Test-Path $qemuDir) {
 
 Ok "Staging complete -> $stageDir"
 
+# 3b. Verify required staging media (Task 2) — gate the final build on the
+# presence of everything the release is supposed to carry. Thalamus.exe is
+# always required; anything in -RequireMedia is enforced on top.
+Step "Verifying staging media..."
+$required = @("Thalamus.exe") + $RequireMedia
+$missing = @()
+foreach ($rel in $required) {
+    $full = Join-Path $stageDir $rel
+    if (Test-Path $full) { Ok "present: $rel" }
+    else { $missing += $rel }
+}
+if ($missing.Count -gt 0) {
+    Fail "Missing required staging media: $($missing -join ', '). Place the file(s) under installer-build\ (or drop them from -RequireMedia) and re-run."
+}
+Ok "All required media present -> proceeding to final build."
+
 # 4. Compile Inno Setup installer
 if (-not $SkipInno) {
     Step "Compiling Inno Setup installer..."
@@ -198,7 +220,7 @@ if (Test-Path $distDir2) {
 }
 if (-not $SkipInstaller -and $instExe -and (Test-Path $instExe)) {
     $s = [math]::Round((Get-Item $instExe).Length / 1MB, 1)
-    Write-Host "    ThalamusInstaller\bin\...\net10.0\ThalamusSetup.exe  ($s MB)" -ForegroundColor Gray
+    Write-Host "    ThalamusInstaller\bin\...\net8.0-windows\win-x64\publish\ThalamusSetup.exe  ($s MB)" -ForegroundColor Gray
 }
 
 Write-Host ""
