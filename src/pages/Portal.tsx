@@ -1,5 +1,5 @@
 import { useAuth } from "@/hooks/use-auth";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import CreditModal from "@/components/CreditModal";
 import OnboardingModal from "@/components/OnboardingModal";
 import StudyProfileModal from "@/components/StudyProfileModal";
@@ -868,12 +868,13 @@ interface GravityAd {
 }
 
 function SponsoredAdCard({ ad }: { ad: GravityAd }) {
-  const impressionFiredRef = useRef(false);
-
-  // Fire the impression pixel exactly once when the card first renders
+  // Fire the impression pixel exactly once PER AD — the card stays mounted
+  // across timed refreshes, so track the last-fired impUrl rather than a
+  // lifetime boolean (which would swallow refreshed ads' impressions).
+  const firedImpUrlRef = useRef<string | null>(null);
   useEffect(() => {
-    if (impressionFiredRef.current || !ad.impUrl) return;
-    impressionFiredRef.current = true;
+    if (!ad.impUrl || firedImpUrlRef.current === ad.impUrl) return;
+    firedImpUrlRef.current = ad.impUrl;
     // window.Image — the DOM constructor (lucide-react's Image icon shadows the global here)
     new window.Image().src = ad.impUrl;
   }, [ad.impUrl]);
@@ -899,6 +900,28 @@ function SponsoredAdCard({ ad }: { ad: GravityAd }) {
     </motion.div>
   );
 }
+
+// ── Completed message bubble ──────────────────────────────────────────────────
+// Memoized so per-chunk streaming updates don't re-render the whole history
+// (MathRenderer re-processing every completed message on each chunk caused lag).
+const ChatMessageBubble = memo(function ChatMessageBubble({ msg }: { msg: Message }) {
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+      className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+    >
+      <div className={`max-w-[82%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-foreground"}`}>
+        {msg.role === "assistant" ? (
+          <MathRenderer html={msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")} />
+        ) : (
+          <p className="whitespace-pre-wrap">{msg.content}</p>
+        )}
+        {msg.costCents !== undefined && msg.costCents > 0 && (
+          <p className="text-[9px] opacity-40 mt-1.5 text-right">{Math.ceil(msg.costCents * 15000).toLocaleString()} AB</p>
+        )}
+      </div>
+    </motion.div>
+  );
+});
 
 function PortalDesktop() {
   const { isLoading, isAuthenticated, user, signOut, token } = useAuth();
@@ -934,6 +957,12 @@ function PortalDesktop() {
   const [showStudyProfile, setShowStudyProfile] = useState(false);
   const [sponsoredAd, setSponsoredAd] = useState<GravityAd | null>(null);
   const adRequestedRef = useRef(false);
+  // Ad refresh machinery: context of the latest completed exchange (so
+  // refreshed ads stay contextual), when we last swapped the ad, and the
+  // user's last interaction (for the activity-based cadence).
+  const adContextRef = useRef<{ messages: Array<{ role: string; content: string }>; sessionId?: string } | null>(null);
+  const lastAdRefreshRef = useRef(0);
+  const lastActivityRef = useRef(0); // stamped on mount by the activity effect
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -961,6 +990,26 @@ function PortalDesktop() {
     }
   }, [token, user, ensureDailyBalance]);
 
+  // Track user activity for the ad-refresh cadence. Passive listeners, ref
+  // writes only — zero re-renders.
+  useEffect(() => {
+    const mark = () => { lastActivityRef.current = Date.now(); };
+    mark(); // opening the portal counts as activity
+    const opts = { passive: true } as const;
+    window.addEventListener("pointermove", mark, opts);
+    window.addEventListener("keydown", mark, opts);
+    window.addEventListener("scroll", mark, opts);
+    window.addEventListener("touchstart", mark, opts);
+    window.addEventListener("click", mark, opts);
+    return () => {
+      window.removeEventListener("pointermove", mark);
+      window.removeEventListener("keydown", mark);
+      window.removeEventListener("scroll", mark);
+      window.removeEventListener("touchstart", mark);
+      window.removeEventListener("click", mark);
+    };
+  }, []);
+
   const handleOnboardingComplete = async () => {
     setShowOnboarding(false);
     if (token) {
@@ -982,6 +1031,36 @@ function PortalDesktop() {
   const sendStudyMessage = useAction(api.study.sendStudyMessage);
   const generateTitle = useAction(api.ai.generateConversationTitle);
   const requestAd = useAction(api.gravityAds.requestAd);
+
+  // Ad refresh cadence. Tab must be visible for ANY refresh (background
+  // impressions are how publisher accounts get banned):
+  //   prompt running + active input (<60s)  → every 60s
+  //   prompt running + passively watching   → every 180s
+  //   idle + active input                   → every 90s
+  //   idle + no input for 2+ minutes        → paused until next activity
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!sponsoredAd || !adContextRef.current) return; // nothing to refresh yet
+      if (document.visibilityState !== "visible") return;
+      const idleMs = Date.now() - lastActivityRef.current;
+      const promptRunning = isThinking || streamingContent !== null;
+      let interval: number | null;
+      if (promptRunning) interval = idleMs < 60_000 ? 60_000 : 180_000;
+      else interval = idleMs < 120_000 ? 90_000 : null;
+      if (interval === null) return;
+      if (Date.now() - lastAdRefreshRef.current < interval) return;
+      // Mark the attempt up front so a no-fill response doesn't cause hammering.
+      lastAdRefreshRef.current = Date.now();
+      requestAd({
+        token: localStorage.getItem("agentai_session_token") ?? undefined,
+        messages: adContextRef.current.messages,
+        sessionId: adContextRef.current.sessionId,
+      })
+        .then(ad => { if (ad) setSponsoredAd(ad as GravityAd); })
+        .catch(() => {});
+    }, 15_000);
+    return () => clearInterval(id);
+  }, [sponsoredAd, isThinking, streamingContent, requestAd]);
   const addTextResource = useMutation(api.studyHelpers.addTextResource);
   const deleteResource = useMutation(api.studyHelpers.deleteResource);
   const searchAndAddResource = useAction(api.study.searchAndAddResource);
@@ -1183,6 +1262,22 @@ function PortalDesktop() {
     setStreamingContent(null);
 
     let finalAssistantText = "";
+    let accumulated = "";
+    let thinkingAccumulated = "";
+    // Batch chunk-driven state updates to one per animation frame — a setState
+    // per SSE chunk re-renders the whole conversation and causes visible lag.
+    let rafId: number | null = null;
+    const scheduleFlush = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (thinkingAccumulated) setThinkingContent(thinkingAccumulated);
+        if (accumulated) setStreamingContent(accumulated);
+      });
+    };
+    const cancelFlush = () => {
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    };
     try {
       const response = await fetch(`${siteUrl}/stream-chat`, {
         method: "POST",
@@ -1209,7 +1304,6 @@ function PortalDesktop() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let accumulated = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -1227,7 +1321,8 @@ function PortalDesktop() {
           try {
             const parsed = JSON.parse(jsonStr) as { type?: string; chunk?: string; done?: boolean; fullText?: string };
             if (parsed.type === "thinking" && parsed.chunk) {
-              setThinkingContent(prev => prev + parsed.chunk);
+              thinkingAccumulated += parsed.chunk;
+              scheduleFlush();
             }
             if (parsed.type === "answer_start") {
               setIsThinking(false);
@@ -1236,13 +1331,14 @@ function PortalDesktop() {
             if ((!parsed.type || parsed.type === "answer") && parsed.chunk) {
               setIsThinking(false);
               accumulated += parsed.chunk;
-              console.log("Chunk received:", parsed.chunk.substring(0, 50));
-              setStreamingContent(accumulated);
+              scheduleFlush();
             }
             if (parsed.done && parsed.fullText) {
+              cancelFlush();
               setIsThinking(false);
               accumulated = parsed.fullText;
               console.log("Stream done signal received. Final text length:", accumulated.length);
+              if (thinkingAccumulated) setThinkingContent(thinkingAccumulated);
               setStreamingContent(accumulated);
             }
           } catch (e) {
@@ -1251,12 +1347,14 @@ function PortalDesktop() {
         }
       }
       console.log("Stream read complete. accumulated length:", accumulated.length);
+      cancelFlush();
       finalAssistantText = accumulated;
       // The stream endpoint saves the assistant response before streaming it
       // back for UX, so clear the temporary bubble after the stream finishes.
       setStreamingContent(null);
     } catch (streamError) {
       console.error("Streaming failed, falling back to action:", streamError);
+      cancelFlush();
       setStreamingContent(null);
       // Fallback to Convex action
       setIsThinking(true);
@@ -1274,21 +1372,24 @@ function PortalDesktop() {
       }
     }
 
-    // Request a contextual sponsored card after the first completed response in
-    // this conversation session. Fire-and-forget — ads must never break chat.
+    // Keep the ad context tracking the latest completed exchange, then request
+    // the first sponsored card of this conversation session. Timed refreshes
+    // (see the cadence effect) reuse the stored context. Fire-and-forget —
+    // ads must never break chat.
+    const adMessages = [
+      ...historyMsgs,
+      { role: "user", content: msg },
+      ...(finalAssistantText ? [{ role: "assistant", content: finalAssistantText }] : []),
+    ].map(m => ({ role: m.role, content: m.content.slice(0, 1000) }));
+    adContextRef.current = { messages: adMessages, sessionId: convId ?? undefined };
     if (!adRequestedRef.current) {
       adRequestedRef.current = true;
-      const adMessages = [
-        ...historyMsgs,
-        { role: "user", content: msg },
-        ...(finalAssistantText ? [{ role: "assistant", content: finalAssistantText }] : []),
-      ].map(m => ({ role: m.role, content: m.content.slice(0, 1000) }));
       requestAd({
         token: localStorage.getItem("agentai_session_token") ?? undefined,
         messages: adMessages,
         sessionId: convId ?? undefined,
       })
-        .then(ad => { if (ad) setSponsoredAd(ad as GravityAd); })
+        .then(ad => { if (ad) { setSponsoredAd(ad as GravityAd); lastAdRefreshRef.current = Date.now(); } })
         .catch(() => {});
     }
 
@@ -1658,20 +1759,7 @@ function PortalDesktop() {
                     </div>
                   ) : (
                     visibleMessages.map((msg: Message) => (
-                      <motion.div key={msg._id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                        className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                      >
-                        <div className={`max-w-[82%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-foreground"}`}>
-                          {msg.role === "assistant" ? (
-                            <MathRenderer html={msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")} />
-                          ) : (
-                            <p className="whitespace-pre-wrap">{msg.content}</p>
-                          )}
-                          {msg.costCents !== undefined && msg.costCents > 0 && (
-                            <p className="text-[9px] opacity-40 mt-1.5 text-right">{Math.ceil(msg.costCents * 15000).toLocaleString()} AB</p>
-                          )}
-                        </div>
-                      </motion.div>
+                      <ChatMessageBubble key={msg._id} msg={msg} />
                     ))
                   )}
                   {streamingContent !== null && (

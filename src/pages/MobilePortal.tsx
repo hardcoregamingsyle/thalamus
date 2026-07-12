@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
 import { useQuery, useMutation, useAction } from "convex/react";
@@ -82,6 +82,36 @@ async function streamChat(
   }
   return accumulated;
 }
+
+// ── Completed message bubble ──────────────────────────────────────────────────
+// Memoized so per-chunk streaming updates don't re-render the whole history.
+const MobileMessageBubble = memo(function MobileMessageBubble({ msg, modeInfo }: { msg: Message; modeInfo: (typeof MODES)[number] }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18 }}
+      className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} items-end gap-2`}
+    >
+      {msg.role === "assistant" && (
+        <div className={`w-7 h-7 rounded-full ${modeInfo.bg} flex items-center justify-center text-sm shrink-0 mb-0.5`}>
+          {modeInfo.emoji}
+        </div>
+      )}
+      <div className={`max-w-[80%] px-3.5 py-2.5 text-[14px] leading-relaxed ${
+        msg.role === "user"
+          ? "bg-primary text-primary-foreground rounded-[18px] rounded-br-[5px]"
+          : "bg-card border border-border/60 text-foreground rounded-[18px] rounded-bl-[5px]"
+      }`}>
+        {msg.role === "assistant" ? (
+          <div className="prose-html text-[13px]" dangerouslySetInnerHTML={{ __html: msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>") }} />
+        ) : (
+          <p className="whitespace-pre-wrap">{msg.content}</p>
+        )}
+      </div>
+    </motion.div>
+  );
+});
 
 // ── Mobile Chat View ──────────────────────────────────────────────────────────
 function MobileChatView({
@@ -208,6 +238,22 @@ function MobileChatView({
     setThinkingContent("");
     setStreamingContent(null);
 
+    // Batch chunk-driven state updates to one per animation frame — a setState
+    // per SSE chunk re-renders the whole conversation and causes visible lag.
+    let streamAccumulated = "";
+    let thinkingAccumulated = "";
+    let rafId: number | null = null;
+    const scheduleFlush = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (thinkingAccumulated) setThinkingContent(thinkingAccumulated);
+        if (streamAccumulated) setStreamingContent(streamAccumulated);
+      });
+    };
+    const cancelFlush = () => {
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    };
     try {
       const accumulated = await streamChat(siteUrl, {
         content: msg,
@@ -221,16 +267,20 @@ function MobileChatView({
         skipUserSave: userMessageSaved,
       }, (text) => {
         setIsThinking(false);
-        setStreamingContent(text);
+        streamAccumulated = text;
+        scheduleFlush();
       }, (text) => {
-        setThinkingContent(prev => prev + text);
+        thinkingAccumulated += text;
+        scheduleFlush();
       }, () => {
         setIsThinking(false);
         setStreamingContent("");
       });
+      cancelFlush();
       setStreamingContent(null);
       void accumulated; // response saved by server
     } catch {
+      cancelFlush();
       setStreamingContent(null);
       setIsThinking(true);
       try {
@@ -367,29 +417,7 @@ function MobileChatView({
         ) : (
           <>
             {visibleMessages.map((msg: Message) => (
-              <motion.div key={msg._id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.18 }}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} items-end gap-2`}
-              >
-                {msg.role === "assistant" && (
-                  <div className={`w-7 h-7 rounded-full ${modeInfo.bg} flex items-center justify-center text-sm shrink-0 mb-0.5`}>
-                    {modeInfo.emoji}
-                  </div>
-                )}
-                <div className={`max-w-[80%] px-3.5 py-2.5 text-[14px] leading-relaxed ${
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground rounded-[18px] rounded-br-[5px]"
-                    : "bg-card border border-border/60 text-foreground rounded-[18px] rounded-bl-[5px]"
-                }`}>
-                  {msg.role === "assistant" ? (
-                    <div className="prose-html text-[13px]" dangerouslySetInnerHTML={{ __html: msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>") }} />
-                  ) : (
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                  )}
-                </div>
-              </motion.div>
+              <MobileMessageBubble key={msg._id} msg={msg} modeInfo={modeInfo} />
             ))}
             {/* Streaming message */}
             {streamingContent !== null && (

@@ -1,4 +1,4 @@
-import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
+import { query, mutation, action, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
 // Admin auth helper
@@ -9,6 +9,51 @@ async function requireAdmin(_ctx: unknown, adminToken: string) {
   if (!ADMIN_TOKEN) throw new Error("ADMIN_TOKEN not configured on server");
   if (!adminToken || adminToken !== ADMIN_TOKEN) throw new Error("Unauthorized");
 }
+
+// ── Admin login: password + security questions ────────────────────────────────
+// Only salted SHA-256 hashes live in this (public) repo — never the values.
+// On success the server hands back ADMIN_TOKEN, which every admin function
+// already validates; the browser never sees the token until the credentials
+// check out server-side.
+const ADMIN_LOGIN_SALT = "thalamus-admin-v1:";
+const ADMIN_PASSWORD_HASH = "6e8740158bf41841b9246adb492c7470b682559e5a6e178ee73dc960e04e9893";
+const ADMIN_ANSWER_HASHES = [
+  "0373b30607fc80acfdbd70987ff92a94b022de7877ace680d1f39be85e2beac2", // q1: favourite Roblox game
+  "1de146172e124ebf5bd16e5ac49b8f60f832fa667095f61c867bb23700513978", // q2: crush name
+  "09ef9530fa5dfe658171f1367cd8b60e9b800ff7689dbcc76b08d7cdcf5e49c4", // q3: greatest enemy of all time
+];
+
+async function sha256Salted(value: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ADMIN_LOGIN_SALT + value));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export const adminLogin = action({
+  args: {
+    password: v.string(),
+    answer1: v.string(),
+    answer2: v.string(),
+    answer3: v.string(),
+  },
+  handler: async (_ctx, args): Promise<{ token: string }> => {
+    if (!ADMIN_TOKEN) throw new Error("ADMIN_TOKEN not configured on server");
+    // Password is case-sensitive; answers are case/whitespace-insensitive.
+    const checks = await Promise.all([
+      sha256Salted(args.password),
+      sha256Salted(args.answer1.toLowerCase().trim()),
+      sha256Salted(args.answer2.toLowerCase().trim()),
+      sha256Salted(args.answer3.toLowerCase().trim()),
+    ]);
+    const ok =
+      checks[0] === ADMIN_PASSWORD_HASH &&
+      checks[1] === ADMIN_ANSWER_HASHES[0] &&
+      checks[2] === ADMIN_ANSWER_HASHES[1] &&
+      checks[3] === ADMIN_ANSWER_HASHES[2];
+    // One generic error regardless of which field failed — no oracle.
+    if (!ok) throw new Error("Invalid credentials");
+    return { token: ADMIN_TOKEN };
+  },
+});
 
 // Used by the frontend login form to validate the token without exposing it in
 // the client bundle. Returns true/false — never exposes the token value.
