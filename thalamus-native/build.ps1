@@ -59,6 +59,14 @@ Step "Building ThalamusApp (desktop app)..."
 $appProject = Join-Path $Root "ThalamusApp\ThalamusApp.csproj"
 if (-not (Test-Path $appProject)) { Fail "ThalamusApp.csproj not found at $appProject" }
 
+# Clean obj/bin to avoid WPF temp-project race conditions on repeat builds
+# (a Debug build's obj/ leftovers collide with the Release publish's
+# generated wpftmp project — same issue the installer step below guards against).
+$appBin = Join-Path (Split-Path $appProject) "bin"
+$appObj = Join-Path (Split-Path $appProject) "obj"
+if (Test-Path $appBin) { Remove-Item $appBin -Recurse -Force }
+if (Test-Path $appObj) { Remove-Item $appObj -Recurse -Force }
+
 dotnet restore $appProject --nologo -q
 if ($LASTEXITCODE -ne 0) { Fail "dotnet restore failed for ThalamusApp" }
 
