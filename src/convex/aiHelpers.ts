@@ -1,6 +1,45 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
+// Guest free-prompt daily cap (unauthenticated users). Mirrors GUEST_LIMIT in
+// the frontend (src/pages/Portal.tsx) — the server side is authoritative.
+export const GUEST_DAILY_LIMIT = 3;
+
+// UTC day key, e.g. "2026-07-12". Computed server-side so the client can't spoof
+// the date to reset its allowance.
+function utcDateKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Read today's guest prompt count (0 when the guest has no row yet).
+export const getGuestUsageCount = internalQuery({
+  args: { guestId: v.string() },
+  handler: async (ctx, args): Promise<number> => {
+    const row = await ctx.db
+      .query("guestUsage")
+      .withIndex("by_guest_and_date", (q) => q.eq("guestId", args.guestId).eq("date", utcDateKey()))
+      .first();
+    return row?.count ?? 0;
+  },
+});
+
+// Increment today's guest prompt count (create the row on first use).
+export const incrementGuestUsage = internalMutation({
+  args: { guestId: v.string() },
+  handler: async (ctx, args) => {
+    const date = utcDateKey();
+    const row = await ctx.db
+      .query("guestUsage")
+      .withIndex("by_guest_and_date", (q) => q.eq("guestId", args.guestId).eq("date", date))
+      .first();
+    if (row) {
+      await ctx.db.patch(row._id, { count: row.count + 1, updatedAt: Date.now() });
+    } else {
+      await ctx.db.insert("guestUsage", { guestId: args.guestId, date, count: 1, updatedAt: Date.now() });
+    }
+  },
+});
+
 export const getConversationMessages = internalQuery({
   args: { conversationId: v.id("conversations") },
   handler: async (ctx, args) => {

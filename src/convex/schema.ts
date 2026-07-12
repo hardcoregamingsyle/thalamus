@@ -537,6 +537,17 @@ const schema = defineSchema(
       .index("by_user_and_date", ["userId", "dateKey"])
       .index("by_date", ["dateKey"]),
 
+    // Guest (unauthenticated) free-prompt usage — one row per guest per UTC day.
+    // Server-side enforcement of the daily guest prompt cap. guestId is a random
+    // UUID persisted in the browser's localStorage (see src/pages/Portal.tsx), so
+    // a plain tab-close no longer resets the allowance the way sessionStorage did.
+    guestUsage: defineTable({
+      guestId: v.string(),
+      date: v.string(),      // YYYY-MM-DD (UTC)
+      count: v.number(),
+      updatedAt: v.number(),
+    }).index("by_guest_and_date", ["guestId", "date"]),
+
     // AWS Bedrock IAM credentials (admin-managed)
     awsCredentials: defineTable({
       accessKeyId: v.string(),
