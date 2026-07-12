@@ -21,15 +21,25 @@ export const queueCommand = internalMutation({
 });
 
 // Get pending commands
+// "Unfinished" commands — pending OR currently running. The pipeline's resume
+// guard uses this; counting only "pending" would let a stray resume slip past
+// while the executor is mid-command.
 export const getPendingCommands = internalQuery({
   args: { branchId: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const pending = await ctx.db
       .query("codeCommands")
       .withIndex("by_branch_and_status", (q) =>
         q.eq("branchId", args.branchId).eq("status", "pending")
       )
       .collect();
+    const running = await ctx.db
+      .query("codeCommands")
+      .withIndex("by_branch_and_status", (q) =>
+        q.eq("branchId", args.branchId).eq("status", "running")
+      )
+      .collect();
+    return [...pending, ...running];
   },
 });
 
@@ -37,8 +47,11 @@ export const getPendingCommands = internalQuery({
 
 // The most recent finished commands + their output, injected into the agent's
 // next prompt so it can actually react to what its shell commands produced.
+// `sinceMs` scopes results to the current resume (commands finished after the
+// agent's last saved message) — without it, later agents in later rounds would
+// see stale outputs (e.g. old test results) and act on them.
 export const getRecentCommandResults = internalQuery({
-  args: { branchId: v.string() },
+  args: { branchId: v.string(), sinceMs: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const rows = await ctx.db
       .query("codeCommands")
@@ -46,9 +59,39 @@ export const getRecentCommandResults = internalQuery({
       .order("desc")
       .take(8);
     return rows
-      .filter((c) => c.status === "completed" || c.status === "failed")
+      .filter((c) => (c.status === "completed" || c.status === "failed")
+        && (args.sinceMs === undefined || (c.completedAt ?? 0) >= args.sinceMs))
       .reverse()
       .map((c) => ({ command: c.command, output: c.output ?? "", exitCode: c.exitCode ?? 0, status: c.status }));
+  },
+});
+
+// Atomically claim pending commands (pending → running) so a duplicate
+// executor invocation can never run — and pay for — the same command twice.
+export const claimPendingCommands = internalMutation({
+  args: { branchId: v.string() },
+  handler: async (ctx, args) => {
+    const pending = await ctx.db
+      .query("codeCommands")
+      .withIndex("by_branch_and_status", (q) =>
+        q.eq("branchId", args.branchId).eq("status", "pending")
+      )
+      .collect();
+    for (const cmd of pending) {
+      await ctx.db.patch(cmd._id, { status: "running" });
+    }
+    return pending.map((c) => ({ _id: c._id, command: c.command }));
+  },
+});
+
+export const countCommands = internalQuery({
+  args: { branchId: v.string() },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("codeCommands")
+      .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
+      .collect();
+    return rows.length;
   },
 });
 

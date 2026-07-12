@@ -342,12 +342,16 @@ export const runPipelineAction = internalAction({
       const context = buildContext(messages);
       const fileContext = buildFileContext(files);
 
-      // Results of shell commands run since this agent last spoke — so on a
-      // post-command resume the agent can actually see what its commands did.
-      const commandResults = await ctx.runQuery(internal.codeCommands.getRecentCommandResults, { branchId }) as Array<{ command: string; output: string; exitCode: number; status: string }>;
+      // Results of shell commands run since the last saved agent message — i.e.
+      // exactly the commands this resume is reacting to. Scoping by timestamp
+      // keeps later agents/rounds from acting on stale outputs (old test runs).
+      const lastMessageAt = messages.length > 0 ? Math.max(...messages.map((m) => m.createdAt)) : 0;
+      const commandResults = await ctx.runQuery(internal.codeCommands.getRecentCommandResults, { branchId, sinceMs: lastMessageAt }) as Array<{ command: string; output: string; exitCode: number; status: string }>;
       const commandContext = commandResults.length > 0
         ? "## Recent Command Results\n" + commandResults
-            .map((c) => `$ ${c.command}\n[${c.status}, exit ${c.exitCode}]\n${c.output.slice(0, 1500)}`)
+            // Fenced + sentinel-neutralized: raw output must read as data, not
+            // as pipeline markup the model might mistake for instructions.
+            .map((c) => `$ ${c.command}\n[${c.status}, exit ${c.exitCode}]\n\`\`\`\n${c.output.slice(0, 1500).split("<<").join("‹‹").split(">>").join("››")}\n\`\`\``)
             .join("\n\n")
         : "";
 

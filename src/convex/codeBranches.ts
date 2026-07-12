@@ -295,6 +295,12 @@ export const deleteBranch = mutation({
       .collect();
     for (const cmd of commands) await ctx.db.delete(cmd._id);
 
+    // Deleting the branch would orphan its cloud sandbox (billing forever,
+    // findable only in the Daytona console) — tear it down first.
+    if (branch.sandboxId) {
+      await ctx.scheduler.runAfter(0, internal.sandbox.destroyBranchSandbox, { sandboxId: branch.sandboxId });
+    }
+
     await ctx.db.delete(branch._id);
   },
 });
@@ -331,6 +337,14 @@ export const updateBranchStatus = internalMutation({
     if (args.totalMessages !== undefined) updates.totalMessages = args.totalMessages;
     if (args.currentTaskIndex !== undefined) updates.currentTaskIndex = args.currentTaskIndex;
     if (args.currentTaskDifficulty !== undefined) updates.currentTaskDifficulty = args.currentTaskDifficulty;
+
+    // A finished branch must not keep a cloud sandbox running (~$54/month
+    // each). Tear it down and clear the reference — a later re-run simply
+    // creates a fresh one lazily.
+    if (args.status === "completed" && branch.sandboxId) {
+      await ctx.scheduler.runAfter(0, internal.sandbox.destroyBranchSandbox, { sandboxId: branch.sandboxId });
+      updates.sandboxId = undefined;
+    }
 
     await ctx.db.patch(branch._id, updates);
   },

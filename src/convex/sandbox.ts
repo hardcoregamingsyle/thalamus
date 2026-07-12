@@ -139,11 +139,27 @@ async function executeCommandWithRetry(sandboxId: string, command: string): Prom
   const wrappedCommand = command.startsWith("cd ") ? command : `cd /home/daytona && ${command}`;
 
   const doExecute = async (): Promise<{ output: string; exitCode: number; status: number }> => {
-    const res = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
-      method: "POST",
-      headers: daytonaHeaders(apiKey),
-      body: JSON.stringify({ command: wrappedCommand }),
-    });
+    // Hard timeout: Daytona's execute endpoint blocks until the command exits,
+    // and a command that never exits would otherwise block until the Convex
+    // action is killed — leaving branch commands stuck in limbo.
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), 150_000);
+    let res: Response;
+    try {
+      res = await fetch(`${DAYTONA_API}/toolbox/${sandboxId}/toolbox/process/execute`, {
+        method: "POST",
+        headers: daytonaHeaders(apiKey),
+        body: JSON.stringify({ command: wrappedCommand }),
+        signal: abort.signal,
+      });
+    } catch (err) {
+      if (abort.signal.aborted) {
+        return { output: "[TIMEOUT: command exceeded 150s — background long-running processes or split the work]", exitCode: 124, status: 408 };
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
     const status = res.status;
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -303,51 +319,96 @@ export const createSandbox = action({
 // results, and resumes the pipeline. Fails safe: if Daytona isn't configured
 // or a command errors, the command is marked failed and the pipeline still
 // resumes, so a build can never hang.
+// Commands that never exit on their own (dev servers) get backgrounded so a
+// single <<RUN-CMD="npm run dev">> can't block the executor until the action
+// deadline kills it (which would leave the branch paused forever).
+const BLOCKING_CMD = /\b(npm|yarn|pnpm|bun)\s+(run\s+)?(dev|start|serve|preview)\b|\bvite(\s|$)|\bnext\s+dev\b|\bnodemon\b|\bserve\b/;
+function backgroundIfBlocking(command: string): { command: string; backgrounded: boolean } {
+  if (!BLOCKING_CMD.test(command)) return { command, backgrounded: false };
+  return {
+    command: `nohup ${command} > /tmp/thalamus-server.log 2>&1 & sleep 3; echo "[backgrounded — logs: /tmp/thalamus-server.log]"; tail -20 /tmp/thalamus-server.log || true`,
+    backgrounded: true,
+  };
+}
+
+// Hard cap on total commands per branch: an agent stuck re-emitting failing
+// commands otherwise livelocks the pipeline with unbounded model+sandbox spend.
+const MAX_COMMANDS_PER_BRANCH = 40;
+
 export const executeBranchCommands = internalAction({
   args: { branchId: v.string() },
   handler: async (ctx, args): Promise<void> => {
-    const resume = () => ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId: args.branchId });
+    // Resume in `finally` — no matter what throws above it, the branch must
+    // never be left paused with commands stuck in limbo.
+    try {
+      // Claiming flips rows pending → running, so a duplicate invocation of
+      // this action sees an empty pending set and can't double-charge.
+      const pending = await ctx.runMutation(internal.codeCommands.claimPendingCommands, { branchId: args.branchId });
+      if (!pending || pending.length === 0) return;
 
-    const pending = await ctx.runQuery(internal.codeCommands.getPendingCommands, { branchId: args.branchId });
-    if (!pending || pending.length === 0) { await resume(); return; }
-
-    // Ensure a sandbox exists for this branch (created lazily, cached on the branch).
-    let sandboxId: string | null = await ctx.runQuery(internal.codeCommands.getBranchSandboxId, { branchId: args.branchId });
-    if (!sandboxId) {
-      try {
-        const sandbox = await daytonaFetch("/sandbox", {
-          method: "POST",
-          body: JSON.stringify({ language: "typescript", envVars: { NODE_ENV: "development" } }),
-        });
-        sandboxId = sandbox.id;
-        await ctx.runMutation(internal.codeCommands.setBranchSandboxId, { branchId: args.branchId, sandboxId });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Sandbox unavailable";
+      const totalSoFar = await ctx.runQuery(internal.codeCommands.countCommands, { branchId: args.branchId });
+      if (totalSoFar > MAX_COMMANDS_PER_BRANCH) {
         for (const cmd of pending) {
           await ctx.runMutation(internal.codeCommands.recordCommandResult, {
-            commandId: cmd._id, status: "failed", output: `Sandbox error: ${msg}`, exitCode: 1,
+            commandId: cmd._id, status: "failed", exitCode: 1,
+            output: `Command budget exhausted (${MAX_COMMANDS_PER_BRANCH} per branch) — finish the task with the results you already have.`,
           });
         }
-        await resume();
         return;
       }
-    }
 
-    for (const cmd of pending) {
-      try {
-        const { output, exitCode } = await executeCommandWithRetry(sandboxId, cmd.command);
-        await ctx.runMutation(internal.codeCommands.recordCommandResult, {
-          commandId: cmd._id, status: "completed", output: (output ?? "").slice(0, 20000), exitCode,
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Command failed";
-        await ctx.runMutation(internal.codeCommands.recordCommandResult, {
-          commandId: cmd._id, status: "failed", output: msg.slice(0, 20000), exitCode: 1,
-        });
+      // Ensure a sandbox exists for this branch (created lazily, cached on the branch).
+      let sandboxId: string | null = await ctx.runQuery(internal.codeCommands.getBranchSandboxId, { branchId: args.branchId });
+      if (!sandboxId) {
+        try {
+          const sandbox = await daytonaFetch("/sandbox", {
+            method: "POST",
+            body: JSON.stringify({ language: "typescript", envVars: { NODE_ENV: "development" } }),
+          });
+          sandboxId = sandbox.id;
+          await ctx.runMutation(internal.codeCommands.setBranchSandboxId, { branchId: args.branchId, sandboxId });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Sandbox unavailable";
+          for (const cmd of pending) {
+            await ctx.runMutation(internal.codeCommands.recordCommandResult, {
+              commandId: cmd._id, status: "failed", output: `Sandbox error: ${msg}`, exitCode: 1,
+            });
+          }
+          return;
+        }
       }
-    }
 
-    await resume();
+      for (const cmd of pending) {
+        try {
+          const prepared = backgroundIfBlocking(cmd.command);
+          const { output, exitCode } = await executeCommandWithRetry(sandboxId, prepared.command);
+          await ctx.runMutation(internal.codeCommands.recordCommandResult, {
+            commandId: cmd._id, status: "completed", output: (output ?? "").slice(0, 20000), exitCode,
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Command failed";
+          await ctx.runMutation(internal.codeCommands.recordCommandResult, {
+            commandId: cmd._id, status: "failed", output: msg.slice(0, 20000), exitCode: 1,
+          });
+        }
+      }
+    } finally {
+      await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId: args.branchId });
+    }
+  },
+});
+
+// Tear down a branch's Daytona sandbox. Called on pipeline completion and
+// branch deletion — without this every branch that ever ran a command leaves
+// a sandbox billing ~$54/month until someone finds it in the Daytona console.
+export const destroyBranchSandbox = internalAction({
+  args: { sandboxId: v.string() },
+  handler: async (_ctx, args): Promise<void> => {
+    try {
+      await daytonaFetch(`/sandbox/${args.sandboxId}`, { method: "DELETE" });
+    } catch {
+      // Best effort — already gone, or Daytona unreachable. Nothing to do.
+    }
   },
 });
 
