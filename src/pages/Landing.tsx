@@ -575,6 +575,9 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-background font-sans text-foreground">
+      <title>Thalamus — AI workspace for chat, research, study, and code</title>
+      <meta name="description" content="Thalamus is an AI workspace: streaming chat, cited web research, study from your own materials, and a nine-agent pipeline that builds software." />
+      <link rel="canonical" href="https://thalamus.aphantic.skinticals.com/" />
       <NavBar
         isAuthenticated={isAuthenticated}
         isLoading={isLoading}

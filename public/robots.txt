@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://thalamus.aphantic.skinticals.com/sitemap.xml

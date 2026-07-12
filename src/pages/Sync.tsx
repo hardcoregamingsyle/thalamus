@@ -206,6 +206,7 @@ echo "✓ Done! Check: https://github.com/$(gh api user --jq .login)/$REPO_NAME"
 
   return (
     <div className="min-h-screen bg-background font-mono flex flex-col">
+      <meta name="robots" content="noindex" />
       <nav className="border-b border-border px-6 h-12 flex items-center justify-between">
         <button onClick={() => navigate("/")} className="flex items-center gap-2">
           <Terminal className="h-4 w-4 text-primary terminal-glow" />

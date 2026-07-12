@@ -8,6 +8,7 @@ export default function NotFound() {
       transition={{ duration: 0.5 }}
       className="min-h-screen flex flex-col"
     >
+      <meta name="robots" content="noindex" />
 
       
       {/* Main Content */}

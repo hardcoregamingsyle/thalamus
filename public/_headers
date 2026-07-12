@@ -1,0 +1,14 @@
+# Hashed build assets never change — cache forever
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The HTML shell must always revalidate, otherwise a stale shell references
+# purged chunk files after a deploy and the app goes blank
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+
+# Static images can cache for a day
+/*.png
+  Cache-Control: public, max-age=86400

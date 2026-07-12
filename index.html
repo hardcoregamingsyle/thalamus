@@ -3,15 +3,26 @@
 
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/png" href="/assets/Untitled_design.png" />
-  <link rel="apple-touch-icon" href="/assets/Untitled_design.png" />
+  <link rel="icon" type="image/png" href="/thalamus-logo.png" />
+  <link rel="apple-touch-icon" href="/thalamus-logo.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#020b1d" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Thalamus is an AI workspace for chat, research, study, and building software." />
+  <!-- Page descriptions are set per-route (React 19 head hoisting); only the
+       landing page and /api-keys are indexable, everything else is noindex -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Thalamus" />
+  <meta property="og:title" content="Thalamus AI | By Aphantic Corporations" />
+  <meta property="og:description" content="Thalamus is an AI workspace for chat, research, study, and building software." />
+  <meta property="og:image" content="https://thalamus.aphantic.skinticals.com/thalamus-logo.png" />
+  <meta name="twitter:card" content="summary" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- Load the font stylesheet without blocking first paint -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+  <noscript>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  </noscript>
   <title>Thalamus AI | By Aphantic Corporations</title>
 </head>
 
