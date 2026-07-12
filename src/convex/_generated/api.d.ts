@@ -40,6 +40,7 @@ import type * as githubStorage from "../githubStorage.js";
 import type * as githubSync from "../githubSync.js";
 import type * as githubSyncHelpers from "../githubSyncHelpers.js";
 import type * as githubWebhooks from "../githubWebhooks.js";
+import type * as gravityAds from "../gravityAds.js";
 import type * as hfRagSpace from "../hfRagSpace.js";
 import type * as http from "../http.js";
 import type * as obscureRepoGenerator from "../obscureRepoGenerator.js";
@@ -50,6 +51,7 @@ import type * as sandbox from "../sandbox.js";
 import type * as sandboxHelpers from "../sandboxHelpers.js";
 import type * as study from "../study.js";
 import type * as studyHelpers from "../studyHelpers.js";
+import type * as userApiKeys from "../userApiKeys.js";
 import type * as users from "../users.js";
 import type * as v86Sandbox from "../v86Sandbox.js";
 
@@ -92,6 +94,7 @@ declare const fullApi: ApiFromModules<{
   githubSync: typeof githubSync;
   githubSyncHelpers: typeof githubSyncHelpers;
   githubWebhooks: typeof githubWebhooks;
+  gravityAds: typeof gravityAds;
   hfRagSpace: typeof hfRagSpace;
   http: typeof http;
   obscureRepoGenerator: typeof obscureRepoGenerator;
@@ -102,6 +105,7 @@ declare const fullApi: ApiFromModules<{
   sandboxHelpers: typeof sandboxHelpers;
   study: typeof study;
   studyHelpers: typeof studyHelpers;
+  userApiKeys: typeof userApiKeys;
   users: typeof users;
   v86Sandbox: typeof v86Sandbox;
 }>;

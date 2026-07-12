@@ -14,8 +14,8 @@ namespace ThalamusApp.Services
     // hence the separate SiteUrl exposed below.
     public class ConvexClient
     {
-        private const string CLOUD_URL  = "https://glad-ermine-937.convex.cloud";
-        private const string SITE_URL   = "https://glad-ermine-937.convex.site";
+        private const string CLOUD_URL  = "https://befitting-wildebeest-866.convex.cloud";
+        private const string SITE_URL   = "https://befitting-wildebeest-866.convex.site";
 
         private readonly HttpClient _http;
 

@@ -22,8 +22,8 @@ bun install
 Create `.env.local` in the project root:
 
 ```
-CONVEX_DEPLOYMENT=glad-ermine-937
-VITE_CONVEX_URL=https://glad-ermine-937.convex.cloud
+CONVEX_DEPLOYMENT=befitting-wildebeest-866
+VITE_CONVEX_URL=https://befitting-wildebeest-866.convex.cloud
 ```
 
 Server-side secrets are managed in the Convex Dashboard — you don't need them locally unless you're deploying.
