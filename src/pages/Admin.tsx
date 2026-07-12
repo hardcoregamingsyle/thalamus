@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
@@ -25,6 +25,10 @@ export default function AdminPage() {
   const [showPass, setShowPass] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [tab, setTab] = useState<AdminTab>("users");
+  // 2FA step: after the password, three security questions gate the login.
+  const [loginStep, setLoginStep] = useState<"password" | "questions">("password");
+  const [answers, setAnswers] = useState(["", "", ""]);
+  const adminLoginAction = useAction(api.admin.adminLogin);
 
   // Verify stored session by testing against a known admin query.
   // We attempt to list promo codes — success means the token is valid.
@@ -47,14 +51,38 @@ export default function AdminPage() {
     }
   }, [storedTokenValid, adminToken, loginPass]);
 
-  const handleLogin = () => {
-    if (!loginPass.trim()) return;
+  const handleLogin = async () => {
+    if (loginStep === "password") {
+      if (!loginPass.trim()) return;
+      setLoginStep("questions");
+      return;
+    }
+    if (answers.some(a => !a.trim())) return;
     setIsVerifying(true);
-    const token = loginPass.trim();
-    try { localStorage.setItem(ADMIN_SESSION_KEY, token); } catch { /* ignore */ }
-    // Set token → triggers useQuery(verifyAdminToken) → useEffect handles result
-    setAdminToken(token);
+    try {
+      // Server-side check of password + all three answers; returns the admin
+      // token only on success. Existing verifyAdminToken flow takes over.
+      const result = await adminLoginAction({
+        password: loginPass,
+        answer1: answers[0],
+        answer2: answers[1],
+        answer3: answers[2],
+      });
+      try { localStorage.setItem(ADMIN_SESSION_KEY, result.token); } catch { /* ignore */ }
+      setAdminToken(result.token);
+    } catch {
+      toast.error("Invalid credentials");
+      setIsVerifying(false);
+      setLoginStep("password");
+      setAnswers(["", "", ""]);
+    }
   };
+
+  const SECURITY_QUESTIONS = [
+    "Favourite game on Roblox",
+    "Crush name",
+    "Greatest enemy of all times",
+  ];
 
   if (!authed) {
     return (
@@ -75,29 +103,46 @@ export default function AdminPage() {
             </div>
           </div>
           <div className="space-y-4">
-            <div>
-              <label className="text-xs font-bold text-muted-foreground mb-1.5 block">ADMIN TOKEN</label>
-              <div className="relative">
-                <input
-                  type={showPass ? "text" : "password"}
-                  value={loginPass}
-                  onChange={e => setLoginPass(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") handleLogin(); }}
-                  placeholder="Enter your admin token"
-                  className="w-full bg-background border border-border rounded-xl px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
-                />
-                <button onClick={() => setShowPass(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
-                  {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
+            {loginStep === "password" ? (
+              <div>
+                <label className="text-xs font-bold text-muted-foreground mb-1.5 block">PASSWORD</label>
+                <div className="relative">
+                  <input
+                    type={showPass ? "text" : "password"}
+                    value={loginPass}
+                    onChange={e => setLoginPass(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") handleLogin(); }}
+                    placeholder="Enter admin password"
+                    className="w-full bg-background border border-border rounded-xl px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
+                  />
+                  <button onClick={() => setShowPass(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                    {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1.5">Set via: <code className="bg-muted px-1 rounded">npx convex env set ADMIN_TOKEN &lt;token&gt;</code></p>
-            </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs font-bold text-muted-foreground">SECURITY VERIFICATION</p>
+                {SECURITY_QUESTIONS.map((q, i) => (
+                  <div key={q}>
+                    <label className="text-[11px] text-muted-foreground mb-1 block">{q}</label>
+                    <input
+                      type="text"
+                      value={answers[i]}
+                      onChange={e => setAnswers(prev => prev.map((a, j) => (j === i ? e.target.value : a)))}
+                      onKeyDown={e => { if (e.key === "Enter") handleLogin(); }}
+                      className="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60 transition-colors"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
             <button
               onClick={handleLogin}
-              disabled={isVerifying || !loginPass.trim()}
+              disabled={isVerifying || (loginStep === "password" ? !loginPass.trim() : answers.some(a => !a.trim()))}
               className="w-full bg-primary text-primary-foreground py-2.5 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {isVerifying ? <><Loader2 className="h-4 w-4 animate-spin" /> Verifying…</> : "Sign In"}
+              {isVerifying ? <><Loader2 className="h-4 w-4 animate-spin" /> Verifying…</> : loginStep === "password" ? "Continue" : "Sign In"}
             </button>
           </div>
         </motion.div>

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from "react";
+import { memo, useEffect, useState, useRef, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/convex/_generated/api";
@@ -304,7 +304,9 @@ function PlannerOutputCard({ data, currentTaskIndex, executionPhase }: { data: P
   );
 }
 
-function MessageContent({ msg, currentTaskIndex, executionPhase }: { msg: { _id?: string; agent: string; content: string }; currentTaskIndex?: number; executionPhase?: string }) {
+// Memoized so live-session updates (streaming agent output) don't re-run
+// ReactMarkdown for every completed message on each render.
+const MessageContent = memo(function MessageContent({ msg, currentTaskIndex, executionPhase }: { msg: { _id?: string; agent: string; content: string }; currentTaskIndex?: number; executionPhase?: string }) {
   if (msg.agent === "Planner") {
     // Don't show task card when session is completed — tasks are done, no need to show them
     if (executionPhase === "completed") {
@@ -324,7 +326,7 @@ function MessageContent({ msg, currentTaskIndex, executionPhase }: { msg: { _id?
       <ReactMarkdown>{msg.content}</ReactMarkdown>
     </div>
   );
-}
+});
 
 // ── Info Request Card ─────────────────────────────────────────────────────────
 function InfoRequestCard({
@@ -1727,6 +1729,7 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
 
   const agentMessages: AgentMessage[] = useMemo(() => (liveMessages ?? []).map((m: Doc<"agentMessages">) => ({
     _id: m._id as string, agent: m.agent, content: m.content, round: m.round, messageIndex: m.messageIndex,
+    isUser: m.agent === "User",
     modelUsed: (m as Record<string, unknown>).modelUsed as string | undefined,
     agentBucksDeducted: (m as Record<string, unknown>).agentBucksDeducted as number | undefined,
   })), [liveMessages]);
@@ -1734,7 +1737,22 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
   // Merge agent messages with local user messages — memoized to avoid recompute on every render
   const allMessages: AgentMessage[] = useMemo(() => {
     if (userMessages.length === 0) return agentMessages;
-    const sortedUserMsgs = [...userMessages].sort((a, b) => (a.messageIndex ?? 999999) - (b.messageIndex ?? 999999));
+    // Dedupe: the mutations echo each sent message back as an agent="User" row via
+    // the watchMessages subscription. Once the server copy is present, drop the
+    // matching optimistic local copy so the message doesn't render twice.
+    // Count-based so repeated identical sends keep their pending local copies.
+    const serverCopies = new Map<string, number>();
+    for (const m of agentMessages) {
+      if (m.isUser) serverCopies.set(m.content, (serverCopies.get(m.content) ?? 0) + 1);
+    }
+    const pendingUserMsgs = userMessages.filter((um) => {
+      const n = serverCopies.get(um.content) ?? 0;
+      if (n === 0) return true;
+      serverCopies.set(um.content, n - 1);
+      return false;
+    });
+    if (pendingUserMsgs.length === 0) return agentMessages;
+    const sortedUserMsgs = [...pendingUserMsgs].sort((a, b) => (a.messageIndex ?? 999999) - (b.messageIndex ?? 999999));
     const combined: AgentMessage[] = [...agentMessages];
     for (let i = sortedUserMsgs.length - 1; i >= 0; i--) {
       const um = sortedUserMsgs[i];
@@ -3251,7 +3269,9 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
                               <span className="text-[9px] text-muted-foreground font-normal">is working...</span>
                             </div>
                             <div className="bg-card border border-border rounded-xl px-4 py-3 text-xs leading-relaxed text-foreground">
-                              <ReactMarkdown>{streamingOutput}</ReactMarkdown>
+                              {/* Plain text while streaming — ReactMarkdown re-parses the whole
+                                  output on every update; the completed message renders markdown */}
+                              <div className="whitespace-pre-wrap">{streamingOutput}</div>
                               <span className="animate-pulse text-primary">█</span>
                             </div>
                           </div>
