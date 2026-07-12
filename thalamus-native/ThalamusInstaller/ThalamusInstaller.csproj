@@ -25,5 +25,8 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="..\ThalamusApp\Assets\icon.ico"/>
+    <!-- Shared theme dictionary — linked from the app so both binaries stay
+         on the exact same palette and control styles. -->
+    <Page Include="..\ThalamusApp\Styles\Theme.xaml" Link="Styles\Theme.xaml"/>
   </ItemGroup>
 </Project>

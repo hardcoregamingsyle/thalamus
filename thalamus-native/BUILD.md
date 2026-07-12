@@ -79,7 +79,10 @@ A clean build is **0 warnings, 0 errors**. Keep it that way — if you add a war
 
 ```
 ThalamusApp/
-├── App.xaml(.cs)              app entry + global styles
+├── App.xaml(.cs)              app entry
+├── Styles/Theme.xaml          THE theme — every color, brush, and control
+│                              style, shared with the installer via a link.
+│                              Change a color here, both apps follow.
 ├── MainWindow.xaml(.cs)       tabbed shell + system tray
 ├── Modes/
 │   ├── ChatView               streaming chat over SSE
@@ -90,13 +93,22 @@ ThalamusApp/
 ├── Services/
 │   ├── ConvexClient           HTTP calls to the Convex backend
 │   └── StreamingClient        SSE streaming
-├── SandboxView + QemuBridgeManager + EmbeddedVncClient
-│                              boots QEMU VMs, draws them over RFB 3.8 VNC
+├── SandboxView + IsoLibrary + QemuBridgeManager + EmbeddedVncClient
+│                              OS catalog, ISO downloads, QEMU boot, and an
+│                              RFB 3.8 VNC client painting the framebuffer
 ├── AutoUpdateSystem           checks GitHub Releases, self-updates
 └── Controls/MessageBubble     chat bubble
 ```
 
 The app talks to the Convex backend over HTTP/SSE. The VM Sandbox drives QEMU through `QemuBridgeManager` (native C# — it replaced the old Node bridge) and paints the framebuffer with an embedded RFB 3.8 VNC client. No external VNC viewer required.
+
+### The ISO catalog is legal-sources-only. Keep it that way.
+
+`IsoLibrary.cs` is the single place the OS catalog lives. Every entry points at an **official, freely downloadable** image — vendor evaluations (Windows 11 Enterprise eval) or open-source releases (Ubuntu, Debian, Kali, Android-x86). Nothing ships inside the app or installer; images download on demand (with pause/resume) into `%LOCALAPPDATA%\Thalamus\ISOs` and each one can be deleted from the UI. Anything without an official free download — retail Windows, macOS (licence-locked to Apple hardware), whatever — is *not* in the catalog and never will be. That's what the **Custom ISO** entry is for: the user brings a file they own, we boot it. If you touch the catalog, verify the URL actually resolves before you commit it, and record the byte size.
+
+### The installer is also the uninstaller
+
+`ThalamusInstaller` downloads and lays down the app, QEMU, TightVNC, and aria2, then copies **itself** into the install dir as `ThalamusSetup.exe` and registers `HKCU\...\Uninstall\Thalamus` so Windows' Add/Remove Programs shows a real entry. Running `ThalamusSetup.exe /uninstall` (which is exactly what that entry does) opens a themed confirmation window, kills running Thalamus processes, and removes files, shortcuts, and registry keys. VM disks and downloaded ISOs survive unless the user explicitly ticks the delete-my-data box. The exe hands its own deletion to a delayed `cmd.exe` because Windows won't let a running binary delete itself.
 
 To point the app at a different backend: **Settings → General** at runtime. No rebuild.
 

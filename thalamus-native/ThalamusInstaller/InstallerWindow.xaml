@@ -6,94 +6,14 @@
         MinWidth="780" MinHeight="580"
         WindowStyle="None"
         AllowsTransparency="False"
-        Background="#050a14"
+        Background="{StaticResource BgDarkerBrush}"
+        FontFamily="{StaticResource AppFontFamily}"
+        UseLayoutRounding="True"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize">
 
-    <Window.Resources>
-        <SolidColorBrush x:Key="Primary"   Color="#3b82f6"/>
-        <SolidColorBrush x:Key="Accent"    Color="#6366f1"/>
-        <SolidColorBrush x:Key="BgDark"    Color="#050a14"/>
-        <SolidColorBrush x:Key="BgDarker"  Color="#020b1d"/>
-        <SolidColorBrush x:Key="BgPanel"   Color="#0a1628"/>
-        <SolidColorBrush x:Key="TextMain"  Color="#e2e8f0"/>
-        <SolidColorBrush x:Key="TextSec"   Color="#64748b"/>
-        <SolidColorBrush x:Key="Border"    Color="#1e3a5f"/>
-        <SolidColorBrush x:Key="Hover"     Color="#1a2d4a"/>
-        <SolidColorBrush x:Key="Green"     Color="#10b981"/>
-        <SolidColorBrush x:Key="Amber"     Color="#f59e0b"/>
-        <SolidColorBrush x:Key="Red"       Color="#ef4444"/>
-
-        <Style x:Key="PrimaryBtn" TargetType="Button">
-            <Setter Property="Foreground"      Value="White"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Cursor"          Value="Hand"/>
-            <Setter Property="FontSize"        Value="13"/>
-            <Setter Property="FontWeight"      Value="SemiBold"/>
-            <Setter Property="Height"          Value="42"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="bd" CornerRadius="8" Padding="24,0">
-                            <Border.Background>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                    <GradientStop Color="#2563eb" Offset="0"/>
-                                    <GradientStop Color="#4f46e5" Offset="1"/>
-                                </LinearGradientBrush>
-                            </Border.Background>
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Opacity" Value="0.88"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="bd" Property="Opacity" Value="0.35"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="GhostBtn" TargetType="Button">
-            <Setter Property="Background"      Value="Transparent"/>
-            <Setter Property="Foreground"      Value="{StaticResource TextSec}"/>
-            <Setter Property="BorderBrush"     Value="{StaticResource Border}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Cursor"          Value="Hand"/>
-            <Setter Property="FontSize"        Value="13"/>
-            <Setter Property="Height"          Value="42"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="bd" Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="8" Padding="20,0">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="{StaticResource Hover}"/>
-                                <Setter Property="Foreground" Value="{StaticResource TextMain}"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="bd" Property="Opacity" Value="0.35"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="CheckStyle" TargetType="CheckBox">
-            <Setter Property="Foreground"  Value="{StaticResource TextMain}"/>
-            <Setter Property="FontSize"    Value="12"/>
-            <Setter Property="Margin"      Value="0,6,0,6"/>
-            <Setter Property="Cursor"      Value="Hand"/>
-        </Style>
-    </Window.Resources>
+    <!-- Palette + PrimaryBtn/GhostBtn/ThemedCheck come from the shared
+         Styles/Theme.xaml (linked from ThalamusApp). -->
 
     <Grid>
         <Grid.RowDefinitions>
@@ -102,8 +22,8 @@
         </Grid.RowDefinitions>
 
         <!-- ═══ TITLE BAR ═══ -->
-        <Border Grid.Row="0" Background="{StaticResource BgDarker}"
-                BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1"
+        <Border Grid.Row="0" Background="{StaticResource BgDarkerBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1"
                 MouseLeftButtonDown="TitleBar_Drag">
             <Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0">
@@ -118,16 +38,16 @@
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <TextBlock Text="Thalamus AI Setup" FontSize="12" FontWeight="SemiBold"
-                               Foreground="{StaticResource TextMain}" VerticalAlignment="Center"/>
+                               Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
                 </StackPanel>
                 <Button Content="✕" HorizontalAlignment="Right" Width="46" Height="38"
-                        Background="Transparent" BorderThickness="0" Foreground="{StaticResource TextSec}"
+                        Background="Transparent" BorderThickness="0" Foreground="{StaticResource TextSecondaryBrush}"
                         FontSize="13" Cursor="Hand" Click="CloseBtn_Click">
                     <Button.Style>
                         <Style TargetType="Button">
                             <Setter Property="Background"      Value="Transparent"/>
                             <Setter Property="BorderThickness" Value="0"/>
-                            <Setter Property="Foreground"      Value="{StaticResource TextSec}"/>
+                            <Setter Property="Foreground"      Value="{StaticResource TextSecondaryBrush}"/>
                             <Setter Property="Cursor"          Value="Hand"/>
                             <Setter Property="Template">
                                 <Setter.Value>
@@ -158,8 +78,8 @@
             </Grid.ColumnDefinitions>
 
             <!-- Left panel — branding + step list -->
-            <Border Grid.Column="0" Background="{StaticResource BgDarker}"
-                    BorderBrush="{StaticResource Border}" BorderThickness="0,0,1,0">
+            <Border Grid.Column="0" Background="{StaticResource BgDarkerBrush}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
                 <DockPanel Margin="0">
                     <!-- Branding -->
                     <StackPanel DockPanel.Dock="Top" Margin="24,28,24,24">
@@ -174,12 +94,12 @@
                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <TextBlock Text="Thalamus AI" FontSize="17" FontWeight="Bold"
-                                   Foreground="{StaticResource TextMain}"/>
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
                         <TextBlock Text="AI workspace for your desktop" FontSize="11"
-                                   Foreground="{StaticResource TextSec}" Margin="0,3,0,0"/>
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0"/>
                     </StackPanel>
 
-                    <Separator DockPanel.Dock="Top" Background="{StaticResource Border}" Height="1" Margin="24,0,24,20"/>
+                    <Separator DockPanel.Dock="Top" Background="{StaticResource BorderBrush}" Height="1" Margin="24,0,24,20"/>
 
                     <!-- Step list -->
                     <StackPanel DockPanel.Dock="Top" Margin="24,0,24,0" x:Name="StepList"/>
@@ -194,8 +114,8 @@
                 <Grid x:Name="PageWelcome" Visibility="Visible">
                     <StackPanel Margin="40,36,40,0" VerticalAlignment="Top">
                         <TextBlock Text="Welcome to Thalamus AI" FontSize="22" FontWeight="Bold"
-                                   Foreground="{StaticResource TextMain}" Margin="0,0,0,10"/>
-                        <TextBlock TextWrapping="Wrap" FontSize="13" Foreground="{StaticResource TextSec}"
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,10"/>
+                        <TextBlock TextWrapping="Wrap" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
                                    LineHeight="22" Margin="0,0,0,28">
                             This wizard will install Thalamus AI on your computer.<LineBreak/>
                             <LineBreak/>
@@ -203,22 +123,22 @@
                             secure VM sandbox for running full operating systems.
                         </TextBlock>
 
-                        <Border Background="{StaticResource BgPanel}" CornerRadius="10"
-                                BorderBrush="{StaticResource Border}" BorderThickness="1" Padding="18,14">
+                        <Border Background="{StaticResource BgCardBrush}" CornerRadius="10"
+                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="18,14">
                             <StackPanel>
                                 <TextBlock Text="What will be installed:" FontSize="12" FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextMain}" Margin="0,0,0,10"/>
-                                <TextBlock Text="• Thalamus AI desktop app (WebView2 native)" FontSize="12" Foreground="{StaticResource TextSec}" Margin="0,3,0,0"/>
-                                <TextBlock Text="• VM Bridge (controls QEMU locally)"         FontSize="12" Foreground="{StaticResource TextSec}" Margin="0,3,0,0"/>
-                                <TextBlock Text="• QEMU (full OS virtualisation engine)"       FontSize="12" Foreground="{StaticResource TextSec}" Margin="0,3,0,0"/>
-                                <TextBlock Text="• TightVNC viewer (VM display)"               FontSize="12" Foreground="{StaticResource TextSec}" Margin="0,3,0,0"/>
-                                <TextBlock Text="• aria2 (fast ISO downloader)"                FontSize="12" Foreground="{StaticResource TextSec}" Margin="0,3,0,0"/>
-                                <TextBlock Text="• Desktop shortcut + Windows integration"     FontSize="12" Foreground="{StaticResource TextSec}" Margin="0,3,0,0"/>
+                                           Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,10"/>
+                                <TextBlock Text="• Thalamus AI desktop app (WebView2 native)" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0"/>
+                                <TextBlock Text="• VM Bridge (controls QEMU locally)"         FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0"/>
+                                <TextBlock Text="• QEMU (full OS virtualisation engine)"       FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0"/>
+                                <TextBlock Text="• TightVNC viewer (VM display)"               FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0"/>
+                                <TextBlock Text="• aria2 (fast ISO downloader)"                FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0"/>
+                                <TextBlock Text="• Desktop shortcut + Windows integration"     FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0"/>
                             </StackPanel>
                         </Border>
 
                         <TextBlock Text="Disk space required: ~350 MB (QEMU ~130 MB + app components)"
-                                   FontSize="11" Foreground="{StaticResource TextSec}" Margin="0,16,0,0"/>
+                                   FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,16,0,0"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                                 VerticalAlignment="Bottom" Margin="0,0,40,28">
@@ -231,20 +151,20 @@
                 <Grid x:Name="PageLocation" Visibility="Collapsed">
                     <StackPanel Margin="40,36,40,0" VerticalAlignment="Top">
                         <TextBlock Text="Installation Folder" FontSize="22" FontWeight="Bold"
-                                   Foreground="{StaticResource TextMain}" Margin="0,0,0,10"/>
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,10"/>
                         <TextBlock Text="Choose where Thalamus AI will be installed."
-                                   FontSize="13" Foreground="{StaticResource TextSec}" Margin="0,0,0,28"/>
+                                   FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,28"/>
 
-                        <TextBlock Text="Install to:" FontSize="12" Foreground="{StaticResource TextSec}" Margin="0,0,0,6"/>
+                        <TextBlock Text="Install to:" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6"/>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" BorderBrush="{StaticResource Border}" BorderThickness="1"
-                                    CornerRadius="6" Background="{StaticResource BgPanel}">
+                            <Border Grid.Column="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                    CornerRadius="6" Background="{StaticResource BgCardBrush}">
                                 <TextBox x:Name="InstallPathBox" Background="Transparent" BorderThickness="0"
-                                         Foreground="{StaticResource TextMain}" FontSize="12"
+                                         Foreground="{StaticResource TextPrimaryBrush}" FontSize="12"
                                          Padding="12,10" VerticalAlignment="Center"/>
                             </Border>
                             <Button Grid.Column="1" Content="Browse…" Style="{StaticResource GhostBtn}"
@@ -252,16 +172,16 @@
                         </Grid>
 
                         <TextBlock x:Name="DiskSpaceLabel"
-                                   Text="" FontSize="11" Foreground="{StaticResource TextSec}" Margin="0,10,0,0"/>
+                                   Text="" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,10,0,0"/>
 
-                        <Separator Background="{StaticResource Border}" Height="1" Margin="0,24,0,24"/>
+                        <Separator Background="{StaticResource BorderBrush}" Height="1" Margin="0,24,0,24"/>
 
                         <TextBlock Text="Additional options:" FontSize="12" FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextMain}" Margin="0,0,0,8"/>
-                        <CheckBox x:Name="ChkDesktop"  Content="Create desktop shortcut"         Style="{StaticResource CheckStyle}" IsChecked="True"/>
-                        <CheckBox x:Name="ChkStartMenu" Content="Create Start Menu entry"        Style="{StaticResource CheckStyle}" IsChecked="True"/>
-                        <CheckBox x:Name="ChkBridge"   Content="Start VM Bridge automatically on login" Style="{StaticResource CheckStyle}" IsChecked="True"/>
-                        <CheckBox x:Name="ChkUriScheme" Content="Register thalamus:// URI scheme" Style="{StaticResource CheckStyle}" IsChecked="True"/>
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                        <CheckBox x:Name="ChkDesktop"  Content="Create desktop shortcut"         Style="{StaticResource ThemedCheck}" IsChecked="True"/>
+                        <CheckBox x:Name="ChkStartMenu" Content="Create Start Menu entry"        Style="{StaticResource ThemedCheck}" IsChecked="True"/>
+                        <CheckBox x:Name="ChkBridge"   Content="Start VM Bridge automatically on login" Style="{StaticResource ThemedCheck}" IsChecked="True"/>
+                        <CheckBox x:Name="ChkUriScheme" Content="Register thalamus:// URI scheme" Style="{StaticResource ThemedCheck}" IsChecked="True"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                                 VerticalAlignment="Bottom" Margin="0,0,40,28">
@@ -276,36 +196,36 @@
                 <Grid x:Name="PageComponents" Visibility="Collapsed">
                     <StackPanel Margin="40,36,40,0" VerticalAlignment="Top">
                         <TextBlock Text="Select Components" FontSize="22" FontWeight="Bold"
-                                   Foreground="{StaticResource TextMain}" Margin="0,0,0,10"/>
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,10"/>
                         <TextBlock Text="Choose which components to download and install."
-                                   FontSize="13" Foreground="{StaticResource TextSec}" Margin="0,0,0,24"/>
+                                   FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,24"/>
 
                         <!-- Required -->
                         <TextBlock Text="REQUIRED" FontSize="10" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSec}" Margin="0,0,0,8"/>
-                        <Border Background="{StaticResource BgPanel}" CornerRadius="8"
-                                BorderBrush="{StaticResource Border}" BorderThickness="1" Padding="14,10" Margin="0,0,0,16">
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                        <Border Background="{StaticResource BgCardBrush}" CornerRadius="8"
+                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14,10" Margin="0,0,0,16">
                             <StackPanel>
-                                <CheckBox Content="Thalamus AI desktop app  (2 MB)"    IsChecked="True" IsEnabled="False" Style="{StaticResource CheckStyle}"/>
-                                <CheckBox Content="VM Bridge                (~31 MB)"   IsChecked="True" IsEnabled="False" Style="{StaticResource CheckStyle}"/>
+                                <CheckBox Content="Thalamus AI desktop app  (2 MB)"    IsChecked="True" IsEnabled="False" Style="{StaticResource ThemedCheck}"/>
+                                <CheckBox Content="VM Bridge                (~31 MB)"   IsChecked="True" IsEnabled="False" Style="{StaticResource ThemedCheck}"/>
                             </StackPanel>
                         </Border>
 
                         <!-- Optional -->
                         <TextBlock Text="OPTIONAL" FontSize="10" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSec}" Margin="0,0,0,8"/>
-                        <Border Background="{StaticResource BgPanel}" CornerRadius="8"
-                                BorderBrush="{StaticResource Border}" BorderThickness="1" Padding="14,10" Margin="0,0,0,16">
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                        <Border Background="{StaticResource BgCardBrush}" CornerRadius="8"
+                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14,10" Margin="0,0,0,16">
                             <StackPanel>
-                                <CheckBox x:Name="ChkQemu"  Content="QEMU virtualisation engine  (~130 MB)" Style="{StaticResource CheckStyle}" IsChecked="True"/>
-                                <CheckBox x:Name="ChkVnc"   Content="TightVNC viewer              (~1 MB)"  Style="{StaticResource CheckStyle}" IsChecked="True"/>
-                                <CheckBox x:Name="ChkAria2" Content="aria2 download manager       (~3 MB)"  Style="{StaticResource CheckStyle}" IsChecked="True"/>
+                                <CheckBox x:Name="ChkQemu"  Content="QEMU virtualisation engine  (~130 MB)" Style="{StaticResource ThemedCheck}" IsChecked="True"/>
+                                <CheckBox x:Name="ChkVnc"   Content="TightVNC viewer              (~1 MB)"  Style="{StaticResource ThemedCheck}" IsChecked="True"/>
+                                <CheckBox x:Name="ChkAria2" Content="aria2 download manager       (~3 MB)"  Style="{StaticResource ThemedCheck}" IsChecked="True"/>
                             </StackPanel>
                         </Border>
 
                         <TextBlock x:Name="TotalSizeLabel"
                                    Text="Estimated download: ~167 MB" FontSize="11"
-                                   Foreground="{StaticResource TextSec}"/>
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                                 VerticalAlignment="Bottom" Margin="0,0,40,28">
@@ -320,13 +240,13 @@
                 <Grid x:Name="PageInstalling" Visibility="Collapsed">
                     <StackPanel Margin="40,36,40,0" VerticalAlignment="Top">
                         <TextBlock Text="Installing Thalamus AI" FontSize="22" FontWeight="Bold"
-                                   Foreground="{StaticResource TextMain}" Margin="0,0,0,10"/>
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,10"/>
                         <TextBlock x:Name="InstallStepLabel"
-                                   Text="Preparing…" FontSize="13" Foreground="{StaticResource TextSec}" Margin="0,0,0,20"/>
+                                   Text="Preparing…" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,20"/>
 
                         <!-- Progress bar -->
-                        <Border Height="8" CornerRadius="4" Background="{StaticResource BgPanel}"
-                                BorderBrush="{StaticResource Border}" BorderThickness="1" Margin="0,0,0,8">
+                        <Border Height="8" CornerRadius="4" Background="{StaticResource BgCardBrush}"
+                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Margin="0,0,0,8">
                             <Border x:Name="ProgressFill" CornerRadius="4" HorizontalAlignment="Left" Width="0">
                                 <Border.Background>
                                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
@@ -338,15 +258,15 @@
                         </Border>
                         <Grid Margin="0,0,0,20">
                             <TextBlock x:Name="ProgressPctLabel"
-                                       Text="0%" FontSize="11" Foreground="{StaticResource TextSec}"/>
+                                       Text="0%" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
                             <TextBlock x:Name="ProgressSpeedLabel"
-                                       Text="" FontSize="11" Foreground="{StaticResource TextSec}"
+                                       Text="" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
                                        HorizontalAlignment="Right"/>
                         </Grid>
 
                         <!-- Log box -->
-                        <Border Height="240" Background="{StaticResource BgDarker}"
-                                BorderBrush="{StaticResource Border}" BorderThickness="1"
+                        <Border Height="240" Background="{StaticResource BgDarkerBrush}"
+                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
                                 CornerRadius="8">
                             <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto" Padding="12">
                                 <TextBox x:Name="LogBox"
@@ -373,13 +293,13 @@
                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <TextBlock Text="Installation Complete!" FontSize="22" FontWeight="Bold"
-                                   Foreground="{StaticResource TextMain}" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+                                   Foreground="{StaticResource TextPrimaryBrush}" HorizontalAlignment="Center" Margin="0,0,0,10"/>
                         <TextBlock Text="Thalamus AI has been installed successfully."
-                                   FontSize="13" Foreground="{StaticResource TextSec}"
+                                   FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
                                    HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,28"/>
 
                         <CheckBox x:Name="ChkLaunch" Content="Launch Thalamus AI now"
-                                  Style="{StaticResource CheckStyle}" IsChecked="True"
+                                  Style="{StaticResource ThemedCheck}" IsChecked="True"
                                   HorizontalAlignment="Center" Margin="0,0,0,24"/>
 
                         <Button Content="Finish" Style="{StaticResource PrimaryBtn}"
@@ -391,11 +311,11 @@
                 <Grid x:Name="PageError" Visibility="Collapsed">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="420">
                         <TextBlock Text="⚠" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,12"
-                                   Foreground="{StaticResource Amber}"/>
+                                   Foreground="{StaticResource AmberBrush}"/>
                         <TextBlock Text="Installation Failed" FontSize="22" FontWeight="Bold"
-                                   Foreground="{StaticResource TextMain}" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+                                   Foreground="{StaticResource TextPrimaryBrush}" HorizontalAlignment="Center" Margin="0,0,0,10"/>
                         <TextBlock x:Name="ErrorDetail" TextWrapping="Wrap" FontSize="13"
-                                   Foreground="{StaticResource TextSec}" HorizontalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center"
                                    TextAlignment="Center" Margin="0,0,0,24"/>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                             <Button Content="← Back" Style="{StaticResource GhostBtn}"

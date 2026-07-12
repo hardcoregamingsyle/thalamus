@@ -17,6 +17,9 @@ namespace ThalamusInstaller
 {
     public partial class InstallerWindow : Window
     {
+        // Version stamped into install.json and the Add/Remove Programs entry.
+        private const string VERSION = "2.0.0";
+
         // ── Download URLs ──────────────────────────────────────────────────────
         private const string URL_APP    = "https://github.com/hardcoregamingsyle/thalamus/releases/download/thalamus-native-v1.0.0/Thalamus.exe";
         private const string URL_BRIDGE = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v3.5.0/thalamus-vm-bridge-v3.5.0.exe";
@@ -287,10 +290,23 @@ namespace ThalamusInstaller
 
                 SetProgress(95, "Registering with Windows…");
 
+                // Keep a copy of this setup exe inside the install dir so the
+                // Add/Remove Programs UninstallString still works after the
+                // originally downloaded installer is deleted.
+                var selfPath  = Environment.ProcessPath;
+                var setupCopy = Path.Combine(_installDir, "ThalamusSetup.exe");
+                if (selfPath != null &&
+                    !string.Equals(Path.GetFullPath(selfPath), Path.GetFullPath(setupCopy),
+                                   StringComparison.OrdinalIgnoreCase))
+                {
+                    File.Copy(selfPath, setupCopy, overwrite: true);
+                    Log("✓ Uninstaller staged (ThalamusSetup.exe).");
+                }
+
                 // Write install.json
                 var installInfo = new
                 {
-                    version     = "1.0.0",
+                    version     = VERSION,
                     installDir  = _installDir,
                     installedAt = DateTime.UtcNow.ToString("o"),
                 };
@@ -451,17 +467,27 @@ namespace ThalamusInstaller
 
         private static void RegisterWithArp(string installDir)
         {
-            const string key = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\ThalamusAI";
+            // Older builds registered under "ThalamusAI" with an UninstallString
+            // pointing at Thalamus.exe (which never implemented uninstall).
+            // Drop that key so upgrades don't leave a duplicate ARP entry.
+            Registry.CurrentUser.DeleteSubKeyTree(
+                @"Software\Microsoft\Windows\CurrentVersion\Uninstall\ThalamusAI", false);
+
+            const string key = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Thalamus";
             using var rk = Registry.CurrentUser.CreateSubKey(key, true);
-            rk.SetValue("DisplayName",          "Thalamus AI");
-            rk.SetValue("DisplayVersion",        "1.0.0");
-            rk.SetValue("Publisher",             "Aphantic Corporations");
-            rk.SetValue("InstallLocation",       installDir);
-            rk.SetValue("UninstallString",       $"\"{Path.Combine(installDir, "Thalamus.exe")}\" --uninstall");
-            rk.SetValue("DisplayIcon",           Path.Combine(installDir, "Thalamus.exe"));
-            rk.SetValue("URLInfoAbout",          "https://thalamus.aphantic.skinticals.com");
-            rk.SetValue("EstimatedSize",         (int)350_000, RegistryValueKind.DWord);
-            rk.SetValue("NoModify",              1, RegistryValueKind.DWord);
+            rk.SetValue("DisplayName",     "Thalamus AI");
+            rk.SetValue("DisplayVersion",  VERSION);
+            rk.SetValue("Publisher",       "Aphantic Corporation");
+            rk.SetValue("InstallLocation", installDir);
+            rk.SetValue("DisplayIcon",     Path.Combine(installDir, "Thalamus.exe"));
+            // The installer copies itself into the install dir and doubles as
+            // the uninstaller via the /uninstall switch.
+            rk.SetValue("UninstallString",
+                $"\"{Path.Combine(installDir, "ThalamusSetup.exe")}\" /uninstall");
+            rk.SetValue("URLInfoAbout",  "https://thalamus.aphantic.skinticals.com");
+            rk.SetValue("EstimatedSize", (int)350_000, RegistryValueKind.DWord); // KB
+            rk.SetValue("NoModify",      1, RegistryValueKind.DWord);
+            rk.SetValue("NoRepair",      1, RegistryValueKind.DWord);
         }
 
         private static void RegisterUriScheme(string installDir)
