@@ -29,12 +29,28 @@ export const getCode = internalQuery({
 // ── Step 2: User authorizes on the website ──────────────────────────────
 
 export const authorizeCode = mutation({
-  args: { code: v.string() },
+  args: { code: v.string(), token: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated — please sign in first.");
-
-    const userId = identity.subject as Id<"users">;
+    // Identify the user by the custom session token — the thing every sign-in
+    // method produces (email OTP, Google, GitHub). The old code relied on
+    // ctx.auth.getUserIdentity() (Convex Auth), which the custom OTP flow never
+    // sets, so it could only ever fail; the token path is the real fix and is
+    // also how OAuth desktop sign-in hands identity back. Convex Auth is kept
+    // as a fallback for any legacy caller.
+    let userId: Id<"users"> | null = null;
+    if (args.token) {
+      const sessions = await ctx.db
+        .query("customSessions")
+        .withIndex("by_token", (q) => q.eq("token", args.token!))
+        .take(1);
+      const session = sessions[0];
+      if (session && session.expiresAt >= Date.now()) userId = session.userId;
+    }
+    if (!userId) {
+      const identity = await ctx.auth.getUserIdentity();
+      if (identity) userId = identity.subject as Id<"users">;
+    }
+    if (!userId) throw new Error("Not authenticated — please sign in first.");
 
     // Find the code
     const records = await ctx.db
