@@ -91,22 +91,10 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: Thalamus ${{ steps.version.outputs.tag }}
-          body: |
-            ## Thalamus ${{ steps.version.outputs.tag }}
-
-            ### What's new in v2.0.0
-            - **Completely rebuilt desktop UI** — All 4 mode views (Chat, Build, Research, Study) rebuilt from scratch with premium WPF design
-            - **Chat mode** — Message bubbles, model selector (Sonnet/Opus/Haiku/Gemini), animated typing indicator, SSE streaming
-            - **Build mode** — Live 9-agent pipeline progress, real-time code output, example project chips
-            - **Research mode** — Animated progress bar, streaming results, amber theme
-            - **Study mode** — Tutor / Quiz / Step-by-Step / Summarise modes, subject chips, purple theme
-            - **Sidebar** — Vector icons replacing emoji, cleaner navigation
-            - **Website auth fix** — Login flow now works correctly on desktop browsers
-
-            ### Installation
-            Download `Thalamus.exe` below and run it — no installer required.
-
-            **Requirements:** Windows 10/11 x64, .NET 8 Runtime (bundled in this build)
+          # Deliberately no `body:` here. Notes are written per-release (the tag
+          # is cut with real notes before this runs); omitting body means the
+          # action uploads the exe without clobbering them. The old hardcoded
+          # "v2.0.0" changelog used to overwrite every release with stale text.
           files: |
             thalamus-native/ThalamusApp/publish/Thalamus.exe
           generate_release_notes: false
