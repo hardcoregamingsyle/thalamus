@@ -1,20 +1,26 @@
 using System;
 using System.Diagnostics;
-using System.Net.Http;
-using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using ThalamusApp.Services;
 
 namespace ThalamusApp.Auth
 {
     public class LoginHandler : IDisposable
     {
-        private const string CONVEX_SITE = "https://befitting-wildebeest-866.convex.cloud";
-        private const string SITE_URL = "https://leadshello-agent-ai.hf.space";
+        // The public website (where the user authorizes the desktop code). The
+        // old value pointed at a dead hf.space host — must be the real site.
+        private const string SITE_URL = "https://thalamus.aphantic.skinticals.com";
         private const int POLL_INTERVAL_MS = 2000;
         private const int MAX_POLL_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
-        private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(10) };
+        // Reuse ConvexClient so the Convex HTTP envelope ({path,args} in the
+        // body, result unwrapped from {status,value}) is handled correctly.
+        // The previous hand-rolled calls used a query-param format Convex
+        // doesn't accept and read fields off the wrong level — every launch
+        // failed with "Connection error".
+        private readonly ConvexClient _convex = new();
 
         public bool IsAuthenticated { get; private set; }
         public string Token { get; private set; } = "";
@@ -37,38 +43,29 @@ namespace ThalamusApp.Auth
         }
 
         /// <summary>
-        /// Step 1: Generate an auth code via Convex action.
-        /// Returns (code, expiresAt).
+        /// Step 1: Generate an auth code via the Convex action. Returns (code, expiresAt).
         /// </summary>
         public async Task<(string code, long expiresAt)> GenerateAuthCodeAsync(CancellationToken ct)
         {
-            var url = $"{CONVEX_SITE}/api/action?componentPath=%2F&actionName=desktopAuthActions%3AcreateCode";
-            var payload = JsonSerializer.Serialize(new { args = new { } });
-            var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            var value = await _convex.CallActionAsync("desktopAuthActions:createCode", new { });
+            if (value is null) throw new InvalidOperationException("Empty response from createCode.");
 
-            var response = await _http.PostAsync(url, content, ct);
-            response.EnsureSuccessStatusCode();
-            var json = await response.Content.ReadAsStringAsync(ct);
-            var doc = JsonDocument.Parse(json);
-
-            var code = doc.RootElement.GetProperty("code").GetString() ?? "";
-            var expiresAt = doc.RootElement.GetProperty("expiresAt").GetInt64();
+            var code = value["code"]?.GetValue<string>() ?? "";
+            // Convex serializes JS numbers as JSON numbers — read as double, then
+            // narrow, so a value expressed with a decimal point never throws.
+            var expiresAt = (long)(value["expiresAt"]?.GetValue<double>() ?? 0);
             return (code, expiresAt);
         }
 
         /// <summary>
-        /// Step 2: Open browser to the website auth page with the code.
+        /// Step 2: Open the browser to the website auth page with the code.
         /// </summary>
         public void OpenBrowserWithCode(string code)
         {
             var authUrl = $"{SITE_URL}/auth/desktop?code={code}";
             try
             {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = authUrl,
-                    UseShellExecute = true
-                });
+                Process.Start(new ProcessStartInfo { FileName = authUrl, UseShellExecute = true });
             }
             catch
             {
@@ -83,7 +80,6 @@ namespace ThalamusApp.Auth
         public async Task<(bool success, string token, string email)> PollForAuthorizationAsync(
             string code, CancellationToken ct)
         {
-            var url = $"{CONVEX_SITE}/api/mutation?componentPath=%2F&mutationName=desktopAuth%3ApollCode";
             var startTime = DateTime.UtcNow;
 
             while (!ct.IsCancellationRequested)
@@ -95,31 +91,23 @@ namespace ThalamusApp.Auth
 
                 try
                 {
-                    var payload = JsonSerializer.Serialize(new { args = new { code = code.ToUpper() } });
-                    var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
-                    var response = await _http.PostAsync(url, content, ct);
-                    response.EnsureSuccessStatusCode();
-                    var json = await response.Content.ReadAsStringAsync(ct);
-                    var doc = JsonDocument.Parse(json);
-
-                    var status = doc.RootElement.GetProperty("status").GetString() ?? "pending";
+                    var value = await _convex.CallMutationAsync("desktopAuth:pollCode", new { code = code.ToUpperInvariant() });
+                    var status = value?["status"]?.GetValue<string>() ?? "pending";
 
                     if (status == "authorized")
                     {
-                        var token = doc.RootElement.GetProperty("token").GetString() ?? "";
-                        var email = doc.RootElement.GetProperty("email").GetString() ?? "";
-                        Token = token;
-                        Email = email;
+                        Token = value?["token"]?.GetValue<string>() ?? "";
+                        Email = value?["email"]?.GetValue<string>() ?? "";
                         IsAuthenticated = true;
-                        return (true, token, email);
+                        return (true, Token, Email);
                     }
 
                     if (status == "expired" || status == "invalid")
                         return (false, "", "");
                 }
-                catch (HttpRequestException)
+                catch (ConvexException)
                 {
-                    // Transient network error — retry
+                    // Transient backend/network error — keep polling.
                     continue;
                 }
             }
@@ -138,10 +126,6 @@ namespace ThalamusApp.Auth
             Email = "";
         }
 
-        public void Dispose()
-        {
-            _http.Dispose();
-            GC.SuppressFinalize(this);
-        }
+        public void Dispose() => GC.SuppressFinalize(this);
     }
 }
