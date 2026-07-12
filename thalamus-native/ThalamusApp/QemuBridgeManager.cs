@@ -168,8 +168,10 @@ namespace ThalamusApp
 
         /// <summary>
         /// Boot a virtual machine with the specified OS and configuration.
+        /// The caller resolves the ISO path (catalog download, eval pick, or
+        /// custom file) via <see cref="IsoLibrary"/> and passes it in.
         /// </summary>
-        public async Task<BootResult> BootVMAsync(string osId, int ram = 4096, int cores = 4)
+        public async Task<BootResult> BootVMAsync(string osId, string isoPath, int ram = 4096, int cores = 4)
         {
             // Launch QEMU off the UI thread; Process.Start itself is synchronous.
             await Task.Yield();
@@ -194,8 +196,6 @@ namespace ThalamusApp
                 var vncPort = FindAvailableVncPort();
                 var vmId = $"{osId}-{DateTime.Now.Ticks}";
 
-                // Get ISO path
-                var isoPath = GetIsoPath(osId);
                 if (!File.Exists(isoPath))
                 {
                     return new BootResult
@@ -300,37 +300,6 @@ namespace ThalamusApp
         public List<VMInstance> ListActiveVMs()
         {
             return _activeVMs.Values.ToList();
-        }
-
-        /// <summary>
-        /// Get the ISO path for an OS.
-        /// </summary>
-        private string GetIsoPath(string osId)
-        {
-            var isoDir = Path.Combine(_installDir, "isos");
-            
-            var isoMappings = new Dictionary<string, string>
-            {
-                { "windows-11", "windows-11.iso" },
-                { "windows-10", "windows-10.iso" },
-                { "macos-18", "macos-sequoia-15.iso" },
-                { "macos-17", "macos-sonoma-14.iso" },
-                { "macos-16", "macos-ventura-13.iso" },
-                { "macos-15", "macos-monterey-12.iso" },
-                { "macos-14", "macos-big-sur-11.iso" },
-                { "android-14", "android-14.iso" },
-                { "android-13", "android-13.iso" },
-                { "ubuntu-24", "ubuntu-24.04-lts.iso" },
-                { "debian-12", "debian-12.iso" },
-                { "kali-2024", "kali-linux-2024.iso" }
-            };
-
-            if (isoMappings.TryGetValue(osId, out var isoName))
-            {
-                return Path.Combine(isoDir, isoName);
-            }
-
-            return Path.Combine(isoDir, $"{osId}.iso");
         }
 
         /// <summary>
