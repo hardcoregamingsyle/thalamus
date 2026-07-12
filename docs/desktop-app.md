@@ -94,7 +94,7 @@ Each mode is a UserControl loaded into the content area:
 
 ### Services
 
-**ConvexClient** — HTTP client calling the Convex deployment (`https://glad-ermine-937.convex.cloud`). Makes POST requests to Convex HTTP actions for mutations and queries. Handles auth token header injection.
+**ConvexClient** — HTTP client calling the Convex deployment (`https://befitting-wildebeest-866.convex.cloud`). Makes POST requests to Convex HTTP actions for mutations and queries. Handles auth token header injection.
 
 **StreamingClient** — SSE (Server-Sent Events) client connecting to the `/stream-chat` endpoint. Parses `data:` lines, dispatches `thinking`, `answer`, and `done` chunks to the UI.
 

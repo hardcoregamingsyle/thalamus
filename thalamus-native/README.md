@@ -47,7 +47,7 @@ Everything publishes self-contained and single-file, so the shipped binary has z
 
 ## Backend
 
-- Deployment: `glad-ermine-937`
-- URL: `https://glad-ermine-937.convex.cloud`
+- Deployment: `befitting-wildebeest-866`
+- URL: `https://befitting-wildebeest-866.convex.cloud`
 
 Change it in-app under Settings → General if you're running your own.

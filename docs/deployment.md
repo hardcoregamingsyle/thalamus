@@ -120,13 +120,13 @@ Upload the `dist/` folder to any static host. The app is a pure SPA — configur
 
 Required environment at build time:
 ```
-VITE_CONVEX_URL=https://glad-ermine-937.convex.cloud
+VITE_CONVEX_URL=https://befitting-wildebeest-866.convex.cloud
 ```
 
 ## Convex Deployment Details
 
-- **Deployment slug:** `glad-ermine-937`
-- **URL:** `https://glad-ermine-937.convex.cloud`
+- **Deployment slug:** `befitting-wildebeest-866`
+- **URL:** `https://befitting-wildebeest-866.convex.cloud`
 - **Dashboard:** `https://dashboard.convex.dev`
 
 ## Release Workflow (Full)

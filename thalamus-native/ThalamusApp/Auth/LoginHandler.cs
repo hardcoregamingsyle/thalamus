@@ -9,7 +9,7 @@ namespace ThalamusApp.Auth
 {
     public class LoginHandler : IDisposable
     {
-        private const string CONVEX_SITE = "https://glad-ermine-937.convex.cloud";
+        private const string CONVEX_SITE = "https://befitting-wildebeest-866.convex.cloud";
         private const string SITE_URL = "https://leadshello-agent-ai.hf.space";
         private const int POLL_INTERVAL_MS = 2000;
         private const int MAX_POLL_DURATION_MS = 5 * 60 * 1000; // 5 minutes
