@@ -26,6 +26,29 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // OAuth (Google/GitHub) lands back here with ?token= — adopt it as the
+  // session and hard-reload so every localStorage reader picks it up.
+  useEffect(() => {
+    const oauthToken = searchParams.get("token");
+    const oauthError = searchParams.get("oauth_error");
+    if (oauthToken) {
+      localStorage.setItem("agentai_session_token", oauthToken);
+      window.location.replace(redirectAfterAuth || "/portal");
+      return;
+    }
+    if (oauthError) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot adoption of an error passed via redirect URL
+      setError(oauthError);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount for URL params
+  }, []);
+
+  const startOAuth = (provider: "google" | "github") => {
+    const site = (import.meta.env.VITE_CONVEX_URL as string).replace(".convex.cloud", ".convex.site");
+    const back = `${window.location.origin}/auth`;
+    window.location.href = `${site}/auth/${provider}?redirect=${encodeURIComponent(back)}`;
+  };
+
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
       navigate(redirectAfterAuth || "/portal");
@@ -159,6 +182,39 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   <p className="text-[11px] text-muted-foreground text-center">
                     New users are registered automatically
                   </p>
+
+                  <div className="flex items-center gap-3">
+                    <div className="h-px flex-1 bg-border" />
+                    <span className="text-[10px] text-muted-foreground font-bold">OR</span>
+                    <div className="h-px flex-1 bg-border" />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => startOAuth("google")}
+                      disabled={isLoading}
+                      className="text-xs font-mono font-bold rounded-lg h-10"
+                    >
+                      <svg className="h-3.5 w-3.5 mr-2" viewBox="0 0 24 24" aria-hidden="true">
+                        <path fill="currentColor" d="M21.35 11.1H12v2.9h5.35c-.5 2.5-2.6 4.3-5.35 4.3a5.8 5.8 0 1 1 0-11.6c1.5 0 2.8.55 3.85 1.45l2.15-2.15A8.65 8.65 0 1 0 12 20.65c5 0 8.65-3.5 8.65-8.65 0-.3-.1-.6-.3-.9Z" />
+                      </svg>
+                      GOOGLE
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => startOAuth("github")}
+                      disabled={isLoading}
+                      className="text-xs font-mono font-bold rounded-lg h-10"
+                    >
+                      <svg className="h-3.5 w-3.5 mr-2" viewBox="0 0 24 24" aria-hidden="true">
+                        <path fill="currentColor" d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.9-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.58 9.58 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85V21c0 .27.18.58.69.48A10 10 0 0 0 12 2Z" />
+                      </svg>
+                      GITHUB
+                    </Button>
+                  </div>
                 </form>
               ) : (
                 <form onSubmit={handleOtpSubmit} className="space-y-4">

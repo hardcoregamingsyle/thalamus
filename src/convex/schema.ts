@@ -609,6 +609,16 @@ const schema = defineSchema(
       .index("by_agent", ["agentName"])
       .index("by_agent_and_mode", ["agentName", "runMode"]),
 
+    // Short-lived OAuth login states (CSRF protection + redirect binding for
+    // Google/GitHub sign-in). Rows are deleted on consumption; stale rows are
+    // ignored via createdAt TTL.
+    oauthStates: defineTable({
+      state: v.string(),
+      redirect: v.string(),   // validated against the origin allowlist at creation
+      provider: v.string(),   // "google" | "github"
+      createdAt: v.number(),
+    }).index("by_state", ["state"]),
+
     // GravityAds configuration (admin-managed)
     gravityAdsConfig: defineTable({
       apiKey: v.string(),           // GravityAds API key
