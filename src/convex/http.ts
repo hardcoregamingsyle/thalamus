@@ -660,8 +660,13 @@ http.route({
   path: "/bmac/webhook",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const secret = process.env.BMAC_WEBHOOK_SECRET;
-    if (!secret) return new Response("BMAC_WEBHOOK_SECRET not configured", { status: 500 });
+    // Secret comes from the admin-managed config (DB), env var as fallback.
+    // The webhook keeps processing even while purchases are disabled in the
+    // admin panel — the switch gates the buy UI, but money that already moved
+    // must always be recorded and credited.
+    const config = await ctx.runQuery(internal.payments.getPaymentsConfigInternal, {});
+    const secret = config?.webhookSecret || process.env.BMAC_WEBHOOK_SECRET;
+    if (!secret) return new Response("BMAC webhook secret not configured", { status: 500 });
 
     const rawBody = await request.text();
     const signatureHeader = (request.headers.get("X-Signature-Sha256") ?? request.headers.get("x-signature-sha256") ?? "").toLowerCase();
