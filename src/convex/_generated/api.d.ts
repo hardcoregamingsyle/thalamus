@@ -31,6 +31,7 @@ import type * as dailyReset from "../dailyReset.js";
 import type * as deployments from "../deployments.js";
 import type * as desktopAuth from "../desktopAuth.js";
 import type * as desktopAuthActions from "../desktopAuthActions.js";
+import type * as desktopIsoCatalog from "../desktopIsoCatalog.js";
 import type * as fileSync from "../fileSync.js";
 import type * as github from "../github.js";
 import type * as githubAutoCreate from "../githubAutoCreate.js";
@@ -86,6 +87,7 @@ declare const fullApi: ApiFromModules<{
   deployments: typeof deployments;
   desktopAuth: typeof desktopAuth;
   desktopAuthActions: typeof desktopAuthActions;
+  desktopIsoCatalog: typeof desktopIsoCatalog;
   fileSync: typeof fileSync;
   github: typeof github;
   githubAutoCreate: typeof githubAutoCreate;
