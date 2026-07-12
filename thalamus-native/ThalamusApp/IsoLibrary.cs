@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,12 +14,18 @@ namespace ThalamusApp
     /// <summary>
     /// The OS image catalog for the VM Sandbox, plus download/storage management.
     ///
-    /// Policy: every catalog entry points at an OFFICIAL, freely downloadable
-    /// image (vendor evaluation or open-source release). Nothing is bundled
-    /// with the app — images download on demand into %LOCALAPPDATA%\Thalamus\ISOs
-    /// and can be deleted individually from the UI. Anything else (retail
-    /// Windows, etc.) goes through the "Custom ISO" entry with a user-supplied
-    /// file.
+    /// Policy: every catalog entry points at an OFFICIAL source only —
+    ///   • open-source releases (Ubuntu, Debian, Kali, Android-x86, BlissOS),
+    ///     direct download;
+    ///   • Microsoft's own Windows ISOs, which the user downloads from
+    ///     microsoft.com and activates in the VM with THEIR OWN license key
+    ///     (the free Enterprise eval needs no key);
+    ///   • a "Custom ISO" entry for any image the user already owns.
+    /// We never bundle, host, redistribute, or link "preactivated"/cracked
+    /// images, macOS (Apple licenses it to Apple hardware only), or iOS
+    /// (no bootable VM image exists). Nothing is bundled with the app — images
+    /// download on demand into %LOCALAPPDATA%\Thalamus\ISOs and can be deleted
+    /// individually from the UI.
     /// </summary>
     public class IsoLibrary
     {
@@ -40,11 +48,23 @@ namespace ThalamusApp
         /// </summary>
         public static readonly IReadOnlyList<IsoEntry> Catalog = new IsoEntry[]
         {
+            new("windows-11-pro", "Windows 11 Pro", "windows",
+                0, null,
+                "https://www.microsoft.com/software-download/windows11",
+                "windows-11.iso",
+                "Official Microsoft ISO — download it, then activate the VM with your own Windows license key"),
+
+            new("windows-10-pro", "Windows 10 Pro", "windows",
+                0, null,
+                "https://www.microsoft.com/software-download/windows10",
+                "windows-10.iso",
+                "Official Microsoft ISO — download it, then activate the VM with your own Windows license key"),
+
             new("windows-11-eval", "Windows 11 Enterprise Evaluation", "windows",
                 0, null,
                 "https://www.microsoft.com/en-us/evalcenter/evaluate-windows-11-enterprise",
                 "windows-11-enterprise-eval.iso",
-                "Official 90-day eval — download from Microsoft, then locate the ISO"),
+                "Official 90-day eval — no key needed. Download from Microsoft, then locate the ISO"),
 
             new("android-x86-9", "Android-x86 9.0-r2 (64-bit)", "android",
                 965_738_496,
@@ -52,6 +72,12 @@ namespace ThalamusApp
                 "https://www.android-x86.org/download.html",
                 "android-x86_64-9.0-r2.iso",
                 "Latest stable release published by the Android-x86 project"),
+
+            new("blissos-android11", "BlissOS (Android 11, x86_64)", "android",
+                0, null,
+                "https://sourceforge.net/projects/blissos-x86/files/Official/",
+                "blissos-x86_64.iso",
+                "Open-source Android 11 by the BlissOS project — pick the FOSS build, then locate it"),
 
             new("ubuntu-2404", "Ubuntu 24.04.4 LTS Desktop", "linux",
                 6_655_619_072,
@@ -97,7 +123,56 @@ namespace ThalamusApp
             _mapFile      = Path.Combine(dataRoot, "iso-paths.json");
 
             Directory.CreateDirectory(_isoDir);
+            HardenDirectory(dataRoot);   // protects ISOs + VM disks under one root
             _manualPaths = LoadManualPaths();
+        }
+
+        /// <summary>
+        /// Lock the VM-data directory to the current user (plus SYSTEM and
+        /// Administrators, which can always take ownership anyway) so other
+        /// Windows accounts on a shared machine cannot read, alter, or delete
+        /// this user's downloaded ISOs and VM disks.
+        ///
+        /// Honest scope: Windows ACLs grant rights by ACCOUNT, not by which
+        /// executable is running. There is no ACL that lets only this .exe write
+        /// while blocking every other program the same user runs — that would
+        /// require a separate service account or WDAC, not a folder permission.
+        /// This gives cross-account isolation (the real protection ACLs can
+        /// enforce) as defence-in-depth on top of LocalAppData already being
+        /// per-user; it is not per-executable DRM and does not pretend to be.
+        /// </summary>
+        private static void HardenDirectory(string path)
+        {
+            if (!OperatingSystem.IsWindows()) return;
+            try
+            {
+                var dir = new DirectoryInfo(path);
+                var security = new DirectorySecurity();
+                // Break inheritance so a loosened parent ACL can't re-open this.
+                security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+
+                var me     = WindowsIdentity.GetCurrent().User!;
+                var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+                var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+
+                foreach (var sid in new SecurityIdentifier[] { me, system, admins })
+                {
+                    security.AddAccessRule(new FileSystemAccessRule(
+                        sid,
+                        FileSystemRights.FullControl,
+                        InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                        PropagationFlags.None,
+                        AccessControlType.Allow));
+                }
+
+                dir.SetAccessControl(security);
+            }
+            catch
+            {
+                // Best effort. On odd filesystems or restricted contexts the ACL
+                // change may fail; the data still lives in the user's private
+                // LocalAppData, so it's never world-accessible regardless.
+            }
         }
 
         // ── Path resolution ───────────────────────────────────────────────────

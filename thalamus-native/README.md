@@ -22,12 +22,16 @@ Plus the quiet stuff that makes it feel finished: system-tray minimize, and an a
 
 The sandbox ships **zero** operating systems. The catalog points exclusively at official, legally free images, and each one downloads on demand — with pause/resume — into `%LocalAppData%\Thalamus\ISOs`:
 
-- **Windows 11 Enterprise Evaluation** — Microsoft's own 90-day eval. Microsoft gates the ISO behind a registration form, so the app opens the [Evaluation Center](https://www.microsoft.com/en-us/evalcenter/evaluate-windows-11-enterprise) and you point Thalamus at the file you downloaded. (Microsoft retired the Windows 10 eval, so it's gone from the catalog too.)
-- **Android-x86 9.0-r2** — the latest stable the [Android-x86 project](https://www.android-x86.org/) actually publishes, pulled from their official SourceForge mirror.
+- **Windows 11 Pro / Windows 10 Pro** — Microsoft's own ISOs from [microsoft.com](https://www.microsoft.com/software-download/windows11). You download the genuine image and activate the VM with **your own Windows license key** (many people already have one; retail keys are cheap). Real, updatable Windows — no cracked "preactivated" builds.
+- **Windows 11 Enterprise Evaluation** — Microsoft's own 90-day eval, no key required. The app opens the [Evaluation Center](https://www.microsoft.com/en-us/evalcenter/evaluate-windows-11-enterprise) and you point Thalamus at the file you downloaded.
+- **Android-x86 9.0-r2** — the latest stable the [Android-x86 project](https://www.android-x86.org/) publishes, from their official SourceForge mirror.
+- **BlissOS (Android 11)** — open-source Android from the [BlissOS project](https://sourceforge.net/projects/blissos-x86/files/Official/); grab the FOSS build and point Thalamus at it.
 - **Ubuntu 24.04 LTS**, **Debian 12**, **Kali Linux** — straight from `releases.ubuntu.com`, `cdimage.debian.org`, and `cdimage.kali.org`.
 - **Custom ISO** — anything you already own. Browse to the file, boot it.
 
-No "preactivated" Windows, no macOS, no sketchy mirrors — those are piracy or licence violations and they're not coming back. Every downloaded ISO shows its size and has its own delete button, and VM disks are sparse qcow2, so the sandbox only ever costs the space you actually use.
+No "preactivated" Windows, no macOS, no iOS, no sketchy mirrors — those are piracy, licence violations, or (in iOS's case) not a thing that exists. Windows runs on your own key; everything else is open source or an official eval. Every downloaded ISO shows its size and has its own delete button, and VM disks are sparse qcow2, so the sandbox only ever costs the space you actually use.
+
+Your ISOs and VM disks live in your private `%LocalAppData%\Thalamus`, and the app locks that folder down to your Windows account on first run — other accounts on a shared PC can't read or delete your VMs. (A note on limits: Windows permissions are per-account, not per-program, so nothing can make a folder writable by *only* one .exe — anyone claiming otherwise is selling you DRM snake oil. What we do is real: cross-account isolation.)
 
 ---
 
