@@ -4,33 +4,7 @@
              Background="{StaticResource ContentBgGradient}">
 
     <UserControl.Resources>
-        <!-- Thin scrollbar -->
-        <Style x:Key="ThinScrollBar" TargetType="ScrollBar">
-            <Setter Property="Width" Value="4"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ScrollBar">
-                        <Track x:Name="PART_Track" IsDirectionReversed="true">
-                            <Track.DecreaseRepeatButton>
-                                <RepeatButton Command="ScrollBar.LineUpCommand" Opacity="0" Height="0"/>
-                            </Track.DecreaseRepeatButton>
-                            <Track.Thumb>
-                                <Thumb>
-                                    <Thumb.Template>
-                                        <ControlTemplate TargetType="Thumb">
-                                            <Border Background="#1e3a5f" CornerRadius="2" Opacity="0.7"/>
-                                        </ControlTemplate>
-                                    </Thumb.Template>
-                                </Thumb>
-                            </Track.Thumb>
-                            <Track.IncreaseRepeatButton>
-                                <RepeatButton Command="ScrollBar.LineDownCommand" Opacity="0" Height="0"/>
-                            </Track.IncreaseRepeatButton>
-                        </Track>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <!-- ThinScrollBar, ThemedInput, Card etc. come from Styles/Theme.xaml -->
 
         <!-- Search button -->
         <Style x:Key="SearchBtn" TargetType="Button">
@@ -67,33 +41,6 @@
             </Setter>
         </Style>
 
-        <!-- Input style -->
-        <Style x:Key="ResearchInputStyle" TargetType="TextBox">
-            <Setter Property="Background" Value="#080f22"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-            <Setter Property="CaretBrush" Value="{StaticResource BlueBrush}"/>
-            <Setter Property="BorderBrush" Value="#1e3a5f"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="Padding" Value="14,10"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="TextBox">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                BorderBrush="{TemplateBinding BorderBrush}" CornerRadius="10">
-                            <ScrollViewer x:Name="PART_ContentHost"
-                                          Padding="{TemplateBinding Padding}" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsFocused" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="#3b82f6"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
     </UserControl.Resources>
 
     <Grid>
@@ -153,9 +100,8 @@
             <StackPanel x:Name="ResearchPanel" Margin="0,0,12,0">
 
                 <!-- Welcome card -->
-                <Border x:Name="WelcomeCard"
-                        Background="#0a1628" BorderBrush="#1e3a5f" BorderThickness="1"
-                        CornerRadius="14" Padding="32,28" Margin="0,20,0,0">
+                <Border x:Name="WelcomeCard" Style="{StaticResource Card}"
+                        Padding="32,28" Margin="0,20,0,0">
                     <StackPanel>
                         <Border Width="48" Height="48" CornerRadius="12"
                                 HorizontalAlignment="Left" Margin="0,0,0,16">
@@ -209,8 +155,8 @@
 
                 <!-- Progress bar (hidden by default) -->
                 <Border x:Name="ProgressCard" Visibility="Collapsed"
-                        Background="#0a1628" BorderBrush="#1e3a5f" BorderThickness="1"
-                        CornerRadius="12" Padding="20,16" Margin="0,16,0,0">
+                        Style="{StaticResource Card}" CornerRadius="12"
+                        Padding="20,16" Margin="0,16,0,0">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                             <TextBlock x:Name="ProgressStepLabel" Text="Searching the web…"
@@ -248,7 +194,7 @@
 
                 <Grid Grid.Column="0">
                     <TextBox x:Name="ResearchInputBox"
-                             Style="{StaticResource ResearchInputStyle}"
+                             Style="{StaticResource ThemedInput}"
                              Height="40"
                              KeyDown="ResearchInput_KeyDown"/>
                     <TextBlock Text="Search a topic, compare options, get a report…"

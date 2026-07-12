@@ -7,46 +7,15 @@
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         ResizeMode="NoResize"
-        Background="#050a14"
+        Background="{StaticResource BgDarkerBrush}"
+        FontFamily="{StaticResource AppFontFamily}"
+        UseLayoutRounding="True"
         AllowsTransparency="False"
         Loaded="Window_Loaded"
         Closing="OnClosing">
 
     <Window.Resources>
-        <!-- Color palette ─ matching website premium theme -->
-        <Color x:Key="BgDeep">#050a14</Color>
-        <Color x:Key="BgDarker">#020b1d</Color>
-        <Color x:Key="BgCard">#0a1628</Color>
-        <Color x:Key="BgHover">#162a4a</Color>
-        <Color x:Key="BorderColor">#1e3a5f</Color>
-        <Color x:Key="TextPrimary">#e2e8f0</Color>
-        <Color x:Key="TextSecondary">#8899aa</Color>
-        <Color x:Key="TextMuted">#3a506a</Color>
-        <Color x:Key="BlueAccent">#3b82f6</Color>
-        <Color x:Key="GreenAccent">#10b981</Color>
-        <Color x:Key="RedAccent">#ef4444</Color>
-
-        <SolidColorBrush x:Key="BgDeepBrush"      Color="{StaticResource BgDeep}"/>
-        <SolidColorBrush x:Key="BgDarkerBrush"    Color="{StaticResource BgDarker}"/>
-        <SolidColorBrush x:Key="BgCardBrush"      Color="{StaticResource BgCard}"/>
-        <SolidColorBrush x:Key="BgHoverBrush"     Color="{StaticResource BgHover}"/>
-        <SolidColorBrush x:Key="BorderBrush"      Color="{StaticResource BorderColor}"/>
-        <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimary}"/>
-        <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondary}"/>
-        <SolidColorBrush x:Key="TextMutedBrush"   Color="{StaticResource TextMuted}"/>
-        <SolidColorBrush x:Key="BlueBrush"        Color="{StaticResource BlueAccent}"/>
-        <SolidColorBrush x:Key="GreenBrush"       Color="{StaticResource GreenAccent}"/>
-        <SolidColorBrush x:Key="RedBrush"         Color="{StaticResource RedAccent}"/>
-
-        <LinearGradientBrush x:Key="BlueGradient" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#3b82f6" Offset="0"/>
-            <GradientStop Color="#6366f1" Offset="1"/>
-        </LinearGradientBrush>
-
-        <LinearGradientBrush x:Key="CardGlow" StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#0f1f3a" Offset="0"/>
-            <GradientStop Color="#0a1628" Offset="1"/>
-        </LinearGradientBrush>
+        <!-- Palette, gradients, PrimaryBtn/GhostBtn come from Styles/Theme.xaml -->
 
         <!-- Traffic light style -->
         <Style x:Key="TrafficLight" TargetType="Ellipse">
@@ -81,66 +50,6 @@
             </Setter>
         </Style>
 
-        <!-- Primary action button -->
-        <!-- Note: WPF Button has no CornerRadius property — corner radius is set directly
-             on the Border inside the ControlTemplate instead of via TemplateBinding. -->
-        <Style x:Key="PrimaryBtn" TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource BlueGradient}"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Height" Value="40"/>
-            <Setter Property="Width" Value="220"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FontSize" Value="12.5"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                CornerRadius="8">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Opacity" Value="0.9"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Opacity" Value="0.8"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Ghost button -->
-        <Style x:Key="GhostBtn" TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource BgCardBrush}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Height" Value="36"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                CornerRadius="6"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                BorderBrush="{TemplateBinding BorderBrush}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgHoverBrush}"/>
-                                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
     </Window.Resources>
 
     <!-- Property elements (RowDefinitions) MUST come before child content in XAML -->
@@ -151,7 +60,7 @@
         </Grid.RowDefinitions>
 
         <!-- Background -->
-        <Rectangle Fill="#050a14"/>
+        <Rectangle Fill="{StaticResource BgDarkerBrush}"/>
 
         <!-- Ambient glow -->
         <Rectangle HorizontalAlignment="Center" VerticalAlignment="Top"
@@ -277,6 +186,7 @@
                     <!-- Open in Browser button -->
                     <Button x:Name="OpenBrowserBtn"
                             Style="{StaticResource PrimaryBtn}"
+                            Width="220"
                             Click="OpenBrowser_Click">
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                             <TextBlock Text="&#x1F310;" FontSize="13" Margin="0,0,8,0"/>
