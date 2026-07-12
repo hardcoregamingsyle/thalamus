@@ -20,6 +20,12 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishReadyToRun>false</PublishReadyToRun>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- WPF spins up a generated *_wpftmp project for markup compilation and
+         copies the nuget asset files into it; on single-file publish that copy
+         intermittently fails ("Copying file ...nuget.g.props..."). This app has
+         no PackageReferences, so markup compile needs none of those assets —
+         skipping the copy removes the race outright. -->
+    <IncludePackageReferencesDuringMarkupCompilation>false</IncludePackageReferencesDuringMarkupCompilation>
   </PropertyGroup>
   <ItemGroup>
     

@@ -19,6 +19,10 @@
     <PublishReadyToRun>true</PublishReadyToRun>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Same WPF markup-compile guard as the app: the linked Theme.xaml uses no
+         package-provided XAML types, so skip copying nuget assets into the
+         generated *_wpftmp project and avoid the single-file publish race. -->
+    <IncludePackageReferencesDuringMarkupCompilation>false</IncludePackageReferencesDuringMarkupCompilation>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="System.Text.Json" Version="8.0.5"/>
