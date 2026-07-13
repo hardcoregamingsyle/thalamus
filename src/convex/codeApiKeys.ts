@@ -1,6 +1,7 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { requireSession, assertProjectOwner } from "./codeAuth";
 
 // Third-party provider keys are encrypted at rest with AES-256-GCM. The key is
 // derived from the API_KEY_ENCRYPTION_SECRET deployment secret, so raw keys never
@@ -82,12 +83,7 @@ export const fulfillApiKeyRequest = mutation({
     value: v.string(),
   },
   handler: async (ctx, args) => {
-    const sessions = await ctx.db
-      .query("customSessions")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
-      .take(1);
-    const session = sessions[0];
-    if (!session || session.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await requireSession(ctx, args.token);
 
     const request = await ctx.db.get(args.requestId);
     if (!request) throw new Error("Request not found");
@@ -99,6 +95,9 @@ export const fulfillApiKeyRequest = mutation({
       .first();
 
     if (!branch) throw new Error("Branch not found");
+
+    // Only the project owner may inject a key value and resume the build.
+    await assertProjectOwner(ctx, session.userId, branch.projectId);
 
     // Store API key in project
     const existing = await ctx.db

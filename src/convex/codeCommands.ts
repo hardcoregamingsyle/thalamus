@@ -1,6 +1,7 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { requireSession, assertBranchOwner } from "./codeAuth";
 
 // Queue a command for execution
 export const queueCommand = internalMutation({
@@ -157,16 +158,14 @@ export const completeCommand = mutation({
     exitCode: v.number(),
   },
   handler: async (ctx, args) => {
-    // Verify auth (implement proper auth check)
-    const sessions = await ctx.db
-      .query("customSessions")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
-      .take(1);
-    const session = sessions[0];
-    if (!session || session.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await requireSession(ctx, args.token);
 
     const command = await ctx.db.get(args.commandId);
     if (!command) throw new Error("Command not found");
+    // The command carries attacker-controlled output that gets fed into the
+    // branch's next agent prompt and resumes its pipeline — only the branch
+    // owner may complete it.
+    await assertBranchOwner(ctx, session.userId, command.branchId);
 
     await ctx.db.patch(args.commandId, {
       status: "completed",
@@ -200,12 +199,11 @@ export const failCommand = mutation({
     output: v.string(),
   },
   handler: async (ctx, args) => {
-    const sessions = await ctx.db
-      .query("customSessions")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
-      .take(1);
-    const session = sessions[0];
-    if (!session || session.expiresAt < Date.now()) throw new Error("Not authenticated");
+    const session = await requireSession(ctx, args.token);
+
+    const command = await ctx.db.get(args.commandId);
+    if (!command) throw new Error("Command not found");
+    await assertBranchOwner(ctx, session.userId, command.branchId);
 
     await ctx.db.patch(args.commandId, {
       status: "failed",
