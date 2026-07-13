@@ -18,6 +18,7 @@ import type * as antiEvasionDb from "../antiEvasionDb.js";
 import type * as auth from "../auth.js";
 import type * as auth_emailOtp from "../auth/emailOtp.js";
 import type * as codeApiKeys from "../codeApiKeys.js";
+import type * as codeAuth from "../codeAuth.js";
 import type * as codeBranches from "../codeBranches.js";
 import type * as codeCommands from "../codeCommands.js";
 import type * as codeMigration from "../codeMigration.js";
@@ -74,6 +75,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   "auth/emailOtp": typeof auth_emailOtp;
   codeApiKeys: typeof codeApiKeys;
+  codeAuth: typeof codeAuth;
   codeBranches: typeof codeBranches;
   codeCommands: typeof codeCommands;
   codeMigration: typeof codeMigration;
