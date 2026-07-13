@@ -322,6 +322,7 @@ export const updateBranchStatus = internalMutation({
     currentTaskDifficulty: v.optional(v.string()),
     criticRetryCount: v.optional(v.number()),
     stopRequested: v.optional(v.boolean()),
+    lastSandboxSyncAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const branch = await ctx.db
@@ -344,6 +345,7 @@ export const updateBranchStatus = internalMutation({
     if (args.currentTaskDifficulty !== undefined) updates.currentTaskDifficulty = args.currentTaskDifficulty;
     if (args.criticRetryCount !== undefined) updates.criticRetryCount = args.criticRetryCount;
     if (args.stopRequested !== undefined) updates.stopRequested = args.stopRequested;
+    if (args.lastSandboxSyncAt !== undefined) updates.lastSandboxSyncAt = args.lastSandboxSyncAt;
 
     // A finished branch must not keep a cloud sandbox running (~$54/month
     // each). Tear it down and clear the reference — a later re-run simply

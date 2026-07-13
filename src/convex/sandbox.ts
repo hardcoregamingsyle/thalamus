@@ -378,6 +378,30 @@ export const executeBranchCommands = internalAction({
         }
       }
 
+      // Seed the sandbox with the branch's generated files BEFORE running any
+      // command, so `npm run build` / `tsc` / tests execute against the real
+      // code instead of an empty disk — the change that makes verification
+      // actually mean something. Incremental (only files changed since the last
+      // seed) and best-effort: if seeding fails the commands still run exactly
+      // as before, so this can only improve outcomes, never break them.
+      try {
+        const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
+        const lastSync = branch?.lastSandboxSyncAt ?? 0;
+        const files = await ctx.runQuery(internal.codeBranches.getFilesInternal, { branchId: args.branchId });
+        const changed = files.filter((f) => (f.lastModifiedAt ?? 0) > lastSync);
+        if (changed.length > 0) {
+          const apiKey = getApiKey();
+          for (const f of changed) {
+            await writeFileToSandbox(sandboxId, apiKey, f.filepath, f.content);
+          }
+          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+            branchId: args.branchId, lastSandboxSyncAt: Date.now(),
+          });
+        }
+      } catch (err) {
+        console.error("Sandbox seed failed (commands run anyway):", err instanceof Error ? err.message : err);
+      }
+
       for (const cmd of pending) {
         try {
           const prepared = backgroundIfBlocking(cmd.command);
