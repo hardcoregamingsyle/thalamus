@@ -310,7 +310,9 @@ export const deleteBranch = mutation({
 export const updateBranchStatus = internalMutation({
   args: {
     branchId: v.string(),
-    status: v.union(v.literal("running"), v.literal("completed"), v.literal("idle"), v.literal("paused")),
+    // Optional so callers can patch just a flag (e.g. clearing stopRequested)
+    // without forcing a status transition.
+    status: v.optional(v.union(v.literal("running"), v.literal("completed"), v.literal("idle"), v.literal("paused"))),
     currentAgent: v.optional(v.string()),
     phase: v.optional(v.string()),
     executionPhase: v.optional(v.string()),
@@ -318,6 +320,8 @@ export const updateBranchStatus = internalMutation({
     totalMessages: v.optional(v.number()),
     currentTaskIndex: v.optional(v.number()),
     currentTaskDifficulty: v.optional(v.string()),
+    criticRetryCount: v.optional(v.number()),
+    stopRequested: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const branch = await ctx.db
@@ -328,9 +332,9 @@ export const updateBranchStatus = internalMutation({
     if (!branch) return;
 
     const updates: Record<string, unknown> = {
-      status: args.status,
       lastActivityAt: Date.now(),
     };
+    if (args.status !== undefined) updates.status = args.status;
     if (args.currentAgent !== undefined) updates.currentAgent = args.currentAgent;
     if (args.phase !== undefined) updates.phase = args.phase;
     if (args.executionPhase !== undefined) updates.executionPhase = args.executionPhase;
@@ -338,6 +342,8 @@ export const updateBranchStatus = internalMutation({
     if (args.totalMessages !== undefined) updates.totalMessages = args.totalMessages;
     if (args.currentTaskIndex !== undefined) updates.currentTaskIndex = args.currentTaskIndex;
     if (args.currentTaskDifficulty !== undefined) updates.currentTaskDifficulty = args.currentTaskDifficulty;
+    if (args.criticRetryCount !== undefined) updates.criticRetryCount = args.criticRetryCount;
+    if (args.stopRequested !== undefined) updates.stopRequested = args.stopRequested;
 
     // A finished branch must not keep a cloud sandbox running (~$54/month
     // each). Tear it down and clear the reference — a later re-run simply

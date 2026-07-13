@@ -29,6 +29,7 @@ import {
   parsePlannerOutput,
   AGENT_SYSTEM_PROMPTS,
   getAgentTier,
+  calcAgentBucksForTier,
   type ModelTier,
   type RunMode,
 } from "./agentCore";
@@ -280,6 +281,33 @@ export const runPipelineAction = internalAction({
     const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
     if (!branch) return;
 
+    // User pressed Stop — halt this run WITHOUT rescheduling, and clear the flag
+    // so a later start isn't immediately cancelled. (The pipeline writes "idle"
+    // between every step, so status alone can't tell a Stop from normal state.)
+    if (branch.stopRequested) {
+      await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+        branchId, status: "idle", stopRequested: false, currentAgent: undefined,
+      });
+      return;
+    }
+
+    // Resolve the branch owner so every model call bills the right account.
+    const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: branch.projectId });
+    const ownerUserId = project?.userId ?? null;
+
+    // Charge the owner's AgentBucks + record platform spend for one model call.
+    // Centralized so no call site runs for free — the old pipeline never billed
+    // at all (a full billing bypass and a blind spot for the budget guard).
+    const bill = async (label: string, r: { tier: ModelTier; inputTokens: number; outputTokens: number }) => {
+      if (ownerUserId) {
+        const ab = calcAgentBucksForTier(r.tier, r.inputTokens, r.outputTokens);
+        await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId: ownerUserId, agentBucksToDeduct: ab });
+      }
+      await ctx.runMutation(internal.admin.deductPlatformCost, {
+        modelName: `${label}-${r.tier}`, inputTokens: r.inputTokens, outputTokens: r.outputTokens,
+      });
+    };
+
     // Check if paused for commands
     // (These gates also make re-scheduling idempotent: a spurious extra
     // invocation while the user hasn't answered simply re-parks the branch.)
@@ -370,6 +398,7 @@ export const runPipelineAction = internalAction({
           ctx, dispatchPrompt, AGENT_SYSTEM_PROMPTS["Dispatcher"] ?? "", "haiku",
           branchId, "Dispatcher", geminiKeys, dbCreds,
         );
+        await bill("dispatcher", dispatchResult);
         await ctx.runMutation(internal.codeBranches.clearStreamingContent, { branchId });
 
         const dispatched = parseDispatcherOutput(dispatchResult.text);
@@ -467,6 +496,7 @@ export const runPipelineAction = internalAction({
         const tier = getAgentTier("Planner", runMode);
         const result = await callModelWithStreaming(ctx, prompt, systemPrompt, tier, branchId, "Planner", geminiKeys, dbCreds);
         agentOutput = result.text;
+        await bill("planner", result);
         await ctx.runMutation(internal.codeBranches.clearStreamingContent, { branchId });
 
         const plannerOutput = parsePlannerOutput(agentOutput);
@@ -524,6 +554,7 @@ export const runPipelineAction = internalAction({
         const tier = getAgentTier(currentPhase, runMode);
         const result = await callModelWithStreaming(ctx, prompt, systemPrompt, tier, branchId, currentPhase, geminiKeys, dbCreds);
         agentOutput = result.text;
+        await bill(currentPhase.toLowerCase(), result);
         await ctx.runMutation(internal.codeBranches.clearStreamingContent, { branchId });
       }
 
@@ -634,12 +665,11 @@ export const runPipelineAction = internalAction({
       // than blindly advancing — this is the core L4.5 behavior improvement.
       const MAX_CRITIC_RETRIES = 2;
       if (currentPhase === "Critic" && parsed.criticResult === "fail") {
-        // KNOWN LIMITATION: criticRetryCount is read here but never persisted
-        // anywhere (see the abandoned patch attempt below), so this is always 0
-        // and the MAX_CRITIC_RETRIES cap is not actually enforced yet.
-        const retryCount = (branch as { criticRetryCount?: number }).criticRetryCount ?? 0;
+        // Persisted per-task counter, so the cap is actually enforced across the
+        // separate runPipelineAction invocations each retry spans.
+        const retryCount = branch.criticRetryCount ?? 0;
         if (retryCount < MAX_CRITIC_RETRIES) {
-          // Save a fix-request context message and requeue from Coder
+          // Bump the counter and requeue from Coder to fix what the Critic flagged.
           round++;
           await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
             branchId,
@@ -649,13 +679,8 @@ export const runPipelineAction = internalAction({
             executionPhase,
             round,
             totalMessages,
+            criticRetryCount: retryCount + 1,
           });
-          // Store retry count in branch (patch directly — no dedicated mutation needed)
-          const branchDoc = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
-          if (branchDoc) {
-            // We can't do a custom patch here (no direct db access in actions), so
-            // we use a saveMessage to carry the retry number in context instead.
-          }
           // Append a system prompt to context so Coder knows exactly what failed
           await ctx.runMutation(internal.codeBranches.saveMessage, {
             branchId,
@@ -735,6 +760,7 @@ export const runPipelineAction = internalAction({
               round,
               totalMessages,
               currentTaskIndex: nextTaskIndex,
+              criticRetryCount: 0, // fresh task — reset the Critic retry budget
             });
 
             await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, {
@@ -803,6 +829,12 @@ export const startPipeline = action({
     const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: branch.projectId });
     if (!project || project.userId !== userId) throw new Error("Not authorized");
 
+    // Fresh run: clear any leftover Stop flag and reset the per-task Critic
+    // retry budget so a previously-exhausted branch starts clean.
+    await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+      branchId: args.branchId, stopRequested: false, criticRetryCount: 0,
+    });
+
     // Save user message if provided
     if (args.userPrompt) {
       await ctx.runMutation(internal.codeBranches.saveMessage, {
@@ -832,10 +864,14 @@ export const stopPipeline = action({
     const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: branch.projectId });
     if (!project || project.userId !== userId) throw new Error("Not authorized");
 
+    // Set the stop flag — the next runPipelineAction (self-chained or resumed)
+    // sees it, halts without rescheduling, and clears it. Setting status alone
+    // wouldn't work: the pipeline writes "idle" between every step anyway.
     await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
       branchId: args.branchId,
       status: "idle",
       currentAgent: undefined,
+      stopRequested: true,
     });
 
     await ctx.runMutation(internal.codeBranches.saveMessage, {

@@ -127,6 +127,14 @@ const schema = defineSchema(
       round: v.optional(v.number()),
       plannerTasksJson: v.optional(v.string()),
       currentTaskDifficulty: v.optional(v.string()),
+      // Per-task Critic retry counter — bounds the Coder<->Critic fix loop so a
+      // task the Critic keeps failing can't loop (and bill) forever. Reset to 0
+      // when the pipeline advances to a new task.
+      criticRetryCount: v.optional(v.number()),
+      // Set by stopPipeline; runPipelineAction halts (without rescheduling) and
+      // clears it. Distinguishes a user Stop from the transient "idle" the
+      // pipeline writes between every step.
+      stopRequested: v.optional(v.boolean()),
       // VM configuration
       vmRam: v.optional(v.number()),
       vmCores: v.optional(v.number()),
