@@ -24,6 +24,7 @@ export const saveGravityAdsConfig = mutation({
     showToPaidUsers: v.boolean(),
     restrictedCategories: v.optional(v.array(v.string())),
     testAdMode: v.optional(v.boolean()),
+    pixelId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     requireAdmin(args.adminToken);
@@ -38,6 +39,7 @@ export const saveGravityAdsConfig = mutation({
       showToPaidUsers: args.showToPaidUsers,
       restrictedCategories: args.restrictedCategories,
       testAdMode: args.testAdMode ?? false,
+      pixelId: args.pixelId,
       updatedAt: Date.now(),
       updatedBy: "admin",
     };
@@ -73,6 +75,7 @@ export const getPublicAdsConfig = query({
       publisherId: config.publisherId,
       adUnitIds: config.adUnitIds,
       restrictedCategories: config.restrictedCategories,
+      pixelId: config.pixelId,
       // API key is server-side only — ad requests are proxied through our backend
     };
   },
@@ -96,11 +99,16 @@ export const requestAd = action({
     messages: v.array(v.object({ role: v.string(), content: v.string() })),
     sessionId: v.optional(v.string()),
     // How many ads the client can display (1 in-chat + N right-rail slots on
-    // wide screens). Server-clamped to 4 — more just cannibalizes attention.
+    // wide screens). Server-clamped to 6.
     count: v.optional(v.number()),
-    // Client device signals (real browser/app UA) forwarded to Gravity so our
-    // proxied requests aren't filtered as bot traffic.
-    device: v.optional(v.object({ ua: v.optional(v.string()), country: v.optional(v.string()) })),
+    // Real end-user device signals. Gravity uses these (not our server's source
+    // IP) for geo/targeting and bot-filtering in server-side fetching, so the
+    // /ad HTTP route fills them from the browser's own request headers.
+    device: v.optional(v.object({
+      ua: v.optional(v.string()),
+      ip: v.optional(v.string()),
+      country: v.optional(v.string()),
+    })),
   },
   handler: async (ctx, args) => {
     const config = await ctx.runQuery(internal.gravityAds.getGravityAdsConfigInternal, {});
@@ -128,7 +136,7 @@ export const requestAd = action({
     }));
     if (messages.length === 0) return null;
 
-    const count = Math.max(1, Math.min(4, Math.floor(args.count ?? 1)));
+    const count = Math.max(1, Math.min(6, Math.floor(args.count ?? 1)));
     // Placement names MUST be from Gravity's fixed vocabulary (below_response,
     // right_response, …). An unknown value like "sidebar" gets the whole
     // request rejected — the in-chat card is below the reply, rail cards are

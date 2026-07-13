@@ -1,7 +1,7 @@
 import { httpRouter } from "convex/server";
 import { auth } from "./auth";
 import { httpAction } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { internal, api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
 import { callModel, calcAgentBucksForTier } from "./agentCore";
@@ -865,6 +865,55 @@ http.route({
       usage,
     }), {
       headers: { "Content-Type": "application/json", ...apiCorsHeaders() },
+    });
+  }),
+});
+
+// ── Contextual ad request (Gravity), proxied so the API key stays server-side ─
+// The browser calls THIS endpoint via fetch, which means the request carries the
+// real end user's User-Agent and IP in its headers. We read those and forward
+// them to Gravity as device signals — Gravity uses the device object (not our
+// server's source IP) for geo/targeting/bot-filtering in server-side fetching,
+// so ads fill for the actual user, not our datacenter. The Gravity key never
+// leaves the server.
+http.route({
+  path: "/ad",
+  method: "OPTIONS",
+  handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders() })),
+});
+
+http.route({
+  path: "/ad",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    let body: { token?: string; messages?: Array<{ role: string; content: string }>; sessionId?: string; count?: number };
+    try {
+      body = await request.json();
+    } catch {
+      return new Response("Bad request", { status: 400, headers: corsHeaders() });
+    }
+
+    // Real end-user signals straight from the browser's request headers.
+    const h = request.headers;
+    const ua = h.get("user-agent") ?? undefined;
+    const ip = (h.get("x-forwarded-for")?.split(",")[0].trim())
+      || h.get("cf-connecting-ip")
+      || h.get("x-real-ip")
+      || undefined;
+    const country = h.get("cf-ipcountry") ?? h.get("x-vercel-ip-country") ?? undefined;
+    const device = (ua || ip || country) ? { ua, ip, country } : undefined;
+
+    const ad = await ctx.runAction(api.gravityAds.requestAd, {
+      token: body.token,
+      messages: body.messages ?? [],
+      sessionId: body.sessionId,
+      count: body.count,
+      device,
+    });
+
+    return new Response(JSON.stringify({ ad: ad ?? null }), {
+      status: 200,
+      headers: { "Content-Type": "application/json", ...corsHeaders() },
     });
   }),
 });

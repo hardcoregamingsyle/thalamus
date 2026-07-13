@@ -689,6 +689,10 @@ const schema = defineSchema(
       // platforms, assistants, Thalamus alternatives). Applied when ad
       // requests are made to the GravityAds API.
       restrictedCategories: v.optional(v.array(v.string())),
+      // Gravity measurement Pixel ID (a dashboard UUID, separate from apiKey).
+      // Required for attribution + payouts; loaded client-side when set.
+      pixelId: v.optional(v.string()),
+      testAdMode: v.optional(v.boolean()),
       updatedAt: v.number(),
       updatedBy: v.optional(v.string()),
     }),
