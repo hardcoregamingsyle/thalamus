@@ -6,6 +6,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { useNavigate, useParams } from "react-router";
 import { useAuth } from "@/hooks/use-auth";
+import { sanitizeAiHtml } from "@/lib/sanitizeHtml";
 import { useTheme } from "@/hooks/use-theme";
 import CreditModal from "@/components/CreditModal";
 import ThinkingPanel from "@/components/ThinkingPanel";
@@ -104,7 +105,7 @@ const MobileMessageBubble = memo(function MobileMessageBubble({ msg, modeInfo }:
           : "bg-card border border-border/60 text-foreground rounded-[18px] rounded-bl-[5px]"
       }`}>
         {msg.role === "assistant" ? (
-          <div className="prose-html text-[13px]" dangerouslySetInnerHTML={{ __html: msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>") }} />
+          <div className="prose-html text-[13px]" dangerouslySetInnerHTML={{ __html: sanitizeAiHtml(msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")) }} />
         ) : (
           <p className="whitespace-pre-wrap">{msg.content}</p>
         )}
@@ -435,7 +436,7 @@ function MobileChatView({
                       ))}
                     </div>
                   ) : (
-                    <div className="prose-html text-[13px]" dangerouslySetInnerHTML={{ __html: streamingContent.startsWith("<") ? streamingContent : streamingContent.replace(/\n/g, "<br/>") }} />
+                    <div className="prose-html text-[13px]" dangerouslySetInnerHTML={{ __html: sanitizeAiHtml(streamingContent.startsWith("<") ? streamingContent : streamingContent.replace(/\n/g, "<br/>")) }} />
                   )}
                 </div>
               </motion.div>

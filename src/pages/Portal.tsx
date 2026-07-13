@@ -5,6 +5,7 @@ import OnboardingModal from "@/components/OnboardingModal";
 import StudyProfileModal from "@/components/StudyProfileModal";
 import StudentSuite from "@/components/StudentSuite";
 import MathRenderer from "@/components/MathRenderer";
+import { sanitizeAiHtml } from "@/lib/sanitizeHtml";
 import ThinkingPanel from "@/components/ThinkingPanel";
 import { useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
@@ -437,7 +438,7 @@ function GuestPortal() {
                     }`}>
                       {msg.role === "assistant" ? (
                         <div className="prose-html text-sm">
-                          <span dangerouslySetInnerHTML={{ __html: msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>") }} />
+                          <span dangerouslySetInnerHTML={{ __html: sanitizeAiHtml(msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")) }} />
                           {isStreamingContent && <span className="inline-block w-0.5 h-4 bg-primary ml-0.5 animate-pulse align-middle" />}
                         </div>
                       ) : (
