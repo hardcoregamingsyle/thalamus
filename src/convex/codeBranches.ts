@@ -1,6 +1,7 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import { requireBranchOwner } from "./codeAuth";
 
 function generateBranchId(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -430,19 +431,9 @@ export const setRunMode = mutation({
     runMode: v.union(v.literal("cheap"), v.literal("balanced"), v.literal("powerful")),
   },
   handler: async (ctx, args) => {
-    const sessions = await ctx.db
-      .query("customSessions")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
-      .take(1);
-    const session = sessions[0];
-    if (!session || session.expiresAt < Date.now()) throw new Error("Not authenticated");
-
-    const branch = await ctx.db
-      .query("codeBranches")
-      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
-      .first();
-    if (!branch) throw new Error("Branch not found");
-
+    // runMode selects the model tier for every future run, so flipping another
+    // user's branch to "powerful" would burn their credits — owner-only.
+    const { branch } = await requireBranchOwner(ctx, args.token, args.branchId);
     await ctx.db.patch(branch._id, { runMode: args.runMode });
   },
 });

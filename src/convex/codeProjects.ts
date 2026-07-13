@@ -1,5 +1,17 @@
-import { mutation, query, type MutationCtx } from "./_generated/server";
+import { mutation, query, internalQuery, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
+
+// Internal: load a project by its public projectId (used by action-context
+// ownership checks in codePipeline, which can't touch the db directly).
+export const getProjectInternal = internalQuery({
+  args: { projectId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("codeProjects")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .first();
+  },
+});
 
 function makeId(len = 10): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";

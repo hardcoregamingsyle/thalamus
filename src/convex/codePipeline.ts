@@ -794,9 +794,14 @@ export const runPipelineAction = internalAction({
 export const startPipeline = action({
   args: { token: v.string(), branchId: v.string(), userPrompt: v.optional(v.string()) },
   handler: async (ctx, args): Promise<void> => {
-    // Verify authentication and ownership
-    const sessions = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
-    if (!sessions) throw new Error("Not authenticated");
+    // Verify authentication AND that the caller owns this branch — otherwise any
+    // signed-in user could inject a prompt into, and start, another user's build.
+    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
+    if (!userId) throw new Error("Not authenticated");
+    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
+    if (!branch) throw new Error("Branch not found");
+    const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: branch.projectId });
+    if (!project || project.userId !== userId) throw new Error("Not authorized");
 
     // Save user message if provided
     if (args.userPrompt) {
@@ -822,6 +827,10 @@ export const stopPipeline = action({
   handler: async (ctx, args): Promise<void> => {
     const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
     if (!userId) throw new Error("Not authenticated");
+    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
+    if (!branch) throw new Error("Branch not found");
+    const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: branch.projectId });
+    if (!project || project.userId !== userId) throw new Error("Not authorized");
 
     await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
       branchId: args.branchId,
