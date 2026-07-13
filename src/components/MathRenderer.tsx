@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { sanitizeAiHtml } from "@/lib/sanitizeHtml";
 
 interface MathRendererProps {
   html: string;
@@ -56,7 +57,7 @@ function processMathInHtml(html: string): string {
 export default function MathRenderer({ html, className = "" }: MathRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const processedHtml = processMathInHtml(html);
+  const processedHtml = sanitizeAiHtml(processMathInHtml(html));
 
   return (
     <div
