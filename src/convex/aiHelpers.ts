@@ -51,6 +51,17 @@ export const getConversationMessages = internalQuery({
   },
 });
 
+// True only if the conversation exists AND belongs to userId. Action entry
+// points must call this before reading history or writing to a conversation,
+// so a caller can't pass someone else's conversationId (IDOR).
+export const isConversationOwner = internalQuery({
+  args: { conversationId: v.id("conversations"), userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const conv = await ctx.db.get(args.conversationId);
+    return !!conv && conv.userId === args.userId;
+  },
+});
+
 export const saveMessage = internalMutation({
   args: {
     conversationId: v.id("conversations"),
@@ -158,6 +169,11 @@ export const saveStreamedMessage = internalMutation({
     const session = sessions[0];
     if (!session || session.expiresAt < Date.now()) return;
     const userId = session.userId;
+
+    // Refuse to read/write a conversation the caller doesn't own (cross-tenant
+    // history injection/exfiltration guard — conversation ids are not secrets).
+    const conv = await ctx.db.get(args.conversationId);
+    if (!conv || conv.userId !== userId) return;
 
     if (!args.skipUserSave) {
       await ctx.db.insert("messages", {
