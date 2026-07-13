@@ -23,6 +23,10 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+      # Cloudflare Pages deploys with `npm ci`, so package-lock.json must stay in
+      # sync with package.json — this fails fast if a `bun add` desynced it.
+      - name: Verify npm lockfile in sync
+        run: npm ci --dry-run --no-audit --no-fund
       - run: bun install --frozen-lockfile
       - name: Type-check
         run: bun run type-check
