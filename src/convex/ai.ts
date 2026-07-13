@@ -253,6 +253,14 @@ export const sendMessage = action({
     );
     if (!userId) throw new Error("Not authenticated");
 
+    // Ownership gate: the conversation must belong to the caller before we read
+    // its history or append to it (prevents cross-tenant read/inject via IDOR).
+    const owns = await ctx.runQuery(internal.aiHelpers.isConversationOwner, {
+      conversationId: args.conversationId,
+      userId,
+    });
+    if (!owns) throw new Error("Conversation not found");
+
     if (!args.skipUserSave) {
       await ctx.runMutation(internal.aiHelpers.saveMessage, {
         conversationId: args.conversationId,
@@ -441,6 +449,13 @@ export const generateConversationTitle = action({
   handler: async (ctx, args): Promise<string> => {
     const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
+
+    // Only the owner may retitle a conversation.
+    const owns = await ctx.runQuery(internal.aiHelpers.isConversationOwner, {
+      conversationId: args.conversationId,
+      userId,
+    });
+    if (!owns) throw new Error("Conversation not found");
 
     const prompt = `Generate a very short, concise title (3-6 words max) for a conversation that starts with this message. Output ONLY the title, no quotes, no punctuation at the end:\n\n"${args.firstMessage.slice(0, 200)}"`;
     

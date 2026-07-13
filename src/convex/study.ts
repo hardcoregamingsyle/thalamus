@@ -362,6 +362,13 @@ export const sendStudyMessage = action({
     ]);
     if (!userId) throw new Error("Not authenticated");
 
+    // Ownership gate before reading/writing the conversation (IDOR guard).
+    const owns = await ctx.runQuery(internal.aiHelpers.isConversationOwner, {
+      conversationId: args.conversationId,
+      userId,
+    });
+    if (!owns) throw new Error("Conversation not found");
+
     if (!args.skipUserSave) {
       await ctx.runMutation(internal.aiHelpers.saveMessage, {
         conversationId: args.conversationId,
