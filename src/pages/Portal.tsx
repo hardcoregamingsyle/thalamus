@@ -6,6 +6,7 @@ import StudyProfileModal from "@/components/StudyProfileModal";
 import StudentSuite from "@/components/StudentSuite";
 import MathRenderer from "@/components/MathRenderer";
 import { sanitizeAiHtml } from "@/lib/sanitizeHtml";
+import { fetchSponsoredAd } from "@/lib/requestAd";
 import ThinkingPanel from "@/components/ThinkingPanel";
 import { useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
@@ -201,7 +202,6 @@ function GuestPortal() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const guestSendMessage = useAction(api.ai.guestSendMessage);
-  const requestAd = useAction(api.gravityAds.requestAd);
   // One sponsored card for guests (no rail — the guest layout is a single
   // centered column). Requested once per session after the first reply; the
   // server still gates on the admin `showToGuests` toggle.
@@ -288,8 +288,8 @@ function GuestPortal() {
         adRequestedRef.current = true;
         const adMessages = [...history, { role: "user", content: msg }, { role: "assistant", content: response }]
           .map(m => ({ role: m.role, content: m.content.slice(0, 1000) }));
-        requestAd({ messages: adMessages, count: 1 })
-          .then(ad => { if (ad) setSponsoredAd(Array.isArray(ad) ? ad[0] : ad); })
+        fetchSponsoredAd({ messages: adMessages, count: 1 })
+          .then(ad => { if (ad) setSponsoredAd(Array.isArray(ad) ? ad[0] as GravityAd : ad as GravityAd); })
           .catch(() => {});
       }
 
@@ -955,8 +955,8 @@ function PortalDesktop() {
   const [showStudyProfile, setShowStudyProfile] = useState(false);
   const [sponsoredAd, setSponsoredAd] = useState<GravityAd | null>(null);
   const [railAds, setRailAds] = useState<GravityAd[]>([]);
-  // Rail slots by viewport: <1280 none, 1280+ one, 1536+ two, 1920+ three.
-  // Total ads = 1 in-chat + rail. Small screens stay ad-light on purpose.
+  // Rail slots by viewport (see calc below): up to 4 on 1920+, scaling down to
+  // 0 under 1024. Total ads = 1 in-chat + rail (max ~5 on wide screens).
   const [railCount, setRailCount] = useState(0);
   const adRequestedRef = useRef(false);
   // Ad refresh machinery: context of the latest completed exchange (so
@@ -995,7 +995,9 @@ function PortalDesktop() {
   // Track user activity for the ad-refresh cadence. Passive listeners, ref
   // writes only — zero re-renders.
   useEffect(() => {
-    const calc = () => setRailCount(window.innerWidth >= 1920 ? 3 : window.innerWidth >= 1536 ? 2 : window.innerWidth >= 1280 ? 1 : 0);
+    // Rail ad slots by viewport width. Total ads = 1 in-chat + rail, so wide
+    // screens show up to 5. Narrow screens stay light (in-chat card only).
+    const calc = () => setRailCount(window.innerWidth >= 1920 ? 4 : window.innerWidth >= 1536 ? 3 : window.innerWidth >= 1280 ? 2 : window.innerWidth >= 1024 ? 1 : 0);
     calc();
     window.addEventListener("resize", calc, { passive: true });
     return () => window.removeEventListener("resize", calc);
@@ -1047,7 +1049,6 @@ function PortalDesktop() {
   const sendMessage = useAction(api.ai.sendMessage);
   const sendStudyMessage = useAction(api.study.sendStudyMessage);
   const generateTitle = useAction(api.ai.generateConversationTitle);
-  const requestAd = useAction(api.gravityAds.requestAd);
 
   // Ad refresh cadence. Tab must be visible for ANY refresh (background
   // impressions are how publisher accounts get banned):
@@ -1068,7 +1069,7 @@ function PortalDesktop() {
       if (Date.now() - lastAdRefreshRef.current < interval) return;
       // Mark the attempt up front so a no-fill response doesn't cause hammering.
       lastAdRefreshRef.current = Date.now();
-      requestAd({
+      fetchSponsoredAd({
         token: localStorage.getItem("agentai_session_token") ?? undefined,
         messages: adContextRef.current.messages,
         sessionId: adContextRef.current.sessionId,
@@ -1078,8 +1079,8 @@ function PortalDesktop() {
         .catch(() => {});
     }, 15_000);
     return () => clearInterval(id);
-     
-  }, [sponsoredAd, isThinking, streamingContent, requestAd, railCount]);
+
+  }, [sponsoredAd, isThinking, streamingContent, railCount]);
   const addTextResource = useMutation(api.studyHelpers.addTextResource);
   const deleteResource = useMutation(api.studyHelpers.deleteResource);
   const searchAndAddResource = useAction(api.study.searchAndAddResource);
@@ -1439,7 +1440,7 @@ function PortalDesktop() {
     adContextRef.current = { messages: adMessages, sessionId: convId ?? undefined };
     if (!adRequestedRef.current) {
       adRequestedRef.current = true;
-      requestAd({
+      fetchSponsoredAd({
         token: localStorage.getItem("agentai_session_token") ?? undefined,
         messages: adMessages,
         sessionId: convId ?? undefined,
