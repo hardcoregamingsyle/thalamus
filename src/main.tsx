@@ -6,6 +6,7 @@ import { StrictMode, Component, useEffect, lazy, Suspense, type ReactNode } from
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation, Navigate } from "react-router";
 import { DauTracker } from "@/components/DauTracker";
+import GravityPixel from "@/components/GravityPixel";
 import { DesktopTitlebar } from "@/components/DesktopTitlebar";
 import "./index.css";
 import "./types/global.d.ts";
@@ -123,6 +124,8 @@ createRoot(document.getElementById("root")!).render(
         <BrowserRouter>
           <RouteSyncer />
           <DauTracker />
+          {/* Gravity measurement pixel — loads only when an admin sets a Pixel ID */}
+          <GravityPixel />
           {/* Custom frameless titlebar — only shown in desktop app */}
           <DesktopTitlebar />
           {/* Add top padding when titlebar is shown */}

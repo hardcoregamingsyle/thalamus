@@ -1520,6 +1520,7 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
   const [showToPaidUsers, setShowToPaidUsers] = useState(false);
   const [restrictedCategories, setRestrictedCategories] = useState("");
   const [testAdMode, setTestAdMode] = useState(false);
+  const [pixelId, setPixelId] = useState("");
   const [saving, setSaving] = useState(false);
   const [showKey, setShowKey] = useState(false);
 
@@ -1535,6 +1536,7 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
       setShowToPaidUsers(existing.showToPaidUsers ?? false);
       setRestrictedCategories((existing.restrictedCategories ?? []).join("\n"));
       setTestAdMode(existing.testAdMode ?? false);
+      setPixelId(existing.pixelId ?? "");
     }
   }, [existing]);
 
@@ -1545,7 +1547,7 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
         adUnitIds: adUnitIds.trim() ? adUnitIds.split("\n").map(s => s.trim()).filter(Boolean) : undefined,
         isEnabled, showToGuests, showToFreeUsers, showToPaidUsers,
         restrictedCategories: restrictedCategories.trim() ? restrictedCategories.split("\n").map(s => s.trim()).filter(Boolean) : undefined,
-        testAdMode });
+        testAdMode, pixelId: pixelId.trim() || undefined });
       toast.success("GravityAds config saved");
     } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed"); }
     finally { setSaving(false); }
@@ -1583,6 +1585,11 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
         <div>
           <label className="text-xs font-bold text-muted-foreground mb-1.5 block">PUBLISHER ID <span className="font-normal">(optional)</span></label>
           <input value={publisherId} onChange={e => setPublisherId(e.target.value)} placeholder="pub-xxxxxxxxxxxxxxxx"
+            className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors" />
+        </div>
+        <div>
+          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">GRAVITY PIXEL ID <span className="font-normal">(dashboard → Settings → Platform Settings; required for attribution &amp; payouts)</span></label>
+          <input value={pixelId} onChange={e => setPixelId(e.target.value)} placeholder="e.g. 3f9a2c10-…-uuid"
             className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors" />
         </div>
         <div>
