@@ -1,0 +1,41 @@
+name: CI
+
+# Quality gate on every push/PR to main. Keeps the foundation solid: no change
+# lands without the frontend type-checking + linting clean and the desktop app
+# compiling. Fast (web job ~1 min); the desktop job catches C# breakage before
+# a release tag ever builds it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web — type-check + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Type-check
+        run: bun run type-check
+      - name: Lint
+        run: bun run lint
+
+  desktop:
+    name: Desktop — dotnet build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build WPF app
+        run: dotnet build thalamus-native/ThalamusApp/ThalamusApp.csproj -c Release
