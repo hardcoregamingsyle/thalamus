@@ -252,6 +252,22 @@ http.route({
 
     const { content, mode, history, systemPrompt, userContext, token, conversationId, preferClaude, skipUserSave } = body;
 
+    // Auth gate: this endpoint drives paid models (Bedrock/Gemini) with the
+    // platform's own credentials, so it must not be an open proxy. Every real
+    // client (web, mobile, desktop) sends a session token; guests use the
+    // separately day-capped guestSendMessage action, not this route. Reject
+    // anything without a valid, unexpired session before doing any model work.
+    const authedUserId = token
+      ? await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token })
+      : null;
+    if (!authedUserId) {
+      return new Response("Unauthorized", { status: 401, headers: corsHeaders() });
+    }
+    // Stop serving once the shared platform budget is spent.
+    if (await ctx.runQuery(internal.admin.isPlatformBudgetExhausted, {})) {
+      return new Response("Service temporarily unavailable", { status: 503, headers: corsHeaders() });
+    }
+
     const contextHeader = userContext
       ? `\n\nCurrent date/time: ${userContext.datetime} (${userContext.timezone})\n`
       : "";
