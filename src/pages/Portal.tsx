@@ -390,7 +390,7 @@ function GuestPortal() {
                 {activeMode === "chat" && "Ask anything and get clear, accurate answers"}
                 {activeMode === "study" && "Study with clear explanations and practice"}
                 {activeMode === "research" && "Research with live web search"}
-                {activeMode === "code" && "9 agents that build software from your description"}
+                {activeMode === "code" && "A dispatcher routes your task through up to 9 agents that build software"}
               </p>
               <p className="text-xs text-muted-foreground/60">{GUEST_LIMIT} free prompts · No sign-up required</p>
             </div>

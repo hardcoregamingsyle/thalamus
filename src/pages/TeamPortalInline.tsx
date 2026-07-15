@@ -58,6 +58,7 @@ interface TeamSession {
   executionPhase?: string;
   currentTaskIndex?: number;
   plannerTasksJson?: string;
+  dispatchedAgentsJson?: string;
   finalReviewCoderEnabled?: boolean;
   deployCommandsJson?: string;
   infoRequestJson?: string;
@@ -94,12 +95,14 @@ interface QueuedMessage {
 
 // ── Agent config ───────────────────────────────────────────────────────────────
 const AGENT_COLORS: Record<string, string> = {
+  Dispatcher: "text-sky-400",
   "R&D Team": "text-cyan-400", Researcher: "text-cyan-400", Analyser: "text-blue-400", Planner: "text-violet-400",
   Coder: "text-emerald-400", Optimiser: "text-amber-400", Organizer: "text-orange-400",
   Tester: "text-green-400", Hacker: "text-red-400", "Security Team": "text-red-400", Critic: "text-purple-400", User: "text-primary",
 };
 
 const AGENT_BG: Record<string, string> = {
+  Dispatcher: "bg-sky-400/10 border-sky-400/30",
   "R&D Team": "bg-cyan-400/10 border-cyan-400/30", Researcher: "bg-cyan-400/10 border-cyan-400/30", Analyser: "bg-blue-400/10 border-blue-400/30",
   Planner: "bg-violet-400/10 border-violet-400/30", Coder: "bg-emerald-400/10 border-emerald-400/30",
   Optimiser: "bg-amber-400/10 border-amber-400/30", Organizer: "bg-orange-400/10 border-orange-400/30",
@@ -108,6 +111,7 @@ const AGENT_BG: Record<string, string> = {
 };
 
 const AGENT_ICONS: Record<string, string> = {
+  Dispatcher: "D",
   "R&D Team": "🔬", Researcher: "🔬", Analyser: "A", Planner: "P", Coder: "C",
   Optimiser: "O", Organizer: "📝", Tester: "T", Hacker: "🛡️", "Security Team": "🛡️", Critic: "R", User: "U",
 };
@@ -167,7 +171,7 @@ function getSubAgentLabel(agent: string): string | null {
 // ── Sub-mode types ─────────────────────────────────────────────────────────────
 type SubMode = "code" | "chat" | "minor";
 const SUB_MODES: Array<{ id: SubMode; label: string; icon: typeof Code2; color: string; accent: string; desc: string }> = [
-  { id: "code", label: "Code", icon: Code2, color: "text-emerald-400", accent: "bg-emerald-400/10 border-emerald-400/30", desc: "Full 9-agent system for building software" },
+  { id: "code", label: "Code", icon: Code2, color: "text-emerald-400", accent: "bg-emerald-400/10 border-emerald-400/30", desc: "Dynamic agent pipeline — the Dispatcher picks the right agents for your task" },
   { id: "chat", label: "Chat", icon: Bot, color: "text-blue-400", accent: "bg-blue-400/10 border-blue-400/30", desc: "Ask questions about the platform or get help" },
   { id: "minor", label: "Minor Edit", icon: Edit3, color: "text-amber-400", accent: "bg-amber-400/10 border-amber-400/30", desc: "Small targeted edits without full agent pipeline" },
 ];
@@ -1707,6 +1711,7 @@ export default function TeamPortalInline({ token: tokenProp, initialSessionCusto
     executionPhase: (liveSession as Record<string, unknown>).executionPhase as string | undefined,
     currentTaskIndex: (liveSession as Record<string, unknown>).currentTaskIndex as number | undefined,
     plannerTasksJson: (liveSession as Record<string, unknown>).plannerTasksJson as string | undefined,
+    dispatchedAgentsJson: (liveSession as Record<string, unknown>).dispatchedAgentsJson as string | undefined,
     finalReviewCoderEnabled: (liveSession as Record<string, unknown>).finalReviewCoderEnabled as boolean | undefined,
   } as TeamSession : null, [liveSession]);
 
@@ -2590,7 +2595,19 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
   const taskIndex = sessionInfo?.currentTaskIndex ?? 0;
   let plannerTasks: Array<{ id: string; title: string; description: string; subpart: boolean }> = [];
   try { if (sessionInfo?.plannerTasksJson) plannerTasks = JSON.parse(sessionInfo.plannerTasksJson); } catch { /* ignore */ }
-  const execPhaseLabel = execPhase === "planning" ? "PLANNING" : execPhase === "final_review" ? "FINAL REVIEW" : `TASK ${taskIndex + 1}/${plannerTasks.length || "?"}`;
+  const execPhaseLabel = execPhase === "dispatching" ? "DISPATCHING" : execPhase === "planning" ? "PLANNING" : execPhase === "final_review" ? "FINAL REVIEW" : `TASK ${taskIndex + 1}/${plannerTasks.length || "?"}`;
+  // Dynamic pipeline: the Dispatcher picks a subset of agents per task —
+  // render only those (in canonical order). Fall back to the full list.
+  let activePipeline = PIPELINE;
+  try {
+    if (sessionInfo?.dispatchedAgentsJson) {
+      const dispatched = JSON.parse(sessionInfo.dispatchedAgentsJson) as string[];
+      if (Array.isArray(dispatched) && dispatched.length > 0) {
+        activePipeline = PIPELINE.filter((a) => dispatched.includes(a));
+      }
+    }
+  } catch { /* ignore — full pipeline */ }
+  const isDispatching = execPhase === "dispatching" || streamingAgent === "Dispatcher";
   const execPhaseColor = execPhase === "planning" ? "text-violet-400" : execPhase === "final_review" ? "text-amber-400" : "text-emerald-400";
 
   // Project Home Screen — show when no session is active
@@ -2769,13 +2786,22 @@ Fix ALL issues — do not leave any unfixed. This is a comprehensive repair pass
             <X className="h-4 w-4" />
           </button>
         </div>
-        {/* Pipeline */}
+        {/* Pipeline (dynamic — only the agents the Dispatcher picked) */}
         <div className="shrink-0 p-3 border-b border-border">
-          <p className="text-[10px] text-muted-foreground font-bold mb-2">PIPELINE</p>
+          <p className="text-[10px] text-muted-foreground font-bold mb-2">
+            {activePipeline.length < PIPELINE.length ? `PIPELINE — ${activePipeline.length} AGENTS` : "PIPELINE"}
+          </p>
           <div className="space-y-0.5">
-            {PIPELINE.map((agent) => {
+            {isDispatching && (
+              <div className="flex items-center gap-2 px-2 py-1 rounded text-[10px] bg-sky-400/10 border border-sky-400/20">
+                <div className="w-4 h-4 rounded flex items-center justify-center text-xs font-bold shrink-0 text-sky-400 animate-pulse">D</div>
+                <span className="flex-1 text-sky-400 font-bold">Dispatcher</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse shrink-0" />
+              </div>
+            )}
+            {activePipeline.map((agent) => {
               const isActive = streamingAgent === agent || (agent === "Researcher" && streamingAgent === "R&D Team") || (agent === "Hacker" && streamingAgent === "Red Team");
-              const isDone = sessionInfo && PIPELINE.indexOf(agent) < PIPELINE.indexOf(sessionInfo.phase ?? "");
+              const isDone = sessionInfo && activePipeline.indexOf(agent) < activePipeline.indexOf(sessionInfo.phase ?? "");
               const isNext = sessionInfo?.phase === agent && !isActive;
               const display = PIPELINE_DISPLAY[agent];
               const displayName = display?.displayName ?? agent;

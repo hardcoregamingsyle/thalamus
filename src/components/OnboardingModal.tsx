@@ -26,8 +26,8 @@ const STEPS = [
   },
   {
     id: "code",
-    title: "Code Mode — 9-Agent System",
-    subtitle: "Nine agents that build software together",
+    title: "Code Mode — Dynamic Agent Pipeline",
+    subtitle: "A dispatcher picks the right agents for your task — up to nine of them",
     content: null,
   },
   {
