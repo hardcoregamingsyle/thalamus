@@ -8,7 +8,7 @@ Everything you need to run, extend, and not break Thalamus. Written by the guy w
 
 - **One backend**: Convex (`src/convex/`). Every serverless function, the schema, the cron jobs, the model routing — all of it.
 - **Two frontends**: the web app (`src/`, React 19 + Vite) and a native Windows app (`thalamus-native/`, WPF on .NET 8). The desktop app is NOT a web wrapper — it's real XAML talking to the same Convex backend over HTTP/SSE.
-- **Four modes**: Chat, Research, Study, Build. Build runs the nine-agent pipeline.
+- **Four modes**: Chat, Research, Study, Build. Build runs the dynamic agent pipeline — a Dispatcher picks which of the nine agents a task actually needs (Coder and Critic are always in).
 - **Money**: AgentBucks. Users burn credits per token; pricing lives in the `modelPricing` table; `/admin` is mission control.
 
 If you remember nothing else: **`agentCore.ts` is the heart.** Model routing, credit deduction, and every agent's system prompt live there. Break it and everything breaks.
@@ -25,7 +25,9 @@ If you remember nothing else: **`agentCore.ts` is the heart.** Model routing, cr
 | Pipeline | `agentPipeline.ts` | `codePipeline.ts` |
 | UI | `TeamPortalInline.tsx` (rendered inside `Portal`) | `CodeProjects/CodeBranches/CodeWorkspace` at `/portal/code` |
 
-Both run the same nine agents. They evolved in parallel and both hold live user data. **Direction: NEW is canonical.** The old system keeps working until its data is migrated, but new features go into `codePipeline.ts` / the `code*` tables only. Don't add features to both. Don't "quickly fix" something in one and forget the twin exists.
+Both dispatch dynamically now: a Dispatcher phase (haiku, one call) runs first and picks the agent subset; the pick is persisted as `dispatchedAgentsJson` on the branch/session and both pipelines filter their phase lists against it. They evolved in parallel and both hold live user data. **Direction: NEW is canonical.** (Yes, the Dispatcher went into BOTH — deliberate parity so the OLD system's users aren't paying for nine agents on typo fixes. That's the one exception to "new features go into NEW only"; don't make a habit of it.) The old system keeps working until its data is migrated, but new features go into `codePipeline.ts` / the `code*` tables only. Don't add features to both. Don't "quickly fix" something in one and forget the twin exists.
+
+One more twin-system landmine: **the desktop app's Build mode drives the NEW system** over Convex's public HTTP API — `codeProjects:createProject` → `codePipeline:startPipeline`, then polls `codeBranches:getBranch` / `watchMessages` / `watchFiles` (see `thalamus-native/.../Modes/CodeView.xaml.cs`). It used to fake the pipeline with a single chat completion; now it's real, which means changing those public function signatures breaks shipped desktop builds. Treat them as API.
 
 Consolidation plan when you're ready: (1) write a migration for `teamSessions` → `codeProjects` (a dead-code migration file existed once — `codeMigration.ts` — resurrect the idea, not the code), (2) point Portal's code mode at the NEW UI, (3) delete `agentPipeline.ts`, `agentTeamHelpers.ts`, `TeamPortalInline.tsx` (~7k lines gone). Do it in that order, verify at each step, and do NOT do it the week of a launch.
 
