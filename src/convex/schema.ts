@@ -262,6 +262,7 @@ const schema = defineSchema(
       plannerTasksJson: v.optional(v.string()),
       currentTaskIndex: v.optional(v.number()),
       executionPhase: v.optional(v.string()),
+      dispatchedAgentsJson: v.optional(v.string()),  // Dispatcher's chosen agent list (dynamic pipeline)
       finalReviewCoderEnabled: v.optional(v.boolean()),
       deployCommandsJson: v.optional(v.string()),
       taskSummariesJson: v.optional(v.string()),
