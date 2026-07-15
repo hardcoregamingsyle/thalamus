@@ -105,9 +105,9 @@ export const createSessionMutation = internalMutation({
       status: "idle",
       round: 0,
       loopCount: 0,
-      phase: "Researcher",
+      phase: "Dispatcher",
       totalMessages: 1,
-      executionPhase: "planning",
+      executionPhase: "dispatching",
       currentTaskIndex: 0,
       finalReviewCoderEnabled: false,
       customId,
@@ -201,9 +201,9 @@ export const createSessionPublic = mutation({
       status: "idle",
       round: 0,
       loopCount: 0,
-      phase: "Researcher",
+      phase: "Dispatcher",
       totalMessages: 1,
-      executionPhase: "planning",
+      executionPhase: "dispatching",
       currentTaskIndex: 0,
       finalReviewCoderEnabled: false,
       customId,
@@ -459,6 +459,19 @@ export const updatePlannerTasks = internalMutation({
   },
 });
 
+// Store the Dispatcher's chosen agent list for this session (dynamic pipeline)
+export const setDispatchedAgents = internalMutation({
+  args: {
+    sessionId: v.id("teamSessions"),
+    agentsJson: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      dispatchedAgentsJson: args.agentsJson,
+    });
+  },
+});
+
 export const updateSessionFull = internalMutation({
   args: {
     sessionId: v.id("teamSessions"),
@@ -626,11 +639,12 @@ export const resetSessionForNewTask = internalMutation({
       currentAgent: undefined,
       round: 0,
       loopCount: 0,
-      phase: "Researcher",
+      phase: "Dispatcher",
       totalMessages: 0,
-      executionPhase: "planning",
+      executionPhase: "dispatching",
       currentTaskIndex: 0,
       plannerTasksJson: undefined,
+      dispatchedAgentsJson: undefined,
       finalReviewCoderEnabled: false,
     });
   },
@@ -1451,9 +1465,9 @@ export const createBranchSessionPublic = mutation({
       status: "idle",
       round: 0,
       loopCount: 0,
-      phase: "Researcher",
+      phase: "Dispatcher",
       totalMessages: 1,
-      executionPhase: "planning",
+      executionPhase: "dispatching",
       currentTaskIndex: 0,
       finalReviewCoderEnabled: false,
       customId,
