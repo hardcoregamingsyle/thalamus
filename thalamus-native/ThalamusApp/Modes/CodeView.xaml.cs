@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -11,26 +12,32 @@ using ThalamusApp.Services;
 
 namespace ThalamusApp.Modes
 {
+    // Build mode — runs the REAL code pipeline (codeProjects/codeBranches/
+    // codePipeline on Convex), the same backend the website's /portal/code uses.
+    // Each build creates a project + branch, starts the pipeline, then polls the
+    // branch for agent progress, messages, streaming output and the code files
+    // the agents write. No fake progress: every dot on screen is a real agent.
     public partial class CodeView : UserControl
     {
         private string? _token;
         private readonly ConvexClient _convex = new();
-        private StreamingClient? _streaming;
         private CancellationTokenSource? _cts;
         private bool _isBuilding;
-        private TextBlock? _liveBlock;
-        private string _liveText = "";
 
-        private static readonly string[] AgentNames =
+        // Full pipeline in canonical order — used until the Dispatcher reports
+        // which subset it actually picked for this task.
+        private static readonly string[] AllAgents =
         {
             "Researcher", "Analyser", "Planner", "Coder",
             "Optimiser", "Organizer", "Tester", "Hacker", "Critic"
         };
 
+        private const int PollMs = 1500;
+        private static readonly TimeSpan BuildTimeout = TimeSpan.FromMinutes(20);
+
         public CodeView()
         {
             InitializeComponent();
-            _streaming = new StreamingClient(_convex);
         }
 
         public void SetToken(string token)
@@ -66,107 +73,197 @@ namespace ThalamusApp.Modes
             var prompt = BuildInputBox.Text.Trim();
             if (string.IsNullOrEmpty(prompt) || _isBuilding) return;
 
+            if (string.IsNullOrEmpty(_token))
+            {
+                AppendBuildError("Please sign in to use Build mode.");
+                return;
+            }
+
             BuildInputBox.Text = "";
             EmptyState.Visibility = Visibility.Collapsed;
-
-            // Show project brief
             AppendProjectBrief(prompt);
 
-            // Show pipeline card
             AgentProgressCard.Visibility = Visibility.Visible;
-            AgentStageLabel.Text = "Starting pipeline…";
-            RenderAgentDots(0);
+            AgentStageLabel.Text = "Creating project…";
+            RenderAgentDots(AllAgents, currentAgent: null, allDone: false);
 
             _isBuilding = true;
             BuildButton.IsEnabled = false;
             BuildStatusLabel.Text = "Building…";
             BuildStatusDot.Fill = (Brush)FindResource("AmberBrush");
 
-            _cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
-            _liveText = "";
-            _liveBlock = null;
-
-            int currentAgent = 0;
+            _cts = new CancellationTokenSource(BuildTimeout);
 
             try
             {
-                await _streaming!.StreamChatAsync(
-                    prompt, "build",
-                    new List<(string, string)>(),
-                    "You are the Thalamus 9-agent autonomous software pipeline. Build the requested project comprehensively. Include: architecture overview, key files with complete code, setup instructions, and a summary of what was built.",
-                    _token, null,
-                    (type, chunk) =>
-                    {
-                        Dispatcher.Invoke(() =>
-                        {
-                            if (type == "done")
-                            {
-                                FinishBuild(_liveText);
-                                return;
-                            }
-                            if (type == "thinking" && _liveText.Length == 0)
-                            {
-                                // Update agent stage from thinking content
-                                if (currentAgent < AgentNames.Length)
-                                {
-                                    AgentStageLabel.Text = $"Agent {currentAgent + 1}: {AgentNames[currentAgent]}";
-                                    RenderAgentDots(currentAgent + 1);
-                                    currentAgent++;
-                                }
-                                return;
-                            }
-                            if (type == "answer")
-                            {
-                                _liveText += chunk;
-                                if (_liveBlock == null)
-                                {
-                                    // Final output section
-                                    currentAgent = AgentNames.Length;
-                                    AgentStageLabel.Text = "Generating output…";
-                                    RenderAgentDots(AgentNames.Length);
-                                    AppendOutputStart(out _liveBlock);
-                                }
-                                _liveBlock.Text = _liveText;
-                                BuildScroll.ScrollToBottom();
-                            }
-                        });
-                    },
-                    _cts.Token);
+                // 1. Project + main branch (server auto-creates "main")
+                var projectName = prompt.Length > 48 ? prompt[..48] : prompt;
+                var created = await _convex.CallMutationAsync("codeProjects:createProject",
+                    new { token = _token, name = projectName, description = prompt }, _token);
+                var branchId = created?["branchId"]?.GetValue<string>()
+                    ?? throw new Exception("Project creation returned no branch");
+
+                // 2. Kick off the real pipeline
+                await _convex.CallActionAsync("codePipeline:startPipeline",
+                    new { token = _token, branchId, userPrompt = prompt }, _token);
+
+                // 3. Poll the branch until the pipeline completes
+                await PollPipelineAsync(branchId, _cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                AgentProgressCard.Visibility = Visibility.Collapsed;
+                AppendBuildError("Build timed out. The pipeline may still be running — check your projects on the website.");
+                SetIdle("Timeout", error: true);
             }
             catch (Exception ex)
             {
-                Dispatcher.Invoke(() =>
-                {
-                    AgentProgressCard.Visibility = Visibility.Collapsed;
-                    AppendBuildError(ex.Message.Contains("401") || ex.Message.Contains("token")
-                        ? "Please sign in to use Build mode."
-                        : "Build failed. Please try again.");
-                    _isBuilding = false;
-                    BuildButton.IsEnabled = true;
-                    BuildStatusLabel.Text = "Error";
-                    BuildStatusDot.Fill = (Brush)FindResource("RedBrush");
-                });
+                AgentProgressCard.Visibility = Visibility.Collapsed;
+                AppendBuildError(ex.Message.Contains("401") || ex.Message.Contains("authenticated")
+                    ? "Please sign in to use Build mode."
+                    : $"Build failed: {ex.Message}");
+                SetIdle("Error", error: true);
             }
         }
 
-        private void FinishBuild(string fullText)
+        private async Task PollPipelineAsync(string branchId, CancellationToken ct)
         {
+            int renderedMessages = 0;
+            string[] pipelineAgents = AllAgents;
+            TextBlock? liveBlock = null;
+            Border? liveBorder = null;
+
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var branch = await _convex.CallQueryAsync("codeBranches:getBranch",
+                    new { token = _token!, branchId }, _token);
+                if (branch == null) throw new Exception("Branch disappeared");
+
+                var status = branch["status"]?.GetValue<string>() ?? "idle";
+                var currentAgent = branch["currentAgent"]?.GetValue<string>();
+
+                // Dynamic pipeline: once the Dispatcher has picked agents, only
+                // show those. (dispatchedAgentsJson is set right after dispatch.)
+                var dispatchedJson = branch["dispatchedAgentsJson"]?.GetValue<string>();
+                if (!string.IsNullOrEmpty(dispatchedJson))
+                {
+                    try
+                    {
+                        var picked = new List<string>();
+                        var arr = JsonNode.Parse(dispatchedJson) as JsonArray;
+                        if (arr != null)
+                            foreach (var a in arr)
+                            {
+                                var name = a?.GetValue<string>();
+                                if (name != null) picked.Add(name);
+                            }
+                        if (picked.Count > 0)
+                        {
+                            var ordered = new List<string>();
+                            foreach (var a in AllAgents) if (picked.Contains(a)) ordered.Add(a);
+                            pipelineAgents = ordered.ToArray();
+                        }
+                    }
+                    catch { /* keep full list */ }
+                }
+
+                // New agent messages → cards
+                var messages = await _convex.CallQueryAsync("codeBranches:watchMessages",
+                    new { branchId }, _token) as JsonArray;
+                if (messages != null && messages.Count > renderedMessages)
+                {
+                    for (int i = renderedMessages; i < messages.Count; i++)
+                    {
+                        var agent = messages[i]?["agent"]?.GetValue<string>() ?? "Agent";
+                        var content = messages[i]?["content"]?.GetValue<string>() ?? "";
+                        if (agent != "User")
+                            AppendAgentMessage(agent, content);
+                    }
+                    renderedMessages = messages.Count;
+                    // A saved message supersedes whatever was streaming
+                    if (liveBorder != null) { BuildPanel.Children.Remove(liveBorder); liveBorder = null; liveBlock = null; }
+                    BuildScroll.ScrollToBottom();
+                }
+
+                // Live token stream from the agent currently generating
+                var streamingContent = branch["streamingContent"]?.GetValue<string>();
+                var streamingAgent = branch["streamingAgent"]?.GetValue<string>();
+                if (!string.IsNullOrEmpty(streamingContent))
+                {
+                    if (liveBlock == null)
+                    {
+                        AppendOutputStart(out liveBlock, out liveBorder, streamingAgent ?? currentAgent ?? "Agent");
+                    }
+                    liveBlock.Text = streamingContent;
+                    BuildScroll.ScrollToBottom();
+                }
+
+                // Progress card
+                var stageAgent = streamingAgent ?? currentAgent;
+                AgentStageLabel.Text = status switch
+                {
+                    "paused" => "Waiting on sandbox commands…",
+                    "completed" => "Finalizing…",
+                    _ => stageAgent == "Dispatcher" ? "Dispatcher: routing your task…"
+                       : stageAgent != null ? $"Agent: {stageAgent}"
+                       : "Working…",
+                };
+                RenderAgentDots(pipelineAgents, stageAgent, allDone: status == "completed");
+
+                if (status == "completed")
+                {
+                    if (liveBorder != null) { BuildPanel.Children.Remove(liveBorder); }
+                    await FinishBuildAsync(branchId);
+                    return;
+                }
+
+                await Task.Delay(PollMs, ct);
+            }
+        }
+
+        private async Task FinishBuildAsync(string branchId)
+        {
+            // Show every code file the agents wrote
+            var files = await _convex.CallQueryAsync("codeBranches:watchFiles",
+                new { branchId }, _token) as JsonArray;
+
+            int fileCount = files?.Count ?? 0;
+            if (files != null && fileCount > 0)
+            {
+                AppendFilesHeader(fileCount);
+                foreach (var f in files)
+                {
+                    var path = f?["filepath"]?.GetValue<string>() ?? "unknown";
+                    var content = f?["content"]?.GetValue<string>() ?? "";
+                    AppendFileCard(path, content);
+                }
+            }
+
             AgentProgressCard.Visibility = Visibility.Collapsed;
-            AppendSuccessBanner();
-            _isBuilding = false;
-            BuildButton.IsEnabled = true;
-            BuildStatusLabel.Text = "Done";
-            BuildStatusDot.Fill = (Brush)FindResource("GreenBrush");
+            AppendSuccessBanner(fileCount);
+            SetIdle("Done", error: false);
             BuildScroll.ScrollToBottom();
         }
 
-        private void RenderAgentDots(int completedCount)
+        private void SetIdle(string label, bool error)
+        {
+            _isBuilding = false;
+            BuildButton.IsEnabled = true;
+            BuildStatusLabel.Text = label;
+            BuildStatusDot.Fill = (Brush)FindResource(error ? "RedBrush" : "GreenBrush");
+        }
+
+        private void RenderAgentDots(string[] agents, string? currentAgent, bool allDone)
         {
             AgentDots.Items.Clear();
-            for (int i = 0; i < AgentNames.Length; i++)
+            int activeIndex = currentAgent != null ? Array.IndexOf(agents, currentAgent) : -1;
+
+            for (int i = 0; i < agents.Length; i++)
             {
-                bool done = i < completedCount;
-                bool active = i == completedCount - 1;
+                bool done = allDone || (activeIndex >= 0 && i < activeIndex);
+                bool active = !allDone && i == activeIndex;
 
                 var container = new StackPanel
                 {
@@ -191,7 +288,7 @@ namespace ThalamusApp.Modes
 
                 var label = new TextBlock
                 {
-                    Text = AgentNames[i],
+                    Text = agents[i],
                     FontSize = 9.5,
                     Foreground = done
                         ? (Brush)FindResource("GreenBrush")
@@ -231,9 +328,43 @@ namespace ThalamusApp.Modes
             BuildPanel.Children.Add(bubble);
         }
 
-        // The pipeline output is code — keep it in a monospace "output" panel that
-        // reads like a build log rather than a chat bubble.
-        private void AppendOutputStart(out TextBlock liveBlock)
+        // A saved agent message — labeled card so the user can follow the hand-offs.
+        private void AppendAgentMessage(string agent, string content)
+        {
+            var border = new Border
+            {
+                Background = (Brush)FindResource("BgCardBrush"),
+                BorderBrush = (Brush)FindResource("BorderSubtleBrush"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(16, 12, 16, 12),
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+
+            var stack = new StackPanel();
+            stack.Children.Add(new TextBlock
+            {
+                Text = agent,
+                FontSize = 10.5,
+                FontWeight = FontWeights.Bold,
+                FontFamily = (FontFamily)FindResource("MonoFontFamily"),
+                Foreground = (Brush)FindResource("GreenBrush"),
+                Margin = new Thickness(0, 0, 0, 6)
+            });
+            stack.Children.Add(new TextBlock
+            {
+                Text = content.Length > 4000 ? content[..4000] + "\n…" : content,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = (Brush)FindResource("TextSecondaryBrush"),
+                LineHeight = 18
+            });
+            border.Child = stack;
+            BuildPanel.Children.Add(border);
+        }
+
+        // Live streaming output — monospace "build log" panel with agent label.
+        private void AppendOutputStart(out TextBlock liveBlock, out Border liveBorder, string agent)
         {
             var border = new Border
             {
@@ -245,6 +376,16 @@ namespace ThalamusApp.Modes
                 Margin = new Thickness(0, 0, 0, 16)
             };
 
+            var stack = new StackPanel();
+            stack.Children.Add(new TextBlock
+            {
+                Text = $"{agent} — writing…",
+                FontSize = 10.5,
+                FontWeight = FontWeights.Bold,
+                FontFamily = (FontFamily)FindResource("MonoFontFamily"),
+                Foreground = (Brush)FindResource("AmberBrush"),
+                Margin = new Thickness(0, 0, 0, 8)
+            });
             var tb = new TextBlock
             {
                 FontSize = 12,
@@ -253,12 +394,72 @@ namespace ThalamusApp.Modes
                 LineHeight = 19,
                 FontFamily = (FontFamily)FindResource("MonoFontFamily")
             };
+            stack.Children.Add(tb);
             liveBlock = tb;
-            border.Child = tb;
+            liveBorder = border;
+            border.Child = stack;
             BuildPanel.Children.Add(border);
         }
 
-        private void AppendSuccessBanner()
+        private void AppendFilesHeader(int count)
+        {
+            BuildPanel.Children.Add(new TextBlock
+            {
+                Text = $"FILES CREATED ({count})",
+                FontSize = 10.5,
+                FontWeight = FontWeights.Bold,
+                FontFamily = (FontFamily)FindResource("MonoFontFamily"),
+                Foreground = (Brush)FindResource("TextMutedBrush"),
+                Margin = new Thickness(0, 4, 0, 8)
+            });
+        }
+
+        // One expander per code file — header is the path, body is the content.
+        private void AppendFileCard(string filepath, string content)
+        {
+            var contentBox = new TextBox
+            {
+                Text = content,
+                IsReadOnly = true,
+                BorderThickness = new Thickness(0),
+                Background = Brushes.Transparent,
+                Foreground = new SolidColorBrush(Color.FromRgb(0x6e, 0xe7, 0xb7)),
+                FontFamily = (FontFamily)FindResource("MonoFontFamily"),
+                FontSize = 11.5,
+                TextWrapping = TextWrapping.Wrap,
+                MaxHeight = 420,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Padding = new Thickness(0, 8, 0, 0)
+            };
+
+            var expander = new Expander
+            {
+                Header = new TextBlock
+                {
+                    Text = filepath,
+                    FontSize = 11.5,
+                    FontWeight = FontWeights.SemiBold,
+                    FontFamily = (FontFamily)FindResource("MonoFontFamily"),
+                    Foreground = (Brush)FindResource("TextPrimaryBrush")
+                },
+                Content = contentBox,
+                IsExpanded = false,
+                Foreground = (Brush)FindResource("TextMutedBrush")
+            };
+
+            BuildPanel.Children.Add(new Border
+            {
+                Background = (Brush)FindResource("BgInputBrush"),
+                BorderBrush = (Brush)FindResource("BorderSubtleBrush"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(14, 10, 14, 10),
+                Margin = new Thickness(0, 0, 0, 8),
+                Child = expander
+            });
+        }
+
+        private void AppendSuccessBanner(int fileCount)
         {
             var border = new Border
             {
@@ -279,7 +480,9 @@ namespace ThalamusApp.Modes
             });
             sp.Children.Add(new TextBlock
             {
-                Text = "Build complete — 9 agents finished",
+                Text = fileCount > 0
+                    ? $"Build complete — {fileCount} file{(fileCount == 1 ? "" : "s")} written"
+                    : "Build complete",
                 FontSize = 12.5, FontWeight = FontWeights.SemiBold,
                 Foreground = (Brush)FindResource("GreenBrush"),
                 VerticalAlignment = VerticalAlignment.Center
