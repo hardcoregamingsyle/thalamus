@@ -98,12 +98,12 @@
                         <Border CornerRadius="8" Background="#061a10"
                                 BorderBrush="#0a3018" BorderThickness="1"
                                 Padding="7,2" Margin="10,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="9-Agent Pipeline" FontSize="8.5" FontWeight="SemiBold"
+                            <TextBlock Text="Dynamic Pipeline" FontSize="8.5" FontWeight="SemiBold"
                                        FontFamily="{StaticResource MonoFontFamily}"
                                        Foreground="{StaticResource GreenBrush}"/>
                         </Border>
                     </StackPanel>
-                    <TextBlock Text="Describe a project — 9 agents build it in sequence"
+                    <TextBlock Text="Describe a project — a dispatcher routes it through the right agents, and real code files come out"
                                FontSize="10.5" Foreground="{StaticResource TextMutedBrush}" Margin="29,2,0,0"/>
                 </StackPanel>
 
