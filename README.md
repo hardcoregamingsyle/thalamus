@@ -1,6 +1,6 @@
 # Thalamus
 
-One backend, two faces: a React + Convex web app and a native Windows desktop app. Chat, live-web research, study-from-your-own-files, and a nine-agent pipeline that takes a plain-English request and turns it into planned, written, tested code. There's also a VM sandbox that boots actual operating systems, because apparently I don't believe in small scopes.
+One backend, two faces: a React + Convex web app and a native Windows desktop app. Chat, live-web research, study-from-your-own-files, and a dynamic agent pipeline that takes a plain-English request and turns it into planned, written, tested code — a dispatcher decides which of the nine agents your task actually needs. There's also a VM sandbox that boots actual operating systems, because apparently I don't believe in small scopes.
 
 Built and maintained by one person. Yes, all of it.
 
@@ -13,16 +13,17 @@ Built and maintained by one person. Yes, all of it.
 | **Chat** | Streaming conversation over SSE. Markdown renders live as tokens arrive. |
 | **Research** | The backend searches the web, reads sources, and returns a report with citations — not vibes, sources. |
 | **Study** | Upload PDFs and notes. Answers come grounded in *your* material (vector search over `ragChunks`), not generic model memory. |
-| **Build** | Nine agents in sequence. Plan, write, test, attack, review. Files get written, commands get executed, results feed the next agent. |
+| **Build** | A dispatcher sizes up your task, then runs only the agents it needs — up to nine in sequence. Plan, write, test, attack, review. Files get written, commands get executed, results feed the next agent. |
 
 ---
 
 ## The pipeline
 
-Both pipeline systems (Team Portal and Code Mode) run the same nine agents:
+The pipeline is **dynamic**. Before anything runs, a Dispatcher (cheapest model, one call) classifies the task — trivial, simple, medium, complex, or full — and picks the minimum agent set. A typo fix gets `Coder → Critic`. A greenfield app gets all nine. Coder and Critic are always in; everything else has to earn its slot. Both pipeline systems (Team Portal and Code Mode) dispatch the same way and draw from the same nine agents:
 
 | Agent | Job |
 |---|---|
+| Dispatcher | Not one of the nine — the router. Reads the task, picks the crew, prints its reasoning in the feed |
 | Researcher | Pulls web context and docs before anyone writes a line |
 | Analyser | Turns the request into an architecture |
 | Planner | Decomposes it into atomic tasks with difficulty ratings |
@@ -44,8 +45,8 @@ src/                    web app (React 19 + Vite + TypeScript + Tailwind)
 ├── convex/             the entire backend — Convex serverless functions
 │   ├── schema.ts       database schema + indexes (standard and vector)
 │   ├── agentCore.ts    model routing, credit metering, agent prompts
-│   ├── codePipeline.ts 9-agent pipeline (Code Mode)
-│   ├── agentPipeline.ts 9-agent pipeline (Team Portal — older twin)
+│   ├── codePipeline.ts dynamic agent pipeline (Code Mode)
+│   ├── agentPipeline.ts dynamic agent pipeline (Team Portal — older twin)
 │   ├── ai.ts           chat / research / study handlers
 │   ├── auth.ts         email OTP auth (@convex-dev/auth)
 │   ├── github.ts       GitHub OAuth + repo sync
