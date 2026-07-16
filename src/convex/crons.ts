@@ -10,4 +10,12 @@ crons.cron(
   internal.dailyReset.resetDailyAgentBucks,
 );
 
+// AgentOverflow credits top back up to 10 on the same clock; earned balances
+// above 10 are left alone (see agentoverflow.ts).
+crons.cron(
+  "refill agentoverflow credits",
+  "30 18 * * *",
+  internal.agentoverflow.dailyRefillAoCredits,
+);
+
 export default crons;
