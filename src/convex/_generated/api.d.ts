@@ -12,6 +12,8 @@ import type * as admin from "../admin.js";
 import type * as agentCore from "../agentCore.js";
 import type * as agentPipeline from "../agentPipeline.js";
 import type * as agentTeamHelpers from "../agentTeamHelpers.js";
+import type * as agentoverflow from "../agentoverflow.js";
+import type * as agentoverflowHttp from "../agentoverflowHttp.js";
 import type * as ai from "../ai.js";
 import type * as aiHelpers from "../aiHelpers.js";
 import type * as antiEvasionDb from "../antiEvasionDb.js";
@@ -69,6 +71,8 @@ declare const fullApi: ApiFromModules<{
   agentCore: typeof agentCore;
   agentPipeline: typeof agentPipeline;
   agentTeamHelpers: typeof agentTeamHelpers;
+  agentoverflow: typeof agentoverflow;
+  agentoverflowHttp: typeof agentoverflowHttp;
   ai: typeof ai;
   aiHelpers: typeof aiHelpers;
   antiEvasionDb: typeof antiEvasionDb;
