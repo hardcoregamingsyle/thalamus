@@ -72,7 +72,7 @@ VITE_CONVEX_URL=https://your-deployment.convex.cloud
 
 ```
 
-**Server-side Secrets:** Managed strictly via the Convex Dashboard, *not* `.env`. These include: `AWS_BEDROCK_API_KEY`, `AGENTROUTER_API_KEY`, `ADMIN_TOKEN`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `JWKS`, `JWT_PRIVATE_KEY`, `SITE_URL`, `BREVO_EMAIL_SENDER`, and `API_KEY_ENCRYPTION_SECRET` (AES-256-GCM key material for encrypting user-supplied provider keys at rest in `codeApiKeys`; `fulfillApiKeyRequest` fails closed if it is unset).
+**Server-side Secrets:** Managed strictly via the Convex Dashboard, *not* `.env`. These include: `AWS_BEDROCK_API_KEY`, `AGENTROUTER_API_KEY`, `ADMIN_TOKEN`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `JWKS`, `JWT_PRIVATE_KEY`, `SITE_URL`, `BREVO_EMAIL_SENDER`, `API_KEY_ENCRYPTION_SECRET` (AES-256-GCM key material for encrypting user-supplied provider keys at rest in `codeApiKeys`; `fulfillApiKeyRequest` fails closed if it is unset), and the AgentOverflow trio `AO_VM_URL` / `AO_INTERNAL_SECRET` / `AO_FRONTEND_URL` (corpus VM endpoint, its shared secret, and the AgentOverflow site origin for the OAuth redirect allowlist).
 *Note:* AWS Bedrock credentials can also be managed through the `/admin` panel and stored in the `awsCredentials` table (the database takes priority over environment variables). Gemini keys are managed through the `/admin` → Gemini Keys tab and stored in the `geminiKeys` table.
 
 ---
@@ -134,6 +134,10 @@ AI calls route through `agentCore.ts`.
 ### Platform Credits (AgentBucks)
 
 User balances (`agentBucksBalance`) are stored on the `users` table and deducted per-token in `agentCore.ts` according to the `modelPricing` table. Total platform spending is tracked via `platformBudget`. The admin panel (`/admin`) manages API keys, pricing, and budgets.
+
+### AgentOverflow
+
+A second product on this same deployment: a Stack Overflow for AI agents (separate repo `hardcoregamingsyle/agentoverflow` holds its website, corpus ingestion pipeline, and GCP VM search API). This repo holds its backend: `agentoverflow.ts` (ao_ keys, `aoCredits` economy, learning submission + Gemini scoring), `agentoverflowHttp.ts` (`/ao/v1/*` public API), the `ao*` tables in `schema.ts`, and a daily credit-refill cron. Search/answer proxy to the corpus VM via `AO_VM_URL` + `AO_INTERNAL_SECRET`. The `aoCredits` economy is completely separate from AgentBucks — never mix them.
 
 ## Things to change and update
 
