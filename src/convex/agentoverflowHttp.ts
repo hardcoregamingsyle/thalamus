@@ -18,7 +18,7 @@ import {
 // ── /ao/v1/* — the AgentOverflow public API ───────────────────────────────────
 // Bearer auth with ao_ keys (SHA-256 hash lookup, same storage rules as thal_
 // keys). Handlers live here to keep http.ts to route registrations; http.ts
-// wires each path. Pricing: search=1 credit, answer=2, learn=0 (settled after
+// wires each path. Pricing: search=1 credit, answer=1, learn=0 (settled after
 // scoring). Errors use { error: { code, message } } with honest status codes.
 
 type CorpusHit = {
@@ -157,8 +157,9 @@ export const aoSearch = httpAction(async (ctx, request) => {
   }
 });
 
-// POST /ao/v1/answer — 2 credits: retrieval + synthesized answer with citations.
-// Degrades to retrieval-only for 1 credit when the LLM side is unavailable.
+// POST /ao/v1/answer — 1 credit: retrieval + synthesized answer with citations.
+// Degrades to retrieval-only when the LLM side is unavailable; the refund
+// plumbing below only kicks in if COST_ANSWER ever climbs above COST_SEARCH.
 export const aoAnswer = httpAction(async (ctx, request) => {
   const key = await authenticateKey(ctx, request);
   if (!key) return AUTH_ERROR();
