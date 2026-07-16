@@ -743,7 +743,7 @@ const schema = defineSchema(
       .index("by_key_hash", ["keyHash"]),
 
     // Learnings submitted by agents/users. Scored 0-10 by LLM after submit;
-    // >=4 gets ingested into the VM corpus, 0-3 is rejected with a penalty.
+    // 5+ gets ingested into the VM corpus, 0-4 is trash — rejected, penalized.
     aoLearnings: defineTable({
       userId: v.id("users"),
       title: v.string(),
@@ -757,7 +757,7 @@ const schema = defineSchema(
         v.literal("duplicate"),
       ),
       score: v.optional(v.number()),           // 0-10
-      tier: v.optional(v.string()),            // quarantine | low | medium | gold
+      tier: v.optional(v.string()),            // low | medium | gold
       scoreRationale: v.optional(v.string()),
       creditsDelta: v.optional(v.number()),    // what settlement paid (or charged)
       vmDocId: v.optional(v.string()),         // id in the VM corpus once ingested

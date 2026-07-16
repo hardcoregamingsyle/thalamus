@@ -20,7 +20,7 @@ import { callModel } from "./agentCore";
 
 export const DAILY_REFILL = 10;
 export const COST_SEARCH = 1;
-export const COST_ANSWER = 3;
+export const COST_ANSWER = 2;
 const RATE_LIMIT_PER_MIN = 30;
 const MAX_ACTIVE_KEYS = 10;
 
@@ -59,20 +59,18 @@ export async function hashAoKey(key: string): Promise<string> {
     .join("");
 }
 
-// Score → tier. Below 4 has no tier: it never enters the corpus.
+// Score → tier. Anything under 5 is trash and never touches the corpus.
 export function tierForScore(score: number): string | null {
-  if (score < 4) return null;
-  if (score === 4) return "quarantine";
+  if (score < 5) return null;
   if (score <= 7) return "low";
   if (score <= 9) return "medium";
   return "gold";
 }
 
-// Settlement: reward is 1/3 of the 3-credit answer charge; gold pays a bounty,
-// trash (0-3) costs the submitter a credit.
+// Settlement: teach the corpus something good, earn a credit; teach it three
+// things and your next deep query is free. Gold pays a bounty. Trash costs you.
 export function rewardForScore(score: number): number {
-  if (score <= 3) return -1;
-  if (score === 4) return 0;
+  if (score <= 4) return -1;
   if (score === 10) return 3;
   return 1;
 }
@@ -335,7 +333,6 @@ export const playgroundSearch = action({
         query: args.query.trim().slice(0, 2000),
         top_k: Math.min(Math.max(args.topK ?? 5, 1), 20),
         tags: normalizeTags(args.tags ?? []),
-        include_quarantine: false,
         expand: true,
       });
       if (!res.ok) throw new Error(`VM search failed: ${res.status}`);
@@ -512,7 +509,7 @@ export const settleLearning = internalMutation({
     }
 
     await ctx.db.patch(args.learningId, {
-      status: score <= 3 ? "rejected" : "scored",
+      status: score <= 4 ? "rejected" : "scored",
       score,
       tier: tierForScore(score) ?? undefined,
       scoreRationale: args.rationale,
@@ -526,8 +523,7 @@ export const settleLearning = internalMutation({
 // ── Scoring pipeline (async, scheduled on submit) ────────────────────────────
 
 const SCORING_SYSTEM_PROMPT = `You are the quality gate for AgentOverflow, a knowledge base AI agents query to avoid re-solving known problems. Score the submitted learning 0-10:
-- 0-3: spam, incoherent, wrong, trivially obvious, or content-free. These get deleted and the submitter is penalized.
-- 4: borderline — plausibly useful but vague, thin, or unverifiable.
+- 0-4: trash — spam, incoherent, wrong, trivially obvious, content-free, or too vague/thin/unverifiable to act on. These get deleted and the submitter is penalized.
 - 5-7: useful but common knowledge; a competent agent would find this quickly anyway.
 - 8-9: specific, reusable, non-obvious; clearly saves real debugging time.
 - 10: gold — a complex, complete, verified fix for a genuinely hard problem. Rare; reserve it.
@@ -611,7 +607,7 @@ export const scoreLearning = internalAction({
       return;
     }
 
-    if (scored.score <= 3) {
+    if (scored.score <= 4) {
       await ctx.runMutation(internal.agentoverflow.settleLearning, {
         learningId: args.learningId,
         score: scored.score,
@@ -620,7 +616,7 @@ export const scoreLearning = internalAction({
       return;
     }
 
-    // 4+ goes into the corpus; the VM dedups against everything already there.
+    // 5+ goes into the corpus; the VM dedups against everything already there.
     try {
       const res = await vmFetch("/internal/ingest", {
         doc_id: `learning-${args.learningId}`,
