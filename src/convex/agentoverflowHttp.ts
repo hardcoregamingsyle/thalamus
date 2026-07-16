@@ -18,7 +18,7 @@ import {
 // ── /ao/v1/* — the AgentOverflow public API ───────────────────────────────────
 // Bearer auth with ao_ keys (SHA-256 hash lookup, same storage rules as thal_
 // keys). Handlers live here to keep http.ts to route registrations; http.ts
-// wires each path. Pricing: search=1 credit, answer=3, learn=0 (settled after
+// wires each path. Pricing: search=1 credit, answer=2, learn=0 (settled after
 // scoring). Errors use { error: { code, message } } with honest status codes.
 
 type CorpusHit = {
@@ -100,7 +100,6 @@ export const aoSearch = httpAction(async (ctx, request) => {
     query?: string;
     tags?: string[];
     top_k?: number;
-    include_quarantine?: boolean;
   };
   try {
     body = await request.json();
@@ -130,7 +129,6 @@ export const aoSearch = httpAction(async (ctx, request) => {
       query: queryText,
       top_k: Math.min(Math.max(Math.round(body.top_k ?? 5), 1), 20),
       tags: normalizeTags(Array.isArray(body.tags) ? body.tags : []),
-      include_quarantine: body.include_quarantine === true,
       expand: true,
     });
     if (!res.ok) throw new Error(`VM search failed: ${res.status}`);
@@ -159,7 +157,7 @@ export const aoSearch = httpAction(async (ctx, request) => {
   }
 });
 
-// POST /ao/v1/answer — 3 credits: retrieval + synthesized answer with citations.
+// POST /ao/v1/answer — 2 credits: retrieval + synthesized answer with citations.
 // Degrades to retrieval-only for 1 credit when the LLM side is unavailable.
 export const aoAnswer = httpAction(async (ctx, request) => {
   const key = await authenticateKey(ctx, request);
@@ -201,7 +199,6 @@ export const aoAnswer = httpAction(async (ctx, request) => {
       query: queryText,
       top_k: 5,
       tags: normalizeTags(Array.isArray(body.tags) ? body.tags : []),
-      include_quarantine: false,
       expand: true,
     });
     if (!res.ok) throw new Error(`VM search failed: ${res.status}`);
