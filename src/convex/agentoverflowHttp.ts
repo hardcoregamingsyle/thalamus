@@ -3,13 +3,14 @@ import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { callModel } from "./agentCore";
 import {
+  contribTierFor,
   COST_ANSWER,
   COST_SEARCH,
-  DAILY_REFILL,
   ERR_INSUFFICIENT,
   ERR_RATE_LIMITED,
   ERR_UNCONFIGURED,
   hashAoKey,
+  nextContribTier,
   normalizeTags,
   validateLearningInput,
   vmFetch,
@@ -324,16 +325,29 @@ export const aoLearningsList = httpAction(async (ctx, request) => {
   return aoJson(200, { learnings });
 });
 
-// GET /ao/v1/balance — free.
+// GET /ao/v1/balance — free. Includes the contribution tier, since agents
+// deciding whether to submit a learning want to know what it buys them.
 export const aoBalance = httpAction(async (ctx, request) => {
   const key = await authenticateKey(ctx, request);
   if (!key) return AUTH_ERROR();
   const account = await ctx.runQuery(internal.agentoverflow.accountForUser, {
     userId: key.userId,
   });
+  const tier = contribTierFor(account.points);
+  const next = nextContribTier(account.points);
   return aoJson(200, {
     balance: account.balance,
-    daily_refill: DAILY_REFILL,
+    points: Math.floor(account.points),
+    tier: tier.name,
+    daily_refill: tier.dailyRefill,
+    next_tier: next
+      ? {
+          name: next.name,
+          min_points: next.minPoints,
+          points_needed: Math.ceil(next.minPoints - account.points),
+          daily_refill: next.dailyRefill,
+        }
+      : null,
     pricing: { search: COST_SEARCH, answer: COST_ANSWER, learn: 0 },
   });
 });

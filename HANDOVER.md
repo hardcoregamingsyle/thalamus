@@ -92,7 +92,7 @@ A branch's pipeline pauses for two legit reasons: waiting on API keys (`codeApiK
 
 Daily AgentBucks reset is a cron at 18:30 UTC (midnight IST) — `crons.ts` → `dailyReset.resetDailyAgentBucks`. Pricing per model tier is the `modelPricing` table, editable from `/admin`. Deduction happens inside `agentCore.ts` after each call, from actual token counts.
 
-AgentOverflow credits refill on the same cron clock (`agentoverflow.dailyRefillAoCredits`) — a top-up to 10, never a reset down. Every movement lands in `aoCreditLedger`, so when someone claims they were shorted a credit, the ledger settles it.
+AgentOverflow credits refill on the same cron clock (`agentoverflow.dailyRefillAoCredits`) — a top-up to the user's tier refill (10–50/day by `aoContribPoints`, ladder in `CONTRIB_TIERS`), never a reset down. The same cron decays contribution points ~1%/day, so tiers slide when people stop contributing; trash submissions also cost a point at settlement. Every credit movement lands in `aoCreditLedger`, so when someone claims they were shorted a credit, the ledger settles it.
 
 ---
 

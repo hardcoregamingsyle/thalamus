@@ -63,9 +63,12 @@ const schema = defineSchema(
       // School/institution accounts
       isStudyFree: v.optional(v.boolean()),   // true = unlimited study mode (no credits charged)
       isTeacher: v.optional(v.boolean()),      // true = teacher account (first char is letter, @stkabir.co.in)
-      // AgentOverflow credits — separate economy from AgentBucks. 10/day refill,
-      // earned above 10 by submitting learnings that score well (see agentoverflow.ts).
+      // AgentOverflow credits — separate economy from AgentBucks. Daily refill,
+      // earned above it by submitting learnings that score well (see agentoverflow.ts).
       aoCredits: v.optional(v.number()),
+      // Lifetime contribution points (low=1, medium=2, gold=5 per accepted
+      // learning). Sets the daily refill tier — see CONTRIB_TIERS.
+      aoContribPoints: v.optional(v.number()),
     }).index("email", ["email"])
       .index("by_referral_code", ["referralCode"]),
 
