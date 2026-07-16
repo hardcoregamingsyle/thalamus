@@ -26,6 +26,38 @@ export const COST_ANSWER = 1;
 const RATE_LIMIT_PER_MIN = 30;
 const MAX_ACTIVE_KEYS = 10;
 
+// Contribution tiers: points from accepted learnings buy a bigger daily
+// refill. Points per accepted learning: low=1, medium=2, gold=5. The ladder
+// works both ways — points decay ~1%/day (stop teaching, start sliding) and
+// trash submissions cost a point. Stored as a float; floored for display.
+export const POINTS_DAILY_DECAY = 0.99;
+export const CONTRIB_TIERS = [
+  { name: "lurker", minPoints: 0, dailyRefill: 10 },
+  { name: "contributor", minPoints: 5, dailyRefill: 15 },
+  { name: "regular", minPoints: 15, dailyRefill: 20 },
+  { name: "veteran", minPoints: 40, dailyRefill: 30 },
+  { name: "legend", minPoints: 100, dailyRefill: 50 },
+];
+
+export function pointsForLearningTier(tier: string | null): number {
+  if (tier === "gold") return 5;
+  if (tier === "medium") return 2;
+  if (tier === "low") return 1;
+  return 0;
+}
+
+export function contribTierFor(points: number) {
+  let current = CONTRIB_TIERS[0];
+  for (const t of CONTRIB_TIERS) {
+    if (points >= t.minPoints) current = t;
+  }
+  return current;
+}
+
+export function nextContribTier(points: number) {
+  return CONTRIB_TIERS.find((t) => t.minPoints > points) ?? null;
+}
+
 // Error message constants double as machine-readable codes for the HTTP layer.
 export const ERR_INSUFFICIENT = "AO_INSUFFICIENT_CREDITS";
 export const ERR_RATE_LIMITED = "AO_RATE_LIMITED";
@@ -268,8 +300,21 @@ export const getAoAccount = query({
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .order("desc")
       .take(50);
+    const rawPoints = user.aoContribPoints ?? 0;
+    const tier = contribTierFor(rawPoints);
+    const next = nextContribTier(rawPoints);
     return {
       balance: user.aoCredits ?? DAILY_REFILL,
+      points: Math.floor(rawPoints),
+      tier: { name: tier.name, dailyRefill: tier.dailyRefill },
+      nextTier: next
+        ? {
+            name: next.name,
+            dailyRefill: next.dailyRefill,
+            minPoints: next.minPoints,
+            pointsNeeded: Math.ceil(next.minPoints - rawPoints),
+          }
+        : null,
       ledger: ledger.map((e) => ({ delta: e.delta, reason: e.reason, createdAt: e.createdAt })),
     };
   },
@@ -421,7 +466,10 @@ export const accountForUser = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
-    return { balance: user?.aoCredits ?? DAILY_REFILL };
+    return {
+      balance: user?.aoCredits ?? DAILY_REFILL,
+      points: user?.aoContribPoints ?? 0,
+    };
   },
 });
 
@@ -492,14 +540,22 @@ export const settleLearning = internalMutation({
 
     const score = Math.max(0, Math.min(10, Math.round(args.score)));
     const reward = rewardForScore(score);
+    const learningTier = tierForScore(score);
     const user = await ctx.db.get(learning.userId);
     let applied = 0;
     if (user) {
       const balance = user.aoCredits ?? DAILY_REFILL;
       // Penalties floor at zero — no negative balances.
       applied = reward < 0 ? -Math.min(balance, -reward) : reward;
+      const patch: { aoCredits?: number; aoContribPoints?: number } = {};
+      if (applied !== 0) patch.aoCredits = balance + applied;
+      // Accepted learnings earn tier points; trash costs one. Floor at zero.
+      const curPoints = user.aoContribPoints ?? 0;
+      const pointsDelta = score >= 5 ? pointsForLearningTier(learningTier) : -1;
+      const newPoints = Math.max(0, curPoints + pointsDelta);
+      if (newPoints !== curPoints) patch.aoContribPoints = newPoints;
+      if (Object.keys(patch).length > 0) await ctx.db.patch(learning.userId, patch);
       if (applied !== 0) {
-        await ctx.db.patch(learning.userId, { aoCredits: balance + applied });
         await ctx.db.insert("aoCreditLedger", {
           userId: learning.userId,
           delta: applied,
@@ -513,7 +569,7 @@ export const settleLearning = internalMutation({
     await ctx.db.patch(args.learningId, {
       status: score <= 4 ? "rejected" : "scored",
       score,
-      tier: tierForScore(score) ?? undefined,
+      tier: learningTier ?? undefined,
       scoreRationale: args.rationale,
       creditsDelta: applied,
       vmDocId: args.vmDocId,
@@ -661,8 +717,9 @@ export const scoreLearning = internalAction({
 
 // ── Daily refill (cron) ───────────────────────────────────────────────────────
 
-// Everyone who has touched AgentOverflow gets topped back up to 10 at midnight
-// IST. Balances above 10 (earned by teaching the corpus) are left alone.
+// Midnight IST housekeeping: contribution points decay ~1%, then everyone
+// gets topped back up to their (possibly new) tier's refill — lurkers to 10,
+// legends to 50. Balances already above the line are left alone.
 export const dailyRefillAoCredits = internalMutation({
   args: {},
   handler: async (ctx) => {
@@ -674,16 +731,27 @@ export const dailyRefillAoCredits = internalMutation({
         .order("asc")
         .paginate({ cursor, numItems: 100 });
       for (const user of batch.page) {
-        if (user.aoCredits !== undefined && user.aoCredits < DAILY_REFILL) {
-          await ctx.db.patch(user._id, { aoCredits: DAILY_REFILL });
-          await ctx.db.insert("aoCreditLedger", {
-            userId: user._id,
-            delta: DAILY_REFILL - user.aoCredits,
-            reason: "daily_refill",
-            createdAt: Date.now(),
-          });
-          refilled++;
+        const patch: { aoCredits?: number; aoContribPoints?: number } = {};
+        let points = user.aoContribPoints ?? 0;
+        if (points > 0) {
+          points = points * POINTS_DAILY_DECAY;
+          if (points < 0.05) points = 0;
+          patch.aoContribPoints = points;
         }
+        if (user.aoCredits !== undefined) {
+          const target = contribTierFor(points).dailyRefill;
+          if (user.aoCredits < target) {
+            patch.aoCredits = target;
+            await ctx.db.insert("aoCreditLedger", {
+              userId: user._id,
+              delta: target - user.aoCredits,
+              reason: "daily_refill",
+              createdAt: Date.now(),
+            });
+            refilled++;
+          }
+        }
+        if (Object.keys(patch).length > 0) await ctx.db.patch(user._id, patch);
       }
       if (batch.isDone) break;
       cursor = batch.continueCursor;
