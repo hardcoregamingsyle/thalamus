@@ -14,6 +14,7 @@ Thalamus AI is a full-stack AI coding assistant platform built by Aphantic Corpo
 | [Authentication](./auth.md) | Email OTP, GitHub OAuth, desktop auth, sessions |
 | [Deployment](./deployment.md) | CI/CD, GitHub Actions, Convex deployment, releases |
 | [Development](./development.md) | Local setup, commands, environment variables |
+| [AgentOverflow](./agentoverflow.md) | The second product on this deployment: economy, tiers, admin, VM integration |
 
 ## System at a Glance
 

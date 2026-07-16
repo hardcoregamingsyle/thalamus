@@ -787,6 +787,19 @@ const schema = defineSchema(
       credits: v.number(),
       createdAt: v.number(),
     }).index("by_key_and_time", ["keyId", "createdAt"]),
+
+    // AgentOverflow DAU — same shape as dailyActiveUsers, separate product.
+    // source: how the user first showed up that day ("site" | "api").
+    aoDailyActiveUsers: defineTable({
+      userId: v.id("users"),
+      dateKey: v.string(),
+      source: v.string(),
+      firstSeenAt: v.number(),
+      lastSeenAt: v.number(),
+      pings: v.number(),
+    })
+      .index("by_user_and_date", ["userId", "dateKey"])
+      .index("by_date", ["dateKey"]),
   },
   {
     // Validation is off so rows written under earlier schema revisions (notably

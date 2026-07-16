@@ -147,6 +147,44 @@ export async function vmFetch(path: string, body?: unknown, method = "POST"): Pr
   });
 }
 
+// One aoDailyActiveUsers row per user per UTC day; writes throttled to one
+// per 5 minutes, same as the thalamus DAU tracker.
+export async function recordAoDau(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  source: "site" | "api",
+): Promise<void> {
+  const now = Date.now();
+  const dateKey = new Date(now).toISOString().slice(0, 10);
+  const existing = await ctx.db
+    .query("aoDailyActiveUsers")
+    .withIndex("by_user_and_date", (q) => q.eq("userId", userId).eq("dateKey", dateKey))
+    .unique();
+  if (existing) {
+    if (now - existing.lastSeenAt < 5 * 60 * 1000) return;
+    await ctx.db.patch(existing._id, { lastSeenAt: now, pings: existing.pings + 1 });
+  } else {
+    await ctx.db.insert("aoDailyActiveUsers", {
+      userId,
+      dateKey,
+      source,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      pings: 1,
+    });
+  }
+}
+
+// Site-side DAU ping — the layout fires this once per load for signed-in users.
+export const pingDau = mutation({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getUserIdByToken(ctx, args.token);
+    if (!userId) return;
+    await recordAoDau(ctx, userId, "site");
+  },
+});
+
 async function insertLearningCore(
   ctx: MutationCtx,
   userId: Id<"users">,
@@ -457,6 +495,9 @@ export const charge = internalMutation({
         createdAt: Date.now(),
       });
       await ctx.db.patch(args.keyDbId, { lastUsedAt: Date.now() });
+    }
+    if (args.credits > 0) {
+      await recordAoDau(ctx, args.userId, args.keyDbId ? "api" : "site");
     }
     return newBalance;
   },
