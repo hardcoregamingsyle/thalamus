@@ -5,6 +5,14 @@ import { internal, api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
 import { callModel, calcAgentBucksForTier } from "./agentCore";
+import {
+  aoOptions,
+  aoSearch,
+  aoAnswer,
+  aoLearn,
+  aoLearningsList,
+  aoBalance,
+} from "./agentoverflowHttp";
 
 const http = httpRouter();
 
@@ -545,7 +553,17 @@ function oauthRedirectAllowed(redirect: string): boolean {
       "https://thalamus.aphantic.skinticals.com",
       "http://localhost:5173",
       "http://localhost:4173",
+      "http://localhost:5174", // AgentOverflow dev server
     ]);
+    // AgentOverflow shares this deployment's auth — its site logs in here too.
+    const aoSite = process.env.AO_FRONTEND_URL;
+    if (aoSite) {
+      try {
+        allowed.add(new URL(aoSite).origin);
+      } catch {
+        // Malformed env value: skip rather than break every OAuth login.
+      }
+    }
     return allowed.has(u.origin);
   } catch {
     return false;
@@ -917,5 +935,20 @@ http.route({
     });
   }),
 });
+
+// ── /ao/v1/* — AgentOverflow public API for ao_ keys ─────────────────────────
+// Handlers live in agentoverflowHttp.ts; search/answer proxy to the corpus VM
+// (AO_VM_URL + AO_INTERNAL_SECRET), learn feeds the async scoring pipeline.
+
+http.route({ path: "/ao/v1/search", method: "OPTIONS", handler: aoOptions });
+http.route({ path: "/ao/v1/search", method: "POST", handler: aoSearch });
+http.route({ path: "/ao/v1/answer", method: "OPTIONS", handler: aoOptions });
+http.route({ path: "/ao/v1/answer", method: "POST", handler: aoAnswer });
+http.route({ path: "/ao/v1/learn", method: "OPTIONS", handler: aoOptions });
+http.route({ path: "/ao/v1/learn", method: "POST", handler: aoLearn });
+http.route({ path: "/ao/v1/learnings", method: "OPTIONS", handler: aoOptions });
+http.route({ path: "/ao/v1/learnings", method: "GET", handler: aoLearningsList });
+http.route({ path: "/ao/v1/balance", method: "OPTIONS", handler: aoOptions });
+http.route({ path: "/ao/v1/balance", method: "GET", handler: aoBalance });
 
 export default http;
