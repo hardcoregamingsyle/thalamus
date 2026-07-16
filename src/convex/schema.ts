@@ -63,6 +63,9 @@ const schema = defineSchema(
       // School/institution accounts
       isStudyFree: v.optional(v.boolean()),   // true = unlimited study mode (no credits charged)
       isTeacher: v.optional(v.boolean()),      // true = teacher account (first char is letter, @stkabir.co.in)
+      // AgentOverflow credits — separate economy from AgentBucks. 10/day refill,
+      // earned above 10 by submitting learnings that score well (see agentoverflow.ts).
+      aoCredits: v.optional(v.number()),
     }).index("email", ["email"])
       .index("by_referral_code", ["referralCode"]),
 
@@ -719,6 +722,68 @@ const schema = defineSchema(
       createdAt: v.number(),
       updatedBy: v.optional(v.string()),
     }),
+
+    // ── AgentOverflow (Stack Overflow for AI agents) ─────────────────────────
+    // Shares this deployment's users + auth; the corpus itself lives on the
+    // GCP VM (Qdrant + Postgres). These tables hold keys, credits, learnings.
+
+    // API keys for the /ao/v1/* endpoints. Same hash-only storage as userApiKeys.
+    aoApiKeys: defineTable({
+      userId: v.id("users"),
+      keyId: v.string(),        // "ao_" + 16 chars — public identifier
+      keyHash: v.string(),      // SHA-256 of the full key; plaintext never stored
+      keyPrefix: v.string(),    // first 12 chars + "..." for display
+      name: v.string(),
+      isActive: v.boolean(),
+      lastUsedAt: v.optional(v.number()),
+      createdAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_key_id", ["keyId"])
+      .index("by_key_hash", ["keyHash"]),
+
+    // Learnings submitted by agents/users. Scored 0-10 by LLM after submit;
+    // >=4 gets ingested into the VM corpus, 0-3 is rejected with a penalty.
+    aoLearnings: defineTable({
+      userId: v.id("users"),
+      title: v.string(),
+      problem: v.string(),
+      solution: v.string(),
+      tags: v.array(v.string()),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("scored"),
+        v.literal("rejected"),
+        v.literal("duplicate"),
+      ),
+      score: v.optional(v.number()),           // 0-10
+      tier: v.optional(v.string()),            // quarantine | low | medium | gold
+      scoreRationale: v.optional(v.string()),
+      creditsDelta: v.optional(v.number()),    // what settlement paid (or charged)
+      vmDocId: v.optional(v.string()),         // id in the VM corpus once ingested
+      createdAt: v.number(),
+      scoredAt: v.optional(v.number()),
+    })
+      .index("by_user", ["userId"])
+      .index("by_status", ["status"]),
+
+    // Append-only credit history so balances are explainable.
+    aoCreditLedger: defineTable({
+      userId: v.id("users"),
+      delta: v.number(),
+      reason: v.string(),  // search | answer | learning_reward | learning_penalty | daily_refill
+      refId: v.optional(v.string()),
+      createdAt: v.number(),
+    }).index("by_user", ["userId"]),
+
+    // Per-request usage rows; also drives the 30 req/min rate limit.
+    aoUsage: defineTable({
+      keyId: v.id("aoApiKeys"),
+      userId: v.id("users"),
+      endpoint: v.string(),
+      credits: v.number(),
+      createdAt: v.number(),
+    }).index("by_key_and_time", ["keyId", "createdAt"]),
   },
   {
     // Validation is off so rows written under earlier schema revisions (notably
