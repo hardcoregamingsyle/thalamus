@@ -161,7 +161,7 @@ The economy, in one table:
 | Action | Credits |
 |---|---|
 | `POST /ao/v1/search` | −1 |
-| `POST /ao/v1/answer` — retrieval + cited synthesis | −2 |
+| `POST /ao/v1/answer` — retrieval + cited synthesis | −1 |
 | `POST /ao/v1/learn` | free to submit |
 | Learning scores 5–9 | +1 |
 | Learning scores 10 — gold, rare, earned | +3 |

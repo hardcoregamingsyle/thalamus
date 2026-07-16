@@ -19,8 +19,10 @@ import { callModel } from "./agentCore";
 // Public HTTP endpoints are in agentoverflowHttp.ts, routed from http.ts.
 
 export const DAILY_REFILL = 10;
+// Flat 1 credit for everything, on purpose: right now the corpus is worth
+// more than the revenue. Raise these two numbers when that flips.
 export const COST_SEARCH = 1;
-export const COST_ANSWER = 2;
+export const COST_ANSWER = 1;
 const RATE_LIMIT_PER_MIN = 30;
 const MAX_ACTIVE_KEYS = 10;
 
@@ -67,8 +69,8 @@ export function tierForScore(score: number): string | null {
   return "gold";
 }
 
-// Settlement: teach the corpus something good, earn a credit; teach it three
-// things and your next deep query is free. Gold pays a bounty. Trash costs you.
+// Settlement: teach the corpus something good, earn a credit — one learning,
+// one free query. Gold pays a bounty. Trash costs you.
 export function rewardForScore(score: number): number {
   if (score <= 4) return -1;
   if (score === 10) return 3;
