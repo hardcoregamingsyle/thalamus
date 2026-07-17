@@ -6,6 +6,7 @@ import {
   contribTierFor,
   COST_ANSWER,
   COST_SEARCH,
+  effectiveRefill,
   ERR_INSUFFICIENT,
   ERR_RATE_LIMITED,
   ERR_UNCONFIGURED,
@@ -310,7 +311,8 @@ export async function runBalance(ctx: ActionCtx, key: AoKeyInfo): Promise<AoOpRe
       balance: account.balance,
       points: Math.floor(account.points),
       tier: tier.name,
-      daily_refill: tier.dailyRefill,
+      daily_refill: effectiveRefill(account.points, account.customRefill),
+      rate_limit_per_min: account.rateLimit,
       next_tier: next
         ? {
             name: next.name,
