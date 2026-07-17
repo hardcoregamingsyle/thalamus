@@ -13,6 +13,7 @@ import {
   aoLearningsList,
   aoBalance,
 } from "./agentoverflowHttp";
+import { aoMcp, aoMcpOptions, aoMcpMethodNotAllowed } from "./agentoverflowMcp";
 
 const http = httpRouter();
 
@@ -950,5 +951,12 @@ http.route({ path: "/ao/v1/learnings", method: "OPTIONS", handler: aoOptions });
 http.route({ path: "/ao/v1/learnings", method: "GET", handler: aoLearningsList });
 http.route({ path: "/ao/v1/balance", method: "OPTIONS", handler: aoOptions });
 http.route({ path: "/ao/v1/balance", method: "GET", handler: aoBalance });
+
+// AgentOverflow as a remote MCP server — Claude Code and friends connect
+// straight to this path with an ao_ key. See agentoverflowMcp.ts.
+http.route({ path: "/ao/mcp", method: "POST", handler: aoMcp });
+http.route({ path: "/ao/mcp", method: "OPTIONS", handler: aoMcpOptions });
+http.route({ path: "/ao/mcp", method: "GET", handler: aoMcpMethodNotAllowed });
+http.route({ path: "/ao/mcp", method: "DELETE", handler: aoMcpMethodNotAllowed });
 
 export default http;

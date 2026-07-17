@@ -18,9 +18,10 @@ import {
 
 // ── /ao/v1/* — the AgentOverflow public API ───────────────────────────────────
 // Bearer auth with ao_ keys (SHA-256 hash lookup, same storage rules as thal_
-// keys). Handlers live here to keep http.ts to route registrations; http.ts
-// wires each path. Pricing: search=1 credit, answer=1, learn=0 (settled after
-// scoring). Errors use { error: { code, message } } with honest status codes.
+// keys). The run* functions below are the single source of truth for each
+// operation — the REST handlers here and the MCP server (agentoverflowMcp.ts)
+// are both thin wrappers over them. Pricing: search=1 credit, answer=1,
+// learn=0 (settled after scoring).
 
 type CorpusHit = {
   doc_id: string;
@@ -35,81 +36,67 @@ type CorpusHit = {
   similarity: number;
 };
 
-function aoCorsHeaders() {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  };
+export type AoKeyInfo = { _id: Id<"aoApiKeys">; keyId: string; userId: Id<"users"> };
+
+// Every operation resolves to this; the transport layers turn it into HTTP
+// or JSON-RPC without re-implementing any behavior.
+export type AoOpResult =
+  | { ok: true; status: number; body: Record<string, unknown> }
+  | { ok: false; status: number; code: string; message: string };
+
+function opError(status: number, code: string, message: string): AoOpResult {
+  return { ok: false, status, code, message };
 }
 
-function aoJson(status: number, payload: unknown): Response {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { "Content-Type": "application/json", ...aoCorsHeaders() },
-  });
-}
-
-function aoError(status: number, code: string, message: string): Response {
-  return aoJson(status, { error: { code, message } });
-}
-
-// Charge failures → API responses; anything else is not a charge failure.
-function chargeErrorResponse(err: unknown): Response | null {
+function chargeErrorResult(err: unknown): AoOpResult | null {
   const msg = err instanceof Error ? err.message : String(err);
   if (msg === ERR_INSUFFICIENT) {
-    return aoError(
+    return opError(
       402,
       "insufficient_credits",
       "Not enough credits. You get 10/day; earn more by submitting learnings that score 5 or higher.",
     );
   }
   if (msg === ERR_RATE_LIMITED) {
-    return aoError(429, "rate_limited", "Rate limit exceeded: 30 requests/min per key.");
+    return opError(429, "rate_limited", "Rate limit exceeded: 30 requests/min per key.");
   }
   return null;
 }
 
-async function authenticateKey(
+function backendDownResult(err: unknown): AoOpResult {
+  const msg = err instanceof Error ? err.message : String(err);
+  return opError(
+    503,
+    "backend_unavailable",
+    msg === ERR_UNCONFIGURED
+      ? "The corpus backend is not deployed yet. No credits were charged."
+      : "The corpus backend is unreachable. No credits were charged.",
+  );
+}
+
+export async function authenticateBearer(
   ctx: ActionCtx,
-  request: Request,
-): Promise<{ _id: Id<"aoApiKeys">; keyId: string; userId: Id<"users"> } | null> {
-  const authHeader = request.headers.get("Authorization") ?? "";
-  const rawKey = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  authHeader: string | null,
+): Promise<AoKeyInfo | null> {
+  const rawKey = (authHeader ?? "").startsWith("Bearer ")
+    ? (authHeader ?? "").slice(7).trim()
+    : "";
   if (!rawKey.startsWith("ao_")) return null;
   const keyHash = await hashAoKey(rawKey);
   return await ctx.runQuery(internal.agentoverflow.getKeyByHash, { keyHash });
 }
 
-const AUTH_ERROR = () =>
-  aoError(
-    401,
-    "invalid_key",
-    "Missing, malformed, or revoked API key. Pass it as: Authorization: Bearer ao_...",
-  );
+// ── Core operations (shared by REST + MCP) ────────────────────────────────────
 
-export const aoOptions = httpAction(
-  async () => new Response(null, { status: 204, headers: aoCorsHeaders() }),
-);
-
-// POST /ao/v1/search — 1 credit. Vector + graph retrieval over the corpus.
-export const aoSearch = httpAction(async (ctx, request) => {
-  const key = await authenticateKey(ctx, request);
-  if (!key) return AUTH_ERROR();
-
-  let body: {
-    query?: string;
-    tags?: string[];
-    top_k?: number;
-  };
-  try {
-    body = await request.json();
-  } catch {
-    return aoError(400, "bad_request", "Request body must be valid JSON.");
-  }
-  const queryText = (body.query ?? "").trim();
+export async function runSearch(
+  ctx: ActionCtx,
+  key: AoKeyInfo,
+  args: { query?: unknown; tags?: unknown; top_k?: unknown },
+  endpoint = "search",
+): Promise<AoOpResult> {
+  const queryText = (typeof args.query === "string" ? args.query : "").trim();
   if (queryText.length < 3 || queryText.length > 2000) {
-    return aoError(400, "bad_request", '"query" must be a string of 3-2000 characters.');
+    return opError(400, "bad_request", '"query" must be a string of 3-2000 characters.');
   }
 
   let balance: number;
@@ -119,61 +106,47 @@ export const aoSearch = httpAction(async (ctx, request) => {
       credits: COST_SEARCH,
       reason: "search",
       keyDbId: key._id,
-      endpoint: "search",
+      endpoint,
     });
   } catch (err) {
-    return chargeErrorResponse(err) ?? aoError(500, "internal_error", "Charge failed.");
+    return chargeErrorResult(err) ?? opError(500, "internal_error", "Charge failed.");
   }
 
   try {
     const res = await vmFetch("/internal/search", {
       query: queryText,
-      top_k: Math.min(Math.max(Math.round(body.top_k ?? 5), 1), 20),
-      tags: normalizeTags(Array.isArray(body.tags) ? body.tags : []),
+      top_k: Math.min(Math.max(Math.round(Number(args.top_k) || 5), 1), 20),
+      tags: normalizeTags(Array.isArray(args.tags) ? (args.tags as string[]) : []),
       expand: true,
     });
     if (!res.ok) throw new Error(`VM search failed: ${res.status}`);
     const data = (await res.json()) as { results: CorpusHit[] };
-    return aoJson(200, {
-      credits_charged: COST_SEARCH,
-      balance,
-      results: data.results ?? [],
-    });
+    return {
+      ok: true,
+      status: 200,
+      body: { credits_charged: COST_SEARCH, balance, results: data.results ?? [] },
+    };
   } catch (err) {
-    // The search never happened — refund before reporting the outage.
-    balance = await ctx.runMutation(internal.agentoverflow.charge, {
+    // The search never happened — give the credit back before reporting.
+    await ctx.runMutation(internal.agentoverflow.charge, {
       userId: key.userId,
       credits: -COST_SEARCH,
       reason: "search",
       refId: "refund",
     });
-    const msg = err instanceof Error ? err.message : String(err);
-    return aoError(
-      503,
-      "backend_unavailable",
-      msg === ERR_UNCONFIGURED
-        ? "The corpus backend is not deployed yet. No credits were charged."
-        : "The corpus backend is unreachable. No credits were charged.",
-    );
+    return backendDownResult(err);
   }
-});
+}
 
-// POST /ao/v1/answer — 1 credit: retrieval + synthesized answer with citations.
-// Degrades to retrieval-only when the LLM side is unavailable; the refund
-// plumbing below only kicks in if COST_ANSWER ever climbs above COST_SEARCH.
-export const aoAnswer = httpAction(async (ctx, request) => {
-  const key = await authenticateKey(ctx, request);
-  if (!key) return AUTH_ERROR();
-
-  let body: { query?: string; tags?: string[] };
-  try {
-    body = await request.json();
-  } catch {
-    return aoError(400, "bad_request", "Request body must be valid JSON.");
-  }
-  const queryText = (body.query ?? "").trim();
+export async function runAnswer(
+  ctx: ActionCtx,
+  key: AoKeyInfo,
+  args: { query?: unknown; tags?: unknown },
+  endpoint = "answer",
+): Promise<AoOpResult> {
+  const queryText = (typeof args.query === "string" ? args.query : "").trim();
   if (queryText.length < 3 || queryText.length > 2000) {
-    return aoError(400, "bad_request", '"query" must be a string of 3-2000 characters.');
+    return opError(400, "bad_request", '"query" must be a string of 3-2000 characters.');
   }
 
   const budgetExhausted = (await ctx.runQuery(
@@ -189,10 +162,10 @@ export const aoAnswer = httpAction(async (ctx, request) => {
       credits: creditsCharged,
       reason: "answer",
       keyDbId: key._id,
-      endpoint: "answer",
+      endpoint,
     });
   } catch (err) {
-    return chargeErrorResponse(err) ?? aoError(500, "internal_error", "Charge failed.");
+    return chargeErrorResult(err) ?? opError(500, "internal_error", "Charge failed.");
   }
 
   let hits: CorpusHit[];
@@ -200,26 +173,19 @@ export const aoAnswer = httpAction(async (ctx, request) => {
     const res = await vmFetch("/internal/search", {
       query: queryText,
       top_k: 5,
-      tags: normalizeTags(Array.isArray(body.tags) ? body.tags : []),
+      tags: normalizeTags(Array.isArray(args.tags) ? (args.tags as string[]) : []),
       expand: true,
     });
     if (!res.ok) throw new Error(`VM search failed: ${res.status}`);
     hits = ((await res.json()) as { results: CorpusHit[] }).results ?? [];
   } catch (err) {
-    balance = await ctx.runMutation(internal.agentoverflow.charge, {
+    await ctx.runMutation(internal.agentoverflow.charge, {
       userId: key.userId,
       credits: -creditsCharged,
       reason: "answer",
       refId: "refund",
     });
-    const msg = err instanceof Error ? err.message : String(err);
-    return aoError(
-      503,
-      "backend_unavailable",
-      msg === ERR_UNCONFIGURED
-        ? "The corpus backend is not deployed yet. No credits were charged."
-        : "The corpus backend is unreachable. No credits were charged.",
-    );
+    return backendDownResult(err);
   }
 
   // Synthesis only when the platform budget allows it and there is material.
@@ -274,80 +240,160 @@ export const aoAnswer = httpAction(async (ctx, request) => {
     creditsCharged = COST_SEARCH;
   }
 
-  return aoJson(200, {
-    credits_charged: creditsCharged,
-    balance,
-    answer,
-    ...(note ? { note } : {}),
-    sources: hits,
-  });
-});
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      credits_charged: creditsCharged,
+      balance,
+      answer,
+      ...(note ? { note } : {}),
+      sources: hits,
+    },
+  };
+}
 
-// POST /ao/v1/learn — free to submit; scored async, credits settle afterwards.
-export const aoLearn = httpAction(async (ctx, request) => {
-  const key = await authenticateKey(ctx, request);
-  if (!key) return AUTH_ERROR();
-
-  let body: { title?: string; problem?: string; solution?: string; tags?: string[] };
-  try {
-    body = await request.json();
-  } catch {
-    return aoError(400, "bad_request", "Request body must be valid JSON.");
-  }
+export async function runLearn(
+  ctx: ActionCtx,
+  key: AoKeyInfo,
+  args: { title?: unknown; problem?: unknown; solution?: unknown; tags?: unknown },
+): Promise<AoOpResult> {
   const input = {
-    title: typeof body.title === "string" ? body.title : "",
-    problem: typeof body.problem === "string" ? body.problem : "",
-    solution: typeof body.solution === "string" ? body.solution : "",
-    tags: normalizeTags(Array.isArray(body.tags) ? body.tags : []),
+    title: typeof args.title === "string" ? args.title : "",
+    problem: typeof args.problem === "string" ? args.problem : "",
+    solution: typeof args.solution === "string" ? args.solution : "",
+    tags: normalizeTags(Array.isArray(args.tags) ? (args.tags as string[]) : []),
   };
   const validationError = validateLearningInput(input);
-  if (validationError) return aoError(400, "bad_request", validationError);
+  if (validationError) return opError(400, "bad_request", validationError);
 
   const learningId = await ctx.runMutation(internal.agentoverflow.insertLearningFromApi, {
     userId: key.userId,
     ...input,
   });
 
-  return aoJson(202, {
-    learning_id: learningId,
-    status: "pending",
-    note: "Scored asynchronously. Credits settle after scoring; poll GET /ao/v1/learnings.",
-  });
-});
+  return {
+    ok: true,
+    status: 202,
+    body: {
+      learning_id: learningId,
+      status: "pending",
+      note: "Scored asynchronously. Credits settle after scoring; poll GET /ao/v1/learnings.",
+    },
+  };
+}
 
-// GET /ao/v1/learnings — your submissions with scores and settlement.
-export const aoLearningsList = httpAction(async (ctx, request) => {
-  const key = await authenticateKey(ctx, request);
-  if (!key) return AUTH_ERROR();
+export async function runLearningsList(ctx: ActionCtx, key: AoKeyInfo): Promise<AoOpResult> {
   const learnings = await ctx.runQuery(internal.agentoverflow.learningsForUser, {
     userId: key.userId,
   });
-  return aoJson(200, { learnings });
-});
+  return { ok: true, status: 200, body: { learnings } };
+}
 
-// GET /ao/v1/balance — free. Includes the contribution tier, since agents
-// deciding whether to submit a learning want to know what it buys them.
-export const aoBalance = httpAction(async (ctx, request) => {
-  const key = await authenticateKey(ctx, request);
-  if (!key) return AUTH_ERROR();
+export async function runBalance(ctx: ActionCtx, key: AoKeyInfo): Promise<AoOpResult> {
   const account = await ctx.runQuery(internal.agentoverflow.accountForUser, {
     userId: key.userId,
   });
   const tier = contribTierFor(account.points);
   const next = nextContribTier(account.points);
-  return aoJson(200, {
-    balance: account.balance,
-    points: Math.floor(account.points),
-    tier: tier.name,
-    daily_refill: tier.dailyRefill,
-    next_tier: next
-      ? {
-          name: next.name,
-          min_points: next.minPoints,
-          points_needed: Math.ceil(next.minPoints - account.points),
-          daily_refill: next.dailyRefill,
-        }
-      : null,
-    pricing: { search: COST_SEARCH, answer: COST_ANSWER, learn: 0 },
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      balance: account.balance,
+      points: Math.floor(account.points),
+      tier: tier.name,
+      daily_refill: tier.dailyRefill,
+      next_tier: next
+        ? {
+            name: next.name,
+            min_points: next.minPoints,
+            points_needed: Math.ceil(next.minPoints - account.points),
+            daily_refill: next.dailyRefill,
+          }
+        : null,
+      pricing: { search: COST_SEARCH, answer: COST_ANSWER, learn: 0 },
+    },
+  };
+}
+
+// ── REST transport ────────────────────────────────────────────────────────────
+
+function aoCorsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  };
+}
+
+function aoJson(status: number, payload: unknown): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "Content-Type": "application/json", ...aoCorsHeaders() },
   });
+}
+
+function toResponse(result: AoOpResult): Response {
+  if (result.ok) return aoJson(result.status, result.body);
+  return aoJson(result.status, { error: { code: result.code, message: result.message } });
+}
+
+const AUTH_ERROR = () =>
+  aoJson(401, {
+    error: {
+      code: "invalid_key",
+      message: "Missing, malformed, or revoked API key. Pass it as: Authorization: Bearer ao_...",
+    },
+  });
+
+async function parseBody(request: Request): Promise<Record<string, unknown> | null> {
+  try {
+    const body = (await request.json()) as unknown;
+    return body && typeof body === "object" && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : {};
+  } catch {
+    return null;
+  }
+}
+
+export const aoOptions = httpAction(
+  async () => new Response(null, { status: 204, headers: aoCorsHeaders() }),
+);
+
+export const aoSearch = httpAction(async (ctx, request) => {
+  const key = await authenticateBearer(ctx, request.headers.get("Authorization"));
+  if (!key) return AUTH_ERROR();
+  const body = await parseBody(request);
+  if (body === null) return toResponse(opError(400, "bad_request", "Request body must be valid JSON."));
+  return toResponse(await runSearch(ctx, key, body));
+});
+
+export const aoAnswer = httpAction(async (ctx, request) => {
+  const key = await authenticateBearer(ctx, request.headers.get("Authorization"));
+  if (!key) return AUTH_ERROR();
+  const body = await parseBody(request);
+  if (body === null) return toResponse(opError(400, "bad_request", "Request body must be valid JSON."));
+  return toResponse(await runAnswer(ctx, key, body));
+});
+
+export const aoLearn = httpAction(async (ctx, request) => {
+  const key = await authenticateBearer(ctx, request.headers.get("Authorization"));
+  if (!key) return AUTH_ERROR();
+  const body = await parseBody(request);
+  if (body === null) return toResponse(opError(400, "bad_request", "Request body must be valid JSON."));
+  return toResponse(await runLearn(ctx, key, body));
+});
+
+export const aoLearningsList = httpAction(async (ctx, request) => {
+  const key = await authenticateBearer(ctx, request.headers.get("Authorization"));
+  if (!key) return AUTH_ERROR();
+  return toResponse(await runLearningsList(ctx, key));
+});
+
+export const aoBalance = httpAction(async (ctx, request) => {
+  const key = await authenticateBearer(ctx, request.headers.get("Authorization"));
+  if (!key) return AUTH_ERROR();
+  return toResponse(await runBalance(ctx, key));
 });

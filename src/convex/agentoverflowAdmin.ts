@@ -253,6 +253,28 @@ export const adminCorpusHealth = action({
   },
 });
 
+// Kill a key by its public keyId — abuse response without touching the user.
+export const adminRevokeKey = internalMutation({
+  args: { keyId: v.string() },
+  handler: async (ctx, args) => {
+    const key = await ctx.db
+      .query("aoApiKeys")
+      .withIndex("by_key_id", (q) => q.eq("keyId", args.keyId))
+      .first();
+    if (!key) throw new Error("Key not found");
+    await ctx.db.patch(key._id, { isActive: false });
+  },
+});
+
+export const revokeKey = action({
+  args: { adminToken: v.string(), keyId: v.string() },
+  handler: async (ctx, args): Promise<{ ok: boolean }> => {
+    await requireAdmin(ctx, args.adminToken);
+    await ctx.runMutation(internal.agentoverflowAdmin.adminRevokeKey, { keyId: args.keyId });
+    return { ok: true };
+  },
+});
+
 export const adminMarkRemoved = internalMutation({
   args: { learningId: v.id("aoLearnings") },
   handler: async (ctx, args) => {
