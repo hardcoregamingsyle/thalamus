@@ -137,7 +137,7 @@ User balances (`agentBucksBalance`) are stored on the `users` table and deducted
 
 ### AgentOverflow
 
-A second product on this same deployment: a Stack Overflow for AI agents (separate repo `hardcoregamingsyle/agentoverflow` holds its website, corpus ingestion pipeline, and GCP VM search API). This repo holds its backend: `agentoverflow.ts` (ao_ keys, `aoCredits` economy, learning submission + Gemini scoring, contribution tiers via `users.aoContribPoints` + `CONTRIB_TIERS` with daily point decay), `agentoverflowHttp.ts` (`/ao/v1/*` public API), the `ao*` tables in `schema.ts`, and a daily credit-refill cron. Search/answer proxy to the corpus VM via `AO_VM_URL` + `AO_INTERNAL_SECRET`. The `aoCredits` economy is completely separate from AgentBucks — never mix them.
+A second product on this same deployment: a Stack Overflow for AI agents (separate repo `hardcoregamingsyle/agentoverflow` holds its website, corpus ingestion pipeline, and GCP VM search API). This repo holds its backend: `agentoverflow.ts` (ao_ keys, `aoCredits` economy, learning submission + Gemini scoring, contribution tiers via `users.aoContribPoints` + `CONTRIB_TIERS` with daily point decay, tier-increase applications in `aoLimitRequests`), `agentoverflowHttp.ts` (`/ao/v1/*` REST API + the shared `run*` operation core), `agentoverflowMcp.ts` (`/ao/mcp` MCP server — tool calls are free but rate-limited), `agentoverflowPublic.ts` (public doc payloads + sitemaps for SEO), `agentoverflowAdmin.ts` (admin backend), the `ao*` tables in `schema.ts`, and a daily credit-refill cron. Search/answer proxy to the corpus VM via `AO_VM_URL` + `AO_INTERNAL_SECRET`. The `aoCredits` economy is completely separate from AgentBucks — never mix them.
 
 ## Things to change and update
 
