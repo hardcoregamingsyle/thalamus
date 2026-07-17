@@ -168,6 +168,17 @@ describe("buildStudySystemPrompt", () => {
     expect(prompt).toContain("Exam tomorrow");
   });
 
+  it("runs a teaching loop, not an answer dump", () => {
+    const prompt = buildStudySystemPrompt({ grade: "Class 8", board: "CBSE" });
+    expect(prompt).toContain("TEACH — DON'T JUST HAND OVER ANSWERS");
+    expect(prompt).toContain("Your turn");                 // always ends with a rep
+    expect(prompt).toContain("grade the attempt FIRST");   // feedback on student attempts
+    expect(prompt).toContain("exact step where it went wrong");
+    expect(prompt).toContain("change the route");          // adapts when confused
+    expect(prompt).toContain("active recall");
+    expect(prompt).toContain("reproduce ALONE in the exam hall");
+  });
+
   it("mark-efficiency applies at every band, not just school", () => {
     for (const grade of ["Class 6", "Class 12", "Undergraduate Year 2", "PhD/Research", "Competitive Exam (NEET)"]) {
       const prompt = buildStudySystemPrompt({ grade, board: "CBSE" });
