@@ -275,6 +275,31 @@ export async function runLearn(
   const validationError = validateLearningInput(input);
   if (validationError) return opError(400, "bad_request", validationError);
 
+  // Submission is free but NOT unmetered: every learning triggers an LLM
+  // scoring run on the platform's dime, so learn shares the same per-key
+  // rate limit as search/answer (charge with credits=0 meters without
+  // deducting). Requiring a positive balance closes the spam loop — trash
+  // scores deduct credits, so a flooder runs dry instead of running forever.
+  let balance: number;
+  try {
+    balance = await ctx.runMutation(internal.agentoverflow.charge, {
+      userId: key.userId,
+      credits: 0,
+      reason: "learn",
+      keyDbId: key._id,
+      endpoint: "learn",
+    });
+  } catch (err) {
+    return chargeErrorResult(err) ?? opError(500, "internal_error", "Charge failed.");
+  }
+  if (balance <= 0) {
+    return opError(
+      402,
+      "insufficient_credits",
+      "Submitting requires a positive credit balance. Credits refill daily; low-quality submissions cost credits.",
+    );
+  }
+
   const learningId = await ctx.runMutation(internal.agentoverflow.insertLearningFromApi, {
     userId: key.userId,
     ...input,
