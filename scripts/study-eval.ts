@@ -1,29 +1,34 @@
-// Study-mode evaluation harness — runs the verified question bank against the
-// LIVE backend and scores every answer as a SHORTCUT, not as an exam.
+// Study-mode TEACHING evaluation — measures whether study mode teaches, not
+// whether it answers. An AI that writes a perfect answer is a solutions
+// manual; a teacher leaves the STUDENT able to solve the next problem alone.
 //
-// The claim being tested is not "the AI knows the answer" — of course it does.
-// The claim is: can a real student on any board, at any level, get MORE MARKS
-// for LESS work by using this? So the judge weights mark yield and effort
-// saved far above raw correctness (see judge()). A technically perfect answer
-// that costs the student more time than it saves fails this eval on purpose.
-//
-// The unit tests (bun test) prove the right shortcut instructions reach the
-// model for every grade/board; THIS proves the deployed system actually
-// delivers the shortcut end to end — real routing, real models, real RAG.
+// Method (per test case):
+//   1. A simulated learner persona (struggling / crammer / average / advanced)
+//      sits a PRE-TEST: a fresh transfer question, answered with only their
+//      baseline knowledge. Graded 0-10 against the rubric.
+//   2. The persona has a real multi-turn tutoring conversation with study
+//      mode (the live backend): asks the bank question, attempts the tutor's
+//      practice tasks, gets confused like a real student.
+//   3. POST-TEST: the same persona answers the SAME transfer question again,
+//      allowed to use only what the tutoring conversation actually taught
+//      them. Graded 0-10.
+//   4. LEARNING GAIN = post − pre. That is the product: marks the student
+//      couldn't earn before the conversation and can earn after it.
+//   5. A separate judge audits the tutor's PEDAGOGY: did it make the student
+//      attempt something, diagnose their exact error, adapt when confused,
+//      check understanding — or did it just dump a beautiful answer?
 //
 // Usage:
-//   bun scripts/study-eval.ts --token <session-token> [--limit 40] [--boards CBSE,ICSE]
+//   bun scripts/study-eval.ts --token <session-token> [--cases 12] [--boards CBSE,ICSE]
 //
-//   --token   a signed-in session token (localStorage "agentai_session_token"
-//             on the website after logging in)
-//   --limit   number of questions to run (default 40, spread across boards)
-//   --boards  comma-separated filter on board names
+//   --token   a signed-in session token (localStorage "agentai_session_token")
+//   --cases   number of tutoring sessions to simulate (default 12)
+//   --boards  comma-separated board filter
+//   --url     override Convex cloud URL (else VITE_CONVEX_URL from .env.local)
 //
-// Environment: VITE_CONVEX_URL from .env.local, or pass --url https://...convex.cloud
-//
-// Output: eval-results/study-eval-<timestamp>.md (scorecard) and .json (raw).
-// Cost note: every question = one study answer + one judge call on your
-// deployment's credits. 40 questions ≈ 80 model calls. Budget accordingly.
+// Output: eval-results/teaching-eval-<timestamp>.md and .json
+// Cost: each case ≈ 9-10 model calls (2-3 tutor turns + simulator + judges).
+// 12 cases ≈ 120 calls on your deployment's credits. Budget accordingly.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
@@ -37,17 +42,50 @@ interface BankQuestion {
   rubric: string[];
 }
 
-interface EvalResult {
+interface Persona {
+  key: string;
+  description: string;
+  baseline: string; // what they already know / how they behave
+}
+
+// The "all kinds of learners" claim, made concrete. Personas differ in prior
+// knowledge, attention, and confidence — the tutor must move ALL of them.
+const PERSONAS: Persona[] = [
+  {
+    key: "struggling",
+    description: "a struggling learner who finds this subject hard",
+    baseline: "You have big gaps in the basics, mix up related concepts, and lose confidence fast. You make a genuine attempt when asked but usually with at least one real mistake. When an explanation uses jargon you say you don't get it.",
+  },
+  {
+    key: "crammer",
+    description: "a last-minute crammer with the exam in two days",
+    baseline: "You know fragments of the topic from class but never revised. You are impatient — you want what scores marks, fast. You attempt practice questions quickly and sloppily.",
+  },
+  {
+    key: "average",
+    description: "an average, reasonably motivated student",
+    baseline: "You know roughly half of this topic with some misconceptions. You cooperate with the tutor, attempt what you're asked, and ask one follow-up when something is unclear.",
+  },
+  {
+    key: "advanced",
+    description: "a quick learner who gets bored by padding",
+    baseline: "You already know the basics well and want the parts that are actually hard. You attempt practice correctly except on the genuinely tricky step.",
+  },
+];
+
+interface CaseResult {
   board: string;
   grade: string;
   subject: string;
+  persona: string;
   question: string;
-  answer: string;
-  score: number;        // 0-10 from the judge
-  rubricHits: number;   // rubric points satisfied
-  rubricTotal: number;
-  judgeNotes: string;
-  latencyMs: number;
+  transferQuestion: string;
+  preScore: number;
+  postScore: number;
+  gain: number;
+  pedagogyScore: number;
+  pedagogyNotes: string;
+  turns: number;
 }
 
 function arg(name: string, fallback?: string): string | undefined {
@@ -70,20 +108,23 @@ function siteUrl(): string {
   return url.replace(".convex.cloud", ".convex.site");
 }
 
-// One /stream-chat call, returning the full answer text from the SSE "done" event.
-async function askStudy(base: string, token: string, question: string, history: Array<{ role: string; content: string }> = []): Promise<{ text: string; latencyMs: number }> {
-  const started = Date.now();
+const stripHtml = (s: string) => s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+// One /stream-chat call; returns the full text from the SSE "done" event.
+async function chatCall(
+  base: string,
+  token: string,
+  mode: "study" | "chat",
+  systemPrompt: string,
+  content: string,
+  history: Array<{ role: string; content: string }> = [],
+): Promise<string> {
   const res = await fetch(`${base}/stream-chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      content: question,
-      mode: "study",
-      history,
-      systemPrompt: "",      // ignored — the server builds the study prompt
-      token,
-      conversationId: null,  // eval runs must not pollute saved conversations
-      preferClaude: true,
+      content, mode, history, systemPrompt,
+      token, conversationId: null, preferClaude: true,
     }),
   });
   if (!res.ok) throw new Error(`stream-chat ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -92,104 +133,118 @@ async function askStudy(base: string, token: string, question: string, history: 
     if (!line.startsWith("data:")) continue;
     try {
       const evt = JSON.parse(line.slice(5).trim());
-      if (evt.type === "done" && evt.fullText) return { text: evt.fullText, latencyMs: Date.now() - started };
+      if (evt.type === "done" && evt.fullText) return evt.fullText as string;
     } catch { /* keep scanning */ }
   }
   throw new Error("No done event in stream");
 }
 
-// Judge an answer against its rubric using the same backend (chat mode).
-async function judge(base: string, token: string, q: BankQuestion, answer: string): Promise<{ score: number; rubricHits: number; notes: string }> {
-  const judgePrompt = `You are auditing an AI study assistant whose promise is: MORE MARKS FOR LESS STUDY TIME. A ${q.grade} student on the ${q.board} board asked:\n"${q.question}"\n\nThe assistant answered (HTML stripped):\n"""\n${answer.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 6000)}\n"""\n\nFactual baseline — a correct answer must include:\n${q.rubric.map((r, i) => `${i + 1}. ${r}`).join("\n")}\n\nScore the answer as a MARK-EFFICIENCY tool, not an essay. The 0-10 score weighs:\n- Mark yield (40%): does it put the exact mark-earning points/keywords up front and say what scores${q.marks ? ` — structured for a ${q.marks}-mark answer` : ""}? Does it match ${q.board} conventions?\n- Effort saved (30%): revision box / answer skeleton / mnemonic / what-to-skip guidance a real student can reuse — or is it a wall of text that costs more time than it saves?\n- Accessibility (20%): can a ${q.grade} student follow it on first read?\n- Factual correctness (10%): rubric coverage, no errors. (An answer that is correct but inefficient is a 5, not an 8.)\n\nRespond with ONLY valid JSON, no markdown:\n{"rubricHits": <rubric points satisfied>, "score": <0-10 mark-efficiency score>, "notes": "<one sentence: the biggest thing costing the student marks or time, or 'solid' if none>"}`;
-
-  const res = await fetch(`${base}/stream-chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      content: judgePrompt,
-      mode: "chat",
-      history: [],
-      systemPrompt: "You are a precise JSON-only grader. Output only the requested JSON object.",
-      token,
-      conversationId: null,
-      preferClaude: true,
-    }),
-  });
-  if (!res.ok) throw new Error(`judge ${res.status}`);
-  const raw = await res.text();
-  for (const line of raw.split("\n")) {
-    if (!line.startsWith("data:")) continue;
-    try {
-      const evt = JSON.parse(line.slice(5).trim());
-      if (evt.type === "done" && evt.fullText) {
-        const m = (evt.fullText as string).replace(/<[^>]+>/g, " ").match(/\{[\s\S]*\}/);
-        if (m) {
-          const parsed = JSON.parse(m[0]);
-          return {
-            score: Math.max(0, Math.min(10, Number(parsed.score) || 0)),
-            rubricHits: Math.max(0, Number(parsedRubric(parsed))),
-            notes: String(parsed.notes ?? "").slice(0, 300),
-          };
-        }
-      }
-    } catch { /* keep scanning */ }
-  }
-  throw new Error("Judge returned no parseable JSON");
-}
-
-function parsedRubric(p: { rubricHits?: unknown }): number {
-  return Number(p.rubricHits) || 0;
+// Extract the first JSON object from a model reply.
+function parseJson<T>(text: string): T {
+  const m = stripHtml(text).match(/\{[\s\S]*\}/);
+  if (!m) throw new Error("No JSON in reply");
+  return JSON.parse(m[0]) as T;
 }
 
 async function main() {
   const token = arg("token");
   if (!token) {
-    console.error("Usage: bun scripts/study-eval.ts --token <session-token> [--limit 40] [--boards CBSE,ICSE]");
+    console.error("Usage: bun scripts/study-eval.ts --token <session-token> [--cases 12] [--boards CBSE,ICSE]");
     process.exit(1);
   }
   const base = siteUrl();
-  const limit = parseInt(arg("limit", "40")!, 10);
-  const boardFilter = arg("boards")?.split(",").map(b => b.trim().toLowerCase());
+  const caseCount = parseInt(arg("cases", "12")!, 10);
+  const boardFilter = arg("boards")?.split(",").map((b) => b.trim().toLowerCase());
 
-  const bankPath = join(process.cwd(), "tests", "fixtures", "study-question-bank.json");
-  let bank = JSON.parse(readFileSync(bankPath, "utf8")) as BankQuestion[];
-  if (boardFilter) bank = bank.filter(q => boardFilter.some(f => q.board.toLowerCase().includes(f)));
+  let bank = JSON.parse(
+    readFileSync(join(process.cwd(), "tests", "fixtures", "study-question-bank.json"), "utf8"),
+  ) as BankQuestion[];
+  if (boardFilter) bank = bank.filter((q) => boardFilter.some((f) => q.board.toLowerCase().includes(f)));
 
-  // Spread the limit across boards round-robin so a small run still touches many boards.
-  const byBoard = new Map<string, BankQuestion[]>();
-  for (const q of bank) {
-    if (!byBoard.has(q.board)) byBoard.set(q.board, []);
-    byBoard.get(q.board)!.push(q);
-  }
-  const selected: BankQuestion[] = [];
-  let round = 0;
-  while (selected.length < Math.min(limit, bank.length)) {
-    let added = false;
-    for (const qs of byBoard.values()) {
-      if (qs[round]) { selected.push(qs[round]); added = true; }
-      if (selected.length >= limit) break;
-    }
-    if (!added) break;
-    round++;
+  // Spread cases across boards, cycling personas so every learner type is hit.
+  const byBoard = [...new Map(bank.map((q) => [q.board, q])).values()];
+  const cases: Array<{ q: BankQuestion; persona: Persona }> = [];
+  for (let i = 0; cases.length < Math.min(caseCount, byBoard.length * PERSONAS.length); i++) {
+    const q = byBoard[i % byBoard.length];
+    cases.push({ q, persona: PERSONAS[i % PERSONAS.length] });
+    if (i + 1 >= byBoard.length * PERSONAS.length) break;
   }
 
-  console.log(`Running ${selected.length} questions against ${base} ...`);
-  const results: EvalResult[] = [];
+  console.log(`Simulating ${cases.length} tutoring sessions against ${base}\n`);
+  const results: CaseResult[] = [];
   let failures = 0;
 
-  for (let i = 0; i < selected.length; i++) {
-    const q = selected[i];
-    process.stdout.write(`[${i + 1}/${selected.length}] ${q.board} · ${q.grade} · ${q.subject} ... `);
+  for (let i = 0; i < cases.length; i++) {
+    const { q, persona } = cases[i];
+    const studentIdentity = `You are ${persona.description}: a ${q.grade} student on the ${q.board} board. ${persona.baseline} Stay completely in character. Write like a real student types: short, informal, no HTML.`;
+    process.stdout.write(`[${i + 1}/${cases.length}] ${q.board} · ${q.grade} · ${persona.key} ... `);
+
     try {
-      const { text, latencyMs } = await askStudy(base, token, q.question);
-      const verdict = await judge(base, token, q, text);
+      // 0. A transfer question: same skill, fresh surface — the exam-hall test.
+      const transfer = parseJson<{ question: string }>(await chatCall(
+        base, token, "chat",
+        "You write exam questions. Output ONLY JSON.",
+        `Original question a student is being tutored on:\n"${q.question}"\n\nSkills a correct answer needs:\n${q.rubric.join("\n")}\n\nWrite ONE new question that tests the SAME skill with different surface details (different numbers, different example, same concept), solvable by a ${q.grade} student on ${q.board}. Respond with only: {"question": "..."}`,
+      ));
+
+      // 1. PRE-TEST: baseline knowledge only.
+      const preAnswer = await chatCall(
+        base, token, "chat",
+        `${studentIdentity} Answer the exam question using ONLY what a student like you would already know BEFORE any tutoring. If you genuinely wouldn't know, attempt what you can or say you don't know — do not secretly use expert knowledge.`,
+        transfer.question,
+      );
+
+      // 2. TUTORING: multi-turn conversation with real study mode.
+      const convo: Array<{ role: string; content: string }> = [];
+      let studentMsg = q.question;
+      let turns = 0;
+      for (let t = 0; t < 3; t++) {
+        const tutorReply = await chatCall(base, token, "study", "", studentMsg, convo);
+        convo.push({ role: "user", content: studentMsg });
+        convo.push({ role: "assistant", content: tutorReply.slice(0, 4000) });
+        turns++;
+        if (t === 2) break;
+        // Simulated student reacts in persona: attempts practice, gets confused, etc.
+        studentMsg = stripHtml(await chatCall(
+          base, token, "chat",
+          `${studentIdentity} The tutor just said this — reply as yourself: if it asked you to try something, ATTEMPT it honestly (with the mistakes your persona would make); if you're confused, say what confuses you; if it all made sense, say so and ask the one thing you're still unsure about. 1-4 sentences.`,
+          `Tutor said:\n${stripHtml(convo[convo.length - 1].content).slice(0, 3000)}`,
+        )).slice(0, 800);
+      }
+
+      // 3. POST-TEST: same transfer question, knowledge = conversation only.
+      const convoText = convo.map((m) => `${m.role === "user" ? "STUDENT" : "TUTOR"}: ${stripHtml(m.content).slice(0, 1500)}`).join("\n\n");
+      const postAnswer = await chatCall(
+        base, token, "chat",
+        `${studentIdentity} You just finished the tutoring session below. Answer the exam question using ONLY your baseline knowledge PLUS what this conversation actually taught you. If the tutoring didn't cover something, you still don't know it.\n\n--- TUTORING SESSION ---\n${convoText.slice(0, 9000)}\n--- END SESSION ---`,
+        transfer.question,
+      );
+
+      // 4. Grade both attempts against the rubric.
+      const gradeOne = async (attempt: string) => parseJson<{ score: number }>(await chatCall(
+        base, token, "chat",
+        "You are a strict examiner. Output ONLY JSON.",
+        `Question: "${transfer.question}"\nMarking rubric:\n${q.rubric.join("\n")}\n\nStudent's answer:\n"""${stripHtml(attempt).slice(0, 3000)}"""\n\nScore 0-10 for how many marks this would earn a ${q.grade} student on ${q.board}. Respond with only: {"score": <0-10>}`,
+      )).then((r) => Math.max(0, Math.min(10, Number(r.score) || 0)));
+      const preScore = await gradeOne(preAnswer);
+      const postScore = await gradeOne(postAnswer);
+
+      // 5. Pedagogy audit of the tutor's side of the conversation.
+      const ped = parseJson<{ score: number; notes: string }>(await chatCall(
+        base, token, "chat",
+        "You audit tutoring quality. Output ONLY JSON.",
+        `Below is a tutoring session with ${persona.description} (${q.grade}, ${q.board}). Audit the TUTOR only. Score 0-10 on whether it TAUGHT rather than answer-dumped:\n- Did it get the student to ATTEMPT something (practice question, "your turn")? (0-3)\n- When the student attempted or was confused, did it diagnose the exact gap and adapt, instead of repeating itself? (0-3)\n- Did it check understanding and push active recall? (0-2)\n- Was it pitched so THIS persona could follow and act on it without wasted reading? (0-2)\n\n${convoText.slice(0, 10000)}\n\nRespond with only: {"score": <0-10>, "notes": "<one sentence: the biggest teaching failure, or 'taught well' if none>"}`,
+      ));
+
       results.push({
-        board: q.board, grade: q.grade, subject: q.subject, question: q.question,
-        answer: text, score: verdict.score,
-        rubricHits: verdict.rubricHits, rubricTotal: q.rubric.length,
-        judgeNotes: verdict.notes, latencyMs,
+        board: q.board, grade: q.grade, subject: q.subject, persona: persona.key,
+        question: q.question, transferQuestion: transfer.question,
+        preScore, postScore, gain: postScore - preScore,
+        pedagogyScore: Math.max(0, Math.min(10, Number(ped.score) || 0)),
+        pedagogyNotes: String(ped.notes ?? "").slice(0, 300),
+        turns,
       });
-      console.log(`score ${verdict.score}/10 (${verdict.rubricHits}/${q.rubric.length} rubric) ${latencyMs}ms`);
+      console.log(`pre ${preScore} → post ${postScore} (gain +${postScore - preScore}) · pedagogy ${ped.score}/10`);
     } catch (err) {
       failures++;
       console.log(`FAILED: ${err instanceof Error ? err.message : err}`);
@@ -201,50 +256,54 @@ async function main() {
   if (!existsSync(outDir)) mkdirSync(outDir);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
-  const avg = results.length ? results.reduce((s, r) => s + r.score, 0) / results.length : 0;
-  const rubricPct = results.length
-    ? (results.reduce((s, r) => s + r.rubricHits, 0) / results.reduce((s, r) => s + r.rubricTotal, 0)) * 100
-    : 0;
-  const weak = results.filter(r => r.score < 6);
+  const n = results.length;
+  const avg = (f: (r: CaseResult) => number) => (n ? results.reduce((s, r) => s + f(r), 0) / n : 0);
+  const avgPre = avg((r) => r.preScore);
+  const avgPost = avg((r) => r.postScore);
+  const avgGain = avg((r) => r.gain);
+  const avgPed = avg((r) => r.pedagogyScore);
+  const noGain = results.filter((r) => r.gain <= 0);
 
-  const perBoard = new Map<string, { n: number; total: number }>();
-  for (const r of results) {
-    const e = perBoard.get(r.board) ?? { n: 0, total: 0 };
-    e.n++; e.total += r.score;
-    perBoard.set(r.board, e);
-  }
+  const perPersona = PERSONAS.map((p) => {
+    const rs = results.filter((r) => r.persona === p.key);
+    const m = rs.length ? rs.reduce((s, r) => s + r.gain, 0) / rs.length : 0;
+    return { persona: p.key, n: rs.length, gain: m };
+  });
 
   const md = [
-    `# Study Mode Evaluation — ${stamp}`,
+    `# Study Mode Teaching Evaluation — ${stamp}`,
     ``,
-    `Endpoint: ${base}`,
-    `Questions run: ${results.length} (${failures} failed to complete)`,
+    `Endpoint: ${base} · Sessions: ${n} (${failures} failed) · ${PERSONAS.length} learner personas`,
+    ``,
+    `## The claim under test`,
+    `A student who talks to study mode can earn marks they could NOT earn before — across all kinds of learners.`,
     ``,
     `## Headline numbers`,
-    `- **Average mark-efficiency score: ${avg.toFixed(1)} / 10** (mark yield 40% · effort saved 30% · accessibility 20% · correctness 10%)`,
-    `- **Factual rubric coverage: ${rubricPct.toFixed(0)}%**`,
-    `- Answers scoring < 6/10: ${weak.length}`,
-    `- Median latency: ${results.length ? [...results].sort((a, b) => a.latencyMs - b.latencyMs)[Math.floor(results.length / 2)].latencyMs : 0}ms`,
+    `- **Average learning gain: +${avgGain.toFixed(1)} marks (of 10)** — pre ${avgPre.toFixed(1)} → post ${avgPost.toFixed(1)}`,
+    `- **Pedagogy score: ${avgPed.toFixed(1)} / 10** (did it teach, or just answer?)`,
+    `- Sessions with zero/negative gain: ${noGain.length} of ${n}`,
     ``,
-    `## Per-board scores`,
-    `| Board | Questions | Avg score |`,
+    `## Gain by learner type`,
+    `| Persona | Sessions | Avg gain |`,
     `|---|---|---|`,
-    ...[...perBoard.entries()].sort((a, b) => a[1].total / a[1].n - b[1].total / b[1].n)
-      .map(([b, e]) => `| ${b} | ${e.n} | ${(e.total / e.n).toFixed(1)} |`),
+    ...perPersona.map((p) => `| ${p.persona} | ${p.n} | +${p.gain.toFixed(1)} |`),
     ``,
-    `## Weak answers (fix before the pitch)`,
-    ...(weak.length === 0 ? ["None. "] : weak.map(r =>
-      `- **${r.board} · ${r.grade} · ${r.subject}** (${r.score}/10, ${r.rubricHits}/${r.rubricTotal} rubric): "${r.question.slice(0, 100)}" — ${r.judgeNotes}`)),
+    `## Sessions that failed to teach (fix before the pitch)`,
+    ...(noGain.length === 0
+      ? ["None — every simulated learner left knowing more than they arrived with."]
+      : noGain.map((r) => `- **${r.board} · ${r.grade} · ${r.persona}** (pre ${r.preScore} → post ${r.postScore}, pedagogy ${r.pedagogyScore}/10): "${r.question.slice(0, 90)}" — ${r.pedagogyNotes}`)),
+    ``,
+    `Caveat: learners are simulated. This measures teaching behaviour end-to-end on the real deployment, but the final proof is a real classroom — run this to catch failures BEFORE they happen in front of one.`,
     ``,
   ].join("\n");
 
-  writeFileSync(join(outDir, `study-eval-${stamp}.md`), md);
-  writeFileSync(join(outDir, `study-eval-${stamp}.json`), JSON.stringify(results, null, 2));
-  console.log(`\n${md.split("## Per-board")[0]}`);
-  console.log(`Full report: eval-results/study-eval-${stamp}.md`);
+  writeFileSync(join(outDir, `teaching-eval-${stamp}.md`), md);
+  writeFileSync(join(outDir, `teaching-eval-${stamp}.json`), JSON.stringify(results, null, 2));
+  console.log(`\n${md.split("## Gain by learner type")[0]}`);
+  console.log(`Full report: eval-results/teaching-eval-${stamp}.md`);
 
-  // Exit nonzero if the run looks pitch-unsafe.
-  if (results.length === 0 || avg < 6) process.exit(1);
+  // Pitch-unsafe: no sessions, weak gains, or answer-dumping tutor.
+  if (n === 0 || avgGain < 2 || avgPed < 6) process.exit(1);
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });
