@@ -321,6 +321,7 @@ export const updateBranchStatus = internalMutation({
     currentTaskIndex: v.optional(v.number()),
     currentTaskDifficulty: v.optional(v.string()),
     criticRetryCount: v.optional(v.number()),
+    mcpRoundCount: v.optional(v.number()),
     stopRequested: v.optional(v.boolean()),
     lastSandboxSyncAt: v.optional(v.number()),
   },
@@ -344,6 +345,7 @@ export const updateBranchStatus = internalMutation({
     if (args.currentTaskIndex !== undefined) updates.currentTaskIndex = args.currentTaskIndex;
     if (args.currentTaskDifficulty !== undefined) updates.currentTaskDifficulty = args.currentTaskDifficulty;
     if (args.criticRetryCount !== undefined) updates.criticRetryCount = args.criticRetryCount;
+    if (args.mcpRoundCount !== undefined) updates.mcpRoundCount = args.mcpRoundCount;
     if (args.stopRequested !== undefined) updates.stopRequested = args.stopRequested;
     if (args.lastSandboxSyncAt !== undefined) updates.lastSandboxSyncAt = args.lastSandboxSyncAt;
 

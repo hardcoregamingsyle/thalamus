@@ -50,6 +50,8 @@ import type * as githubWebhooks from "../githubWebhooks.js";
 import type * as gravityAds from "../gravityAds.js";
 import type * as hfRagSpace from "../hfRagSpace.js";
 import type * as http from "../http.js";
+import type * as mcpClient from "../mcpClient.js";
+import type * as mcpServers from "../mcpServers.js";
 import type * as obscureRepoGenerator from "../obscureRepoGenerator.js";
 import type * as payments from "../payments.js";
 import type * as qemuSandbox from "../qemuSandbox.js";
@@ -112,6 +114,8 @@ declare const fullApi: ApiFromModules<{
   gravityAds: typeof gravityAds;
   hfRagSpace: typeof hfRagSpace;
   http: typeof http;
+  mcpClient: typeof mcpClient;
+  mcpServers: typeof mcpServers;
   obscureRepoGenerator: typeof obscureRepoGenerator;
   payments: typeof payments;
   qemuSandbox: typeof qemuSandbox;

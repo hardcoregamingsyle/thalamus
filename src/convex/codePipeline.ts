@@ -33,6 +33,12 @@ import {
   type ModelTier,
   type RunMode,
 } from "./agentCore";
+import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./mcpClient";
+
+// MCP loop guard: how many times one agent may be re-run with tool results
+// before the pipeline advances anyway (prevents infinite call loops).
+const MAX_MCP_ROUNDS = 2;
+const MAX_MCP_CALLS_PER_MESSAGE = 5;
 
 // All known agents in their natural order
 const ALL_PLANNING_AGENTS = ["Researcher", "Analyser", "Planner"] as const;
@@ -109,6 +115,32 @@ function parseCommands(content: string): string[] {
     commands.push(match[1]);
   }
   return commands;
+}
+
+// Parse MCP tool calls from agent output. Block form (mirrors CREATEFILE):
+//   <<MCP-CALL server="name" tool="toolName">>
+//   {"json": "arguments"}
+//   <<END.MCP-CALL>>
+const MCP_CALL_REGEX = /<<MCP-CALL\s+server="([^"]+)"\s+tool="([^"]+)">>\s*([\s\S]*?)<<END\.MCP-CALL>>/g;
+
+function parseMcpCalls(content: string): Array<{ server: string; tool: string; args: Record<string, unknown> }> {
+  const calls: Array<{ server: string; tool: string; args: Record<string, unknown> }> = [];
+  let match;
+  const regex = new RegExp(MCP_CALL_REGEX.source, "g");
+  while ((match = regex.exec(content)) !== null) {
+    let args: Record<string, unknown> = {};
+    const body = match[3].trim();
+    if (body) {
+      try { args = JSON.parse(body) as Record<string, unknown>; }
+      catch { args = { _raw: body.slice(0, 2000) }; }
+    }
+    calls.push({ server: match[1], tool: match[2], args });
+  }
+  return calls;
+}
+
+function stripMcpBlocks(content: string): string {
+  return content.replace(new RegExp(MCP_CALL_REGEX.source, "g"), "").trim();
 }
 
 // Parse API key requests from agent output
@@ -295,6 +327,37 @@ export const runPipelineAction = internalAction({
     const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: branch.projectId });
     const ownerUserId = project?.userId ?? null;
 
+    // The owner's enabled MCP servers — agents may call their tools.
+    const mcpServers = ownerUserId
+      ? await ctx.runQuery(internal.mcpServers.getEnabledServersInternal, { userId: ownerUserId })
+      : [];
+
+    // Compact tool inventory for the agent prompt (only when servers exist).
+    let mcpToolSection = "";
+    if (mcpServers.length > 0) {
+      const lines: string[] = [];
+      for (const s of mcpServers) {
+        let tools: Array<{ name: string; description?: string }> = [];
+        try {
+          const parsed = JSON.parse(s.toolsJson ?? "[]");
+          if (Array.isArray(parsed)) tools = parsed;
+        } catch { /* stale/error cache — list the server without tools */ }
+        const toolList = tools.slice(0, 10)
+          .map(t => t.description ? `${t.name} (${t.description.slice(0, 80)})` : t.name)
+          .join(", ");
+        lines.push(`- server "${s.name}": ${toolList || "tools unknown — call at your own risk"}`);
+      }
+      mcpToolSection = [
+        `## MCP Tools`,
+        `You can call external tools on the user's connected MCP servers. Emit:`,
+        `<<MCP-CALL server="serverName" tool="toolName">>`,
+        `{"argName": "value"}`,
+        `<<END.MCP-CALL>>`,
+        `Results will be returned to you before you continue. Available servers:`,
+        ...lines,
+      ].join("\n");
+    }
+
     // Charge the owner's AgentBucks + record platform spend for one model call.
     // Centralized so no call site runs for free — the old pipeline never billed
     // at all (a full billing bypass and a blind spot for the budget guard).
@@ -458,6 +521,7 @@ export const runPipelineAction = internalAction({
             executionPhase: "executing",
             round,
             totalMessages,
+            mcpRoundCount: 0,
           });
           await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
           return;
@@ -547,6 +611,7 @@ export const runPipelineAction = internalAction({
               commandContext,
               `## Pipeline Context\n${context}`,
               `## Tool Usage\nRun shell commands: <<RUN-CMD="command">>\nRequest API keys: <<REQUEST-API-KEY name="VAR" description="..." howToGet="...">>`,
+              mcpToolSection,
             ].filter(Boolean).join("\n\n");
           }
         }
@@ -629,8 +694,65 @@ export const runPipelineAction = internalAction({
         return;
       }
 
+      // ── MCP tool calls ──────────────────────────────────────────────────
+      // Execute inline (plain HTTPS — no sandbox needed), post the results,
+      // and re-run the SAME agent so it can use them. Bounded by
+      // MAX_MCP_ROUNDS; past the cap the calls are stripped and the pipeline
+      // advances normally (results from earlier rounds stay in context).
+      const mcpCalls = parseMcpCalls(agentOutput);
+      if (mcpCalls.length > 0 && mcpServers.length > 0) {
+        const mcpRound = branch.mcpRoundCount ?? 0;
+        if (mcpRound < MAX_MCP_ROUNDS) {
+          // Save the partial output as-is; the re-run re-emits file ops.
+          totalMessages++;
+          await ctx.runMutation(internal.codeBranches.saveMessage, {
+            branchId, agent: agentName, content: agentOutput,
+            round, messageIndex: totalMessages,
+          });
+
+          const resultBlocks: string[] = [];
+          for (const call of mcpCalls.slice(0, MAX_MCP_CALLS_PER_MESSAGE)) {
+            const server = mcpServers.find((s: Doc<"mcpServers">) => s.name === call.server);
+            if (!server) {
+              resultBlocks.push(`### ${call.server}/${call.tool}\n[error] No connected MCP server named "${call.server}"`);
+              continue;
+            }
+            let outcome;
+            try {
+              const auth = await decryptAuthHeader(server.authHeader);
+              outcome = await mcpCallTool(server.url, auth, call.tool, call.args);
+            } catch (err) {
+              outcome = { ok: false, text: err instanceof Error ? err.message : String(err) };
+            }
+            // Fenced + sentinel-neutralized, same as shell command output.
+            const safe = outcome.text.slice(0, 4000).split("<<").join("‹‹").split(">>").join("››");
+            resultBlocks.push(`### ${call.server}/${call.tool}\n[${outcome.ok ? "ok" : "error"}]\n\`\`\`\n${safe}\n\`\`\``);
+          }
+          if (mcpCalls.length > MAX_MCP_CALLS_PER_MESSAGE) {
+            resultBlocks.push(`(${mcpCalls.length - MAX_MCP_CALLS_PER_MESSAGE} additional calls skipped — max ${MAX_MCP_CALLS_PER_MESSAGE} per message)`);
+          }
+
+          totalMessages++;
+          await ctx.runMutation(internal.codeBranches.saveMessage, {
+            branchId, agent: "MCP",
+            content: `## MCP Tool Results\n${resultBlocks.join("\n\n")}`,
+            round, messageIndex: totalMessages,
+          });
+
+          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+            branchId, status: "idle", currentAgent: agentName,
+            totalMessages, mcpRoundCount: mcpRound + 1,
+          });
+          await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+          return;
+        }
+      }
+
       // Parse file operations
       const parsed = parseAgentOutput(agentOutput);
+      // MCP blocks aren't known to parseAgentOutput — strip them ourselves so
+      // ignored/over-cap calls don't litter the saved message.
+      parsed.cleanContent = stripMcpBlocks(parsed.cleanContent);
       for (const op of parsed.fileOps) {
         if (op.type === "create" || op.type === "edit") {
           await ctx.runMutation(internal.codeBranches.upsertFile, {
@@ -680,6 +802,7 @@ export const runPipelineAction = internalAction({
             round,
             totalMessages,
             criticRetryCount: retryCount + 1,
+            mcpRoundCount: 0,
           });
           // Append a system prompt to context so Coder knows exactly what failed
           await ctx.runMutation(internal.codeBranches.saveMessage, {
@@ -724,6 +847,7 @@ export const runPipelineAction = internalAction({
             executionPhase: "executing",
             round,
             totalMessages,
+            mcpRoundCount: 0,
           });
 
           await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, {
@@ -761,6 +885,7 @@ export const runPipelineAction = internalAction({
               totalMessages,
               currentTaskIndex: nextTaskIndex,
               criticRetryCount: 0, // fresh task — reset the Critic retry budget
+              mcpRoundCount: 0,
             });
 
             await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, {
@@ -795,6 +920,7 @@ export const runPipelineAction = internalAction({
           executionPhase,
           round,
           totalMessages,
+          mcpRoundCount: 0,
         });
 
         await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, {
@@ -832,7 +958,7 @@ export const startPipeline = action({
     // Fresh run: clear any leftover Stop flag and reset the per-task Critic
     // retry budget so a previously-exhausted branch starts clean.
     await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-      branchId: args.branchId, stopRequested: false, criticRetryCount: 0,
+      branchId: args.branchId, stopRequested: false, criticRetryCount: 0, mcpRoundCount: 0,
     });
 
     // Save user message if provided
@@ -878,6 +1004,30 @@ export const stopPipeline = action({
       branchId: args.branchId,
       agent: "System",
       content: "⏹️ Pipeline stopped by user",
+    });
+  },
+});
+// ── MCP tool-cache refresh ───────────────────────────────────────────────────
+// Lives here (not in mcpClient.ts) on purpose: the api type of this codebase
+// sits at TypeScript's instantiation-depth cliff, and registering an action in
+// a brand-new module trips TS2589 on everything in it. mcpServers.ts schedules
+// this by string reference ("codePipeline:refreshServerToolsInternal").
+export const refreshServerToolsInternal = internalAction({
+  args: { serverId: v.id("mcpServers") },
+  handler: async (ctx, args): Promise<void> => {
+    const server = await ctx.runQuery(internal.mcpServers.getServerInternal, { serverId: args.serverId });
+    if (!server) return;
+    let toolsJson: string;
+    try {
+      const auth = await decryptAuthHeader(server.authHeader);
+      const tools = await mcpListTools(server.url, auth);
+      toolsJson = JSON.stringify(tools);
+    } catch (err) {
+      toolsJson = JSON.stringify({ error: err instanceof Error ? err.message.slice(0, 300) : String(err) });
+    }
+    await ctx.runMutation(internal.mcpServers.saveServerTools, {
+      serverId: args.serverId,
+      toolsJson,
     });
   },
 });
