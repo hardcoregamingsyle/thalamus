@@ -5,6 +5,7 @@ import { internal, api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
 import { callModel, calcAgentBucksForTier } from "./agentCore";
+import { buildStudySystemPrompt } from "./studyPrompt";
 import {
   aoOptions,
   aoSearch,
@@ -283,10 +284,51 @@ http.route({
       return new Response("Service temporarily unavailable", { status: 503, headers: corsHeaders() });
     }
 
+    // Study mode: the SERVER builds the system prompt — grade/board/language
+    // from the user record plus RAG grounding from the student's own uploaded
+    // material. This upgrades every client at once (web, desktop, mobile) and
+    // stops the prompt depending on whatever the client happened to send.
+    let effectiveSystemPrompt = systemPrompt;
+    if (mode === "study") {
+      try {
+        const [userRecord, adminMaterials, resources] = await Promise.all([
+          ctx.runQuery(internal.customAuthHelpers.getUserByTokenInternal, { token: token! }) as Promise<{ studyGrade?: string; studyBoard?: string; studyLanguage?: string } | null>,
+          ctx.runQuery(internal.admin.getAdminStudyMaterials, {}) as Promise<Array<{ title: string; content: string }>>,
+          ctx.runQuery(internal.studyHelpers.getResourcesForUser, { userId: authedUserId }) as Promise<Array<{ title: string }>>,
+        ]);
+
+        // Vector + graph grounding over the student's uploads. Non-fatal: a
+        // slow or failed lookup must never block the answer itself.
+        let ragContext = "";
+        let graphContext = "";
+        try {
+          const studyCtx = await ctx.runAction(internal.rag.getStudyContextInternal, {
+            userId: authedUserId,
+            query: content,
+          }) as { ragContext: string; graphContext: string; hasContext: boolean };
+          ragContext = studyCtx.ragContext;
+          graphContext = studyCtx.graphContext;
+        } catch { /* answer without grounding */ }
+
+        effectiveSystemPrompt = buildStudySystemPrompt({
+          grade: userRecord?.studyGrade,
+          board: userRecord?.studyBoard,
+          language: userRecord?.studyLanguage,
+          ragContext,
+          graphContext,
+          adminContext: adminMaterials.slice(0, 2).map((m) => `[${m.title}]: ${m.content.slice(0, 800)}`).join("\n"),
+          resourceTitles: resources.map((r) => r.title),
+        });
+      } catch (err) {
+        // Profile lookup failed — fall back to the client-sent prompt.
+        console.error("Study prompt build failed:", err instanceof Error ? err.message : String(err));
+      }
+    }
+
     const contextHeader = userContext
       ? `\n\nCurrent date/time: ${userContext.datetime} (${userContext.timezone})\n`
       : "";
-    const fullSystem = systemPrompt + contextHeader;
+    const fullSystem = effectiveSystemPrompt + contextHeader;
 
     const messages: Array<{ role: "user" | "assistant"; content: string }> = [
       ...history.map(m => ({ role: m.role, content: m.content.slice(0, 2000) })),
