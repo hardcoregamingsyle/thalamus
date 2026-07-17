@@ -69,6 +69,11 @@ const schema = defineSchema(
       // Lifetime contribution points (low=1, medium=2, gold=5 per accepted
       // learning). Sets the daily refill tier — see CONTRIB_TIERS.
       aoContribPoints: v.optional(v.number()),
+      // Admin-granted limit overrides (approved tier-increase applications).
+      // Refill wins over the contribution ladder when higher; rate limit
+      // replaces the default 30/min.
+      aoCustomRefill: v.optional(v.number()),
+      aoCustomRateLimit: v.optional(v.number()),
     }).index("email", ["email"])
       .index("by_referral_code", ["referralCode"]),
 
@@ -787,6 +792,22 @@ const schema = defineSchema(
       credits: v.number(),
       createdAt: v.number(),
     }).index("by_key_and_time", ["keyId", "createdAt"]),
+
+    // Tier-increase applications: users pitch their use case, admin grants
+    // custom refill/rate-limit numbers or rejects with a note.
+    aoLimitRequests: defineTable({
+      userId: v.id("users"),
+      useCase: v.string(),
+      expectedDaily: v.string(),
+      status: v.union(v.literal("pending"), v.literal("approved"), v.literal("rejected")),
+      adminNote: v.optional(v.string()),
+      grantedRefill: v.optional(v.number()),
+      grantedRateLimit: v.optional(v.number()),
+      createdAt: v.number(),
+      resolvedAt: v.optional(v.number()),
+    })
+      .index("by_user", ["userId"])
+      .index("by_status", ["status"]),
 
     // AgentOverflow DAU — same shape as dailyActiveUsers, separate product.
     // source: how the user first showed up that day ("site" | "api").
