@@ -18,6 +18,8 @@ namespace ThalamusApp.Modes
         private readonly ConvexClient _convex = new();
         private StreamingClient? _streaming;
         private readonly List<(string role, string text)> _history = new();
+        private ConversationStore? _store;
+        private bool _historyLoaded;
         private CancellationTokenSource? _cts;
         private bool _isStreaming;
         private StackPanel? _liveContent;      // assistant bubble content host (HTML rendered on "done")
@@ -29,13 +31,50 @@ namespace ThalamusApp.Modes
         {
             InitializeComponent();
             _streaming = new StreamingClient(_convex);
+            _store = new ConversationStore(_convex, "chat");
         }
 
         public void SetToken(string token)
         {
             _token = token;
             _adRequested = false;   // sign-in/out is the session boundary — allow a fresh ad
+            _store!.Reset();
+            _historyLoaded = false;
+            if (string.IsNullOrEmpty(token))
+            {
+                ChatCreditsLabel.Text = "Signed out";
+                return;
+            }
             ChatCreditsLabel.Text = "Signed in";
+            _ = LoadHistoryAsync(token);
+        }
+
+        // Pull the newest cloud conversation for this account and replay it into
+        // the panel, so chats survive app restarts and follow the user's account.
+        private async Task LoadHistoryAsync(string token)
+        {
+            var loaded = await _store!.LoadLatestAsync(token);
+            if (_historyLoaded || loaded.Count == 0) return;
+            _historyLoaded = true;
+
+            Dispatcher.Invoke(() =>
+            {
+                EmptyState.Visibility = Visibility.Collapsed;
+                foreach (var (role, content) in loaded)
+                {
+                    if (role == "user")
+                    {
+                        AppendUserBubble(content);
+                    }
+                    else
+                    {
+                        AppendAiBubbleStart(out var host, out _);
+                        HtmlToWpf.Populate(host, content);
+                    }
+                    _history.Add((role, content));
+                }
+                ScrollToBottom();
+            });
         }
 
         private void ChatInput_KeyDown(object sender, KeyEventArgs e)
@@ -84,6 +123,11 @@ namespace ThalamusApp.Modes
 
             try
             {
+                // Make sure a cloud conversation exists so the server persists
+                // both turns of this exchange (it only saves with a conversationId).
+                if (!string.IsNullOrEmpty(_token))
+                    await _store!.EnsureAsync(_token, text);
+
                 // "chat" mode → the backend's default model routing picks the model.
                 // Same HTML-forcing system prompt the website sends (Portal.tsx), so the
                 // model returns semantic HTML we render, instead of raw Markdown.
@@ -93,7 +137,7 @@ namespace ThalamusApp.Modes
                     "semantic HTML only — no Markdown, no plain text, no code fences around the whole reply. " +
                     "Use <h2>/<h3>, <p>, <ul>/<ol>/<li>, <strong>, <em>, <code>, <pre><code>, <blockquote>, " +
                     "<a>, and <table> where appropriate. Be clear, accurate, and well-structured.",
-                    _token, null,
+                    _token, _store!.ConversationId,
                     (type, chunk) =>
                     {
                         Dispatcher.Invoke(() =>
