@@ -93,6 +93,7 @@ export async function runSearch(
   key: AoKeyInfo,
   args: { query?: unknown; tags?: unknown; top_k?: unknown },
   endpoint = "search",
+  cost = COST_SEARCH,
 ): Promise<AoOpResult> {
   const queryText = (typeof args.query === "string" ? args.query : "").trim();
   if (queryText.length < 3 || queryText.length > 2000) {
@@ -103,7 +104,7 @@ export async function runSearch(
   try {
     balance = await ctx.runMutation(internal.agentoverflow.charge, {
       userId: key.userId,
-      credits: COST_SEARCH,
+      credits: cost,
       reason: "search",
       keyDbId: key._id,
       endpoint,
@@ -124,16 +125,18 @@ export async function runSearch(
     return {
       ok: true,
       status: 200,
-      body: { credits_charged: COST_SEARCH, balance, results: data.results ?? [] },
+      body: { credits_charged: cost, balance, results: data.results ?? [] },
     };
   } catch (err) {
     // The search never happened — give the credit back before reporting.
-    await ctx.runMutation(internal.agentoverflow.charge, {
-      userId: key.userId,
-      credits: -COST_SEARCH,
-      reason: "search",
-      refId: "refund",
-    });
+    if (cost > 0) {
+      await ctx.runMutation(internal.agentoverflow.charge, {
+        userId: key.userId,
+        credits: -cost,
+        reason: "search",
+        refId: "refund",
+      });
+    }
     return backendDownResult(err);
   }
 }
@@ -143,6 +146,7 @@ export async function runAnswer(
   key: AoKeyInfo,
   args: { query?: unknown; tags?: unknown },
   endpoint = "answer",
+  cost = COST_ANSWER,
 ): Promise<AoOpResult> {
   const queryText = (typeof args.query === "string" ? args.query : "").trim();
   if (queryText.length < 3 || queryText.length > 2000) {
@@ -153,7 +157,8 @@ export async function runAnswer(
     internal.admin.isPlatformBudgetExhausted,
     {},
   )) as boolean;
-  let creditsCharged = budgetExhausted ? COST_SEARCH : COST_ANSWER;
+  const floorCost = Math.min(COST_SEARCH, cost);
+  let creditsCharged = budgetExhausted ? floorCost : cost;
 
   let balance: number;
   try {
@@ -179,12 +184,14 @@ export async function runAnswer(
     if (!res.ok) throw new Error(`VM search failed: ${res.status}`);
     hits = ((await res.json()) as { results: CorpusHit[] }).results ?? [];
   } catch (err) {
-    await ctx.runMutation(internal.agentoverflow.charge, {
-      userId: key.userId,
-      credits: -creditsCharged,
-      reason: "answer",
-      refId: "refund",
-    });
+    if (creditsCharged > 0) {
+      await ctx.runMutation(internal.agentoverflow.charge, {
+        userId: key.userId,
+        credits: -creditsCharged,
+        reason: "answer",
+        refId: "refund",
+      });
+    }
     return backendDownResult(err);
   }
 
@@ -192,9 +199,9 @@ export async function runAnswer(
   let answer: string | null = null;
   let note: string | undefined;
   if (budgetExhausted) {
-    note = "Answer synthesis is temporarily unavailable; charged as a search (1 credit).";
+    note = "Answer synthesis is temporarily unavailable; charged at the search rate.";
   } else if (hits.length === 0) {
-    note = "No relevant results found; charged as a search (1 credit).";
+    note = "No relevant results found; charged at the search rate.";
   } else {
     const sourcesBlock = hits
       .map(
@@ -225,19 +232,19 @@ export async function runAnswer(
       console.error("AO answer synthesis failed:", err);
     }
     if (!answer) {
-      note = "Answer synthesis failed; charged as a search (1 credit).";
+      note = "Answer synthesis failed; charged at the search rate.";
     }
   }
 
   // Anything that ends without a synthesized answer costs search price.
-  if (answer === null && creditsCharged > COST_SEARCH) {
+  if (answer === null && creditsCharged > floorCost) {
     balance = await ctx.runMutation(internal.agentoverflow.charge, {
       userId: key.userId,
-      credits: -(creditsCharged - COST_SEARCH),
+      credits: -(creditsCharged - floorCost),
       reason: "answer",
       refId: "degraded",
     });
-    creditsCharged = COST_SEARCH;
+    creditsCharged = floorCost;
   }
 
   return {

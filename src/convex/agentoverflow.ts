@@ -452,8 +452,9 @@ export const getKeyByHash = internalQuery({
   },
 });
 
-// Atomic charge/refund. credits > 0 deducts, credits < 0 refunds/rewards.
-// Passing keyDbId also enforces the per-key rate limit and records usage.
+// Atomic charge/refund/metering. credits > 0 deducts, credits < 0 refunds,
+// credits === 0 meters a free call (rate limit + usage row, no money moves —
+// this is how MCP traffic stays free without becoming unlimited).
 export const charge = internalMutation({
   args: {
     userId: v.id("users"),
@@ -464,29 +465,32 @@ export const charge = internalMutation({
     endpoint: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<number> => {
-    if (args.keyDbId && args.credits > 0) {
+    const user = await ctx.db.get(args.userId);
+    if (!user) throw new Error("User not found");
+    if (args.keyDbId && args.credits >= 0) {
+      const limit = user.aoCustomRateLimit ?? RATE_LIMIT_PER_MIN;
       const cutoff = Date.now() - 60_000;
       const keyDbId = args.keyDbId;
       const recent = await ctx.db
         .query("aoUsage")
         .withIndex("by_key_and_time", (q) => q.eq("keyId", keyDbId).gt("createdAt", cutoff))
         .collect();
-      if (recent.length >= RATE_LIMIT_PER_MIN) throw new Error(ERR_RATE_LIMITED);
+      if (recent.length >= limit) throw new Error(ERR_RATE_LIMITED);
     }
-    const user = await ctx.db.get(args.userId);
-    if (!user) throw new Error("User not found");
     const balance = user.aoCredits ?? DAILY_REFILL; // first touch = free daily 10
     if (args.credits > 0 && balance < args.credits) throw new Error(ERR_INSUFFICIENT);
     const newBalance = balance - args.credits;
-    await ctx.db.patch(args.userId, { aoCredits: newBalance });
-    await ctx.db.insert("aoCreditLedger", {
-      userId: args.userId,
-      delta: -args.credits,
-      reason: args.reason,
-      refId: args.refId,
-      createdAt: Date.now(),
-    });
-    if (args.keyDbId && args.credits > 0) {
+    if (args.credits !== 0) {
+      await ctx.db.patch(args.userId, { aoCredits: newBalance });
+      await ctx.db.insert("aoCreditLedger", {
+        userId: args.userId,
+        delta: -args.credits,
+        reason: args.reason,
+        refId: args.refId,
+        createdAt: Date.now(),
+      });
+    }
+    if (args.keyDbId && args.credits >= 0) {
       await ctx.db.insert("aoUsage", {
         keyId: args.keyDbId,
         userId: args.userId,
@@ -496,7 +500,7 @@ export const charge = internalMutation({
       });
       await ctx.db.patch(args.keyDbId, { lastUsedAt: Date.now() });
     }
-    if (args.credits > 0) {
+    if (args.credits >= 0) {
       await recordAoDau(ctx, args.userId, args.keyDbId ? "api" : "site");
     }
     return newBalance;
