@@ -4,6 +4,7 @@
         xmlns:modes="clr-namespace:ThalamusApp.Modes"
         xmlns:local="clr-namespace:ThalamusApp"
         Title="Thalamus AI"
+        Icon="Assets/logo.png"
         Width="1500" Height="940"
         MinWidth="960" MinHeight="600"
         WindowStyle="None"
