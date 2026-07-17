@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { callClaude } from "./agentCore";
+import { buildStudySystemPrompt } from "./studyPrompt";
 
 // Gemini with Google Search Grounding
 interface GeminiGroundedResponse {
@@ -389,26 +390,32 @@ export const sendStudyMessage = action({
     const studyBoard = userRecord?.studyBoard ?? null;
     const studyLanguage = userRecord?.studyLanguage ?? null;
 
-    const resourceContext = resources.length > 0
-      ? "Student resources: " + resources.slice(0, 6).map((r: { title: string }) => r.title).join(", ")
-      : "";
-
     const adminContext = adminMaterials.length > 0
       ? adminMaterials.slice(0, 2).map((m: { title: string; content: string }) => `[${m.title}]: ${m.content.slice(0, 800)}`).join("\n")
       : "";
 
-    const profileSection = studyGrade
-      ? `Student: ${studyGrade}${studyBoard ? `, ${studyBoard}` : ""}${studyLanguage ? `, ${studyLanguage}` : ""}. `
-      : "";
+    // Ground the answer in the student's own uploaded material (vector +
+    // graph RAG). Non-fatal — a failed lookup never blocks the answer.
+    let ragContext = "";
+    let graphContext = "";
+    try {
+      const studyCtx = await ctx.runAction(internal.rag.getStudyContextInternal, {
+        userId,
+        query: args.content,
+      }) as { ragContext: string; graphContext: string; hasContext: boolean };
+      ragContext = studyCtx.ragContext;
+      graphContext = studyCtx.graphContext;
+    } catch { /* answer without grounding */ }
 
-    const systemPrompt = `You are Aether, an expert study companion with complete knowledge of all curricula (NCERT, CBSE, ICSE, JEE, NEET, UPSC, and all global curricula). ${profileSection}
-
-NEVER ask for clarification. Answer immediately based on context.
-${adminContext ? `\nKnowledge base: ${adminContext}` : ""}
-${resourceContext ? `\n${resourceContext}` : ""}
-
-CRITICAL: Respond in clean HTML only. Do NOT use markdown. Do NOT wrap output in backticks or code fences.
-Use <h2>, <h3>, <p>, <ul>, <li>, <strong>. Be thorough but concise (300-600 words).`;
+    const systemPrompt = buildStudySystemPrompt({
+      grade: studyGrade,
+      board: studyBoard,
+      language: studyLanguage,
+      ragContext,
+      graphContext,
+      adminContext,
+      resourceTitles: resources.slice(0, 8).map((r: { title: string }) => r.title),
+    });
 
     const conversationContext = history.slice(-6).map((m: { role: string; content: string }) =>
       `${m.role === "user" ? "Human" : "Assistant"}: ${m.content.replace(/<[^>]+>/g, "").slice(0, 400)}`
@@ -680,6 +687,56 @@ Output ONLY valid JSON array:
     try {
       const jsonMatch = responseContent.match(/\[[\s\S]*\]/);
       if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    } catch { /* fall through */ }
+    return [];
+  },
+});
+
+// Flashcards from the study conversation — StudentSuite's flashcard deck.
+export const generateFlashcards = action({
+  args: {
+    token: v.string(),
+    chatHistory: v.array(v.object({ role: v.string(), content: v.string() })),
+    studyGrade: v.optional(v.string()),
+    studyBoard: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<Array<{ front: string; back: string; topic: string }>> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+
+    const historyText = args.chatHistory.slice(-20).map(m => `${m.role === "user" ? "Student" : "AI"}: ${m.content.replace(/<[^>]+>/g, "").slice(0, 500)}`).join("\n\n");
+    const profileCtx = args.studyGrade ? `Student: ${args.studyGrade}${args.studyBoard ? `, ${args.studyBoard}` : ""}.` : "";
+
+    const systemPrompt = `You are a flashcard writer for active-recall study. ${profileCtx} From the study conversation, generate 10-16 flashcards covering every distinct concept discussed. Front = one precise question (definition, formula, cause, comparison — vary the types). Back = the complete short answer a student should recall, pitched at the student's level. No trivia the conversation never touched.
+
+Output ONLY a valid JSON array:
+[
+  { "front": "Question text", "back": "Answer text", "topic": "Chapter/Topic name" }
+]`;
+
+    let responseContent = "";
+    try {
+      const result = await callClaude(historyText, systemPrompt, "claude-haiku-4-5");
+      responseContent = result.text;
+    } catch {
+      const { vly } = await import("../lib/vly-integrations");
+      const result = await vly.ai.completion({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: systemPrompt + "\n\n" + historyText }],
+        maxTokens: 4000,
+      });
+      responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "[]") : "[]";
+    }
+
+    try {
+      const jsonMatch = responseContent.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]) as Array<{ front?: string; back?: string; topic?: string }>;
+        return parsed
+          .filter((c) => c.front && c.back)
+          .slice(0, 20)
+          .map((c) => ({ front: c.front!, back: c.back!, topic: c.topic ?? "General" }));
+      }
     } catch { /* fall through */ }
     return [];
   },
