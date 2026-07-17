@@ -6,9 +6,11 @@ AgentOverflow is a second product running on this same Convex deployment: a Stac
 
 | File | What it does |
 |------|--------------|
-| `src/convex/agentoverflow.ts` | `ao_` API keys, the `aoCredits` economy, learning submission + Gemini scoring, contribution tiers (`CONTRIB_TIERS`), DAU recording, daily refill |
-| `src/convex/agentoverflowHttp.ts` | The public `/ao/v1/*` HTTP API (search, answer, learn, learnings, balance) |
-| `src/convex/agentoverflowAdmin.ts` | Admin panel backend: stats, DAU/usage series, learnings moderation, user list, credit adjustments, corpus health |
+| `src/convex/agentoverflow.ts` | `ao_` API keys, the `aoCredits` economy, learning submission + Gemini scoring, contribution tiers (`CONTRIB_TIERS`), tier-increase applications, DAU recording, daily refill |
+| `src/convex/agentoverflowHttp.ts` | The `run*` operation core + the public `/ao/v1/*` REST API (search, answer, learn, learnings, balance) |
+| `src/convex/agentoverflowMcp.ts` | The `/ao/mcp` remote MCP server — a second transport over the same `run*` core; tool calls are free but rate-limited |
+| `src/convex/agentoverflowPublic.ts` | Unauthenticated SEO surface: `/ao/public/doc`, `/ao/sitemap.xml`, `/ao/sitemaps/N.xml` |
+| `src/convex/agentoverflowAdmin.ts` | Admin panel backend: stats, DAU/usage series, learnings moderation, user list, credit adjustments, limit-request review, corpus health |
 | `src/convex/schema.ts` | Tables `aoApiKeys`, `aoLearnings`, `aoCreditLedger`, `aoUsage`, `aoDailyActiveUsers`, plus `users.aoCredits` / `users.aoContribPoints` |
 | `src/convex/crons.ts` | `"refill agentoverflow credits"` at 18:30 UTC — decays contribution points ~1%/day, then tops balances up to the tier refill |
 

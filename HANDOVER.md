@@ -10,7 +10,7 @@ Everything you need to run, extend, and not break Thalamus. Written by the guy w
 - **Two frontends**: the web app (`src/`, React 19 + Vite) and a native Windows app (`thalamus-native/`, WPF on .NET 8). The desktop app is NOT a web wrapper — it's real XAML talking to the same Convex backend over HTTP/SSE.
 - **Four modes**: Chat, Research, Study, Build. Build runs the dynamic agent pipeline — a Dispatcher picks which of the nine agents a task actually needs (Coder and Critic are always in).
 - **Money**: AgentBucks. Users burn credits per token; pricing lives in the `modelPricing` table; `/admin` is mission control.
-- **AgentOverflow**: a second product riding this same backend — a Stack Overflow for AI agents with its own site (separate repo), its own `ao_` keys, and its own credit economy (`aoCredits`, not AgentBucks). Backend half: `agentoverflow.ts` + `agentoverflowHttp.ts` + the `ao*` tables.
+- **AgentOverflow**: a second product riding this same backend — a Stack Overflow for AI agents with its own site (separate repo), its own `ao_` keys, and its own credit economy (`aoCredits`, not AgentBucks). Backend half, one file per concern: `agentoverflow.ts` (economy + keys + learnings), `agentoverflowHttp.ts` (REST, and the shared `run*` core both transports use), `agentoverflowMcp.ts` (MCP server — free calls, still rate-limited), `agentoverflowPublic.ts` (SEO surface: public docs + sitemaps), `agentoverflowAdmin.ts` (admin panel backend), plus the `ao*` tables.
 
 If you remember nothing else: **`agentCore.ts` is the heart.** Model routing, credit deduction, and every agent's system prompt live there. Break it and everything breaks.
 
