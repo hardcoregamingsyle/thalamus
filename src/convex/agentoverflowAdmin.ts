@@ -1,8 +1,8 @@
-import { action, internalMutation, query } from "./_generated/server";
+import { action, internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Doc } from "./_generated/dataModel";
-import { contribTierFor, vmFetch } from "./agentoverflow";
+import { contribTierFor, effectiveRefill, vmFetch } from "./agentoverflow";
 
 // ── AgentOverflow admin ───────────────────────────────────────────────────────
 // Same gate as the thalamus /admin panel: the AO site logs in through
@@ -249,6 +249,87 @@ export const adminCorpusHealth = action({
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { ok: false, error: msg === "AO_BACKEND_UNCONFIGURED" ? "VM not configured" : msg };
+    }
+  },
+});
+
+// Tier-increase applications: pending first, then recent history.
+export const adminLimitRequests = query({
+  args: { adminToken: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const pending = await ctx.db
+      .query("aoLimitRequests")
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .order("desc")
+      .take(100);
+    const recent = await ctx.db.query("aoLimitRequests").order("desc").take(50);
+    const seen = new Set(pending.map((r) => r._id));
+    const rows = [...pending, ...recent.filter((r) => !seen.has(r._id))];
+    const out = [];
+    for (const r of rows) {
+      const user = await ctx.db.get(r.userId);
+      const points = user?.aoContribPoints ?? 0;
+      out.push({
+        id: r._id,
+        userEmail: user?.email ?? "(deleted user)",
+        userTier: contribTierFor(points).name,
+        currentRefill: effectiveRefill(points, user?.aoCustomRefill),
+        currentRateLimit: user?.aoCustomRateLimit ?? 30,
+        useCase: r.useCase,
+        expectedDaily: r.expectedDaily,
+        status: r.status,
+        adminNote: r.adminNote ?? null,
+        grantedRefill: r.grantedRefill ?? null,
+        grantedRateLimit: r.grantedRateLimit ?? null,
+        createdAt: r.createdAt,
+        resolvedAt: r.resolvedAt ?? null,
+      });
+    }
+    return out;
+  },
+});
+
+// Approve with real numbers or reject with a note. Approval writes the
+// overrides straight onto the user; the next refill cron honors them.
+export const resolveLimitRequest = mutation({
+  args: {
+    adminToken: v.string(),
+    requestId: v.id("aoLimitRequests"),
+    approve: v.boolean(),
+    dailyRefill: v.optional(v.number()),
+    rateLimitPerMin: v.optional(v.number()),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const request = await ctx.db.get(args.requestId);
+    if (!request || request.status !== "pending") throw new Error("Request not found or resolved");
+    if (args.approve) {
+      const refill =
+        args.dailyRefill && args.dailyRefill > 0 ? Math.round(args.dailyRefill) : undefined;
+      const rate =
+        args.rateLimitPerMin && args.rateLimitPerMin > 0
+          ? Math.round(args.rateLimitPerMin)
+          : undefined;
+      if (!refill && !rate) throw new Error("Approval needs a refill and/or rate limit to grant");
+      const patch: { aoCustomRefill?: number; aoCustomRateLimit?: number } = {};
+      if (refill) patch.aoCustomRefill = refill;
+      if (rate) patch.aoCustomRateLimit = rate;
+      await ctx.db.patch(request.userId, patch);
+      await ctx.db.patch(args.requestId, {
+        status: "approved",
+        grantedRefill: refill,
+        grantedRateLimit: rate,
+        adminNote: args.note,
+        resolvedAt: Date.now(),
+      });
+    } else {
+      await ctx.db.patch(args.requestId, {
+        status: "rejected",
+        adminNote: args.note,
+        resolvedAt: Date.now(),
+      });
     }
   },
 });
