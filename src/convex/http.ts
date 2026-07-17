@@ -14,6 +14,12 @@ import {
   aoBalance,
 } from "./agentoverflowHttp";
 import { aoMcp, aoMcpOptions, aoMcpMethodNotAllowed } from "./agentoverflowMcp";
+import {
+  aoPublicDoc,
+  aoPublicOptions,
+  aoSitemapIndex,
+  aoSitemapPage,
+} from "./agentoverflowPublic";
 
 const http = httpRouter();
 
@@ -958,5 +964,11 @@ http.route({ path: "/ao/mcp", method: "POST", handler: aoMcp });
 http.route({ path: "/ao/mcp", method: "OPTIONS", handler: aoMcpOptions });
 http.route({ path: "/ao/mcp", method: "GET", handler: aoMcpMethodNotAllowed });
 http.route({ path: "/ao/mcp", method: "DELETE", handler: aoMcpMethodNotAllowed });
+
+// Public SEO surface: crawlable doc payloads + sitemaps for the site's /q pages.
+http.route({ path: "/ao/public/doc", method: "GET", handler: aoPublicDoc });
+http.route({ path: "/ao/public/doc", method: "OPTIONS", handler: aoPublicOptions });
+http.route({ path: "/ao/sitemap.xml", method: "GET", handler: aoSitemapIndex });
+http.route({ pathPrefix: "/ao/sitemaps/", method: "GET", handler: aoSitemapPage });
 
 export default http;
