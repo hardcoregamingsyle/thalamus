@@ -58,6 +58,12 @@ export function nextContribTier(points: number) {
   return CONTRIB_TIERS.find((t) => t.minPoints > points) ?? null;
 }
 
+// Approved tier-increase applications set users.aoCustomRefill; whichever of
+// the ladder and the grant is higher wins.
+export function effectiveRefill(points: number, customRefill: number | undefined): number {
+  return Math.max(contribTierFor(points).dailyRefill, customRefill ?? 0);
+}
+
 // Error message constants double as machine-readable codes for the HTTP layer.
 export const ERR_INSUFFICIENT = "AO_INSUFFICIENT_CREDITS";
 export const ERR_RATE_LIMITED = "AO_RATE_LIMITED";
@@ -344,6 +350,8 @@ export const getAoAccount = query({
     return {
       balance: user.aoCredits ?? DAILY_REFILL,
       points: Math.floor(rawPoints),
+      dailyRefill: effectiveRefill(rawPoints, user.aoCustomRefill),
+      rateLimit: user.aoCustomRateLimit ?? 30,
       tier: { name: tier.name, dailyRefill: tier.dailyRefill },
       nextTier: next
         ? {
@@ -384,6 +392,62 @@ export const submitLearning = mutation({
     const userId = await getUserIdByToken(ctx, args.token);
     if (!userId) throw new Error("Unauthorized");
     return await insertLearningCore(ctx, userId, args);
+  },
+});
+
+// ── Tier-increase applications ────────────────────────────────────────────────
+// The contribution ladder is the organic path; this is the fast lane — pitch
+// your use case, the admin grants real numbers. One pending application at a
+// time per user.
+
+export const submitLimitRequest = mutation({
+  args: { token: v.string(), useCase: v.string(), expectedDaily: v.string() },
+  handler: async (ctx, args): Promise<Id<"aoLimitRequests">> => {
+    const userId = await getUserIdByToken(ctx, args.token);
+    if (!userId) throw new Error("Unauthorized");
+    if (args.useCase.trim().length < 20 || args.useCase.length > 2000) {
+      throw new Error("Tell us what you're building — 20-2000 characters.");
+    }
+    if (args.expectedDaily.trim().length < 1 || args.expectedDaily.length > 200) {
+      throw new Error("Expected daily volume must be 1-200 characters.");
+    }
+    const existing = await ctx.db
+      .query("aoLimitRequests")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    if (existing.some((r) => r.status === "pending")) {
+      throw new Error("You already have a pending application.");
+    }
+    return await ctx.db.insert("aoLimitRequests", {
+      userId,
+      useCase: args.useCase.trim(),
+      expectedDaily: args.expectedDaily.trim(),
+      status: "pending",
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const myLimitRequests = query({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getUserIdByToken(ctx, args.token);
+    if (!userId) return [];
+    const requests = await ctx.db
+      .query("aoLimitRequests")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .order("desc")
+      .take(10);
+    return requests.map((r) => ({
+      id: r._id,
+      status: r.status,
+      useCase: r.useCase,
+      adminNote: r.adminNote ?? null,
+      grantedRefill: r.grantedRefill ?? null,
+      grantedRateLimit: r.grantedRateLimit ?? null,
+      createdAt: r.createdAt,
+      resolvedAt: r.resolvedAt ?? null,
+    }));
   },
 });
 
@@ -514,6 +578,8 @@ export const accountForUser = internalQuery({
     return {
       balance: user?.aoCredits ?? DAILY_REFILL,
       points: user?.aoContribPoints ?? 0,
+      customRefill: user?.aoCustomRefill,
+      rateLimit: user?.aoCustomRateLimit ?? 30,
     };
   },
 });
@@ -784,7 +850,7 @@ export const dailyRefillAoCredits = internalMutation({
           patch.aoContribPoints = points;
         }
         if (user.aoCredits !== undefined) {
-          const target = contribTierFor(points).dailyRefill;
+          const target = effectiveRefill(points, user.aoCustomRefill);
           if (user.aoCredits < target) {
             patch.aoCredits = target;
             await ctx.db.insert("aoCreditLedger", {
