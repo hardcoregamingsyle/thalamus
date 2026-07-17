@@ -137,6 +137,8 @@ Server-side secrets live in the **Convex dashboard**, never in files:
 | `AO_VM_URL` | AgentOverflow corpus VM (`http://<vm-ip>:8080`) |
 | `AO_INTERNAL_SECRET` | Shared secret between Convex and the corpus VM |
 | `AO_FRONTEND_URL` | AgentOverflow site origin — joins the OAuth redirect allowlist |
+| `AO_MCP_API_KEY` | `ao_` key that gives every pipeline run built-in AgentOverflow MCP tools |
+| `AO_MCP_URL` | Override for the AgentOverflow MCP endpoint (defaults to this deployment's `/ao/mcp`) |
 
 Gemini keys and AWS credentials can also be managed in the Admin panel (stored in the DB, which takes priority over env vars).
 

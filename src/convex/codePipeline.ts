@@ -327,10 +327,43 @@ export const runPipelineAction = internalAction({
     const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: branch.projectId });
     const ownerUserId = project?.userId ?? null;
 
-    // The owner's enabled MCP servers — agents may call their tools.
-    const mcpServers = ownerUserId
+    // The owner's enabled MCP servers — agents may call their tools. Unified
+    // shape over user-connected servers (encrypted auth header in the DB) and
+    // the built-in AgentOverflow server (plaintext key from the deployment env).
+    interface PipelineMcpServer {
+      name: string;
+      url: string;
+      encryptedAuth?: string;
+      plainAuth?: string;
+      toolsJson?: string;
+    }
+    const userServers = ownerUserId
       ? await ctx.runQuery(internal.mcpServers.getEnabledServersInternal, { userId: ownerUserId })
       : [];
+    const mcpServers: PipelineMcpServer[] = userServers.map((s: Doc<"mcpServers">) => ({
+      name: s.name, url: s.url, encryptedAuth: s.authHeader, toolsJson: s.toolsJson,
+    }));
+
+    // Built-in: AgentOverflow rides this same deployment (/ao/mcp), so every
+    // pipeline gets its corpus tools out of the box once AO_MCP_API_KEY is set
+    // in the Convex dashboard. A user-connected server with the same name wins.
+    const aoKey = (process.env.AO_MCP_API_KEY ?? "").trim();
+    if (aoKey && !mcpServers.some((s) => s.name === "agentoverflow")) {
+      const aoUrl = (process.env.AO_MCP_URL ?? "").trim() ||
+        (process.env.CONVEX_SITE_URL ? `${process.env.CONVEX_SITE_URL}/ao/mcp` : "");
+      if (aoUrl) {
+        mcpServers.unshift({
+          name: "agentoverflow",
+          url: aoUrl,
+          plainAuth: `Authorization: Bearer ${aoKey}`,
+          toolsJson: JSON.stringify([
+            { name: "search", description: "Search AgentOverflow's corpus of agent-written solutions BEFORE burning tokens rediscovering a known fix. Args: {\"query\": \"...\"}" },
+            { name: "answer", description: "Get a synthesized answer with sources from the corpus. Args: {\"question\": \"...\"}" },
+            { name: "submit_learning", description: "Write up a hard-won solution so other agents can find it later" },
+          ]),
+        });
+      }
+    }
 
     // Compact tool inventory for the agent prompt (only when servers exist).
     let mcpToolSection = "";
@@ -712,14 +745,14 @@ export const runPipelineAction = internalAction({
 
           const resultBlocks: string[] = [];
           for (const call of mcpCalls.slice(0, MAX_MCP_CALLS_PER_MESSAGE)) {
-            const server = mcpServers.find((s: Doc<"mcpServers">) => s.name === call.server);
+            const server = mcpServers.find((s) => s.name === call.server);
             if (!server) {
               resultBlocks.push(`### ${call.server}/${call.tool}\n[error] No connected MCP server named "${call.server}"`);
               continue;
             }
             let outcome;
             try {
-              const auth = await decryptAuthHeader(server.authHeader);
+              const auth = server.plainAuth ?? await decryptAuthHeader(server.encryptedAuth);
               outcome = await mcpCallTool(server.url, auth, call.tool, call.args);
             } catch (err) {
               outcome = { ok: false, text: err instanceof Error ? err.message : String(err) };
