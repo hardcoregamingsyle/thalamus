@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun run type-check)",
+      "Bash(bun run type-check *)",
+      "Bash(bun run lint)",
+      "Bash(bun run lint *)",
+      "Bash(bun test)",
+      "Bash(bun test *)",
+      "mcp__github__list_commits"
+    ]
+  }
+}
