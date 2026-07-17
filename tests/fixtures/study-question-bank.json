@@ -1,0 +1,2584 @@
+[
+ {
+  "board": "CBSE",
+  "grade": "Class 7",
+  "subject": "Mathematics",
+  "question": "class 7 maths simple equations chapter, solve 3(x + 2) = 15 step by step and check the answer pls",
+  "marks": 0,
+  "rubric": [
+   "Open the bracket or divide both sides by 3 correctly (e.g. 3x + 6 = 15)",
+   "Transpose the constant to isolate the variable term (3x = 9)",
+   "State the solution x = 3",
+   "Verify by substituting x = 3 back into the original equation: 3(3 + 2) = 15 ✓",
+   "Show each step using balancing/transposition reasoning, not just the final answer"
+  ]
+ },
+ {
+  "board": "CBSE",
+  "grade": "Class 10",
+  "subject": "History",
+  "question": "nationalism in india chapter class 10 — explain how different social groups participated in the Non-Cooperation Movement (5 marks)",
+  "marks": 5,
+  "rubric": [
+   "Urban middle class: students, teachers and lawyers boycotting schools, colleges, courts and foreign goods",
+   "Peasants in the countryside (e.g. Awadh under Baba Ramchandra): movement against talukdars, high rents and begar",
+   "Tribal peasants (Gudem Hills, Alluri Sitaram Raju): militant guerrilla interpretation of swaraj",
+   "Plantation workers in Assam: defying the Inland Emigration Act 1859, leaving plantations for home",
+   "Note that different groups understood 'swaraj' differently and did not always follow Congress's programme",
+   "Concluding line on the movement becoming a mass movement"
+  ]
+ },
+ {
+  "board": "CBSE",
+  "grade": "Class 12",
+  "subject": "Physics",
+  "question": "class 12 physics moving charges and magnetism — derive the expression for force per unit length between two parallel current carrying conductors and hence define one ampere",
+  "marks": 3,
+  "rubric": [
+   "Magnetic field due to conductor 1 at the location of conductor 2: B1 = μ0·I1 / (2πd)",
+   "Force per unit length on conductor 2: F/L = μ0·I1·I2 / (2πd)",
+   "State nature of force: parallel currents attract, antiparallel currents repel (with direction reasoning via F = IL × B)",
+   "Definition of one ampere: the current which, flowing in two infinitely long parallel conductors 1 m apart in vacuum, produces a force of 2×10⁻⁷ N per metre of length",
+   "Correct symbols and SI units throughout"
+  ]
+ },
+ {
+  "board": "CBSE",
+  "grade": "Class 12",
+  "subject": "Biology",
+  "question": "molecular basis of inheritance class 12 - explain the Meselson and Stahl experiment and how it proved DNA replication is semiconservative",
+  "marks": 0,
+  "rubric": [
+   "E. coli grown for many generations in medium with heavy nitrogen (15N-labelled NH4Cl) so DNA is heavy",
+   "Cells transferred to normal 14N medium and DNA extracted after successive generations",
+   "DNA separated by density using CsCl density gradient centrifugation",
+   "After one generation: a single hybrid (intermediate density) band, ruling out conservative replication",
+   "After two generations: equal amounts of light and hybrid DNA, supporting semiconservative replication",
+   "Conclusion: each daughter DNA molecule has one parental (old) strand and one new strand"
+  ]
+ },
+ {
+  "board": "ICSE",
+  "grade": "Class 7",
+  "subject": "Biology",
+  "question": "icse class 7 biology - difference between pollination and fertilisation in flowering plants?",
+  "marks": 0,
+  "rubric": [
+   "Pollination: transfer of pollen grains from anther to stigma",
+   "Mention self-pollination and cross-pollination as its types",
+   "Fertilisation: fusion of the male gamete (from pollen) with the female gamete (egg) inside the ovule",
+   "Sequence point: pollination occurs first and is external transfer; fertilisation follows and is internal fusion",
+   "Results of fertilisation: zygote → embryo, ovule → seed, ovary → fruit"
+  ]
+ },
+ {
+  "board": "ICSE",
+  "grade": "Class 10",
+  "subject": "Physics",
+  "question": "icse physics class 10 refraction through a lens - an object is placed at 2F of a convex lens, where is the image formed and what is its nature? draw ray diagram",
+  "marks": 3,
+  "rubric": [
+   "Draw a ray diagram using at least two standard rays (one parallel to axis then through F, one through the optical centre)",
+   "Correctly mark F and 2F on both sides of the lens",
+   "Image formed at 2F on the opposite side of the lens",
+   "Nature of image: real and inverted",
+   "Size of image: same size as the object (magnification = 1)"
+  ]
+ },
+ {
+  "board": "ICSE",
+  "grade": "Class 10",
+  "subject": "Mathematics",
+  "question": "icse class 10 maths shares and dividends - a man invests ₹8000 in shares of face value ₹100 available at ₹80. if the company pays 12% dividend, find his annual income and his rate of return (3 marks)",
+  "marks": 3,
+  "rubric": [
+   "Number of shares = investment ÷ market value = 8000 ÷ 80 = 100 shares",
+   "Dividend per share = 12% of face value ₹100 = ₹12",
+   "Total annual income = 100 × 12 = ₹1200",
+   "Rate of return (yield) = (income ÷ investment) × 100 = (1200 ÷ 8000) × 100 = 15%",
+   "Clear distinction between face value and market value, with correct ₹ units"
+  ]
+ },
+ {
+  "board": "ICSE",
+  "grade": "Class 10",
+  "subject": "Literature",
+  "question": "icse english treasure trove - in 'The Patriot' by Robert Browning how does the poet show the change in the crowd's attitude towards the speaker? give references",
+  "marks": 0,
+  "rubric": [
+   "Opening welcome: roses and myrtle strewn, cheering crowds, house-roofs crammed 'a year ago on this very day'",
+   "Present contrast: he walks to the scaffold, only a 'palsied few' at the windows, the rest gone to the Shambles' Gate to watch his execution",
+   "Identify the poem as a dramatic monologue and note the irony of adulation turning to condemnation",
+   "Reference to 'nought man could do, have I left undone' showing his sincere service",
+   "Ending faith in divine justice (\"'Tis God shall repay\") — reward in heaven despite earthly betrayal",
+   "Link to Browning's theme of the fickleness of public fame"
+  ]
+ },
+ {
+  "board": "ISC",
+  "grade": "Class 12",
+  "subject": "Mathematics",
+  "question": "isc maths class 12 integrals - solve ∫ x·eˣ dx using integration by parts",
+  "marks": 0,
+  "rubric": [
+   "State the integration-by-parts formula ∫u dv = uv − ∫v du",
+   "Choose u = x and dv = eˣ dx (justify via LIATE: algebraic before exponential)",
+   "Compute du = dx and v = eˣ",
+   "Apply formula: x·eˣ − ∫eˣ dx = x·eˣ − eˣ + C",
+   "Include the constant of integration C (optionally factor as eˣ(x − 1) + C)"
+  ]
+ },
+ {
+  "board": "ISC",
+  "grade": "Class 12",
+  "subject": "Chemistry",
+  "question": "isc chemistry class 12 electrochemistry - state Kohlrausch's law and use it to find the molar conductivity at infinite dilution of acetic acid given the values for HCl, CH3COONa and NaCl (5 marks)",
+  "marks": 5,
+  "rubric": [
+   "State Kohlrausch's law of independent migration of ions: limiting molar conductivity = sum of individual ionic contributions (λ°+ + λ°−)",
+   "Set up the relation Λ°m(CH3COOH) = Λ°m(CH3COONa) + Λ°m(HCl) − Λ°m(NaCl)",
+   "Substitute the given values correctly and carry out the arithmetic",
+   "Report answer with correct units: S cm² mol⁻¹",
+   "Explain why weak electrolytes require this indirect method (Λ°m cannot be obtained by extrapolation to zero concentration)",
+   "Application: degree of dissociation α = Λm/Λ°m (and hence dissociation constant Ka)"
+  ]
+ },
+ {
+  "board": "ISC",
+  "grade": "Class 12",
+  "subject": "Economics",
+  "question": "isc economics class 12 - explain how equilibrium price is determined by market demand and supply, and what happens if demand increases",
+  "marks": 0,
+  "rubric": [
+   "Equilibrium occurs where quantity demanded equals quantity supplied and the market clears",
+   "Diagram with a downward-sloping demand curve and upward-sloping supply curve intersecting at equilibrium price and quantity",
+   "Adjustment mechanism: excess demand pushes price up, excess supply pushes price down",
+   "An increase in demand shifts the demand curve rightward (supply unchanged, ceteris paribus)",
+   "New equilibrium is at a higher price and a higher quantity",
+   "State the ceteris paribus assumption"
+  ]
+ },
+ {
+  "board": "ISC",
+  "grade": "Class 11",
+  "subject": "Literature",
+  "question": "isc english literature class 11 - character sketch of Prospero in The Tempest. is he a just ruler or a revengeful magician?",
+  "marks": 0,
+  "rubric": [
+   "Background: rightful Duke of Milan, usurped by his brother Antonio and exiled with Miranda to the island",
+   "Master of magic and learning (his books); commands the spirit Ariel and enslaves Caliban",
+   "Orchestrates the tempest and the events of the play to bring his enemies within his power",
+   "Moral arc from vengeance to forgiveness ('the rarer action is in virtue than in vengeance')",
+   "Renunciation of magic ('I'll break my staff') leading to reconciliation and restoration",
+   "A balanced judgement supported with specific textual reference"
+  ]
+ },
+ {
+  "board": "NIOS",
+  "grade": "Class 8",
+  "subject": "Science",
+  "question": "nios open basic education science - why is an electric fuse used in household wiring and what is the fuse wire made of? explain simply",
+  "marks": 0,
+  "rubric": [
+   "A fuse is a safety device connected in series with the circuit",
+   "Made of a thin wire of an alloy with a low melting point and high resistance (e.g. tin-lead alloy)",
+   "When current exceeds the safe limit (overload or short circuit) the wire heats up and melts, breaking the circuit",
+   "This prevents fire and protects appliances and wiring from damage",
+   "Fuses are rated in amperes and must be chosen to match the circuit's safe current"
+  ]
+ },
+ {
+  "board": "NIOS",
+  "grade": "Class 10",
+  "subject": "Mathematics",
+  "question": "nios secondary maths (211) - the length of a rectangular field is 3 m more than its width and its area is 40 sq m. form a quadratic equation and find the dimensions",
+  "marks": 0,
+  "rubric": [
+   "Define variables: let width = w metres, length = (w + 3) metres",
+   "Form the equation w(w + 3) = 40 → w² + 3w − 40 = 0",
+   "Factorise: (w + 8)(w − 5) = 0",
+   "Reject the negative root w = −8 because length cannot be negative",
+   "State width = 5 m and length = 8 m, and verify area = 5 × 8 = 40 sq m"
+  ]
+ },
+ {
+  "board": "NIOS",
+  "grade": "Class 12",
+  "subject": "Economics",
+  "question": "nios senior secondary economics (318) - explain the functions of money in a modern economy",
+  "marks": 0,
+  "rubric": [
+   "Primary functions: medium of exchange and measure/unit of value",
+   "Secondary functions: standard of deferred payments, store of value, transfer of value",
+   "Contingent functions: basis of credit, distribution of national income, liquidity",
+   "Explain how money overcomes the barter problem of double coincidence of wants",
+   "Support with simple everyday examples"
+  ]
+ },
+ {
+  "board": "NIOS",
+  "grade": "Class 12",
+  "subject": "History",
+  "question": "nios senior secondary history (315) - describe the main causes of the First World War (answer for 5 marks)",
+  "marks": 5,
+  "rubric": [
+   "Aggressive nationalism among the European powers",
+   "Militarism and the arms race, including Anglo-German naval rivalry",
+   "The system of secret alliances (Triple Alliance vs Triple Entente)",
+   "Imperialist rivalries over colonies and markets",
+   "Immediate cause: the assassination of Archduke Franz Ferdinand at Sarajevo in 1914",
+   "A concluding line linking these into the chain reaction that led to war"
+  ]
+ },
+ {
+  "board": "CISCE",
+  "grade": "Class 8",
+  "subject": "Physics",
+  "question": "cisce class 8 physics physical quantities and measurement chapter - what is the difference between mass and weight and which instrument measures each?",
+  "marks": 0,
+  "rubric": [
+   "Mass: quantity of matter in a body; remains constant everywhere; SI unit kilogram; measured by a beam/physical balance",
+   "Weight: the force with which the earth attracts the body; varies with location (depends on g); SI unit newton; measured by a spring balance",
+   "Mass is a scalar quantity while weight is a force (has direction)",
+   "State the relation weight = mass × g",
+   "A concrete illustration (e.g. mass stays the same on the moon but weight becomes less)"
+  ]
+ },
+ {
+  "board": "CISCE",
+  "grade": "Class 9",
+  "subject": "Chemistry",
+  "question": "cisce icse class 9 chemistry atomic structure - explain isotopes with an example and show how to calculate the average atomic mass of chlorine",
+  "marks": 0,
+  "rubric": [
+   "Isotopes: atoms of the same element with the same atomic number (protons) but different mass numbers (different neutrons)",
+   "Example: chlorine-35 and chlorine-37 (or protium/deuterium/tritium)",
+   "Isotopes have identical chemical properties (same electronic configuration) but differ in physical properties like mass",
+   "Average atomic mass is the weighted mean using the relative abundances",
+   "Calculation: (35 × 75 + 37 × 25) ÷ 100 = 35.5 u",
+   "Explains why atomic masses are often fractional rather than whole numbers"
+  ]
+ },
+ {
+  "board": "CISCE",
+  "grade": "Class 11",
+  "subject": "Physics",
+  "question": "cisce isc class 11 physics laws of motion - state and prove the law of conservation of linear momentum from Newton's third law (4 marks)",
+  "marks": 4,
+  "rubric": [
+   "State the law: in the absence of an external force, the total linear momentum of a system stays constant",
+   "Consider two bodies interacting/colliding and apply Newton's third law (F12 = −F21)",
+   "Use F = dp/dt to show the rates of change of the two momenta are equal and opposite",
+   "Derive m1u1 + m2u2 = m1v1 + m2v2",
+   "Conclude that total momentum before = total momentum after for an isolated system",
+   "Correct vector treatment / sign convention for direction"
+  ]
+ },
+ {
+  "board": "CISCE",
+  "grade": "Class 12",
+  "subject": "Mathematics",
+  "question": "cisce isc class 12 maths probability - bag A has 3 red and 2 white balls, bag B has 2 red and 4 white balls. a bag is chosen at random and a red ball is drawn. find the probability it came from bag A (bayes theorem)",
+  "marks": 0,
+  "rubric": [
+   "Define events: E1 = bag A chosen, E2 = bag B chosen, A = a red ball is drawn",
+   "Prior probabilities P(E1) = P(E2) = 1/2",
+   "Conditional probabilities P(A|E1) = 3/5 and P(A|E2) = 2/6 = 1/3",
+   "Apply Bayes' theorem: P(E1|A) = P(E1)P(A|E1) ÷ [P(E1)P(A|E1) + P(E2)P(A|E2)]",
+   "Compute the denominator (total probability) correctly: 3/10 + 1/6 = 14/30",
+   "Final answer P(E1|A) = 9/14"
+  ]
+ },
+ {
+  "board": "Maharashtra State Board (MSBSHSE)",
+  "grade": "Class 7",
+  "subject": "Science",
+  "question": "difference between autotrophic and heterotrophic nutrition with examples? class 7 science nutrition in living organisms chapter",
+  "marks": 0,
+  "rubric": [
+   "Autotrophic nutrition: organism prepares its own food; green plants do it by photosynthesis using chlorophyll, sunlight, CO2 and water",
+   "Heterotrophic nutrition: organism cannot make its own food and depends on other organisms",
+   "Examples of autotrophs (green plants, some bacteria) and heterotrophs (animals, fungi, humans)",
+   "Name sub-types of heterotrophic nutrition (holozoic, saprophytic, parasitic) with one example each",
+   "Uses correct Balbharati Class 7 terms and spellings"
+  ]
+ },
+ {
+  "board": "Maharashtra State Board (MSBSHSE)",
+  "grade": "Class 10",
+  "subject": "Mathematics",
+  "question": "prove pythagoras theorem with given, to prove, construction and proof - ssc geometry board 4 marks",
+  "marks": 4,
+  "rubric": [
+   "Correct statement: in a right-angled triangle the square of the hypotenuse equals the sum of the squares of the other two sides",
+   "Written in Given / To Prove / Construction / Proof format as expected in the Maharashtra board",
+   "Construction draws a perpendicular from the right-angle vertex to the hypotenuse",
+   "Uses similarity of the two smaller triangles with the whole triangle to get the proportions",
+   "Adds the two derived relations to obtain hypotenuse squared = sum of squares, with a neat labelled figure and 'hence proved'"
+  ]
+ },
+ {
+  "board": "Maharashtra State Board (MSBSHSE)",
+  "grade": "Class 12",
+  "subject": "Physics",
+  "question": "explain conservation of angular momentum with examples, hsc physics rotational dynamics",
+  "marks": 0,
+  "rubric": [
+   "States the law: when net external torque is zero, total angular momentum L = Iω stays constant",
+   "Shows dL/dt = external torque, so zero torque implies L constant",
+   "Since L = Iω is constant, a decrease in moment of inertia I increases angular velocity ω and vice versa",
+   "Real examples: ice skater or ballet dancer pulling arms in to spin faster, diver curling the body",
+   "Links to Maharashtra HSC Rotational Dynamics chapter (moment of inertia)"
+  ]
+ },
+ {
+  "board": "Maharashtra State Board (MSBSHSE)",
+  "grade": "Competitive Exam (MHT-CET)",
+  "subject": "Chemistry",
+  "question": "mht-cet chemistry: difference between order and molecularity of a reaction (chemical kinetics)",
+  "marks": 0,
+  "rubric": [
+   "Order: sum of powers of concentration terms in the experimentally determined rate law; can be zero, fractional or whole",
+   "Molecularity: number of reacting species in an elementary reaction; always a whole number, never zero or fractional",
+   "Order is found experimentally; molecularity is theoretical and defined only for elementary steps",
+   "For a complex reaction, order relates to the slowest (rate-determining) step; molecularity has no meaning for the overall reaction",
+   "Gives one example where order does not equal molecularity (e.g. pseudo-first-order acid hydrolysis of an ester)"
+  ]
+ },
+ {
+  "board": "Gujarat Board (GSEB)",
+  "grade": "Class 8",
+  "subject": "Science",
+  "question": "std 8 science force and pressure - why does a sharp knife cut better than a blunt one?",
+  "marks": 0,
+  "rubric": [
+   "Pressure = force / area (P = F/A)",
+   "For the same applied force, a smaller area produces larger pressure",
+   "A sharp knife has a very thin edge (small area) so it exerts high pressure and cuts easily",
+   "A blunt knife has a larger edge area, giving less pressure for the same force",
+   "SI unit of pressure is the pascal (N/m2); may add a second daily-life example such as pointed nails or a camel's broad feet"
+  ]
+ },
+ {
+  "board": "Gujarat Board (GSEB)",
+  "grade": "Class 10",
+  "subject": "Social Science",
+  "question": "explain the different types of unemployment in india, std 10 social science (3 marks)",
+  "marks": 3,
+  "rubric": [
+   "Defines unemployment: a person willing and able to work at the prevailing wage but not getting work",
+   "Seasonal unemployment (work available only in certain seasons, e.g. agriculture)",
+   "Disguised unemployment (more people employed than actually needed, common on Indian farms)",
+   "Educated / structural unemployment (qualified youth without suitable jobs)",
+   "Keeps the answer point-wise and to the length of a 3-mark question, noting it as a major economic challenge in India"
+  ]
+ },
+ {
+  "board": "Gujarat Board (GSEB)",
+  "grade": "Class 12",
+  "subject": "Chemistry",
+  "question": "how to calculate emf of daniell cell using nernst equation? std 12 chemistry electrochemistry",
+  "marks": 0,
+  "rubric": [
+   "Cell notation Zn | Zn2+ || Cu2+ | Cu, with Zn as anode (oxidation) and Cu as cathode (reduction)",
+   "Standard EMF E(cell) = E(cathode) - E(anode) = 0.34 - (-0.76) = 1.10 V",
+   "Nernst equation at 298 K: E(cell) = E(cell, standard) - (0.0591/n) log([Zn2+]/[Cu2+]) with n = 2",
+   "Substitute the given ion concentrations to compute E(cell)",
+   "States that EMF changes with ion concentration; standard values are at 1 M and 298 K"
+  ]
+ },
+ {
+  "board": "Gujarat Board (GSEB)",
+  "grade": "Competitive Exam (GUJCET)",
+  "subject": "Physics",
+  "question": "gujcet physics - difference between interference and diffraction of light",
+  "marks": 0,
+  "rubric": [
+   "Interference: superposition of light waves from two coherent sources; diffraction: bending/spreading of light around an obstacle or slit with superposition of secondary wavelets from the same wavefront",
+   "Interference needs two or more coherent sources; diffraction occurs with a single source or aperture",
+   "Interference fringes are of equal width and nearly equal intensity; diffraction fringes have unequal width and decreasing intensity",
+   "In diffraction the central maximum is the brightest and widest",
+   "Both are wave phenomena producing alternate bright and dark bands"
+  ]
+ },
+ {
+  "board": "Rajasthan Board (RBSE)",
+  "grade": "Class 8",
+  "subject": "Social Science",
+  "question": "who was panna dhai and why is she remembered in mewar history? rbse class 8",
+  "marks": 0,
+  "rubric": [
+   "Panna Dhai was the royal nursemaid (dhai maa) of prince Udai Singh II of Mewar in the 16th century",
+   "To protect the infant heir from the usurper Banveer, she placed her own son Chandan in the prince's bed",
+   "Banveer killed her son believing him to be Udai Singh, and the real prince was saved",
+   "She is remembered as a symbol of supreme sacrifice, loyalty and devotion to the Mewar dynasty",
+   "Udai Singh later ruled Mewar and founded Udaipur; he was the father of Maharana Pratap"
+  ]
+ },
+ {
+  "board": "Rajasthan Board (RBSE)",
+  "grade": "Class 10",
+  "subject": "Science",
+  "question": "types of chemical reactions with one balanced example each, class 10 science rbse chemical reactions and equations",
+  "marks": 0,
+  "rubric": [
+   "Combination reaction with a balanced example (e.g. CaO + H2O gives Ca(OH)2)",
+   "Decomposition reaction with an example (e.g. CaCO3 on heating gives CaO + CO2)",
+   "Displacement reaction with an example (e.g. Fe + CuSO4 gives FeSO4 + Cu)",
+   "Double displacement reaction with an example (e.g. Na2SO4 + BaCl2 gives BaSO4 + 2NaCl)",
+   "All equations correctly balanced; may add an oxidation-reduction or exothermic/endothermic note"
+  ]
+ },
+ {
+  "board": "Rajasthan Board (RBSE)",
+  "grade": "Class 12",
+  "subject": "History",
+  "question": "explain the causes and significance of the battle of haldighati (1576) for 5 marks, rbse 12th history",
+  "marks": 5,
+  "rubric": [
+   "Context: fought in 1576 near Haldighati in the Aravalli hills between Maharana Pratap of Mewar and the Mughal army led by Raja Man Singh on Akbar's behalf",
+   "Causes: Pratap's refusal to accept Mughal suzerainty, Akbar's policy of expansion, and the failure of peace negotiations",
+   "Course of battle: fierce fighting, mention of Pratap's horse Chetak; Pratap survived and withdrew, with no decisive Mughal control of Mewar",
+   "Significance: symbol of Rajput valour and resistance; Pratap continued guerrilla warfare and later recovered much of Mewar",
+   "Structured point-wise long answer (introduction, causes, events, significance) suited to 5 marks"
+  ]
+ },
+ {
+  "board": "Rajasthan Board (RBSE)",
+  "grade": "Competitive Exam (JEE)",
+  "subject": "Mathematics",
+  "question": "jee main - how many real roots does x^3 - 3x + 1 = 0 have and how to find without solving",
+  "marks": 0,
+  "rubric": [
+   "Defines f(x) = x^3 - 3x + 1 and treats roots as x-intercepts of a continuous cubic",
+   "f'(x) = 3x^2 - 3 = 0 gives critical points x = 1 and x = -1",
+   "Evaluates f(-1) = 3 > 0 (local maximum) and f(1) = -1 < 0 (local minimum)",
+   "Since the local maximum is positive and the local minimum is negative, the graph crosses the x-axis three times",
+   "Concludes 3 distinct real roots using sign-change / Intermediate Value Theorem reasoning"
+  ]
+ },
+ {
+  "board": "Goa Board (GBSHSE)",
+  "grade": "Class 8",
+  "subject": "Science",
+  "question": "class 8 science - plant cell vs animal cell differences with diagram",
+  "marks": 0,
+  "rubric": [
+   "Plant cell has a rigid cell wall (cellulose) outside the membrane; animal cell has only a cell membrane",
+   "Plant cell contains chloroplasts (chlorophyll) for photosynthesis; animal cell has none",
+   "Plant cell has a large central vacuole; animal cell has small or no vacuoles",
+   "Both share a nucleus, cytoplasm, cell membrane and mitochondria",
+   "Includes well-labelled diagrams of both cells"
+  ]
+ },
+ {
+  "board": "Goa Board (GBSHSE)",
+  "grade": "Class 10",
+  "subject": "Social Science",
+  "question": "explain the liberation of goa 1961 / operation vijay for 4 marks, goa board ssc history",
+  "marks": 4,
+  "rubric": [
+   "Goa remained under Portuguese colonial rule for about 450 years, continuing even after India's independence in 1947",
+   "Freedom struggle: satyagrahas and civil resistance, mentioning figures such as Dr. Ram Manohar Lohia (1946 Margao) and T. B. Cunha",
+   "Operation Vijay: the Indian armed forces' action in December 1961 (17-19 December)",
+   "Goa was liberated on 19 December 1961 and merged with India (Union Territory, statehood in 1987)",
+   "Significance: end of European colonial rule in India; 19 December is observed as Goa Liberation Day"
+  ]
+ },
+ {
+  "board": "Goa Board (GBSHSE)",
+  "grade": "Class 12",
+  "subject": "Biology",
+  "question": "explain meselson and stahl experiment proving semiconservative dna replication, 12th biology molecular basis of inheritance",
+  "marks": 0,
+  "rubric": [
+   "Semiconservative replication means each new DNA molecule keeps one old (parental) strand and one newly synthesised strand",
+   "Meselson and Stahl (1958) grew E. coli in heavy nitrogen (15N) medium, then transferred it to light nitrogen (14N) medium",
+   "DNA was separated by density-gradient (CsCl) centrifugation",
+   "After one generation a single band of intermediate/hybrid density appeared; after two generations one hybrid and one light band",
+   "Results confirm the semiconservative model and rule out the conservative and dispersive models"
+  ]
+ },
+ {
+  "board": "Goa Board (GBSHSE)",
+  "grade": "Competitive Exam (Goa CET)",
+  "subject": "Physics",
+  "question": "goa cet physics - state lenz's law and how it follows conservation of energy",
+  "marks": 0,
+  "rubric": [
+   "Lenz's law: the direction of the induced current or EMF opposes the change in magnetic flux that produces it",
+   "Expressed by the negative sign in Faraday's law, EMF = -dΦ/dt",
+   "Example: when a magnet's north pole approaches a coil, the induced current makes the near face a north pole to repel it",
+   "Because the induced effect opposes the motion, work must be done to move the magnet",
+   "That work is converted into electrical energy, so Lenz's law is a consequence of conservation of energy"
+  ]
+ },
+ {
+  "board": "Madhya Pradesh Board (MPBSE)",
+  "grade": "Class 7",
+  "subject": "English",
+  "question": "central idea of the poem 'the rebel' by d j enright, class 7 english honeycomb",
+  "marks": 0,
+  "rubric": [
+   "The poem contrasts a rebel with the conforming majority, showing the rebel doing the opposite of what everyone else does",
+   "Gives examples from the poem (grows hair long when others cut it short, stays silent when others talk, etc.)",
+   "Central idea: rebels break monotony and are useful, but a world made entirely of rebels would be just as dull or chaotic",
+   "Notes the light, humorous tone and the theme of individuality versus conformity",
+   "Identifies the poet as D. J. Enright (Honeycomb, Class 7)"
+  ]
+ },
+ {
+  "board": "Madhya Pradesh Board (MPBSE)",
+  "grade": "Class 10",
+  "subject": "Mathematics",
+  "question": "find the sum of first 20 terms of the AP 5, 8, 11, ... show all steps, mp board class 10 (3 marks)",
+  "marks": 3,
+  "rubric": [
+   "Identifies first term a = 5, common difference d = 3, and n = 20",
+   "Uses the sum formula Sn = n/2 [2a + (n - 1)d]",
+   "Substitutes correctly: S20 = 20/2 [2(5) + 19(3)] = 10 [10 + 57]",
+   "Simplifies 10 x 67 = 670",
+   "Shows each step clearly with the final answer 670"
+  ]
+ },
+ {
+  "board": "Madhya Pradesh Board (MPBSE)",
+  "grade": "Class 12",
+  "subject": "Economics",
+  "question": "difference between gdp and gnp with formula, class 12 economics national income",
+  "marks": 0,
+  "rubric": [
+   "GDP is the total market value of all final goods and services produced within a country's domestic territory in one year",
+   "GNP = GDP + Net Factor Income from Abroad (NFIA)",
+   "NFIA = factor income earned by residents abroad minus factor income paid to foreigners within the country",
+   "Distinguishes 'domestic territory' (GDP) from 'normal residents / nationals' (GNP)",
+   "Notes that only final goods and services in one year are counted (to avoid double counting); NCERT macroeconomics context"
+  ]
+ },
+ {
+  "board": "Madhya Pradesh Board (MPBSE)",
+  "grade": "Competitive Exam (NEET)",
+  "subject": "Biology",
+  "question": "neet biology - key differences between mitosis and meiosis",
+  "marks": 0,
+  "rubric": [
+   "Number of divisions: mitosis is a single division; meiosis is two successive divisions",
+   "Daughter cells: mitosis gives 2 diploid cells identical to the parent; meiosis gives 4 haploid, genetically varied cells",
+   "Site: mitosis in somatic cells (growth and repair); meiosis in germ/reproductive cells (gamete or spore formation)",
+   "Chromosome number: maintained in mitosis (2n to 2n); halved in meiosis (2n to n)",
+   "Meiosis shows synapsis, bivalent formation and crossing over (recombination), which are absent in mitosis"
+  ]
+ },
+ {
+  "board": "UP Board (UPMSP)",
+  "grade": "Class 7",
+  "subject": "Science",
+  "question": "class 7 science paadap mein poshan (nutrition in plants) chapter se photosynthesis ka process aur equation short mein samjha do",
+  "marks": 0,
+  "rubric": [
+   "Autotrophic nutrition define kare — plants make their own food",
+   "Raw materials: carbon dioxide (stomata se), paani (jadon se), sunlight",
+   "Role of chlorophyll — sunlight ki energy trap karta hai; site = patti/chloroplast",
+   "Word ya chemical equation: CO2 + H2O --(sunlight, chlorophyll)--> glucose + O2",
+   "Products: glucose (starch ke roop mein store) aur oxygen release"
+  ]
+ },
+ {
+  "board": "UP Board (UPMSP)",
+  "grade": "Class 10",
+  "subject": "Chemistry",
+  "question": "Rasayanik abhikriyaen evam samikaran chapter — samikaran ka santulan (balancing) kya hai aur combination, decomposition, displacement abhikriya ka ek-ek udaharan do. (5 ank)",
+  "marks": 5,
+  "rubric": [
+   "Balanced equation ki definition + dravyaman sanrakshan ka niyam (law of conservation of mass)",
+   "Combination reaction udaharan, e.g. CaO + H2O -> Ca(OH)2",
+   "Decomposition reaction udaharan, e.g. CaCO3 --(taap)--> CaO + CO2",
+   "Displacement reaction udaharan, e.g. Fe + CuSO4 -> FeSO4 + Cu",
+   "Sahi gunank (coefficients) aur avastha suchak (s, l, g, aq) ka prayog",
+   "Har type ka sahi vargikaran/paribhasha"
+  ]
+ },
+ {
+  "board": "UP Board (UPMSP)",
+  "grade": "Class 12",
+  "subject": "Physics",
+  "question": "12th physics vaidyut-chumbakiya prerann (Electromagnetic Induction) — motional emf ka formula derive karke bata do, aur direction kaise nikalte hain",
+  "marks": 0,
+  "rubric": [
+   "Setup: lambai l ka conducting rod, vega v se magnetic field B ke lambvat gati",
+   "Charge par Lorentz bal / flux badalne ki dar se derivation: emf = Blv",
+   "Faraday ke niyam ka prayog (emf = -dPhi/dt, Phi = Blx)",
+   "Induced current/emf ki disha — Lenz ka niyam / Fleming ka right-hand rule",
+   "Chapter 'Vaidyut-chumbakiya Prerann' (NCERT Class 12) se hone ka reference"
+  ]
+ },
+ {
+  "board": "UP Board (UPMSP)",
+  "grade": "Class 10",
+  "subject": "Hindi Literature",
+  "question": "hindi 10th board — anupras, yamak aur shlesh alankar mein antar udaharan ke sath samjhao, ye har saal exam mein aata hai",
+  "marks": 0,
+  "rubric": [
+   "Anupras: varnon (vyanjan) ki aavritti — udaharan de (e.g. 'charu chandra ki chanchal kirnen')",
+   "Yamak: ek hi shabd ki aavritti par arth alag-alag — udaharan de (e.g. 'kanak kanak te sau guni...')",
+   "Shlesh: ek hi shabd ek hi baar par ek se adhik arth — udaharan de",
+   "Spasht antar: Yamak = shabd do baar aata hai; Shlesh = shabd ek baar par kai arth",
+   "Teeno ko shabdalankar ke roop mein sahi pehchanana"
+  ]
+ },
+ {
+  "board": "Bihar Board (BSEB)",
+  "grade": "Class 8",
+  "subject": "Mathematics",
+  "question": "class 8 kshetramiti (mensuration) — trapezium ka area aur cuboid ka volume ka formula example ke sath batao",
+  "marks": 0,
+  "rubric": [
+   "Trapezium ka area = 1/2 x (samantar bhujaon ka yog) x unchai = (1/2)(a+b)h",
+   "Cuboid ka volume = lambai x chaudai x unchai (l x b x h)",
+   "Dono ke liye ek-ek hal kiya hua numerical udaharan",
+   "Sahi ikaiyan: area cm^2, volume cm^3",
+   "Cuboid ke prashtiya kshetrafal (TSA/LSA) ka ullekh optional"
+  ]
+ },
+ {
+  "board": "Bihar Board (BSEB)",
+  "grade": "Class 10",
+  "subject": "History",
+  "question": "BSEB matric SST — 'Bharat mein rashtravaad' chapter se asahyog aandolan (Non-Cooperation Movement) ke karan aur prabhav likho, deergh uttariya 5 marks ka",
+  "marks": 5,
+  "rubric": [
+   "Karan: Rowlatt Act, Jallianwala Bagh hatyakand, Khilafat ka mudda, WWI ke baad aarthik kathinai",
+   "1920 mein Gandhi dwara shuruaat; Congress ka Nagpur adhiveshan mein samarthan",
+   "Karyakram: schools/courts/videshi vastuon/upadhiyon ka bahishkar, swadeshi",
+   "Vibhinn vargon ki bhagidari — chhatra, kisan, mazdoor, madhyam varg",
+   "Chauri Chaura kaand (Feb 1922) ke baad aandolan wapas lena",
+   "Prabhav: jan-andolan ka vistar, rashtravaad ka prasar"
+  ]
+ },
+ {
+  "board": "Bihar Board (BSEB)",
+  "grade": "Class 12",
+  "subject": "Biology",
+  "question": "inter 12th bio Bihar board — Mendel ke prithakkaran ka niyam aur swatantra apavyuhan ke niyam mein antar, monohybrid cross ka example de do",
+  "marks": 0,
+  "rubric": [
+   "Law of Segregation: gamete bante samay alleles alag ho jaate hain, har gamete ko ek allele",
+   "Law of Independent Assortment: alag genes ke alleles swatantra roop se assort hote hain (dihybrid se)",
+   "Monohybrid cross udaharan: Tt x Tt -> phenotypic 3:1, genotypic 1:2:1",
+   "Dihybrid ratio 9:3:3:1 (independent assortment ke liye)",
+   "Dominant/recessive, homozygous/heterozygous ki paribhasha",
+   "Chapter 'Principles of Inheritance and Variation' (NCERT Class 12) reference"
+  ]
+ },
+ {
+  "board": "Bihar Board (BSEB)",
+  "grade": "Competitive Exam (JEE)",
+  "subject": "Physics",
+  "question": "JEE ke liye rotational motion — solid sphere ka moment of inertia, torque aur angular momentum ka relation, aur conservation of angular momentum ka example",
+  "marks": 0,
+  "rubric": [
+   "Solid sphere ka MOI = (2/5)MR^2 (diameter ke pariti)",
+   "Torque tau = I*alpha (F=ma ka rotational analog)",
+   "Angular momentum L = I*omega",
+   "Net external torque = 0 hone par angular momentum conserve (udaharan: skater haath samet-ta hua)",
+   "Parallel/perpendicular axis theorem ka ullekh optional",
+   "Chapter 'System of Particles and Rotational Motion' (Class 11) reference"
+  ]
+ },
+ {
+  "board": "West Bengal Board (WBBSE)",
+  "grade": "Class 8",
+  "subject": "Science",
+  "question": "class 8 science WB board — friction (ghorshon) kake bole, koto rokom friction ache, ar friction komanor upay ki",
+  "marks": 0,
+  "rubric": [
+   "Friction = do surface ke beech relative motion ko oppose karne wala bal",
+   "Types: static, sliding (kinetic), rolling; order static > sliding > rolling",
+   "Karan: surface ki irregularities/interlocking",
+   "Komanor upay: lubricant, ball bearing, streamlining, polishing",
+   "Friction ke fayde o osubidha (advantages/disadvantages) ka ullekh"
+  ]
+ },
+ {
+  "board": "West Bengal Board (WBBSE)",
+  "grade": "Class 10",
+  "subject": "Physical Science",
+  "question": "Madhyamik physical science 'Aalo' (Light) chapter theke lens er formula die ekta numerical, ar real o virtual image er difference. 3 marks er jonno",
+  "marks": 3,
+  "rubric": [
+   "Lens formula 1/v - 1/u = 1/f, Cartesian sign convention er sathe",
+   "Magnification m = v/u = h'/h",
+   "Real image: converge kore toiri, ulto, screen e phela jay; virtual: shoja, screen e phela jay na",
+   "Sign convention thik rekhe ekta hal kora numerical",
+   "Convex (+f) vs concave (-f) lens er byabohar",
+   "Thik unit o focal length er chinho"
+  ]
+ },
+ {
+  "board": "West Bengal Board (WBCHSE)",
+  "grade": "Class 12",
+  "subject": "Economics",
+  "question": "HS economics WBCHSE — national income ber korar tinta method (product, income, expenditure) ar GDP vs GNP er difference bujhiye dao",
+  "marks": 0,
+  "rubric": [
+   "Product/Value-added method: shob sector er value added er jog",
+   "Income method: factor income er jog (rent + wages + interest + profit)",
+   "Expenditure method: C + I + G + (X - M)",
+   "GDP vs GNP: GNP = GDP + NFIA (net factor income from abroad)",
+   "Double counting eriye jawa / nominal vs real GDP er ullekh"
+  ]
+ },
+ {
+  "board": "West Bengal Board (WBCHSE)",
+  "grade": "Class 12",
+  "subject": "Bengali Literature",
+  "question": "HS Bangla — Rabindranath er 'Rupnaraner Kule' kobitar mul bhab ki, kobi 'satya' bolte ki bujhiyechen, boro proshner jonno",
+  "marks": 0,
+  "rubric": [
+   "Kobita ta Rabindranath er shesh porbo er lekha (kabyagrantho 'Shesh Lekha')",
+   "'Rupnaraner kule jege uthilam' — kobi bastob/satya jogote jege otha",
+   "Upolobdhi: ei jogot swapna noy, ei jogot satya",
+   "'Satya je kothin' — satya kothin holeo kobi take bhalobeshechen karon se kokhono banchona kore na",
+   "Mrityu / jibaner dukkho ke satya hisebe grohon, aar tar sathe mitali",
+   "Kobi o kabyagrantho er thik reference"
+  ]
+ },
+ {
+  "board": "Punjab Board (PSEB)",
+  "grade": "Class 8",
+  "subject": "Science",
+  "question": "PSEB class 8 science — sound kise kehnde ne, ih kis tarah travel karda hai te human ear di working short vich dasso",
+  "marks": 0,
+  "rubric": [
+   "Sound vibration naal paida hunda hai",
+   "Travel karan layi medium chahida (solid/liquid/gas), vacuum vich nahi ja sakda",
+   "Terms: frequency (Hz), amplitude (loudness), pitch",
+   "Human ear da path: pinna -> ear canal -> eardrum -> ossicles -> cochlea -> auditory nerve",
+   "Audible range 20 Hz to 20,000 Hz"
+  ]
+ },
+ {
+  "board": "Punjab Board (PSEB)",
+  "grade": "Class 10",
+  "subject": "History",
+  "question": "PSEB 10th SST — Maharaja Ranjit Singh de raj parbandh (administration) te unhan diyan mukh achievements baare 5 marks da jawab",
+  "marks": 5,
+  "rubric": [
+   "Ranjit Singh ne Sikh misls nu ikattha karke Sikh Raj banaya (rajdhani Lahore), 1801 vich Maharaja banya",
+   "Fauji sudhaar: modern army (Fauj-i-Khas), European officers, artillery",
+   "Parbandh: subas/provinces vich vand, kaargar revenue system",
+   "Dharam-nirpekh niti: Hindu, Muslim, Sikh sab nu naukri; dharmik sehnsheelta",
+   "Jitan: Lahore, Multan, Kashmir, Peshawar",
+   "'Sher-e-Punjab' de naam naal jaane jande san"
+  ]
+ },
+ {
+  "board": "Punjab Board (PSEB)",
+  "grade": "Class 12",
+  "subject": "Chemistry",
+  "question": "12th chem PSEB — aldehyde te ketone vich difference kive pata lagaiye, Tollens test te Fehling test kithe use hunde ne",
+  "marks": 0,
+  "rubric": [
+   "Structural difference: aldehyde vich -CHO (terminal), ketone vich >C=O do carbon de vichkaar",
+   "Tollens' test (ammoniacal AgNO3): aldehyde silver mirror dinda, ketone nahi",
+   "Fehling's test: aldehyde red-brown Cu2O precipitate dinda, ketone (aam taur te) negative",
+   "Aldehyde ketone naalon jaldi oxidise ho jande",
+   "Aromatic aldehyde (benzaldehyde) Fehling naal respond nahi karda — nuance",
+   "Chapter 'Aldehydes, Ketones and Carboxylic Acids' (NCERT Class 12) reference"
+  ]
+ },
+ {
+  "board": "Punjab Board (PSEB)",
+  "grade": "Class 12",
+  "subject": "Punjabi Literature",
+  "question": "12th Punjabi PSEB — Shiv Kumar Batalvi diyan kavitavan da mukh vishay ki hai, 'birha' da concept samjhao",
+  "marks": 0,
+  "rubric": [
+   "Shiv Kumar Batalvi — 'birha da sultan', mukh vishay birha (vichhora/tarap/dard)",
+   "Romanticism, vichhore da dukh, ishq, te maut baar-baar aaunde vishay",
+   "Parsiddh rachnavan da hawala (e.g. 'Loona' — epic kaav natak, Sahitya Akademi award)",
+   "Geetmayi, jazbaati Punjabi kavita da andaaz",
+   "Birha nu ruhani/jazbaati tarap vajon pesh karna, udaas sur",
+   "Sab ton chhoti umar da Sahitya Akademi award jetu (Loona layi, 1967)"
+  ]
+ },
+ {
+  "board": "Haryana Board (BSEH)",
+  "grade": "Class 6",
+  "subject": "Mathematics",
+  "question": "class 6 maths Haryana board — integers wale chapter mein negative numbers ka addition aur subtraction number line se kaise karte hain",
+  "marks": 0,
+  "rubric": [
+   "Integers = whole numbers + negatives (...-2,-1,0,1,2...)",
+   "Number line par darshana: positive dayen, negative bayen",
+   "Addition: same sign -> jodo aur sign rakho; opposite sign -> ghatao, bade wale ka sign",
+   "Subtraction: additive inverse jodo (a - b = a + (-b))",
+   "Hal kiye hue udaharan (e.g. -3 + 5 = 2, -4 - 2 = -6)"
+  ]
+ },
+ {
+  "board": "Haryana Board (BSEH)",
+  "grade": "Class 10",
+  "subject": "Physics",
+  "question": "BSEH 10th science vidyut (Electricity) chapter — Ohm's law state karke series aur parallel mein resistance ka combined formula derive karo, ek numerical bhi. (5 marks)",
+  "marks": 5,
+  "rubric": [
+   "Ohm's law: sthir taap par V = IR; V I ke samanupati",
+   "Series: Rs = R1 + R2 + R3 (current same, voltage vibhajit)",
+   "Parallel: 1/Rp = 1/R1 + 1/R2 + 1/R3 (voltage same, current vibhajit)",
+   "Dono combination ke liye derivation ka tark",
+   "Hal kiya hua numerical",
+   "Ikaiyan: V (volt), I (ampere), R (ohm)"
+  ]
+ },
+ {
+  "board": "Haryana Board (BSEH)",
+  "grade": "Class 12",
+  "subject": "Economics",
+  "question": "12th economics Haryana board — money ke functions kya hain aur commercial bank credit creation kaise karta hai, macro wale part se",
+  "marks": 0,
+  "rubric": [
+   "Money ke functions: medium of exchange, measure of value, store of value, standard of deferred payment",
+   "Primary vs secondary functions ka antar",
+   "Credit creation: bank kuch hissa reserve (LRR/CRR) rakhta hai, baaki loan deta hai",
+   "Money multiplier = 1/LRR; deposit expansion ka udaharan",
+   "Primary/initial deposit ki bhumika",
+   "Chapter 'Money and Banking' (NCERT Class 12 Macroeconomics) reference"
+  ]
+ },
+ {
+  "board": "Haryana Board (BSEH)",
+  "grade": "Competitive Exam (JEE)",
+  "subject": "Chemistry",
+  "question": "JEE mains ke liye — hybridization kaise decide karte hain, sp/sp2/sp3 ke examples, aur VSEPR se shape kaise predict kare",
+  "marks": 0,
+  "rubric": [
+   "Steric number = (bonded atoms + lone pairs) se hybridization; sp(2), sp2(3), sp3(4), sp3d(5), sp3d2(6)",
+   "Examples: sp = BeCl2/C2H2 (linear), sp2 = BF3/C2H4 (trigonal planar), sp3 = CH4/NH3 (tetrahedral)",
+   "VSEPR: electron pairs repulsion minimize karte hain; lone pair repulsion > bond pair",
+   "Shape vs geometry ka antar (NH3 pyramidal, H2O bent lone pairs ki wajah se)",
+   "Bond angle par lone pair ka asar (CH4 109.5, NH3 107, H2O 104.5 degree)"
+  ]
+ },
+ {
+  "board": "Jharkhand Board (JAC)",
+  "grade": "Class 7",
+  "subject": "History",
+  "marks": 0,
+  "question": "who is birsa munda and what was ulgulan? explain in short",
+  "rubric": [
+   "Birsa Munda was a tribal freedom fighter and leader of the Munda community in the Chotanagpur region (Jharkhand), revered as 'Dharti Aaba' (Father of the Earth)",
+   "Ulgulan means 'The Great Tumult/Uprising', the rebellion he led around 1899-1900 against British rule, moneylenders and dikus (outsiders)",
+   "Aims: end exploitation, restore tribal land rights (Khuntkatti communal land system) and establish Munda Raj / self-rule",
+   "He was also a religious and social reformer who preached against superstition and started a new faith among his followers",
+   "He was arrested by the British and died in Ranchi jail in 1900; Jharkhand celebrates his legacy (e.g. Birsa Munda Jayanti / Janjatiya Gaurav Divas)"
+  ]
+ },
+ {
+  "board": "Jharkhand Board (JAC)",
+  "grade": "Class 10",
+  "subject": "Math",
+  "marks": 5,
+  "question": "real numbers chapter - prove that root 3 is irrational (5 marks)",
+  "rubric": [
+   "Use proof by contradiction: assume √3 is rational, so √3 = p/q where p and q are integers, q ≠ 0, and p, q are coprime (no common factor other than 1)",
+   "Square both sides: 3 = p²/q², so p² = 3q², meaning 3 divides p², therefore 3 divides p (using the theorem: if a prime p divides a², then p divides a)",
+   "Let p = 3k for some integer k; substitute to get 3q² = 9k², so q² = 3k², meaning 3 divides q², therefore 3 divides q",
+   "Now 3 divides both p and q, which contradicts the assumption that p and q are coprime",
+   "Conclude that the assumption is wrong, hence √3 is irrational"
+  ]
+ },
+ {
+  "board": "Jharkhand Board (JAC)",
+  "grade": "Class 12",
+  "subject": "Physics",
+  "marks": 0,
+  "question": "derive expression for electric field at a point on the axial line of an electric dipole",
+  "rubric": [
+   "Define electric dipole and dipole moment p = q(2a) directed from −q to +q",
+   "Take a point on the axis at distance r from the centre; write field due to +q as E₊ = (1/4πε₀)·q/(r−a)² and due to −q as E₋ = (1/4πε₀)·q/(r+a)², along opposite directions",
+   "Net axial field E = E₊ − E₋ = (1/4πε₀)·q·[1/(r−a)² − 1/(r+a)²], simplifying to E = (1/4πε₀)·(2pr)/(r²−a²)²",
+   "For a short dipole (r >> a), E = (1/4πε₀)·(2p/r³)",
+   "State direction: field is along the direction of the dipole moment p (from −q to +q)"
+  ]
+ },
+ {
+  "board": "Jharkhand Board (JAC)",
+  "grade": "Class 9",
+  "subject": "Economics",
+  "marks": 0,
+  "question": "story of village palampur - explain the factors of production with example",
+  "rubric": [
+   "Four factors of production: land (and other natural resources), labour, physical capital, and human capital / enterprise",
+   "Land: fixed factor, farming is the main activity and most land is under cultivation; scope to raise output is limited",
+   "Labour: workers who cultivate the fields, both landless labourers and small farmers",
+   "Physical capital: working capital (seeds, fertilizers, money) and fixed capital (tools, machines, tube wells, buildings)",
+   "Human capital / knowledge and enterprise combine the other three factors to produce output; note multiple cropping and modern (HYV) farming methods used in Palampur",
+   "Mention non-farm activities in Palampur: dairy, small-scale manufacturing, shopkeeping and transport"
+  ]
+ },
+ {
+  "board": "Chhattisgarh Board (CGBSE)",
+  "grade": "Class 8",
+  "subject": "Physics",
+  "marks": 0,
+  "question": "friction chapter - friction ke advantages aur disadvantages kya hai",
+  "rubric": [
+   "Friction is the force that opposes relative motion between two surfaces in contact",
+   "Advantages: enables walking without slipping, writing with a pen/pencil, gripping objects, and braking of vehicles",
+   "Disadvantages: causes wear and tear of parts, produces heat, and wastes energy (reduces efficiency of machines)",
+   "Methods to reduce friction: lubricants (oil/grease), ball bearings, polishing surfaces, streamlining shapes",
+   "Mention types: static, sliding and rolling friction; rolling friction is smaller than sliding friction; friction depends on surface roughness"
+  ]
+ },
+ {
+  "board": "Chhattisgarh Board (CGBSE)",
+  "grade": "Class 10",
+  "subject": "Chemistry",
+  "marks": 3,
+  "question": "chemical reactions and equations - types of chemical reactions ke saath balanced example do (3 marks)",
+  "rubric": [
+   "Name the main types: combination, decomposition, displacement, and double displacement (plus oxidation-reduction / redox)",
+   "Combination example: 2Mg + O₂ → 2MgO (correctly balanced)",
+   "Decomposition example: 2FeSO₄ → Fe₂O₃ + SO₂ + SO₃ (or CaCO₃ → CaO + CO₂), balanced",
+   "Displacement example: Fe + CuSO₄ → FeSO₄ + Cu; double displacement example: Na₂SO₄ + BaCl₂ → BaSO₄ + 2NaCl",
+   "Define oxidation (gain of oxygen / loss of hydrogen) and reduction (loss of oxygen / gain of hydrogen), and note all equations must be balanced (law of conservation of mass)"
+  ]
+ },
+ {
+  "board": "Chhattisgarh Board (CGBSE)",
+  "grade": "Class 12",
+  "subject": "Biology",
+  "marks": 0,
+  "question": "principles of inheritance - explain mendel's monohybrid cross and the 3:1 ratio",
+  "rubric": [
+   "Mendel used garden pea (Pisum sativum) and studied one pair of contrasting traits (monohybrid cross), e.g. tall (TT) × dwarf (tt)",
+   "F1 generation: all plants are tall (Tt), showing the Law of Dominance (dominant allele masks recessive)",
+   "F2 generation on selfing F1: phenotypic ratio 3 tall : 1 dwarf, genotypic ratio 1 TT : 2 Tt : 1 tt",
+   "State the Law of Segregation: the two alleles of a gene separate during gamete formation and each gamete gets only one",
+   "Explain with a Punnett square and mention the test cross (F1 × recessive parent) to determine an unknown genotype"
+  ]
+ },
+ {
+  "board": "Chhattisgarh Board (CGBSE)",
+  "grade": "Class 11",
+  "subject": "Math",
+  "marks": 0,
+  "question": "sets chapter - types of sets samjhao with examples (empty, finite, infinite, equal)",
+  "rubric": [
+   "Empty / null set: a set with no elements, denoted ∅ or { }, e.g. {x : x is a natural number, 2 < x < 3}",
+   "Finite set: a set with a countable (definite) number of elements, e.g. {1, 2, 3, 4}",
+   "Infinite set: a set whose elements cannot be counted / listed completely, e.g. set of natural numbers N",
+   "Equal sets: two sets A and B are equal if they have exactly the same elements, e.g. {1,2,3} = {3,2,1}",
+   "Mention singleton set (exactly one element) and subset / universal set concepts with a short example"
+  ]
+ },
+ {
+  "board": "Odisha Board (BSE Odisha)",
+  "grade": "Class 7",
+  "subject": "History",
+  "marks": 0,
+  "question": "why did emperor ashoka fight the kalinga war and what happened after it",
+  "rubric": [
+   "Kalinga war (around 261 BCE) was fought by Ashoka of the Maurya empire to conquer Kalinga (ancient Odisha region), which was prosperous and independent",
+   "The war caused massive bloodshed — about a lakh killed, more wounded and thousands deported",
+   "Seeing the destruction, Ashoka was filled with remorse and gave up war / conquest by force (digvijaya) forever, adopting instead conquest through Dharma (dhammavijaya)",
+   "He embraced Buddhism and adopted the policy of Dhamma (non-violence, tolerance, welfare)",
+   "He spread the message through rock edicts (e.g. the Dhauli edicts near Bhubaneswar) and sent missionaries to other lands"
+  ]
+ },
+ {
+  "board": "Odisha Board (BSE Odisha)",
+  "grade": "Class 10",
+  "subject": "Physics",
+  "marks": 5,
+  "question": "light chapter - state the laws of refraction and derive the lens formula 1/v - 1/u = 1/f (5 marks)",
+  "rubric": [
+   "State the two laws of refraction: (1) incident ray, refracted ray and normal lie in the same plane; (2) Snell's law — sin i / sin r = constant (refractive index)",
+   "Draw a labelled ray diagram for a convex lens forming a real image of an object placed beyond the focus",
+   "Apply the Cartesian sign convention for distances (u, v, f)",
+   "Use similar triangles to relate object distance, image distance and focal length and derive 1/v − 1/u = 1/f",
+   "Define magnification m = v/u = h'/h and state its sign meaning (real/inverted vs virtual/erect)"
+  ]
+ },
+ {
+  "board": "Odisha Board (CHSE Odisha)",
+  "grade": "Class 12",
+  "subject": "Biology",
+  "marks": 0,
+  "question": "explain the process of dna replication with the enzymes involved",
+  "rubric": [
+   "DNA replication is semiconservative — each new DNA molecule has one parental (old) strand and one newly synthesised strand (Meselson & Stahl experiment)",
+   "Replication begins at the origin of replication; helicase unwinds the double helix and separates the two strands forming a replication fork",
+   "DNA-dependent DNA polymerase synthesises the new strand in the 5'→3' direction using each parental strand as template; primase lays down an RNA primer",
+   "Leading strand is synthesised continuously; lagging strand is synthesised in short Okazaki fragments that are later joined by DNA ligase",
+   "Mention high fidelity / proofreading by DNA polymerase to minimise errors"
+  ]
+ },
+ {
+  "board": "Odisha Board (CHSE Odisha)",
+  "grade": "Class 11",
+  "subject": "Literature",
+  "marks": 0,
+  "question": "theme of rebati by fakir mohan senapati (odia mil)",
+  "rubric": [
+   "'Rebati' by Fakir Mohan Senapati is regarded as the first modern Odia short story (published 1898); Fakir Mohan is called the father of Odia prose fiction",
+   "Story of a young village girl, Rebati, who has a strong desire to study/get an education, encouraged by Basudev the teacher",
+   "Central conflict: the desire for female education against the backdrop of a conservative, superstitious rural society (grandmother's opposition)",
+   "A cholera epidemic destroys her family (father, Basudev, then Rebati), turning her hope into tragedy",
+   "Themes: yearning for female education vs orthodoxy/superstition, human suffering, and the clash between tradition and modernity"
+  ]
+ },
+ {
+  "board": "Assam Board (SEBA)",
+  "grade": "Class 7",
+  "subject": "Literature",
+  "marks": 0,
+  "question": "burhi aair sadhu - who wrote it and what is the book about",
+  "rubric": [
+   "'Burhi Aair Sadhu' (Grandma's Tales) was written by Sahityarathi Lakshminath Bezbaroa, a leading figure of Assamese literature",
+   "It is a collection of Assamese folk tales / fairy tales, first published in 1911",
+   "The title means tales told by 'Burhi Aai' (the grandmother), reflecting the oral storytelling tradition of Assam",
+   "It preserves Assamese folk culture and is a classic of children's literature (e.g. well-known tale 'Tejimola')",
+   "Mention Bezbaroa's wider contribution to Assamese language and culture (e.g. writing 'O Mur Apunar Desh')"
+  ]
+ },
+ {
+  "board": "Assam Board (SEBA)",
+  "grade": "Class 10",
+  "subject": "History",
+  "marks": 5,
+  "question": "who was lachit borphukan? describe the battle of saraighat (5 marks)",
+  "rubric": [
+   "Lachit Borphukan was a commander (Borphukan) of the Ahom kingdom of Assam, famous for defending Assam against the Mughals",
+   "The Battle of Saraighat was fought in 1671 on the Brahmaputra river near Guwahati between the Ahoms and the Mughal army led by Ram Singh I",
+   "Despite illness, Lachit led the Ahoms and won a decisive naval victory using the river terrain and guerrilla tactics",
+   "Famous incident: he beheaded his own maternal uncle for negligence in building the defence rampart ('my uncle is not greater than my country')",
+   "Significance: it halted Mughal expansion into Assam; Lachit is celebrated as a national hero (Lachit Divas observed on 24 November)"
+  ]
+ },
+ {
+  "board": "Assam Board (AHSEC)",
+  "grade": "Class 11",
+  "subject": "Economics",
+  "marks": 0,
+  "question": "indian economic development - explain the goals of the five year plans",
+  "rubric": [
+   "Five Year Plans were formulated by the Planning Commission (set up in 1950; the First Five Year Plan was launched in 1951) to develop the economy in a planned way",
+   "Growth: increase in the country's capacity to produce goods and services / rise in GDP",
+   "Modernisation: adoption of new technology and progressive social change (e.g. greater role for women)",
+   "Self-reliance: reducing dependence on imports and foreign aid, promoting domestic production",
+   "Equity: reducing inequality and poverty so benefits of growth reach all sections of society"
+  ]
+ },
+ {
+  "board": "Assam Board (AHSEC)",
+  "grade": "Class 12",
+  "subject": "Chemistry",
+  "marks": 0,
+  "question": "electrochemistry - explain the working of a daniell cell / galvanic cell",
+  "rubric": [
+   "A galvanic (voltaic) cell converts chemical energy into electrical energy through a spontaneous redox reaction",
+   "In a Daniell cell, the zinc electrode is the anode (oxidation: Zn → Zn²⁺ + 2e⁻) placed in ZnSO₄ solution",
+   "The copper electrode is the cathode (reduction: Cu²⁺ + 2e⁻ → Cu) placed in CuSO₄ solution",
+   "A salt bridge connects the two half-cells and maintains electrical neutrality / completes the circuit; electrons flow from anode to cathode through the external wire",
+   "Cell representation Zn | Zn²⁺ || Cu²⁺ | Cu and EMF = E°cathode − E°anode (about 1.1 V)"
+  ]
+ },
+ {
+  "board": "Himachal Board (HPBOSE)",
+  "grade": "Class 6",
+  "subject": "Biology",
+  "marks": 0,
+  "question": "parts of a plant and their functions",
+  "rubric": [
+   "Roots: fix the plant in the soil and absorb water and minerals; mention tap root and fibrous root types",
+   "Stem: gives support and holds leaves/flowers; conducts water and minerals upward and food downward",
+   "Leaves: make food by photosynthesis and carry out transpiration; mention veins/midrib and stomata",
+   "Flower: the reproductive part of the plant that develops into fruit and seed",
+   "Fruit and seed: seed grows into a new plant (reproduction), fruit protects the seed"
+  ]
+ },
+ {
+  "board": "Himachal Board (HPBOSE)",
+  "grade": "Class 10",
+  "subject": "Math",
+  "marks": 4,
+  "question": "arithmetic progressions - find the sum of the first 20 terms of the AP 2, 5, 8, ... (4 marks)",
+  "rubric": [
+   "Identify first term a = 2, common difference d = 3, and n = 20",
+   "State the sum formula Sₙ = n/2 [2a + (n − 1)d]",
+   "Substitute correctly: S₂₀ = 20/2 [2(2) + (20 − 1)(3)] = 10 [4 + 57]",
+   "Compute the answer S₂₀ = 10 × 61 = 610",
+   "Show the working steps clearly (state nth term formula aₙ = a + (n−1)d if used)"
+  ]
+ },
+ {
+  "board": "Himachal Board (HPBOSE)",
+  "grade": "Class 12",
+  "subject": "Physics",
+  "marks": 0,
+  "question": "explain the working and principle of a transformer",
+  "rubric": [
+   "Principle: mutual induction — a changing current in the primary coil induces an EMF in the secondary coil",
+   "Construction: primary and secondary coils wound on a common laminated soft-iron core; works only on alternating current (AC)",
+   "Turns relation: Vs/Vp = Ns/Np; step-up transformer (Ns > Np) increases voltage, step-down (Ns < Np) decreases it",
+   "For an ideal transformer power is conserved: VpIp = VsIs",
+   "Energy losses (eddy current, hysteresis, copper/resistance, flux leakage) and how they are minimised (laminated core, soft iron, thick wires)"
+  ]
+ },
+ {
+  "board": "Himachal Board (HPBOSE)",
+  "grade": "Class 11",
+  "subject": "Chemistry",
+  "marks": 0,
+  "question": "structure of atom - explain bohr's model of the hydrogen atom and its postulates",
+  "rubric": [
+   "Electrons revolve around the nucleus only in certain fixed circular orbits (stationary states / energy levels) without radiating energy",
+   "Angular momentum is quantised: mvr = nh/2π, where n = 1, 2, 3...",
+   "Energy of an orbit is fixed and given by En = −13.6/n² eV for hydrogen; energy increases (becomes less negative) with n",
+   "Energy is absorbed or emitted only when an electron jumps between orbits, ΔE = E_final − E_initial = hν",
+   "It successfully explains the hydrogen line spectrum; state limitations (fails for multi-electron atoms and finer spectral details)"
+  ]
+ },
+ {
+  "board": "IB MYP",
+  "grade": "Class 6",
+  "subject": "Mathematics",
+  "marks": 0,
+  "question": "myp maths yr1 - i keep mixing up area and perimeter of a rectangle, can u explain the difference with an example pls",
+  "rubric": [
+   "Perimeter = total distance around the shape (sum of all sides), measured in linear units like cm",
+   "Area = amount of space inside the shape, measured in square units like cm²",
+   "Give the rectangle formulas: perimeter = 2(l + w) and area = l × w",
+   "Worked example with numbers, e.g. l=5 cm, w=3 cm gives perimeter 16 cm and area 15 cm²",
+   "Stress the unit difference (cm vs cm²) as the key way to tell them apart"
+  ]
+ },
+ {
+  "board": "IB MYP",
+  "grade": "Class 7",
+  "subject": "Biology",
+  "marks": 0,
+  "question": "for my MYP sciences ecosystems unit whats the difference between a food chain and a food web? need it for criterion A",
+  "rubric": [
+   "Food chain = single linear sequence showing who eats whom and energy transfer from one organism to the next",
+   "Food web = many interconnected food chains showing all feeding relationships in an ecosystem",
+   "Include trophic roles: producer → primary consumer → secondary consumer → tertiary consumer",
+   "Note arrows point in the direction of energy flow (from the organism eaten to the eater)",
+   "Explain a food web is more realistic because most organisms eat and are eaten by more than one species",
+   "Uses correct scientific terminology as expected for Criterion A (knowing and understanding)"
+  ]
+ },
+ {
+  "board": "IB MYP",
+  "grade": "Class 8",
+  "subject": "History",
+  "marks": 0,
+  "question": "myp individuals and societies - what does OPCVL mean when you analyse a source and how do i actually use it",
+  "rubric": [
+   "Expand OPCVL: Origin, Purpose, Content, Value, Limitation",
+   "Origin: who created it, when, and what type of source it is (primary or secondary)",
+   "Purpose: why it was made and for what intended audience",
+   "Value: what the source is genuinely useful for, given its origin and purpose",
+   "Limitation: bias, missing perspectives, or what the source cannot tell us",
+   "Link OPCVL to evaluating the reliability and usefulness of sources in an investigation"
+  ]
+ },
+ {
+  "board": "IB MYP",
+  "grade": "Class 10",
+  "subject": "Chemistry",
+  "marks": 8,
+  "question": "MYP year 5 eAssessment prep - explain how increasing temperature affects the rate of reaction using collision theory. teacher says its a criterion A style question and i want the top band",
+  "rubric": [
+   "State that increasing temperature increases the rate of reaction",
+   "Explain that particles gain more kinetic energy and move faster at higher temperature",
+   "More frequent collisions between reactant particles per unit time (higher collision frequency)",
+   "A greater proportion of collisions have energy equal to or above the activation energy (more successful collisions)",
+   "Answers to the depth of the command term 'explain' (gives causes/reasons, not just describes)",
+   "Top-band answer links cause → effect clearly using correct terms (kinetic energy, collision frequency, activation energy)"
+  ]
+ },
+ {
+  "board": "IB DP",
+  "grade": "Class 11",
+  "subject": "Economics",
+  "marks": 0,
+  "question": "DP econ SL - can someone explain movement along the demand curve vs a shift of the demand curve? i always lose marks mixing these up",
+  "rubric": [
+   "Movement along the curve is caused ONLY by a change in the price of the good itself (a change in quantity demanded)",
+   "A shift of the curve is caused by a change in a non-price determinant (a change in demand)",
+   "List non-price determinants: income, price of substitutes/complements, tastes/preferences, expectations, number of consumers",
+   "Direction: rightward shift = increase in demand, leftward shift = decrease in demand",
+   "Uses the correct terminology distinction: 'change in quantity demanded' vs 'change in demand'",
+   "Describes or references a diagram to illustrate both cases"
+  ]
+ },
+ {
+  "board": "IB DP",
+  "grade": "Class 11",
+  "subject": "Chemistry",
+  "marks": 0,
+  "question": "IB chem HL Structure 1 - whats the actual difference between the mole, molar mass and Avogadro's constant? keep getting them confused in stoichiometry",
+  "rubric": [
+   "Mole = the amount of substance containing 6.02×10²³ specified entities (particles)",
+   "Avogadro's constant (N_A) = 6.02×10²³ mol⁻¹, the number of entities per mole",
+   "Molar mass (M) = mass of one mole of a substance in g mol⁻¹, numerically equal to relative atomic/molecular mass",
+   "State the relationships: n = m/M and N = n × N_A",
+   "Short worked example linking all three (mass → moles → number of particles)",
+   "Correctly frames it within DP Chemistry Structure 1 (counting particles / the mole concept)"
+  ]
+ },
+ {
+  "board": "IB DP",
+  "grade": "Class 12",
+  "subject": "Mathematics",
+  "marks": 0,
+  "question": "math AA HL - how do you prove by induction that the sum of the first n positive integers is n(n+1)/2? my teacher is strict about the layout so i need the full steps",
+  "rubric": [
+   "State the proposition P(n): 1 + 2 + ... + n = n(n+1)/2",
+   "Base case: verify P(1) is true (LHS = 1, RHS = 1(2)/2 = 1)",
+   "Inductive step: assume P(k) is true (state the inductive hypothesis explicitly)",
+   "Add (k+1) to both sides and algebraically simplify to (k+1)(k+2)/2",
+   "Show this matches the formula with n = k+1, so P(k+1) is true",
+   "Formal concluding statement: by the principle of mathematical induction it holds for all n ∈ ℤ⁺ (AA HL expects this sentence)"
+  ]
+ },
+ {
+  "board": "IB DP",
+  "grade": "Class 12",
+  "subject": "History",
+  "marks": 15,
+  "question": "DP history paper 2 - 'Evaluate the causes of one twentieth-century war.' i want to write on WW2, how do i structure a top-band 15 mark essay?",
+  "rubric": [
+   "Clear introduction with a defined focus (which war, which causes) and a stated thesis/argument",
+   "Engages the command term 'evaluate' by weighing long-term vs short-term causes and their relative importance",
+   "Specific, accurate historical evidence (e.g. Treaty of Versailles, Great Depression, appeasement, Hitler's foreign policy, failure of the League of Nations)",
+   "Reference to differing historian interpretations / historiography (expected for the top mark bands)",
+   "Balanced analysis leading to a substantiated judgement rather than narrative recount",
+   "Linked, well-structured paragraphs and a conclusion that directly answers 'evaluate'"
+  ]
+ },
+ {
+  "board": "Cambridge IGCSE",
+  "grade": "Class 9",
+  "subject": "Physics",
+  "marks": 0,
+  "question": "igcse physics 0625 - whats the difference between speed and velocity?? and is it still acceleration when youre slowing down",
+  "rubric": [
+   "Speed = scalar quantity, how fast (distance/time), no direction",
+   "Velocity = vector quantity, speed in a stated direction (displacement/time)",
+   "Acceleration = rate of change of velocity",
+   "Yes, slowing down is acceleration too (negative acceleration / deceleration)",
+   "Correct units: m/s for speed and velocity, m/s² for acceleration",
+   "Note that changing direction at constant speed is also acceleration because velocity (a vector) changes"
+  ]
+ },
+ {
+  "board": "Cambridge IGCSE",
+  "grade": "Class 10",
+  "subject": "English Literature",
+  "marks": 0,
+  "question": "cie igcse lit - we're doing Songs of Ourselves, how do i analyse imagery in a poem for the exam? what does the examiner actually want",
+  "rubric": [
+   "Identify specific images and name the device (metaphor, simile, personification, sensory imagery)",
+   "Use short, precise embedded quotations as evidence",
+   "Explain the effect or connotation of the imagery on meaning, mood or tone",
+   "Link the analysis back to the poem's themes or the poet's message",
+   "Comment on how word choice, form or structure supports the imagery",
+   "Avoid feature-spotting; the examiner rewards developed analysis of the effect on the reader"
+  ]
+ },
+ {
+  "board": "Cambridge IGCSE",
+  "grade": "Class 10",
+  "subject": "Chemistry",
+  "marks": 0,
+  "question": "igcse chem 0620 - explain the electrolysis of molten lead bromide, whats happening at each electrode",
+  "rubric": [
+   "Molten PbBr₂ contains free-moving Pb²⁺ and Br⁻ ions (it must be molten to conduct and be decomposed)",
+   "Cathode (negative electrode): Pb²⁺ ions gain electrons (reduction) forming molten lead",
+   "Anode (positive electrode): Br⁻ ions lose electrons (oxidation) forming bromine gas/vapour",
+   "Half-equations: Pb²⁺ + 2e⁻ → Pb and 2Br⁻ → Br₂ + 2e⁻",
+   "Cations migrate to the cathode and anions migrate to the anode",
+   "Links reduction to the cathode and oxidation to the anode (OIL RIG)"
+  ]
+ },
+ {
+  "board": "Cambridge IGCSE",
+  "grade": "Class 10",
+  "subject": "Biology",
+  "marks": 6,
+  "question": "0610 igcse bio - 'Describe the process of transpiration and explain how wind speed affects the rate of transpiration. [6]' can someone give a model answer?",
+  "rubric": [
+   "Define transpiration as the loss/evaporation of water vapour from the leaves, mainly through the stomata",
+   "Water evaporates from the surfaces of mesophyll cells and diffuses out through open stomata",
+   "Water is drawn up the xylem (the transpiration stream) to replace what is lost",
+   "Higher wind speed removes water vapour from around the leaf/stomata",
+   "This maintains a steep diffusion/concentration gradient of water vapour, so the rate of transpiration increases",
+   "Answer is split for the 6 marks (description + explanation) and uses correct terms (stomata, diffusion, water vapour, xylem)"
+  ]
+ },
+ {
+  "board": "Cambridge AS-Level",
+  "grade": "Class 11",
+  "subject": "Economics",
+  "marks": 0,
+  "question": "cie as econ 9708 - difference between PED and PES and how do i tell if supply is elastic or inelastic just from a value",
+  "rubric": [
+   "PED = price elasticity of demand = %Δ quantity demanded / %Δ price",
+   "PES = price elasticity of supply = %Δ quantity supplied / %Δ price",
+   "Interpretation of the value: magnitude > 1 elastic, < 1 inelastic, = 1 unit elastic (0 perfectly inelastic, ∞ perfectly elastic)",
+   "Note PED is negative due to the inverse price–demand relationship, so we judge by magnitude",
+   "Factors affecting PES: time period, spare capacity, availability of stocks, mobility of factors of production",
+   "Includes a numerical worked example with correct calculation"
+  ]
+ },
+ {
+  "board": "Cambridge AS-Level",
+  "grade": "Class 11",
+  "subject": "Physics",
+  "marks": 0,
+  "question": "as physics 9702 - i dont get the difference between scalars and vectors and how you add two vectors at an angle. is it just pythagoras?",
+  "rubric": [
+   "Scalar = magnitude only; vector = magnitude and direction (with examples of each)",
+   "For two perpendicular vectors: find resultant magnitude by Pythagoras and direction by tan⁻¹",
+   "For non-perpendicular vectors: use a scale drawing (tip-to-tail / parallelogram) or resolve into components",
+   "Resolving a vector into components: F cosθ (horizontal) and F sinθ (vertical)",
+   "Worked example that finds BOTH the resultant magnitude and its direction (angle)",
+   "Emphasises that direction must be stated to fully define a vector answer"
+  ]
+ },
+ {
+  "board": "Cambridge AS-Level",
+  "grade": "Class 11",
+  "subject": "Mathematics",
+  "marks": 0,
+  "question": "9709 pure maths 1 - how do i find the discriminant and use it to know how many roots a quadratic has",
+  "rubric": [
+   "Discriminant = b² − 4ac, from a quadratic in the form ax² + bx + c = 0",
+   "b² − 4ac > 0 gives two distinct real roots",
+   "b² − 4ac = 0 gives one repeated (equal) real root",
+   "b² − 4ac < 0 gives no real roots",
+   "Shows how to correctly identify a, b and c from an equation",
+   "A worked example, e.g. finding the values of k for which an equation has real/equal/no roots (typical P1 exam use)"
+  ]
+ },
+ {
+  "board": "Cambridge AS-Level",
+  "grade": "Class 11",
+  "subject": "Biology",
+  "marks": 5,
+  "question": "9700 as bio cell membranes - 'Explain how the structure of a cell surface membrane allows it to control what enters and leaves the cell. [5]'",
+  "rubric": [
+   "Phospholipid bilayer with hydrophilic heads and hydrophobic tails acting as a partially permeable barrier",
+   "Small and non-polar molecules (O₂, CO₂) diffuse directly through the bilayer",
+   "Channel and carrier proteins allow transport of ions and polar molecules (facilitated diffusion / active transport)",
+   "Carrier proteins are specific and can use ATP for active transport against the concentration gradient",
+   "Cholesterol regulates the fluidity and stability of the membrane",
+   "Framed within the fluid mosaic model and gives 5 distinct valid points for the 5 marks"
+  ]
+ },
+ {
+  "board": "Cambridge A-Level",
+  "grade": "Class 12",
+  "subject": "Chemistry",
+  "marks": 0,
+  "question": "a level chem 9701 - explain the mechanism for the reaction of bromoethane with aqueous NaOH. is it SN1 or SN2 and why",
+  "rubric": [
+   "Reaction: bromoethane + OH⁻ → ethanol + Br⁻ (nucleophilic substitution / hydrolysis)",
+   "Bromoethane is a primary halogenoalkane so it proceeds by the SN2 mechanism",
+   "OH⁻ is the nucleophile (lone pair on oxygen) and attacks the δ+ carbon bonded to bromine",
+   "Curly arrows shown: OH⁻ lone pair to the carbon, and the C–Br bonding pair to bromine",
+   "A transition state with partial bonds is formed; C–Br breaks heterolytically and Br⁻ leaves",
+   "One-step concerted mechanism; explains why a primary halogenoalkane favours SN2 (steric/kinetic reasons)"
+  ]
+ },
+ {
+  "board": "Cambridge A-Level",
+  "grade": "Class 12",
+  "subject": "Biology",
+  "marks": 0,
+  "question": "cie a2 bio - can someone explain the light-dependent stage of photosynthesis? cyclic vs non-cyclic photophosphorylation really confuses me",
+  "rubric": [
+   "Location: the thylakoid membranes of the chloroplast",
+   "Non-cyclic: light excites electrons at PSII; photolysis of water (2H₂O → 4H⁺ + O₂ + 4e⁻) replaces the lost electrons",
+   "Electrons pass along the electron transport chain; energy pumps H⁺ to create a gradient, and ATP synthase makes ATP (chemiosmosis)",
+   "NADP is reduced to reduced NADP at the PSI end; oxygen is released as a by-product",
+   "Cyclic: only PSI is involved, electrons return to PSI, producing ATP only (no reduced NADP and no oxygen)",
+   "Uses correct terms: photophosphorylation, photolysis, electron transport chain, chemiosmosis"
+  ]
+ },
+ {
+  "board": "Cambridge A-Level",
+  "grade": "Class 12",
+  "subject": "History",
+  "marks": 0,
+  "question": "9489 a level history - how do i evaluate the usefulness of a source in the document question instead of just saying 'its biased'",
+  "rubric": [
+   "Assess usefulness through the content: what the source tells us that is relevant to the question",
+   "Use the provenance: origin, nature, purpose and intended audience of the source",
+   "Explain how the provenance affects reliability/utility rather than just labelling it 'biased'",
+   "Cross-reference the source against own contextual knowledge to test its claims",
+   "Reach a judgement on how useful the source is for the specific enquiry",
+   "Avoid stock phrases and tie every point directly to the question asked"
+  ]
+ },
+ {
+  "board": "Cambridge A-Level",
+  "grade": "Class 12",
+  "subject": "Economics",
+  "marks": 12,
+  "question": "9708 paper 4 econ - 'Assess whether a minimum wage is the best policy to reduce poverty. [12]' how do i actually reach the top level for the evaluation marks?",
+  "rubric": [
+   "Define a minimum wage (a price floor set above the equilibrium wage) and define poverty",
+   "Analysis using a labour market diagram showing the minimum wage above equilibrium and the resulting potential excess supply of labour (unemployment)",
+   "Explain how a minimum wage can raise the incomes of low-paid workers and reduce poverty",
+   "Evaluation of drawbacks: possible unemployment, higher firm costs, and that it does not help the non-working poor",
+   "Compare with alternative policies (benefits/transfers, education and training, progressive taxation)",
+   "A supported final judgement addressing 'best policy' (depends on labour demand elasticity/context) rather than just listing points"
+  ]
+ },
+ {
+  "board": "GCSE (AQA)",
+  "grade": "Class 10",
+  "subject": "Math",
+  "question": "how do you add fractions with different bottom numbers like 2/3 + 1/4?? my teacher went too fast",
+  "marks": 0,
+  "rubric": [
+   "Find a common denominator using the LCM of 3 and 4, which is 12",
+   "Convert each fraction to twelfths: 2/3 = 8/12 and 1/4 = 3/12",
+   "Add the numerators only and keep the denominator: 8/12 + 3/12 = 11/12",
+   "Explicitly warn NOT to add the denominators together",
+   "Check whether the answer can be simplified (11/12 is already in lowest terms)"
+  ]
+ },
+ {
+  "board": "GCSE (AQA)",
+  "grade": "Class 10",
+  "subject": "Chemistry",
+  "question": "why does reactivity increase going down Group 1 in aqa chemistry (atomic structure & periodic table topic)? bit confused",
+  "marks": 0,
+  "rubric": [
+   "Group 1 alkali metals react by losing their single outer-shell electron",
+   "Going down the group, atoms have more electron shells so the outer electron is further from the nucleus",
+   "Increased shielding by inner shells reduces the electrostatic attraction between the nucleus and the outer electron",
+   "The outer electron is therefore lost more easily, so reactivity increases down the group",
+   "Support with the trend Li < Na < K in reactivity"
+  ]
+ },
+ {
+  "board": "GCSE (AQA)",
+  "grade": "Class 10",
+  "subject": "Physics",
+  "question": "AQA physics electricity topic — explain how the National Grid uses transformers to transmit electricity efficiently. [6 marks]",
+  "marks": 6,
+  "rubric": [
+   "Step-up transformers increase the potential difference (voltage) after the power station",
+   "For a fixed power, higher voltage means lower current (P = VI)",
+   "Lower current reduces energy wasted as heat in the transmission cables (loss ∝ I²R), improving efficiency",
+   "Step-down transformers reduce the voltage to safe, usable levels for homes and consumers",
+   "State that transformers only work with alternating current (a.c.)",
+   "Answer is logically structured with correct terminology to reach the top band for 6 marks"
+  ]
+ },
+ {
+  "board": "GCSE (AQA)",
+  "grade": "Class 11",
+  "subject": "Literature",
+  "question": "how does dickens present scrooge as an outsider at the start of A Christmas Carol? mock is next week pls help",
+  "marks": 0,
+  "rubric": [
+   "Reference Stave One with embedded quotations such as 'solitary as an oyster' and 'Hard and sharp as flint'",
+   "Analyse Dickens's use of cold/isolation imagery and simile to separate Scrooge from society",
+   "Contrast Scrooge's isolation with the warmth and community of Fred, the carol singer and Bob Cratchit",
+   "Comment on writer's methods (language and structure), not just retelling the plot",
+   "Link to context and Dickens's social message about Victorian attitudes to the poor / the novella as allegory",
+   "Consider the effect created on the reader"
+  ]
+ },
+ {
+  "board": "GCSE (Edexcel)",
+  "grade": "Class 10",
+  "subject": "Biology",
+  "question": "difference between animal and plant cells?? need it simple, just started key concepts in biology",
+  "marks": 0,
+  "rubric": [
+   "Both cell types share: nucleus, cytoplasm, cell membrane, mitochondria and ribosomes",
+   "Plant cells additionally have a cellulose cell wall, chloroplasts and a permanent vacuole",
+   "Animal cells lack a cell wall and chloroplasts",
+   "Give function: chloroplasts for photosynthesis, cell wall for support/structure",
+   "Correct spelling of the key organelles"
+  ]
+ },
+ {
+  "board": "GCSE (Edexcel)",
+  "grade": "Class 10",
+  "subject": "History",
+  "question": "explain why the Weimar Republic faced so many problems in 1919-1923 (edexcel weimar & nazi germany). 12 marks how do i answer",
+  "marks": 12,
+  "rubric": [
+   "Treaty of Versailles: war guilt (Article 231), reparations, loss of territory and the resentment this caused",
+   "Political instability from both extremes: Spartacist uprising (1919), Kapp Putsch (1920), Munich Putsch (1923)",
+   "Hyperinflation of 1923 triggered by the French occupation of the Ruhr and the printing of money, wiping out savings",
+   "The 'stab in the back' myth and the 'November Criminals' undermining the republic's legitimacy",
+   "Reasons are explained with causal links (not just listed) and supported with specific dates/facts",
+   "Sustained, well-organised analytical explanation with a range of reasons and clear causal links to reach Level 4 (the 12-mark 'Explain why' question does not require an overall judgement of the most serious problem)"
+  ]
+ },
+ {
+  "board": "GCSE (Edexcel)",
+  "grade": "Class 10",
+  "subject": "Math",
+  "question": "how do i solve a quadratic by completing the square? stuck on x^2 + 6x + 2 = 0 edexcel higher",
+  "marks": 0,
+  "rubric": [
+   "Halve the coefficient of x (6 ÷ 2 = 3) and write (x + 3)²",
+   "Subtract the square of that number to compensate: (x + 3)² − 9",
+   "Include the constant term: (x + 3)² − 9 + 2 = (x + 3)² − 7",
+   "Rearrange to (x + 3)² = 7 and take the square root: x + 3 = ±√7",
+   "Give both final answers in surd form: x = −3 + √7 and x = −3 − √7"
+  ]
+ },
+ {
+  "board": "GCSE (Edexcel)",
+  "grade": "Class 11",
+  "subject": "Physics",
+  "question": "explain half life in edexcel physics (radioactivity) and how do i read it off a decay graph",
+  "marks": 0,
+  "rubric": [
+   "Define half-life as the time taken for the number of undecayed nuclei / the activity (count-rate) of a sample to halve",
+   "State that radioactive decay is random and the decay of an individual nucleus is unpredictable",
+   "To read from a graph: find the initial activity, halve it, and read the corresponding time from the x-axis",
+   "Repeat over successive intervals to confirm the half-life is constant",
+   "Include correct units (activity in becquerels, Bq) and note half-life is fixed for a given isotope"
+  ]
+ },
+ {
+  "board": "A-Level (OCR)",
+  "grade": "Class 12",
+  "subject": "Chemistry",
+  "question": "OCR chem module 3 (periodic table & energy) — can someone explain calculating enthalpy change with a Hess's law cycle? keep messing up the arrow directions",
+  "marks": 0,
+  "rubric": [
+   "State Hess's law: the total enthalpy change is independent of the route taken (consequence of conservation of energy)",
+   "Construct a cycle with an alternative route (e.g. via elements or via combustion products)",
+   "Explain that going against the direction of an arrow reverses the sign of that ΔH",
+   "Apply the route summation, e.g. ΔH₁ = ΔH₂ + ΔH₃, rearranged for the unknown",
+   "Show a worked application such as enthalpy of formation from combustion data",
+   "Use correct units (kJ mol⁻¹) and sign convention (exothermic negative)"
+  ]
+ },
+ {
+  "board": "A-Level (OCR)",
+  "grade": "Class 12",
+  "subject": "Economics",
+  "question": "evaluate whether the government should impose a minimum price on alcohol. 25 marks OCR economics microeconomics",
+  "marks": 25,
+  "rubric": [
+   "Define a minimum price as a price floor set above the free-market equilibrium, illustrated with a diagram showing the resulting surplus",
+   "Analyse how it reduces consumption of a demerit good and addresses negative externalities / market failure, with an externality diagram (MPC, MSC, external cost)",
+   "Evaluate using price elasticity of demand — alcohol is often inelastic, limiting the fall in consumption",
+   "Consider drawbacks: regressive impact on low-income consumers, risk of black markets, gains for producers",
+   "Compare effectiveness against alternative policies such as indirect taxation, advertising bans or information provision",
+   "Reach a justified, reasoned judgement (it depends on elasticity/enforcement) to access the top level"
+  ]
+ },
+ {
+  "board": "A-Level (OCR)",
+  "grade": "Class 13",
+  "subject": "Biology",
+  "question": "OCR bio module 5 — how does the loop of Henle actually produce concentrated urine? the countercurrent thing confuses me",
+  "marks": 0,
+  "rubric": [
+   "Identify the countercurrent multiplier mechanism operating in the loop of Henle",
+   "Descending limb is permeable to water (water leaves by osmosis) but impermeable to ions",
+   "Ascending limb is impermeable to water while Na⁺ and Cl⁻ are actively pumped out into the medulla",
+   "This establishes a low water potential / high solute concentration gradient in the medulla",
+   "In the collecting duct, water is reabsorbed by osmosis as urine passes through the medulla (ADH-dependent permeability)",
+   "Net result is hypertonic (concentrated) urine and conservation of water"
+  ]
+ },
+ {
+  "board": "A-Level (OCR)",
+  "grade": "Class 13",
+  "subject": "Math",
+  "question": "how do you integrate by parts? trying to do the integral of x e^x dx for OCR maths",
+  "marks": 0,
+  "rubric": [
+   "State the formula ∫u (dv/dx) dx = uv − ∫v (du/dx) dx",
+   "Choose u = x (simplifies on differentiating) and dv/dx = eˣ, guided by LIATE / the aim of simplifying the integral",
+   "Find du/dx = 1 and v = eˣ",
+   "Apply the formula: x eˣ − ∫eˣ dx = x eˣ − eˣ + C",
+   "Factorise the final answer and include the constant: eˣ(x − 1) + C"
+  ]
+ },
+ {
+  "board": "A-Level (AQA)",
+  "grade": "Class 12",
+  "subject": "Physics",
+  "question": "aqa physics year 12 particles & radiation — explain the photoelectric effect and why it shows light behaves as a particle",
+  "marks": 0,
+  "rubric": [
+   "Define the photoelectric effect: emission of electrons from a metal surface when light above a threshold frequency is incident on it",
+   "Model light as photons, discrete packets of energy given by E = hf",
+   "State the one-photon-to-one-electron interaction",
+   "Explain the threshold frequency: photon energy must exceed the work function φ for emission to occur",
+   "Use Einstein's photoelectric equation hf = φ + E_k(max) and explain why intensity alone cannot cause emission below the threshold",
+   "Contrast with wave theory, which cannot explain the threshold frequency or the instantaneous emission, supporting the particle model"
+  ]
+ },
+ {
+  "board": "A-Level (AQA)",
+  "grade": "Class 13",
+  "subject": "History",
+  "question": "'The Depression was the main reason for the Nazi rise to power by 1933.' Assess the validity of this view. 25 marks aqa democracy and nazism germany",
+  "marks": 25,
+  "rubric": [
+   "Address the Depression: mass unemployment (around 6 million by 1932), collapse of the Weimar coalition and the growing appeal of extremism",
+   "Weigh alternative factors: Nazi propaganda and organisation, Hitler's oratory and the role of the SA",
+   "Analyse the weaknesses of Weimar and political intrigue: the Papen–Hindenburg backstairs deal, Article 48 and proportional representation",
+   "Consider fear of communism and support from conservative elites and industrialists",
+   "Sustain a judgement on the relative importance of factors throughout, rather than a narrative",
+   "Support with precise dated evidence and a balanced counter-argument to reach the top level"
+  ]
+ },
+ {
+  "board": "A-Level (AQA)",
+  "grade": "Class 12",
+  "subject": "Literature",
+  "question": "how does shakespeare present othello as a tragic hero? doing aqa lit b aspects of tragedy",
+  "marks": 0,
+  "rubric": [
+   "Apply the AQA tragedy framework: conventions of the tragic hero (high status, hamartia, peripeteia, catharsis)",
+   "Identify Othello's fatal flaw — jealousy / insecurity / credulity — that Iago manipulates",
+   "Reference his noble status as a general and trace his fall through the structure of the tragedy",
+   "Analyse language, e.g. the deterioration of his verse and lines such as 'Chaos is come again'",
+   "Discuss Iago's role as antagonist/agent and the use of dramatic irony",
+   "Integrate context and critical interpretations (AO3/AO5) and consider the audience's response"
+  ]
+ },
+ {
+  "board": "A-Level (AQA)",
+  "grade": "Class 13",
+  "subject": "Biology",
+  "question": "aqa bio topic 8 control of gene expression — explain how a mutation can lead to cancer, the tumour suppressor gene stuff",
+  "marks": 0,
+  "rubric": [
+   "Cancer arises from mutations in genes that control the rate of cell division / mitosis",
+   "Proto-oncogenes mutating into oncogenes become permanently activated, driving uncontrolled cell division",
+   "Tumour suppressor genes (e.g. p53) normally slow division or trigger apoptosis; their mutation/inactivation removes this control",
+   "Uncontrolled mitosis produces a tumour; distinguish benign from malignant (metastasis)",
+   "Include epigenetic control: hypermethylation of tumour suppressor gene promoters silences them",
+   "Link to abnormal gene expression via transcription factors"
+  ]
+ },
+ {
+  "board": "Scottish Highers (SQA)",
+  "grade": "Class 11 (National 5)",
+  "subject": "Physics",
+  "question": "nat 5 physics dynamics — whats the difference between speed and velocity, and how do i use the d=vt triangle",
+  "marks": 0,
+  "rubric": [
+   "Speed is a scalar (magnitude only); velocity is a vector (magnitude and direction)",
+   "Velocity is displacement ÷ time whereas speed is distance ÷ time",
+   "State d = v t and rearrange using the triangle: v = d/t and t = d/v",
+   "Use correct SI units (m, s and m/s)",
+   "Give a worked example with substitution and the unit stated in the final answer",
+   "Distinguish average speed from instantaneous speed at National 5 level"
+  ]
+ },
+ {
+  "board": "Scottish Highers (SQA)",
+  "grade": "Class 12 (Higher)",
+  "subject": "History",
+  "question": "higher history germany essay — 'To what extent was the fear of communism the main reason for the rise of the Nazis to power?' how do i structure this for 22 marks SQA",
+  "marks": 22,
+  "rubric": [
+   "Use the SQA essay structure: introduction with a clear line of argument and the factors to be examined, developed middle paragraphs, and a reasoned conclusion",
+   "Develop the named factor (fear of communism): its appeal to the middle class and elites, the KPD threat and the Reichstag fire",
+   "Develop other factors: weaknesses of the Weimar constitution, economic crises (Wall Street Crash / Depression), Nazi propaganda and organisation, and the intrigue of Hindenburg and von Papen",
+   "Evaluate the relative importance of factors rather than describing them",
+   "Support with accurate, detailed evidence and reference differing historical interpretations where possible",
+   "Conclusion directly answers 'to what extent' with a justified overall judgement"
+  ]
+ },
+ {
+  "board": "Scottish Highers (SQA)",
+  "grade": "Class 12 (Higher)",
+  "subject": "Chemistry",
+  "question": "higher chem — explain using collision theory why increasing the temperature increases the rate of reaction",
+  "marks": 0,
+  "rubric": [
+   "State collision theory: particles must collide with the correct orientation/geometry and with energy greater than or equal to the activation energy to react",
+   "Increasing temperature increases the kinetic energy of the particles so they move faster",
+   "This causes more frequent collisions AND a greater proportion of collisions with energy ≥ the activation energy",
+   "Explain, at Higher level, that the increased fraction of molecules exceeding the activation energy is the dominant effect",
+   "Conclude that the frequency of successful collisions rises, so the rate increases",
+   "Emphasise the Higher-level point that a small rise in temperature gives a large increase in rate because many more particles now have energy ≥ the activation energy, not mainly because of the small increase in collision frequency"
+  ]
+ },
+ {
+  "board": "Scottish Highers (SQA)",
+  "grade": "Class 13 (Advanced Higher)",
+  "subject": "Math",
+  "question": "advanced higher maths — how do i find the general solution of a second order differential equation like y'' - 5y' + 6y = 0",
+  "marks": 0,
+  "rubric": [
+   "Form the auxiliary (characteristic) equation: m² − 5m + 6 = 0",
+   "Solve by factorising: (m − 2)(m − 3) = 0, giving m = 2 and m = 3",
+   "Recognise real distinct roots give the general solution y = A e^(2x) + B e^(3x)",
+   "State that A and B are arbitrary constants",
+   "Note that the method differs for repeated roots and complex roots (Advanced Higher awareness)"
+  ]
+ },
+ {
+  "board": "US Common Core",
+  "grade": "Class 7",
+  "subject": "Math",
+  "question": "7.RP proportional relationships — a recipe uses 3/4 cup sugar for every 2 cups flour. how much sugar do i need for 5 cups flour?? and how do i show its actually proportional",
+  "marks": 0,
+  "rubric": [
+   "Find the constant of proportionality (unit rate): sugar per cup flour = (3/4) / 2 = 3/8 cup sugar per cup flour",
+   "Write the relationship as y = kx with k = 3/8 (sugar = 3/8 x flour)",
+   "Compute sugar for 5 cups flour: (3/8)(5) = 15/8 = 1 7/8 cups",
+   "Justify it is proportional: constant ratio between quantities / graph passes through the origin",
+   "Label units correctly (cups of sugar)"
+  ]
+ },
+ {
+  "board": "US Common Core",
+  "grade": "Class 8",
+  "subject": "Math",
+  "question": "8.EE.6 why is the slope of a line the same no matter which two points i pick?? something about similar triangles, i dont get it",
+  "marks": 0,
+  "rubric": [
+   "Define slope as rise/run = change in y over change in x",
+   "Explain that any two right triangles formed under the line are similar by AA (they share the line's angle and both have a right angle)",
+   "State that corresponding sides of similar triangles are proportional, so rise/run is constant everywhere on the line",
+   "Connect to the equation y = mx + b, where m is that constant slope",
+   "Give a concrete example computing slope between two different pairs of points and showing the values are equal"
+  ]
+ },
+ {
+  "board": "US Common Core",
+  "grade": "Class 10",
+  "subject": "Literature",
+  "question": "english we're reading Of Mice and Men, i have to analyze how the theme of loneliness is developed through the characters (RL.9-10.2). where do i even start",
+  "marks": 0,
+  "rubric": [
+   "Identify loneliness as a central theme and name specific characters who embody it (e.g., Crooks, Curley's wife, Candy, George)",
+   "Provide textual evidence (specific scenes or quotations) showing each character's isolation",
+   "Explain how the theme emerges and is shaped over the course of the text, per RL.9-10.2 (development, not just identification)",
+   "Analyze Steinbeck's craft: use of setting (the ranch), dialogue, and repetition to build the theme",
+   "Provide an objective summary free of personal opinion, as the standard requires",
+   "Tie the characters' loneliness back to the novel's broader message about the American Dream and human connection"
+  ]
+ },
+ {
+  "board": "US Common Core",
+  "grade": "Class 11",
+  "subject": "Literature",
+  "question": "constructed response worth 6 points — 'analyze how the author uses figurative language to develop the central idea of the passage.' how do i actually get full credit on this??",
+  "marks": 6,
+  "rubric": [
+   "State a clear thesis/claim identifying the central idea of the passage",
+   "Cite at least two specific examples of figurative language (metaphor, simile, personification, imagery) with quoted text",
+   "Analyze HOW each device develops or reveals the central idea, not just naming the device",
+   "Embed precise textual evidence with quotation marks and integrate it smoothly",
+   "Maintain coherent organization, formal academic tone, and command of conventions",
+   "Include a concluding statement connecting the analysis back to the central idea"
+  ]
+ },
+ {
+  "board": "AP (Advanced Placement)",
+  "grade": "Class 11",
+  "subject": "Physics",
+  "question": "AP Physics 1 FRQ help — 2 kg block slides from rest down a frictionless incline, angle 30 deg, height 1.5 m. worth 7 points, find speed at the bottom AND explain with energy conservation. how do the graders want it laid out?",
+  "marks": 7,
+  "rubric": [
+   "State conservation of mechanical energy: initial PE = final KE, mgh = (1/2)mv^2",
+   "Solve symbolically then numerically: v = sqrt(2gh) = sqrt(2 x 9.8 x 1.5) ≈ 5.4 m/s",
+   "Explicitly note frictionless means no energy lost to thermal energy, so mechanical energy is conserved",
+   "Include a labeled free-body diagram or energy bar chart as AP graders expect",
+   "Provide reasoning in words, not just equations (AP rewards clear justification)",
+   "Use correct units and appropriate significant figures throughout"
+  ]
+ },
+ {
+  "board": "AP (Advanced Placement)",
+  "grade": "Class 12",
+  "subject": "Chemistry",
+  "question": "ap chem unit 7 equilibrium — how do i set up and calculate Kc from equilibrium concentrations, and what does a big K vs a small K actually tell me?",
+  "marks": 0,
+  "rubric": [
+   "Write the correct equilibrium expression Kc = [products]^coeff / [reactants]^coeff, excluding pure solids and liquids",
+   "Use equilibrium (not initial) concentrations and raise each to its stoichiometric coefficient",
+   "Interpret a large K (>>1) as products favored and a small K (<<1) as reactants favored",
+   "State that K depends only on temperature",
+   "Handle states of matter and the dimensionless convention correctly"
+  ]
+ },
+ {
+  "board": "AP (Advanced Placement)",
+  "grade": "Class 11",
+  "subject": "History",
+  "question": "APUSH period 5 — my teacher wants a real argument with evidence: was the Civil War mostly about slavery or states rights?",
+  "marks": 0,
+  "rubric": [
+   "Take a clear thesis position; identify slavery (especially its expansion into western territories) as the central cause",
+   "Support with specific evidence: Missouri Compromise, Compromise of 1850, Kansas-Nebraska Act, Dred Scott decision, Fugitive Slave Act",
+   "Address the 'states' rights' counterargument and explain it centered on the right to maintain and expand slavery",
+   "Reference sectionalism and economic differences between North and South, plus John Brown's raid and the 1860 election of Lincoln",
+   "Situate the argument within APUSH Period 5 (1844-1877)",
+   "Demonstrate the APUSH argumentation skill with a defensible, evidence-backed claim"
+  ]
+ },
+ {
+  "board": "AP (Advanced Placement)",
+  "grade": "Class 12",
+  "subject": "Economics",
+  "question": "ap macro unit 3 — explain how an increase in government spending affects AD and real GDP, and what the spending multiplier does. do i need the graph?",
+  "marks": 0,
+  "rubric": [
+   "State that an increase in government spending (G) shifts Aggregate Demand (AD) to the right",
+   "Explain the spending multiplier: multiplier = 1/(1 - MPC), so initial spending causes a larger total change in real GDP",
+   "Describe or draw the AD-AS graph: AD shifts right to a new equilibrium",
+   "Identify the result: higher real GDP and a higher price level (and lower unemployment)",
+   "State a key assumption or caveat (economy below full employment / short run, or possible crowding-out)"
+  ]
+ },
+ {
+  "board": "SAT prep",
+  "grade": "Class 9",
+  "subject": "Math",
+  "question": "starting sat prep early as a freshman lol — if 3x + 5 = 2x + 12, whats x? and whats the fastest way to do these linear ones on the digital sat",
+  "marks": 0,
+  "rubric": [
+   "Combine like terms: subtract 2x from both sides to get x + 5 = 12",
+   "Subtract 5 from both sides to get x = 7",
+   "Verify by substitution: 3(7)+5 = 26 and 2(7)+12 = 26",
+   "Give an efficient strategy (isolate the variable in one move) and note the built-in Desmos calculator is available on the digital SAT"
+  ]
+ },
+ {
+  "board": "SAT prep",
+  "grade": "Class 11",
+  "subject": "Literature",
+  "question": "digital sat reading and writing — how do i do the 'words in context' questions? i keep getting them wrong even when i know what the word means",
+  "marks": 0,
+  "rubric": [
+   "Read the full sentence and surrounding context before looking at the answer choices",
+   "Predict a word that fits the blank before reading the options",
+   "Use context clues (tone, transition words, logical relationships) rather than only the dictionary definition",
+   "Eliminate choices that are too extreme or that contradict the passage's tone",
+   "Watch for common words used in a less-common secondary meaning, which the SAT frequently tests"
+  ]
+ },
+ {
+  "board": "SAT prep",
+  "grade": "Class 12",
+  "subject": "Math",
+  "question": "sat math student-produced response (grid-in) — the parabola y = x^2 - 6x + 8 crosses the x-axis at two points, find the larger x-value. need the full method since grid-ins have no partial credit",
+  "marks": 1,
+  "rubric": [
+   "Set y = 0: x^2 - 6x + 8 = 0",
+   "Factor as (x - 2)(x - 4) = 0 (or apply the quadratic formula)",
+   "Find the roots x = 2 and x = 4",
+   "Identify the larger x-value as 4",
+   "Note the grid-in requires an exact numeric entry (4) and can be confirmed with Desmos"
+  ]
+ },
+ {
+  "board": "SAT prep",
+  "grade": "Class 11",
+  "subject": "Literature",
+  "question": "sat writing conventions — when do i use a semicolon vs a colon vs a comma? the punctuation questions destroy me every time",
+  "marks": 0,
+  "rubric": [
+   "Semicolon joins two closely related independent clauses (each a complete sentence)",
+   "Colon introduces a list, explanation, or elaboration and must follow an independent clause",
+   "A comma plus a FANBOYS conjunction joins two independent clauses; commas also separate items and set off nonessential information",
+   "Test each side of the punctuation for independence (can it stand alone as a sentence?)",
+   "Apply the rules to an example that distinguishes correct from incorrect usage"
+  ]
+ },
+ {
+  "board": "Texas TEKS",
+  "grade": "Class 7",
+  "subject": "History",
+  "question": "7th grade texas history, studying for our unit test — why did the texans want to break away from mexico? we're on the texas revolution unit",
+  "marks": 0,
+  "rubric": [
+   "Cite conflict over Santa Anna's centralized government and his abolition of the Constitution of 1824",
+   "Explain cultural and political differences between Anglo settlers and Mexican law, language, and the Catholicism requirement",
+   "Note the conflict over slavery, which Mexico had abolished but many Anglo settlers relied on",
+   "Reference specific events: Battle of Gonzales ('Come and Take It'), the Alamo, Goliad, and San Jacinto",
+   "State the outcome: Texas Declaration of Independence (March 2, 1836) and the Republic of Texas"
+  ]
+ },
+ {
+  "board": "Texas TEKS",
+  "grade": "Class 9",
+  "subject": "Biology",
+  "question": "biology staar eoc — whats the difference between photosynthesis and cellular respiration and how are they connected? our TEKS review says know both equations",
+  "marks": 0,
+  "rubric": [
+   "Give the photosynthesis equation: 6CO2 + 6H2O + light -> C6H12O6 + 6O2, occurring in chloroplasts",
+   "Give the cellular respiration equation: C6H12O6 + 6O2 -> 6CO2 + 6H2O + ATP, occurring in mitochondria",
+   "Explain that the two are essentially reverse, complementary processes",
+   "State that photosynthesis stores energy in glucose while respiration releases energy as ATP",
+   "Describe the cycling of matter and energy: the products of one are the reactants of the other"
+  ]
+ },
+ {
+  "board": "Texas TEKS",
+  "grade": "Class 10",
+  "subject": "Chemistry",
+  "question": "texas chem class — how do i do mole conversions, grams to moles to particles? the 'mole map' thing keeps confusing me",
+  "marks": 0,
+  "rubric": [
+   "Use molar mass (g/mol from the periodic table) to convert grams to and from moles (divide grams by molar mass)",
+   "Use Avogadro's number (6.022 x 10^23) to convert moles to and from particles (atoms or molecules)",
+   "Set up dimensional analysis / the factor-label method so units cancel correctly",
+   "Follow the correct mole-map sequence: grams -> moles -> particles (and the reverse)",
+   "Show a worked example with correct significant figures and units"
+  ]
+ },
+ {
+  "board": "Texas TEKS",
+  "grade": "Class 9",
+  "subject": "Math",
+  "question": "algebra 1 class quiz, show all work for full marks — a line passes through (2,3) and (4,7), write its equation in slope-intercept form",
+  "marks": 4,
+  "rubric": [
+   "Compute the slope: m = (7 - 3)/(4 - 2) = 4/2 = 2",
+   "Substitute a point into y = mx + b to solve for b: 3 = 2(2) + b, so b = -1",
+   "Write the final equation: y = 2x - 1",
+   "Show each step of work clearly to earn full credit on the quiz",
+   "Verify using the second point: 2(4) - 1 = 7, which matches"
+  ]
+ },
+ {
+  "board": "New York Regents",
+  "grade": "Class 9",
+  "subject": "Biology",
+  "question": "living environment regents — explain how a mutation in DNA can affect the protein that gets made. we just did protein synthesis",
+  "marks": 0,
+  "rubric": [
+   "State that the DNA base sequence determines mRNA codons (transcription) and then the amino acid sequence (translation)",
+   "Explain that a mutation changes the base sequence, which can change one or more codons",
+   "Explain that a changed codon can change an amino acid, altering the protein's structure/shape",
+   "Connect altered protein shape to changed or lost protein function",
+   "Note that some mutations are neutral (no effect) while others can be harmful or beneficial"
+  ]
+ },
+ {
+  "board": "New York Regents",
+  "grade": "Class 10",
+  "subject": "History",
+  "question": "global regents — how did the industrial revolution change society? need turning-point stuff for the enduring issues essay",
+  "marks": 0,
+  "rubric": [
+   "Identify the Industrial Revolution as a turning point that began in Britain in the late 1700s",
+   "Describe economic change: the factory system, urbanization, and the shift from an agrarian to an industrial economy",
+   "Describe social change: the rise of a working and middle class, poor working conditions, and child labor",
+   "Describe political/ideological responses: labor unions, reform movements, and capitalism vs. socialism (Marx)",
+   "Connect to an enduring issue (such as inequality or the impact of technology), as the current Regents framework requires"
+  ]
+ },
+ {
+  "board": "New York Regents",
+  "grade": "Class 11",
+  "subject": "Chemistry",
+  "question": "chem regents part C constructed response, like 2 points — calculate the number of moles in 36 grams of water, show work. we can use the reference tables right?",
+  "marks": 2,
+  "rubric": [
+   "Use the formula moles = mass / gram-formula mass (Table T on the Chemistry Reference Tables)",
+   "Determine the molar mass of H2O = 18 g/mol",
+   "Substitute and calculate: 36 g / 18 g/mol = 2 mol",
+   "Show the numerical setup with substitution and units (1 credit) and the correct final answer with its unit (1 credit)",
+   "Reference correct use of the Chemistry Reference Tables (Table T)"
+  ]
+ },
+ {
+  "board": "New York Regents",
+  "grade": "Class 11",
+  "subject": "Physics",
+  "question": "physics regents — a projectile is launched horizontally off a cliff, how do i find how long its in the air and how far it lands? which reference table equations do i use",
+  "marks": 0,
+  "rubric": [
+   "Recognize that horizontal and vertical motions are independent of each other",
+   "Vertical: use d = v_i*t + (1/2)a*t^2 with initial vertical velocity = 0 and a = g = 9.81 m/s^2 to solve for time of flight",
+   "Horizontal: velocity is constant, so range = v_x * t (no horizontal acceleration)",
+   "Reference the correct kinematics equations from the Physics Reference Tables",
+   "Use correct units (meters, seconds) and keep the x and y components separate"
+  ]
+ },
+ {
+  "board": "Singapore O-Level (SEAB)",
+  "grade": "Secondary 1",
+  "subject": "Mathematics",
+  "marks": 0,
+  "question": "how do i find the HCF and LCM of 36 and 48 using prime factorisation? my shinglee (NSM) book shows it in index notation and i don't get why",
+  "rubric": [
+   "Express each number as a product of prime factors in index form: 36 = 2^2 x 3^2 and 48 = 2^4 x 3",
+   "HCF = product of the LOWEST powers of the common prime factors -> 2^2 x 3 = 12",
+   "LCM = product of the HIGHEST powers of every prime factor present -> 2^4 x 3^2 = 144",
+   "Explain the reasoning: the HCF is the largest number that divides both, the LCM is the smallest number both divide into",
+   "Optional check: HCF x LCM = product of the two numbers (12 x 144 = 1728 = 36 x 48)"
+  ]
+ },
+ {
+  "board": "Singapore O-Level (SEAB)",
+  "grade": "Secondary 3",
+  "subject": "Chemistry",
+  "marks": 0,
+  "question": "chem titration qn (pure chem 6092) — 25.0 cm3 of NaOH needs 20.0 cm3 of 0.100 mol/dm3 HCl to neutralise. how do i find the concentration of the NaOH in mol/dm3 AND in g/dm3?",
+  "rubric": [
+   "Write the balanced neutralisation equation: NaOH + HCl -> NaCl + H2O (1:1 mole ratio)",
+   "Moles of HCl = concentration x volume(dm3) = 0.100 x (20.0/1000) = 2.00 x 10^-3 mol",
+   "Use the 1:1 mole ratio -> moles of NaOH = 2.00 x 10^-3 mol",
+   "Concentration of NaOH = moles / volume(dm3) = 2.00 x 10^-3 / (25.0/1000) = 0.0800 mol/dm3",
+   "Convert to g/dm3 by multiplying by Mr(NaOH) = 40.0 -> 0.0800 x 40.0 = 3.20 g/dm3"
+  ]
+ },
+ {
+  "board": "Singapore O-Level (SEAB)",
+  "grade": "Secondary 4",
+  "subject": "Physics",
+  "marks": 6,
+  "question": "physics paper 2 style — a transformer has 1200 turns on the primary and 100 on the secondary, primary connected to 240 V mains. (a) explain how a transformer works with reference to electromagnetic induction [3] (b) calculate the secondary voltage [2] (c) state one reason it is not 100% efficient [1]",
+  "rubric": [
+   "(a) The alternating current in the primary coil produces a continuously changing magnetic flux in the soft-iron core",
+   "(a) The core carries/links this changing flux to the secondary coil, inducing an e.m.f. (voltage) in it by electromagnetic induction",
+   "(b) Apply Vs/Vp = Ns/Np -> Vs = 240 x (100/1200) = 20 V (with working and unit)",
+   "(c) A valid named energy loss: eddy currents / heating of the coils due to resistance / hysteresis / flux leakage",
+   "Marks awarded step-appropriately with correct units; the induced e.m.f. depends on the rate of change of flux (a.c. is essential)"
+  ]
+ },
+ {
+  "board": "Singapore O-Level (SEAB)",
+  "grade": "Secondary 4",
+  "subject": "Literature",
+  "marks": 0,
+  "question": "lit in english unseen poetry — how do i actually write about imagery and tone in a poem i've never seen before? i keep just summarising what happens and my teacher says i'm not analysing",
+  "rubric": [
+   "Distinguish analysis from summary: focus on HOW meaning and feeling are created, not on retelling the content",
+   "Identify and correctly name specific devices (imagery, metaphor, personification, diction/word choice) and quote them",
+   "Explain the effect of each device on the reader and how it shapes the tone/mood (link device -> effect -> meaning)",
+   "Comment on tone and any shift in tone, plus structural features (stanza breaks, rhythm, enjambment) with textual evidence",
+   "Embed short quotations and use tentative analytical language ('suggests', 'conveys', 'evokes') rather than stating content"
+  ]
+ },
+ {
+  "board": "Singapore A-Level (SEAB)",
+  "grade": "JC1",
+  "subject": "Economics",
+  "marks": 0,
+  "question": "econ h2 — can someone explain the difference between a movement ALONG the demand curve and a SHIFT of the demand curve? and how PED links to a firm's total revenue when price changes",
+  "rubric": [
+   "A movement along the curve is caused only by a change in the good's own price (change in quantity demanded)",
+   "A shift is caused by non-price determinants (income, prices of related goods, tastes/preferences, expectations, population)",
+   "Define PED = %change in quantity demanded / %change in price (note it is negative, usually taken as modulus)",
+   "Price-elastic (|PED|>1): a price fall raises total revenue and a price rise lowers it; price-inelastic (|PED|<1): the reverse",
+   "Link to which percentage change dominates, and note unit elasticity (|PED|=1) leaves total revenue unchanged / maximised"
+  ]
+ },
+ {
+  "board": "Singapore A-Level (SEAB)",
+  "grade": "JC1",
+  "subject": "Biology",
+  "marks": 0,
+  "question": "bio h2 (9744) — explain how the fluid mosaic model of the cell surface membrane allows it to control what enters the cell. need this for the membrane transport topic",
+  "rubric": [
+   "Describe the phospholipid bilayer: hydrophilic phosphate heads facing outward, hydrophobic fatty-acid tails inward; membrane is partially permeable",
+   "Small non-polar / lipid-soluble molecules (O2, CO2) diffuse directly through the bilayer down a concentration gradient (simple diffusion)",
+   "Polar molecules and ions cannot cross the hydrophobic core; they move via specific channel and carrier proteins (facilitated diffusion)",
+   "Active transport uses carrier proteins and ATP to move substances against the concentration gradient",
+   "'Fluid mosaic': phospholipids and proteins move laterally and form a mosaic; mention cholesterol regulating fluidity and glycoproteins for recognition"
+  ]
+ },
+ {
+  "board": "Singapore A-Level (SEAB)",
+  "grade": "JC2",
+  "subject": "Physics",
+  "marks": 6,
+  "question": "h2 physics structured qn on gravitation: a satellite is in a circular geostationary orbit around Earth. (a) explain what is meant by a geostationary orbit [2] (b) derive an expression for the orbital radius in terms of G, M and T and calculate it [4] (Earth mass = 6.0x10^24 kg)",
+  "rubric": [
+   "(a) Period is 24 h (equal to Earth's rotation), orbit is in the equatorial plane moving west-to-east, so the satellite stays above a fixed point on the surface",
+   "(b) Equate gravitational force to centripetal force: GMm/r^2 = m(4(pi)^2 r / T^2) (note m cancels)",
+   "(b) Rearrange to r = (GMT^2 / 4(pi)^2)^(1/3)",
+   "(b) Substitute T = 24 h = 86400 s, G = 6.67x10^-11, M = 6.0x10^24 -> r ~ 4.2x10^7 m",
+   "Correct units and sensible significant figures; explicitly note the satellite mass cancels out"
+  ]
+ },
+ {
+  "board": "Singapore A-Level (SEAB)",
+  "grade": "JC2",
+  "subject": "Mathematics",
+  "marks": 0,
+  "question": "h3 maths proof — how do i prove by induction that n^3 + 2n is divisible by 3 for all positive integers n? and quick q, whats the difference between weak and strong induction, does this one need strong",
+  "rubric": [
+   "Base case: for n = 1, n^3 + 2n = 3, which is divisible by 3 (statement true for n = 1)",
+   "Inductive hypothesis: assume k^3 + 2k is divisible by 3 for some positive integer k (write k^3 + 2k = 3m)",
+   "Inductive step: expand (k+1)^3 + 2(k+1) = (k^3 + 2k) + 3(k^2 + k + 1) and argue both terms are divisible by 3",
+   "Conclude by the principle of mathematical induction that the result holds for all positive integers n",
+   "Explain the difference: weak (ordinary) induction assumes only P(k); strong induction assumes P(1)...P(k); note this proof needs only weak induction"
+  ]
+ },
+ {
+  "board": "Australian HSC (NSW)",
+  "grade": "Year 8",
+  "subject": "Mathematics",
+  "marks": 0,
+  "question": "yr 8 maths help — solving 3(x + 4) = 27. i wrote 3x + 4 = 27 and got x = 23/3 which looks wrong, where did i mess up??",
+  "rubric": [
+   "Identify the error: the 3 must be multiplied by BOTH terms inside the bracket (distributive law), so 3(x+4) = 3x + 12, not 3x + 4",
+   "Correct equation: 3x + 12 = 27",
+   "Subtract 12 from both sides: 3x = 15, then divide by 3: x = 5",
+   "Verify by substitution: 3(5 + 4) = 3 x 9 = 27 (correct)",
+   "State the general principle: expand brackets first, and do the same operation to both sides"
+  ]
+ },
+ {
+  "board": "Australian HSC (NSW)",
+  "grade": "Year 10",
+  "subject": "History",
+  "marks": 0,
+  "question": "history assignment (rights and freedoms) — why was the 1967 referendum important for aboriginal rights in australia? need like 3 main reasons",
+  "rubric": [
+   "Explain the constitutional change: it amended s127 so Aboriginal people would be counted in the census, and s51(xxvi) so the Commonwealth could make laws for Aboriginal people",
+   "Note the overwhelming 'Yes' vote (about 90.77%), showing strong national public support",
+   "Symbolic significance: recognition and a major step toward equality and inclusion, boosting the rights movement",
+   "Practical significance: it enabled federal government involvement and funding in Aboriginal affairs",
+   "Accuracy/context: link to activism (e.g. 1965 Freedom Ride, FCAATSI) and note it did NOT grant the vote (Aboriginal people already had the federal vote by 1962)"
+  ]
+ },
+ {
+  "board": "Australian HSC (NSW)",
+  "grade": "Year 11",
+  "subject": "Chemistry",
+  "marks": 0,
+  "question": "prelim chem module 2 (quantitative chem) — how do i work out the empirical formula from percentage composition? worked example pls: a compound is 40.0% C, 6.7% H, 53.3% O",
+  "rubric": [
+   "Assume a 100 g sample so the percentages become masses in grams (40.0 g C, 6.7 g H, 53.3 g O)",
+   "Divide each mass by its molar mass to get moles: C = 40.0/12.0 = 3.33, H = 6.7/1.008 ~ 6.65, O = 53.3/16.0 = 3.33",
+   "Divide all mole values by the smallest (3.33) to get the ratio C:H:O = 1:2:1",
+   "Write the empirical formula: CH2O",
+   "State that the empirical formula is the simplest whole-number ratio; the molar mass is needed to find the molecular formula"
+  ]
+ },
+ {
+  "board": "Australian HSC (NSW)",
+  "grade": "Year 12",
+  "subject": "English",
+  "marks": 20,
+  "question": "hsc paper 1 — how do i structure a 20 mark essay for the common module 'texts and human experiences'? my prescribed text is Nineteen Eighty-Four and i always run out of time",
+  "rubric": [
+   "Address the module focus: individual and collective human experiences, human qualities and emotions, and the anomalies/paradoxes/inconsistencies in human behaviour and motivations",
+   "Sustain a clear thesis that responds directly to the specific exam question (not a pre-prepared generic answer)",
+   "Body paragraphs with integrated evidence from Nineteen Eighty-Four analysing specific techniques (symbolism, characterisation, narrative voice, motif) linked to how experiences are represented",
+   "Discuss how the text invites the responder to see the world differently or reflect on shared human experiences",
+   "Structure and timing: thesis-led introduction, ~3 analytical body paragraphs (TEEL), conclusion, with sophisticated cohesive expression for the top band",
+   "Exam craft: plan before writing and allocate roughly 40 minutes to the essay"
+  ]
+ },
+ {
+  "board": "Australian VCE (Victoria)",
+  "grade": "Year 8",
+  "subject": "Science",
+  "marks": 0,
+  "question": "science yr 8 — whats the difference between plant and animal cells? gotta label a diagram for my prac report",
+  "rubric": [
+   "Structures common to both: cell membrane, cytoplasm, nucleus, mitochondria",
+   "Structures unique to plant cells: cell wall (cellulose), chloroplasts, and a large permanent (central) vacuole",
+   "Functions: nucleus controls cell activities and holds DNA; mitochondria release energy; chloroplasts carry out photosynthesis; cell wall gives support; vacuole keeps the cell turgid",
+   "Animal cells have no cell wall or chloroplasts and only small/temporary vacuoles, and are usually more irregular in shape",
+   "Correct diagram conventions: straight label lines that do not cross, clear labels"
+  ]
+ },
+ {
+  "board": "Australian VCE (Victoria)",
+  "grade": "Year 10",
+  "subject": "Economics",
+  "marks": 0,
+  "question": "econ — can u explain needs vs wants and what 'opportunity cost' actually means? with a real example please",
+  "rubric": [
+   "Define needs (essential for survival: food, water, shelter) versus wants (desirable but not essential)",
+   "Explain scarcity: resources are limited but wants are unlimited, so choices must be made",
+   "Define opportunity cost as the value of the next-best alternative forgone when a choice is made",
+   "Give a concrete example that shows the trade-off (e.g. spending $20 on a movie means forgoing a meal out, so the meal is the opportunity cost)",
+   "Link the concept to decision-making by individuals, businesses or governments"
+  ]
+ },
+ {
+  "board": "Australian VCE (Victoria)",
+  "grade": "Year 11",
+  "subject": "Chemistry",
+  "marks": 0,
+  "question": "vce chem unit 1 — explain why atomic radius decreases across period 3 (Na to Cl) but increases going down a group. periodic trends topic",
+  "rubric": [
+   "Across a period, nuclear charge (number of protons) increases while electrons are added to the same shell with similar shielding",
+   "The greater effective nuclear charge pulls the outer electrons in more strongly, so atomic radius decreases from Na to Cl",
+   "Down a group, each element has an additional occupied electron shell, so outer electrons are further from the nucleus",
+   "Increased shielding by inner shells reduces the nucleus's pull on the outer electrons, so atomic radius increases down a group",
+   "Correctly conclude that the extra shells and shielding outweigh the increased nuclear charge going down a group"
+  ]
+ },
+ {
+  "board": "Australian VCE (Victoria)",
+  "grade": "Year 12",
+  "subject": "History",
+  "marks": 20,
+  "question": "revolutions SAC (units 3&4) — 'To what extent was the leadership of Lenin responsible for the success of the October Revolution 1917?' (20 marks). how do i argue 'to what extent' instead of just listing everything Lenin did?",
+  "rubric": [
+   "State a clear contention that directly answers 'to what extent' (a judgement on the degree of Lenin's responsibility, e.g. significant but not the sole cause)",
+   "Give specific evidence of Lenin's role: return in April 1917, the April Theses ('Peace, Land, Bread'), and pushing the Bolsheviks toward armed insurrection",
+   "Weigh other factors: Trotsky and the Military Revolutionary Committee/Red Guards, the weakness of the Provisional Government, WWI, economic conditions and popular discontent, the soviets",
+   "Use accurate, specific evidence (dates, events, names) and reference historians'/differing interpretations for the top band",
+   "Sustain an analytical argument that reaches a substantiated judgement rather than a narrative or list"
+  ]
+ },
+ {
+  "board": "New Zealand NCEA",
+  "grade": "Year 10",
+  "subject": "Mathematics",
+  "marks": 0,
+  "question": "yr 10 maths — how do i use pythagoras to find a SHORTER side not the hypotenuse? triangle has hypotenuse 13 and one side 5",
+  "rubric": [
+   "State Pythagoras' theorem: a^2 + b^2 = c^2, where c is the hypotenuse (the longest side, opposite the right angle)",
+   "Recognise the unknown is a shorter side, so rearrange to a^2 = c^2 - b^2",
+   "Substitute: a^2 = 13^2 - 5^2 = 169 - 25 = 144",
+   "Take the square root: a = sqrt(144) = 12",
+   "Note you subtract (not add) when finding a shorter side, include units, and check the hypotenuse is the largest value"
+  ]
+ },
+ {
+  "board": "New Zealand NCEA",
+  "grade": "Year 11",
+  "subject": "Physics",
+  "marks": 0,
+  "question": "ncea level 1 mechanics — a car goes from rest to 20 m/s in 4 seconds. find the acceleration and the distance travelled. i keep getting confused which equation to use",
+  "rubric": [
+   "Identify the known quantities: u = 0 m/s (from rest), v = 20 m/s, t = 4 s",
+   "Acceleration a = (v - u)/t = (20 - 0)/4 = 5 m/s^2",
+   "Choose a suitable distance equation: d = ((u + v)/2) x t or d = ut + (1/2)at^2",
+   "Calculate the distance: d = ((0 + 20)/2) x 4 = 40 m (or (1/2) x 5 x 4^2 = 40 m)",
+   "Use correct units (m/s^2 and m) and recognise that 'from rest' means u = 0"
+  ]
+ },
+ {
+  "board": "New Zealand NCEA",
+  "grade": "Year 12",
+  "subject": "Economics",
+  "marks": 4,
+  "question": "level 2 econ external (4 credits) — 'Fully explain how a decrease in the price of petrol would affect the market for large petrol cars, using a demand and supply model.' this is an excellence question right? what do i need for excellence not just merit",
+  "rubric": [
+   "Identify that petrol and large petrol cars are complements, so a fall in the petrol price makes running such cars cheaper",
+   "Refer to a demand/supply diagram with labelled axes (Price, Quantity) and show demand shifting right (D to D1) with a new equilibrium",
+   "Explain the flow-on: at the original price there is now a shortage, so price rises and quantity supplied rises (movement along supply) to the new equilibrium",
+   "(Merit) explain WHY the change happens via the complement relationship, clearly distinguishing a shift of demand from a movement along supply",
+   "(Excellence) give a full, detailed and integrated explanation, correctly linking every diagram change to the reasoning and using terms precisely (equilibrium, complements, ceteris paribus)"
+  ]
+ },
+ {
+  "board": "New Zealand NCEA",
+  "grade": "Year 13",
+  "subject": "History",
+  "marks": 0,
+  "question": "level 3 history internal — doing the 1981 springbok tour for the 'event of significance to new zealanders' standard. what actually makes it significant? i need to argue significance not just describe what happened",
+  "rubric": [
+   "Briefly establish context: the 1981 tour of NZ by apartheid South Africa's Springbok rugby team, and the divide between protesters and pro-tour supporters",
+   "Apply criteria of historical significance (how many people were affected, how deeply, for how long, and its relevance today) rather than narrating events",
+   "Give evidence of impact: a deeply divided society, large-scale protests (e.g. the cancelled Hamilton game), and the police 'Red/Blue Squad' response",
+   "Discuss longer-term significance: NZ's stance on apartheid and sporting contacts, effects on race relations and national identity, links to anti-apartheid activism",
+   "Use primary and secondary sources and differing perspectives (protesters, pro-tour supporters, the Muldoon government) to support a judgement of significance"
+  ]
+ },
+ {
+  "board": "JEE (Main+Advanced)",
+  "grade": "Class 10",
+  "subject": "Mathematics",
+  "question": "bro how do i tell the nature of roots of a quadratic WITHOUT actually solving it? doing jee foundation and i keep messing up the discriminant sign",
+  "marks": 0,
+  "rubric": [
+   "Write the discriminant D = b^2 - 4ac for ax^2 + bx + c = 0",
+   "D > 0 -> two distinct real roots; D = 0 -> two equal (repeated) real roots",
+   "D < 0 -> no real roots (complex conjugate pair)",
+   "Note: for rational a,b,c, roots are rational only if D is a perfect square, else irrational conjugates",
+   "Show one quick worked example: pick coefficients, compute D, state the conclusion"
+  ]
+ },
+ {
+  "board": "JEE (Main+Advanced)",
+  "grade": "Class 11",
+  "subject": "Physics",
+  "question": "jee main pyq, 4 mark numerical: a projectile is thrown at 60 degrees with 20 m/s. find max height AND range. need full steps, g=10",
+  "marks": 4,
+  "rubric": [
+   "Resolve initial velocity: ux = 20 cos60 = 10 m/s, uy = 20 sin60 = 10*sqrt(3) ~ 17.32 m/s",
+   "Max height H = uy^2 / (2g) = (17.32)^2 / 20 ~ 15 m",
+   "Time of flight T = 2*uy/g = 2*17.32/10 ~ 3.46 s",
+   "Range R = ux*T = 10*3.46 ~ 34.6 m (or R = u^2 sin(2theta)/g)",
+   "Use g = 10 consistently, correct units on every quantity, and box the two final answers"
+  ]
+ },
+ {
+  "board": "JEE (Main+Advanced)",
+  "grade": "Competitive Exam (JEE)",
+  "subject": "Chemistry",
+  "question": "why does SN1 go faster with tertiary halides but SN2 prefers primary? sir just said 'steric' and moved on, i want the actual reason for jee",
+  "marks": 0,
+  "rubric": [
+   "SN1 is two-step; rate = k[substrate] only, carbocation formation is the rate-determining step",
+   "Tertiary carbocation is stabilised by +I effect and hyperconjugation, so SN1 is fastest for 3-degree",
+   "SN2 is one-step concerted backside attack; rate = k[substrate][nucleophile]",
+   "Primary carbon has least steric crowding, so nucleophile attacks easily -> fastest SN2",
+   "Tertiary carbon blocks the backside approach (steric hindrance) -> SN2 nearly does not happen",
+   "Stereochem note: SN2 gives inversion (Walden), SN1 gives racemisation"
+  ]
+ },
+ {
+  "board": "JEE (Main+Advanced)",
+  "grade": "Competitive Exam (JEE)",
+  "subject": "Mathematics",
+  "question": "jee adv type integral: evaluate integral of sqrt(tan x) dx from 0 to pi/2. i know the answer is pi/sqrt(2) but i cant derive it",
+  "marks": 0,
+  "rubric": [
+   "Let I = integral of sqrt(tan x) and J = integral of sqrt(cot x) over [0, pi/2]; show I = J using the reflection property x -> pi/2 - x",
+   "Compute I + J by combining integrands: (sin x + cos x)/sqrt(sin x cos x)",
+   "Substitute sin x - cos x = t so that 2 sin x cos x = 1 - t^2, hence sqrt(sin x cos x) = sqrt(1 - t^2)/sqrt(2); the integral becomes sqrt(2) * integral of dt/sqrt(1 - t^2) with t running from -1 to 1",
+   "Evaluate to get I + J = sqrt(2) * pi = pi*sqrt(2)",
+   "Since I = J, conclude I = pi/sqrt(2) and sanity-check numerically (~2.221)"
+  ]
+ },
+ {
+  "board": "NEET",
+  "grade": "Class 10",
+  "subject": "Biology",
+  "question": "difference between mitosis and meiosis in a simple table pls, class 10 but starting neet foundation",
+  "marks": 0,
+  "rubric": [
+   "Mitosis: single division producing 2 daughter cells; meiosis: two divisions producing 4 daughter cells",
+   "Mitosis keeps chromosome number same (2n -> 2n); meiosis halves it (2n -> n)",
+   "Mitosis occurs in somatic/body cells (growth, repair); meiosis occurs in reproductive cells/gonads (gamete formation)",
+   "Meiosis creates genetic variation via crossing over (prophase I) and independent assortment; mitosis gives genetically identical cells",
+   "State the purpose of each clearly in the comparison"
+  ]
+ },
+ {
+  "board": "NEET",
+  "grade": "Class 11",
+  "subject": "Biology",
+  "question": "explain the enzymes in human digestion and where each one acts - from NCERT ch Digestion and Absorption. need it neet-ready",
+  "marks": 0,
+  "rubric": [
+   "Mouth: salivary amylase (ptyalin) converts starch to maltose, optimum pH ~6.8",
+   "Stomach: pepsin (from pepsinogen activated by HCl) breaks proteins to peptones; rennin in infants",
+   "Small intestine gets pancreatic juice: pancreatic amylase, trypsin/chymotrypsin, lipase; bile emulsifies fats",
+   "Intestinal juice (succus entericus): maltase, sucrase, lactase, peptidases, nucleases finish digestion",
+   "Final absorbable products: glucose, amino acids, fatty acids + glycerol; absorbed mainly in jejunum/ileum",
+   "Use correct NCERT terminology and enzyme-substrate-product mapping"
+  ]
+ },
+ {
+  "board": "NEET",
+  "grade": "Competitive Exam (NEET)",
+  "subject": "Chemistry",
+  "question": "neet pyq style 4 marks: calculate the pH of 0.001 M HCl and then of 0.001 M NaOH. show the steps",
+  "marks": 4,
+  "rubric": [
+   "HCl is a strong acid, dissociates fully: [H+] = 0.001 = 10^-3 M",
+   "pH = -log[H+] = 3",
+   "NaOH is a strong base: [OH-] = 10^-3 M, so pOH = 3",
+   "pH = 14 - pOH = 11",
+   "State assumptions: strong electrolyte, 25 degrees C, Kw = 10^-14; report answers to correct significant figures"
+  ]
+ },
+ {
+  "board": "NEET",
+  "grade": "Competitive Exam (NEET)",
+  "subject": "Biology",
+  "question": "in a dihybrid cross why is the F2 ratio 9:3:3:1 and how does that prove independent assortment? neet genetics",
+  "marks": 0,
+  "rubric": [
+   "Dihybrid cross tracks two genes (e.g. RrYy x RrYy), each with a dominant and recessive allele",
+   "Each parent forms four gamete types (RY, Ry, rY, ry); a 4x4 Punnett square gives 16 combinations",
+   "Phenotypic ratio 9 (both dominant) : 3 : 3 : 1 (both recessive)",
+   "Independent assortment (Mendel's Second Law): alleles of different genes segregate independently during meiosis (anaphase I)",
+   "Requires the two genes to be on different (non-linked) chromosomes; mention linkage as the exception"
+  ]
+ },
+ {
+  "board": "UPSC (Prelims)",
+  "grade": "Competitive Exam (UPSC)",
+  "subject": "Political Science",
+  "question": "always confuse fundamental rights vs directive principles - clean difference for upsc prelims?",
+  "marks": 0,
+  "rubric": [
+   "FRs are in Part III (Art 12-35) and are justiciable/enforceable in court; DPSPs are in Part IV (Art 36-51) and are non-justiciable",
+   "FRs are largely negative (restrain the State); DPSPs are positive (direct the State to act for welfare)",
+   "FRs protect individual/political liberty; DPSPs set socio-economic goals (welfare state) - can classify as Gandhian, liberal-intellectual, socialist",
+   "Article 37: DPSPs are fundamental in governance though not enforceable; mention 42nd Amendment and Minerva Mills / Kesavananda balance",
+   "Both together are treated as the conscience of the Constitution"
+  ]
+ },
+ {
+  "board": "UPSC (Prelims)",
+  "grade": "Competitive Exam (UPSC)",
+  "subject": "History",
+  "question": "prelims statement type: w.r.t. Government of India Act 1935 - (1) it introduced provincial autonomy (2) it provided for an All India Federation that never came into being (3) it introduced direct elections for the first time. which are correct and why?",
+  "marks": 2,
+  "rubric": [
+   "Statement 1 correct: the 1935 Act introduced provincial autonomy and abolished dyarchy at the provincial level",
+   "Statement 2 correct: it proposed an All-India Federation including princely states, which never materialised",
+   "Statement 3 incorrect: direct elections were first introduced by the Government of India Act 1919, not this Act (the 1935 Act only widened the franchise); explain the flaw in the 'first time' framing",
+   "Final verdict: statements 1 and 2 are correct",
+   "Add value: it introduced dyarchy at the Centre, provided for the RBI and a Federal Court (1937)"
+  ]
+ },
+ {
+  "board": "UPSC (Prelims)",
+  "grade": "Competitive Exam (UPSC)",
+  "subject": "Economics",
+  "question": "fiscal deficit vs revenue deficit vs primary deficit - keep mixing them up for upsc economy",
+  "marks": 0,
+  "rubric": [
+   "Revenue deficit = revenue expenditure - revenue receipts (indicates government dissaving)",
+   "Fiscal deficit = total expenditure - total receipts excluding borrowings (equals the borrowing requirement)",
+   "Primary deficit = fiscal deficit - interest payments",
+   "Show the relationship: borrowing finances the fiscal deficit; primary deficit strips out the burden of past debt",
+   "Mention the FRBM Act context and why these indicators matter for fiscal health"
+  ]
+ },
+ {
+  "board": "UPSC (Prelims)",
+  "grade": "Competitive Exam (UPSC)",
+  "subject": "Geography",
+  "question": "el nino and la nina simple explanation + effect on indian monsoon? upsc geography/environment",
+  "marks": 0,
+  "rubric": [
+   "El Nino: abnormal warming of the central/eastern equatorial Pacific, weakened trade winds, usually linked to a weak Indian monsoon/drought",
+   "La Nina: cooling of the eastern Pacific with stronger trade winds, generally linked to a good/above-normal Indian monsoon",
+   "Explain ENSO and the Walker circulation; Southern Oscillation is the pressure seesaw (Tahiti-Darwin)",
+   "Note impacts on agriculture, food prices and cyclone activity",
+   "Mention the Indian Ocean Dipole (IOD) as an additional factor influencing monsoon"
+  ]
+ },
+ {
+  "board": "GATE",
+  "grade": "Undergraduate Year 2",
+  "subject": "Mathematics",
+  "question": "gate cs prep - find the eigenvalues of [[2,1],[1,2]] and honestly why do we even care about eigenvalues",
+  "marks": 0,
+  "rubric": [
+   "Set up the characteristic equation det(A - lambda*I) = 0 -> (2 - lambda)^2 - 1 = 0",
+   "Solve to get lambda = 1 and lambda = 3",
+   "Note both eigenvalues are real because the matrix is symmetric",
+   "Verify using trace = sum of eigenvalues (4) and determinant = product of eigenvalues (3)",
+   "Explain significance: diagonalisation, stability analysis, PCA and solving linear systems"
+  ]
+ },
+ {
+  "board": "GATE",
+  "grade": "Competitive Exam (GATE)",
+  "subject": "Computer Science",
+  "question": "gate 2-marker: what is the time complexity of building a binary heap from n elements and why is it O(n) and not O(n log n)? show the derivation",
+  "marks": 2,
+  "rubric": [
+   "Build-heap uses bottom-up heapify (Floyd's method), not n separate insertions",
+   "The naive O(n log n) bound is loose; a tighter level-by-level analysis is required",
+   "Number of nodes at height h is at most n/2^(h+1), and heapify at that node costs O(h)",
+   "Total work = sum of h * n/2^(h+1); the series sum of h/2^h converges to a constant (2)",
+   "Conclude build-heap is O(n); contrast with n individual inserts giving O(n log n)"
+  ]
+ },
+ {
+  "board": "GATE",
+  "grade": "Undergraduate Year 3",
+  "subject": "Computer Science",
+  "question": "difference between process and thread + what exactly happens in a context switch? gate os",
+  "marks": 0,
+  "rubric": [
+   "Process: independent execution unit with its own address space (code/data/heap/stack) and PCB; heavyweight",
+   "Thread: lightweight unit sharing the process's address space, code and data but with its own stack, registers and program counter",
+   "IPC between processes is costly (pipes, shared memory, message passing); threads share memory so communication is cheap",
+   "Context switch: save the running unit's state (registers, PC, stack pointer) and load another's; incurs overhead",
+   "Switching between processes may require a TLB/address-space flush; switching threads within the same process does not"
+  ]
+ },
+ {
+  "board": "GATE",
+  "grade": "Competitive Exam (GATE)",
+  "subject": "Computer Science",
+  "question": "is L = {a^n b^n | n >= 0} regular or not? prove it. gate toc",
+  "marks": 0,
+  "rubric": [
+   "State that L is NOT regular (it is context-free)",
+   "Apply the Pumping Lemma for regular languages: assume L is regular with pumping length p",
+   "Choose s = a^p b^p with |s| >= p, and decompose s = xyz with |xy| <= p and |y| >= 1",
+   "Because |xy| <= p, y consists only of a's; pumping to xy^2z gives more a's than b's, so the string leaves L - contradiction",
+   "Conclude L is not regular; note a CFG S -> aSb | epsilon (or a PDA) accepts it, so it is context-free"
+  ]
+ },
+ {
+  "board": "University (UG/PG General)",
+  "grade": "Undergraduate Year 1",
+  "subject": "Literature",
+  "question": "can someone explain the central theme of 'The Waste Land' by T.S. Eliot? i have a 10 mark essay question in BA English sem 1",
+  "marks": 10,
+  "rubric": [
+   "Central theme: post-WWI disillusionment, spiritual sterility and the fragmentation of modern civilisation",
+   "Structure: the five sections (The Burial of the Dead, A Game of Chess, The Fire Sermon, Death by Water, What the Thunder Said)",
+   "Technique: mythic method (Grail legend, Fisher King), dense allusion, multiple voices/languages, collage/fragmentation",
+   "Motifs: barrenness vs regeneration, water and drought imagery, death and rebirth",
+   "Modernist form and the closing gesture toward possible redemption ('Shantih shantih shantih')",
+   "Support the argument with specific lines/sections as expected in a 10-mark essay"
+  ]
+ },
+ {
+  "board": "University (UG/PG General)",
+  "grade": "Undergraduate Year 2",
+  "subject": "Economics",
+  "question": "explain price elasticity of demand and its determinants - this is a 5 mark question in my BA economics paper",
+  "marks": 5,
+  "rubric": [
+   "Definition: PED = percentage change in quantity demanded / percentage change in price",
+   "Types: elastic (>1), inelastic (<1), unit elastic (=1), plus perfectly elastic and perfectly inelastic",
+   "Determinants: availability of substitutes, necessity vs luxury, share of income spent, time period, habit/addiction",
+   "Mention the measurement methods (percentage/point/arc) and that the value is negative by the law of demand",
+   "Application: link to total revenue (for elastic goods a price cut raises revenue)"
+  ]
+ },
+ {
+  "board": "University (UG/PG General)",
+  "grade": "Undergraduate Year 2",
+  "subject": "Physics",
+  "question": "what is the physical meaning of divergence and curl of a vector field? doing EM from griffiths and im totally lost",
+  "marks": 0,
+  "rubric": [
+   "Divergence (del dot F): scalar measuring net outward flux per unit volume - a source or sink at a point",
+   "Curl (del cross F): vector measuring the rotation/circulation of the field at a point",
+   "Physical links: div E relates to charge density (Gauss), curl B to current (Ampere), curl E = -dB/dt (Faraday)",
+   "Divergence-free = solenoidal (no magnetic monopoles); curl-free = irrotational/conservative",
+   "Connect to the divergence theorem and Stokes' theorem",
+   "Tie it back to how these appear in Maxwell's equations in Griffiths"
+  ]
+ },
+ {
+  "board": "University (UG/PG General)",
+  "grade": "Postgraduate",
+  "subject": "Economics",
+  "question": "difference between fixed effects and random effects models in panel data? doing MA econometrics and the Hausman test part confuses me",
+  "marks": 0,
+  "rubric": [
+   "Fixed effects: controls time-invariant unobserved heterogeneity via within/demeaning transform, entity-specific intercepts; allows individual effects to correlate with regressors",
+   "Random effects: treats individual effects as random and uncorrelated with regressors; estimated by GLS and more efficient if that assumption holds",
+   "Key distinction: FE permits corr(alpha_i, X_it) != 0, whereas RE requires corr = 0",
+   "Hausman test: null is that RE is consistent and efficient (no correlation); rejecting the null means use FE",
+   "Trade-off: FE cannot estimate time-invariant regressors while RE can but risks bias; state when to prefer each"
+  ]
+ }
+]

@@ -1,10 +1,15 @@
 // Study-mode evaluation harness — runs the verified question bank against the
-// LIVE backend and scores every answer with an LLM judge against the rubric.
+// LIVE backend and scores every answer as a SHORTCUT, not as an exam.
 //
-// This is the pre-pitch check. The unit tests (bun test) prove the right
-// instructions reach the model for every grade/board; THIS proves the deployed
-// system actually produces board-appropriate answers end to end — real
-// routing, real models, real RAG.
+// The claim being tested is not "the AI knows the answer" — of course it does.
+// The claim is: can a real student on any board, at any level, get MORE MARKS
+// for LESS work by using this? So the judge weights mark yield and effort
+// saved far above raw correctness (see judge()). A technically perfect answer
+// that costs the student more time than it saves fails this eval on purpose.
+//
+// The unit tests (bun test) prove the right shortcut instructions reach the
+// model for every grade/board; THIS proves the deployed system actually
+// delivers the shortcut end to end — real routing, real models, real RAG.
 //
 // Usage:
 //   bun scripts/study-eval.ts --token <session-token> [--limit 40] [--boards CBSE,ICSE]
