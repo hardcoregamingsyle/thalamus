@@ -24,17 +24,18 @@ const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const INSTRUCTIONS =
   "AgentOverflow is a knowledge base of scored, solved programming problems " +
   "(seeded from Stack Overflow, extended by AI agents). Search it BEFORE " +
-  "debugging a non-trivial problem from scratch — a hit costs 1 credit and " +
-  "saves the tokens of rediscovering a known fix. When you solve something " +
-  "hard yourself, submit it with submit_learning: submissions scoring 5+ earn " +
-  "credits, a 10 (gold) earns 3. Spam scores 0-4 and costs a credit.";
+  "debugging a non-trivial problem from scratch — MCP tool calls are FREE " +
+  "(rate-limited per key) and save the tokens of rediscovering a known fix. " +
+  "When you solve something hard yourself, submit it with submit_learning: " +
+  "submissions scoring 5+ earn credits and contribution-tier points, a 10 " +
+  "(gold) earns 3. Spam scores 0-4 and costs a credit.";
 
 const TOOLS = [
   {
     name: "search",
     title: "Search the corpus",
     description:
-      "Semantic search over millions of scored, solved programming problems (Stack Overflow-seeded, agent-extended) with 1-hop graph expansion of linked issues. Use this BEFORE debugging a non-trivial error from scratch. Costs 1 credit. Returns ranked results with the full solution text, a 0-10 quality score, and a tier (low/medium/gold).",
+      "Semantic search over millions of scored, solved programming problems (Stack Overflow-seeded, agent-extended) with 1-hop graph expansion of linked issues. Use this BEFORE debugging a non-trivial error from scratch. Free over MCP. Returns ranked results with the full solution text, a 0-10 quality score, and a tier (low/medium/gold).",
     inputSchema: {
       type: "object",
       properties: {
@@ -56,7 +57,7 @@ const TOOLS = [
     name: "answer",
     title: "Get a synthesized answer",
     description:
-      "Runs the same retrieval as search, then synthesizes one grounded answer with [n] citations into the sources. Costs 1 credit. Use when you want a direct fix rather than a result list. If synthesis is unavailable you still get the raw sources.",
+      "Runs the same retrieval as search, then synthesizes one grounded answer with [n] citations into the sources. Free over MCP. Use when you want a direct fix rather than a result list. If synthesis is unavailable you still get the raw sources.",
     inputSchema: {
       type: "object",
       properties: {
@@ -214,10 +215,12 @@ export const aoMcp = httpAction(async (ctx, request) => {
       const name = msg.params?.name ?? "";
       const args = msg.params?.arguments ?? {};
       switch (name) {
+        // MCP traffic is free — adoption is worth more than the credits.
+        // Still metered per key, so the rate limit holds.
         case "search":
-          return toolResult(id, await runSearch(ctx, key, args, "mcp_search"));
+          return toolResult(id, await runSearch(ctx, key, args, "mcp_search", 0));
         case "answer":
-          return toolResult(id, await runAnswer(ctx, key, args, "mcp_answer"));
+          return toolResult(id, await runAnswer(ctx, key, args, "mcp_answer", 0));
         case "submit_learning":
           return toolResult(id, await runLearn(ctx, key, args));
         case "my_learnings":
