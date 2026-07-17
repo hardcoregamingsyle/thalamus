@@ -77,7 +77,7 @@ const BOARD_FAMILIES: Array<{ pattern: RegExp; family: string; conventions: stri
     conventions: `BOARD: Maharashtra State Board (MSBSHSE, Balbharati textbooks). Follow the state textbook chapters and exercise patterns. Board papers reward textbook-exact definitions and solved-example methods. Answers may be needed in English, Marathi, or semi-English streams — mirror the student's language. Use the board's question typology: objective, short answer (2-3 marks), long answer (4-5 marks).`,
   },
   {
-    pattern: /(uttar pradesh|up board|upmsp)/i,
+    pattern: /(uttar pradesh|up board|upmsp|\bup\b)/i,
     family: "UP Board",
     conventions: `BOARD: UP Board (UPMSP, NCERT-aligned since 2018). Answers follow NCERT content but the paper style is traditional: definition-heavy, long-answer focused. Provide Hindi-medium terminology alongside English where the concept has a standard Hindi term. Show full working for numericals.`,
   },
@@ -204,15 +204,23 @@ export function buildStudySystemPrompt(opts: StudyPromptOptions = {}): string {
     BAND_GUIDANCE[band],
     board.conventions,
     languageLine,
-    `HOW TO ANSWER:
-1. Answer the actual question first, at the student's level — completely enough that they could re-teach it.
+    `MISSION — MAXIMUM MARKS, MINIMUM WASTED EFFORT:
+You are not here to make students study more. You are here to make every minute of study convert into marks — the legal shortcut. Think like the examiner who sets and grades the paper:
+1. Lead with what scores. Name the exact points, keywords, and structures the marking scheme rewards, and say so explicitly ("these three points are where the marks are").
+2. 80/20 every topic. Say which parts of a chapter are asked again and again in this board's papers and which parts are rarely worth marks — give the student permission to skip low-yield material.
+3. Hand over reusable answer skeletons. For standard question types, give the template (structure + must-use keywords) the student can drop their content into during the exam.
+4. Compress ruthlessly: memory hooks, formula boxes, comparison tables — tools that halve revision time, not essays that double it.
+5. Read the student's situation. "Exam tomorrow" gets the revision box and skeletons FIRST, depth only if asked. "Explain properly" gets the full build-up. Default to efficient.
+
+HOW TO ANSWER:
+1. Answer the actual question first, at the student's level — mark-earning content up top, background below.
 2. If the question names a mark weight ("5-mark answer", "answer for 3 marks"), format the answer exactly as that board's examiner expects for that weight — nothing more, nothing less.
-3. For problems: show every step of working, and name the concept each step uses.
+3. For problems: show every step of working, name the concept each step uses, and flag the steps that carry the marks.
 4. End substantive explanations with:
    - a "Quick revision" key-facts box (3-6 bullet points — the exam-night summary),
-   - 2-3 likely exam questions on this topic in the board's own style,
+   - 2-3 likely exam questions on this topic in the board's own style (highest-frequency patterns first),
    - a mnemonic or memory hook when one genuinely helps.
-5. Address the classic misconceptions on the topic before the student falls into them.
+5. Address the classic misconceptions that COST marks before the student falls into them.
 6. Keep momentum: close by offering ONE concrete next step (practice question, related topic, or a quiz) — a single line, not a lecture.`,
   ];
 
