@@ -17,6 +17,8 @@ namespace ThalamusApp.Modes
         private readonly ConvexClient _convex = new();
         private StreamingClient? _streaming;
         private readonly List<(string role, string text)> _history = new();
+        private ConversationStore? _store;
+        private bool _historyLoaded;
         private CancellationTokenSource? _cts;
         private bool _isStreaming;
         private TextBlock? _liveBlock;
@@ -26,12 +28,44 @@ namespace ThalamusApp.Modes
         {
             InitializeComponent();
             _streaming = new StreamingClient(_convex);
+            _store = new ConversationStore(_convex, "study");
         }
 
         public void SetToken(string token)
         {
             _token = token;
+            _store!.Reset();
+            _historyLoaded = false;
             StudyStatusLabel.Text = "Ready";
+            if (!string.IsNullOrEmpty(token))
+                _ = LoadHistoryAsync(token);
+        }
+
+        // Replay the newest cloud study thread so sessions survive restarts.
+        private async Task LoadHistoryAsync(string token)
+        {
+            var loaded = await _store!.LoadLatestAsync(token);
+            if (_historyLoaded || loaded.Count == 0) return;
+            _historyLoaded = true;
+
+            Dispatcher.Invoke(() =>
+            {
+                EmptyState.Visibility = Visibility.Collapsed;
+                foreach (var (role, content) in loaded)
+                {
+                    if (role == "user")
+                    {
+                        AppendUserBubble(content);
+                    }
+                    else
+                    {
+                        AppendAiBubbleStart(out var tb);
+                        tb.Text = Controls.HtmlToWpf.PlainText(content);
+                    }
+                    _history.Add((role, content));
+                }
+                StudyScroll.ScrollToBottom();
+            });
         }
 
         private void StudyMode_Click(object sender, RoutedEventArgs e)
@@ -102,8 +136,12 @@ namespace ThalamusApp.Modes
 
             try
             {
+                // Ensure a cloud conversation so the server persists both turns.
+                if (!string.IsNullOrEmpty(_token))
+                    await _store!.EnsureAsync(_token, text);
+
                 await _streaming!.StreamChatAsync(
-                    text, "study", _history, systemPrompt, _token, null,
+                    text, "study", _history, systemPrompt, _token, _store!.ConversationId,
                     (type, chunk) =>
                     {
                         Dispatcher.Invoke(() =>

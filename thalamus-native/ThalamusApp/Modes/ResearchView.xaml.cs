@@ -16,6 +16,8 @@ namespace ThalamusApp.Modes
         private string? _token;
         private readonly ConvexClient _convex = new();
         private StreamingClient? _streaming;
+        private ConversationStore? _store;
+        private bool _historyLoaded;
         private bool _isResearching;
         private CancellationTokenSource? _cts;
         private TextBlock? _liveBlock;
@@ -25,12 +27,43 @@ namespace ThalamusApp.Modes
         {
             InitializeComponent();
             _streaming = new StreamingClient(_convex);
+            _store = new ConversationStore(_convex, "research");
         }
 
         public void SetToken(string token)
         {
             _token = token;
+            _store!.Reset();
+            _historyLoaded = false;
             ResearchStatusLabel.Text = "Ready";
+            if (!string.IsNullOrEmpty(token))
+                _ = LoadHistoryAsync(token);
+        }
+
+        // Replay past research queries + reports from the cloud thread.
+        private async Task LoadHistoryAsync(string token)
+        {
+            var loaded = await _store!.LoadLatestAsync(token);
+            if (_historyLoaded || loaded.Count == 0) return;
+            _historyLoaded = true;
+
+            Dispatcher.Invoke(() =>
+            {
+                EmptyState.Visibility = Visibility.Collapsed;
+                foreach (var (role, content) in loaded)
+                {
+                    if (role == "user")
+                    {
+                        AppendQueryHeader(content);
+                    }
+                    else
+                    {
+                        AppendResultStart(out var tb);
+                        tb.Text = Controls.HtmlToWpf.PlainText(content);
+                    }
+                }
+                ResearchScroll.ScrollToBottom();
+            });
         }
 
         private void ResearchInput_KeyDown(object sender, KeyEventArgs e)
@@ -83,11 +116,15 @@ namespace ThalamusApp.Modes
 
             try
             {
+                // Ensure a cloud conversation so the server persists query + report.
+                if (!string.IsNullOrEmpty(_token))
+                    await _store!.EnsureAsync(_token, query);
+
                 await _streaming!.StreamChatAsync(
                     query, "research",
                     new List<(string, string)>(),
                     "You are a thorough research assistant. Search the web for current information, synthesize findings from multiple sources, and provide a comprehensive, well-structured report with clear sections and source citations where possible.",
-                    _token, null,
+                    _token, _store!.ConversationId,
                     (type, chunk) =>
                     {
                         Dispatcher.Invoke(() =>
