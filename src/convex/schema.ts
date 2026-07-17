@@ -155,6 +155,9 @@ const schema = defineSchema(
       // Stored as a JSON array of agent names, e.g. '["Coder","Tester","Critic"]'.
       // Null/missing means "full pipeline" (first-time backwards compat).
       dispatchedAgentsJson: v.optional(v.string()),
+      // MCP tool-call loop guard — how many times the current agent has been
+      // re-run with MCP results this phase. Reset to 0 on every phase advance.
+      mcpRoundCount: v.optional(v.number()),
       // Real-time streaming state — updated frequently during agent generation
       streamingContent: v.optional(v.string()),
       streamingAgent: v.optional(v.string()),
@@ -215,6 +218,21 @@ const schema = defineSchema(
     })
       .index("by_project", ["projectId"])
       .index("by_project_and_name", ["projectId", "variableName"]),
+
+    // MCP servers users connect for the agent pipeline (Model Context Protocol
+    // over Streamable HTTP). Agents call their tools via <<MCP-CALL>> blocks.
+    mcpServers: defineTable({
+      userId: v.id("users"),
+      name: v.string(),                    // referenced by agents: <<MCP-CALL server="name" ...>>
+      url: v.string(),                     // Streamable HTTP endpoint (POST JSON-RPC)
+      authHeader: v.optional(v.string()),  // "Header-Name: value", AES-256-GCM encrypted at rest
+      toolsJson: v.optional(v.string()),   // cached tools/list result [{name, description}]
+      enabled: v.boolean(),
+      createdAt: v.number(),
+      lastRefreshedAt: v.optional(v.number()),
+    })
+      .index("by_user", ["userId"])
+      .index("by_user_and_name", ["userId", "name"]),
 
     codeApiKeyRequests: defineTable({
       branchId: v.string(),
