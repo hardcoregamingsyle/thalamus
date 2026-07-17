@@ -80,12 +80,23 @@ async function getUserIdByToken(ctx: { db: QueryCtx["db"] }, token: string) {
   return session.userId;
 }
 
-// Same alphabet/shape as userApiKeys.ts, different prefix.
+// Same alphabet/shape as userApiKeys.ts, different prefix. Drawn from the
+// CSPRNG, not Math.random — these are bearer credentials, and a predictable
+// generator would let key n leak key n+1. Bytes >= the largest multiple of
+// the alphabet size are rejected so every character stays equally likely.
 function generateAoKey(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  const limit = 256 - (256 % chars.length);
   let key = "ao_";
-  for (let i = 0; i < 32; i++) {
-    key += chars[Math.floor(Math.random() * chars.length)];
+  const bytes = new Uint8Array(64);
+  let i = bytes.length;
+  while (key.length < 35) {
+    if (i >= bytes.length) {
+      crypto.getRandomValues(bytes);
+      i = 0;
+    }
+    const b = bytes[i++];
+    if (b < limit) key += chars[b % chars.length];
   }
   return key;
 }
@@ -139,18 +150,32 @@ export function normalizeTags(tags: string[]): string[] {
 
 // Fetch against the VM corpus API. Throws ERR_UNCONFIGURED until the operator
 // sets AO_VM_URL + AO_INTERNAL_SECRET in the Convex dashboard.
+//
+// Hard 15s timeout: a slow or hung VM (normal during bulk loads) must fail
+// fast into the caller's refund path instead of pinning the action open —
+// callers charge before this fetch, so "hangs forever" means "charged and
+// nothing came back".
+const VM_FETCH_TIMEOUT_MS = 15_000;
+
 export async function vmFetch(path: string, body?: unknown, method = "POST"): Promise<Response> {
   const base = process.env.AO_VM_URL;
   const secret = process.env.AO_INTERNAL_SECRET;
   if (!base || !secret) throw new Error(ERR_UNCONFIGURED);
-  return fetch(`${base.replace(/\/$/, "")}${path}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      "X-AO-Internal-Secret": secret,
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), VM_FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(`${base.replace(/\/$/, "")}${path}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        "X-AO-Internal-Secret": secret,
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // One aoDailyActiveUsers row per user per UTC day; writes throttled to one
