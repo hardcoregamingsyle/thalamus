@@ -16,6 +16,7 @@ import type * as agentoverflow from "../agentoverflow.js";
 import type * as agentoverflowAdmin from "../agentoverflowAdmin.js";
 import type * as agentoverflowHttp from "../agentoverflowHttp.js";
 import type * as agentoverflowMcp from "../agentoverflowMcp.js";
+import type * as agentoverflowPublic from "../agentoverflowPublic.js";
 import type * as ai from "../ai.js";
 import type * as aiHelpers from "../aiHelpers.js";
 import type * as antiEvasionDb from "../antiEvasionDb.js";
@@ -77,6 +78,7 @@ declare const fullApi: ApiFromModules<{
   agentoverflowAdmin: typeof agentoverflowAdmin;
   agentoverflowHttp: typeof agentoverflowHttp;
   agentoverflowMcp: typeof agentoverflowMcp;
+  agentoverflowPublic: typeof agentoverflowPublic;
   ai: typeof ai;
   aiHelpers: typeof aiHelpers;
   antiEvasionDb: typeof antiEvasionDb;
