@@ -1,6 +1,7 @@
 import { httpAction } from "./_generated/server";
 import {
   authenticateBearer,
+  runAnonRetrieve,
   runAnswer,
   runBalance,
   runLearn,
@@ -148,27 +149,29 @@ export const aoMcpMethodNotAllowed = httpAction(
   async () => new Response(null, { status: 405, headers: mcpCorsHeaders() }),
 );
 
+// Best-effort client IP for the anonymous tier's per-IP metering. Convex sits
+// behind an edge that sets x-forwarded-for; if it's ever absent the request
+// falls into a shared "anon" bucket (stricter, never looser).
+function clientIp(request: Request): string {
+  const fwd = request.headers.get("x-forwarded-for");
+  if (fwd) return fwd.split(",")[0].trim();
+  return request.headers.get("cf-connecting-ip") ?? "anon";
+}
+
+// Tools an anonymous (keyless) caller can't use — they need an account.
+function anonNeedsKey(id: JsonRpcId, tool: string): Response {
+  return toolResult(id, {
+    ok: false,
+    status: 401,
+    code: "key_required",
+    message: `"${tool}" needs a free API key — mint one on the AgentOverflow dashboard. Anonymous MCP can search and answer only.`,
+  });
+}
+
 export const aoMcp = httpAction(async (ctx, request) => {
+  // Keyless is allowed: no bearer → anonymous tier (per-IP limit, gold hidden).
   const key = await authenticateBearer(ctx, request.headers.get("Authorization"));
-  if (!key) {
-    return new Response(
-      JSON.stringify({
-        error: {
-          code: "invalid_key",
-          message:
-            "Missing, malformed, or revoked API key. Connect with header: Authorization: Bearer ao_... (mint keys on the AgentOverflow dashboard).",
-        },
-      }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "WWW-Authenticate": 'Bearer realm="agentoverflow"',
-          ...mcpCorsHeaders(),
-        },
-      },
-    );
-  }
+  const anonIp = key ? null : clientIp(request);
 
   let msg: {
     jsonrpc?: string;
@@ -214,6 +217,24 @@ export const aoMcp = httpAction(async (ctx, request) => {
     case "tools/call": {
       const name = msg.params?.name ?? "";
       const args = msg.params?.arguments ?? {};
+      // Anonymous tier: read-only, per-IP limited, gold-tier hidden. Everything
+      // that touches an account (submit/list/balance) needs a free key.
+      if (anonIp) {
+        switch (name) {
+          case "search":
+            return toolResult(id, await runAnonRetrieve(ctx, anonIp, args, "search"));
+          case "answer":
+            return toolResult(id, await runAnonRetrieve(ctx, anonIp, args, "answer"));
+          case "submit_learning":
+          case "my_learnings":
+          case "balance":
+            return anonNeedsKey(id, name);
+          default:
+            return rpcError(id, -32602, `Unknown tool: ${name}`);
+        }
+      }
+      // anonIp is null here, so key is guaranteed non-null; guard for the types.
+      if (!key) return rpcError(id, -32603, "Internal error: no principal resolved.");
       switch (name) {
         // MCP traffic is free — adoption is worth more than the credits.
         // Still metered per key, so the rate limit holds.

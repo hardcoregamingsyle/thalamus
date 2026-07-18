@@ -26,6 +26,12 @@ export const COST_ANSWER = 1;
 export const RATE_LIMIT_PER_MIN = 60;
 const MAX_ACTIVE_KEYS = 10;
 
+// Keyless MCP (anonymous tier): try the corpus with no account at all, capped
+// per client IP per day, with gold-tier answers hidden until you sign up.
+export const AO_ANON_DAILY_LIMIT = 1000;
+// The quota an admin-minted key advertises to the VM — effectively unlimited.
+const ADMIN_UNLIMITED_QUOTA = 1_000_000_000;
+
 // Contribution tiers: points from accepted learnings buy a bigger daily
 // refill. Points per accepted learning: low=1, medium=2, gold=5. The ladder
 // works both ways — points decay ~1%/day (stop teaching, start sliding) and
@@ -103,7 +109,7 @@ async function getUserIdByToken(ctx: { db: QueryCtx["db"] }, token: string) {
 // CSPRNG, not Math.random — these are bearer credentials, and a predictable
 // generator would let key n leak key n+1. Bytes >= the largest multiple of
 // the alphabet size are rejected so every character stays equally likely.
-function generateAoKey(): string {
+export function generateAoKey(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
   const limit = 256 - (256 % chars.length);
   let key = "ao_";
@@ -341,6 +347,43 @@ export const insertApiKey = internalMutation({
   },
 });
 
+// The system user that owns every admin-minted key. Its own credit balance is
+// irrelevant — admin keys bypass charging — so it just needs to exist to
+// satisfy the userId foreign key.
+const ADMIN_SYSTEM_EMAIL = "ao-admin@system.agentoverflow";
+
+async function adminSystemUserId(ctx: MutationCtx): Promise<Id<"users">> {
+  const existing = await ctx.db
+    .query("users")
+    .withIndex("email", (q) => q.eq("email", ADMIN_SYSTEM_EMAIL))
+    .first();
+  if (existing) return existing._id;
+  return await ctx.db.insert("users", {
+    name: "AgentOverflow Admin",
+    email: ADMIN_SYSTEM_EMAIL,
+  });
+}
+
+// Mint an admin key: unlimited requests, no credit charge, gold-tier visible.
+// Called only from the admin backend (see agentoverflowAdmin.adminCreateApiKey),
+// never the dashboard — MAX_ACTIVE_KEYS doesn't apply.
+export const insertAdminKey = internalMutation({
+  args: { keyId: v.string(), keyHash: v.string(), keyPrefix: v.string(), name: v.string() },
+  handler: async (ctx, args): Promise<void> => {
+    const userId = await adminSystemUserId(ctx);
+    await ctx.db.insert("aoApiKeys", {
+      userId,
+      keyId: args.keyId,
+      keyHash: args.keyHash,
+      keyPrefix: args.keyPrefix,
+      name: args.name,
+      isActive: true,
+      isAdmin: true,
+      createdAt: Date.now(),
+    });
+  },
+});
+
 export const listApiKeys = query({
   args: { token: v.string() },
   handler: async (ctx, args) => {
@@ -556,7 +599,34 @@ export const getKeyByHash = internalQuery({
       .withIndex("by_key_hash", (q) => q.eq("keyHash", args.keyHash))
       .first();
     if (!key || !key.isActive) return null;
-    return { _id: key._id, keyId: key.keyId, userId: key.userId };
+    return {
+      _id: key._id,
+      keyId: key.keyId,
+      userId: key.userId,
+      isAdmin: key.isAdmin === true,
+    };
+  },
+});
+
+// Anonymous (keyless) daily metering, bucketed by client IP. Increments the
+// UTC-day counter and returns how many calls remain; throws ERR_RATE_LIMITED
+// once the IP is over AO_ANON_DAILY_LIMIT for the day.
+export const chargeAnon = internalMutation({
+  args: { ip: v.string() },
+  handler: async (ctx, args): Promise<number> => {
+    const day = new Date(Date.now()).toISOString().slice(0, 10);
+    const existing = await ctx.db
+      .query("aoAnonDaily")
+      .withIndex("by_ip_day", (q) => q.eq("ip", args.ip).eq("day", day))
+      .first();
+    const count = (existing?.count ?? 0) + 1;
+    if (count > AO_ANON_DAILY_LIMIT) throw new Error(ERR_RATE_LIMITED);
+    if (existing) {
+      await ctx.db.patch(existing._id, { count, updatedAt: Date.now() });
+    } else {
+      await ctx.db.insert("aoAnonDaily", { ip: args.ip, day, count, updatedAt: Date.now() });
+    }
+    return AO_ANON_DAILY_LIMIT - count;
   },
 });
 
@@ -577,11 +647,19 @@ export const activeKeysForSync = internalQuery({
     const quotaByUser = new Map<string, { dailyQuota: number; burstPerMin: number }>();
     for (const key of keys) {
       if (!key.isActive) continue;
-      let quota = quotaByUser.get(key.userId);
-      if (!quota) {
-        const user = await ctx.db.get(key.userId);
-        quota = searchQuotaFor(user?.aoContribPoints ?? 0, user?.aoCustomSearchQuota);
-        quotaByUser.set(key.userId, quota);
+      let quota: { dailyQuota: number; burstPerMin: number };
+      if (key.isAdmin === true) {
+        // Admin keys advertise an unlimited quota regardless of their tier.
+        quota = { dailyQuota: ADMIN_UNLIMITED_QUOTA, burstPerMin: ADMIN_UNLIMITED_QUOTA };
+      } else {
+        const cached = quotaByUser.get(key.userId);
+        if (cached) {
+          quota = cached;
+        } else {
+          const user = await ctx.db.get(key.userId);
+          quota = searchQuotaFor(user?.aoContribPoints ?? 0, user?.aoCustomSearchQuota);
+          quotaByUser.set(key.userId, quota);
+        }
       }
       out.push({
         key_hash: key.keyHash,
@@ -632,11 +710,14 @@ export const charge = internalMutation({
     refId: v.optional(v.string()),
     keyDbId: v.optional(v.id("aoApiKeys")),
     endpoint: v.optional(v.string()),
+    // Admin keys: skip the rate limit and never deduct credits. Usage rows are
+    // still written so admin traffic shows up in the metrics.
+    unlimited: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<number> => {
     const user = await ctx.db.get(args.userId);
     if (!user) throw new Error("User not found");
-    if (args.keyDbId && args.credits >= 0) {
+    if (args.keyDbId && args.credits >= 0 && !args.unlimited) {
       const limit = user.aoCustomRateLimit ?? RATE_LIMIT_PER_MIN;
       const cutoff = Date.now() - 60_000;
       const keyDbId = args.keyDbId;
@@ -647,13 +728,14 @@ export const charge = internalMutation({
       if (recent.length >= limit) throw new Error(ERR_RATE_LIMITED);
     }
     const balance = user.aoCredits ?? DAILY_REFILL; // first touch = free daily 10
-    if (args.credits > 0 && balance < args.credits) throw new Error(ERR_INSUFFICIENT);
-    const newBalance = balance - args.credits;
-    if (args.credits !== 0) {
+    const credits = args.unlimited ? 0 : args.credits;
+    if (credits > 0 && balance < credits) throw new Error(ERR_INSUFFICIENT);
+    const newBalance = balance - credits;
+    if (credits !== 0) {
       await ctx.db.patch(args.userId, { aoCredits: newBalance });
       await ctx.db.insert("aoCreditLedger", {
         userId: args.userId,
-        delta: -args.credits,
+        delta: -credits,
         reason: args.reason,
         refId: args.refId,
         createdAt: Date.now(),
@@ -664,7 +746,7 @@ export const charge = internalMutation({
         keyId: args.keyDbId,
         userId: args.userId,
         endpoint: args.endpoint ?? "unknown",
-        credits: args.credits,
+        credits,
         createdAt: Date.now(),
       });
       await ctx.db.patch(args.keyDbId, { lastUsedAt: Date.now() });

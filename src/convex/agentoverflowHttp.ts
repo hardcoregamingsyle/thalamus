@@ -38,7 +38,18 @@ type CorpusHit = {
   similarity: number;
 };
 
-export type AoKeyInfo = { _id: Id<"aoApiKeys">; keyId: string; userId: Id<"users"> };
+export type AoKeyInfo = {
+  _id: Id<"aoApiKeys">;
+  keyId: string;
+  userId: Id<"users">;
+  isAdmin: boolean;
+};
+
+// Gold-tier docs are the corpus's crown jewels — hidden from the keyless
+// anonymous tier so signing up (free) is worth it.
+function stripGold(hits: CorpusHit[]): CorpusHit[] {
+  return hits.filter((h) => h.tier !== "gold");
+}
 
 // Every operation resolves to this; the transport layers turn it into HTTP
 // or JSON-RPC without re-implementing any behavior.
@@ -108,6 +119,7 @@ export async function runSearch(
     return opError(400, "bad_request", '"query" must be a string of 3-2000 characters.');
   }
 
+  const charged = key.isAdmin ? 0 : cost;
   let balance: number;
   try {
     balance = await ctx.runMutation(internal.agentoverflow.charge, {
@@ -116,6 +128,7 @@ export async function runSearch(
       reason: "search",
       keyDbId: key._id,
       endpoint,
+      unlimited: key.isAdmin,
     });
   } catch (err) {
     return chargeErrorResult(err) ?? opError(500, "internal_error", "Charge failed.");
@@ -133,11 +146,11 @@ export async function runSearch(
     return {
       ok: true,
       status: 200,
-      body: { credits_charged: cost, balance, results: data.results ?? [] },
+      body: { credits_charged: charged, balance, results: data.results ?? [] },
     };
   } catch (err) {
     // The search never happened — give the credit back before reporting.
-    if (cost > 0) {
+    if (charged > 0) {
       await ctx.runMutation(internal.agentoverflow.charge, {
         userId: key.userId,
         credits: -cost,
@@ -145,6 +158,64 @@ export async function runSearch(
         refId: "refund",
       });
     }
+    return backendDownResult(err);
+  }
+}
+
+// Keyless anonymous retrieval — the free trial of MCP. No account: metered per
+// client IP (AO_ANON_DAILY_LIMIT/day), gold-tier results hidden, and no LLM
+// synthesis (that's a signed-up perk). `mode` shapes the body as a search
+// result list or an answer's source list. Nothing is ever charged in credits.
+export async function runAnonRetrieve(
+  ctx: ActionCtx,
+  ip: string,
+  args: { query?: unknown; tags?: unknown; top_k?: unknown },
+  mode: "search" | "answer",
+): Promise<AoOpResult> {
+  const queryText = (typeof args.query === "string" ? args.query : "").trim();
+  if (queryText.length < 3 || queryText.length > 2000) {
+    return opError(400, "bad_request", '"query" must be a string of 3-2000 characters.');
+  }
+
+  let remaining: number;
+  try {
+    remaining = await ctx.runMutation(internal.agentoverflow.chargeAnon, { ip });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === ERR_RATE_LIMITED) {
+      return opError(
+        429,
+        "rate_limited",
+        "Anonymous daily limit reached. Get a free API key for a much higher limit and gold-tier results.",
+      );
+    }
+    return opError(500, "internal_error", "Metering failed.");
+  }
+
+  try {
+    const res = await vmFetch("/internal/search", {
+      query: queryText,
+      top_k: Math.min(Math.max(Math.round(Number(args.top_k) || 5), 1), 20),
+      tags: normalizeTags(Array.isArray(args.tags) ? (args.tags as string[]) : []),
+      expand: true,
+    });
+    if (!res.ok) throw new Error(`VM search failed: ${res.status}`);
+    const hits = stripGold(((await res.json()) as { results: CorpusHit[] }).results ?? []);
+    const upsell =
+      "Anonymous tier: gold-tier results and synthesized answers are hidden. A free API key unlocks both.";
+    if (mode === "answer") {
+      return {
+        ok: true,
+        status: 200,
+        body: { answer: null, note: upsell, sources: hits, anon_remaining_today: remaining },
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      body: { credits_charged: 0, results: hits, note: upsell, anon_remaining_today: remaining },
+    };
+  } catch (err) {
     return backendDownResult(err);
   }
 }
@@ -176,10 +247,13 @@ export async function runAnswer(
       reason: "answer",
       keyDbId: key._id,
       endpoint,
+      unlimited: key.isAdmin,
     });
   } catch (err) {
     return chargeErrorResult(err) ?? opError(500, "internal_error", "Charge failed.");
   }
+  // Admin keys never actually paid, so none of the refund/degrade math applies.
+  if (key.isAdmin) creditsCharged = 0;
 
   let hits: CorpusHit[];
   try {

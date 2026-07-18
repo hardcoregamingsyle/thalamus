@@ -2,7 +2,14 @@ import { action, internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Doc } from "./_generated/dataModel";
-import { contribTierFor, effectiveRefill, RATE_LIMIT_PER_MIN, vmFetch } from "./agentoverflow";
+import {
+  contribTierFor,
+  effectiveRefill,
+  generateAoKey,
+  hashAoKey,
+  RATE_LIMIT_PER_MIN,
+  vmFetch,
+} from "./agentoverflow";
 
 // ── AgentOverflow admin ───────────────────────────────────────────────────────
 // Same gate as the thalamus /admin panel: the AO site logs in through
@@ -353,6 +360,51 @@ export const revokeKey = action({
     await requireAdmin(ctx, args.adminToken);
     await ctx.runMutation(internal.agentoverflowAdmin.adminRevokeKey, { keyId: args.keyId });
     return { ok: true };
+  },
+});
+
+// Mint an admin key — unlimited requests, no credit charge, gold visible. The
+// full key is returned exactly once; only its hash is ever stored.
+export const createAdminKey = action({
+  args: { adminToken: v.string(), name: v.string() },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ keyId: string; fullKey: string; keyPrefix: string }> => {
+    await requireAdmin(ctx, args.adminToken);
+    const name = args.name.trim();
+    if (name.length === 0 || name.length > 60) {
+      throw new Error("Key name must be 1-60 characters");
+    }
+    const fullKey = generateAoKey();
+    const keyHash = await hashAoKey(fullKey);
+    const keyId = "ao_" + fullKey.slice(3, 19);
+    const keyPrefix = fullKey.slice(0, 12) + "...";
+    await ctx.runMutation(internal.agentoverflow.insertAdminKey, {
+      keyId,
+      keyHash,
+      keyPrefix,
+      name,
+    });
+    return { keyId, fullKey, keyPrefix };
+  },
+});
+
+// The admin panel's list of live admin keys.
+export const listAdminKeys = query({
+  args: { adminToken: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const keys = await ctx.db.query("aoApiKeys").take(2000);
+    return keys
+      .filter((k) => k.isAdmin === true && k.isActive)
+      .map((k) => ({
+        keyId: k.keyId,
+        name: k.name,
+        keyPrefix: k.keyPrefix,
+        createdAt: k.createdAt,
+        lastUsedAt: k.lastUsedAt,
+      }));
   },
 });
 
