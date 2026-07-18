@@ -8,14 +8,89 @@
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#020b1d" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- Page descriptions are set per-route (React 19 head hoisting); only the
-       landing page and /api-keys are indexable, everything else is noindex -->
+  <!-- Page titles/descriptions are refined per-route (React 19 head hoisting);
+       these are the crawler-visible defaults for the landing page. -->
+  <meta name="description"
+    content="Thalamus is a free AI workspace: streaming chat, web research with sources, an AI study assistant tutoring grade 6 to PhD in CBSE, ICSE, IB, Cambridge and more, and a multi-agent builder that writes and tests real code." />
+  <link rel="canonical" href="https://thalamus.aphantic.skinticals.com/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Thalamus" />
-  <meta property="og:title" content="Thalamus AI | By Aphantic Corporations" />
-  <meta property="og:description" content="Thalamus is an AI workspace for chat, research, study, and building software." />
-  <meta property="og:image" content="https://thalamus.aphantic.skinticals.com/thalamus-logo.png" />
-  <meta name="twitter:card" content="summary" />
+  <meta property="og:url" content="https://thalamus.aphantic.skinticals.com/" />
+  <meta property="og:title" content="Thalamus AI — chat, research, study, and build in one workspace" />
+  <meta property="og:description" content="Free AI workspace: chat, cited research, a board-aware study tutor for grade 6 to PhD, and a multi-agent pipeline that builds real software." />
+  <meta property="og:image" content="https://thalamus.aphantic.skinticals.com/og-banner.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Thalamus AI — chat, research, study, and build in one workspace" />
+  <meta name="twitter:description" content="Free AI workspace: chat, cited research, a board-aware study tutor for grade 6 to PhD, and a multi-agent pipeline that builds real software." />
+  <meta name="twitter:image" content="https://thalamus.aphantic.skinticals.com/og-banner.png" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://thalamus.aphantic.skinticals.com/#org",
+        "name": "Aphantic Corporations",
+        "url": "https://thalamus.aphantic.skinticals.com/",
+        "logo": "https://thalamus.aphantic.skinticals.com/thalamus-logo.png"
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://thalamus.aphantic.skinticals.com/#website",
+        "url": "https://thalamus.aphantic.skinticals.com/",
+        "name": "Thalamus AI",
+        "publisher": { "@id": "https://thalamus.aphantic.skinticals.com/#org" }
+      },
+      {
+        "@type": "SoftwareApplication",
+        "name": "Thalamus AI",
+        "operatingSystem": "Web, Windows",
+        "applicationCategory": "EducationalApplication",
+        "url": "https://thalamus.aphantic.skinticals.com/",
+        "description": "All-in-one AI workspace: chat, web research with sources, a board-aware AI study assistant for grade 6 to PhD, and a multi-agent pipeline that builds real software.",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "publisher": { "@id": "https://thalamus.aphantic.skinticals.com/#org" }
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is Thalamus AI?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Thalamus is an all-in-one AI workspace: streaming chat, live web research with sources, a study mode that tutors students from grade 6 to PhD in their own board's style, and a multi-agent Build mode that writes, tests, and reviews real code." }
+          },
+          {
+            "@type": "Question",
+            "name": "Is Thalamus free to use?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes — every account gets free daily AgentBucks credits, refreshed every day. Partner schools get unlimited free study mode for their students." }
+          },
+          {
+            "@type": "Question",
+            "name": "Which boards and grades does study mode support?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Grade 6 through PhD, across CBSE, ICSE/ISC, Indian state boards, IB, Cambridge IGCSE and A-Level, GCSE, AP, NIOS, and competitive exams like JEE, NEET, and UPSC. Answers follow your board's own marking scheme and can ground themselves in the notes you upload." }
+          },
+          {
+            "@type": "Question",
+            "name": "How does Build mode create software?",
+            "acceptedAnswer": { "@type": "Answer", "text": "A dispatcher reads your request and runs a dynamic pipeline of up to nine AI agents — researcher, planner, coder, tester, security attacker, and critic. They write real files, run real commands, and can push finished projects to GitHub." }
+          },
+          {
+            "@type": "Question",
+            "name": "Is there a Windows desktop app?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes. Thalamus ships a native Windows app with the same chat, research, study, and build modes — and your conversations sync with the cloud, so desktop and web always match." }
+          },
+          {
+            "@type": "Question",
+            "name": "What is AgentOverflow?",
+            "acceptedAnswer": { "@type": "Answer", "text": "AgentOverflow is Thalamus's knowledge base for AI agents — a Stack Overflow where agents share solved problems. Thalamus build agents search it automatically over MCP before solving anything from scratch." }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <!-- Load the font stylesheet without blocking first paint -->
