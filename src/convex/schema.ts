@@ -71,9 +71,11 @@ const schema = defineSchema(
       aoContribPoints: v.optional(v.number()),
       // Admin-granted limit overrides (approved tier-increase applications).
       // Refill wins over the contribution ladder when higher; rate limit
-      // replaces the default 30/min.
+      // replaces the default 30/min; search quota raises the free VM-served
+      // daily search allowance above the tier floor.
       aoCustomRefill: v.optional(v.number()),
       aoCustomRateLimit: v.optional(v.number()),
+      aoCustomSearchQuota: v.optional(v.number()),
     }).index("email", ["email"])
       .index("by_referral_code", ["referralCode"]),
 

@@ -18,4 +18,14 @@ crons.cron(
   internal.agentoverflow.dailyRefillAoCredits,
 );
 
+// Push the active API-key snapshot to the corpus VM so it can authorize search
+// locally. Every 2 min keeps a freshly issued key working within the interval
+// and a revocation propagating just as fast, while the search path itself
+// never calls Convex.
+crons.interval(
+  "sync agentoverflow keys to vm",
+  { minutes: 2 },
+  internal.agentoverflow.syncKeysToVm,
+);
+
 export default crons;

@@ -31,12 +31,17 @@ const MAX_ACTIVE_KEYS = 10;
 // works both ways — points decay ~1%/day (stop teaching, start sliding) and
 // trash submissions cost a point. Stored as a float; floored for display.
 export const POINTS_DAILY_DECAY = 0.99;
+// dailyRefill is AgentBucks-style credits/day (spent on answer synthesis).
+// dailySearch is the free VM-served search allowance/day — the lurker gets
+// StackOverflow parity (10k) and it climbs from there; burstPerMin caps how
+// fast one key may hammer the corpus. Search quotas are pushed to the VM and
+// enforced there (see syncKeysToVm), so the hot path never touches Convex.
 export const CONTRIB_TIERS = [
-  { name: "lurker", minPoints: 0, dailyRefill: 10 },
-  { name: "contributor", minPoints: 5, dailyRefill: 15 },
-  { name: "regular", minPoints: 15, dailyRefill: 20 },
-  { name: "veteran", minPoints: 40, dailyRefill: 30 },
-  { name: "legend", minPoints: 100, dailyRefill: 50 },
+  { name: "lurker", minPoints: 0, dailyRefill: 10, dailySearch: 10_000, burstPerMin: 120 },
+  { name: "contributor", minPoints: 5, dailyRefill: 15, dailySearch: 25_000, burstPerMin: 180 },
+  { name: "regular", minPoints: 15, dailyRefill: 20, dailySearch: 50_000, burstPerMin: 300 },
+  { name: "veteran", minPoints: 40, dailyRefill: 30, dailySearch: 100_000, burstPerMin: 600 },
+  { name: "legend", minPoints: 100, dailyRefill: 50, dailySearch: 250_000, burstPerMin: 1200 },
 ];
 
 export function pointsForLearningTier(tier: string | null): number {
@@ -62,6 +67,20 @@ export function nextContribTier(points: number) {
 // the ladder and the grant is higher wins.
 export function effectiveRefill(points: number, customRefill: number | undefined): number {
   return Math.max(contribTierFor(points).dailyRefill, customRefill ?? 0);
+}
+
+// Free search allowance + burst for a user, tier-derived. A granted
+// aoCustomSearchQuota (from an approved tier-increase) can only raise the
+// daily figure, never lower it below the tier floor.
+export function searchQuotaFor(
+  points: number,
+  customQuota: number | undefined,
+): { dailyQuota: number; burstPerMin: number } {
+  const tier = contribTierFor(points);
+  return {
+    dailyQuota: Math.max(tier.dailySearch, customQuota ?? 0),
+    burstPerMin: tier.burstPerMin,
+  };
 }
 
 // Error message constants double as machine-readable codes for the HTTP layer.
@@ -538,6 +557,67 @@ export const getKeyByHash = internalQuery({
       .first();
     if (!key || !key.isActive) return null;
     return { _id: key._id, keyId: key.keyId, userId: key.userId };
+  },
+});
+
+// Snapshot of every active key + its tier-derived search quota, for the VM
+// key push. Full-table read: fine at launch scale (keys are capped at 10/user
+// and users are few); if AgentOverflow ever crosses ~10k keys this needs
+// cursor pagination to stay under Convex's per-query read limit.
+export const activeKeysForSync = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const keys = await ctx.db.query("aoApiKeys").take(8000);
+    const out: {
+      key_hash: string;
+      user_id: string;
+      daily_quota: number;
+      burst_per_min: number;
+    }[] = [];
+    const quotaByUser = new Map<string, { dailyQuota: number; burstPerMin: number }>();
+    for (const key of keys) {
+      if (!key.isActive) continue;
+      let quota = quotaByUser.get(key.userId);
+      if (!quota) {
+        const user = await ctx.db.get(key.userId);
+        quota = searchQuotaFor(user?.aoContribPoints ?? 0, user?.aoCustomSearchQuota);
+        quotaByUser.set(key.userId, quota);
+      }
+      out.push({
+        key_hash: key.keyHash,
+        user_id: key.userId,
+        daily_quota: quota.dailyQuota,
+        burst_per_min: quota.burstPerMin,
+      });
+    }
+    return out;
+  },
+});
+
+// Push the active-key snapshot to the VM so it can authorize `ao_` bearer
+// tokens locally (no Convex call on the search hot path). Run on a cron; a
+// full replace on the VM side means a revoked/removed key drops out here and
+// disappears there within one interval.
+export const syncKeysToVm = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ pushed: number; active: number } | { skipped: string }> => {
+    let keys;
+    try {
+      keys = await ctx.runQuery(internal.agentoverflow.activeKeysForSync, {});
+    } catch (err) {
+      return { skipped: err instanceof Error ? err.message : String(err) };
+    }
+    try {
+      const res = await vmFetch("/internal/sync-keys", { keys });
+      if (!res.ok) return { skipped: `VM sync failed: ${res.status}` };
+      const body = (await res.json()) as { active_keys?: number };
+      return { pushed: keys.length, active: body.active_keys ?? keys.length };
+    } catch (err) {
+      // ERR_UNCONFIGURED (no AO_VM_URL yet) or a network blip — the next cron
+      // tick retries. Never throw: a failed push must not spam the logs as an
+      // unhandled action error.
+      return { skipped: err instanceof Error ? err.message : String(err) };
+    }
   },
 });
 
