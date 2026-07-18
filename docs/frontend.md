@@ -18,8 +18,6 @@ Provider hierarchy (outermost to innermost):
 3. `ConvexAuthProvider` (wraps Convex client pointed at `VITE_CONVEX_URL`)
 4. `BrowserRouter` with all route definitions
 
-Desktop detection: `window.NL_PORT` exists = Neutralinojs desktop wrapper.
-
 ## Pages & Routes
 
 | Route | Page | Description |

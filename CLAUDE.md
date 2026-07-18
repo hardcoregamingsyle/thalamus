@@ -81,7 +81,7 @@ VITE_CONVEX_URL=https://your-deployment.convex.cloud
 
 ### Frontend (React + Vite)
 
-* **`src/main.tsx`:** Entry point. Sets up routing, Convex auth provider, and desktop app detection (`window.NL_PORT` = Neutralinojs).
+* **`src/main.tsx`:** Entry point. Sets up routing and the Convex auth provider.
 * **`src/pages/`:** Route-level components (`Portal`, `CodeProjects`, `CodeBranches`, `CodeWorkspace`, `Admin`, `Auth`, `Landing`).
 * **`src/components/`:** Feature components. The `src/components/ui/` folder contains the Shadcn UI layer—**do not customize these directly**.
 * **`src/lib/vmLauncher.ts`:** WebSocket client communicating with the local VM Bridge on `ws://localhost:5900`.
@@ -128,8 +128,7 @@ AI calls route through `agentCore.ts`.
 
 ### Desktop & Native Apps
 
-* **Native C# App (`thalamus-native/`):** The desktop app. A strictly independent WPF application (`ThalamusApp.csproj`) and installer (`ThalamusInstaller.csproj`), both on `net8.0-windows`, published self-contained/single-file. Build via `thalamus-native/build.ps1` (`dotnet publish` + optional Inno Setup `installer.iss`). Full instructions in `thalamus-native/BUILD.md`.
-* **Legacy Neutralino detection:** An earlier Neutralino-based desktop shell no longer exists in the repo, but `src/main.tsx` / `DesktopTitlebar.tsx` still check `window.NL_PORT` so any legacy installs loading the live site keep working.
+* **Native C# App (`thalamus-native/`):** The desktop app — the only desktop app. A strictly independent WPF application (`ThalamusApp.csproj`) and installer (`ThalamusInstaller.csproj`), both on `net8.0-windows`, published self-contained/single-file. Build via `thalamus-native/build.ps1` (`dotnet publish` + optional Inno Setup `installer.iss`). Full instructions in `thalamus-native/BUILD.md`. The web app is web-only — no desktop-wrapper detection.
 
 ### Platform Credits (AgentBucks)
 
