@@ -11,19 +11,21 @@
   <!-- Page titles/descriptions are refined per-route (React 19 head hoisting);
        these are the crawler-visible defaults for the landing page. -->
   <meta name="description"
-    content="Thalamus is a free AI workspace: streaming chat, web research with sources, an AI study assistant tutoring grade 6 to PhD in CBSE, ICSE, IB, Cambridge and more, and a multi-agent builder that writes and tests real code." />
+    content="Free AI study app for CBSE, ICSE, JEE & NEET — instant homework help and doubt solving grounded in your NCERT notes, plus an AI that builds real apps." />
   <link rel="canonical" href="https://thalamus.aphantic.skinticals.com/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Thalamus" />
   <meta property="og:url" content="https://thalamus.aphantic.skinticals.com/" />
-  <meta property="og:title" content="Thalamus AI — chat, research, study, and build in one workspace" />
-  <meta property="og:description" content="Free AI workspace: chat, cited research, a board-aware study tutor for grade 6 to PhD, and a multi-agent pipeline that builds real software." />
+  <meta property="og:title" content="Thalamus — Free AI Study App for CBSE, ICSE, JEE & NEET + AI App Builder" />
+  <meta property="og:description" content="Free AI study assistant for CBSE, ICSE, JEE & NEET: homework help, doubt solving, and board-aware answers — plus a multi-agent AI that builds real software." />
   <meta property="og:image" content="https://thalamus.aphantic.skinticals.com/og-banner.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Thalamus AI — study, research, chat, and build in one workspace" />
+  <meta property="og:locale" content="en_IN" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Thalamus AI — chat, research, study, and build in one workspace" />
-  <meta name="twitter:description" content="Free AI workspace: chat, cited research, a board-aware study tutor for grade 6 to PhD, and a multi-agent pipeline that builds real software." />
+  <meta name="twitter:title" content="Thalamus — Free AI Study App for CBSE, ICSE, JEE & NEET + AI App Builder" />
+  <meta name="twitter:description" content="Free AI study assistant for CBSE, ICSE, JEE & NEET: homework help, doubt solving, and board-aware answers — plus a multi-agent AI that builds real software." />
   <meta name="twitter:image" content="https://thalamus.aphantic.skinticals.com/og-banner.png" />
   <script type="application/ld+json">
   {
@@ -73,6 +75,16 @@
           },
           {
             "@type": "Question",
+            "name": "Can Thalamus solve my homework and doubts?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes — Thalamus is an AI study app built for homework help and instant doubt solving. Ask any question, upload a photo or PDF of the problem, and get a step-by-step solution at your grade level with the marks flagged. It explains the method, then gives you a practice question so you actually learn it." }
+          },
+          {
+            "@type": "Question",
+            "name": "Does it use NCERT textbooks, sample papers, and previous year questions?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes. Upload your NCERT chapters, sample papers, or previous year questions (PYQs) and study mode grounds its answers in them, matches your board's exam pattern, and generates mock tests and practice from exactly that material." }
+          },
+          {
+            "@type": "Question",
             "name": "How does Build mode create software?",
             "acceptedAnswer": { "@type": "Answer", "text": "A dispatcher reads your request and runs a dynamic pipeline of up to nine AI agents — researcher, planner, coder, tester, security attacker, and critic. They write real files, run real commands, and can push finished projects to GitHub." }
           },
@@ -98,11 +110,26 @@
   <noscript>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   </noscript>
-  <title>Thalamus AI | By Aphantic Corporations</title>
+  <title>Thalamus — Free AI Study App for CBSE, ICSE, JEE & NEET + AI App Builder</title>
 </head>
 
 <body>
   <div id="root"></div>
+  <!-- Crawlable fallback for non-JS bots (Bing, social/LLM scrapers) and a
+       first-paint signal before hydration. The React app replaces #root. -->
+  <noscript>
+    <div style="max-width:720px;margin:80px auto;padding:0 24px;font-family:system-ui,sans-serif;color:#e5e7eb;background:#020b1d">
+      <h1>Thalamus — free AI study app for CBSE, ICSE, JEE &amp; NEET, plus an AI that builds apps</h1>
+      <p>Thalamus is an all-in-one AI workspace. Study mode is a board-aware tutor for grade 6 to PhD:
+        instant homework help and doubt solving grounded in your own NCERT notes and sample papers, with
+        mark-scheme answers for CBSE, ICSE, state boards, IB, Cambridge, JEE, NEET and more. Build mode runs
+        a team of AI agents that plan, write, test, and review real software. There's also streaming chat and
+        cited web research.</p>
+      <p><a href="/portal" style="color:#93c5fd">Open Thalamus</a> ·
+        <a href="/api-keys" style="color:#93c5fd">Developer API</a> ·
+        <a href="https://agentoverflow.aphantic.skinticals.com" style="color:#93c5fd">AgentOverflow</a></p>
+    </div>
+  </noscript>
   <!-- Neutralinojs client — only active when running as desktop app -->
   <script>
     // Only load Neutralino if running as desktop app (NL_PORT is set)
