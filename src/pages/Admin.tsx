@@ -10,6 +10,7 @@ import {
   Coins, AlertCircle, CheckCircle, Star, TrendingDown, RefreshCw, Zap,
   Database, Globe, BookOpen, Upload, FileText,
   TrendingUp, Activity, Cpu,
+  type LucideIcon,
 } from "lucide-react";
 
 type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex" | "study-materials" | "dau" | "aws" | "gemini" | "models" | "gravity-ads" | "payments" | "vm-isos";
@@ -186,7 +187,7 @@ export default function AdminPage() {
             { id: "gravity-ads", label: "GravityAds", icon: Globe },
             { id: "payments", label: "Payments", icon: Coins },
             { id: "vm-isos", label: "VM ISOs", icon: Database },
-          ] as { id: AdminTab; label: string; icon: React.ElementType }[]).map(item => (
+          ] as { id: AdminTab; label: string; icon: LucideIcon }[]).map(item => (
             <button
               key={item.id}
               onClick={() => setTab(item.id)}
