@@ -53,6 +53,16 @@ const MODE_CARDS: Array<{
   examples: string[];
 }> = [
   {
+    id: "code",
+    label: "Build",
+    icon: Code2,
+    tone: "text-emerald-300 border-emerald-300/25 bg-emerald-300/8",
+    metric: "L3.5 agent",
+    headline: "Ship real apps from one prompt",
+    desc: "Describe what you want and a team of AI agents plans, writes, tests, and reviews real code — files, commands, and a GitHub push, not just a snippet.",
+    examples: ["Web apps", "APIs & tools", "Fix & ship code"],
+  },
+  {
     id: "chat",
     label: "Chat",
     icon: MessageSquare,
@@ -81,16 +91,6 @@ const MODE_CARDS: Array<{
     headline: "A patient tutor for every learner",
     desc: "Upload notes or ask a question and get explanations that are easy to follow and ready to revise.",
     examples: ["School lessons", "College topics", "Practice questions"],
-  },
-  {
-    id: "code",
-    label: "Build",
-    icon: Code2,
-    tone: "text-emerald-300 border-emerald-300/25 bg-emerald-300/8",
-    metric: "make things",
-    headline: "Bring apps and ideas to life",
-    desc: "Describe what you want to create, and Thalamus helps plan, build, check, and improve it.",
-    examples: ["Websites", "Apps", "Useful tools"],
   },
 ];
 
@@ -354,18 +354,18 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur-xl"
           >
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-            AI workspace · By Aphantic Corporations
+            L3.5 Agent · dynamic multi-agent pipeline · by Aphantic
           </motion.div>
 
           <motion.h1
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.65 }}
-            className="mx-auto max-w-5xl text-balance text-4xl font-semibold leading-[0.98] tracking-normal text-foreground sm:text-6xl lg:text-7xl"
+            className="mx-auto max-w-5xl text-balance text-4xl font-semibold leading-[0.98] tracking-normal text-foreground/90 sm:text-6xl lg:text-7xl"
           >
-            <span className="block">Free AI study app for CBSE, ICSE, JEE &amp; NEET</span>
-            <span className="block bg-[linear-gradient(110deg,#f8fafc_0%,#93c5fd_32%,#fcd34d_66%,#d9f99d_100%)] bg-clip-text text-transparent drop-shadow-[0_0_28px_rgba(147,197,253,0.18)]">
-              — plus an AI that builds real apps.
+            <span className="block">The L3.5 AI agent that builds real apps.</span>
+            <span className="block bg-[linear-gradient(110deg,#a7f3d0_0%,#6ee7b7_35%,#93c5fd_70%,#c4b5fd_100%)] bg-clip-text text-transparent">
+              Better output. A fraction of the price.
             </span>
           </motion.h1>
 
@@ -375,8 +375,9 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             transition={{ delay: 0.12, duration: 0.55 }}
             className="mx-auto mt-6 max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg"
           >
-            Instant homework help and doubt solving grounded in your own NCERT notes — the everything-app for
-            students and builders. Ask, learn, research, and build software from one place.
+            Describe what you want once. A dispatcher sends in a team of up to nine AI agents that plan, code,
+            test, attack, and review it — real files, real commands, pushed to GitHub. And when you're done
+            building, there's a free board-aware study tutor in the same app.
           </motion.p>
 
 
@@ -564,6 +565,12 @@ function PipelineSection() {
             agents it needs — up to nine of them — to research, plan, write, test, attack, and review real code.
             A typo fix gets two agents. A full app gets the whole crew. Files get written, commands get executed,
             and finished projects can push straight to GitHub.
+          </p>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            The big AI coding tools charge $20–200 a month for a single agent. Thalamus runs the whole team on
+            free daily credits — you pay only if you want more. <span className="text-foreground/80">L3.5 means it
+            plans and executes multi-step builds end to end, verifies its own work through the Tester and Critic,
+            and leaves you the final say — autonomy where it helps, control where it matters.</span>
           </p>
         </div>
 
@@ -809,19 +816,22 @@ export default function Landing() {
         onFeedback={() => setSuggestionsOpen(true)}
         onToggleTheme={toggleTheme}
       />
-      {show3d && (
+      {show3d && theme === "dark" && (
         <div className="pointer-events-none fixed inset-0 z-0" aria-hidden>
           <Suspense fallback={null}>
             <NeuralScene progress={sceneProgress} />
           </Suspense>
+          {/* Readability scrim — dims the particle field under the content,
+              deepening toward the text-heavy lower sections. */}
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(2,11,29,0.25)_0%,rgba(2,11,29,0.55)_35%,rgba(2,11,29,0.72)_100%)]" />
         </div>
       )}
 
       <div className="relative z-10">
         <Hero onLaunch={handleLaunch} />
         <ModeGrid onSelect={handleModeSelect} />
-        <StudySection />
         <PipelineSection />
+        <StudySection />
         <CapabilityBand />
         <FaqSection />
         <FinalCta onLaunch={handleLaunch} onSelect={handleModeSelect} />

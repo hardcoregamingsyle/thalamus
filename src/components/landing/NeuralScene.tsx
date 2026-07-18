@@ -8,7 +8,7 @@ import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { MotionValue } from "framer-motion";
 
-const PARTICLE_COUNT = 4500;
+const PARTICLE_COUNT = 2400;
 
 const VERT = /* glsl */ `
   attribute vec3 aScattered;
@@ -29,7 +29,7 @@ const VERT = /* glsl */ `
     vec4 mv = modelViewMatrix * vec4(pos, 1.0);
     vDepth = -mv.z;
     gl_Position = projectionMatrix * mv;
-    gl_PointSize = (1.8 + aSeed * 2.2) * (300.0 / -mv.z);
+    gl_PointSize = (1.5 + aSeed * 1.8) * (300.0 / -mv.z);
   }
 `;
 
@@ -53,7 +53,7 @@ const FRAG = /* glsl */ `
     color = mix(color, amber, step(0.965, vSeed) * 0.85); // rare warm sparks
 
     float fade = clamp(1.6 - vDepth * 0.12, 0.25, 1.0);
-    gl_FragColor = vec4(color, alpha * 0.75 * fade);
+    gl_FragColor = vec4(color, alpha * 0.45 * fade);
   }
 `;
 
@@ -151,7 +151,7 @@ export default function NeuralScene({ progress }: { progress: MotionValue<number
   return (
     <Canvas
       camera={{ position: [0, 0, 6.2], fov: 46 }}
-      dpr={[1, 1.75]}
+      dpr={[1, 1.4]}
       gl={{ antialias: false, powerPreference: "high-performance", alpha: true }}
       style={{ position: "absolute", inset: 0 }}
       aria-hidden
