@@ -386,10 +386,14 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             transition={{ delay: 0.2 }}
             className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row"
           >
-            <button onClick={onLaunch} className="group flex items-center gap-2 rounded-lg bg-foreground px-6 py-3 text-sm font-bold text-background shadow-2xl shadow-black/30 transition-all hover:bg-foreground/90">
+            <a
+              href="/portal"
+              onClick={(e) => { e.preventDefault(); onLaunch(); }}
+              className="group flex items-center gap-2 rounded-lg bg-foreground px-6 py-3 text-sm font-bold text-background shadow-2xl shadow-black/30 transition-all hover:bg-foreground/90"
+            >
               Launch Thalamus
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-            </button>
+            </a>
             <a
               href={EXE_URL}
               download="Thalamus.exe"
@@ -736,6 +740,10 @@ function Footer() {
           <a href="#faq" className="transition-colors hover:text-foreground">FAQ</a>
           <a href={EXE_URL} download="Thalamus.exe" className="transition-colors hover:text-foreground">Windows app</a>
           <a href="https://agentoverflow.aphantic.skinticals.com" target="_blank" rel="noreferrer" className="transition-colors hover:text-foreground">AgentOverflow</a>
+          <a href="/privacy" className="transition-colors hover:text-foreground">Privacy</a>
+          <a href="/terms" className="transition-colors hover:text-foreground">Terms</a>
+          <a href="/refund" className="transition-colors hover:text-foreground">Refunds</a>
+          <a href="/contact" className="transition-colors hover:text-foreground">Contact</a>
         </nav>
       </div>
     </footer>
