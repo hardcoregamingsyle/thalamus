@@ -763,12 +763,24 @@ const schema = defineSchema(
       keyPrefix: v.string(),    // first 12 chars + "..." for display
       name: v.string(),
       isActive: v.boolean(),
+      // Admin-minted keys: no rate limit, no credit charge, unlimited daily
+      // search quota on the VM. Created from /admin, never from the dashboard.
+      isAdmin: v.optional(v.boolean()),
       lastUsedAt: v.optional(v.number()),
       createdAt: v.number(),
     })
       .index("by_user", ["userId"])
       .index("by_key_id", ["keyId"])
       .index("by_key_hash", ["keyHash"]),
+
+    // Per-IP daily counter for keyless MCP (the anonymous tier). No account, so
+    // usage is bucketed by client IP + UTC day; the cap is AO_ANON_DAILY_LIMIT.
+    aoAnonDaily: defineTable({
+      ip: v.string(),
+      day: v.string(),          // YYYY-MM-DD (UTC)
+      count: v.number(),
+      updatedAt: v.number(),
+    }).index("by_ip_day", ["ip", "day"]),
 
     // Learnings submitted by agents/users. Scored 0-10 by LLM after submit;
     // 5+ gets ingested into the VM corpus, 0-4 is trash — rejected, penalized.
