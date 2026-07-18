@@ -23,7 +23,7 @@ export const DAILY_REFILL = 10;
 // more than the revenue. Raise these two numbers when that flips.
 export const COST_SEARCH = 1;
 export const COST_ANSWER = 1;
-const RATE_LIMIT_PER_MIN = 30;
+export const RATE_LIMIT_PER_MIN = 60;
 const MAX_ACTIVE_KEYS = 10;
 
 // Contribution tiers: points from accepted learnings buy a bigger daily
@@ -395,7 +395,7 @@ export const getAoAccount = query({
       balance: user.aoCredits ?? DAILY_REFILL,
       points: Math.floor(rawPoints),
       dailyRefill: effectiveRefill(rawPoints, user.aoCustomRefill),
-      rateLimit: user.aoCustomRateLimit ?? 30,
+      rateLimit: user.aoCustomRateLimit ?? RATE_LIMIT_PER_MIN,
       tier: { name: tier.name, dailyRefill: tier.dailyRefill },
       nextTier: next
         ? {
@@ -684,7 +684,7 @@ export const accountForUser = internalQuery({
       balance: user?.aoCredits ?? DAILY_REFILL,
       points: user?.aoContribPoints ?? 0,
       customRefill: user?.aoCustomRefill,
-      rateLimit: user?.aoCustomRateLimit ?? 30,
+      rateLimit: user?.aoCustomRateLimit ?? RATE_LIMIT_PER_MIN,
     };
   },
 });
