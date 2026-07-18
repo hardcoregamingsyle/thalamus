@@ -1,3 +1,12 @@
+# Trust/security signals applied site-wide — clickjacking, MIME-sniffing,
+# referrer leakage, and transport downgrade protection for an app with auth + payments.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()
+
 # Hashed build assets never change — cache forever
 /assets/*
   Cache-Control: public, max-age=31536000, immutable

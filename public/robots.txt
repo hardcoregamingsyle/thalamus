@@ -1,4 +1,9 @@
 User-agent: *
 Allow: /
+# App shells behind auth — same empty SPA, nothing to index.
+Disallow: /admin
+Disallow: /portal
+Disallow: /sync
+Disallow: /auth
 
 Sitemap: https://thalamus.aphantic.skinticals.com/sitemap.xml

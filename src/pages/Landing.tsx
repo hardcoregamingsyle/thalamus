@@ -361,11 +361,11 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.65 }}
-            className="mx-auto max-w-5xl text-balance text-5xl font-semibold leading-[0.94] tracking-normal text-foreground/80 sm:text-7xl lg:text-8xl"
+            className="mx-auto max-w-5xl text-balance text-4xl font-semibold leading-[0.98] tracking-normal text-foreground sm:text-6xl lg:text-7xl"
           >
-            <span className="block text-foreground/55">Everything you need</span>
+            <span className="block">Free AI study app for CBSE, ICSE, JEE &amp; NEET</span>
             <span className="block bg-[linear-gradient(110deg,#f8fafc_0%,#93c5fd_32%,#fcd34d_66%,#d9f99d_100%)] bg-clip-text text-transparent drop-shadow-[0_0_28px_rgba(147,197,253,0.18)]">
-              in one AI workspace.
+              — plus an AI that builds real apps.
             </span>
           </motion.h1>
 
@@ -375,7 +375,8 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             transition={{ delay: 0.12, duration: 0.55 }}
             className="mx-auto mt-6 max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg"
           >
-            Thalamus helps you ask, learn, research, write, plan, and build from one beautiful place.
+            Instant homework help and doubt solving grounded in your own NCERT notes — the everything-app for
+            students and builders. Ask, learn, research, and build software from one place.
           </motion.p>
 
 
@@ -552,7 +553,7 @@ function PipelineSection() {
         <div className="mb-10 max-w-3xl">
           <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-emerald-300">AI app builder</p>
           <h2 className="mt-3 text-3xl font-semibold text-foreground sm:text-5xl">
-            Describe it once. A team of AI agents builds it.
+            AI app builder: describe it once, a team of AI agents builds it.
           </h2>
           <p className="mt-4 text-sm leading-6 text-muted-foreground">
             Thalamus runs a dynamic multi-agent pipeline: a dispatcher sizes up your task and sends in only the
@@ -599,15 +600,16 @@ function StudySection() {
       <div className="mx-auto max-w-7xl">
         <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-indigo-300">AI study assistant</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-indigo-300">AI study app · homework help</p>
             <h2 className="mt-3 text-3xl font-semibold text-foreground sm:text-5xl">
-              More marks. Less studying. Every board, grade 6 to PhD.
+              AI study assistant for every board — grade 6 to PhD.
             </h2>
             <p className="mt-4 text-sm leading-6 text-muted-foreground">
-              Study mode is a tutor, not an answer machine. It knows your board's marking scheme — CBSE step-marking,
-              ICSE depth, IB command terms, Cambridge mark schemes — and answers the way your examiner wants,
-              at the level you're actually at. Upload your own notes and textbooks and answers come grounded in
-              <em> your</em> material, not generic internet memory.
+              Thalamus is the AI study app that gives instant homework help and doubt solving — a tutor, not an
+              answer machine. It knows your board's marking scheme (CBSE step-marking, ICSE depth, IB command
+              terms, Cambridge mark schemes) and answers the way your examiner wants. Upload your NCERT notes,
+              sample papers, and previous year questions (PYQs), and answers come grounded in <em>your</em> material,
+              not generic internet memory.
             </p>
             <ul className="mt-6 space-y-2.5 text-sm text-muted-foreground">
               {[
@@ -662,6 +664,14 @@ const FAQ_ITEMS = [
   {
     q: "Which boards and grades does study mode support?",
     a: "Grade 6 through PhD, across CBSE, ICSE/ISC, Indian state boards, IB, Cambridge IGCSE and A-Level, GCSE, AP, NIOS, and competitive exams like JEE, NEET, and UPSC. Answers follow your board's own marking scheme and can ground themselves in the notes you upload.",
+  },
+  {
+    q: "Can Thalamus solve my homework and doubts?",
+    a: "Yes — Thalamus is an AI study app built for homework help and instant doubt solving. Ask any question, upload a photo or PDF of the problem, and get a step-by-step solution at your grade level with the marks flagged. It explains the method, then gives you a practice question so you actually learn it.",
+  },
+  {
+    q: "Does it use NCERT textbooks, sample papers, and previous year questions?",
+    a: "Yes. Upload your NCERT chapters, sample papers, or previous year questions (PYQs) and study mode grounds its answers in them, matches your board's exam pattern, and generates mock tests and practice from exactly that material.",
   },
   {
     q: "How does Build mode create software?",
@@ -780,9 +790,9 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-background font-sans text-foreground">
-      <title>Thalamus — AI workspace for chat, research, study, and code</title>
-      <meta name="description" content="Thalamus is an AI workspace: streaming chat, cited web research, study from your own materials, and a nine-agent pipeline that builds software." />
-      <link rel="canonical" href="https://thalamus.aphantic.skinticals.com/" />
+      {/* title / description / canonical for "/" live in index.html so crawlers
+          and social scrapers get them without executing JS — not duplicated here
+          (React 19 does not dedupe head tags, and a second copy is a split signal). */}
       <NavBar
         isAuthenticated={isAuthenticated}
         isLoading={isLoading}
