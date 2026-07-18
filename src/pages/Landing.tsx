@@ -1,10 +1,13 @@
-import { motion } from "framer-motion";
+import { motion, useScroll, useSpring } from "framer-motion";
 import { useNavigate } from "react-router";
 import { useAuth } from "@/hooks/use-auth";
-import { useRef, useState } from "react";
+import { lazy, Suspense, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
+
+// Heavy three.js scene loads after first paint and only where it can run well.
+const NeuralScene = lazy(() => import("@/components/landing/NeuralScene"));
 import {
   ArrowRight,
   BookOpen,
@@ -527,6 +530,184 @@ function FinalCta({ onLaunch, onSelect }: { onLaunch: () => void; onSelect: (mod
   );
 }
 
+// The build pipeline, told as a scroll story — each agent card slides in as
+// you reach it, so scrolling literally walks the pipeline.
+const PIPELINE_AGENTS = [
+  { name: "Dispatcher", role: "Reads your task and picks the smallest crew that can nail it" },
+  { name: "Researcher", role: "Pulls current docs and APIs before a line is written" },
+  { name: "Analyser", role: "Turns the request into an architecture" },
+  { name: "Planner", role: "Breaks it into atomic, checkable tasks" },
+  { name: "Coder", role: "Writes the complete implementation — real files, real commands" },
+  { name: "Optimiser", role: "Performance and quality pass" },
+  { name: "Organizer", role: "Structure, docs, readme" },
+  { name: "Tester", role: "Writes and runs the tests" },
+  { name: "Hacker", role: "Attacks the code before you ever see it" },
+  { name: "Critic", role: "Final gate — rejects weak work and sends it back" },
+];
+
+function PipelineSection() {
+  return (
+    <section id="pipeline" className="px-4 py-20 sm:px-6">
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-10 max-w-3xl">
+          <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-emerald-300">AI app builder</p>
+          <h2 className="mt-3 text-3xl font-semibold text-foreground sm:text-5xl">
+            Describe it once. A team of AI agents builds it.
+          </h2>
+          <p className="mt-4 text-sm leading-6 text-muted-foreground">
+            Thalamus runs a dynamic multi-agent pipeline: a dispatcher sizes up your task and sends in only the
+            agents it needs — up to nine of them — to research, plan, write, test, attack, and review real code.
+            A typo fix gets two agents. A full app gets the whole crew. Files get written, commands get executed,
+            and finished projects can push straight to GitHub.
+          </p>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          {PIPELINE_AGENTS.map((agent, index) => (
+            <motion.div
+              key={agent.name}
+              initial={{ opacity: 0, y: 24, scale: 0.96 }}
+              whileInView={{ opacity: 1, y: 0, scale: 1 }}
+              viewport={{ once: true, margin: "-60px" }}
+              transition={{ delay: index * 0.07, duration: 0.45 }}
+              className="rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] p-4"
+            >
+              <div className="flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-emerald-300/30 text-[10px] font-bold text-emerald-300">
+                  {index + 1}
+                </span>
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-foreground">{agent.name}</p>
+              </div>
+              <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{agent.role}</p>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// Study mode — the section search engines and parents actually look for.
+const STUDY_BOARDS = [
+  "CBSE", "ICSE / ISC", "Maharashtra Board", "UP Board", "Tamil Nadu Board", "Karnataka Board",
+  "IB (MYP / DP)", "Cambridge IGCSE / A-Level", "GCSE", "AP", "NIOS", "JEE · NEET · UPSC",
+];
+
+function StudySection() {
+  return (
+    <section id="study" className="border-y border-white/10 bg-white/[0.02] px-4 py-20 sm:px-6">
+      <div className="mx-auto max-w-7xl">
+        <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-indigo-300">AI study assistant</p>
+            <h2 className="mt-3 text-3xl font-semibold text-foreground sm:text-5xl">
+              More marks. Less studying. Every board, grade 6 to PhD.
+            </h2>
+            <p className="mt-4 text-sm leading-6 text-muted-foreground">
+              Study mode is a tutor, not an answer machine. It knows your board's marking scheme — CBSE step-marking,
+              ICSE depth, IB command terms, Cambridge mark schemes — and answers the way your examiner wants,
+              at the level you're actually at. Upload your own notes and textbooks and answers come grounded in
+              <em> your</em> material, not generic internet memory.
+            </p>
+            <ul className="mt-6 space-y-2.5 text-sm text-muted-foreground">
+              {[
+                "Mark-weighted exam answers — ask for a 5-mark answer and get exactly that",
+                "Explains, then makes you try — practice questions, feedback on your attempts",
+                "Mock tests, flashcards, and quizzes generated from what you studied",
+                "Answers in English, Hindi, Tamil, and other languages you prefer",
+              ].map((line) => (
+                <li key={line} className="flex items-start gap-2">
+                  <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-indigo-300" />
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <motion.div
+            initial={{ opacity: 0, x: 24 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            className="rounded-lg border border-indigo-300/20 bg-indigo-300/[0.05] p-6"
+          >
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-indigo-300">Boards & exams covered</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {STUDY_BOARDS.map((board) => (
+                <span key={board} className="rounded-full border border-white/10 bg-background/60 px-3 py-1.5 text-[11px] font-medium text-foreground">
+                  {board}
+                </span>
+              ))}
+            </div>
+            <p className="mt-5 text-[11px] leading-5 text-muted-foreground">
+              Plus every other state board and university curriculum — study mode adapts its language, depth,
+              and answer format to the grade and board on your profile.
+            </p>
+          </motion.div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// Visible FAQ — kept word-for-word in sync with the FAQPage JSON-LD in index.html.
+const FAQ_ITEMS = [
+  {
+    q: "What is Thalamus AI?",
+    a: "Thalamus is an all-in-one AI workspace: streaming chat, live web research with sources, a study mode that tutors students from grade 6 to PhD in their own board's style, and a multi-agent Build mode that writes, tests, and reviews real code.",
+  },
+  {
+    q: "Is Thalamus free to use?",
+    a: "Yes — every account gets free daily AgentBucks credits, refreshed every day. Partner schools get unlimited free study mode for their students.",
+  },
+  {
+    q: "Which boards and grades does study mode support?",
+    a: "Grade 6 through PhD, across CBSE, ICSE/ISC, Indian state boards, IB, Cambridge IGCSE and A-Level, GCSE, AP, NIOS, and competitive exams like JEE, NEET, and UPSC. Answers follow your board's own marking scheme and can ground themselves in the notes you upload.",
+  },
+  {
+    q: "How does Build mode create software?",
+    a: "A dispatcher reads your request and runs a dynamic pipeline of up to nine AI agents — researcher, planner, coder, tester, security attacker, and critic. They write real files, run real commands, and can push finished projects to GitHub.",
+  },
+  {
+    q: "Is there a Windows desktop app?",
+    a: "Yes. Thalamus ships a native Windows app with the same chat, research, study, and build modes — and your conversations sync with the cloud, so desktop and web always match.",
+  },
+  {
+    q: "What is AgentOverflow?",
+    a: "AgentOverflow is Thalamus's knowledge base for AI agents — a Stack Overflow where agents share solved problems. Thalamus build agents search it automatically over MCP before solving anything from scratch.",
+  },
+];
+
+function FaqSection() {
+  return (
+    <section id="faq" className="px-4 py-20 sm:px-6">
+      <div className="mx-auto max-w-4xl">
+        <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">Questions</p>
+        <h2 className="mt-3 text-3xl font-semibold text-foreground sm:text-4xl">Frequently asked questions</h2>
+        <div className="mt-8 space-y-3">
+          {FAQ_ITEMS.map((item, index) => (
+            <motion.details
+              key={item.q}
+              initial={{ opacity: 0, y: 12 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: index * 0.04 }}
+              className="group rounded-lg border border-white/10 bg-white/[0.03] px-5 py-4"
+            >
+              <summary className="cursor-pointer list-none text-sm font-semibold text-foreground marker:content-none">
+                <span className="flex items-center justify-between gap-4">
+                  {item.q}
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+                </span>
+              </summary>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.a}</p>
+            </motion.details>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Footer() {
   return (
     <footer className="border-t border-white/10 px-4 py-8 sm:px-6">
@@ -538,12 +719,14 @@ function Footer() {
           <span className="text-xs font-bold tracking-[0.22em] text-foreground">THALAMUS</span>
           <span className="text-[10px] text-muted-foreground">by Aphantic Corporations</span>
         </div>
-        <div className="flex flex-wrap items-center justify-center gap-3 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-          <span>AI workspace</span>
-          <span>Build help</span>
-          <span>Live research</span>
-          <span>Study help</span>
-        </div>
+        <nav className="flex flex-wrap items-center justify-center gap-4 text-[10px] uppercase tracking-[0.14em] text-muted-foreground" aria-label="Footer">
+          <a href="#modes" className="transition-colors hover:text-foreground">Modes</a>
+          <a href="#study" className="transition-colors hover:text-foreground">Study</a>
+          <a href="#pipeline" className="transition-colors hover:text-foreground">Build</a>
+          <a href="#faq" className="transition-colors hover:text-foreground">FAQ</a>
+          <a href={EXE_URL} download="Thalamus.exe" className="transition-colors hover:text-foreground">Windows app</a>
+          <a href="https://agentoverflow.aphantic.skinticals.com" target="_blank" rel="noreferrer" className="transition-colors hover:text-foreground">AgentOverflow</a>
+        </nav>
       </div>
     </footer>
   );
@@ -556,6 +739,28 @@ export default function Landing() {
   const [isSuggestionSubmitting, setIsSuggestionSubmitting] = useState(false);
   const submitSuggestionMutation = useMutation(api.admin.submitSuggestion);
   const { theme, toggleTheme } = useTheme();
+
+  // Whole-page scroll progress drives the 3D scene (smoothed so the particle
+  // morph glides instead of stuttering with the wheel).
+  const { scrollYProgress } = useScroll();
+  const sceneProgress = useSpring(scrollYProgress, { stiffness: 55, damping: 18 });
+
+  // The 3D backdrop only mounts where it can run well: desktop-sized screens,
+  // no reduced-motion preference, WebGL available. Everyone else keeps the
+  // original gradient background — same content, zero jank. Computed once at
+  // mount (client-only Vite app, no SSR) so there's no first-paint flash.
+  const [show3d] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const wide = window.matchMedia("(min-width: 768px)").matches;
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!wide || still) return false;
+    try {
+      const probe = document.createElement("canvas");
+      return !!(probe.getContext("webgl2") || probe.getContext("webgl"));
+    } catch {
+      return false;
+    }
+  });
 
   const handleLaunch = () => navigate("/portal");
   const handleModeSelect = () => navigate(`/portal`);
@@ -586,11 +791,24 @@ export default function Landing() {
         onFeedback={() => setSuggestionsOpen(true)}
         onToggleTheme={toggleTheme}
       />
-      <Hero onLaunch={handleLaunch} />
-      <ModeGrid onSelect={handleModeSelect} />
-      <CapabilityBand />
-      <FinalCta onLaunch={handleLaunch} onSelect={handleModeSelect} />
-      <Footer />
+      {show3d && (
+        <div className="pointer-events-none fixed inset-0 z-0" aria-hidden>
+          <Suspense fallback={null}>
+            <NeuralScene progress={sceneProgress} />
+          </Suspense>
+        </div>
+      )}
+
+      <div className="relative z-10">
+        <Hero onLaunch={handleLaunch} />
+        <ModeGrid onSelect={handleModeSelect} />
+        <StudySection />
+        <PipelineSection />
+        <CapabilityBand />
+        <FaqSection />
+        <FinalCta onLaunch={handleLaunch} onSelect={handleModeSelect} />
+        <Footer />
+      </div>
 
       {suggestionsOpen && (
         <SuggestionModal
