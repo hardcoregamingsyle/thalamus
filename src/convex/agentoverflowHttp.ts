@@ -13,6 +13,7 @@ import {
   hashAoKey,
   nextContribTier,
   normalizeTags,
+  RATE_LIMIT_PER_MIN,
   validateLearningInput,
   vmFetch,
 } from "./agentoverflow";
@@ -59,7 +60,13 @@ function chargeErrorResult(err: unknown): AoOpResult | null {
     );
   }
   if (msg === ERR_RATE_LIMITED) {
-    return opError(429, "rate_limited", "Rate limit exceeded: 30 requests/min per key.");
+    // Default figure only — an admin-granted aoCustomRateLimit can be higher;
+    // the exact per-key number always comes back on GET /ao/v1/balance.
+    return opError(
+      429,
+      "rate_limited",
+      `Rate limit exceeded: ${RATE_LIMIT_PER_MIN} requests/min per key by default.`,
+    );
   }
   return null;
 }

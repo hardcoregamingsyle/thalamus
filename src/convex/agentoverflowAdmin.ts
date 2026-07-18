@@ -2,7 +2,7 @@ import { action, internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Doc } from "./_generated/dataModel";
-import { contribTierFor, effectiveRefill, vmFetch } from "./agentoverflow";
+import { contribTierFor, effectiveRefill, RATE_LIMIT_PER_MIN, vmFetch } from "./agentoverflow";
 
 // ── AgentOverflow admin ───────────────────────────────────────────────────────
 // Same gate as the thalamus /admin panel: the AO site logs in through
@@ -275,7 +275,7 @@ export const adminLimitRequests = query({
         userEmail: user?.email ?? "(deleted user)",
         userTier: contribTierFor(points).name,
         currentRefill: effectiveRefill(points, user?.aoCustomRefill),
-        currentRateLimit: user?.aoCustomRateLimit ?? 30,
+        currentRateLimit: user?.aoCustomRateLimit ?? RATE_LIMIT_PER_MIN,
         useCase: r.useCase,
         expectedDaily: r.expectedDaily,
         status: r.status,
