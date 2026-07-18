@@ -80,9 +80,6 @@ GitHub OAuth is used solely for connecting user repositories to code projects. I
 
 ## Desktop App Auth
 
-### Neutralinojs (Legacy Desktop Wrapper)
-Uses the same web auth flow. Detects desktop mode via `window.NL_PORT`. Token stored in same localStorage.
-
 ### WPF Native App
 The native Windows app (`thalamus-native/`) uses a device-code style flow — it never asks for the OTP itself:
 

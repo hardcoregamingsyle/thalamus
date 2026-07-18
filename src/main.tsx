@@ -4,10 +4,9 @@ import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
 import { StrictMode, Component, useEffect, lazy, Suspense, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes, useLocation, Navigate } from "react-router";
+import { BrowserRouter, Route, Routes, useLocation } from "react-router";
 import { DauTracker } from "@/components/DauTracker";
 import GravityPixel from "@/components/GravityPixel";
-import { DesktopTitlebar } from "@/components/DesktopTitlebar";
 import "./index.css";
 import "./types/global.d.ts";
 
@@ -86,9 +85,6 @@ function ConfigError() {
   );
 }
 
-// Detect if running as Neutralinojs desktop app
-const isDesktopApp = typeof window !== "undefined" && !!window.NL_PORT;
-
 // eslint-disable-next-line react-refresh/only-export-components -- app entry point; HMR component boundaries don't apply here
 function RouteSyncer() {
   const location = useLocation();
@@ -127,15 +123,10 @@ createRoot(document.getElementById("root")!).render(
           <DauTracker />
           {/* Gravity measurement pixel — loads only when an admin sets a Pixel ID */}
           <GravityPixel />
-          {/* Custom frameless titlebar — only shown in desktop app */}
-          <DesktopTitlebar />
-          {/* Add top padding when titlebar is shown */}
-          <div className={isDesktopApp ? "pt-10" : ""}>
-            <RouteErrorBoundary>
+          <RouteErrorBoundary>
             <Suspense fallback={<RouteLoading />}>
               <Routes>
-                {/* In desktop mode, skip landing page — go straight to auth */}
-                <Route path="/" element={isDesktopApp ? <Navigate to="/auth" replace /> : <Landing />} />
+                <Route path="/" element={<Landing />} />
                 <Route path="/auth" element={<AuthPage redirectAfterAuth="/portal/chat" />} />
                 <Route path="/auth/desktop" element={<AuthDesktopPage />} />
                 {/* New Code Mode Routes */}
@@ -155,13 +146,12 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="/terms" element={<Legal doc="terms" />} />
                 <Route path="/refund" element={<Legal doc="refund" />} />
                 <Route path="/contact" element={<Legal doc="contact" />} />
-                {/* Admin hidden in desktop mode */}
-                {!isDesktopApp && <Route path="/admin" element={<AdminPage />} />}
+                {/* Admin is gated by ADMIN_TOKEN inside the page regardless of route */}
+                <Route path="/admin" element={<AdminPage />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>
-            </RouteErrorBoundary>
-          </div>
+          </RouteErrorBoundary>
         </BrowserRouter>
         <Toaster />
       </ConvexAuthProvider>
