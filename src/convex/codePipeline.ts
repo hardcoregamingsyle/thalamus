@@ -34,6 +34,7 @@ import {
   type RunMode,
 } from "./agentCore";
 import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./mcpClient";
+import { parseMcpCalls, stripMcpBlocks } from "./mcpParse";
 
 // MCP loop guard: how many times one agent may be re-run with tool results
 // before the pipeline advances anyway (prevents infinite call loops).
@@ -115,32 +116,6 @@ function parseCommands(content: string): string[] {
     commands.push(match[1]);
   }
   return commands;
-}
-
-// Parse MCP tool calls from agent output. Block form (mirrors CREATEFILE):
-//   <<MCP-CALL server="name" tool="toolName">>
-//   {"json": "arguments"}
-//   <<END.MCP-CALL>>
-const MCP_CALL_REGEX = /<<MCP-CALL\s+server="([^"]+)"\s+tool="([^"]+)">>\s*([\s\S]*?)<<END\.MCP-CALL>>/g;
-
-function parseMcpCalls(content: string): Array<{ server: string; tool: string; args: Record<string, unknown> }> {
-  const calls: Array<{ server: string; tool: string; args: Record<string, unknown> }> = [];
-  let match;
-  const regex = new RegExp(MCP_CALL_REGEX.source, "g");
-  while ((match = regex.exec(content)) !== null) {
-    let args: Record<string, unknown> = {};
-    const body = match[3].trim();
-    if (body) {
-      try { args = JSON.parse(body) as Record<string, unknown>; }
-      catch { args = { _raw: body.slice(0, 2000) }; }
-    }
-    calls.push({ server: match[1], tool: match[2], args });
-  }
-  return calls;
-}
-
-function stripMcpBlocks(content: string): string {
-  return content.replace(new RegExp(MCP_CALL_REGEX.source, "g"), "").trim();
 }
 
 // Parse API key requests from agent output
