@@ -457,6 +457,30 @@ export const runPipelineAction = internalAction({
             .join("\n\n")
         : "";
 
+      // Stuck on a failing command? Look it up on AgentOverflow before the
+      // agents burn tokens guessing — the way a human pastes an error into
+      // Stack Overflow. Auto-searches the corpus with the most recent failure
+      // and hands the hits to the agents. Best-effort: a miss or a corpus
+      // outage never blocks the pipeline.
+      let corpusContext = "";
+      const aoServer = mcpServers.find((s) => s.name === "agentoverflow");
+      const failedCommands = commandResults.filter((c) => c.exitCode !== 0);
+      if (aoServer && failedCommands.length > 0) {
+        const worst = failedCommands[failedCommands.length - 1];
+        const query = `${worst.command}\n${worst.output}`.replace(/\s+/g, " ").trim().slice(0, 1500);
+        try {
+          const auth = aoServer.plainAuth ?? await decryptAuthHeader(aoServer.encryptedAuth);
+          const outcome = await mcpCallTool(aoServer.url, auth, "search", { query });
+          if (outcome.ok && outcome.text.trim()) {
+            const safe = outcome.text.slice(0, 3000).split("<<").join("‹‹").split(">>").join("››");
+            corpusContext =
+              "## AgentOverflow — known fixes for the failing command\n" +
+              "(auto-searched the corpus with the error, like pasting it into Stack Overflow; check these before guessing)\n```\n" +
+              safe + "\n```";
+          }
+        } catch { /* corpus lookup is best-effort — never block the pipeline */ }
+      }
+
       // ── Dispatcher phase ──────────────────────────────────────────────────
       // Runs once at the very start to decide which agents are needed.
       if (executionPhase === "dispatching" || currentPhase === "Dispatcher") {
@@ -585,7 +609,7 @@ export const runPipelineAction = internalAction({
       } else {
         const systemPrompt = AGENT_SYSTEM_PROMPTS[currentPhase] ?? `You are the ${currentPhase} agent.`;
         // Default prompt for planning phase and non-Coder agents in execution phase
-        let prompt = [`## Project Goal\n${task}`, `## Current Files\n${fileContext}`, commandContext, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
+        let prompt = [`## Project Goal\n${task}`, `## Current Files\n${fileContext}`, commandContext, corpusContext, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
 
         if (executionPhase === "executing") {
           let plannerTasks: Array<{ title: string; description: string; dependencies?: string[] }> = [];
@@ -620,6 +644,7 @@ export const runPipelineAction = internalAction({
               files.length > 0 ? `## File Contents (recent)\n${fileContext}` : "",
               recentFeedback ? `## Previous Feedback (from Tester/Critic/Hacker)\n${recentFeedback}` : "",
               commandContext,
+              corpusContext,
               `## Pipeline Context\n${context}`,
               `## Tool Usage\nRun shell commands: <<RUN-CMD="command">>\nRequest API keys: <<REQUEST-API-KEY name="VAR" description="..." howToGet="...">>`,
               mcpToolSection,
