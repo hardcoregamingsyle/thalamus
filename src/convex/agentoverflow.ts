@@ -538,57 +538,6 @@ export const myLimitRequests = query({
   },
 });
 
-// The dashboard playground pays like the API does — same search, same 1 credit.
-export const playgroundSearch = action({
-  args: {
-    token: v.string(),
-    query: v.string(),
-    tags: v.optional(v.array(v.string())),
-    topK: v.optional(v.number()),
-  },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<{ creditsCharged: number; balance: number; results: unknown[] }> => {
-    const userId = await ctx.runQuery(internal.userApiKeys.getSessionUserId, {
-      token: args.token,
-    });
-    if (!userId) throw new Error("Unauthorized");
-    if (args.query.trim().length < 3) throw new Error("Query too short");
-
-    const balance: number = await ctx.runMutation(internal.agentoverflow.charge, {
-      userId,
-      credits: COST_SEARCH,
-      reason: "search",
-      refId: "playground",
-    });
-
-    let res: Response;
-    try {
-      res = await vmFetch("/internal/search", {
-        query: args.query.trim().slice(0, 2000),
-        top_k: Math.min(Math.max(args.topK ?? 5, 1), 20),
-        tags: normalizeTags(args.tags ?? []),
-        expand: true,
-      });
-      if (!res.ok) throw new Error(`VM search failed: ${res.status}`);
-    } catch (err) {
-      // Search never happened — give the credit back.
-      await ctx.runMutation(internal.agentoverflow.charge, {
-        userId,
-        credits: -COST_SEARCH,
-        reason: "search",
-        refId: "refund",
-      });
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(msg === ERR_UNCONFIGURED ? "Corpus backend is not deployed yet" : msg);
-    }
-
-    const data = (await res.json()) as { results: unknown[] };
-    return { creditsCharged: COST_SEARCH, balance, results: data.results ?? [] };
-  },
-});
-
 // ── Internal: credits, key lookup, learnings ─────────────────────────────────
 
 export const getKeyByHash = internalQuery({
