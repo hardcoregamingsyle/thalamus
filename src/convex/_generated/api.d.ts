@@ -51,6 +51,7 @@ import type * as gravityAds from "../gravityAds.js";
 import type * as hfRagSpace from "../hfRagSpace.js";
 import type * as http from "../http.js";
 import type * as mcpClient from "../mcpClient.js";
+import type * as mcpParse from "../mcpParse.js";
 import type * as mcpServers from "../mcpServers.js";
 import type * as obscureRepoGenerator from "../obscureRepoGenerator.js";
 import type * as payments from "../payments.js";
@@ -116,6 +117,7 @@ declare const fullApi: ApiFromModules<{
   hfRagSpace: typeof hfRagSpace;
   http: typeof http;
   mcpClient: typeof mcpClient;
+  mcpParse: typeof mcpParse;
   mcpServers: typeof mcpServers;
   obscureRepoGenerator: typeof obscureRepoGenerator;
   payments: typeof payments;
