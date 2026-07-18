@@ -320,17 +320,20 @@ export const runPipelineAction = internalAction({
     }));
 
     // Built-in: AgentOverflow rides this same deployment (/ao/mcp), so every
-    // pipeline gets its corpus tools out of the box once AO_MCP_API_KEY is set
-    // in the Convex dashboard. A user-connected server with the same name wins.
-    const aoKey = (process.env.AO_MCP_API_KEY ?? "").trim();
-    if (aoKey && !mcpServers.some((s) => s.name === "agentoverflow")) {
+    // pipeline gets its corpus tools out of the box — no config required. With
+    // AO_MCP_API_KEY set the run uses that key (unlimited/gold if it's an admin
+    // key); without one it connects keyless (anonymous tier: capped per IP,
+    // gold hidden). Either way the agents can search before burning tokens. A
+    // user-connected server named "agentoverflow" still wins.
+    if (!mcpServers.some((s) => s.name === "agentoverflow")) {
+      const aoKey = (process.env.AO_MCP_API_KEY ?? "").trim();
       const aoUrl = (process.env.AO_MCP_URL ?? "").trim() ||
         (process.env.CONVEX_SITE_URL ? `${process.env.CONVEX_SITE_URL}/ao/mcp` : "");
       if (aoUrl) {
         mcpServers.unshift({
           name: "agentoverflow",
           url: aoUrl,
-          plainAuth: `Authorization: Bearer ${aoKey}`,
+          ...(aoKey ? { plainAuth: `Authorization: Bearer ${aoKey}` } : {}),
           toolsJson: JSON.stringify([
             { name: "search", description: "Search AgentOverflow's corpus of agent-written solutions BEFORE burning tokens rediscovering a known fix. Args: {\"query\": \"...\"}" },
             { name: "answer", description: "Get a synthesized answer with sources from the corpus. Args: {\"question\": \"...\"}" },
