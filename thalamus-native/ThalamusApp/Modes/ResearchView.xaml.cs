@@ -20,7 +20,8 @@ namespace ThalamusApp.Modes
         private bool _historyLoaded;
         private bool _isResearching;
         private CancellationTokenSource? _cts;
-        private TextBlock? _liveBlock;
+        private StackPanel? _liveHost;    // report content host (HTML rendered on "done")
+        private TextBlock? _liveBlock;    // live plaintext preview shown while streaming
         private string _liveText = "";
 
         public ResearchView()
@@ -94,8 +95,8 @@ namespace ThalamusApp.Modes
                 }
                 else
                 {
-                    AppendResultStart(out var tb);
-                    tb.Text = Controls.HtmlToWpf.PlainText(content);
+                    AppendResultStart(out var host, out _);
+                    Controls.HtmlToWpf.Populate(host, content);
                 }
             }
             ResearchScroll.ScrollToBottom();
@@ -145,6 +146,7 @@ namespace ThalamusApp.Modes
 
             _cts = new CancellationTokenSource(TimeSpan.FromSeconds(180));
             _liveText = "";
+            _liveHost = null;
             _liveBlock = null;
 
             bool resultStarted = false;
@@ -159,7 +161,14 @@ namespace ThalamusApp.Modes
                 await _streaming!.StreamChatAsync(
                     query, "research",
                     new List<(string, string)>(),
-                    "You are a thorough research assistant. Search the web for current information, synthesize findings from multiple sources, and provide a comprehensive, well-structured report with clear sections and source citations where possible.",
+                    // Same HTML-forcing framing the website sends — without it the
+                    // model answers in Markdown and the report renders as raw text.
+                    "You are a thorough research assistant. Search the web for current information, " +
+                    "synthesize findings from multiple sources, and provide a comprehensive, well-structured " +
+                    "report with clear sections and source citations where possible. CRITICAL: respond in " +
+                    "clean, semantic HTML only — no Markdown, no plain text, no code fences around the whole " +
+                    "reply. Use <h2>/<h3>, <p>, <ul>/<ol>/<li>, <strong>, <em>, <code>, <pre><code>, " +
+                    "<blockquote>, <a>, and <table> where appropriate.",
                     _token, _store!.ConversationId,
                     (type, chunk) =>
                     {
@@ -178,11 +187,12 @@ namespace ThalamusApp.Modes
                                     resultStarted = true;
                                     ProgressStepLabel.Text = "Generating report…";
                                     AnimateProgress(0.7);
-                                    AppendResultStart(out _liveBlock);
+                                    AppendResultStart(out _liveHost, out _liveBlock);
                                 }
                                 if (_liveBlock != null)
                                 {
-                                    _liveBlock.Text = _liveText;
+                                    // Plain-text preview while streaming; formatted on "done".
+                                    _liveBlock.Text = Controls.HtmlToWpf.PlainText(_liveText);
                                     ResearchScroll.ScrollToBottom();
                                 }
                             }
@@ -208,6 +218,13 @@ namespace ThalamusApp.Modes
         private void FinishResearch(string fullText, bool isFirstExchange, string query)
         {
             ProgressCard.Visibility = Visibility.Collapsed;
+            if (!string.IsNullOrEmpty(fullText))
+            {
+                // Replace the plaintext preview with the rendered HTML report.
+                if (_liveHost == null)
+                    AppendResultStart(out _liveHost, out _liveBlock);
+                Controls.HtmlToWpf.Populate(_liveHost, fullText);
+            }
             _isResearching = false;
             ResearchButton.IsEnabled = true;
             ResearchStatusLabel.Text = "Done";
@@ -260,19 +277,23 @@ namespace ThalamusApp.Modes
             ResearchPanel.Children.Add(bubble);
         }
 
-        // The report — left-aligned prose, no card, no avatar.
-        private void AppendResultStart(out TextBlock liveBlock)
+        // The report — left-aligned prose, no card, no avatar. The host panel
+        // carries a plaintext preview while streaming and is repopulated with
+        // rendered HTML (HtmlToWpf) on "done" / replay.
+        private void AppendResultStart(out StackPanel host, out TextBlock liveBlock)
         {
             var tb = new TextBlock
             {
                 FontSize = 13,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = (Brush)FindResource("TextPrimaryBrush"),
-                LineHeight = 21,
-                Margin = new Thickness(0, 0, 0, 18)
+                LineHeight = 21
             };
             liveBlock = tb;
-            ResearchPanel.Children.Add(tb);
+            var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 18) };
+            panel.Children.Add(tb);
+            host = panel;
+            ResearchPanel.Children.Add(panel);
         }
 
         private void AppendError(string msg)
