@@ -157,8 +157,15 @@ Shared resources (colors, brushes) MUST be in `App.xaml` → `Application.Resour
 
 ### Style Patterns
 - Custom Button styles: `SidebarBtn`, `SidebarBtnActive` (with animated active indicator)
-- Dark theme throughout: deep navy backgrounds, blue accents, white text
 - CornerRadius on all interactive elements (8px standard)
+
+### Theming (light/dark)
+- `Styles/Theme.xaml` is the dark default; `Styles/Theme.Light.xaml` is an overlay dictionary redefining every palette key (colors, brushes, semantic surfaces, gradients) with the website's `.light` values.
+- `Services/ThemeManager.cs` merges/removes the light overlay at runtime (`Application.Current.Resources.MergedDictionaries`) and persists the choice to `%LOCALAPPDATA%\Thalamus\theme`. `App.OnStartup` calls `ThemeManager.Initialize()` before any window is created; the toggle button sits in the MainWindow title bar.
+- All palette brush/gradient references are `DynamicResource` (never `StaticResource`) so open windows repaint on toggle. Exceptions that MUST stay `StaticResource`: `BasedOn=` in styles (WPF requirement), `Style=` references, `Color=` inside a dictionary's own brush declarations, and font families.
+- Semantic surface keys (`HeaderBgBrush`, `InputBarBgBrush`, `InputPlaceholderBrush`, `TintBlueBgBrush`/`Border`, green/amber/purple/red tints, `ConsoleBgBrush`/`ConsoleTextBrush`) replace the old hardcoded navy hexes — new UI must use these, not literal colors. Theme-invariant colors (macOS traffic lights, low-opacity ambient glows, decorative icon-accent gradient stops) stay hardcoded.
+- Long-lived code-behind elements set brushes with `SetResourceReference`, not `FindResource` — a `FindResource` value is frozen at creation and survives a theme toggle stale. Transient per-message elements may use `FindResource`.
+- The installer links `Theme.xaml` only and is dark-only by design — never merge the light overlay there.
 
 ### WPF-Specific Gotchas
 - `Border` can only have ONE child — wrap multiple children in a `Grid`

@@ -19,7 +19,7 @@ namespace ThalamusApp
 {
     public partial class MainWindow : Window
     {
-        private const string APP_VERSION = "2.3.3";
+        private const string APP_VERSION = "2.4.0";
         private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
         private readonly ConvexClient _convex = new();
         private bool _isAuthenticated;
