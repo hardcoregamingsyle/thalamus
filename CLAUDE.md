@@ -116,6 +116,7 @@ VITE_CONVEX_URL=https://your-deployment.convex.cloud
 **Server-side secrets** live strictly in the Convex dashboard, *not* `.env`. Verified-referenced in `src/convex/`:
 
 * Models: `AWS_BEDROCK_API_KEY` (an `ABSK…` bearer key, preferred over SigV4), `AGENTROUTER_API_KEY` (last-resort fallback), `GEMINI_API_KEY`/`GOOGLE_AI_API_KEY` (**rag.ts embeddings only** — everything else reads Gemini keys from the DB `geminiKeys` table), `DAYTONA_API_KEY` (cloud sandbox), `HF_RAG_SPACE_URL`/`HF_RAG_BASE_URL`.
+* Pipeline tools: `SKETCHFAB_API_TOKEN` (optional — the built-in Sketchfab 3D-model MCP server at `/sketchfab/mcp`, attached to gamedev runs; search/model-info work without it, only `download_model` needs it).
 * Auth/infra: `ADMIN_TOKEN`, `BREVO_EMAIL_SENDER` (despite the name, this is the **Brevo API key**), `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, `GITHUB_TOKEN` (repo-sync fallback), `FRONTEND_URL`, `BMAC_WEBHOOK_SECRET`, `API_KEY_ENCRYPTION_SECRET` (AES-256-GCM for user-supplied provider keys in `codeApiKeys`; `fulfillApiKeyRequest` fails closed without it).
 * AgentOverflow: `AO_VM_URL`, `AO_INTERNAL_SECRET`, `AO_FRONTEND_URL` (OAuth redirect allowlist), `AO_MCP_API_KEY` (+ optional `AO_MCP_URL`).
 * `CONVEX_SITE_URL` is Convex-built-in (OAuth redirects, sitemap base, MCP default URL).
