@@ -6,7 +6,7 @@ import { Link } from "react-router";
 // and each is a genuine crawlable URL for the internal link graph. One
 // component renders all four; the route picks which via `doc`.
 
-const SUPPORT_EMAIL = "goeljagat@gmail.com";
+const SUPPORT_EMAIL = "hardcorgamingstyle@gmail.com";
 const SITE = "https://thalamus.aphantic.skinticals.com";
 const COMPANY = "Aphantic Corporations";
 const EFFECTIVE = "18 July 2026";
