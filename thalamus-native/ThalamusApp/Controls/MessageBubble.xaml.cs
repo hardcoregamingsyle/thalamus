@@ -15,17 +15,15 @@ namespace ThalamusApp.Controls
 
             RoleLabel.Text = isUser ? "You" : "Thalamus AI";
 
-            BubbleBorder.Background = isUser
-                ? new SolidColorBrush(Color.FromRgb(37, 99, 235))   // blue
-                : new SolidColorBrush(Color.FromRgb(10, 22, 40));    // dark card
+            BubbleBorder.SetResourceReference(System.Windows.Controls.Border.BackgroundProperty, "BgCardBrush");
 
             BubbleBorder.HorizontalAlignment = isUser
                 ? HorizontalAlignment.Right
                 : HorizontalAlignment.Left;
 
-            RoleLabel.Foreground = isUser
-                ? new SolidColorBrush(Color.FromRgb(147, 197, 253))
-                : new SolidColorBrush(Color.FromRgb(100, 116, 139));
+            // BlueBrush keeps the user label's accent now both bubbles share one bg
+            RoleLabel.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,
+                isUser ? "BlueBrush" : "TextMutedBrush");
 
             RenderMarkdown(text);
         }
@@ -50,7 +48,7 @@ namespace ThalamusApp.Controls
             var doc = new FlowDocument { PagePadding = new Thickness(0) };
             doc.FontSize = 13;
             doc.FontFamily = new FontFamily("Segoe UI");
-            doc.Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240));
+            doc.SetResourceReference(FlowDocument.ForegroundProperty, "TextPrimaryBrush");
 
             foreach (var rawLine in text.Split('\n'))
             {
@@ -61,12 +59,12 @@ namespace ThalamusApp.Controls
                     // Code fence line — render as code block paragraph
                     var codePara = new Paragraph
                     {
-                        Background     = new SolidColorBrush(Color.FromRgb(2, 11, 29)),
                         Padding        = new Thickness(10, 6, 10, 6),
                         Margin         = new Thickness(0, 4, 0, 4),
                         FontFamily     = new FontFamily("Consolas"),
-                        Foreground     = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
                     };
+                    codePara.SetResourceReference(TextElement.BackgroundProperty, "ConsoleBgBrush");
+                    codePara.SetResourceReference(TextElement.ForegroundProperty, "GreenBrush");
                     codePara.Inlines.Add(new Run(line));
                     doc.Blocks.Add(codePara);
                     continue;
@@ -120,9 +118,10 @@ namespace ThalamusApp.Controls
                         var code = new Run(text[(i + 1)..end])
                         {
                             FontFamily  = new FontFamily("Consolas"),
-                            Background  = new SolidColorBrush(Color.FromRgb(15, 35, 60)),
-                            Foreground  = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
                         };
+                        // ConsoleBgBrush, not BgCardBrush — must stay visible on a BgCard bubble
+                        code.SetResourceReference(TextElement.BackgroundProperty, "ConsoleBgBrush");
+                        code.SetResourceReference(TextElement.ForegroundProperty, "GreenBrush");
                         para.Inlines.Add(code);
                         i = end + 1;
                         continue;

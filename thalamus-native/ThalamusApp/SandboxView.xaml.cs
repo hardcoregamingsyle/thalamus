@@ -38,11 +38,6 @@ namespace ThalamusApp
             public CancellationTokenSource? Cts;   // non-null while downloading
         }
 
-        private static readonly SolidColorBrush SelectedBg =
-            new(Color.FromRgb(0x0d, 0x1f, 0x3c));
-
-        static SandboxView() => SelectedBg.Freeze();
-
         public SandboxView()
         {
             InitializeComponent();
@@ -128,21 +123,22 @@ namespace ThalamusApp
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var textStack = new StackPanel();
-            textStack.Children.Add(new TextBlock
+            var name = new TextBlock
             {
                 Text = entry.Name,
                 FontSize = 11.5,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("TextPrimaryBrush"),
                 TextTrimming = TextTrimming.CharacterEllipsis,
-            });
+            };
+            name.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
+            textStack.Children.Add(name);
             row.Status = new TextBlock
             {
                 FontSize = 9.5,
-                Foreground = (Brush)FindResource("TextSecondaryBrush"),
                 Margin = new Thickness(0, 2, 0, 0),
                 TextWrapping = TextWrapping.Wrap,
             };
+            row.Status.SetResourceReference(TextBlock.ForegroundProperty, "TextSecondaryBrush");
             textStack.Children.Add(row.Status);
             grid.Children.Add(textStack);
 
@@ -162,28 +158,24 @@ namespace ThalamusApp
             var fillGrid = new Grid();
             fillGrid.ColumnDefinitions.Add(row.DoneCol);
             fillGrid.ColumnDefinitions.Add(row.LeftCol);
-            fillGrid.Children.Add(new Border
-            {
-                Background = (Brush)FindResource("BlueGradient"),
-                CornerRadius = new CornerRadius(1.5),
-            });
+            var fill = new Border { CornerRadius = new CornerRadius(1.5) };
+            fill.SetResourceReference(Border.BackgroundProperty, "BlueGradient");
+            fillGrid.Children.Add(fill);
             row.ProgressTrack = new Border
             {
                 Height = 3,
                 CornerRadius = new CornerRadius(1.5),
-                Background = SelectedBg,
                 Margin = new Thickness(0, 7, 0, 1),
                 Child = fillGrid,
                 Visibility = Visibility.Collapsed,
             };
+            row.ProgressTrack.SetResourceReference(Border.BackgroundProperty, "TintBlueBgBrush");
             Grid.SetRow(row.ProgressTrack, 1);
             Grid.SetColumnSpan(row.ProgressTrack, 2);
             grid.Children.Add(row.ProgressTrack);
 
             row.Root = new Border
             {
-                Background = (Brush)FindResource("BgCardBrush"),
-                BorderBrush = (Brush)FindResource("BorderDimBrush"),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(10),
                 Padding = new Thickness(10, 8, 10, 8),
@@ -191,6 +183,8 @@ namespace ThalamusApp
                 Cursor = Cursors.Hand,
                 Child = grid,
             };
+            row.Root.SetResourceReference(Border.BackgroundProperty, "BgCardBrush");
+            row.Root.SetResourceReference(Border.BorderBrushProperty, "BorderDimBrush");
             row.Root.MouseLeftButtonDown += (_, _) => SelectRow(row);
 
             return row;
@@ -200,13 +194,13 @@ namespace ThalamusApp
         {
             if (_selectedRow != null)
             {
-                _selectedRow.Root.BorderBrush = (Brush)FindResource("BorderDimBrush");
-                _selectedRow.Root.Background  = (Brush)FindResource("BgCardBrush");
+                _selectedRow.Root.SetResourceReference(Border.BorderBrushProperty, "BorderDimBrush");
+                _selectedRow.Root.SetResourceReference(Border.BackgroundProperty, "BgCardBrush");
             }
 
             _selectedRow = row;
-            row.Root.BorderBrush = (Brush)FindResource("BlueBrush");
-            row.Root.Background  = SelectedBg;
+            row.Root.SetResourceReference(Border.BorderBrushProperty, "BlueBrush");
+            row.Root.SetResourceReference(Border.BackgroundProperty, "TintBlueBgBrush");
 
             DisplayText.Text = $"Ready to boot: {row.Entry.Name}";
             IsoHint.Text     = "";

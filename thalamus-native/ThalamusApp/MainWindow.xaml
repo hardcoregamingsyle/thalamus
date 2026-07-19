@@ -9,7 +9,7 @@
         MinWidth="960" MinHeight="600"
         WindowStyle="None"
         AllowsTransparency="False"
-        Background="{StaticResource BgDarkerBrush}"
+        Background="{DynamicResource BgDarkerBrush}"
         FontFamily="{StaticResource AppFontFamily}"
         UseLayoutRounding="True"
         WindowStartupLocation="CenterScreen"
@@ -51,7 +51,7 @@
         <!-- Sidebar nav button -->
         <Style x:Key="SidebarBtn" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="Padding" Value="16,0,16,0"/>
@@ -69,7 +69,7 @@
                                 <Border x:Name="ActiveBar"
                                         Width="3" Height="0"
                                         CornerRadius="2"
-                                        Background="{StaticResource BlueGradient}"
+                                        Background="{DynamicResource BlueGradient}"
                                         HorizontalAlignment="Left"
                                         VerticalAlignment="Center"
                                         Margin="-16,0,0,0"
@@ -79,8 +79,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgHoverBrush}"/>
-                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -90,16 +90,16 @@
 
         <!-- Active sidebar nav button -->
         <Style x:Key="SidebarBtnActive" TargetType="Button" BasedOn="{StaticResource SidebarBtn}">
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{StaticResource BgActiveBrush}"
+                        <Border Background="{DynamicResource BgActiveBrush}"
                                 CornerRadius="8" Padding="{TemplateBinding Padding}">
                             <Grid>
                                 <Border Width="3" Height="20"
                                         CornerRadius="2"
-                                        Background="{StaticResource BlueGradient}"
+                                        Background="{DynamicResource BlueGradient}"
                                         HorizontalAlignment="Left"
                                         VerticalAlignment="Center"
                                         Margin="-16,0,0,0"
@@ -109,7 +109,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                                <Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -122,7 +122,7 @@
     <!-- ═══ ROOT LAYOUT ═══ -->
     <Grid>
         <!-- Background -->
-        <Rectangle Fill="{StaticResource BgDarkerBrush}"/>
+        <Rectangle Fill="{DynamicResource BgDarkerBrush}"/>
 
         <!-- Ambient glow - top-left blue -->
         <Rectangle HorizontalAlignment="Left" VerticalAlignment="Top"
@@ -173,8 +173,8 @@
             </Grid.RowDefinitions>
 
             <!-- ═══ TITLE BAR ═══ -->
-            <Border Grid.Row="0" Background="{StaticResource BgDarkerBrush}"
-                    BorderBrush="{StaticResource BorderBrush}"
+            <Border Grid.Row="0" Background="{DynamicResource BgDarkerBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
                     BorderThickness="0,0,0,1"
                     MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                 <Grid>
@@ -202,11 +202,11 @@
                                 Margin="8,0,0,0"/>
 
                         <Separator Margin="14,0,14,0" Width="1"
-                                   Background="{StaticResource BorderBrush}" Height="18"/>
+                                   Background="{DynamicResource BorderBrush}" Height="18"/>
 
                         <!-- Logo -->
                         <Border Width="18" Height="18" CornerRadius="5"
-                                Background="{StaticResource BlueGradient}">
+                                Background="{DynamicResource BlueGradient}">
                             <TextBlock Text="T" FontSize="9" FontWeight="Black"
                                        Foreground="White"
                                        HorizontalAlignment="Center"
@@ -214,14 +214,14 @@
                         </Border>
 
                         <TextBlock Text="Thalamus" FontSize="11.5" FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
                                    VerticalAlignment="Center" Margin="8,0,0,0"/>
 
-                        <Border CornerRadius="8" Background="#0d1f3c"
-                                BorderBrush="{StaticResource BorderBrush}"
+                        <Border CornerRadius="8" Background="{DynamicResource TintBlueBgBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
                                 BorderThickness="1" Padding="6,1,6,2" Margin="8,0,0,0">
                             <TextBlock Text="Desktop" FontSize="8" FontWeight="Bold"
-                                       Foreground="{StaticResource BlueBrush}"/>
+                                       Foreground="{DynamicResource BlueBrush}"/>
                         </Border>
                     </StackPanel>
 
@@ -229,13 +229,20 @@
                     <StackPanel Grid.Column="1" Orientation="Horizontal"
                                 HorizontalAlignment="Center" VerticalAlignment="Center">
                         <Border x:Name="AuthDot" Width="6" Height="6" CornerRadius="3"
-                                Background="{StaticResource AmberBrush}"
+                                Background="{DynamicResource AmberBrush}"
                                 VerticalAlignment="Center" Margin="0,0,8,0"/>
                         <TextBlock x:Name="UserLabel" Text=""
-                                   FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                   FontSize="10.5" Foreground="{DynamicResource TextSecondaryBrush}"/>
                     </StackPanel>
 
-                    <!-- Right: spacer (traffic lights already on left) -->
+                    <!-- Right: light/dark toggle (mirrors the website's theme switch) -->
+                    <Button Grid.Column="2" x:Name="BtnTheme" Click="ThemeToggle_Click"
+                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                            Width="34" Margin="0,0,10,0"
+                            ToolTip="Toggle light / dark theme">
+                        <TextBlock x:Name="ThemeIcon" Text="☀" FontSize="13"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    </Button>
                 </Grid>
             </Border>
 
@@ -247,22 +254,22 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- ── SIDEBAR ── -->
-                <Border Grid.Column="0" Background="{StaticResource SidebarGradient}"
-                        BorderBrush="{StaticResource BorderBrush}"
+                <Border Grid.Column="0" Background="{DynamicResource SidebarGradient}"
+                        BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="0,0,1,0">
                     <DockPanel>
                         <!-- Top gradient accent line -->
                         <Border DockPanel.Dock="Top" Height="2"
-                                Background="{StaticResource BlueGradient}" Opacity="0.4"/>
+                                Background="{DynamicResource BlueGradient}" Opacity="0.4"/>
 
                         <!-- Modes header -->
                         <Border DockPanel.Dock="Top" Padding="24,22,24,10">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="MODES"
                                            FontSize="8.5" FontWeight="Bold"
-                                           Foreground="{StaticResource TextMutedBrush}"/>
+                                           Foreground="{DynamicResource TextMutedBrush}"/>
                                 <Ellipse Width="3" Height="3"
-                                         Fill="{StaticResource TextMutedBrush}"
+                                         Fill="{DynamicResource TextMutedBrush}"
                                          Opacity="0.4" Margin="8,4,0,0"/>
                             </StackPanel>
                         </Border>
@@ -274,10 +281,10 @@
                                     Click="Nav_Click" Style="{StaticResource SidebarBtnActive}">
                                 <StackPanel Orientation="Horizontal">
                                     <Border Width="22" Height="22" CornerRadius="6"
-                                            Background="#061a10" Margin="0,0,12,0"
-                                            BorderBrush="#0a3018" BorderThickness="1">
+                                            Background="{DynamicResource TintGreenBgBrush}" Margin="0,0,12,0"
+                                            BorderBrush="{DynamicResource TintGreenBorderBrush}" BorderThickness="1">
                                         <Path Data="M13 10V3L4 14h7v7l9-11h-7z"
-                                              Fill="{StaticResource GreenBrush}"
+                                              Fill="{DynamicResource GreenBrush}"
                                               Width="10" Height="10" Stretch="Uniform"
                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
@@ -289,11 +296,11 @@
                                     Click="Nav_Click" Style="{StaticResource SidebarBtn}">
                                 <StackPanel Orientation="Horizontal">
                                     <Border Width="22" Height="22" CornerRadius="6"
-                                            Background="#0d1f3c" Margin="0,0,12,0"
-                                            BorderBrush="{StaticResource BorderBrush}"
+                                            Background="{DynamicResource TintBlueBgBrush}" Margin="0,0,12,0"
+                                            BorderBrush="{DynamicResource BorderBrush}"
                                             BorderThickness="1">
                                         <Path Data="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
-                                              Stroke="{StaticResource TextSecondaryBrush}"
+                                              Stroke="{DynamicResource TextSecondaryBrush}"
                                               StrokeThickness="1.4" Fill="Transparent"
                                               Width="11" Height="11" Stretch="Uniform"
                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -306,11 +313,11 @@
                                     Click="Nav_Click" Style="{StaticResource SidebarBtn}">
                                 <StackPanel Orientation="Horizontal">
                                     <Border Width="22" Height="22" CornerRadius="6"
-                                            Background="#0d1f3c" Margin="0,0,12,0"
-                                            BorderBrush="{StaticResource BorderBrush}"
+                                            Background="{DynamicResource TintBlueBgBrush}" Margin="0,0,12,0"
+                                            BorderBrush="{DynamicResource BorderBrush}"
                                             BorderThickness="1">
                                         <Path Data="M21 21 L15 15 M17 11 A6 6 0 1 1 5 11 A6 6 0 0 1 17 11 Z"
-                                              Stroke="{StaticResource TextSecondaryBrush}"
+                                              Stroke="{DynamicResource TextSecondaryBrush}"
                                               StrokeThickness="1.4" Fill="Transparent"
                                               StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                                               Width="11" Height="11" Stretch="Uniform"
@@ -324,11 +331,11 @@
                                     Click="Nav_Click" Style="{StaticResource SidebarBtn}">
                                 <StackPanel Orientation="Horizontal">
                                     <Border Width="22" Height="22" CornerRadius="6"
-                                            Background="#0d1f3c" Margin="0,0,12,0"
-                                            BorderBrush="{StaticResource BorderBrush}"
+                                            Background="{DynamicResource TintBlueBgBrush}" Margin="0,0,12,0"
+                                            BorderBrush="{DynamicResource BorderBrush}"
                                             BorderThickness="1">
                                         <Path Data="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"
-                                              Stroke="{StaticResource TextSecondaryBrush}"
+                                              Stroke="{DynamicResource TextSecondaryBrush}"
                                               StrokeThickness="1.3" Fill="Transparent"
                                               StrokeLineJoin="Round"
                                               Width="11" Height="11" Stretch="Uniform"
@@ -342,11 +349,11 @@
                                     Click="Nav_Click" Style="{StaticResource SidebarBtn}">
                                 <StackPanel Orientation="Horizontal">
                                     <Border Width="22" Height="22" CornerRadius="6"
-                                            Background="#0d1f3c" Margin="0,0,12,0"
-                                            BorderBrush="{StaticResource BorderBrush}"
+                                            Background="{DynamicResource TintBlueBgBrush}" Margin="0,0,12,0"
+                                            BorderBrush="{DynamicResource BorderBrush}"
                                             BorderThickness="1">
                                         <Path Data="M20 3H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z M8 21h8 M12 17v4"
-                                              Stroke="{StaticResource TextSecondaryBrush}"
+                                              Stroke="{DynamicResource TextSecondaryBrush}"
                                               StrokeThickness="1.4" Fill="Transparent"
                                               StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                                               StrokeLineJoin="Round"
@@ -360,14 +367,14 @@
 
                         <!-- Divider -->
                         <Border DockPanel.Dock="Top" Height="1"
-                                Background="{StaticResource BorderBrush}" Opacity="0.4"
+                                Background="{DynamicResource BorderBrush}" Opacity="0.4"
                                 Margin="20,0,20,0"/>
 
                         <!-- Section: Account / Sign In -->
                         <Border DockPanel.Dock="Top" Padding="24,16,24,8">
                             <TextBlock x:Name="SectionLabel" Text="ACCOUNT"
                                        FontSize="8.5" FontWeight="Bold"
-                                       Foreground="{StaticResource TextMutedBrush}"/>
+                                       Foreground="{DynamicResource TextMutedBrush}"/>
                         </Border>
 
                         <!-- Account rows stack vertically; the StackPanel keeps them
@@ -382,18 +389,18 @@
                                 ToolTip="AgentBucks — daily allowance + purchased credits">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <Border Width="22" Height="22" CornerRadius="6"
-                                        Background="#1f1705" Margin="0,0,12,0"
-                                        BorderBrush="{StaticResource BorderBrush}"
+                                        Background="{DynamicResource TintAmberBgBrush}" Margin="0,0,12,0"
+                                        BorderBrush="{DynamicResource BorderBrush}"
                                         BorderThickness="1">
                                     <Path Data="M13 10V3L4 14h7v7l9-11h-7z"
-                                          Fill="{StaticResource AmberBrush}"
+                                          Fill="{DynamicResource AmberBrush}"
                                           Width="11" Height="11" Stretch="Uniform"
                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
                                 <TextBlock x:Name="CreditsLabel" Text="—"
                                            VerticalAlignment="Center" FontSize="11.5"
                                            FontFamily="{StaticResource MonoFontFamily}"
-                                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                                           Foreground="{DynamicResource TextPrimaryBrush}"/>
                             </StackPanel>
                         </Border>
 
@@ -403,17 +410,17 @@
                                 Visibility="Collapsed">
                             <StackPanel Orientation="Horizontal">
                                 <Border Width="22" Height="22" CornerRadius="6"
-                                        Background="#1f1705" Margin="0,0,12,0"
-                                        BorderBrush="{StaticResource BorderBrush}"
+                                        Background="{DynamicResource TintAmberBgBrush}" Margin="0,0,12,0"
+                                        BorderBrush="{DynamicResource BorderBrush}"
                                         BorderThickness="1">
                                     <!-- Lightning bolt — echoes the AgentBucks/credits accent -->
                                     <Path Data="M13 10V3L4 14h7v7l9-11h-7z"
-                                          Fill="{StaticResource AmberBrush}"
+                                          Fill="{DynamicResource AmberBrush}"
                                           Width="11" Height="11" Stretch="Uniform"
                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
                                 <TextBlock Text="Buy Credits" VerticalAlignment="Center"
-                                           Foreground="{StaticResource AmberBrush}"/>
+                                           Foreground="{DynamicResource AmberBrush}"/>
                             </StackPanel>
                         </Button>
 
@@ -423,12 +430,12 @@
                                 Visibility="Collapsed">
                             <StackPanel Orientation="Horizontal">
                                 <Border Width="22" Height="22" CornerRadius="6"
-                                        Background="#0d1f3c" Margin="0,0,12,0"
-                                        BorderBrush="{StaticResource BorderBrush}"
+                                        Background="{DynamicResource TintBlueBgBrush}" Margin="0,0,12,0"
+                                        BorderBrush="{DynamicResource BorderBrush}"
                                         BorderThickness="1">
                                     <!-- Log-out arrow icon -->
                                     <Path Data="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9"
-                                          Stroke="{StaticResource TextSecondaryBrush}"
+                                          Stroke="{DynamicResource TextSecondaryBrush}"
                                           StrokeThickness="1.5" Fill="Transparent"
                                           StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                                           StrokeLineJoin="Round"
@@ -445,22 +452,22 @@
                              recents list so Dock=Bottom wins the layout pass and the
                              list (last child) fills whatever height remains. -->
                         <Border DockPanel.Dock="Bottom" Padding="20,14"
-                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
                                 BorderThickness="0,1,0,0">
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal">
-                                    <Ellipse Width="5" Height="5" Fill="{StaticResource GreenBrush}"
+                                    <Ellipse Width="5" Height="5" Fill="{DynamicResource GreenBrush}"
                                              VerticalAlignment="Center" Margin="0,0,8,0"/>
                                     <TextBlock x:Name="VersionLabel" Text="v1.0.0"
                                                FontSize="9.5" FontFamily="{StaticResource MonoFontFamily}"
-                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                               Foreground="{DynamicResource TextMutedBrush}"/>
                                     <TextBlock Text="  ·  " FontSize="9.5"
-                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                               Foreground="{DynamicResource TextMutedBrush}"/>
                                     <TextBlock x:Name="UpdateLabel" Text="Up to date"
-                                               FontSize="9.5" Foreground="{StaticResource GreenBrush}"/>
+                                               FontSize="9.5" Foreground="{DynamicResource GreenBrush}"/>
                                 </StackPanel>
                                 <TextBlock x:Name="UpdateSubLabel" Text=""
-                                           FontSize="8.5" Foreground="{StaticResource TextMutedBrush}"
+                                           FontSize="8.5" Foreground="{DynamicResource TextMutedBrush}"
                                            Margin="13,3,0,0" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
@@ -474,14 +481,14 @@
                                     <TextBlock Text="RECENT"
                                                FontSize="8.5" FontWeight="Bold"
                                                VerticalAlignment="Center"
-                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                               Foreground="{DynamicResource TextMutedBrush}"/>
                                     <Button x:Name="BtnNewChat" Click="NewChat_Click"
                                             HorizontalAlignment="Right"
                                             Background="Transparent" BorderThickness="0"
                                             Cursor="Hand" Padding="6,2"
                                             ToolTip="Start a new conversation">
                                         <TextBlock Text="+ New" FontSize="9.5" FontWeight="Bold"
-                                                   Foreground="{StaticResource BlueBrush}"/>
+                                                   Foreground="{DynamicResource BlueBrush}"/>
                                     </Button>
                                 </Grid>
                             </Border>
@@ -497,7 +504,7 @@
                 </Border>
 
                 <!-- ── CONTENT AREA ── -->
-                <Grid Grid.Column="1" Background="{StaticResource ContentBgGradient}">
+                <Grid Grid.Column="1" Background="{DynamicResource ContentBgGradient}">
                     <!-- Subtle inner glow -->
                     <Rectangle HorizontalAlignment="Left" VerticalAlignment="Top"
                                Width="300" Height="300" Opacity="0.05">
@@ -518,8 +525,8 @@
             </Grid>
 
             <!-- ═══ STATUS BAR ═══ -->
-            <Border Grid.Row="2" Background="{StaticResource StatusBarGradient}"
-                    BorderBrush="{StaticResource BorderBrush}"
+            <Border Grid.Row="2" Background="{DynamicResource StatusBarGradient}"
+                    BorderBrush="{DynamicResource BorderBrush}"
                     BorderThickness="0,1,0,0" Padding="14,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -527,20 +534,20 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Ellipse Width="4" Height="4" Fill="{StaticResource GreenBrush}"
+                        <Ellipse Width="4" Height="4" Fill="{DynamicResource GreenBrush}"
                                  VerticalAlignment="Center" Margin="0,0,7,0"/>
                         <TextBlock x:Name="StatusText" Text="Ready"
-                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                    FontFamily="{StaticResource MonoFontFamily}"
                                    FontSize="9.5"/>
                     </StackPanel>
                     <Border Grid.Column="1" CornerRadius="4"
-                            Background="#0d1f3c"
-                            BorderBrush="{StaticResource BorderBrush}"
+                            Background="{DynamicResource TintBlueBgBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1"
                             Padding="8,1,8,2" VerticalAlignment="Center">
                         <TextBlock x:Name="ModeLabel" Text="Code Mode"
-                                   Foreground="{StaticResource BlueBrush}"
+                                   Foreground="{DynamicResource BlueBrush}"
                                    FontFamily="{StaticResource MonoFontFamily}"
                                    FontSize="8.5" FontWeight="SemiBold"/>
                     </Border>

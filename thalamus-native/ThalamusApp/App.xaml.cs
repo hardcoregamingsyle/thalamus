@@ -30,6 +30,9 @@ namespace ThalamusApp
             }
             base.OnStartup(e);
 
+            // Saved light/dark preference must land before any window paints.
+            Services.ThemeManager.Initialize();
+
             try
             {
                 // ── Auth gate — the desktop app requires sign-in, no guest mode ──

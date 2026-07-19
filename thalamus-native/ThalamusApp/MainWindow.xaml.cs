@@ -48,7 +48,14 @@ namespace ThalamusApp
             if (Height > wa.Height) Height = wa.Height;
             if (Width > wa.Width) Width = wa.Width;
             VersionLabel.Text = $"v{APP_VERSION}";
+            ThemeIcon.Text = ThemeManager.IsLight ? "🌙" : "☀";
             _ = Task.Run(CheckForUpdatesAsync);
+        }
+
+        private void ThemeToggle_Click(object sender, RoutedEventArgs e)
+        {
+            ThemeManager.Toggle();
+            ThemeIcon.Text = ThemeManager.IsLight ? "🌙" : "☀";
         }
 
         /// <summary>
@@ -61,7 +68,9 @@ namespace ThalamusApp
             _sessionToken = token;
             _sessionEmail = email;
             UserLabel.Text = email;
-            AuthDot.Background = (Brush)FindResource("GreenBrush");
+            // SetResourceReference (not FindResource) — the dot lives for the
+            // whole session and must follow a runtime theme toggle.
+            AuthDot.SetResourceReference(System.Windows.Controls.Border.BackgroundProperty, "GreenBrush");
             AuthDot.ToolTip = email;
 
             // Signed in — show sign out + buy credits + balance
@@ -202,13 +211,14 @@ namespace ThalamusApp
             RecentListPanel.Children.Clear();
             if (convs == null || convs.Count == 0)
             {
-                RecentListPanel.Children.Add(new TextBlock
+                var empty = new TextBlock
                 {
                     Text = "No conversations yet",
                     FontSize = 10.5,
                     Margin = new Thickness(24, 6, 16, 0),
-                    Foreground = (Brush)FindResource("TextMutedBrush"),
-                });
+                };
+                empty.SetResourceReference(TextBlock.ForegroundProperty, "TextMutedBrush");
+                RecentListPanel.Children.Add(empty);
                 return;
             }
 
@@ -342,9 +352,9 @@ namespace ThalamusApp
                 {
                     Dispatcher.Invoke(() =>
                     {
-                        UpdateLabel.Text       = $"Update v{ver} available";
-                        UpdateLabel.Foreground = new SolidColorBrush(Color.FromRgb(245, 158, 11));
-                        UpdateSubLabel.Text    = "Restart to update";
+                        UpdateLabel.Text = $"Update v{ver} available";
+                        UpdateLabel.SetResourceReference(TextBlock.ForegroundProperty, "AmberBrush");
+                        UpdateSubLabel.Text = "Restart to update";
                     });
                 }
             }

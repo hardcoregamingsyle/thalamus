@@ -1,0 +1,98 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ═════════════════════════════════════════════════════════════════════
+         THALAMUS LIGHT PALETTE — overlay dictionary merged ON TOP of Theme.xaml
+         by ThemeManager when light mode is on. Redefines every palette key
+         (colors, brushes, semantic surfaces, gradients) with the website's
+         .light values from src/index.css; styles stay in Theme.xaml and pick
+         these up through their DynamicResource references. Never merge this
+         into the installer — the installer is dark-only by design.
+         ═════════════════════════════════════════════════════════════════════ -->
+
+    <!-- ── Colors — mirrors src/index.css .light (oklch → sRGB) ── -->
+    <Color x:Key="BgDeep">#eff2f5</Color>        <!-- css sidebar -->
+    <Color x:Key="BgDarker">#f2f6f8</Color>      <!-- css background -->
+    <Color x:Key="BgCard">#ffffff</Color>        <!-- css card -->
+    <Color x:Key="BgInput">#e2e5e8</Color>       <!-- css input -->
+    <Color x:Key="BgHover">#e7ecf0</Color>       <!-- css secondary -->
+    <Color x:Key="BgActive">#e0e5e9</Color>      <!-- css sidebar-accent -->
+    <Color x:Key="BorderColor">#d3d8dc</Color>   <!-- css border -->
+    <Color x:Key="BorderDim">#dde1e5</Color>
+    <!-- ~8% black — the light twin of the dark theme's white hairline -->
+    <Color x:Key="BorderSubtle">#14000000</Color>
+    <Color x:Key="TextPrimary">#12161c</Color>   <!-- css foreground -->
+    <Color x:Key="TextSecondary">#1b2328</Color> <!-- css secondary-fg -->
+    <Color x:Key="TextMuted">#555f67</Color>     <!-- css muted-fg -->
+    <Color x:Key="BlueAccent">#0065e0</Color>    <!-- css primary -->
+    <Color x:Key="BlueGlow">#0052b8</Color>
+    <Color x:Key="GreenAccent">#059669</Color>   <!-- darkened for white surfaces -->
+    <Color x:Key="AmberAccent">#d07600</Color>   <!-- css accent -->
+    <Color x:Key="PurpleAccent">#7c3aed</Color>  <!-- darkened for white surfaces -->
+    <Color x:Key="RedAccent">#c8003e</Color>     <!-- css destructive -->
+
+    <!-- ── Brushes ── -->
+    <SolidColorBrush x:Key="BgDeepBrush"        Color="{StaticResource BgDeep}"/>
+    <SolidColorBrush x:Key="BgDarkerBrush"      Color="{StaticResource BgDarker}"/>
+    <SolidColorBrush x:Key="BgCardBrush"        Color="{StaticResource BgCard}"/>
+    <SolidColorBrush x:Key="BgInputBrush"       Color="{StaticResource BgInput}"/>
+    <SolidColorBrush x:Key="BgHoverBrush"       Color="{StaticResource BgHover}"/>
+    <SolidColorBrush x:Key="BgActiveBrush"      Color="{StaticResource BgActive}"/>
+    <SolidColorBrush x:Key="BorderBrush"        Color="{StaticResource BorderColor}"/>
+    <SolidColorBrush x:Key="BorderDimBrush"     Color="{StaticResource BorderDim}"/>
+    <SolidColorBrush x:Key="BorderSubtleBrush"  Color="{StaticResource BorderSubtle}"/>
+    <SolidColorBrush x:Key="TextPrimaryBrush"   Color="{StaticResource TextPrimary}"/>
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondary}"/>
+    <SolidColorBrush x:Key="TextMutedBrush"     Color="{StaticResource TextMuted}"/>
+    <SolidColorBrush x:Key="BlueBrush"          Color="{StaticResource BlueAccent}"/>
+    <SolidColorBrush x:Key="GreenBrush"         Color="{StaticResource GreenAccent}"/>
+    <SolidColorBrush x:Key="AmberBrush"         Color="{StaticResource AmberAccent}"/>
+    <SolidColorBrush x:Key="PurpleBrush"        Color="{StaticResource PurpleAccent}"/>
+    <SolidColorBrush x:Key="RedBrush"           Color="{StaticResource RedAccent}"/>
+
+    <!-- ── Semantic surfaces — light twins of every key in Theme.xaml ── -->
+    <SolidColorBrush x:Key="HeaderBgBrush"          Color="#f6f8fa"/>
+    <SolidColorBrush x:Key="InputBarBgBrush"        Color="#eff2f5"/>
+    <SolidColorBrush x:Key="InputPlaceholderBrush"  Color="#9aa5b1"/>
+    <SolidColorBrush x:Key="TintBlueBgBrush"        Color="#dcebfb"/>
+    <SolidColorBrush x:Key="TintBlueBorderBrush"    Color="#b8d4f5"/>
+    <SolidColorBrush x:Key="TintGreenBgBrush"       Color="#ddf3e7"/>
+    <SolidColorBrush x:Key="TintGreenBorderBrush"   Color="#b5e0c9"/>
+    <SolidColorBrush x:Key="TintAmberBgBrush"       Color="#fdf0d9"/>
+    <SolidColorBrush x:Key="TintAmberBorderBrush"   Color="#f0d9a8"/>
+    <SolidColorBrush x:Key="TintPurpleBgBrush"      Color="#efe7fd"/>
+    <SolidColorBrush x:Key="TintPurpleBorderBrush"  Color="#d5c5f5"/>
+    <SolidColorBrush x:Key="TintRedBgBrush"         Color="#fde3e9"/>
+    <SolidColorBrush x:Key="TintRedBorderBrush"     Color="#f2b8c6"/>
+    <SolidColorBrush x:Key="ConsoleBgBrush"         Color="#f4f6f8"/>
+    <SolidColorBrush x:Key="ConsoleTextBrush"       Color="#047857"/>
+
+    <!-- ── Gradients — whole brushes redefined (GradientStops can't be themed
+         individually), same keys and directions as the dark set ── -->
+    <LinearGradientBrush x:Key="BlueGradient" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#0065e0" Offset="0"/>
+        <GradientStop Color="#0052b8" Offset="1"/>
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="SidebarGradient" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#eff2f5" Offset="0"/>
+        <GradientStop Color="#f2f4f7" Offset="0.5"/>
+        <GradientStop Color="#eff2f5" Offset="1"/>
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="ContentBgGradient" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#f6f8fa" Offset="0"/>
+        <GradientStop Color="#f2f6f8" Offset="1"/>
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="StatusBarGradient" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#f6f8fa" Offset="0"/>
+        <GradientStop Color="#f2f6f8" Offset="1"/>
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="CardGlow" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#ffffff" Offset="0"/>
+        <GradientStop Color="#fafbfc" Offset="1"/>
+    </LinearGradientBrush>
+
+</ResourceDictionary>
