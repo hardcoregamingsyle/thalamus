@@ -56,25 +56,62 @@ namespace ThalamusApp.Modes
             var loaded = await _store!.LoadLatestAsync(token);
             if (_historyLoaded || loaded.Count == 0) return;
             _historyLoaded = true;
+            Dispatcher.Invoke(() => ReplayMessages(loaded));
+        }
 
+        /// <summary>The thread sends currently append to (null = fresh).</summary>
+        public string? CurrentConversationId => _store?.ConversationId;
+
+        /// <summary>Open a specific past conversation from the sidebar RECENT list.</summary>
+        public async Task OpenConversationAsync(string conversationId)
+        {
+            if (string.IsNullOrEmpty(_token) || _isStreaming) return;
+            if (_store!.ConversationId == conversationId) return;
+            var loaded = await _store.LoadByIdAsync(_token, conversationId);
+            _historyLoaded = true;
             Dispatcher.Invoke(() =>
             {
-                EmptyState.Visibility = Visibility.Collapsed;
-                foreach (var (role, content) in loaded)
-                {
-                    if (role == "user")
-                    {
-                        AppendUserBubble(content);
-                    }
-                    else
-                    {
-                        AppendAiBubbleStart(out var host, out _);
-                        HtmlToWpf.Populate(host, content);
-                    }
-                    _history.Add((role, content));
-                }
-                ScrollToBottom();
+                ClearTranscript();
+                ReplayMessages(loaded);
             });
+        }
+
+        /// <summary>Drop to a fresh thread — the next send creates a new conversation.</summary>
+        public void StartNewConversation()
+        {
+            if (_isStreaming) return;
+            _store!.Reset();
+            _history.Clear();
+            ClearTranscript();
+            EmptyState.Visibility = Visibility.Visible;
+        }
+
+        // Remove every transcript element except the typing row (last child).
+        private void ClearTranscript()
+        {
+            _history.Clear();
+            while (MessagesPanel.Children.Count > 1)
+                MessagesPanel.Children.RemoveAt(0);
+        }
+
+        private void ReplayMessages(List<(string role, string content)> loaded)
+        {
+            if (loaded.Count == 0) return;
+            EmptyState.Visibility = Visibility.Collapsed;
+            foreach (var (role, content) in loaded)
+            {
+                if (role == "user")
+                {
+                    AppendUserBubble(content);
+                }
+                else
+                {
+                    AppendAiBubbleStart(out var host, out _);
+                    HtmlToWpf.Populate(host, content);
+                }
+                _history.Add((role, content));
+            }
+            ScrollToBottom();
         }
 
         private void ChatInput_KeyDown(object sender, KeyEventArgs e)
@@ -199,6 +236,16 @@ namespace ThalamusApp.Modes
             // Fire-and-forget and fully guarded, so ads can never stall or break chat.
             if (!string.IsNullOrEmpty(fullText))
                 _ = MaybeRequestAdAsync();
+
+            // Every exchange spends AgentBucks and may have created a thread —
+            // poke the sidebar so balance + RECENT stay honest. First exchange
+            // also gets a proper AI title, like the website.
+            if (!string.IsNullOrEmpty(fullText) && !string.IsNullOrEmpty(_token))
+            {
+                if (_history.Count == 2)
+                    _ = _store!.GenerateTitleAsync(_token, _history[0].text);
+                (Window.GetWindow(this) as MainWindow)?.NotifyExchangeCompleted();
+            }
         }
 
         // ── Sponsored ad (Gravity) ───────────────────────────────────────────

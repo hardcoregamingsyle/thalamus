@@ -1,14 +1,19 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using ThalamusApp.Auth;
 using ThalamusApp.Controls;
+using ThalamusApp.Services;
 
 namespace ThalamusApp
 {
@@ -16,7 +21,14 @@ namespace ThalamusApp
     {
         private const string APP_VERSION = "2.3.3";
         private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
+        private readonly ConvexClient _convex = new();
         private bool _isAuthenticated;
+        private string _activeMode = "Code";
+        private DispatcherTimer? _creditsTimer;
+
+        // Modes whose transcripts live in the conversations/messages tables and
+        // therefore get the sidebar RECENT list. Build has projects, Sandbox VMs.
+        private static readonly HashSet<string> ConversationModes = new() { "Chat", "Research", "Study" };
 
         // Kept so the Buy Credits dialog can be handed the live session identity.
         private string _sessionToken = "";
@@ -52,9 +64,10 @@ namespace ThalamusApp
             AuthDot.Background = (Brush)FindResource("GreenBrush");
             AuthDot.ToolTip = email;
 
-            // Signed in — show sign out + buy credits
+            // Signed in — show sign out + buy credits + balance
             BtnSignOut.Visibility = Visibility.Visible;
             BtnBuyCredits.Visibility = Visibility.Visible;
+            CreditsRow.Visibility = Visibility.Visible;
             SectionLabel.Text = email.Length > 18 ? email[..16] + "..." : email;
 
             // Pass token to mode views
@@ -63,8 +76,62 @@ namespace ThalamusApp
             ResearchPanel.SetToken(token);
             StudyPanel.SetToken(token);
 
+            // Balance readout: ensure the daily allowance on first load (same as
+            // the website), then keep it fresh on a slow timer — sends also poke
+            // it via NotifyExchangeCompleted so it updates right after spending.
+            _ = RefreshCreditsAsync(ensureDaily: true);
+            if (_creditsTimer == null)
+            {
+                _creditsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
+                _creditsTimer.Tick += (_, _) => _ = RefreshCreditsAsync(ensureDaily: false);
+            }
+            _creditsTimer.Start();
+
             StatusText.Text = "Ready — Signed in";
             NavigateTo("Code");
+        }
+
+        // ── Credits + recents (called by mode views after each exchange) ──────
+
+        /// <summary>
+        /// Refresh the sidebar balance and the RECENT list. Safe from any thread;
+        /// both refreshes are best-effort and never throw into the UI.
+        /// </summary>
+        public void NotifyExchangeCompleted()
+        {
+            _ = RefreshCreditsAsync(ensureDaily: false);
+            _ = RefreshRecentAsync();
+        }
+
+        private async Task RefreshCreditsAsync(bool ensureDaily)
+        {
+            if (!_isAuthenticated || string.IsNullOrEmpty(_sessionToken)) return;
+            var token = _sessionToken;
+            try
+            {
+                if (ensureDaily)
+                {
+                    try
+                    {
+                        await _convex.CallMutationAsync("customAuthHelpers:ensureDailyBalance",
+                            new { token }, token);
+                    }
+                    catch { /* the balance query below still shows whatever is there */ }
+                }
+
+                var user = await _convex.CallQueryAsync("customAuthHelpers:getUserByToken",
+                    new { token }, token);
+                if (user is not JsonObject u) return;
+
+                // Spendable = daily allowance (legacy field as fallback) + purchased.
+                // Same formula the website renders (Portal.tsx).
+                double daily = u["dailyAgentBucks"]?.GetValue<double>()
+                    ?? u["agentBucksBalance"]?.GetValue<double>() ?? 0;
+                double purchased = u["purchasedAgentBucks"]?.GetValue<double>() ?? 0;
+                long total = (long)(daily + purchased);
+                Dispatcher.Invoke(() => CreditsLabel.Text = $"{total:N0} AB");
+            }
+            catch { /* transient network failure — keep the last known value */ }
         }
 
         // ── Navigation ────────────────────────────────────────────────────────
@@ -101,6 +168,117 @@ namespace ThalamusApp
 
             ModeLabel.Text = mode == "Code" ? "Build Mode" : mode + " Mode";
             StatusText.Text = $"Ready — {mode}";
+
+            _activeMode = mode;
+            var hasRecents = _isAuthenticated && ConversationModes.Contains(mode);
+            RecentSection.Visibility = hasRecents ? Visibility.Visible : Visibility.Collapsed;
+            if (hasRecents) _ = RefreshRecentAsync();
+        }
+
+        // ── RECENT conversation list ──────────────────────────────────────────
+
+        private async Task RefreshRecentAsync()
+        {
+            if (!_isAuthenticated || !ConversationModes.Contains(_activeMode)) return;
+            var mode = _activeMode.ToLowerInvariant();
+            var token = _sessionToken;
+            try
+            {
+                var convs = await _convex.CallQueryAsync("conversations:list",
+                    new { mode, token }, token) as JsonArray;
+                Dispatcher.Invoke(() =>
+                {
+                    // A slow response from a previous mode must not clobber the
+                    // list the user is actually looking at.
+                    if (_activeMode.ToLowerInvariant() != mode) return;
+                    PopulateRecent(convs);
+                });
+            }
+            catch { /* offline — leave the current list alone */ }
+        }
+
+        private void PopulateRecent(JsonArray? convs)
+        {
+            RecentListPanel.Children.Clear();
+            if (convs == null || convs.Count == 0)
+            {
+                RecentListPanel.Children.Add(new TextBlock
+                {
+                    Text = "No conversations yet",
+                    FontSize = 10.5,
+                    Margin = new Thickness(24, 6, 16, 0),
+                    Foreground = (Brush)FindResource("TextMutedBrush"),
+                });
+                return;
+            }
+
+            foreach (var c in convs)
+            {
+                var id = c?["_id"]?.GetValue<string>();
+                if (id == null) continue;
+                var title = c?["title"]?.GetValue<string>() ?? "Untitled";
+                if (title.Length > 26) title = title[..24] + "…";
+
+                var btn = new Button
+                {
+                    Style = (Style)FindResource("SidebarBtn"),
+                    Height = 32,
+                    FontSize = 11,
+                    Tag = id,
+                    Content = new TextBlock { Text = title, TextTrimming = TextTrimming.CharacterEllipsis },
+                    ToolTip = c?["title"]?.GetValue<string>(),
+                };
+                btn.Click += RecentItem_Click;
+
+                var menu = new ContextMenu();
+                var del = new MenuItem { Header = "Delete conversation", Tag = id };
+                del.Click += RecentDelete_Click;
+                menu.Items.Add(del);
+                btn.ContextMenu = menu;
+
+                RecentListPanel.Children.Add(btn);
+            }
+        }
+
+        private async void RecentItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button b || b.Tag is not string id) return;
+            switch (_activeMode)
+            {
+                case "Chat": await ChatPanel.OpenConversationAsync(id); break;
+                case "Research": await ResearchPanel.OpenConversationAsync(id); break;
+                case "Study": await StudyPanel.OpenConversationAsync(id); break;
+            }
+        }
+
+        private async void RecentDelete_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem m || m.Tag is not string id) return;
+            try
+            {
+                await _convex.CallMutationAsync("conversations:remove",
+                    new { id, token = _sessionToken }, _sessionToken);
+            }
+            catch { /* stays in the list until a refresh succeeds */ }
+
+            // If the open thread was deleted, drop the view to a fresh one.
+            switch (_activeMode)
+            {
+                case "Chat" when ChatPanel.CurrentConversationId == id: ChatPanel.StartNewConversation(); break;
+                case "Research" when ResearchPanel.CurrentConversationId == id: ResearchPanel.StartNewConversation(); break;
+                case "Study" when StudyPanel.CurrentConversationId == id: StudyPanel.StartNewConversation(); break;
+            }
+            await RefreshRecentAsync();
+        }
+
+        private void NewChat_Click(object sender, RoutedEventArgs e)
+        {
+            switch (_activeMode)
+            {
+                case "Chat": ChatPanel.StartNewConversation(); break;
+                case "Research": ResearchPanel.StartNewConversation(); break;
+                case "Study": StudyPanel.StartNewConversation(); break;
+            }
         }
 
         /// <summary>
@@ -113,6 +291,11 @@ namespace ThalamusApp
             _isAuthenticated = false;
             _sessionToken = "";
             _sessionEmail = "";
+            _creditsTimer?.Stop();
+            CreditsRow.Visibility = Visibility.Collapsed;
+            CreditsLabel.Text = "—";
+            RecentSection.Visibility = Visibility.Collapsed;
+            RecentListPanel.Children.Clear();
 
             // Clear tokens from mode views
             CodePanel.SetToken("");

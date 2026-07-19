@@ -47,25 +47,61 @@ namespace ThalamusApp.Modes
             var loaded = await _store!.LoadLatestAsync(token);
             if (_historyLoaded || loaded.Count == 0) return;
             _historyLoaded = true;
+            Dispatcher.Invoke(() => ReplayMessages(loaded));
+        }
 
+        /// <summary>The thread sends currently append to (null = fresh).</summary>
+        public string? CurrentConversationId => _store?.ConversationId;
+
+        /// <summary>Open a specific past conversation from the sidebar RECENT list.</summary>
+        public async Task OpenConversationAsync(string conversationId)
+        {
+            if (string.IsNullOrEmpty(_token) || _isStreaming) return;
+            if (_store!.ConversationId == conversationId) return;
+            var loaded = await _store.LoadByIdAsync(_token, conversationId);
+            _historyLoaded = true;
             Dispatcher.Invoke(() =>
             {
-                EmptyState.Visibility = Visibility.Collapsed;
-                foreach (var (role, content) in loaded)
-                {
-                    if (role == "user")
-                    {
-                        AppendUserBubble(content);
-                    }
-                    else
-                    {
-                        AppendAiBubbleStart(out var tb);
-                        tb.Text = Controls.HtmlToWpf.PlainText(content);
-                    }
-                    _history.Add((role, content));
-                }
-                StudyScroll.ScrollToBottom();
+                ClearTranscript();
+                ReplayMessages(loaded);
             });
+        }
+
+        /// <summary>Drop to a fresh thread — the next send creates a new conversation.</summary>
+        public void StartNewConversation()
+        {
+            if (_isStreaming) return;
+            _store!.Reset();
+            ClearTranscript();
+            EmptyState.Visibility = Visibility.Visible;
+        }
+
+        // Remove every transcript element except the typing row (last child).
+        private void ClearTranscript()
+        {
+            _history.Clear();
+            while (StudyPanel.Children.Count > 1)
+                StudyPanel.Children.RemoveAt(0);
+        }
+
+        private void ReplayMessages(List<(string role, string content)> loaded)
+        {
+            if (loaded.Count == 0) return;
+            EmptyState.Visibility = Visibility.Collapsed;
+            foreach (var (role, content) in loaded)
+            {
+                if (role == "user")
+                {
+                    AppendUserBubble(content);
+                }
+                else
+                {
+                    AppendAiBubbleStart(out var tb);
+                    tb.Text = Controls.HtmlToWpf.PlainText(content);
+                }
+                _history.Add((role, content));
+            }
+            StudyScroll.ScrollToBottom();
         }
 
         private void StudyMode_Click(object sender, RoutedEventArgs e)
@@ -191,6 +227,15 @@ namespace ThalamusApp.Modes
             StudyButton.IsEnabled = true;
             StudyStatusLabel.Text = "Ready";
             StudyScroll.ScrollToBottom();
+
+            // Keep the sidebar honest (balance + RECENT) and title the thread
+            // after its first exchange, exactly like the website does.
+            if (!string.IsNullOrEmpty(fullText) && !string.IsNullOrEmpty(_token))
+            {
+                if (_history.Count == 2)
+                    _ = _store!.GenerateTitleAsync(_token, _history[0].text);
+                (Window.GetWindow(this) as MainWindow)?.NotifyExchangeCompleted();
+            }
         }
 
         // User turn — right-aligned neutral card, no avatar.
