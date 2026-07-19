@@ -31,6 +31,13 @@ This file provides behavioral guidelines and repository context for Claude Code 
 * Desktop software is **natively built** — the WPF/.NET app in `thalamus-native/` with zero NuGet dependencies. Never propose a bundled web wrapper (no Electron, no Tauri, no WebView shell posing as an app).
 * "Best" does not mean over-engineered: no speculative features, no single-use abstractions, no unrequested flexibility.
 
+### Web/Desktop Parity
+
+**Any change made to the website must also be made to the desktop app.**
+
+* The WPF app (`thalamus-native/`) mirrors the web portal's surfaces (Chat, Research, Study, Code, Sandbox). When you change user-facing behavior, UI flows, or backend contracts on the web side, port the same change to the native app in the same task — the desktop is never allowed to lag behind the site.
+* If a web change genuinely has no desktop counterpart (e.g. SEO, landing page, guest mode), say so explicitly instead of silently skipping the desktop side.
+
 ### Simplicity First
 
 **Minimum code that solves the problem. Nothing speculative.**
@@ -163,6 +170,7 @@ New features go into the NEW system only. The two pipeline files are near-duplic
 
 ### Desktop & Native Apps (`thalamus-native/`)
 
+* **Parity rule (§1): every website change ships to the desktop app too, in the same task.**
 * WPF/.NET 8, self-contained single-file, **zero NuGet packages in the app** (HTTP/SSE/RFB-VNC hand-rolled; installer allows exactly one — System.Text.Json). Build via `build.ps1` (handles the WPF `_wpftmp` publish race); full instructions in `thalamus-native/BUILD.md`.
 * It drives the NEW code system through Convex's public HTTP API — public function signatures used by shipped builds (`codeProjects:createProject`, `codePipeline:startPipeline`, `codeBranches:getBranch/watchMessages/watchFiles`, …) are a public API. Don't break them.
 * `ConvexClient.cs` hardcodes the prod deployment (`befitting-wildebeest-866`); repointing requires a rebuild.
