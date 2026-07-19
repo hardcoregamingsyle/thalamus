@@ -3,6 +3,15 @@
 
 import { hfQueryVector } from "./hfRagSpace";
 
+// Platform-wide free+unlimited switch for Thalamus AgentBucks. While true, no
+// user is charged and no usage cap (balance, daily, guest, or API-key
+// allocation) blocks them. Lives here — the one pure module both the Node
+// ("use node") and default-runtime files can import — so every deduction path
+// reads one flag. Flip to false to restore the credit economy. Does NOT gate
+// the platform provider-budget guard (that protects the owner's real wallet).
+// AgentOverflow's aoCredits are a separate economy with their own switch.
+export const FREE_UNLIMITED = true;
+
 // Claude via Amazon Bedrock — Pricing (cents per million tokens)
 export const CLAUDE_PRICING = {
   "claude-haiku-4-5": {

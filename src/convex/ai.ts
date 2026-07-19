@@ -3,7 +3,7 @@ import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { performSearch } from "./agentCore";
+import { performSearch, FREE_UNLIMITED } from "./agentCore";
 
 // Gemini keys are loaded from the DB (admin-managed via Admin UI)
 async function getGeminiKeysFromDB(ctx: { runQuery: ActionCtx["runQuery"] }): Promise<string[]> {
@@ -557,7 +557,7 @@ export const guestSendMessage = action({
     // Server-side enforcement of the guest daily prompt cap. Keyed by a
     // persistent client guestId + the current UTC day, so closing the tab (the
     // old sessionStorage bug) no longer grants a fresh set of free prompts.
-    if (args.guestId) {
+    if (args.guestId && !FREE_UNLIMITED) {
       const used: number = await ctx.runQuery(internal.aiHelpers.getGuestUsageCount, { guestId: args.guestId });
       if (used >= GUEST_DAILY_LIMIT) throw new Error("GUEST_LIMIT_REACHED");
     }
