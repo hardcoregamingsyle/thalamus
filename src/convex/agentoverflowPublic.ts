@@ -89,10 +89,17 @@ export const aoSitemapPage = httpAction(async (_ctx, request) => {
     const res = await vmFetch(`/internal/sitemap/${match[1]}`, undefined, "GET");
     if (res.status === 404) return xml(404, `<?xml version="1.0" encoding="UTF-8"?><error/>`, 60);
     if (!res.ok) throw new Error(`VM sitemap page failed: ${res.status}`);
-    const { doc_ids } = (await res.json()) as { doc_ids: string[] };
-    const entries = doc_ids
-      .filter((id) => DOC_ID.test(id))
-      .map((id) => `<url><loc>${site}/q/${id}</loc></url>`)
+    // Prefer the newer `docs` shape ({doc_id, lastmod}) so each URL carries a
+    // <lastmod> — a real recrawl/priority signal for Google at 500k+ scale.
+    // Fall back to bare `doc_ids` if the VM predates that change.
+    const body = (await res.json()) as { doc_ids?: string[]; docs?: Array<{ doc_id: string; lastmod: string | null }> };
+    const docs = body.docs ?? (body.doc_ids ?? []).map((doc_id) => ({ doc_id, lastmod: null }));
+    const entries = docs
+      .filter((d) => DOC_ID.test(d.doc_id))
+      .map((d) => {
+        const lm = d.lastmod ? `<lastmod>${d.lastmod.slice(0, 10)}</lastmod>` : "";
+        return `<url><loc>${site}/q/${d.doc_id}</loc>${lm}</url>`;
+      })
       .join("");
     return xml(
       200,
