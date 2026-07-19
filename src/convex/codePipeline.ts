@@ -343,6 +343,29 @@ export const runPipelineAction = internalAction({
       }
     }
 
+    // Built-in: Sketchfab 3D-model catalogue — attached ONLY when the task looks
+    // like gamedev / 3D work, so ordinary runs aren't handed an asset tool they'd
+    // never touch. Search + model lookups are public; downloads use the
+    // deployment's SKETCHFAB_API_TOKEN when set. A user server named "sketchfab"
+    // still wins.
+    const gamedevSignal = `${branch.name ?? ""} ${branch.description ?? ""} ${args.userPrompt ?? ""}`;
+    const looksGamedev = /\b(game\s?dev|3d|three\.?js|threejs|babylon|webgl|unity|unreal|godot|gltf|glb|\.fbx|blender|voxel|low[- ]?poly|game engine|game|3d model|asset pack)\b/i.test(gamedevSignal);
+    if (looksGamedev && !mcpServers.some((s) => s.name === "sketchfab")) {
+      const sfUrl = (process.env.SKETCHFAB_MCP_URL ?? "").trim() ||
+        (process.env.CONVEX_SITE_URL ? `${process.env.CONVEX_SITE_URL}/sketchfab/mcp` : "");
+      if (sfUrl) {
+        mcpServers.unshift({
+          name: "sketchfab",
+          url: sfUrl,
+          toolsJson: JSON.stringify([
+            { name: "search_models", description: "Find 3D models for a game/3D scene. Check the license (prefer CC0/CC-BY). Args: {\"query\": \"...\", \"downloadable\": true?, \"limit\": 8?, \"tags\": [\"...\"]?}" },
+            { name: "model_info", description: "Full details + license for one model. Args: {\"uid\": \"...\"}" },
+            { name: "download_model", description: "Temporary glTF/GLB/USDZ download URLs for a downloadable model. Args: {\"uid\": \"...\"}" },
+          ]),
+        });
+      }
+    }
+
     // Compact tool inventory for the agent prompt (only when servers exist).
     let mcpToolSection = "";
     if (mcpServers.length > 0) {
@@ -374,6 +397,11 @@ export const runPipelineAction = internalAction({
               : []),
           ]
         : [];
+      // When the 3D catalogue is attached (gamedev tasks), point agents at it for
+      // assets instead of stubbing placeholder geometry or asking the user.
+      const sketchfabGuidance = mcpServers.some((s) => s.name === "sketchfab")
+        ? [`Need a 3D asset (character, prop, environment)? Call sketchfab's "search_models" (downloadable:true), check the license, then "download_model" for a glTF/GLB URL — don't hand-roll placeholder meshes or block on the user for models.`]
+        : [];
       mcpToolSection = [
         `## MCP Tools`,
         `You can call external tools on the user's connected MCP servers. Emit:`,
@@ -383,6 +411,7 @@ export const runPipelineAction = internalAction({
         `Results will be returned to you before you continue. Available servers:`,
         ...lines,
         ...aoGuidance,
+        ...sketchfabGuidance,
       ].join("\n");
     }
 

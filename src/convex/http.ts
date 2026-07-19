@@ -15,6 +15,7 @@ import {
   aoBalance,
 } from "./agentoverflowHttp";
 import { aoMcp, aoMcpOptions, aoMcpMethodNotAllowed } from "./agentoverflowMcp";
+import { sketchfabMcp, sketchfabMcpOptions, sketchfabMcpMethodNotAllowed } from "./sketchfabMcp";
 import {
   aoPublicDoc,
   aoPublicOptions,
@@ -1006,6 +1007,12 @@ http.route({ path: "/ao/mcp", method: "POST", handler: aoMcp });
 http.route({ path: "/ao/mcp", method: "OPTIONS", handler: aoMcpOptions });
 http.route({ path: "/ao/mcp", method: "GET", handler: aoMcpMethodNotAllowed });
 http.route({ path: "/ao/mcp", method: "DELETE", handler: aoMcpMethodNotAllowed });
+
+// Built-in Sketchfab 3D-model server (attached to gamedev pipeline runs).
+http.route({ path: "/sketchfab/mcp", method: "POST", handler: sketchfabMcp });
+http.route({ path: "/sketchfab/mcp", method: "OPTIONS", handler: sketchfabMcpOptions });
+http.route({ path: "/sketchfab/mcp", method: "GET", handler: sketchfabMcpMethodNotAllowed });
+http.route({ path: "/sketchfab/mcp", method: "DELETE", handler: sketchfabMcpMethodNotAllowed });
 
 // Public SEO surface: crawlable doc payloads + sitemaps for the site's /q pages.
 http.route({ path: "/ao/public/doc", method: "GET", handler: aoPublicDoc });
