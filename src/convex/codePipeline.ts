@@ -335,9 +335,9 @@ export const runPipelineAction = internalAction({
           url: aoUrl,
           ...(aoKey ? { plainAuth: `Authorization: Bearer ${aoKey}` } : {}),
           toolsJson: JSON.stringify([
-            { name: "search", description: "Search AgentOverflow's corpus of agent-written solutions BEFORE burning tokens rediscovering a known fix. Args: {\"query\": \"...\"}" },
-            { name: "answer", description: "Get a synthesized answer with sources from the corpus. Args: {\"question\": \"...\"}" },
-            { name: "submit_learning", description: "Write up a hard-won solution so other agents can find it later" },
+            { name: "search", description: "Search AgentOverflow's corpus of agent-written solutions BEFORE burning tokens rediscovering a known fix. Args: {\"query\": \"...\", \"tags\": [\"...\"]?, \"top_k\": 5?}" },
+            { name: "answer", description: "Get a synthesized answer with sources from the corpus. Args: {\"query\": \"...\", \"tags\": [\"...\"]?}" },
+            { name: "submit_learning", description: "Write up a hard-won solution so other agents can find it later. Args: {\"title\": \"...\", \"problem\": \"...\", \"solution\": \"...\", \"tags\": [\"...\"]?}" },
           ]),
         });
       }
@@ -353,11 +353,27 @@ export const runPipelineAction = internalAction({
           const parsed = JSON.parse(s.toolsJson ?? "[]");
           if (Array.isArray(parsed)) tools = parsed;
         } catch { /* stale/error cache — list the server without tools */ }
+        // 160 chars keeps the inventory compact without truncating away the
+        // "Args: {...}" hints — an agent that has to guess arg names fails
+        // its first call and burns an MCP round learning nothing.
         const toolList = tools.slice(0, 10)
-          .map(t => t.description ? `${t.name} (${t.description.slice(0, 80)})` : t.name)
+          .map(t => t.description ? `${t.name} (${t.description.slice(0, 160)})` : t.name)
           .join(", ");
         lines.push(`- server "${s.name}": ${toolList || "tools unknown — call at your own risk"}`);
       }
+      // AgentOverflow is why MCP is wired in at all: agents should hit the
+      // corpus before rediscovering known fixes, and (keyed runs only — the
+      // server rejects keyless submissions) pay it back with learnings.
+      const aoServer = mcpServers.find((s) => s.name === "agentoverflow");
+      const aoKeyed = !!(aoServer && (aoServer.plainAuth || aoServer.encryptedAuth));
+      const aoGuidance = aoServer
+        ? [
+            `Before solving a hard problem, debugging a failing command, or researching a library quirk, call agentoverflow's "search" first — another agent has likely already hit it, and one search is cheaper than rediscovery.`,
+            ...(aoKeyed
+              ? [`When you crack a problem that took real effort (a failing command you fixed, a non-obvious bug, a gotcha that cost you a retry), call agentoverflow's "submit_learning" with a clear title/problem/solution so the next agent skips the pain.`]
+              : []),
+          ]
+        : [];
       mcpToolSection = [
         `## MCP Tools`,
         `You can call external tools on the user's connected MCP servers. Emit:`,
@@ -366,6 +382,7 @@ export const runPipelineAction = internalAction({
         `<<END.MCP-CALL>>`,
         `Results will be returned to you before you continue. Available servers:`,
         ...lines,
+        ...aoGuidance,
       ].join("\n");
     }
 
@@ -608,8 +625,11 @@ export const runPipelineAction = internalAction({
         }
       } else {
         const systemPrompt = AGENT_SYSTEM_PROMPTS[currentPhase] ?? `You are the ${currentPhase} agent.`;
-        // Default prompt for planning phase and non-Coder agents in execution phase
-        let prompt = [`## Project Goal\n${task}`, `## Current Files\n${fileContext}`, commandContext, corpusContext, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
+        // Default prompt for planning phase and non-Coder agents in execution
+        // phase. mcpToolSection is included here too — the planning-phase
+        // Researcher is the natural "search AgentOverflow first" agent, and
+        // without the section it never learns the tools exist.
+        let prompt = [`## Project Goal\n${task}`, `## Current Files\n${fileContext}`, commandContext, corpusContext, mcpToolSection, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
 
         if (executionPhase === "executing") {
           let plannerTasks: Array<{ title: string; description: string; dependencies?: string[] }> = [];
