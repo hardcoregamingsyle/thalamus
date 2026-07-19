@@ -21,7 +21,8 @@ namespace ThalamusApp.Modes
         private bool _historyLoaded;
         private CancellationTokenSource? _cts;
         private bool _isStreaming;
-        private TextBlock? _liveBlock;
+        private StackPanel? _liveContent;   // assistant content host (HTML rendered on "done")
+        private TextBlock? _liveBlock;      // live plaintext preview shown while streaming
         private string _liveText = "";
 
         public StudyView()
@@ -96,8 +97,8 @@ namespace ThalamusApp.Modes
                 }
                 else
                 {
-                    AppendAiBubbleStart(out var tb);
-                    tb.Text = Controls.HtmlToWpf.PlainText(content);
+                    AppendAiBubbleStart(out var host, out _);
+                    Controls.HtmlToWpf.Populate(host, content);
                 }
                 _history.Add((role, content));
             }
@@ -160,6 +161,7 @@ namespace ThalamusApp.Modes
 
             _cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
             _liveText = "";
+            _liveContent = null;
             _liveBlock = null;
 
             var systemPrompt = _studyMode switch
@@ -193,10 +195,12 @@ namespace ThalamusApp.Modes
                                 if (_liveBlock == null)
                                 {
                                     StudyTypingRow.Visibility = Visibility.Collapsed;
-                                    AppendAiBubbleStart(out _liveBlock);
+                                    AppendAiBubbleStart(out _liveContent, out _liveBlock);
                                     StudyStatusLabel.Text = "Answering…";
                                 }
-                                _liveBlock.Text = _liveText;
+                                // Plain-text preview while streaming — the HTML can't be
+                                // rendered mid-stream (unclosed tags); formatted on "done".
+                                _liveBlock!.Text = Controls.HtmlToWpf.PlainText(_liveText);
                                 StudyScroll.ScrollToBottom();
                             }
                         });
@@ -222,7 +226,13 @@ namespace ThalamusApp.Modes
         {
             StudyTypingRow.Visibility = Visibility.Collapsed;
             if (!string.IsNullOrEmpty(fullText))
+            {
+                // Replace the plaintext preview with the rendered HTML.
+                if (_liveContent == null)
+                    AppendAiBubbleStart(out _liveContent, out _liveBlock);
+                Controls.HtmlToWpf.Populate(_liveContent, fullText);
                 _history.Add(("assistant", fullText));
+            }
             _isStreaming = false;
             StudyButton.IsEnabled = true;
             StudyStatusLabel.Text = "Ready";
@@ -261,17 +271,21 @@ namespace ThalamusApp.Modes
             StudyScroll.ScrollToBottom();
         }
 
-        // Assistant turn — left-aligned formatted text, no card, no avatar.
-        private void AppendAiBubbleStart(out TextBlock liveBlock)
+        // Assistant turn — left-aligned formatted content, no card, no avatar.
+        // The host StackPanel carries a plaintext preview while streaming and is
+        // repopulated with rendered HTML (HtmlToWpf) on "done" / replay.
+        private void AppendAiBubbleStart(out StackPanel content, out TextBlock streamBlock)
         {
-            var tb = new TextBlock
+            streamBlock = new TextBlock
             {
                 FontSize = 13, TextWrapping = TextWrapping.Wrap,
                 Foreground = (Brush)FindResource("TextPrimaryBrush"),
-                LineHeight = 21, Margin = new Thickness(0, 16, 0, 2)
+                LineHeight = 21
             };
-            liveBlock = tb;
-            StudyPanel.Children.Insert(StudyPanel.Children.Count - 1, tb);
+            var panel = new StackPanel { Margin = new Thickness(0, 16, 0, 2) };
+            panel.Children.Add(streamBlock);
+            content = panel;
+            StudyPanel.Children.Insert(StudyPanel.Children.Count - 1, panel);
         }
 
         private void AppendAiError(string msg)
