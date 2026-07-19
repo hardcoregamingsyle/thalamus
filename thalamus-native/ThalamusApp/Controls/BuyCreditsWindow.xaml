@@ -253,7 +253,7 @@
                         </UniformGrid>
 
                         <!-- Persistent email warning -->
-                        <Border Background="{DynamicResource TintAmberBgBrush}" BorderBrush="{DynamicResource TintAmberBorderBrush}" BorderThickness="1"
+                        <Border Background="{DynamicResource TintAmberBgBrush}" BorderBrush="{DynamicResource WarnAmberBorderBrush}" BorderThickness="1"
                                 CornerRadius="10" Padding="12" Margin="0,12,0,0">
                             <StackPanel>
                                 <TextBlock Text="⚠ IMPORTANT — payments are verified by email."

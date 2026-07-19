@@ -64,6 +64,10 @@
     <SolidColorBrush x:Key="TintPurpleBorderBrush"  Color="#d5c5f5"/>
     <SolidColorBrush x:Key="TintRedBgBrush"         Color="#fde3e9"/>
     <SolidColorBrush x:Key="TintRedBorderBrush"     Color="#f2b8c6"/>
+    <!-- Light twins of the dark emphasis variants (Theme.xaml) -->
+    <SolidColorBrush x:Key="WarnAmberBorderBrush"       Color="#e0c080"/>
+    <SolidColorBrush x:Key="TintGreenStrongBorderBrush" Color="#8fd4af"/>
+    <SolidColorBrush x:Key="TintPurpleActiveBgBrush"    Color="#efe7fd"/>
     <SolidColorBrush x:Key="ConsoleBgBrush"         Color="#f4f6f8"/>
     <SolidColorBrush x:Key="ConsoleTextBrush"       Color="#047857"/>
 

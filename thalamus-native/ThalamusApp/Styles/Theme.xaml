@@ -66,6 +66,15 @@
     <SolidColorBrush x:Key="TintPurpleBorderBrush"  Color="#280e50"/>
     <SolidColorBrush x:Key="TintRedBgBrush"         Color="#1a0808"/>
     <SolidColorBrush x:Key="TintRedBorderBrush"     Color="#4a1010"/>
+    <!-- Dedicated emphasis variants — restore the exact pre-theme-refactor dark
+         values that a shared Tint key would otherwise flatten (warning box,
+         active study chip, build-complete banner). -->
+    <SolidColorBrush x:Key="WarnAmberBorderBrush"       Color="#5a4410"/>
+    <SolidColorBrush x:Key="TintGreenStrongBorderBrush" Color="#105c2a"/>
+    <LinearGradientBrush x:Key="TintPurpleActiveBgBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#1e1048" Offset="0"/>
+        <GradientStop Color="#160d3c" Offset="1"/>
+    </LinearGradientBrush>
     <SolidColorBrush x:Key="ConsoleBgBrush"         Color="#0f0f0f"/>
     <SolidColorBrush x:Key="ConsoleTextBrush"       Color="#6ee7b7"/>
 

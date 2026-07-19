@@ -105,7 +105,7 @@
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="Bd" CornerRadius="13" BorderThickness="1"
                                 Padding="{TemplateBinding Padding}"
-                                Background="{DynamicResource TintPurpleBgBrush}">
+                                Background="{DynamicResource TintPurpleActiveBgBrush}">
                             <Border.BorderBrush>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                                     <GradientStop Color="#8b5cf6" Offset="0"/>

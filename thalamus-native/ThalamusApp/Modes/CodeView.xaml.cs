@@ -469,7 +469,7 @@ namespace ThalamusApp.Modes
                 Margin = new Thickness(0, 12, 0, 16)
             };
             border.SetResourceReference(Border.BackgroundProperty, "TintGreenBgBrush");
-            border.SetResourceReference(Border.BorderBrushProperty, "TintGreenBorderBrush");
+            border.SetResourceReference(Border.BorderBrushProperty, "TintGreenStrongBorderBrush");
             var sp = new StackPanel { Orientation = Orientation.Horizontal };
             var dot = new Ellipse
             {

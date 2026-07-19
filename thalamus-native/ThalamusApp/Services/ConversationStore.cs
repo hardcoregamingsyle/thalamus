@@ -17,6 +17,14 @@ namespace ThalamusApp.Services
 
         public string? ConversationId { get; private set; }
 
+        // Bumped by every explicit user action that fixes the active thread —
+        // opening a specific thread (LoadByIdAsync), a "+ New"/sign-out Reset, or
+        // the first-send create (EnsureAsync). A slow startup LoadLatestAsync
+        // snapshots this before its first await and refuses to commit
+        // ConversationId if the user moved on while it was in flight. Everything
+        // here runs on the WPF dispatcher, so a plain int is safe.
+        private int _gen;
+
         public ConversationStore(ConvexClient convex, string mode)
         {
             _convex = convex;
@@ -24,7 +32,11 @@ namespace ThalamusApp.Services
         }
 
         // Sign-in/out boundary or "+ New" — next send starts a fresh thread.
-        public void Reset() => ConversationId = null;
+        public void Reset()
+        {
+            ConversationId = null;
+            _gen++;
+        }
 
         // All of this account's conversations for this mode, newest first
         // (server caps at 50). Returns empty on any failure.
@@ -49,10 +61,13 @@ namespace ThalamusApp.Services
 
         // Load the most recent conversation for this mode and return its
         // messages (role, content) oldest-first. Sets ConversationId so
-        // subsequent sends append to the same thread. Returns empty on any
-        // failure — persistence must never break the chat itself.
+        // subsequent sends append to the same thread — UNLESS an explicit user
+        // action (open / "+ New" / first send) raced ahead while this was in
+        // flight, in which case that choice wins and this commits nothing.
+        // Returns empty on any failure — persistence must never break the chat.
         public async Task<List<(string role, string content)>> LoadLatestAsync(string token)
         {
+            var gen = _gen;
             try
             {
                 var convs = await _convex.CallQueryAsync("conversations:list",
@@ -60,23 +75,41 @@ namespace ThalamusApp.Services
                 var convId = (convs != null && convs.Count > 0)
                     ? convs[0]?["_id"]?.GetValue<string>() : null;
                 if (convId == null) return new List<(string, string)>();
-                return await LoadByIdAsync(token, convId);
+                var loaded = await FetchMessagesAsync(token, convId);
+                // The fetch failed, or a user action bumped the generation while
+                // we were loading — don't clobber the thread they're now on.
+                if (loaded == null || _gen != gen) return new List<(string, string)>();
+                ConversationId = convId;
+                return loaded;
             }
             catch { return new List<(string, string)>(); }
         }
 
         // Open a specific thread (from the sidebar RECENT list) and return its
-        // messages oldest-first. Sets ConversationId so sends append to it.
-        public async Task<List<(string role, string content)>> LoadByIdAsync(string token, string conversationId)
+        // messages oldest-first. Explicit user intent — bumps the generation so a
+        // slow in-flight LoadLatestAsync can't clobber ConversationId afterward.
+        // Sets ConversationId only on success; returns null on failure so callers
+        // can tell a transport error from a genuinely empty conversation and keep
+        // the current thread + transcript untouched.
+        public async Task<List<(string role, string content)>?> LoadByIdAsync(string token, string conversationId)
+        {
+            _gen++;
+            var loaded = await FetchMessagesAsync(token, conversationId);
+            if (loaded == null) return null;
+            ConversationId = conversationId;
+            return loaded;
+        }
+
+        // Raw message fetch — oldest-first (role, content). Returns null on any
+        // failure and never touches ConversationId or the generation counter.
+        private async Task<List<(string role, string content)>?> FetchMessagesAsync(string token, string conversationId)
         {
             var loaded = new List<(string role, string content)>();
             try
             {
                 var msgs = await _convex.CallQueryAsync("conversations:getMessages",
                     new { conversationId, token }, token) as JsonArray;
-                if (msgs == null) return loaded;
-                ConversationId = conversationId;
-
+                if (msgs == null) return null;
                 foreach (var m in msgs)
                 {
                     var role = m?["role"]?.GetValue<string>() ?? "";
@@ -85,14 +118,17 @@ namespace ThalamusApp.Services
                         loaded.Add((role, content));
                 }
             }
-            catch { /* offline / expired token — chat still works unpersisted */ }
+            catch { return null; /* offline / expired token — chat still works unpersisted */ }
             return loaded;
         }
 
-        // Create the conversation on first send if none exists yet.
+        // Create the conversation on first send if none exists yet. Establishing
+        // a fresh thread is an explicit user action, so it bumps the generation
+        // too — a stale startup LoadLatestAsync must not overwrite it.
         public async Task EnsureAsync(string token, string firstMessage)
         {
             if (ConversationId != null) return;
+            _gen++;
             try
             {
                 var title = firstMessage.Length > 50 ? firstMessage[..50] : firstMessage;
