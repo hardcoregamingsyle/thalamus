@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 using ThalamusApp.Controls;
 using ThalamusApp.Services;
 
@@ -22,6 +21,8 @@ namespace ThalamusApp.Modes
         private bool _historyLoaded;
         private CancellationTokenSource? _cts;
         private bool _isStreaming;
+        private bool _isOpening;     // a RECENT open is fetching — block sends until it lands
+        private bool _pendingReset;  // "+ New"/delete arrived mid-stream — reset when it ends
         private StackPanel? _liveContent;      // assistant bubble content host (HTML rendered on "done")
         private TextBlock? _liveStreamBlock;   // live plaintext preview shown while streaming
         private string _liveText = "";
@@ -65,21 +66,29 @@ namespace ThalamusApp.Modes
         /// <summary>Open a specific past conversation from the sidebar RECENT list.</summary>
         public async Task OpenConversationAsync(string conversationId)
         {
-            if (string.IsNullOrEmpty(_token) || _isStreaming) return;
+            if (string.IsNullOrEmpty(_token) || _isStreaming || _isOpening) return;
             if (_store!.ConversationId == conversationId) return;
-            var loaded = await _store.LoadByIdAsync(_token, conversationId);
-            _historyLoaded = true;
-            Dispatcher.Invoke(() =>
+            _isOpening = true;
+            try
             {
-                ClearTranscript();
-                ReplayMessages(loaded);
-            });
+                var loaded = await _store.LoadByIdAsync(_token, conversationId);
+                if (loaded == null) return;   // load failed — keep the current thread and transcript
+                _historyLoaded = true;
+                Dispatcher.Invoke(() =>
+                {
+                    ClearTranscript();
+                    ReplayMessages(loaded);
+                    EmptyState.Visibility = loaded.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+                });
+            }
+            finally { _isOpening = false; }
         }
 
         /// <summary>Drop to a fresh thread — the next send creates a new conversation.</summary>
         public void StartNewConversation()
         {
-            if (_isStreaming) return;
+            _historyLoaded = true;   // explicit choice — a late startup load must not undo it
+            if (_isStreaming) { _pendingReset = true; return; }   // defer until the stream ends
             _store!.Reset();
             _history.Clear();
             ClearTranscript();
@@ -140,7 +149,7 @@ namespace ThalamusApp.Modes
         private async Task SendAsync()
         {
             var text = ChatInputBox.Text.Trim();
-            if (string.IsNullOrEmpty(text) || _isStreaming) return;
+            if (string.IsNullOrEmpty(text) || _isStreaming || _isOpening) return;
 
             ChatInputBox.Text = "";
             EmptyState.Visibility = Visibility.Collapsed;
@@ -212,6 +221,7 @@ namespace ThalamusApp.Modes
                         : "Something went wrong. Please try again.");
                     _isStreaming = false;
                     SendButton.IsEnabled = true;
+                    if (_pendingReset) { _pendingReset = false; StartNewConversation(); }
                 });
             }
         }
@@ -242,10 +252,24 @@ namespace ThalamusApp.Modes
             // also gets a proper AI title, like the website.
             if (!string.IsNullOrEmpty(fullText) && !string.IsNullOrEmpty(_token))
             {
+                var main = Window.GetWindow(this) as MainWindow;   // capture on the UI thread
                 if (_history.Count == 2)
-                    _ = _store!.GenerateTitleAsync(_token, _history[0].text);
-                (Window.GetWindow(this) as MainWindow)?.NotifyExchangeCompleted();
+                    _ = TitleThenRefreshAsync(main, _token, _history[0].text);
+                main?.NotifyExchangeCompleted();
             }
+
+            // A "+ New"/delete that arrived mid-stream was deferred — apply it now
+            // that the stream has ended and the id is safely captured by the request.
+            if (_pendingReset) { _pendingReset = false; StartNewConversation(); }
+        }
+
+        // Title the freshly created thread, then refresh RECENT again once the
+        // title lands so the sidebar swaps the truncated-prompt fallback for the
+        // real AI title (the first list refresh races ahead of the title action).
+        private async Task TitleThenRefreshAsync(MainWindow? main, string token, string firstMessage)
+        {
+            await _store!.GenerateTitleAsync(token, firstMessage);
+            main?.NotifyExchangeCompleted();
         }
 
         // ── Sponsored ad (Gravity) ───────────────────────────────────────────
@@ -291,6 +315,13 @@ namespace ThalamusApp.Modes
         // User turn — right-aligned neutral card (BgCard/BorderSubtle), no avatar.
         private void AppendUserBubble(string text)
         {
+            var tb = new TextBlock
+            {
+                Text = text, FontSize = 13,
+                TextWrapping = TextWrapping.Wrap,
+                LineHeight = 20
+            };
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
             var bubble = new Border
             {
                 CornerRadius = new CornerRadius(12),
@@ -298,17 +329,13 @@ namespace ThalamusApp.Modes
                 MaxWidth = 560,
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Margin = new Thickness(0, 0, 0, 16),
-                Background = (Brush)FindResource("BgCardBrush"),
-                BorderBrush = (Brush)FindResource("BorderSubtleBrush"),
                 BorderThickness = new Thickness(1),
-                Child = new TextBlock
-                {
-                    Text = text, FontSize = 13,
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = (Brush)FindResource("TextPrimaryBrush"),
-                    LineHeight = 20
-                }
+                Child = tb
             };
+            // SetResourceReference (not a FindResource snapshot) so bubbles already
+            // on screen repaint when the theme is toggled at runtime.
+            bubble.SetResourceReference(Border.BackgroundProperty, "BgCardBrush");
+            bubble.SetResourceReference(Border.BorderBrushProperty, "BorderSubtleBrush");
 
             // Insert before typing row (last child)
             MessagesPanel.Children.Insert(MessagesPanel.Children.Count - 1, bubble);
@@ -323,9 +350,9 @@ namespace ThalamusApp.Modes
             streamBlock = new TextBlock
             {
                 FontSize = 13.5, TextWrapping = TextWrapping.Wrap,
-                Foreground = (Brush)FindResource("TextPrimaryBrush"),
                 LineHeight = 21
             };
+            streamBlock.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
             var panel = new StackPanel();
             panel.Children.Add(streamBlock);
             content = panel;
@@ -337,11 +364,11 @@ namespace ThalamusApp.Modes
                 MaxWidth = 620,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Thickness(0, 0, 0, 16),
-                Background = (Brush)FindResource("BgCardBrush"),
-                BorderBrush = (Brush)FindResource("BorderSubtleBrush"),
                 BorderThickness = new Thickness(1),
                 Child = panel
             };
+            bubble.SetResourceReference(Border.BackgroundProperty, "BgCardBrush");
+            bubble.SetResourceReference(Border.BorderBrushProperty, "BorderSubtleBrush");
             MessagesPanel.Children.Insert(MessagesPanel.Children.Count - 1, bubble);
         }
 
@@ -350,9 +377,9 @@ namespace ThalamusApp.Modes
             var tb = new TextBlock
             {
                 Text = msg, FontSize = 12.5, TextWrapping = TextWrapping.Wrap,
-                Foreground = (Brush)FindResource("RedBrush"),
                 LineHeight = 20, Margin = new Thickness(0, 0, 0, 18)
             };
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "RedBrush");
             MessagesPanel.Children.Insert(MessagesPanel.Children.Count - 1, tb);
             ScrollToBottom();
         }

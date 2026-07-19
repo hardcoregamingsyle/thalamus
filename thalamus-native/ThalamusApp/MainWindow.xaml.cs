@@ -286,9 +286,11 @@ namespace ThalamusApp
                 await _convex.CallMutationAsync("conversations:remove",
                     new { id, token = _sessionToken }, _sessionToken);
             }
-            catch { /* stays in the list until a refresh succeeds */ }
+            catch { return; /* delete failed — leave the open thread and the list alone */ }
 
             // If the open thread was deleted, drop the view to a fresh one.
+            // StartNewConversation now defers when that view is mid-stream, so a
+            // delete during a live reply can't silently no-op and strand a dead id.
             switch (_activeMode)
             {
                 case "Chat" when ChatPanel.CurrentConversationId == id: ChatPanel.StartNewConversation(); break;
