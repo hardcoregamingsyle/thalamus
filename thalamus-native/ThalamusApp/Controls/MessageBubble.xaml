@@ -8,16 +8,16 @@
     <!-- Role-switching is done in code-behind by toggling HorizontalAlignment and Background -->
     <Border x:Name="BubbleBorder" MaxWidth="700" Margin="8,4"
             Padding="12,10" CornerRadius="12"
-            BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1"
+            BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1"
             HorizontalAlignment="Left">
         <StackPanel>
             <TextBlock x:Name="RoleLabel" FontSize="10" FontWeight="Bold"
-                       Foreground="#64748b" Margin="0,0,0,4"/>
+                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
             <!-- Message text — rendered as a RichTextBox so we can do inline formatting -->
             <RichTextBox x:Name="ContentBox"
                          Background="Transparent" BorderThickness="0"
                          IsReadOnly="True" IsDocumentEnabled="True"
-                         Foreground="#e2e8f0" FontSize="13"
+                         Foreground="{DynamicResource TextPrimaryBrush}" FontSize="13"
                          FontFamily="Segoe UI" Padding="0"
                          ScrollViewer.VerticalScrollBarVisibility="Disabled"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>

@@ -49,6 +49,26 @@
     <SolidColorBrush x:Key="PurpleBrush"        Color="{StaticResource PurpleAccent}"/>
     <SolidColorBrush x:Key="RedBrush"           Color="{StaticResource RedAccent}"/>
 
+    <!-- ── Semantic surfaces — keys for what used to be hardcoded hex scattered
+         through the views (mode headers, input bars, tinted icon tiles, console
+         panes). Both palettes define every key, so views can reference them via
+         DynamicResource and survive a runtime light/dark toggle. ── -->
+    <SolidColorBrush x:Key="HeaderBgBrush"          Color="#161616"/>
+    <SolidColorBrush x:Key="InputBarBgBrush"        Color="#121212"/>
+    <SolidColorBrush x:Key="InputPlaceholderBrush"  Color="#4a4a4a"/>
+    <SolidColorBrush x:Key="TintBlueBgBrush"        Color="#0d1f3c"/>
+    <SolidColorBrush x:Key="TintBlueBorderBrush"    Color="#1e3a5f"/>
+    <SolidColorBrush x:Key="TintGreenBgBrush"       Color="#061a10"/>
+    <SolidColorBrush x:Key="TintGreenBorderBrush"   Color="#0a3018"/>
+    <SolidColorBrush x:Key="TintAmberBgBrush"       Color="#1f1705"/>
+    <SolidColorBrush x:Key="TintAmberBorderBrush"   Color="#3a2800"/>
+    <SolidColorBrush x:Key="TintPurpleBgBrush"      Color="#12082a"/>
+    <SolidColorBrush x:Key="TintPurpleBorderBrush"  Color="#280e50"/>
+    <SolidColorBrush x:Key="TintRedBgBrush"         Color="#1a0808"/>
+    <SolidColorBrush x:Key="TintRedBorderBrush"     Color="#4a1010"/>
+    <SolidColorBrush x:Key="ConsoleBgBrush"         Color="#0f0f0f"/>
+    <SolidColorBrush x:Key="ConsoleTextBrush"       Color="#6ee7b7"/>
+
     <!-- ── Typography — native stand-in for the site's Inter ── -->
     <FontFamily x:Key="AppFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>
     <!-- Monospace for the status strip, code blocks, and technical labels —
@@ -87,8 +107,8 @@
 
     <!-- ── Card — dark surface, ~16px corners, hairline border ── -->
     <Style x:Key="Card" TargetType="Border">
-        <Setter Property="Background" Value="{StaticResource BgCardBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource BgCardBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="16"/>
     </Style>
@@ -96,8 +116,8 @@
     <!-- ── Example-prompt chip — rounded bordered button that prefills the input.
          Mirrors the website's empty-state suggestion chips (bg-card border). ── -->
     <Style x:Key="ExampleChip" TargetType="Border">
-        <Setter Property="Background" Value="{StaticResource BgCardBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource BgCardBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="9"/>
         <Setter Property="Padding" Value="12,8"/>
@@ -105,8 +125,8 @@
         <Setter Property="Cursor" Value="Hand"/>
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="{StaticResource BgHoverBrush}"/>
-                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                <Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             </Trigger>
         </Style.Triggers>
     </Style>
@@ -114,19 +134,19 @@
     <!-- Chip label — quiet secondary text sitting inside an ExampleChip. -->
     <Style x:Key="ExampleChipText" TargetType="TextBlock">
         <Setter Property="FontSize" Value="11.5"/>
-        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
     </Style>
 
     <!-- ── Section header — muted uppercase label ── -->
     <Style x:Key="SectionHeader" TargetType="TextBlock">
         <Setter Property="FontSize" Value="10"/>
         <Setter Property="FontWeight" Value="Bold"/>
-        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
     </Style>
 
     <!-- ── Primary button — blue gradient pill ── -->
     <Style x:Key="PrimaryBtn" TargetType="Button">
-        <Setter Property="Background" Value="{StaticResource BlueGradient}"/>
+        <Setter Property="Background" Value="{DynamicResource BlueGradient}"/>
         <Setter Property="Foreground" Value="White"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Height" Value="40"/>
@@ -159,14 +179,14 @@
 
     <!-- ── Danger button — destructive actions (uninstall, delete) ── -->
     <Style x:Key="DangerBtn" TargetType="Button" BasedOn="{StaticResource PrimaryBtn}">
-        <Setter Property="Background" Value="{StaticResource RedBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource RedBrush}"/>
     </Style>
 
     <!-- ── Ghost button — quiet outline ── -->
     <Style x:Key="GhostBtn" TargetType="Button">
         <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource BorderDimBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderDimBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Height" Value="36"/>
         <Setter Property="Padding" Value="16,0"/>
@@ -183,9 +203,9 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgHoverBrush}"/>
-                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
-                            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Bd" Property="Opacity" Value="0.35"/>
@@ -198,10 +218,10 @@
 
     <!-- ── Text input — dark field, rounded, blue focus ring ── -->
     <Style x:Key="ThemedInput" TargetType="TextBox">
-        <Setter Property="Background" Value="{StaticResource BgInputBrush}"/>
-        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-        <Setter Property="CaretBrush" Value="{StaticResource BlueBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource BgInputBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        <Setter Property="CaretBrush" Value="{DynamicResource BlueBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="FontSize" Value="13"/>
         <Setter Property="Padding" Value="14,10"/>
@@ -218,7 +238,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsFocused" Value="True">
-                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource BlueBrush}"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource BlueBrush}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -228,7 +248,7 @@
 
     <!-- ── Checkbox — dark box, blue-gradient check ── -->
     <Style x:Key="ThemedCheck" TargetType="CheckBox">
-        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
         <Setter Property="FontSize" Value="12"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Margin" Value="0,6,0,6"/>
@@ -237,8 +257,8 @@
                 <ControlTemplate TargetType="CheckBox">
                     <StackPanel Orientation="Horizontal" Background="Transparent">
                         <Border x:Name="Box" Width="16" Height="16" CornerRadius="4"
-                                Background="{StaticResource BgInputBrush}"
-                                BorderBrush="{StaticResource BorderBrush}"
+                                Background="{DynamicResource BgInputBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
                                 BorderThickness="1" VerticalAlignment="Center">
                             <Path x:Name="Check" Data="M1 5 L4.5 8.5 L11 1.5"
                                   Stroke="White" StrokeThickness="1.8"
@@ -253,12 +273,12 @@
                     </StackPanel>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="Box" Property="Background" Value="{StaticResource BlueGradient}"/>
+                            <Setter TargetName="Box" Property="Background" Value="{DynamicResource BlueGradient}"/>
                             <Setter TargetName="Box" Property="BorderBrush" Value="Transparent"/>
                             <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource BlueBrush}"/>
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BlueBrush}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.45"/>
@@ -276,14 +296,14 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Slider">
                     <Grid VerticalAlignment="Center" Background="Transparent">
-                        <Border Height="4" CornerRadius="2" Background="{StaticResource BgHoverBrush}"/>
+                        <Border Height="4" CornerRadius="2" Background="{DynamicResource BgHoverBrush}"/>
                         <Track x:Name="PART_Track">
                             <Track.DecreaseRepeatButton>
                                 <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
                                     <RepeatButton.Template>
                                         <ControlTemplate TargetType="RepeatButton">
                                             <Border Height="4" CornerRadius="2"
-                                                    Background="{StaticResource BlueGradient}"/>
+                                                    Background="{DynamicResource BlueGradient}"/>
                                         </ControlTemplate>
                                     </RepeatButton.Template>
                                 </RepeatButton>
@@ -301,7 +321,7 @@
                                 <Thumb Width="14" Height="14" Cursor="Hand">
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
-                                            <Ellipse Fill="{StaticResource BlueBrush}"
+                                            <Ellipse Fill="{DynamicResource BlueBrush}"
                                                      Stroke="#0b1220" StrokeThickness="1"/>
                                         </ControlTemplate>
                                     </Thumb.Template>
@@ -328,7 +348,7 @@
                             <Thumb>
                                 <Thumb.Template>
                                     <ControlTemplate TargetType="Thumb">
-                                        <Border Background="{StaticResource BorderBrush}"
+                                        <Border Background="{DynamicResource BorderBrush}"
                                                 CornerRadius="2" Opacity="0.7"/>
                                     </ControlTemplate>
                                 </Thumb.Template>

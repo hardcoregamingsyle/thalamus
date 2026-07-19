@@ -90,7 +90,7 @@ namespace ThalamusApp.Modes
             _isBuilding = true;
             BuildButton.IsEnabled = false;
             BuildStatusLabel.Text = "Building…";
-            BuildStatusDot.Fill = (Brush)FindResource("AmberBrush");
+            BuildStatusDot.SetResourceReference(Shape.FillProperty, "AmberBrush");
 
             _cts = new CancellationTokenSource(BuildTimeout);
 
@@ -252,7 +252,7 @@ namespace ThalamusApp.Modes
             _isBuilding = false;
             BuildButton.IsEnabled = true;
             BuildStatusLabel.Text = label;
-            BuildStatusDot.Fill = (Brush)FindResource(error ? "RedBrush" : "GreenBrush");
+            BuildStatusDot.SetResourceReference(Shape.FillProperty, error ? "RedBrush" : "GreenBrush");
         }
 
         private void RenderAgentDots(string[] agents, string? currentAgent, bool allDone)
@@ -284,7 +284,7 @@ namespace ThalamusApp.Modes
                 else if (active)
                     dot.Fill = (Brush)FindResource("AmberBrush");
                 else
-                    dot.Fill = new SolidColorBrush(Color.FromRgb(0x1e, 0x3a, 0x5f));
+                    dot.Fill = (Brush)FindResource("TintBlueBorderBrush");
 
                 var label = new TextBlock
                 {
@@ -390,7 +390,7 @@ namespace ThalamusApp.Modes
             {
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x6e, 0xe7, 0xb7)),
+                Foreground = (Brush)FindResource("ConsoleTextBrush"),
                 LineHeight = 19,
                 FontFamily = (FontFamily)FindResource("MonoFontFamily")
             };
@@ -423,7 +423,7 @@ namespace ThalamusApp.Modes
                 IsReadOnly = true,
                 BorderThickness = new Thickness(0),
                 Background = Brushes.Transparent,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x6e, 0xe7, 0xb7)),
+                Foreground = (Brush)FindResource("ConsoleTextBrush"),
                 FontFamily = (FontFamily)FindResource("MonoFontFamily"),
                 FontSize = 11.5,
                 TextWrapping = TextWrapping.Wrap,
@@ -463,50 +463,53 @@ namespace ThalamusApp.Modes
         {
             var border = new Border
             {
-                Background = new SolidColorBrush(Color.FromRgb(0x06, 0x1a, 0x0e)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x10, 0x5c, 0x2a)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(10),
                 Padding = new Thickness(16, 12, 16, 12),
                 Margin = new Thickness(0, 12, 0, 16)
             };
+            border.SetResourceReference(Border.BackgroundProperty, "TintGreenBgBrush");
+            border.SetResourceReference(Border.BorderBrushProperty, "TintGreenBorderBrush");
             var sp = new StackPanel { Orientation = Orientation.Horizontal };
-            sp.Children.Add(new Ellipse
+            var dot = new Ellipse
             {
                 Width = 8, Height = 8,
-                Fill = (Brush)FindResource("GreenBrush"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 10, 0)
-            });
-            sp.Children.Add(new TextBlock
+            };
+            dot.SetResourceReference(Shape.FillProperty, "GreenBrush");
+            sp.Children.Add(dot);
+            var label = new TextBlock
             {
                 Text = fileCount > 0
                     ? $"Build complete — {fileCount} file{(fileCount == 1 ? "" : "s")} written"
                     : "Build complete",
                 FontSize = 12.5, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("GreenBrush"),
                 VerticalAlignment = VerticalAlignment.Center
-            });
+            };
+            label.SetResourceReference(TextBlock.ForegroundProperty, "GreenBrush");
+            sp.Children.Add(label);
             border.Child = sp;
             BuildPanel.Children.Add(border);
         }
 
         private void AppendBuildError(string msg)
         {
+            var text = new TextBlock
+            {
+                Text = msg, FontSize = 12.5, TextWrapping = TextWrapping.Wrap
+            };
+            text.SetResourceReference(TextBlock.ForegroundProperty, "RedBrush");
             var border = new Border
             {
-                Background = new SolidColorBrush(Color.FromRgb(0x1a, 0x08, 0x08)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x4a, 0x10, 0x10)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(10),
                 Padding = new Thickness(16, 12, 16, 12),
                 Margin = new Thickness(0, 0, 0, 12),
-                Child = new TextBlock
-                {
-                    Text = msg, FontSize = 12.5, TextWrapping = TextWrapping.Wrap,
-                    Foreground = (Brush)FindResource("RedBrush")
-                }
+                Child = text
             };
+            border.SetResourceReference(Border.BackgroundProperty, "TintRedBgBrush");
+            border.SetResourceReference(Border.BorderBrushProperty, "TintRedBorderBrush");
             BuildPanel.Children.Add(border);
             BuildScroll.ScrollToBottom();
         }

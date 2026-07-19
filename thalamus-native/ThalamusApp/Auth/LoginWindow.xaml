@@ -7,7 +7,7 @@
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         ResizeMode="NoResize"
-        Background="{StaticResource BgDarkerBrush}"
+        Background="{DynamicResource BgDarkerBrush}"
         FontFamily="{StaticResource AppFontFamily}"
         UseLayoutRounding="True"
         AllowsTransparency="False"
@@ -27,7 +27,7 @@
         <!-- Close button -->
         <Style x:Key="CloseBtn" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Width" Value="40"/>
             <Setter Property="Height" Value="32"/>
@@ -41,8 +41,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgHoverBrush}"/>
-                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -60,7 +60,7 @@
         </Grid.RowDefinitions>
 
         <!-- Background -->
-        <Rectangle Fill="{StaticResource BgDarkerBrush}"/>
+        <Rectangle Fill="{DynamicResource BgDarkerBrush}"/>
 
         <!-- Ambient glow -->
         <Rectangle HorizontalAlignment="Center" VerticalAlignment="Top"
@@ -92,8 +92,8 @@
         </Rectangle>
 
         <!-- ═══ TITLE BAR (terminal style) ═══ -->
-        <Border Grid.Row="0" Background="{StaticResource BgDarkerBrush}"
-                BorderBrush="{StaticResource BorderBrush}"
+        <Border Grid.Row="0" Background="{DynamicResource BgDarkerBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,0,0,1"
                 MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
             <Grid>
@@ -102,7 +102,7 @@
                     <Ellipse Style="{StaticResource TrafficLight}" Fill="#febc2e" Stroke="#dda020" Margin="8,0,0,0"/>
                     <Ellipse Style="{StaticResource TrafficLight}" Fill="#28c840" Stroke="#20a830" Margin="8,0,0,0"/>
                     <TextBlock Text="  thalamus://auth" FontSize="10" FontFamily="Consolas"
-                               Foreground="{StaticResource TextMutedBrush}"
+                               Foreground="{DynamicResource TextMutedBrush}"
                                VerticalAlignment="Center" Margin="12,0,0,0"/>
                 </StackPanel>
                 <Button HorizontalAlignment="Right" Style="{StaticResource CloseBtn}"
@@ -118,7 +118,7 @@
                             Visibility="Visible">
                     <!-- Logo -->
                     <Border Width="44" Height="44" CornerRadius="12"
-                            Background="{StaticResource BlueGradient}"
+                            Background="{DynamicResource BlueGradient}"
                             HorizontalAlignment="Center" Margin="0,0,0,18">
                         <TextBlock Text="T" FontSize="20" FontWeight="Black"
                                    Foreground="White"
@@ -128,20 +128,20 @@
 
                     <TextBlock Text="Connecting to Thalamus..."
                                FontSize="14" FontWeight="SemiBold"
-                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
                                HorizontalAlignment="Center" Margin="0,0,0,6"/>
                     <TextBlock Text="Generating secure authentication code"
                                FontSize="11"
-                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
                                HorizontalAlignment="Center" Margin="0,0,0,24"/>
 
                     <!-- Animated dots -->
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <Ellipse x:Name="Dot1" Width="7" Height="7" Fill="{StaticResource BlueBrush}"
+                        <Ellipse x:Name="Dot1" Width="7" Height="7" Fill="{DynamicResource BlueBrush}"
                                  Margin="0,0,5,0" Opacity="0.3"/>
-                        <Ellipse x:Name="Dot2" Width="7" Height="7" Fill="{StaticResource BlueBrush}"
+                        <Ellipse x:Name="Dot2" Width="7" Height="7" Fill="{DynamicResource BlueBrush}"
                                  Margin="5,0,5,0" Opacity="0.3"/>
-                        <Ellipse x:Name="Dot3" Width="7" Height="7" Fill="{StaticResource BlueBrush}"
+                        <Ellipse x:Name="Dot3" Width="7" Height="7" Fill="{DynamicResource BlueBrush}"
                                  Margin="5,0,0,0" Opacity="0.3"/>
                     </StackPanel>
                 </StackPanel>
@@ -152,11 +152,11 @@
                     <!-- Title -->
                     <TextBlock Text="Authorize Desktop App"
                                FontSize="16" FontWeight="SemiBold"
-                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
                                HorizontalAlignment="Center" Margin="0,0,0,6"/>
                     <TextBlock Text="Enter this code on the website to sign in securely"
                                FontSize="10.5"
-                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
                                HorizontalAlignment="Center"
                                TextWrapping="Wrap"
                                TextAlignment="Center"
@@ -164,21 +164,21 @@
 
                     <!-- Auth code card -->
                     <Border CornerRadius="12"
-                            Background="{StaticResource CardGlow}"
-                            BorderBrush="{StaticResource BorderBrush}"
+                            Background="{DynamicResource CardGlow}"
+                            BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1"
                             Padding="32,20"
                             HorizontalAlignment="Center"
                             Margin="0,0,0,20">
                         <Border CornerRadius="8"
-                                Background="#040916"
-                                BorderBrush="{StaticResource BorderBrush}"
+                                Background="{DynamicResource HeaderBgBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
                                 BorderThickness="1" Padding="24,16">
                             <TextBlock x:Name="CodeLabel"
                                        Text="XXXX XXXX"
                                        FontSize="38" FontWeight="Bold"
                                        FontFamily="Consolas"
-                                       Foreground="{StaticResource BlueBrush}"
+                                       Foreground="{DynamicResource BlueBrush}"
                                        HorizontalAlignment="Center"/>
                         </Border>
                     </Border>
@@ -196,7 +196,7 @@
 
                     <!-- Status text -->
                     <TextBlock x:Name="StatusLabel" Text="Waiting for authorization..."
-                               FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"
+                               FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"
                                HorizontalAlignment="Center" Margin="0,14,0,0"/>
 
                     <!-- Cancel button -->
@@ -211,7 +211,7 @@
                             Visibility="Collapsed">
                     <!-- Green check circle -->
                     <Border Width="56" Height="56" CornerRadius="28"
-                            Background="{StaticResource GreenBrush}"
+                            Background="{DynamicResource GreenBrush}"
                             HorizontalAlignment="Center" Margin="0,0,0,16">
                         <TextBlock Text="&#x2713;" FontSize="24" FontWeight="Bold"
                                    Foreground="White"
@@ -220,11 +220,11 @@
                     </Border>
                     <TextBlock Text="Authorized!"
                                FontSize="20" FontWeight="Bold"
-                               Foreground="{StaticResource GreenBrush}"
+                               Foreground="{DynamicResource GreenBrush}"
                                HorizontalAlignment="Center" Margin="0,0,0,6"/>
                     <TextBlock Text="You are now signed in to Thalamus."
                                FontSize="11"
-                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
                                HorizontalAlignment="Center"/>
                 </StackPanel>
 
@@ -233,7 +233,7 @@
                             Visibility="Collapsed">
                     <!-- Red X circle -->
                     <Border Width="56" Height="56" CornerRadius="28"
-                            Background="{StaticResource RedBrush}"
+                            Background="{DynamicResource RedBrush}"
                             HorizontalAlignment="Center" Margin="0,0,0,16">
                         <TextBlock Text="&#x2715;" FontSize="22" FontWeight="Bold"
                                    Foreground="White"
@@ -242,11 +242,11 @@
                     </Border>
                     <TextBlock x:Name="ErrorLabel" Text="Authorization failed"
                                FontSize="14" FontWeight="SemiBold"
-                               Foreground="{StaticResource RedBrush}"
+                               Foreground="{DynamicResource RedBrush}"
                                HorizontalAlignment="Center" Margin="0,0,0,6"/>
                     <TextBlock Text="The authorization code may have expired or an error occurred."
                                FontSize="10.5"
-                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
                                HorizontalAlignment="Center"
                                TextWrapping="Wrap"
                                TextAlignment="Center"
