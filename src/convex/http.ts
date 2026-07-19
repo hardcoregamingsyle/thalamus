@@ -4,7 +4,7 @@ import { httpAction } from "./_generated/server";
 import { internal, api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
-import { callModel, calcAgentBucksForTier } from "./agentCore";
+import { callModel, calcAgentBucksForTier, FREE_UNLIMITED } from "./agentCore";
 import { buildStudySystemPrompt } from "./studyPrompt";
 import {
   aoOptions,
@@ -844,7 +844,7 @@ http.route({
     const keyHash = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
     const key = await ctx.runQuery(internal.userApiKeys.getKeyByHash, { keyHash });
     if (!key) return apiError(401, "Invalid, revoked, or expired API key.", "invalid_request_error");
-    if (key.creditsRemaining <= 0) {
+    if (!FREE_UNLIMITED && key.creditsRemaining <= 0) {
       return apiError(402, "This API key has exhausted its AgentBucks allocation.", "insufficient_quota");
     }
 

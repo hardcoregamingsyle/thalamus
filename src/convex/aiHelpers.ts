@@ -1,8 +1,10 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
+import { FREE_UNLIMITED } from "./agentCore";
 
 // Guest free-prompt daily cap (unauthenticated users). Mirrors GUEST_LIMIT in
 // the frontend (src/pages/Portal.tsx) — the server side is authoritative.
+// Ignored while FREE_UNLIMITED is on (guests are uncapped too).
 export const GUEST_DAILY_LIMIT = 3;
 
 // UTC day key, e.g. "2026-07-12". Computed server-side so the client can't spoof
@@ -105,7 +107,7 @@ export const saveAssistantMessage = internalMutation({
     await ctx.db.patch(args.conversationId, { lastMessageAt: Date.now() });
 
     const user = await ctx.db.get(args.userId);
-    if (user) {
+    if (user && !FREE_UNLIMITED) {
       const current = (user as { totalUsageCents?: number }).totalUsageCents || 0;
 
       // Formula: z = 1.5 * x * y
@@ -202,9 +204,10 @@ export const saveStreamedMessage = internalMutation({
 
     await ctx.db.patch(args.conversationId, { lastMessageAt: Date.now() });
 
-    // Deduct AB — skip for isStudyFree users in study mode
+    // Deduct AB — skip entirely while the platform is free, and for isStudyFree
+    // users in study mode.
     const user = await ctx.db.get(userId);
-    if (user) {
+    if (user && !FREE_UNLIMITED) {
       const typedUser = user as { totalUsageCents?: number; dailyAgentBucks?: number; purchasedAgentBucks?: number; isStudyFree?: boolean };
       const isStudyFree = typedUser.isStudyFree === true;
       const isStudyMode = args.mode === "study";

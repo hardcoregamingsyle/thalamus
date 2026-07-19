@@ -66,6 +66,9 @@ interface SuggestionFile {
 
 // ── Guest limit constants ─────────────────────────────────────────────────────
 const GUEST_LIMIT = 3;
+// "for now" free+unlimited: guests are uncapped, mirroring FREE_UNLIMITED in the
+// Convex backend (src/convex/agentCore.ts). Flip to false to re-arm the cap.
+const GUEST_UNLIMITED = true;
 // Guest history + counter live in localStorage (was sessionStorage) so they
 // persist across tab-closes; the server enforces the real 3/day cap keyed by
 // GUEST_ID_KEY (see api.ai.guestSendMessage).
@@ -233,8 +236,8 @@ function GuestPortal() {
       return;
     }
 
-    // Check prompt limit
-    if (session.promptsUsed >= GUEST_LIMIT) {
+    // Check prompt limit (skipped while guests are unlimited)
+    if (!GUEST_UNLIMITED && session.promptsUsed >= GUEST_LIMIT) {
       setShowSignUp({ reason: "limit", pendingMessage: msg });
       return;
     }
@@ -293,8 +296,8 @@ function GuestPortal() {
           .catch(() => {});
       }
 
-      // Nudge sign-up once the free prompts are used up.
-      if (newSession.promptsUsed >= GUEST_LIMIT) {
+      // Nudge sign-up once the free prompts are used up (skipped when unlimited).
+      if (!GUEST_UNLIMITED && newSession.promptsUsed >= GUEST_LIMIT) {
         setTimeout(() => setShowSignUp({ reason: "limit" }), 1500);
       }
     } catch (err) {
@@ -392,7 +395,7 @@ function GuestPortal() {
                 {activeMode === "research" && "Research with live web search"}
                 {activeMode === "code" && "A dispatcher routes your task through up to 9 agents that build software"}
               </p>
-              <p className="text-xs text-muted-foreground/60">{GUEST_LIMIT} free prompts · No sign-up required</p>
+              <p className="text-xs text-muted-foreground/60">{GUEST_UNLIMITED ? "Free · No sign-up required" : `${GUEST_LIMIT} free prompts · No sign-up required`}</p>
             </div>
             {/* Quick suggestions */}
             <div className="grid grid-cols-2 gap-2 w-full max-w-md">
@@ -517,7 +520,7 @@ function GuestPortal() {
         )}
         <div className="flex items-center justify-center gap-1 mt-1.5">
           <Lock className="h-2.5 w-2.5 text-muted-foreground/40" />
-          <span className="text-[9px] text-muted-foreground/40">Guest session · {promptsLeft} of {GUEST_LIMIT} free prompts remaining</span>
+          <span className="text-[9px] text-muted-foreground/40">{GUEST_UNLIMITED ? "Guest session · Free & unlimited" : `Guest session · ${promptsLeft} of ${GUEST_LIMIT} free prompts remaining`}</span>
         </div>
       </div>
 

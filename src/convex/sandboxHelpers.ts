@@ -3,6 +3,9 @@
 import { internalMutation, internalQuery, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
+// Free+unlimited switch lives in agentCore (the one pure module every runtime
+// can import). While true, these AgentBucks deduction paths are no-ops.
+import { FREE_UNLIMITED } from "./agentCore";
 
 export const insertSandbox = internalMutation({
   args: {
@@ -232,6 +235,7 @@ export const addUserCost = internalMutation({
     costCents: v.number(),
   },
   handler: async (ctx, args) => {
+    if (FREE_UNLIMITED) return; // platform is free — no sandbox-runtime charge
     const user = await ctx.db.get(args.userId);
     if (!user) return;
     // Use new formula: costCents * 15000 = AB to deduct
@@ -288,6 +292,7 @@ export const deductAgentBucks = internalMutation({
     agentBucksToDeduct: v.number(),
   },
   handler: async (ctx, args) => {
+    if (FREE_UNLIMITED) return; // platform is free — no per-call AgentBucks charge
     const user = await ctx.db.get(args.userId);
     if (!user) return;
     const now = Date.now();
