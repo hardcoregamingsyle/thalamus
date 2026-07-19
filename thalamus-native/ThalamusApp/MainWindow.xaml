@@ -370,6 +370,33 @@
                                        Foreground="{StaticResource TextMutedBrush}"/>
                         </Border>
 
+                        <!-- Account rows stack vertically; the StackPanel keeps them
+                             docked as one Top block regardless of DockPanel defaults. -->
+                        <StackPanel DockPanel.Dock="Top">
+
+                        <!-- AgentBucks balance (visible when authenticated). Mirrors the
+                             website's readout: daily allowance + purchased, formatted N0. -->
+                        <Border x:Name="CreditsRow" Height="44" Margin="6,1,6,1"
+                                Padding="16,0,16,0" CornerRadius="8"
+                                Visibility="Collapsed"
+                                ToolTip="AgentBucks — daily allowance + purchased credits">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Border Width="22" Height="22" CornerRadius="6"
+                                        Background="#1f1705" Margin="0,0,12,0"
+                                        BorderBrush="{StaticResource BorderBrush}"
+                                        BorderThickness="1">
+                                    <Path Data="M13 10V3L4 14h7v7l9-11h-7z"
+                                          Fill="{StaticResource AmberBrush}"
+                                          Width="11" Height="11" Stretch="Uniform"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock x:Name="CreditsLabel" Text="—"
+                                           VerticalAlignment="Center" FontSize="11.5"
+                                           FontFamily="{StaticResource MonoFontFamily}"
+                                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                            </StackPanel>
+                        </Border>
+
                         <!-- Buy Credits button (visible when authenticated) -->
                         <Button x:Name="BtnBuyCredits"
                                 Click="BuyCredits_Click" Style="{StaticResource SidebarBtn}"
@@ -412,10 +439,11 @@
                             </StackPanel>
                         </Button>
 
-                        <!-- Spacer -->
-                        <Grid/>
+                        </StackPanel>
 
-                        <!-- Bottom section: version + update -->
+                        <!-- Bottom section: version + update. Declared before the
+                             recents list so Dock=Bottom wins the layout pass and the
+                             list (last child) fills whatever height remains. -->
                         <Border DockPanel.Dock="Bottom" Padding="20,14"
                                 BorderBrush="{StaticResource BorderBrush}"
                                 BorderThickness="0,1,0,0">
@@ -436,6 +464,35 @@
                                            Margin="13,3,0,0" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
+
+                        <!-- RECENT — past conversations for the active chat-ish mode
+                             (Chat/Research/Study). Hidden for Build and Sandbox, which
+                             have their own project/VM lists. Last child → fills. -->
+                        <DockPanel x:Name="RecentSection" Visibility="Collapsed">
+                            <Border DockPanel.Dock="Top" Padding="24,14,16,6">
+                                <Grid>
+                                    <TextBlock Text="RECENT"
+                                               FontSize="8.5" FontWeight="Bold"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                    <Button x:Name="BtnNewChat" Click="NewChat_Click"
+                                            HorizontalAlignment="Right"
+                                            Background="Transparent" BorderThickness="0"
+                                            Cursor="Hand" Padding="6,2"
+                                            ToolTip="Start a new conversation">
+                                        <TextBlock Text="+ New" FontSize="9.5" FontWeight="Bold"
+                                                   Foreground="{StaticResource BlueBrush}"/>
+                                    </Button>
+                                </Grid>
+                            </Border>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
+                                <ScrollViewer.Resources>
+                                    <Style TargetType="ScrollBar" BasedOn="{StaticResource ThinScrollBar}"/>
+                                </ScrollViewer.Resources>
+                                <StackPanel x:Name="RecentListPanel" Margin="0,0,0,8"/>
+                            </ScrollViewer>
+                        </DockPanel>
                     </DockPanel>
                 </Border>
 

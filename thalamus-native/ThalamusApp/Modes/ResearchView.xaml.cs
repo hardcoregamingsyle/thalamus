@@ -46,24 +46,59 @@ namespace ThalamusApp.Modes
             var loaded = await _store!.LoadLatestAsync(token);
             if (_historyLoaded || loaded.Count == 0) return;
             _historyLoaded = true;
+            Dispatcher.Invoke(() => ReplayMessages(loaded));
+        }
 
+        /// <summary>The thread sends currently append to (null = fresh).</summary>
+        public string? CurrentConversationId => _store?.ConversationId;
+
+        /// <summary>Open a specific past conversation from the sidebar RECENT list.</summary>
+        public async Task OpenConversationAsync(string conversationId)
+        {
+            if (string.IsNullOrEmpty(_token) || _isResearching) return;
+            if (_store!.ConversationId == conversationId) return;
+            var loaded = await _store.LoadByIdAsync(_token, conversationId);
+            _historyLoaded = true;
             Dispatcher.Invoke(() =>
             {
-                EmptyState.Visibility = Visibility.Collapsed;
-                foreach (var (role, content) in loaded)
-                {
-                    if (role == "user")
-                    {
-                        AppendQueryHeader(content);
-                    }
-                    else
-                    {
-                        AppendResultStart(out var tb);
-                        tb.Text = Controls.HtmlToWpf.PlainText(content);
-                    }
-                }
-                ResearchScroll.ScrollToBottom();
+                ClearTranscript();
+                ReplayMessages(loaded);
             });
+        }
+
+        /// <summary>Drop to a fresh thread — the next query creates a new conversation.</summary>
+        public void StartNewConversation()
+        {
+            if (_isResearching) return;
+            _store!.Reset();
+            ClearTranscript();
+            EmptyState.Visibility = Visibility.Visible;
+        }
+
+        // Remove every transcript element except the progress card (first child).
+        private void ClearTranscript()
+        {
+            while (ResearchPanel.Children.Count > 1)
+                ResearchPanel.Children.RemoveAt(1);
+        }
+
+        private void ReplayMessages(List<(string role, string content)> loaded)
+        {
+            if (loaded.Count == 0) return;
+            EmptyState.Visibility = Visibility.Collapsed;
+            foreach (var (role, content) in loaded)
+            {
+                if (role == "user")
+                {
+                    AppendQueryHeader(content);
+                }
+                else
+                {
+                    AppendResultStart(out var tb);
+                    tb.Text = Controls.HtmlToWpf.PlainText(content);
+                }
+            }
+            ResearchScroll.ScrollToBottom();
         }
 
         private void ResearchInput_KeyDown(object sender, KeyEventArgs e)
@@ -113,6 +148,7 @@ namespace ThalamusApp.Modes
             _liveBlock = null;
 
             bool resultStarted = false;
+            bool isFirstExchange = _store!.ConversationId == null;
 
             try
             {
@@ -131,7 +167,7 @@ namespace ThalamusApp.Modes
                         {
                             if (type == "done")
                             {
-                                FinishResearch(_liveText);
+                                FinishResearch(_liveText, isFirstExchange, query);
                                 return;
                             }
                             if (type == "answer")
@@ -169,13 +205,22 @@ namespace ThalamusApp.Modes
             }
         }
 
-        private void FinishResearch(string fullText)
+        private void FinishResearch(string fullText, bool isFirstExchange, string query)
         {
             ProgressCard.Visibility = Visibility.Collapsed;
             _isResearching = false;
             ResearchButton.IsEnabled = true;
             ResearchStatusLabel.Text = "Done";
             ResearchScroll.ScrollToBottom();
+
+            // Keep the sidebar honest (balance + RECENT) and title the thread
+            // after its first exchange, exactly like the website does.
+            if (!string.IsNullOrEmpty(fullText) && !string.IsNullOrEmpty(_token))
+            {
+                if (isFirstExchange)
+                    _ = _store!.GenerateTitleAsync(_token, query);
+                (Window.GetWindow(this) as MainWindow)?.NotifyExchangeCompleted();
+            }
         }
 
         private void AnimateProgress(double toFraction)

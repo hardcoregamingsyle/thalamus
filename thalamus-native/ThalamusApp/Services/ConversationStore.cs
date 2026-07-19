@@ -23,8 +23,29 @@ namespace ThalamusApp.Services
             _mode = mode;
         }
 
-        // Sign-in/out boundary — next send starts (or loads) a fresh thread.
+        // Sign-in/out boundary or "+ New" — next send starts a fresh thread.
         public void Reset() => ConversationId = null;
+
+        // All of this account's conversations for this mode, newest first
+        // (server caps at 50). Returns empty on any failure.
+        public async Task<List<(string id, string title)>> ListAsync(string token)
+        {
+            var result = new List<(string id, string title)>();
+            try
+            {
+                var convs = await _convex.CallQueryAsync("conversations:list",
+                    new { mode = _mode, token }, token) as JsonArray;
+                if (convs == null) return result;
+                foreach (var c in convs)
+                {
+                    var id = c?["_id"]?.GetValue<string>();
+                    if (id == null) continue;
+                    result.Add((id, c?["title"]?.GetValue<string>() ?? "Untitled"));
+                }
+            }
+            catch { /* offline / expired token */ }
+            return result;
+        }
 
         // Load the most recent conversation for this mode and return its
         // messages (role, content) oldest-first. Sets ConversationId so
@@ -32,20 +53,29 @@ namespace ThalamusApp.Services
         // failure — persistence must never break the chat itself.
         public async Task<List<(string role, string content)>> LoadLatestAsync(string token)
         {
-            var loaded = new List<(string role, string content)>();
             try
             {
                 var convs = await _convex.CallQueryAsync("conversations:list",
                     new { mode = _mode, token }, token) as JsonArray;
-                if (convs == null || convs.Count == 0) return loaded;
+                var convId = (convs != null && convs.Count > 0)
+                    ? convs[0]?["_id"]?.GetValue<string>() : null;
+                if (convId == null) return new List<(string, string)>();
+                return await LoadByIdAsync(token, convId);
+            }
+            catch { return new List<(string, string)>(); }
+        }
 
-                var convId = convs[0]?["_id"]?.GetValue<string>();
-                if (convId == null) return loaded;
-                ConversationId = convId;
-
+        // Open a specific thread (from the sidebar RECENT list) and return its
+        // messages oldest-first. Sets ConversationId so sends append to it.
+        public async Task<List<(string role, string content)>> LoadByIdAsync(string token, string conversationId)
+        {
+            var loaded = new List<(string role, string content)>();
+            try
+            {
                 var msgs = await _convex.CallQueryAsync("conversations:getMessages",
-                    new { conversationId = convId, token }, token) as JsonArray;
+                    new { conversationId, token }, token) as JsonArray;
                 if (msgs == null) return loaded;
+                ConversationId = conversationId;
 
                 foreach (var m in msgs)
                 {
@@ -71,6 +101,19 @@ namespace ThalamusApp.Services
                 ConversationId = created?["id"]?.GetValue<string>();
             }
             catch { /* best-effort — a null id just means this send isn't persisted */ }
+        }
+
+        // After the first exchange, ask the backend for a proper title (the web
+        // does the same via ai:generateConversationTitle). Fire-and-forget.
+        public async Task GenerateTitleAsync(string token, string firstMessage)
+        {
+            if (ConversationId == null) return;
+            try
+            {
+                await _convex.CallActionAsync("ai:generateConversationTitle",
+                    new { firstMessage, conversationId = ConversationId, token }, token);
+            }
+            catch { /* the first-50-chars fallback title stays */ }
         }
     }
 }
