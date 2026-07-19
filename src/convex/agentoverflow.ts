@@ -18,6 +18,15 @@ import { callModel } from "./agentCore";
 // (vectors + graph) lives on the GCP VM behind AO_VM_URL / AO_INTERNAL_SECRET.
 // Public HTTP endpoints are in agentoverflowHttp.ts, routed from http.ts.
 
+// Platform-wide free+unlimited switch for AgentOverflow. While true, no aoCredit
+// is ever charged and no limit blocks a caller: the per-key rate limit, the
+// insufficient-credits check, and the anonymous per-IP daily cap are all
+// bypassed. Its own switch, separate from Thalamus AgentBucks — the two
+// economies never mix. NOTE: the VM enforces its own per-key search quota +
+// burst and a keyless per-IP throttle; those are bypassed separately in the
+// agentoverflow repo (api/app/keystore.py) and need a VM redeploy to take hold.
+export const AO_FREE_UNLIMITED = true;
+
 export const DAILY_REFILL = 10;
 // Flat 1 credit for everything, on purpose: right now the corpus is worth
 // more than the revenue. Raise these two numbers when that flips.
@@ -569,7 +578,7 @@ export const chargeAnon = internalMutation({
       .withIndex("by_ip_day", (q) => q.eq("ip", args.ip).eq("day", day))
       .first();
     const count = (existing?.count ?? 0) + 1;
-    if (count > AO_ANON_DAILY_LIMIT) throw new Error(ERR_RATE_LIMITED);
+    if (count > AO_ANON_DAILY_LIMIT && !AO_FREE_UNLIMITED) throw new Error(ERR_RATE_LIMITED);
     if (existing) {
       await ctx.db.patch(existing._id, { count, updatedAt: Date.now() });
     } else {
@@ -666,7 +675,7 @@ export const charge = internalMutation({
   handler: async (ctx, args): Promise<number> => {
     const user = await ctx.db.get(args.userId);
     if (!user) throw new Error("User not found");
-    if (args.keyDbId && args.credits >= 0 && !args.unlimited) {
+    if (args.keyDbId && args.credits >= 0 && !args.unlimited && !AO_FREE_UNLIMITED) {
       const limit = user.aoCustomRateLimit ?? RATE_LIMIT_PER_MIN;
       const cutoff = Date.now() - 60_000;
       const keyDbId = args.keyDbId;
@@ -677,7 +686,7 @@ export const charge = internalMutation({
       if (recent.length >= limit) throw new Error(ERR_RATE_LIMITED);
     }
     const balance = user.aoCredits ?? DAILY_REFILL; // first touch = free daily 10
-    const credits = args.unlimited ? 0 : args.credits;
+    const credits = (args.unlimited || AO_FREE_UNLIMITED) ? 0 : args.credits;
     if (credits > 0 && balance < credits) throw new Error(ERR_INSUFFICIENT);
     const newBalance = balance - credits;
     if (credits !== 0) {
