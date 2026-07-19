@@ -7,7 +7,7 @@
     <AssemblyName>Thalamus</AssemblyName>
     <RootNamespace>ThalamusApp</RootNamespace>
     <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
-    <Version>2.3.3</Version>
+    <Version>2.4.0</Version>
     <Company>Aphantic Corporations</Company>
     <Product>Thalamus AI</Product>
     <Description>Thalamus — AI workspace</Description>

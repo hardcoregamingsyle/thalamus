@@ -183,11 +183,13 @@ Code Mode can execute commands in an isolated sandbox. Two backends:
 
 The desktop app goes further: it launches QEMU directly and renders the VM display with a built-in RFB 3.8 VNC client. No external viewer.
 
+And it keeps pace with the site everywhere else too: your AgentBucks balance lives in the sidebar, every chat/research/study thread syncs to the cloud with a RECENT list to jump back into any of them, and there's a proper light mode — runtime toggle, both palettes native XAML, no restart. Website feature, desktop feature. That's the rule.
+
 ---
 
 ## Releases
 
-Push a `v*` tag and `.github/workflows/release.yml` builds the WPF app (`dotnet publish`, single-file, self-contained, win-x64) and attaches it to a GitHub Release. Manual builds: `thalamus-native/build.ps1`, which also produces the Inno Setup installer and SHA-256 checksums. After a release, update the website's download links — no stale endpoints.
+Push a `v*` tag and `.github/workflows/release.yml` builds the WPF app (`dotnet publish`, single-file, self-contained, win-x64) and attaches it to a GitHub Release. Manual builds: `thalamus-native/build.ps1`, which also produces the Inno Setup installer and SHA-256 checksums. The website's download links point at `releases/latest`, so publishing the Release with an asset named exactly `Thalamus.exe` is the whole job — nothing to update on the site.
 
 ---
 
