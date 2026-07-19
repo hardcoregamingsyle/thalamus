@@ -343,14 +343,12 @@ export const runPipelineAction = internalAction({
       }
     }
 
-    // Built-in: Sketchfab 3D-model catalogue — attached ONLY when the task looks
-    // like gamedev / 3D work, so ordinary runs aren't handed an asset tool they'd
-    // never touch. Search + model lookups are public; downloads use the
-    // deployment's SKETCHFAB_API_TOKEN when set. A user server named "sketchfab"
-    // still wins.
-    const gamedevSignal = `${branch.name ?? ""} ${branch.description ?? ""} ${args.userPrompt ?? ""}`;
-    const looksGamedev = /\b(game\s?dev|3d|three\.?js|threejs|babylon|webgl|unity|unreal|godot|gltf|glb|\.fbx|blender|voxel|low[- ]?poly|game engine|game|3d model|asset pack)\b/i.test(gamedevSignal);
-    if (looksGamedev && !mcpServers.some((s) => s.name === "sketchfab")) {
+    // Built-in: Sketchfab 3D-model catalogue — attached to EVERY run alongside
+    // AgentOverflow. Both MCPs are always available; the agent decides when (if
+    // ever) to call them — nothing here gates or auto-fires them. Search + model
+    // lookups are public; downloads use the deployment's SKETCHFAB_API_TOKEN when
+    // set. A user server named "sketchfab" still wins.
+    if (!mcpServers.some((s) => s.name === "sketchfab")) {
       const sfUrl = (process.env.SKETCHFAB_MCP_URL ?? "").trim() ||
         (process.env.CONVEX_SITE_URL ? `${process.env.CONVEX_SITE_URL}/sketchfab/mcp` : "");
       if (sfUrl) {
@@ -503,29 +501,11 @@ export const runPipelineAction = internalAction({
             .join("\n\n")
         : "";
 
-      // Stuck on a failing command? Look it up on AgentOverflow before the
-      // agents burn tokens guessing — the way a human pastes an error into
-      // Stack Overflow. Auto-searches the corpus with the most recent failure
-      // and hands the hits to the agents. Best-effort: a miss or a corpus
-      // outage never blocks the pipeline.
-      let corpusContext = "";
-      const aoServer = mcpServers.find((s) => s.name === "agentoverflow");
-      const failedCommands = commandResults.filter((c) => c.exitCode !== 0);
-      if (aoServer && failedCommands.length > 0) {
-        const worst = failedCommands[failedCommands.length - 1];
-        const query = `${worst.command}\n${worst.output}`.replace(/\s+/g, " ").trim().slice(0, 1500);
-        try {
-          const auth = aoServer.plainAuth ?? await decryptAuthHeader(aoServer.encryptedAuth);
-          const outcome = await mcpCallTool(aoServer.url, auth, "search", { query });
-          if (outcome.ok && outcome.text.trim()) {
-            const safe = outcome.text.slice(0, 3000).split("<<").join("‹‹").split(">>").join("››");
-            corpusContext =
-              "## AgentOverflow — known fixes for the failing command\n" +
-              "(auto-searched the corpus with the error, like pasting it into Stack Overflow; check these before guessing)\n```\n" +
-              safe + "\n```";
-          }
-        } catch { /* corpus lookup is best-effort — never block the pipeline */ }
-      }
+      // MCP calls are agent-decided, never system-fired: the pipeline used to
+      // auto-search AgentOverflow whenever a command failed and inject the hits.
+      // That's now the agent's call — both MCP servers are attached to every run
+      // and the prompt guidance tells agents to search the corpus on a failing
+      // command themselves, so nothing here reaches out to an MCP on their behalf.
 
       // ── Dispatcher phase ──────────────────────────────────────────────────
       // Runs once at the very start to decide which agents are needed.
@@ -658,7 +638,7 @@ export const runPipelineAction = internalAction({
         // phase. mcpToolSection is included here too — the planning-phase
         // Researcher is the natural "search AgentOverflow first" agent, and
         // without the section it never learns the tools exist.
-        let prompt = [`## Project Goal\n${task}`, `## Current Files\n${fileContext}`, commandContext, corpusContext, mcpToolSection, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
+        let prompt = [`## Project Goal\n${task}`, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
 
         if (executionPhase === "executing") {
           let plannerTasks: Array<{ title: string; description: string; dependencies?: string[] }> = [];
@@ -693,7 +673,6 @@ export const runPipelineAction = internalAction({
               files.length > 0 ? `## File Contents (recent)\n${fileContext}` : "",
               recentFeedback ? `## Previous Feedback (from Tester/Critic/Hacker)\n${recentFeedback}` : "",
               commandContext,
-              corpusContext,
               `## Pipeline Context\n${context}`,
               `## Tool Usage\nRun shell commands: <<RUN-CMD="command">>\nRequest API keys: <<REQUEST-API-KEY name="VAR" description="..." howToGet="...">>`,
               mcpToolSection,
