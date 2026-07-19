@@ -6,6 +6,12 @@ import type { Id } from "./_generated/dataModel";
 // 1 rupee = 1 USD cent = 15,000 AB. Overridable from the admin Payments tab.
 const DEFAULT_AB_PER_CENT = 15_000;
 
+// Platform-wide purchase kill switch. While true, the buy flow is off for
+// everyone regardless of the admin-panel toggle — flip back to false to hand
+// control back to paymentsConfig.isEnabled. Webhook crediting stays live so
+// anyone who already paid still gets their AgentBucks.
+const PAYMENTS_DISABLED = true;
+
 // ── Admin-managed config (singleton row; payments ship disabled) ─────────────
 
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";
@@ -55,7 +61,8 @@ export const getPublicPaymentsConfig = query({
   args: {},
   handler: async (ctx) => {
     const config = await ctx.db.query("paymentsConfig").first();
-    if (!config || !config.isEnabled) return { isEnabled: false as const, bmacPageUrl: "" };
+    if (PAYMENTS_DISABLED || !config || !config.isEnabled)
+      return { isEnabled: false as const, bmacPageUrl: "" };
     return { isEnabled: true as const, bmacPageUrl: config.bmacPageUrl };
   },
 });

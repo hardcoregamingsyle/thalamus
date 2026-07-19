@@ -73,10 +73,11 @@ namespace ThalamusApp
             AuthDot.SetResourceReference(System.Windows.Controls.Border.BackgroundProperty, "GreenBrush");
             AuthDot.ToolTip = email;
 
-            // Signed in — show sign out + buy credits + balance
+            // Signed in — show sign out + balance. Buy Credits only appears if
+            // the platform actually sells credits right now (see below).
             BtnSignOut.Visibility = Visibility.Visible;
-            BtnBuyCredits.Visibility = Visibility.Visible;
             CreditsRow.Visibility = Visibility.Visible;
+            _ = RefreshBuyCreditsVisibilityAsync();
             SectionLabel.Text = email.Length > 18 ? email[..16] + "..." : email;
 
             // Pass token to mode views
@@ -110,6 +111,22 @@ namespace ThalamusApp
         {
             _ = RefreshCreditsAsync(ensureDaily: false);
             _ = RefreshRecentAsync();
+        }
+
+        // Same flag the website's buy modal reads — when payments are switched
+        // off platform-side, the desktop hides the button instead of opening a
+        // dialog that can only apologize.
+        private async Task RefreshBuyCreditsVisibilityAsync()
+        {
+            try
+            {
+                var cfg = await _convex.CallQueryAsync("payments:getPublicPaymentsConfig", new { });
+                var enabled = (cfg as JsonObject)?["isEnabled"]?.GetValue<bool>() ?? false;
+                Dispatcher.Invoke(() =>
+                    BtnBuyCredits.Visibility = _isAuthenticated && enabled
+                        ? Visibility.Visible : Visibility.Collapsed);
+            }
+            catch { /* unreachable backend — leave the button hidden */ }
         }
 
         private async Task RefreshCreditsAsync(bool ensureDaily)
