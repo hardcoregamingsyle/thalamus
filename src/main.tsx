@@ -24,6 +24,8 @@ const CodeBranches = lazy(() => import("./pages/CodeBranches"));
 const CodeWorkspace = lazy(() => import("./pages/CodeWorkspace"));
 const ApiPage = lazy(() => import("./pages/ApiPage"));
 const Legal = lazy(() => import("./pages/Legal"));
+const Blog = lazy(() => import("./pages/Blog"));
+const BlogPost = lazy(() => import("./pages/BlogPost"));
 
 // Without a boundary, a failed lazy-route chunk (typical after a deploy purges
 // old hashed assets while a stale index.html is still cached) unmounts the whole
@@ -141,6 +143,9 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="/sync" element={<SyncPage />} />
                 <Route path="/refer" element={<ReferPage />} />
                 <Route path="/api-keys" element={<ApiPage />} />
+                {/* Blog — indexable marketing content */}
+                <Route path="/blog" element={<Blog />} />
+                <Route path="/blog/:slug" element={<BlogPost />} />
                 {/* Legal / trust pages — real indexable content for a paid product */}
                 <Route path="/privacy" element={<Legal doc="privacy" />} />
                 <Route path="/terms" element={<Legal doc="terms" />} />

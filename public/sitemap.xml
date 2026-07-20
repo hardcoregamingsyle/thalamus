@@ -13,6 +13,30 @@
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://thalamus.aphantic.skinticals.com/blog</loc>
+    <lastmod>2026-07-20</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://thalamus.aphantic.skinticals.com/blog/multi-agent-ai-writes-tests-code</loc>
+    <lastmod>2026-07-20</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://thalamus.aphantic.skinticals.com/blog/build-app-from-a-prompt-free-ai</loc>
+    <lastmod>2026-07-20</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://thalamus.aphantic.skinticals.com/blog/ai-study-tool-learn-from-your-files</loc>
+    <lastmod>2026-07-20</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://thalamus.aphantic.skinticals.com/privacy</loc>
     <lastmod>2026-07-18</lastmod>
     <changefreq>yearly</changefreq>

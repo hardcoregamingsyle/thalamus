@@ -747,6 +747,7 @@ function Footer() {
           <a href="#faq" className="transition-colors hover:text-foreground">FAQ</a>
           <a href={EXE_URL} download="Thalamus.exe" className="transition-colors hover:text-foreground">Windows app</a>
           <a href="https://agentoverflow.aphantic.skinticals.com" target="_blank" rel="noreferrer" className="transition-colors hover:text-foreground">AgentOverflow</a>
+          <a href="/blog" className="transition-colors hover:text-foreground">Blog</a>
           <a href="/privacy" className="transition-colors hover:text-foreground">Privacy</a>
           <a href="/terms" className="transition-colors hover:text-foreground">Terms</a>
           <a href="/refund" className="transition-colors hover:text-foreground">Refunds</a>
