@@ -936,21 +936,23 @@ export function parseAgentOutput(content: string): ParsedOutput {
     cleanContent = cleanContent.replace(m[0], `[FILE DELETED: ${m[1]}]`);
   }
 
-  // Lazy .+? (not [^"]+): these args are free-form and may contain double
-  // quotes — a shell command like node -e 'console.log("ok")', a search query,
-  // a URL with a quoted fragment. Matching terminates on the first `">>`, so
-  // inner quotes are preserved instead of truncating the value at the first one.
-  for (const m of content.matchAll(/(?:<<<<<|<<)SEARCH-TOOL="(.+?)"(?:>>>>>|>>)/g)) {
+  // These args are free-form and may contain double quotes — a shell command
+  // like node -e 'console.log("ok")', a search query, a URL with a quoted
+  // fragment. `(?:[^"]|"(?!>>))*` accepts any char (newlines included, so
+  // multi-line values still work) plus any quote NOT immediately followed by
+  // `>>`, terminating precisely at the closing `">>`. The old [^"]+ died at the
+  // first inner quote and silently dropped the whole marker.
+  for (const m of content.matchAll(/(?:<<<<<|<<)SEARCH-TOOL="((?:[^"]|"(?!>>))*)"(?:>>>>>|>>)/g)) {
     searchOps.push({ query: m[1] });
     cleanContent = cleanContent.replace(m[0], `[SEARCHING: ${m[1]}]`);
   }
 
-  for (const m of content.matchAll(/(?:<<<<<|<<)SCRAPE-URL="(.+?)"(?:>>>>>|>>)/g)) {
+  for (const m of content.matchAll(/(?:<<<<<|<<)SCRAPE-URL="((?:[^"]|"(?!>>))*)"(?:>>>>>|>>)/g)) {
     scrapeOps.push({ url: m[1] });
     cleanContent = cleanContent.replace(m[0], `[SCRAPING: ${m[1]}]`);
   }
 
-  for (const m of content.matchAll(/(?:<<<<<|<<)RUN-CMD="(.+?)"(?:>>>>>|>>)/g)) {
+  for (const m of content.matchAll(/(?:<<<<<|<<)RUN-CMD="((?:[^"]|"(?!>>))*)"(?:>>>>>|>>)/g)) {
     cmdOps.push({ command: m[1] });
     cleanContent = cleanContent.replace(m[0], `[CMD: ${m[1]}]`);
   }

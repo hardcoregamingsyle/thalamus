@@ -22,6 +22,11 @@ describe("parseAgentOutput — commands", () => {
     const out = `<<RUN-CMD="npm install">>\n<<RUN-CMD="npm test">>`;
     expect(parseAgentOutput(out).cmdOps.map((c) => c.command)).toEqual(["npm install", "npm test"]);
   });
+
+  it("parses a multi-line command value (no [^\"]+ newline regression)", () => {
+    const out = `<<RUN-CMD="line1\nline2">>`;
+    expect(parseAgentOutput(out).cmdOps.map((c) => c.command)).toEqual(["line1\nline2"]);
+  });
 });
 
 describe("parseAgentOutput — files", () => {
@@ -38,5 +43,16 @@ describe("parseAgentOutput — files", () => {
     // loop stitches it instead.
     const out = `<<CREATEFILE="src/big.ts">>export const partial = `;
     expect(parseAgentOutput(out).fileOps).toEqual([]);
+  });
+
+  it("parses a file whose content documents the marker syntax as ONE file", () => {
+    // A doc that mentions <<CREATEFILE="..."> inside its body must still parse as
+    // a single complete file (non-greedy match to the real close), and its
+    // content is preserved verbatim.
+    const out = `<<CREATEFILE="docs/markers.md">>To create a file emit <<CREATEFILE="path">> then content.<<END.CREATEFILE>>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toHaveLength(1);
+    expect(parsed.fileOps[0].filepath).toBe("docs/markers.md");
+    expect(parsed.fileOps[0].content).toContain(`emit <<CREATEFILE="path">> then content.`);
   });
 });

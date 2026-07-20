@@ -108,13 +108,14 @@ function buildFileContext(files: Array<{ filepath: string; content: string }>, m
 // Parse commands from agent output
 // Agents are instructed (in AGENT_SYSTEM_PROMPTS) to emit <<RUN-CMD="...">>.
 // Accept the legacy <<RUN-COMMAND="...">> spelling too so older prompts still work.
-// The capture is LAZY (.+?) and terminates on the first `">>`, so a command may
-// contain double quotes — `node -e 'console.log("ok")' 2>&1` and the like. The
-// old [^"]+ died at the first inner quote, which silently dropped any command
-// with embedded quotes (the exact shape the prompts' own examples use).
+// The capture accepts any char (newlines included) plus any quote NOT followed
+// by `>>`, terminating precisely at the closing `">>`. So a command may contain
+// double quotes — `node -e 'console.log("ok")' 2>&1` and the like — or span
+// lines. The old [^"]+ died at the first inner quote, silently dropping any
+// command with embedded quotes (the exact shape the prompts' own examples use).
 function parseCommands(content: string): string[] {
   const commands: string[] = [];
-  const regex = /<<RUN-(?:CMD|COMMAND)="(.+?)">>/g;
+  const regex = /<<RUN-(?:CMD|COMMAND)="((?:[^"]|"(?!>>))*)">>/g;
   let match;
   while ((match = regex.exec(content)) !== null) {
     commands.push(match[1]);
@@ -137,22 +138,33 @@ function parseApiKeyRequests(content: string): Array<{variableName: string; desc
   return requests;
 }
 
-// A run that reaches this many saved messages is stuck in a loop, not making
-// progress — hard-stop it instead of billing forever. (The transcript that
-// prompted this was past 200.)
-const MAX_TOTAL_MESSAGES = 300;
+// A run that reaches this many saved messages is a runaway, not progress —
+// hard-stop it instead of billing forever. Generous so a genuinely large
+// multi-task build (each task is a multi-agent sub-pipeline) isn't cut off; a
+// true loop is infinite and hits any finite ceiling anyway. (The transcript
+// that prompted this was past 200 and climbing.)
+const MAX_TOTAL_MESSAGES = 500;
 
-// How many times we'll ask the model to continue a file that got cut off at the
-// token limit before giving up on that step.
-const MAX_FILE_CONTINUATIONS = 3;
+// How many times we'll ask the model to continue a file cut off at the token
+// limit before giving up. Kept at 2 (≤3 sequential model calls per step) so the
+// loop can't blow the action's time budget — with the 16k cap above, most files
+// need zero continuations anyway.
+const MAX_FILE_CONTINUATIONS = 2;
 
-// True when a <<CREATEFILE/EDITFILE>> block was opened but never closed with
-// <<END.CREATEFILE>> — the signature of output truncated mid-file. Counts both
-// the new <<...>> and legacy <<<<<...>>>>> delimiters.
+// True when a <<CREATEFILE/EDITFILE>> block was opened but never closed — the
+// signature of output truncated mid-file. We strip every COMPLETE block first
+// (non-greedy to its own <<END.CREATEFILE>>, exactly how parseAgentOutput reads
+// them), then check whether an opener is left dangling in the remainder. Naively
+// counting marker literals over the whole string false-positives on a file whose
+// CONTENT documents the marker syntax; stripping complete blocks first avoids
+// that (the inner mention sits inside a stripped block). Both new <<...>> and
+// legacy <<<<<...>>>>> delimiters count.
 function hasUnclosedFileBlock(content: string): boolean {
-  const opens = (content.match(/(?:<<<<<|<<)(?:CREATEFILE|EDITFILE)="[^"]+"(?:>>>>>|>>)/g) || []).length;
-  const closes = (content.match(/(?:<<<<<|<<)END\.CREATEFILE(?:>>>>>|>>)/g) || []).length;
-  return opens > closes;
+  const withoutComplete = content.replace(
+    /(?:<<<<<|<<)(?:CREATEFILE|EDITFILE)="[^"]+"(?:>>>>>|>>)[\s\S]*?(?:<<<<<|<<)END\.CREATEFILE(?:>>>>>|>>)/g,
+    "",
+  );
+  return /(?:<<<<<|<<)(?:CREATEFILE|EDITFILE)="[^"]+"(?:>>>>>|>>)/.test(withoutComplete);
 }
 
 // Streaming-aware model call — writes partial output to the branch's streamingContent
@@ -206,7 +218,11 @@ async function callModelWithStreaming(
     anthropic_version: "bedrock-2023-05-31",
     system: systemPrompt.length > 8000 ? systemPrompt.slice(0, 8000) : systemPrompt,
     messages: [{ role: "user", content: prompt.length > 48000 ? prompt.slice(0, 48000) : prompt }],
-    max_tokens: 8192,
+    // 16384, mirroring MAX_OUTPUT_TOKENS in agentCore. This is the LIVE cap on
+    // the preferred ABSK path (the SigV4 path delegates to callModel, which
+    // reads MAX_OUTPUT_TOKENS). Leaving it at 8192 here silently kept the Coder
+    // truncating large files on the exact path most deployments use.
+    max_tokens: 16384,
     temperature: 0.7,
   });
 
