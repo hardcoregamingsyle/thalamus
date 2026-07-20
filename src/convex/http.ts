@@ -392,7 +392,7 @@ http.route({
       for (let attempt = 0; attempt < geminiKeys.length && !streamSuccess; attempt++) {
         try {
           const key = geminiKeys[attempt % geminiKeys.length];
-          const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${key}`;
+          const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
           const geminiRes = await fetch(streamUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },

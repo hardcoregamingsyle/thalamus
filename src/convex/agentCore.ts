@@ -517,7 +517,7 @@ export async function callModel(
   // Pass an empty geminiKeys array into callClaude so it will NOT loop back into
   // callGemini (which would re-hit the dead keys); its own chain is Bedrock → AgentRouter.
   try {
-    const result = await callGemini(prompt, systemPrompt, undefined, geminiKeys);
+    const result = await callGemini(prompt, systemPrompt, undefined, geminiKeys, geminiModelForTier(tier));
     if (result.text && result.text.trim().length > 0) {
       return { ...result, tier };
     }
@@ -571,6 +571,13 @@ export async function callClaude(
     return result;
   }
 
+  // If Bedrock is dry, the fallbacks below drop to Gemini — pick the Gemini variant
+  // that matches this Claude tier so the fallback isn't a quality cliff.
+  const geminiFallbackModel =
+    model === "claude-opus-4-8" ? "gemini-2.5-pro"
+    : (model === "claude-opus-4-6" || model === "claude-sonnet-4-6") ? "gemini-2.5-flash"
+    : "gemini-3.1-flash-lite";
+
   // Hard caps on prompt/system size — long agent contexts (file dumps, reports)
   // otherwise blow past Bedrock limits and inflate cost. 48k chars ≈ 12k tokens.
   const trimmedPrompt = prompt.length > 48000 ? prompt.slice(0, 48000) + "\n...[context trimmed for efficiency]" : prompt;
@@ -602,7 +609,7 @@ export async function callClaude(
 
   if (!creds) {
     console.warn("No AWS credentials available (env or DB), falling back to Gemini");
-    return callGemini(prompt, systemPrompt, undefined, geminiKeys);
+    return callGemini(prompt, systemPrompt, undefined, geminiKeys, geminiFallbackModel);
   }
 
   const region = userRegion || creds.region;
@@ -661,7 +668,7 @@ export async function callClaude(
       }
       console.warn(`Bedrock ${model} failed (${response.status}), falling back to Gemini`);
       if (geminiKeys && geminiKeys.length > 0) {
-        return callGemini(prompt, systemPrompt, undefined, geminiKeys);
+        return callGemini(prompt, systemPrompt, undefined, geminiKeys, geminiFallbackModel);
       }
       return callAgentRouter(prompt, systemPrompt);
     }
@@ -680,7 +687,7 @@ export async function callClaude(
   } catch (err) {
     console.error(`❌ Claude ${model} (Bedrock) exception, falling back to Gemini/AgentRouter:`, err);
     if (geminiKeys && geminiKeys.length > 0) {
-      return callGemini(prompt, systemPrompt, undefined, geminiKeys);
+      return callGemini(prompt, systemPrompt, undefined, geminiKeys, geminiFallbackModel);
     }
     return callAgentRouter(prompt, systemPrompt);
   }
@@ -699,10 +706,32 @@ interface GeminiTeamResponse {
 
 const RETRIES_PER_KEY = 2;
 
-// Gemini 3.1 Flash Lite Preview
+// Gemini free tier is tier-aware now, not stuck on the weakest model: flash-lite
+// for the cheap/fast seats (highest free RPM), flash for real coding/analysis, and
+// pro for the hardest reasoning + security seats. All free-tier, no card. This is
+// the whole reason plain Gemini felt weak before — the pipeline only ever called
+// flash-lite. Pro's free RPM is tight, so only the lowest-volume seat rides it.
+// Model ids chosen for reliability first: flash-lite is confirmed GA (highest free
+// RPM), and 2.5-flash / 2.5-pro are long-standing GA workhorses. 3.1 only shipped
+// Flash-Lite + Pro (no standard "3.1 Flash"), so we don't bet a tier on an id that
+// might 404 — and callGemini self-heals to flash-lite anyway if any id is missing
+// or rate-limited. Bump opus48 to gemini-3.1-pro once you confirm its free limits.
+const GEMINI_MODEL_IDS: Record<ModelTier, string> = {
+  gemini: "gemini-3.1-flash-lite",
+  haiku:  "gemini-3.1-flash-lite",
+  sonnet: "gemini-2.5-flash",
+  opus46: "gemini-2.5-flash",
+  opus48: "gemini-2.5-pro",
+};
+
+export function geminiModelForTier(tier: ModelTier): string {
+  return GEMINI_MODEL_IDS[tier] ?? "gemini-3.1-flash";
+}
+
 // Accepts optional keys array — if not provided, falls back to GEMINI_KEYS constant.
-// agentTeam.ts fetches fresh keys from DB and passes them here.
-export async function callGemini(prompt: string, systemPrompt: string, _maxTokens?: number, keys?: string[]): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+// agentTeam.ts fetches fresh keys from DB and passes them here. `model` picks the
+// Gemini variant (default flash — a real coder, unlike flash-lite).
+export async function callGemini(prompt: string, systemPrompt: string, _maxTokens?: number, keys?: string[], model = "gemini-3.1-flash"): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const activeKeys = (keys && keys.length > 0) ? keys : GEMINI_KEYS;
   if (activeKeys.length === 0) {
     // No Gemini keys — fall back to AgentRouter directly.
@@ -721,7 +750,7 @@ export async function callGemini(prompt: string, systemPrompt: string, _maxToken
     for (let retry = 0; retry < RETRIES_PER_KEY; retry++) {
       try {
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${key}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -737,6 +766,15 @@ export async function callGemini(prompt: string, systemPrompt: string, _maxToken
         if (!response.ok) {
           const errText = await response.text().catch(() => "");
           lastError = new Error(`Gemini API error ${response.status}: ${errText.slice(0, 200)}`);
+          // Model id not available (404, or 400 "model not found/not supported") —
+          // downgrade to flash-lite, which is confirmed GA, and retry the whole call
+          // once. Keeps a wrong/rolled model id from hard-killing the tier.
+          if (
+            model !== "gemini-3.1-flash-lite" &&
+            (response.status === 404 || (response.status === 400 && /not found|not supported|unknown|unsupported/i.test(errText)))
+          ) {
+            return callGemini(prompt, systemPrompt, _maxTokens, keys, "gemini-3.1-flash-lite");
+          }
           if (response.status === 429 || response.status >= 500) {
             const delay = response.status === 429 ? 2000 * (retry + 1) : 1000 * (retry + 1);
             await new Promise(r => setTimeout(r, delay));
@@ -762,6 +800,13 @@ export async function callGemini(prompt: string, systemPrompt: string, _maxToken
         await new Promise(r => setTimeout(r, 500 * (retry + 1)));
       }
     }
+  }
+  // All keys exhausted on this model. If it was a heavier tier (flash/pro) that
+  // may have hit its tighter free-tier rate limit, drop to flash-lite (highest RPM,
+  // confirmed GA) and try the whole pool once more before giving up on Gemini.
+  if (model !== "gemini-3.1-flash-lite") {
+    console.warn(`Gemini ${model} exhausted, retrying pool on flash-lite`);
+    return callGemini(prompt, systemPrompt, _maxTokens, keys, "gemini-3.1-flash-lite");
   }
   // All Gemini keys exhausted — try AgentRouter as last resort
   console.warn("All Gemini API keys exhausted, trying AgentRouter:", lastError);
