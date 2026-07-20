@@ -4,7 +4,7 @@ import { httpAction } from "./_generated/server";
 import { internal, api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
-import { callModel, calcAgentBucksForTier, FREE_UNLIMITED, AGENTROUTER_PRIMARY, callAgentRouter, agentRouterModelForTier } from "./agentCore";
+import { callModel, calcAgentBucksForTier, FREE_UNLIMITED, AGENTROUTER_PRIMARY, callAgentRouter, agentRouterModelForTier, OPENAI_PRIMARY, PRIMARY_PROVIDER, callOpenAICompatible } from "./agentCore";
 import { buildStudySystemPrompt } from "./studyPrompt";
 import {
   aoOptions,
@@ -349,6 +349,18 @@ http.route({
     let streamSuccess = false;
     let geminiStreamBody = "";
 
+    // An OpenAI-compatible provider (DeepSeek / SambaNova / Cerebras / Groq)
+    // as configured primary: serve chat from it first with the full turn history.
+    // Falls through to Gemini/VLY on error so a hiccup degrades, not dead-ends.
+    if (OPENAI_PRIMARY && !streamSuccess) {
+      try {
+        const oai = await callOpenAICompatible("", fullSystem, "sonnet", PRIMARY_PROVIDER, 4096, messages);
+        if (oai.text) { fullText = oai.text; usedClaude = true; streamSuccess = true; }
+      } catch (oaiErr) {
+        console.error(`${PRIMARY_PROVIDER} (primary) failed for stream-chat:`, oaiErr instanceof Error ? oaiErr.message : String(oaiErr));
+      }
+    }
+
     // AgentRouter as configured primary (AWS Bedrock budget out): serve chat from
     // it first with the full turn history. Falls through to Bedrock/Gemini/VLY on
     // any error, so a WAF block just degrades instead of dead-ending the request.
@@ -362,9 +374,9 @@ http.route({
     }
 
     // Try Claude (non-streaming invoke first to get full text, then stream it).
-    // Skipped when AgentRouter is primary — Bedrock's budget is out, so attempting
-    // it would only burn a 120s timeout before falling through to Gemini/VLY.
-    if (!streamSuccess && !AGENTROUTER_PRIMARY && hasBedrock && bedrockCreds && preferClaude !== false) {
+    // Skipped when any non-Bedrock provider is primary — Bedrock's budget is out, so
+    // attempting it would only burn a 120s timeout before falling through to Gemini/VLY.
+    if (!streamSuccess && !AGENTROUTER_PRIMARY && !OPENAI_PRIMARY && hasBedrock && bedrockCreds && preferClaude !== false) {
       try {
         const result = await streamClaudeWithCreds(bedrockCreds, fullSystem, messages, () => {});
         fullText = result.fullText;

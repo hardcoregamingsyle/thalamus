@@ -3,7 +3,7 @@ import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { performSearch, FREE_UNLIMITED, AGENTROUTER_PRIMARY, callAgentRouter, agentRouterModelForTier } from "./agentCore";
+import { performSearch, FREE_UNLIMITED, AGENTROUTER_PRIMARY, callAgentRouter, agentRouterModelForTier, OPENAI_PRIMARY, PRIMARY_PROVIDER, callOpenAICompatible } from "./agentCore";
 
 // Gemini keys are loaded from the DB (admin-managed via Admin UI)
 async function getGeminiKeysFromDB(ctx: { runQuery: ActionCtx["runQuery"] }): Promise<string[]> {
@@ -218,6 +218,21 @@ async function callAI(
   maxTokens = 4096,
   modelName = "claude-haiku-4-5",
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; provider: string }> {
+  // An OpenAI-compatible provider (DeepSeek / SambaNova / Cerebras / Groq)
+  // as configured primary: serve chat straight from it with the full turn history.
+  // On error OR an empty 200, degrade to Gemini rather than hard-failing the chat
+  // request (chat surfaces degrade; only the pipeline treats the flag as absolute).
+  if (OPENAI_PRIMARY) {
+    try {
+      const result = await callOpenAICompatible("", systemPrompt, "sonnet", PRIMARY_PROVIDER, maxTokens, messages);
+      if (result.text && result.text.trim()) return { ...result, provider: PRIMARY_PROVIDER };
+      console.warn(`${PRIMARY_PROVIDER} returned empty for chat, trying Gemini`);
+    } catch (oaiErr) {
+      console.warn(`${PRIMARY_PROVIDER} (primary) failed for chat, trying Gemini:`, oaiErr instanceof Error ? oaiErr.message : String(oaiErr));
+    }
+    const result = await callGeminiChat(ctx, systemPrompt, messages, maxTokens);
+    return { ...result, provider: "gemini" };
+  }
   // AgentRouter as configured primary (AWS Bedrock budget out): serve chat straight
   // from it, passing the full turn history. AR has no haiku — map onto its catalog.
   // On error OR an empty 200, skip the dead Bedrock leg (a 120s timeout) and try

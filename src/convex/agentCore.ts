@@ -488,6 +488,18 @@ export async function callModel(
   geminiKeys?: string[],
   dbCreds?: { accessKeyId: string; secretAccessKey: string; region: string } | null,
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: ModelTier }> {
+  // An OpenAI-compatible provider (DeepSeek / SambaNova / Cerebras / Groq)
+  // as configured primary: serve straight from it, tier-mapped onto its catalog.
+  // The flag means this *is* the provider, so surface its error rather than falling
+  // through to the dead Bedrock/Gemini legs. Empty 200 counts as a failure.
+  if (OPENAI_PRIMARY) {
+    const result = await callOpenAICompatible(prompt, systemPrompt, tier, PRIMARY_PROVIDER);
+    if (!result.text || !result.text.trim()) {
+      throw new Error(`${PRIMARY_PROVIDER} returned an empty response.`);
+    }
+    return { ...result, tier };
+  }
+
   // AgentRouter as configured primary (AWS Bedrock budget out): serve straight from
   // it and skip the dead Bedrock/Gemini legs entirely. NO fall-through — the flag
   // means AR *is* the provider, and the Bedrock/Gemini fallback tails would just
@@ -558,10 +570,23 @@ export async function callClaude(
   dbCreds?: { accessKeyId: string; secretAccessKey: string; region: string } | null,
   geminiKeys?: string[],
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+  // Direct callers (e.g. study-mode helpers) honor the configured primary too, so
+  // they don't eat a 120s dead-Bedrock timeout. Map the Claude model onto a tier.
+  const primaryTier: ModelTier =
+    model === "claude-opus-4-8" ? "opus48"
+    : model === "claude-opus-4-6" ? "opus46"
+    : model === "claude-sonnet-4-6" ? "sonnet"
+    : "haiku";
+  if (OPENAI_PRIMARY) {
+    const result = await callOpenAICompatible(prompt, systemPrompt, primaryTier, PRIMARY_PROVIDER);
+    if (!result.text || !result.text.trim()) {
+      throw new Error(`${PRIMARY_PROVIDER} returned an empty response.`);
+    }
+    return result;
+  }
+
   // AgentRouter as configured primary: serve Claude-tier calls straight from AR
-  // (mapped onto its Opus catalog) and skip Bedrock entirely. This covers direct
-  // callers — e.g. study-mode helpers — that don't route through callModel, so they
-  // don't eat a 120s dead-Bedrock timeout when the flag is set.
+  // (mapped onto its Opus catalog) and skip Bedrock entirely.
   if (AGENTROUTER_PRIMARY) {
     const arModel = model === "claude-opus-4-8" ? "claude-opus-4-8" : "claude-opus-4-6";
     const result = await callAgentRouter(prompt, systemPrompt, arModel);
@@ -835,7 +860,7 @@ export function agentRouterModelForTier(tier: ModelTier): string {
 // AWS Bedrock budget is exhausted. Set the Convex env var AI_PRIMARY_PROVIDER to
 // "agentrouter" and every model call serves straight from AR, skipping the dead
 // Bedrock/Gemini legs. Unset (or any other value) keeps Bedrock-first behaviour.
-export const AGENTROUTER_PRIMARY = process.env.AI_PRIMARY_PROVIDER === "agentrouter";
+export const AGENTROUTER_PRIMARY = (process.env.AI_PRIMARY_PROVIDER ?? "").toLowerCase() === "agentrouter";
 
 // AgentRouter double-gates its relay: an app-level client whitelist (returns JSON
 // unauthorized_client_error) AND an Aliyun WAF that serves an HTML JS-challenge
@@ -943,6 +968,130 @@ export async function callAgentRouter(
       text,
       inputTokens: data.usage?.input_tokens ?? 0,
       outputTokens: data.usage?.output_tokens ?? 0,
+    };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// ── Generic OpenAI-compatible providers ──────────────────────────────────────
+// One wire format — POST {baseUrl}/chat/completions, Bearer key, read
+// choices[0].message.content — serves every modern non-Anthropic host: DeepSeek,
+// SambaNova, Cerebras, Groq. The strong coders (DeepSeek-V3, Qwen3-Coder,
+// GLM, Kimi) are open-weight, so the free hosts below serve them at $0, no card, and
+// NONE is behind a WAF — they work straight from Convex's datacenter IP (unlike
+// AgentRouter). Pick one with AI_PRIMARY_PROVIDER=<name> and set its <KEYENV> secret.
+// The model ids map our ModelTier onto that host's catalog — verify/adjust the ids
+// for whichever host you enable (they drift; the base URLs are stable).
+type OAIProvider = { baseUrl: string; keyEnv: string; models: Record<ModelTier, string> };
+
+const OPENAI_PROVIDERS: Record<string, OAIProvider> = {
+  // SambaNova Cloud — free, no card, big daily token budget. Serves DeepSeek-V3.
+  sambanova: {
+    baseUrl: "https://api.sambanova.ai/v1",
+    keyEnv: "SAMBANOVA_API_KEY",
+    models: {
+      gemini: "Meta-Llama-3.3-70B-Instruct", haiku: "Meta-Llama-3.3-70B-Instruct",
+      sonnet: "DeepSeek-V3-0324", opus46: "DeepSeek-V3-0324", opus48: "DeepSeek-V3-0324",
+    },
+  },
+  // Cerebras — free, no card, ~2000 tok/s. Serves Qwen3-Coder + GLM.
+  cerebras: {
+    baseUrl: "https://api.cerebras.ai/v1",
+    keyEnv: "CEREBRAS_API_KEY",
+    models: {
+      gemini: "llama-3.3-70b", haiku: "llama-3.3-70b",
+      sonnet: "qwen-3-coder-480b", opus46: "qwen-3-coder-480b", opus48: "qwen-3-235b-a22b-instruct-2507",
+    },
+  },
+  // Groq — free, no card, fast. Serves Kimi-K2 + gpt-oss.
+  groq: {
+    baseUrl: "https://api.groq.com/openai/v1",
+    keyEnv: "GROQ_API_KEY",
+    models: {
+      gemini: "llama-3.3-70b-versatile", haiku: "llama-3.3-70b-versatile",
+      sonnet: "moonshotai/kimi-k2-instruct", opus46: "moonshotai/kimi-k2-instruct", opus48: "openai/gpt-oss-120b",
+    },
+  },
+  // DeepSeek direct — PAID (needs a card/balance). Best DeepSeek quality (V3.2/reasoner).
+  deepseek: {
+    baseUrl: "https://api.deepseek.com/v1",
+    keyEnv: "DEEPSEEK_API_KEY",
+    models: {
+      gemini: "deepseek-chat", haiku: "deepseek-chat",
+      sonnet: "deepseek-chat", opus46: "deepseek-reasoner", opus48: "deepseek-reasoner",
+    },
+  },
+};
+
+// The selected primary provider, resolved once from the env flag.
+export const PRIMARY_PROVIDER = (process.env.AI_PRIMARY_PROVIDER ?? "").toLowerCase();
+export const OPENAI_PRIMARY = Object.prototype.hasOwnProperty.call(OPENAI_PROVIDERS, PRIMARY_PROVIDER);
+
+// Guard the footgun: a non-empty AI_PRIMARY_PROVIDER that matches nothing silently
+// falls back to the (probably-dead) Bedrock chain. Surface the typo loudly instead.
+if (PRIMARY_PROVIDER && PRIMARY_PROVIDER !== "agentrouter" && !OPENAI_PRIMARY) {
+  console.warn(
+    `AI_PRIMARY_PROVIDER="${PRIMARY_PROVIDER}" is not recognised — known values: ` +
+    `agentrouter, ${Object.keys(OPENAI_PROVIDERS).join(", ")}. Falling back to the default Bedrock/Gemini chain.`,
+  );
+}
+
+// POST one turn (or a chat history) to the selected OpenAI-compatible provider.
+export async function callOpenAICompatible(
+  prompt: string,
+  systemPrompt: string,
+  tier: ModelTier,
+  providerId: string,
+  maxTokens = 16384,
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
+): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+  const provider = OPENAI_PROVIDERS[providerId];
+  if (!provider) throw new Error(`Unknown OpenAI-compatible provider: ${providerId}`);
+  const apiKey = process.env[provider.keyEnv];
+  if (!apiKey) throw new Error(`Missing ${provider.keyEnv} — set it in the Convex dashboard for provider "${providerId}".`);
+  const model = provider.models[tier] ?? provider.models.sonnet;
+
+  const messages = [
+    { role: "system", content: systemPrompt.slice(0, 12000) },
+    ...((history && history.length > 0)
+      ? history.map(m => ({ role: m.role, content: m.content.slice(0, 48000) }))
+      : [{ role: "user", content: prompt.slice(0, 48000) }]),
+  ];
+
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 120_000);
+  try {
+    const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature: 0.7, stream: false }),
+      signal: ctrl.signal,
+    });
+    const raw = await res.text();
+    if (!res.ok) {
+      // Self-heal against id drift / output caps: on a model-not-found or
+      // max-tokens 400/404, retry ONCE on this provider's most basic model
+      // (the gemini/haiku-tier entry — always its cheapest, most stable id) with a
+      // clamped token budget. The guard ensures the retry changes something, so it
+      // can't loop. Mirrors the Gemini downgrade — a wrong id degrades, not dies.
+      const baseModel = provider.models.haiku;
+      const recoverable =
+        res.status === 404 ||
+        (res.status === 400 && /model|not found|does not exist|decommission|unsupported|max_tokens|maximum|too (long|large)/i.test(raw));
+      if (recoverable && (model !== baseModel || maxTokens > 8192)) {
+        console.warn(`${providerId} (${model}) ${res.status} — retrying on ${baseModel} @8k`);
+        return callOpenAICompatible(prompt, systemPrompt, "haiku", providerId, Math.min(maxTokens, 8192), history);
+      }
+      throw new Error(`${providerId} (${model}) error ${res.status}: ${raw.slice(0, 300)}`);
+    }
+    let data: { choices?: Array<{ message?: { content?: string } }>; usage?: { prompt_tokens?: number; completion_tokens?: number } };
+    try { data = JSON.parse(raw); } catch { throw new Error(`${providerId} returned non-JSON: ${raw.slice(0, 120)}`); }
+    const text = data.choices?.[0]?.message?.content ?? "";
+    return {
+      text,
+      inputTokens: data.usage?.prompt_tokens ?? 0,
+      outputTokens: data.usage?.completion_tokens ?? 0,
     };
   } finally {
     clearTimeout(t);
