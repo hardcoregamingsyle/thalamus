@@ -493,10 +493,9 @@ export async function callModel(
   // The flag means this *is* the provider, so surface its error rather than falling
   // through to the dead Bedrock/Gemini legs. Empty 200 counts as a failure.
   if (OPENAI_PRIMARY) {
-    const result = await callOpenAICompatible(prompt, systemPrompt, tier, PRIMARY_PROVIDER);
-    if (!result.text || !result.text.trim()) {
-      throw new Error(`${PRIMARY_PROVIDER} returned an empty response.`);
-    }
+    // Failover across all configured providers — a rate-limited primary rolls to
+    // the next key/provider instead of killing the run.
+    const result = await callOpenAIFailover(prompt, systemPrompt, tier);
     return { ...result, tier };
   }
 
@@ -578,11 +577,7 @@ export async function callClaude(
     : model === "claude-sonnet-4-6" ? "sonnet"
     : "haiku";
   if (OPENAI_PRIMARY) {
-    const result = await callOpenAICompatible(prompt, systemPrompt, primaryTier, PRIMARY_PROVIDER);
-    if (!result.text || !result.text.trim()) {
-      throw new Error(`${PRIMARY_PROVIDER} returned an empty response.`);
-    }
-    return result;
+    return callOpenAIFailover(prompt, systemPrompt, primaryTier);
   }
 
   // AgentRouter as configured primary: serve Claude-tier calls straight from AR
@@ -1042,6 +1037,44 @@ if (PRIMARY_PROVIDER && PRIMARY_PROVIDER !== "agentrouter" && !OPENAI_PRIMARY) {
   );
 }
 
+// Read one provider's key(s). The env var may hold several comma-separated keys —
+// callers pick one at random, spreading load and giving 429 retries a fresh key.
+function providerKeys(keyEnv: string): string[] {
+  return (process.env[keyEnv] ?? "").split(",").map(k => k.trim()).filter(Boolean);
+}
+
+// Failover order: the configured primary first, then every other registry provider
+// that has a key set. So a rate-limited SambaNova falls over to Groq automatically.
+export function providerChain(): string[] {
+  const others = Object.keys(OPENAI_PROVIDERS).filter(
+    p => p !== PRIMARY_PROVIDER && providerKeys(OPENAI_PROVIDERS[p].keyEnv).length > 0,
+  );
+  return [PRIMARY_PROVIDER, ...others];
+}
+
+// Try each provider in the chain until one answers with usable text (non-streaming).
+// Throws only if EVERY configured provider fails.
+export async function callOpenAIFailover(
+  prompt: string,
+  systemPrompt: string,
+  tier: ModelTier,
+  maxTokens = 16384,
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
+): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+  let lastErr: unknown;
+  for (const providerId of providerChain()) {
+    try {
+      const r = await callOpenAICompatible(prompt, systemPrompt, tier, providerId, maxTokens, history);
+      if (r.text && r.text.trim()) return r;
+      lastErr = new Error(`${providerId} returned empty`);
+    } catch (e) {
+      lastErr = e;
+      console.warn(`provider ${providerId} failed, trying next in chain:`, e instanceof Error ? e.message : String(e));
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("all configured providers failed");
+}
+
 // POST one turn (or a chat history) to the selected OpenAI-compatible provider.
 export async function callOpenAICompatible(
   prompt: string,
@@ -1053,8 +1086,8 @@ export async function callOpenAICompatible(
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const provider = OPENAI_PROVIDERS[providerId];
   if (!provider) throw new Error(`Unknown OpenAI-compatible provider: ${providerId}`);
-  const apiKey = process.env[provider.keyEnv];
-  if (!apiKey) throw new Error(`Missing ${provider.keyEnv} — set it in the Convex dashboard for provider "${providerId}".`);
+  const keyList = providerKeys(provider.keyEnv);
+  if (keyList.length === 0) throw new Error(`Missing ${provider.keyEnv} — set it in the Convex dashboard for provider "${providerId}".`);
   const model = provider.models[tier] ?? provider.models.sonnet;
 
   const messages = [
@@ -1072,6 +1105,9 @@ export async function callOpenAICompatible(
   const TRANSIENT_RETRIES = 2;
   let lastErr: unknown;
   for (let attempt = 0; attempt <= TRANSIENT_RETRIES; attempt++) {
+    // Fresh key each attempt — if the env var holds several comma-separated keys,
+    // a 429'd key gets swapped for a sibling on retry instead of hammering one.
+    const apiKey = keyList[Math.floor(Math.random() * keyList.length)];
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 240_000);
     try {
@@ -1093,8 +1129,12 @@ export async function callOpenAICompatible(
           console.warn(`${providerId} (${model}) ${res.status} — retrying on ${baseModel} @8k`);
           return callOpenAICompatible(prompt, systemPrompt, "haiku", providerId, Math.min(maxTokens, 8192), history);
         }
-        // Transient server-side failure — back off and retry.
-        if ((res.status === 429 || res.status >= 500) && attempt < TRANSIENT_RETRIES) {
+        // Transient server-side failure — back off and retry. For 429 (rate limit)
+        // only retry if there's a sibling key to swap to; with a single key, waiting
+        // out a per-minute cap is pointless, so throw fast and let the failover chain
+        // roll to the next provider immediately.
+        const retryable = res.status >= 500 || (res.status === 429 && keyList.length > 1);
+        if (retryable && attempt < TRANSIENT_RETRIES) {
           lastErr = new Error(`${providerId} ${res.status}: ${raw.slice(0, 120)}`);
           await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
           continue;
@@ -1142,8 +1182,9 @@ export async function callOpenAICompatibleStreaming(
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const provider = OPENAI_PROVIDERS[providerId];
   if (!provider) throw new Error(`Unknown OpenAI-compatible provider: ${providerId}`);
-  const apiKey = process.env[provider.keyEnv];
-  if (!apiKey) throw new Error(`Missing ${provider.keyEnv} for provider "${providerId}".`);
+  const keyList = providerKeys(provider.keyEnv);
+  if (keyList.length === 0) throw new Error(`Missing ${provider.keyEnv} for provider "${providerId}".`);
+  const apiKey = keyList[Math.floor(Math.random() * keyList.length)];
   const model = provider.models[tier] ?? provider.models.sonnet;
 
   const ctrl = new AbortController();

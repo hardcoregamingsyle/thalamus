@@ -32,7 +32,7 @@ import {
   calcAgentBucksForTier,
   AGENTROUTER_PRIMARY,
   OPENAI_PRIMARY,
-  PRIMARY_PROVIDER,
+  providerChain,
   callOpenAICompatibleStreaming,
   type ModelTier,
   type RunMode,
@@ -210,19 +210,21 @@ async function callModelWithStreaming(
     opus48: "us.anthropic.claude-opus-4-1-20250805-v1:0",
   };
   if (OPENAI_PRIMARY) {
-    // Real token streaming from the OpenAI-compatible provider — the agent's output
-    // fills in live (first token ~0.5s) instead of a blank wait for the whole reply.
-    // Best-effort: on any streaming error, fall back to the non-streaming path, which
-    // carries the retry + model self-heal.
-    try {
-      const streamed = await callOpenAICompatibleStreaming(
-        prompt, systemPrompt, tier, PRIMARY_PROVIDER,
-        async (full) => {
-          await ctx.runMutation(internal.codeBranches.setStreamingContent, { branchId, content: full, agentName });
-        },
-      );
-      if (streamed.text && streamed.text.trim()) return { ...streamed, tier };
-    } catch { /* fall through to the non-streaming path below */ }
+    // Real token streaming — the agent's output fills in live (first token ~0.5s)
+    // instead of a blank wait. Stream across the provider chain: if the primary is
+    // rate-limited, roll to the next provider's stream. Best-effort — if every
+    // stream fails, drop to the non-streaming path (retry + self-heal + failover).
+    for (const providerId of providerChain()) {
+      try {
+        const streamed = await callOpenAICompatibleStreaming(
+          prompt, systemPrompt, tier, providerId,
+          async (full) => {
+            await ctx.runMutation(internal.codeBranches.setStreamingContent, { branchId, content: full, agentName });
+          },
+        );
+        if (streamed.text && streamed.text.trim()) return { ...streamed, tier };
+      } catch { /* try the next provider's stream */ }
+    }
     const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
     await ctx.runMutation(internal.codeBranches.setStreamingContent, { branchId, content: result.text, agentName });
     return result;

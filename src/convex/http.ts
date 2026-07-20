@@ -4,7 +4,7 @@ import { httpAction } from "./_generated/server";
 import { internal, api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
-import { callModel, calcAgentBucksForTier, FREE_UNLIMITED, AGENTROUTER_PRIMARY, callAgentRouter, agentRouterModelForTier, OPENAI_PRIMARY, PRIMARY_PROVIDER, callOpenAICompatible } from "./agentCore";
+import { callModel, calcAgentBucksForTier, FREE_UNLIMITED, AGENTROUTER_PRIMARY, callAgentRouter, agentRouterModelForTier, OPENAI_PRIMARY, PRIMARY_PROVIDER, callOpenAIFailover } from "./agentCore";
 import { buildStudySystemPrompt } from "./studyPrompt";
 import {
   aoOptions,
@@ -354,7 +354,7 @@ http.route({
     // Falls through to Gemini/VLY on error so a hiccup degrades, not dead-ends.
     if (OPENAI_PRIMARY && !streamSuccess) {
       try {
-        const oai = await callOpenAICompatible("", fullSystem, "sonnet", PRIMARY_PROVIDER, 4096, messages);
+        const oai = await callOpenAIFailover("", fullSystem, "sonnet", 4096, messages);
         if (oai.text) { fullText = oai.text; usedClaude = true; streamSuccess = true; }
       } catch (oaiErr) {
         console.error(`${PRIMARY_PROVIDER} (primary) failed for stream-chat:`, oaiErr instanceof Error ? oaiErr.message : String(oaiErr));

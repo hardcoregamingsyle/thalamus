@@ -3,7 +3,7 @@ import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { performSearch, FREE_UNLIMITED, AGENTROUTER_PRIMARY, callAgentRouter, agentRouterModelForTier, OPENAI_PRIMARY, PRIMARY_PROVIDER, callOpenAICompatible } from "./agentCore";
+import { performSearch, FREE_UNLIMITED, AGENTROUTER_PRIMARY, callAgentRouter, agentRouterModelForTier, OPENAI_PRIMARY, PRIMARY_PROVIDER, callOpenAIFailover } from "./agentCore";
 
 // Gemini keys are loaded from the DB (admin-managed via Admin UI)
 async function getGeminiKeysFromDB(ctx: { runQuery: ActionCtx["runQuery"] }): Promise<string[]> {
@@ -224,7 +224,7 @@ async function callAI(
   // request (chat surfaces degrade; only the pipeline treats the flag as absolute).
   if (OPENAI_PRIMARY) {
     try {
-      const result = await callOpenAICompatible("", systemPrompt, "sonnet", PRIMARY_PROVIDER, maxTokens, messages);
+      const result = await callOpenAIFailover("", systemPrompt, "sonnet", maxTokens, messages);
       if (result.text && result.text.trim()) return { ...result, provider: PRIMARY_PROVIDER };
       console.warn(`${PRIMARY_PROVIDER} returned empty for chat, trying Gemini`);
     } catch (oaiErr) {
