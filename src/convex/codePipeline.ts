@@ -32,6 +32,8 @@ import {
   calcAgentBucksForTier,
   AGENTROUTER_PRIMARY,
   OPENAI_PRIMARY,
+  PRIMARY_PROVIDER,
+  callOpenAICompatibleStreaming,
   type ModelTier,
   type RunMode,
 } from "./agentCore";
@@ -207,10 +209,28 @@ async function callModelWithStreaming(
     opus46: "us.anthropic.claude-opus-4-1-20250805-v1:0",
     opus48: "us.anthropic.claude-opus-4-1-20250805-v1:0",
   };
-  if (AGENTROUTER_PRIMARY || OPENAI_PRIMARY || tier === "gemini" || !BEDROCK_MODELS[tier]) {
-    // A configured primary (AgentRouter / DeepSeek / SambaNova / …) or Gemini: no
-    // Bedrock token streaming available — run the call and push the whole result
-    // once it lands. callModel routes to the primary provider, skipping dead Bedrock.
+  if (OPENAI_PRIMARY) {
+    // Real token streaming from the OpenAI-compatible provider — the agent's output
+    // fills in live (first token ~0.5s) instead of a blank wait for the whole reply.
+    // Best-effort: on any streaming error, fall back to the non-streaming path, which
+    // carries the retry + model self-heal.
+    try {
+      const streamed = await callOpenAICompatibleStreaming(
+        prompt, systemPrompt, tier, PRIMARY_PROVIDER,
+        async (full) => {
+          await ctx.runMutation(internal.codeBranches.setStreamingContent, { branchId, content: full, agentName });
+        },
+      );
+      if (streamed.text && streamed.text.trim()) return { ...streamed, tier };
+    } catch { /* fall through to the non-streaming path below */ }
+    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+    await ctx.runMutation(internal.codeBranches.setStreamingContent, { branchId, content: result.text, agentName });
+    return result;
+  }
+
+  if (AGENTROUTER_PRIMARY || tier === "gemini" || !BEDROCK_MODELS[tier]) {
+    // A configured primary (AgentRouter) or Gemini: no token streaming available —
+    // run the call and push the whole result once it lands.
     const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
     await ctx.runMutation(internal.codeBranches.setStreamingContent, {
       branchId, content: result.text, agentName,

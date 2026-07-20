@@ -1127,6 +1127,107 @@ export async function callOpenAICompatible(
   throw lastErr instanceof Error ? lastErr : new Error(`${providerId} failed after ${TRANSIENT_RETRIES + 1} attempts`);
 }
 
+// Streaming variant — same call with stream:true, parsing the SSE delta chunks and
+// pushing the accumulated text to `onDelta` as it arrives (throttled to ~3/sec so
+// the UI fills in live). Returns the full text + usage at the end. On ANY error it
+// just throws — callers fall back to the non-streaming callOpenAICompatible, which
+// carries the retry / self-heal, so streaming stays a best-effort UX layer.
+export async function callOpenAICompatibleStreaming(
+  prompt: string,
+  systemPrompt: string,
+  tier: ModelTier,
+  providerId: string,
+  onDelta: (fullText: string) => void | Promise<void>,
+  maxTokens = 16384,
+): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+  const provider = OPENAI_PROVIDERS[providerId];
+  if (!provider) throw new Error(`Unknown OpenAI-compatible provider: ${providerId}`);
+  const apiKey = process.env[provider.keyEnv];
+  if (!apiKey) throw new Error(`Missing ${provider.keyEnv} for provider "${providerId}".`);
+  const model = provider.models[tier] ?? provider.models.sonnet;
+
+  const ctrl = new AbortController();
+  // Shorter than the non-streaming ceiling: streaming is best-effort, so if it
+  // stalls we'd rather bail fast to the robust non-streaming path than burn 240s.
+  const t = setTimeout(() => ctrl.abort(), 120_000);
+  try {
+    const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt.slice(0, 12000) },
+          { role: "user", content: prompt.slice(0, 48000) },
+        ],
+        max_tokens: maxTokens,
+        temperature: 0.7,
+        stream: true,
+        stream_options: { include_usage: true },
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok || !res.body) {
+      const raw = res.body ? await res.text().catch(() => "") : "";
+      throw new Error(`${providerId} (${model}) stream error ${res.status}: ${raw.slice(0, 200)}`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let fullText = "";
+    let inTok = 0;
+    let outTok = 0;
+    let lastFlush = 0;
+
+    const handleData = (payload: string) => {
+      if (!payload || payload === "[DONE]") return;
+      try {
+        const j = JSON.parse(payload) as {
+          choices?: Array<{ delta?: { content?: string } }>;
+          usage?: { prompt_tokens?: number; completion_tokens?: number };
+        };
+        const d = j.choices?.[0]?.delta?.content;
+        if (d) fullText += d;
+        if (j.usage) { inTok = j.usage.prompt_tokens ?? inTok; outTok = j.usage.completion_tokens ?? outTok; }
+      } catch { /* partial/non-JSON keepalive line */ }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? ""; // keep the trailing partial line for next read
+      for (const line of lines) {
+        const s = line.trim();
+        if (s.startsWith("data:")) handleData(s.slice(5).trim());
+      }
+      const now = Date.now();
+      if (fullText && now - lastFlush >= 300) {
+        lastFlush = now;
+        await onDelta(fullText);
+      }
+    }
+    // Flush the decoder + any line left in the buffer — a provider that ends the
+    // byte stream on the final delta with no trailing newline would otherwise drop
+    // that last delta AND the usage chunk.
+    buffer += decoder.decode();
+    for (const line of buffer.split("\n")) {
+      const s = line.trim();
+      if (s.startsWith("data:")) handleData(s.slice(5).trim());
+    }
+    if (fullText) await onDelta(fullText); // final flush with the complete text
+    // Some hosts ignore include_usage and never emit a usage chunk. Estimate from
+    // length so billing/platform-budget never silently records a free generation.
+    if (!outTok) outTok = Math.ceil(fullText.length / 4);
+    if (!inTok) inTok = Math.ceil((prompt.length + systemPrompt.length) / 4);
+    return { text: fullText, inputTokens: inTok, outputTokens: outTok };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export async function performSearch(query: string, keys?: string[]): Promise<string> {
   let ragContext = "";
   try {
