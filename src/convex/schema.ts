@@ -294,6 +294,7 @@ const schema = defineSchema(
       currentTaskIndex: v.optional(v.number()),
       executionPhase: v.optional(v.string()),
       dispatchedAgentsJson: v.optional(v.string()),  // Dispatcher's chosen agent list (dynamic pipeline)
+      agentModelsJson: v.optional(v.string()),        // Dispatcher's per-agent model tier assignment ({agent: tier})
       finalReviewCoderEnabled: v.optional(v.boolean()),
       deployCommandsJson: v.optional(v.string()),
       taskSummariesJson: v.optional(v.string()),

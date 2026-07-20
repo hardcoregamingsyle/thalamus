@@ -486,6 +486,8 @@ export const setDispatchedAgents = internalMutation({
   args: {
     branchId: v.string(),
     agentsJson: v.string(),
+    // The Dispatcher's per-agent model tier map ({agent: tier}), if it assigned one.
+    agentModelsJson: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const branch = await ctx.db
@@ -493,7 +495,10 @@ export const setDispatchedAgents = internalMutation({
       .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
       .first();
     if (!branch) return;
-    await ctx.db.patch(branch._id, { dispatchedAgentsJson: args.agentsJson });
+    await ctx.db.patch(branch._id, {
+      dispatchedAgentsJson: args.agentsJson,
+      ...(args.agentModelsJson !== undefined ? { agentModelsJson: args.agentModelsJson } : {}),
+    });
   },
 });
 

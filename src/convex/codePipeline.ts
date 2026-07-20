@@ -62,8 +62,12 @@ function buildTaskPipeline(dispatched: string[]): string[] {
   return ALL_TASK_AGENTS.filter(a => dispatched.includes(a));
 }
 
+const VALID_MODEL_TIERS = new Set(["gemini", "haiku", "sonnet", "opus46", "opus48"]);
+
 /** Parse and validate the Dispatcher's JSON output. Returns null on failure. */
-function parseDispatcherOutput(text: string): { tier: string; agents: string[] } | null {
+function parseDispatcherOutput(
+  text: string,
+): { tier: string; agents: string[]; models: Record<string, string> } | null {
   try {
     // Strip markdown fences if the model wrapped them anyway
     const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
@@ -74,7 +78,18 @@ function parseDispatcherOutput(text: string): { tier: string; agents: string[] }
     // Always guarantee Coder and Critic
     if (!agents.includes("Coder"))  agents.push("Coder");
     if (!agents.includes("Critic")) agents.push("Critic");
-    return { tier: parsed.tier ?? "medium", agents };
+    // Per-agent model assignment: keep only known agents mapped to a valid tier.
+    // Anything the Dispatcher omits or mis-names falls back to getAgentTier later.
+    const models: Record<string, string> = {};
+    const rawModels = parsed.models;
+    if (rawModels && typeof rawModels === "object" && !Array.isArray(rawModels)) {
+      for (const [agent, tier] of Object.entries(rawModels)) {
+        if (VALID.has(agent) && typeof tier === "string" && VALID_MODEL_TIERS.has(tier)) {
+          models[agent] = tier;
+        }
+      }
+    }
+    return { tier: parsed.tier ?? "medium", agents, models };
   } catch {
     return null;
   }
@@ -527,6 +542,16 @@ export const runPipelineAction = internalAction({
       }
     } catch { /* ignored */ }
 
+    // The Dispatcher's per-agent model assignment ({agent: tier}). Each agent's
+    // model is resolved from this first, falling back to getAgentTier(runMode)
+    // for any agent the Dispatcher didn't assign.
+    let agentModels: Record<string, string> = {};
+    try {
+      if (branch.agentModelsJson) {
+        agentModels = JSON.parse(branch.agentModelsJson);
+      }
+    } catch { /* ignored */ }
+
     // Mark as running
     await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
       branchId,
@@ -574,7 +599,7 @@ export const runPipelineAction = internalAction({
           phase: "Dispatcher",
         });
 
-        const dispatchPrompt = `## Task to analyse\n${task}\n\n## Existing project files\n${files.length > 0 ? files.map(f => `- ${f.filepath}`).join("\n") : "None (greenfield project)"}`;
+        const dispatchPrompt = `## Task to analyse\n${task}\n\n## Existing project files\n${files.length > 0 ? files.map(f => `- ${f.filepath}`).join("\n") : "None (greenfield project)"}\n\n## Budget preference: ${runMode}\ncheap → prefer gemini/haiku, sonnet only where reasoning is essential. balanced → sonnet by default, opus48 only for the hardest seat(s). powerful → opus48 for the heavy reasoning seats. Assign each agent a model within this budget.`;
         const dispatchResult = await callModelWithStreaming(
           ctx, dispatchPrompt, AGENT_SYSTEM_PROMPTS["Dispatcher"] ?? "", "haiku",
           branchId, "Dispatcher", geminiKeys, dbCreds,
@@ -585,20 +610,29 @@ export const runPipelineAction = internalAction({
         const dispatched = parseDispatcherOutput(dispatchResult.text);
         const agents = dispatched?.agents ?? ["Analyser", "Planner", "Coder", "Tester", "Critic"];
         const tier = dispatched?.tier ?? "medium";
+        const models = dispatched?.models ?? {};
 
-        // Persist so every subsequent pipeline invocation can read it
+        // Persist so every subsequent pipeline invocation can read both the agent
+        // list and the Dispatcher's per-agent model choices.
         await ctx.runMutation(internal.codeBranches.setDispatchedAgents, {
           branchId,
           agentsJson: JSON.stringify(agents),
+          agentModelsJson: JSON.stringify(models),
         });
         dispatchedAgents = agents;
+        agentModels = models;
 
-        // Post a visible message so the user can see the routing decision
+        // Post a visible message so the user can see the routing decision AND the
+        // model each agent got (falling back to the run-mode default where the
+        // Dispatcher didn't assign one).
+        const routeLine = agents
+          .map((a) => `${a} (${models[a] ?? getAgentTier(a, runMode)})`)
+          .join(" → ");
         totalMessages++;
         await ctx.runMutation(internal.codeBranches.saveMessage, {
           branchId,
           agent: "Dispatcher",
-          content: `**Task complexity: ${tier}**\nRunning agents: ${agents.join(" → ")}`,
+          content: `**Task complexity: ${tier}**\nRunning agents: ${routeLine}`,
           round,
           messageIndex: totalMessages,
         });
@@ -675,7 +709,8 @@ export const runPipelineAction = internalAction({
       if (currentPhase === "Planner") {
         const systemPrompt = AGENT_SYSTEM_PROMPTS["Planner"] ?? "";
         const prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
-        const tier = getAgentTier("Planner", runMode);
+        // Dispatcher-assigned model first; run-mode default if it didn't pick one.
+        const tier = (agentModels["Planner"] ?? getAgentTier("Planner", runMode)) as ModelTier;
         const result = await callModelWithStreaming(ctx, prompt, systemPrompt, tier, branchId, "Planner", geminiKeys, dbCreds);
         agentOutput = result.text;
         await bill("planner", result);
@@ -737,7 +772,8 @@ export const runPipelineAction = internalAction({
           }
         }
 
-        const tier = getAgentTier(currentPhase, runMode);
+        // Dispatcher-assigned model first; run-mode default if it didn't pick one.
+        const tier = (agentModels[currentPhase] ?? getAgentTier(currentPhase, runMode)) as ModelTier;
         const result = await callModelWithStreaming(ctx, prompt, systemPrompt, tier, branchId, currentPhase, geminiKeys, dbCreds);
         agentOutput = result.text;
         await bill(currentPhase.toLowerCase(), result);
