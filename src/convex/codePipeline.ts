@@ -108,9 +108,13 @@ function buildFileContext(files: Array<{ filepath: string; content: string }>, m
 // Parse commands from agent output
 // Agents are instructed (in AGENT_SYSTEM_PROMPTS) to emit <<RUN-CMD="...">>.
 // Accept the legacy <<RUN-COMMAND="...">> spelling too so older prompts still work.
+// The capture is LAZY (.+?) and terminates on the first `">>`, so a command may
+// contain double quotes — `node -e 'console.log("ok")' 2>&1` and the like. The
+// old [^"]+ died at the first inner quote, which silently dropped any command
+// with embedded quotes (the exact shape the prompts' own examples use).
 function parseCommands(content: string): string[] {
   const commands: string[] = [];
-  const regex = /<<RUN-(?:CMD|COMMAND)="([^"]+)">>/g;
+  const regex = /<<RUN-(?:CMD|COMMAND)="(.+?)">>/g;
   let match;
   while ((match = regex.exec(content)) !== null) {
     commands.push(match[1]);
@@ -131,6 +135,24 @@ function parseApiKeyRequests(content: string): Array<{variableName: string; desc
     });
   }
   return requests;
+}
+
+// A run that reaches this many saved messages is stuck in a loop, not making
+// progress — hard-stop it instead of billing forever. (The transcript that
+// prompted this was past 200.)
+const MAX_TOTAL_MESSAGES = 300;
+
+// How many times we'll ask the model to continue a file that got cut off at the
+// token limit before giving up on that step.
+const MAX_FILE_CONTINUATIONS = 3;
+
+// True when a <<CREATEFILE/EDITFILE>> block was opened but never closed with
+// <<END.CREATEFILE>> — the signature of output truncated mid-file. Counts both
+// the new <<...>> and legacy <<<<<...>>>>> delimiters.
+function hasUnclosedFileBlock(content: string): boolean {
+  const opens = (content.match(/(?:<<<<<|<<)(?:CREATEFILE|EDITFILE)="[^"]+"(?:>>>>>|>>)/g) || []).length;
+  const closes = (content.match(/(?:<<<<<|<<)END\.CREATEFILE(?:>>>>>|>>)/g) || []).length;
+  return opens > closes;
 }
 
 // Streaming-aware model call — writes partial output to the branch's streamingContent
@@ -458,6 +480,25 @@ export const runPipelineAction = internalAction({
     const currentPhase = branch.phase ?? "Dispatcher";
     let round = branch.round ?? 0;
     let totalMessages = branch.totalMessages ?? 0;
+
+    // Hard stop for a runaway loop: a run this long isn't progressing (the
+    // failure that prompted this sat past 200, re-running the Coder forever).
+    // Better to end with a clear message than bill into the void.
+    if (totalMessages >= MAX_TOTAL_MESSAGES) {
+      totalMessages++;
+      await ctx.runMutation(internal.codeBranches.saveMessage, {
+        branchId,
+        agent: "System",
+        content: `Pipeline stopped: hit the ${MAX_TOTAL_MESSAGES}-step ceiling without finishing. A run this long is stuck rather than progressing — start a fresh run, or narrow the task into smaller pieces.`,
+        round,
+        messageIndex: totalMessages,
+      });
+      await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+        branchId, status: "completed", currentAgent: undefined, totalMessages,
+      });
+      return;
+    }
+
     const executionPhase = branch.executionPhase ?? "dispatching";
     const currentTaskIndex = branch.currentTaskIndex ?? 0;
     const runMode: RunMode = (branch.runMode as RunMode) ?? "balanced";
@@ -684,6 +725,29 @@ export const runPipelineAction = internalAction({
         const result = await callModelWithStreaming(ctx, prompt, systemPrompt, tier, branchId, currentPhase, geminiKeys, dbCreds);
         agentOutput = result.text;
         await bill(currentPhase.toLowerCase(), result);
+
+        // Stitch a file write that got cut off at the token limit: if a
+        // <<CREATEFILE/EDITFILE>> block is still open (no <<END.CREATEFILE>>),
+        // ask the model to continue from the tail until it closes. Bounded so a
+        // model that never closes can't loop. Without this a file bigger than one
+        // response is silently lost and the pipeline retries forever.
+        let contRounds = 0;
+        while (hasUnclosedFileBlock(agentOutput) && contRounds < MAX_FILE_CONTINUATIONS) {
+          contRounds++;
+          const tail = agentOutput.slice(-6000);
+          const contPrompt = [
+            `Your previous output was cut off at the token limit mid-file: a <<CREATEFILE="...">> or <<EDITFILE="...">> block is still open, with no closing <<END.CREATEFILE>> tag yet.`,
+            `## The tail of what you wrote (continue from the exact end of this)`,
+            tail,
+            `## Continue`,
+            `Emit ONLY the remaining content, picking up at the exact character where the tail stops — do NOT repeat anything above, do NOT re-open the <<CREATEFILE/EDITFILE tag. Finish the file and close it with <<END.CREATEFILE>>. If you still had more files or commands to emit after it, continue with those.`,
+          ].join("\n\n");
+          const cont = await callModelWithStreaming(ctx, contPrompt, systemPrompt, tier, branchId, currentPhase, geminiKeys, dbCreds);
+          if (!cont.text.trim()) break;
+          agentOutput += cont.text;
+          await bill(`${currentPhase.toLowerCase()}-cont`, cont);
+        }
+
         await ctx.runMutation(internal.codeBranches.clearStreamingContent, { branchId });
       }
 

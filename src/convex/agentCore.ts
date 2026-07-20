@@ -304,14 +304,17 @@ const BEDROCK_MODEL_IDS: Record<ClaudeModel, string> = {
 };
 
 // Max output tokens per model tier.
-// Capped at 8192: 32k-token generations routinely took >55s and tripped the
-// Bedrock abort timeout, which then cascaded into the (dead) Gemini/AgentRouter
-// fallback. 8192 is plenty for agent steps and completes well within the limit.
+// 16384: 8192 truncated the Coder mid-file on large writes — the model ran out
+// of budget before emitting <<END.CREATEFILE>>, so the block never parsed and
+// the file silently vanished (then the pipeline looped retrying). 16k fits the
+// vast majority of files in one shot and, on Bedrock (120s abort), completes
+// comfortably; anything still bigger is stitched by the continuation loop in
+// codePipeline. We stay well under the old 32k mark that tripped the timeout.
 const MAX_OUTPUT_TOKENS: Record<ClaudeModel, number> = {
-  "claude-haiku-4-5": 8192,
-  "claude-sonnet-4-6": 8192,
-  "claude-opus-4-6": 8192,
-  "claude-opus-4-8": 8192,
+  "claude-haiku-4-5": 16384,
+  "claude-sonnet-4-6": 16384,
+  "claude-opus-4-6": 16384,
+  "claude-opus-4-8": 16384,
 };
 
 // Parse Bedrock credentials from env var
@@ -933,17 +936,21 @@ export function parseAgentOutput(content: string): ParsedOutput {
     cleanContent = cleanContent.replace(m[0], `[FILE DELETED: ${m[1]}]`);
   }
 
-  for (const m of content.matchAll(/(?:<<<<<|<<)SEARCH-TOOL="([^"]+)"(?:>>>>>|>>)/g)) {
+  // Lazy .+? (not [^"]+): these args are free-form and may contain double
+  // quotes — a shell command like node -e 'console.log("ok")', a search query,
+  // a URL with a quoted fragment. Matching terminates on the first `">>`, so
+  // inner quotes are preserved instead of truncating the value at the first one.
+  for (const m of content.matchAll(/(?:<<<<<|<<)SEARCH-TOOL="(.+?)"(?:>>>>>|>>)/g)) {
     searchOps.push({ query: m[1] });
     cleanContent = cleanContent.replace(m[0], `[SEARCHING: ${m[1]}]`);
   }
 
-  for (const m of content.matchAll(/(?:<<<<<|<<)SCRAPE-URL="([^"]+)"(?:>>>>>|>>)/g)) {
+  for (const m of content.matchAll(/(?:<<<<<|<<)SCRAPE-URL="(.+?)"(?:>>>>>|>>)/g)) {
     scrapeOps.push({ url: m[1] });
     cleanContent = cleanContent.replace(m[0], `[SCRAPING: ${m[1]}]`);
   }
 
-  for (const m of content.matchAll(/(?:<<<<<|<<)RUN-CMD="([^"]+)"(?:>>>>>|>>)/g)) {
+  for (const m of content.matchAll(/(?:<<<<<|<<)RUN-CMD="(.+?)"(?:>>>>>|>>)/g)) {
     cmdOps.push({ command: m[1] });
     cleanContent = cleanContent.replace(m[0], `[CMD: ${m[1]}]`);
   }
