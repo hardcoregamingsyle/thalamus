@@ -986,31 +986,36 @@ export async function callAgentRouter(
 type OAIProvider = { baseUrl: string; keyEnv: string; models: Record<ModelTier, string> };
 
 const OPENAI_PROVIDERS: Record<string, OAIProvider> = {
-  // SambaNova Cloud — free, no card, big daily token budget. Serves DeepSeek-V3.
+  // SambaNova Cloud — free, no card, big daily token budget, US-hosted. Serves the
+  // latest DeepSeek-V3.2 (verified live against the account's /v1/models).
   sambanova: {
     baseUrl: "https://api.sambanova.ai/v1",
     keyEnv: "SAMBANOVA_API_KEY",
     models: {
       gemini: "Meta-Llama-3.3-70B-Instruct", haiku: "Meta-Llama-3.3-70B-Instruct",
-      sonnet: "DeepSeek-V3-0324", opus46: "DeepSeek-V3-0324", opus48: "DeepSeek-V3-0324",
+      sonnet: "DeepSeek-V3.2", opus46: "DeepSeek-V3.2", opus48: "DeepSeek-V3.2",
     },
   },
-  // Cerebras — free, no card, ~2000 tok/s. Serves Qwen3-Coder + GLM.
+  // Cerebras — ids valid but inference is BILLING-GATED on this account (402
+  // "payment required"), so it's not a $0 option here. Left wired in case billing
+  // is enabled later; GLM-4.7 is its strong coder.
   cerebras: {
     baseUrl: "https://api.cerebras.ai/v1",
     keyEnv: "CEREBRAS_API_KEY",
     models: {
-      gemini: "llama-3.3-70b", haiku: "llama-3.3-70b",
-      sonnet: "qwen-3-coder-480b", opus46: "qwen-3-coder-480b", opus48: "qwen-3-235b-a22b-instruct-2507",
+      gemini: "gemma-4-31b", haiku: "gemma-4-31b",
+      sonnet: "zai-glm-4.7", opus46: "zai-glm-4.7", opus48: "gpt-oss-120b",
     },
   },
-  // Groq — free, no card, fast. Serves Kimi-K2 + gpt-oss.
+  // Groq — free, no card, fast. Pinned to Llama-3.3-70B, which returns clean
+  // content; its qwen3.6/gpt-oss models are reasoning models that leak <think>
+  // blocks / empty short-content and muddy the pipeline's tag parsing.
   groq: {
     baseUrl: "https://api.groq.com/openai/v1",
     keyEnv: "GROQ_API_KEY",
     models: {
       gemini: "llama-3.3-70b-versatile", haiku: "llama-3.3-70b-versatile",
-      sonnet: "moonshotai/kimi-k2-instruct", opus46: "moonshotai/kimi-k2-instruct", opus48: "openai/gpt-oss-120b",
+      sonnet: "llama-3.3-70b-versatile", opus46: "llama-3.3-70b-versatile", opus48: "llama-3.3-70b-versatile",
     },
   },
   // DeepSeek direct — PAID (needs a card/balance). Best DeepSeek quality (V3.2/reasoner).
@@ -1077,7 +1082,7 @@ export async function callOpenAICompatible(
       // can't loop. Mirrors the Gemini downgrade — a wrong id degrades, not dies.
       const baseModel = provider.models.haiku;
       const recoverable =
-        res.status === 404 ||
+        res.status === 404 || res.status === 410 ||
         (res.status === 400 && /model|not found|does not exist|decommission|unsupported|max_tokens|maximum|too (long|large)/i.test(raw));
       if (recoverable && (model !== baseModel || maxTokens > 8192)) {
         console.warn(`${providerId} (${model}) ${res.status} — retrying on ${baseModel} @8k`);
