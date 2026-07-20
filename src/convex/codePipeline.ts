@@ -30,6 +30,7 @@ import {
   AGENT_SYSTEM_PROMPTS,
   getAgentTier,
   calcAgentBucksForTier,
+  AGENTROUTER_PRIMARY,
   type ModelTier,
   type RunMode,
 } from "./agentCore";
@@ -205,8 +206,10 @@ async function callModelWithStreaming(
     opus46: "us.anthropic.claude-opus-4-1-20250805-v1:0",
     opus48: "us.anthropic.claude-opus-4-1-20250805-v1:0",
   };
-  if (tier === "gemini" || !BEDROCK_MODELS[tier]) {
-    // Gemini: no per-token streaming — just run and update when done
+  if (AGENTROUTER_PRIMARY || tier === "gemini" || !BEDROCK_MODELS[tier]) {
+    // AgentRouter-primary (or Gemini): no Bedrock token streaming available — run
+    // the call and push the whole result once it lands. callModel routes AR-first
+    // when AI_PRIMARY_PROVIDER=agentrouter, so this skips the dead Bedrock leg.
     const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
     await ctx.runMutation(internal.codeBranches.setStreamingContent, {
       branchId, content: result.text, agentName,

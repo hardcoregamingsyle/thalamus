@@ -3,7 +3,7 @@ import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { performSearch, FREE_UNLIMITED } from "./agentCore";
+import { performSearch, FREE_UNLIMITED, AGENTROUTER_PRIMARY, callAgentRouter, agentRouterModelForTier } from "./agentCore";
 
 // Gemini keys are loaded from the DB (admin-managed via Admin UI)
 async function getGeminiKeysFromDB(ctx: { runQuery: ActionCtx["runQuery"] }): Promise<string[]> {
@@ -217,6 +217,21 @@ async function callAI(
   maxTokens = 4096,
   modelName = "claude-haiku-4-5",
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; provider: string }> {
+  // AgentRouter as configured primary (AWS Bedrock budget out): serve chat straight
+  // from it, passing the full turn history. AR has no haiku — map onto its catalog.
+  // On error OR an empty 200, skip the dead Bedrock leg (a 120s timeout) and try
+  // Gemini directly before giving up.
+  if (AGENTROUTER_PRIMARY) {
+    try {
+      const result = await callAgentRouter("", systemPrompt, agentRouterModelForTier("sonnet"), maxTokens, messages);
+      if (result.text && result.text.trim()) return { ...result, provider: "agentrouter" };
+      console.warn("AgentRouter returned empty for chat, trying Gemini");
+    } catch (arErr) {
+      console.warn("AgentRouter (primary) failed for chat, trying Gemini:", arErr instanceof Error ? arErr.message : String(arErr));
+    }
+    const result = await callGeminiChat(ctx, systemPrompt, messages, maxTokens);
+    return { ...result, provider: "gemini" };
+  }
   try {
     const result = await callBedrockClaude(ctx, systemPrompt, messages, maxTokens, modelName);
     return { ...result, provider: "bedrock" };

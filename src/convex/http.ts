@@ -4,7 +4,7 @@ import { httpAction } from "./_generated/server";
 import { internal, api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
-import { callModel, calcAgentBucksForTier, FREE_UNLIMITED } from "./agentCore";
+import { callModel, calcAgentBucksForTier, FREE_UNLIMITED, AGENTROUTER_PRIMARY, callAgentRouter, agentRouterModelForTier } from "./agentCore";
 import { buildStudySystemPrompt } from "./studyPrompt";
 import {
   aoOptions,
@@ -349,8 +349,22 @@ http.route({
     let streamSuccess = false;
     let geminiStreamBody = "";
 
-    // Try Claude (non-streaming invoke first to get full text, then stream it)
-    if (hasBedrock && bedrockCreds && preferClaude !== false) {
+    // AgentRouter as configured primary (AWS Bedrock budget out): serve chat from
+    // it first with the full turn history. Falls through to Bedrock/Gemini/VLY on
+    // any error, so a WAF block just degrades instead of dead-ending the request.
+    if (AGENTROUTER_PRIMARY && !streamSuccess) {
+      try {
+        const ar = await callAgentRouter("", fullSystem, agentRouterModelForTier("sonnet"), 4096, messages);
+        if (ar.text) { fullText = ar.text; usedClaude = true; streamSuccess = true; }
+      } catch (arErr) {
+        console.error("AgentRouter (primary) failed for stream-chat:", arErr instanceof Error ? arErr.message : String(arErr));
+      }
+    }
+
+    // Try Claude (non-streaming invoke first to get full text, then stream it).
+    // Skipped when AgentRouter is primary — Bedrock's budget is out, so attempting
+    // it would only burn a 120s timeout before falling through to Gemini/VLY.
+    if (!streamSuccess && !AGENTROUTER_PRIMARY && hasBedrock && bedrockCreds && preferClaude !== false) {
       try {
         const result = await streamClaudeWithCreds(bedrockCreds, fullSystem, messages, () => {});
         fullText = result.fullText;
