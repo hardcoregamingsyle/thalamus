@@ -1064,43 +1064,67 @@ export async function callOpenAICompatible(
       : [{ role: "user", content: prompt.slice(0, 48000) }]),
   ];
 
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 120_000);
-  try {
-    const res = await fetch(`${provider.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature: 0.7, stream: false }),
-      signal: ctrl.signal,
-    });
-    const raw = await res.text();
-    if (!res.ok) {
-      // Self-heal against id drift / output caps: on a model-not-found or
-      // max-tokens 400/404, retry ONCE on this provider's most basic model
-      // (the gemini/haiku-tier entry — always its cheapest, most stable id) with a
-      // clamped token budget. The guard ensures the retry changes something, so it
-      // can't loop. Mirrors the Gemini downgrade — a wrong id degrades, not dies.
-      const baseModel = provider.models.haiku;
-      const recoverable =
-        res.status === 404 || res.status === 410 ||
-        (res.status === 400 && /model|not found|does not exist|decommission|unsupported|max_tokens|maximum|too (long|large)/i.test(raw));
-      if (recoverable && (model !== baseModel || maxTokens > 8192)) {
-        console.warn(`${providerId} (${model}) ${res.status} — retrying on ${baseModel} @8k`);
-        return callOpenAICompatible(prompt, systemPrompt, "haiku", providerId, Math.min(maxTokens, 8192), history);
+  const baseModel = provider.models.haiku;
+  // 240s per attempt: a full 16384-token generation at these free hosts' ~120 tok/s
+  // takes ~135s, so 120s was too tight and aborted long outputs. Node actions get a
+  // ~10-min budget, so 240s is safe. Retry transient hangs/5xx up to twice — the
+  // dispatcher (tiny output) aborting means a momentary provider blip, not length.
+  const TRANSIENT_RETRIES = 2;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= TRANSIENT_RETRIES; attempt++) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 240_000);
+    try {
+      const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+        body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature: 0.7, stream: false }),
+        signal: ctrl.signal,
+      });
+      const raw = await res.text();
+      if (!res.ok) {
+        // Self-heal against id drift / output caps: on a model-not-found or max-tokens
+        // 400/404/410, retry on this provider's most basic model with a clamped budget.
+        // The guard ensures the retry changes something, so it can't loop.
+        const recoverable =
+          res.status === 404 || res.status === 410 ||
+          (res.status === 400 && /model|not found|does not exist|decommission|unsupported|max_tokens|maximum|too (long|large)/i.test(raw));
+        if (recoverable && (model !== baseModel || maxTokens > 8192)) {
+          console.warn(`${providerId} (${model}) ${res.status} — retrying on ${baseModel} @8k`);
+          return callOpenAICompatible(prompt, systemPrompt, "haiku", providerId, Math.min(maxTokens, 8192), history);
+        }
+        // Transient server-side failure — back off and retry.
+        if ((res.status === 429 || res.status >= 500) && attempt < TRANSIENT_RETRIES) {
+          lastErr = new Error(`${providerId} ${res.status}: ${raw.slice(0, 120)}`);
+          await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+          continue;
+        }
+        throw new Error(`${providerId} (${model}) error ${res.status}: ${raw.slice(0, 300)}`);
       }
-      throw new Error(`${providerId} (${model}) error ${res.status}: ${raw.slice(0, 300)}`);
+      let data: { choices?: Array<{ message?: { content?: string } }>; usage?: { prompt_tokens?: number; completion_tokens?: number } };
+      try { data = JSON.parse(raw); } catch { throw new Error(`${providerId} returned non-JSON: ${raw.slice(0, 120)}`); }
+      const text = data.choices?.[0]?.message?.content ?? "";
+      return {
+        text,
+        inputTokens: data.usage?.prompt_tokens ?? 0,
+        outputTokens: data.usage?.completion_tokens ?? 0,
+      };
+    } catch (err) {
+      // A timeout/abort or network hiccup — retry before giving up.
+      const msg = err instanceof Error ? err.message : String(err);
+      const transient = err instanceof Error &&
+        (err.name === "AbortError" || /abort|network|fetch failed|econn|etimedout|terminated|socket/i.test(msg));
+      if (transient && attempt < TRANSIENT_RETRIES) {
+        lastErr = err;
+        await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    } finally {
+      clearTimeout(t);
     }
-    let data: { choices?: Array<{ message?: { content?: string } }>; usage?: { prompt_tokens?: number; completion_tokens?: number } };
-    try { data = JSON.parse(raw); } catch { throw new Error(`${providerId} returned non-JSON: ${raw.slice(0, 120)}`); }
-    const text = data.choices?.[0]?.message?.content ?? "";
-    return {
-      text,
-      inputTokens: data.usage?.prompt_tokens ?? 0,
-      outputTokens: data.usage?.completion_tokens ?? 0,
-    };
-  } finally {
-    clearTimeout(t);
   }
+  throw lastErr instanceof Error ? lastErr : new Error(`${providerId} failed after ${TRANSIENT_RETRIES + 1} attempts`);
 }
 
 export async function performSearch(query: string, keys?: string[]): Promise<string> {
