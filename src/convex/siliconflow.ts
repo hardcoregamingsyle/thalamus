@@ -5,11 +5,24 @@
 
 // ── Base URL & Auth ───────────────────────────────────────────────────────────
 const BASE_URL = "https://ollama.com";
-const API_KEY = (process.env.OLLAMA_API_KEY ?? "").trim();
 
+// Key fallback chain: OLLAMA_API_KEY → OLLAMA_API_KEY_2 → OLLAMA_API_KEY_3 → ...
+function resolveApiKey(): string {
+  for (let i = 1; ; i++) {
+    const name = i === 1 ? "OLLAMA_API_KEY" : `OLLAMA_API_KEY_${i}`;
+    const key = (process.env[name] ?? "").trim();
+    if (key) return key;
+    if (i > 10) break; // check up to _10
+  }
+  throw new Error("OLLAMA_API_KEY not configured — set it in the Convex dashboard.");
+}
+
+let _cachedKey: string | null = null;
 function requireKey(): string {
-  if (!API_KEY) throw new Error("OLLAMA_API_KEY not configured — set it in the Convex dashboard.");
-  return API_KEY;
+  if (_cachedKey === null) {
+    _cachedKey = resolveApiKey();
+  }
+  return _cachedKey;
 }
 
 // ── Model Catalog ─────────────────────────────────────────────────────────────
