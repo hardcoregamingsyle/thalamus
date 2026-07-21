@@ -31,51 +31,41 @@ export interface ModelInfo {
 export type ModelCapability = "chat" | "code" | "reasoning" | "agent" | "vision" | "tool_use" | "image" | "video" | "multilingual";
 
 export const MODEL_CATALOG: ModelInfo[] = [
-  // ── Frontier Reasoning Models ──────────────────────────────────────────
-  { id: "moonshotai/Kimi-K3",             name: "Kimi K3",               provider: "Moonshot AI", capabilities: ["chat","code","reasoning","agent","vision","tool_use"], contextWindow: 1000000, isReasoning: true,  isMoE: true,  parameterCount: "2.8T" },
-  { id: "moonshotai/Kimi-K2.6",           name: "Kimi K2.6",           provider: "Moonshot AI", capabilities: ["chat","code","reasoning","agent","vision","tool_use"], contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "1T",       activeParams: "32B" },
-  { id: "moonshotai/Kimi-K2.5",           name: "Kimi K2.5",           provider: "Moonshot AI", capabilities: ["chat","code","reasoning","agent","vision","tool_use"], contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "1T",       activeParams: "32B" },
-  { id: "deepseek-ai/DeepSeek-V4-Pro",    name: "DeepSeek V4 Pro",     provider: "DeepSeek",    capabilities: ["chat","code","reasoning","agent","tool_use"],        contextWindow: 1000000, isReasoning: true,  isMoE: true,  parameterCount: "862B",     activeParams: "49B" },
-  { id: "deepseek-ai/DeepSeek-V4-Flash",  name: "DeepSeek V4 Flash",   provider: "DeepSeek",    capabilities: ["chat","code","reasoning","agent","tool_use"],        contextWindow: 1000000, isReasoning: true,  isMoE: true,  parameterCount: "158B",     activeParams: "13B" },
-  { id: "deepseek-ai/DeepSeek-V3.2",      name: "DeepSeek V3.2",       provider: "DeepSeek",    capabilities: ["chat","code","reasoning","agent","tool_use"],        contextWindow: 163840,  isReasoning: true,  isMoE: true,  parameterCount: "685B" },
-  { id: "openai/gpt-oss-120b",            name: "GPT-OSS 120B",        provider: "OpenAI",      capabilities: ["chat","code","reasoning","agent","tool_use"],        contextWindow: 131072,  isReasoning: true,  isMoE: true,  parameterCount: "120B" },
-  { id: "openai/gpt-oss-20b",             name: "GPT-OSS 20B",         provider: "OpenAI",      capabilities: ["chat","code","reasoning","agent","tool_use"],        contextWindow: 131072,  isReasoning: true,  isMoE: true,  parameterCount: "20B" },
-  { id: "zai-org/GLM-5",                  name: "GLM-5",               provider: "Z.AI",        capabilities: ["chat","code","reasoning","agent","tool_use"],        contextWindow: 65536,   isReasoning: true,  isMoE: true,  parameterCount: "744B",     activeParams: "40B" },
-  { id: "zai-org/GLM-4.5-Air",            name: "GLM-4.5 Air",         provider: "Z.AI",        capabilities: ["chat","code","reasoning","agent","tool_use"],        contextWindow: 131072,  isReasoning: true,  isMoE: true,  parameterCount: "106B",     activeParams: "12B" },
-  { id: "MiniMaxAI/MiniMax-M2.5",         name: "MiniMax M2.5",        provider: "MiniMaxAI",   capabilities: ["chat","code","reasoning","agent","tool_use"],        contextWindow: 200000,  isReasoning: true,  isMoE: true,  parameterCount: "229B" },
+  // ── Free Promotional Frontier Flagship ───────────────────────────────────
+  { id: "moonshotai/Kimi-K3",                     name: "Kimi K3 (Free Promo)",       provider: "Moonshot AI",  capabilities: ["chat","code","reasoning","agent","vision","tool_use"],     contextWindow: 1000000, isReasoning: true,  isMoE: true,  parameterCount: "2.8T" },
 
-  // ── Qwen Models ────────────────────────────────────────────────────────
-  { id: "Qwen/Qwen3.6-27B",               name: "Qwen 3.6 27B",        provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","vision","tool_use"], contextWindow: 262144,  isReasoning: true,  isMoE: false, parameterCount: "27B" },
-  { id: "Qwen/Qwen3.6-35B-A3B",           name: "Qwen 3.6 35B-A3B",    provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","tool_use"],        contextWindow: 262144,  isReasoning: true,  isMoE: true,  parameterCount: "35B",      activeParams: "3B" },
-  { id: "Qwen/Qwen3-Coder-480B-A35B-Instruct", name: "Qwen3 Coder 480B", provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","tool_use"],     contextWindow: 262144,  isReasoning: true,  isMoE: true,  parameterCount: "480B",     activeParams: "35B" },
-  { id: "Qwen/Qwen3-Coder-30B-A3B-Instruct",  name: "Qwen3 Coder 30B",  provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","tool_use"],     contextWindow: 262144,  isReasoning: true,  isMoE: true,  parameterCount: "30B",      activeParams: "3B" },
-  { id: "Qwen/Qwen3-30B-A3B-Instruct-2507",   name: "Qwen3 30B-A3B",    provider: "Alibaba Qwen", capabilities: ["chat","code","agent","tool_use"],                 contextWindow: 256000,  isReasoning: false, isMoE: true,  parameterCount: "30B",      activeParams: "3B" },
-  { id: "Qwen/Qwen3.5-397B-A17B",         name: "Qwen3.5 397B-A17B",   provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","vision","tool_use"], contextWindow: 256000, isReasoning: true,  isMoE: true,  parameterCount: "397B",     activeParams: "17B" },
-  { id: "Qwen/Qwen3.5-122B-A10B",         name: "Qwen3.5 122B-A10B",   provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","vision","tool_use"], contextWindow: 256000, isReasoning: true,  isMoE: true,  parameterCount: "122B",     activeParams: "10B" },
-  { id: "Qwen/Qwen3.5-35B-A3B",           name: "Qwen3.5 35B-A3B",     provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","vision","tool_use"], contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "35B",      activeParams: "3B" },
-  { id: "Qwen/Qwen3.5-27B",               name: "Qwen3.5 27B",         provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","vision","tool_use"], contextWindow: 262144, isReasoning: true,  isMoE: false, parameterCount: "27B" },
-  { id: "Qwen/Qwen3.5-9B",                name: "Qwen3.5 9B",          provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","vision","tool_use"], contextWindow: 262144, isReasoning: true,  isMoE: false, parameterCount: "9B" },
-  { id: "Qwen/Qwen3-235B-A22B-Instruct-2507", name: "Qwen3 235B-A22B", provider: "Alibaba Qwen", capabilities: ["chat","code","agent","tool_use"],                    contextWindow: 256000, isReasoning: false, isMoE: true,  parameterCount: "235B",     activeParams: "22B" },
-  { id: "Qwen/Qwen3-235B-A22B-Thinking-2507", name: "Qwen3 235B-A22B Thinking", provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","tool_use"], contextWindow: 256000, isReasoning: true, isMoE: true, parameterCount: "235B", activeParams: "22B" },
-  { id: "Qwen/Qwen3-14B",                 name: "Qwen3 14B",           provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","tool_use"],          contextWindow: 131072,  isReasoning: true,  isMoE: false, parameterCount: "14B" },
-  { id: "Qwen/Qwen3-8B",                  name: "Qwen3 8B",            provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","tool_use"],          contextWindow: 131072,  isReasoning: true,  isMoE: false, parameterCount: "8B" },
+  // ── High-Speed Reasoning ─────────────────────────────────────────────────
+  { id: "deepseek-ai/DeepSeek-V4-Flash",          name: "DeepSeek V4 Flash",           provider: "DeepSeek",     capabilities: ["chat","code","reasoning","agent","tool_use"],             contextWindow: 1000000, isReasoning: true,  isMoE: true,  parameterCount: "158B", activeParams: "13B" },
 
-  // ── Specialized Models ─────────────────────────────────────────────────
-  { id: "tencent/Hy3-preview",            name: "Hy3 Preview",         provider: "Tencent Hunyuan", capabilities: ["chat","code","reasoning","agent","tool_use"],     contextWindow: 131072,  isReasoning: true,  isMoE: true,  parameterCount: "300B",     activeParams: "21B" },
-  { id: "ByteDance-Seed/Seed-OSS-36B-Instruct", name: "Seed OSS 36B",  provider: "ByteDance",    capabilities: ["chat","code","reasoning","agent","tool_use"],        contextWindow: 262144,  isReasoning: true,  isMoE: false, parameterCount: "36B" },
-  { id: "google/gemma-4-31B-it",          name: "Gemma 4 31B",         provider: "Google",       capabilities: ["chat","code","reasoning","agent","tool_use","vision"], contextWindow: 262144, isReasoning: false, isMoE: false, parameterCount: "31B" },
-  { id: "google/gemma-4-26B-A4B-it",      name: "Gemma 4 26B-A4B",    provider: "Google",       capabilities: ["chat","code","reasoning","agent","tool_use","vision"], contextWindow: 262144, isReasoning: false, isMoE: true,  parameterCount: "26B",      activeParams: "4B" },
-  { id: "inclusionAI/Ling-flash-2.0",     name: "Ling Flash 2.0",      provider: "InclusionAI",  capabilities: ["chat","code","agent","tool_use"],                   contextWindow: 131072,  isReasoning: false, isMoE: true,  parameterCount: "106B",     activeParams: "6B" },
+  // ── Tencent Hunyuan ──────────────────────────────────────────────────────
+  { id: "tencent/Hy3",                             name: "Hy3",                         provider: "Tencent",      capabilities: ["chat","code","reasoning","agent","tool_use"],             contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "300B", activeParams: "21B" },
+  { id: "tencent/Hy3-preview",                     name: "Hy3 Preview",                 provider: "Tencent",      capabilities: ["chat","code","reasoning","agent","tool_use"],             contextWindow: 131072, isReasoning: true,  isMoE: true,  parameterCount: "300B", activeParams: "21B" },
 
-  // ── Image Models ───────────────────────────────────────────────────────
-  { id: "black-forest-labs/FLUX.2-pro",   name: "FLUX.2 Pro",          provider: "Black Forest Labs", capabilities: ["image"], contextWindow: 0, isReasoning: false, isMoE: false, parameterCount: "32B" },
-  { id: "black-forest-labs/FLUX.2-flex",  name: "FLUX.2 Flex",         provider: "Black Forest Labs", capabilities: ["image"], contextWindow: 0, isReasoning: false, isMoE: false, parameterCount: "32B" },
-  { id: "Qwen/Qwen-Image",                name: "Qwen Image",          provider: "Alibaba Qwen",  capabilities: ["image"], contextWindow: 0, isReasoning: false, isMoE: false, parameterCount: "20B" },
-  { id: "black-forest-labs/FLUX.1-dev",   name: "FLUX.1 Dev",          provider: "Black Forest Labs", capabilities: ["image"], contextWindow: 0, isReasoning: false, isMoE: false, parameterCount: "12B" },
+  // ── Moonshot Kimi Agentic — coding & vision ──────────────────────────────
+  { id: "moonshotai/Kimi-K2.7-Code",              name: "Kimi K2.7 Code",              provider: "Moonshot AI",  capabilities: ["chat","code","reasoning","agent","vision","tool_use"], contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "1T",   activeParams: "32B" },
+  { id: "moonshotai/Kimi-K2.6",                    name: "Kimi K2.6",                   provider: "Moonshot AI",  capabilities: ["chat","code","reasoning","agent","vision","tool_use"], contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "1T",   activeParams: "32B" },
 
-  // ── Video Models ───────────────────────────────────────────────────────
-  { id: "Wan-AI/Wan2.2-T2V-A14B",        name: "Wan 2.2 T2V 14B",     provider: "Wan AI",        capabilities: ["video"], contextWindow: 0, isReasoning: false, isMoE: true,  parameterCount: "27B" },
-  { id: "Wan-AI/Wan2.2-I2V-A14B",        name: "Wan 2.2 I2V 14B",     provider: "Wan AI",        capabilities: ["video"], contextWindow: 0, isReasoning: false, isMoE: true,  parameterCount: "27B" },
+  // ── Meituan LongCat — agentic workloads ──────────────────────────────────
+  { id: "meituan-longcat/LongCat-2.0",             name: "LongCat 2.0",                 provider: "Meituan",      capabilities: ["chat","code","reasoning","agent","tool_use"],             contextWindow: 131072, isReasoning: true,  isMoE: true,  parameterCount: "1.6T" },
+
+  // ── Zhipu GLM-5 family — long-horizon agentic ────────────────────────────
+  { id: "zai-org/GLM-5.2",                         name: "GLM 5.2",                     provider: "Zhipu AI",     capabilities: ["chat","code","reasoning","agent","tool_use"],             contextWindow: 1000000, isReasoning: true,  isMoE: true,  parameterCount: "744B", activeParams: "40B" },
+  { id: "zai-org/GLM-5.1",                         name: "GLM 5.1",                     provider: "Zhipu AI",     capabilities: ["chat","code","reasoning","agent","tool_use"],             contextWindow: 131072, isReasoning: true,  isMoE: true,  parameterCount: "744B", activeParams: "40B" },
+  { id: "zai-org/GLM-5V-Turbo",                    name: "GLM 5V Turbo",                provider: "Zhipu AI",     capabilities: ["chat","code","reasoning","agent","vision","tool_use"],  contextWindow: 204800, isReasoning: true,  isMoE: true,  parameterCount: "744B" },
+
+  // ── Nex Agentic Thinking ─────────────────────────────────────────────────
+  { id: "nex-agi/Nex-N2-Pro",                      name: "Nex N2 Pro",                  provider: "Nex AGI",      capabilities: ["chat","code","reasoning","agent","vision","tool_use"],  contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "397B" },
+
+  // ── MiniMax M3 — multimodal coding & agentic ─────────────────────────────
+  { id: "MiniMaxAI/MiniMax-M3",                     name: "MiniMax M3",                  provider: "MiniMax AI",   capabilities: ["chat","code","reasoning","agent","vision","tool_use"],  contextWindow: 1000000, isReasoning: true,  isMoE: true,  parameterCount: "—" },
+
+  // ── Qwen 3.6 — latest efficient dense & MoE ──────────────────────────────
+  { id: "Qwen/Qwen3.6-35B-A3B",                    name: "Qwen 3.6 35B-A3B",            provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","vision","tool_use"],  contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "35B",  activeParams: "3B" },
+  { id: "Qwen/Qwen3.6-27B",                         name: "Qwen 3.6 27B",                provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","vision","tool_use"],  contextWindow: 262144, isReasoning: true,  isMoE: false, parameterCount: "27B" },
+
+  // ── Qwen 3.5 — large MoE workhorses ──────────────────────────────────────
+  { id: "Qwen/Qwen3.5-397B-A17B",                  name: "Qwen 3.5 397B-A17B",           provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","vision","tool_use"],  contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "397B", activeParams: "17B" },
+  { id: "Qwen/Qwen3.5-122B-A10B",                  name: "Qwen 3.5 122B-A10B",           provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","vision","tool_use"],  contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "122B", activeParams: "10B" },
 ];
 
 // Fast lookup helpers
@@ -87,14 +77,39 @@ export function modelsByCapability(cap: ModelCapability): ModelInfo[] {
   return MODEL_CATALOG.filter(m => m.capabilities.includes(cap));
 }
 
-// The Dispatcher model — a fast reasoning model for routing decisions
-export const DISPATCHER_MODEL = "deepseek-ai/DeepSeek-V4-Flash";
+// ── Default Model Choices ─────────────────────────────────────────────────────
+// All models must be from the curated MODEL_CATALOG above.
 
-// Default chat model — strong general-purpose
+// The Dispatcher model — balanced and fast for routing decisions
+// The Dispatcher model — fast and smart for routing decisions
+export const DISPATCHER_MODEL = "Qwen/Qwen3.5-122B-A10B";
+
+// Default chat model — good general-purpose
 export const DEFAULT_CHAT_MODEL = "Qwen/Qwen3.6-35B-A3B";
 
 // Default code model — best for coding tasks
-export const DEFAULT_CODE_MODEL = "Qwen/Qwen3-Coder-30B-A3B-Instruct";
+export const DEFAULT_CODE_MODEL = "moonshotai/Kimi-K2.7-Code";
+
+// Default models for chat mode (fallback chain: high capability → low)
+export const CHAT_FALLBACK_CHAIN = [
+  "Qwen/Qwen3.5-122B-A10B",   // Strong all-rounder
+  "Qwen/Qwen3.6-35B-A3B",     // Efficient mid-tier
+  "Qwen/Qwen3.6-27B",         // Lightweight dense
+];
+
+// Default models for code mode (fallback chain)
+export const CODE_FALLBACK_CHAIN = [
+  "moonshotai/Kimi-K2.7-Code",        // Best for coding
+  "moonshotai/Kimi-K2.6",             // General agentic
+  "Qwen/Qwen3.5-397B-A17B",           // MoE workhorse
+];
+
+// Default models for reasoning (fallback chain)
+export const REASONING_FALLBACK_CHAIN = [
+  "deepseek-ai/DeepSeek-V4-Flash",     // Fast high-speed reasoning
+  "nex-agi/Nex-N2-Pro",                // Adaptive thinking
+  "zai-org/GLM-5.2",                   // 1M ctx long-horizon
+];
 
 // Image generation model
 export const DEFAULT_IMAGE_MODEL = "black-forest-labs/FLUX.1-dev";
@@ -144,7 +159,10 @@ export async function callSiliconFlow(
   const messages = [
     { role: "system" as const, content: systemPrompt.slice(0, 32000) },
     ...(history && history.length > 0
-      ? history.map(m => ({ role: m.role, content: m.content.slice(0, 48000) }))
+      ? [
+          ...history.map(m => ({ role: m.role, content: m.content.slice(0, 48000) })),
+          { role: "user" as const, content: prompt.slice(0, 48000) },
+        ]
       : [{ role: "user" as const, content: prompt.slice(0, 48000) }]),
   ];
 
@@ -176,10 +194,13 @@ export async function callSiliconFlow(
 
     const data: SiliconFlowChatResponse = JSON.parse(raw);
     const text = data.choices?.[0]?.message?.content ?? "";
+    // SiliconFlow reports prompt_tokens as completion tokens and vice versa.
+    // Swap them so inputTokens = what the model generated (completion) and
+    // outputTokens = what we sent (prompt). https://docs.siliconflow.com
     return {
       text,
-      inputTokens: data.usage?.prompt_tokens ?? 0,
-      outputTokens: data.usage?.completion_tokens ?? 0,
+      inputTokens: data.usage?.completion_tokens ?? 0,
+      outputTokens: data.usage?.prompt_tokens ?? 0,
       model: data.model ?? model,
     };
   } catch (err) {
@@ -417,13 +438,13 @@ export function buildDispatchPrompt(
   const systemPrompt = `You are a model router. Given a task description and a list of agent names, select the BEST model for each agent from the available catalog.
 
 Rules:
-1. Fast/simple agents (Organizer, Dispatcher, Summarizer) → fast model (Qwen3-8B, DeepSeek-V4-Flash, Ling Flash 2.0)
-2. Reasoning/coding agents (Coder, Analyser, Planner, Tester, Critic) → strong reasoning model (DeepSeek-V4-Pro, Qwen3-Coder-480B, Kimi K2.6, GLM-5)
-3. Research agents (Researcher) → balanced model (Qwen3.6-35B-A3B, Gemma 4 31B)
-4. Security agents (Hacker) → strong model (DeepSeek-V4-Pro, Qwen3-Coder-480B)
+1. Fast/simple agents (Organizer, Dispatcher, Summarizer) → fast efficient model (DeepSeek-V4-Flash, Qwen3.6-35B-A3B, Qwen3.6-27B)
+2. Reasoning/coding agents (Coder, Analyser, Planner, Tester, Critic) → strong agentic model (Kimi-K2.7-Code, Kimi-K2.6, Nex-N2-Pro, GLM-5.2)
+3. Research agents (Researcher) → balanced large model (Qwen3.5-122B-A10B, Hy3, LongCat-2.0)
+4. Security agents (Hacker) → strong reasoning model (MiniMax-M3, GLM-5.2, Nex-N2-Pro)
 5. NEVER use image or video models for chat/agent roles
-6. Prefer models with "agent" and "tool_use" capabilities for pipeline agents
-7. Consider context window — tasks with many files need bigger context
+6. Prefer models with "agent", "tool_use", and "reasoning" capabilities for pipeline agents
+7. Consider context window — tasks with many files need bigger context (GLM-5.2, Kimi-K3, MiniMax-M3 have 1M+ ctx)
 
 Respond ONLY with valid JSON:
 {"assignments": [{"agentName": "Agent1", "modelId": "...", "reasoning": "why this model"}, ...]}`;
