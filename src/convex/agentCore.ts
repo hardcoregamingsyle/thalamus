@@ -978,7 +978,14 @@ export async function callAgentRouter(
 // AgentRouter). Pick one with AI_PRIMARY_PROVIDER=<name> and set its <KEYENV> secret.
 // The model ids map our ModelTier onto that host's catalog — verify/adjust the ids
 // for whichever host you enable (they drift; the base URLs are stable).
-type OAIProvider = { baseUrl: string; keyEnv: string; models: Record<ModelTier, string> };
+// baseUrl may be a function so hosts whose URL embeds an account id (Cloudflare)
+// resolve it from env at CALL time, not at module load — so it picks up the value
+// the moment it's set, even in a warm isolate.
+type OAIProvider = { baseUrl: string | (() => string); keyEnv: string; models: Record<ModelTier, string> };
+
+function providerBaseUrl(p: OAIProvider): string {
+  return typeof p.baseUrl === "function" ? p.baseUrl() : p.baseUrl;
+}
 
 const OPENAI_PROVIDERS: Record<string, OAIProvider> = {
   // Google AI Studio Gemini via its OpenAI-compatible endpoint — free, no card, and
@@ -999,7 +1006,7 @@ const OPENAI_PROVIDERS: Record<string, OAIProvider> = {
   // pool-flagged like shared keys), Qwen2.5-Coder-32B is GPT-4o-class on code. Needs
   // both CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (the id goes in the URL).
   cloudflare: {
-    baseUrl: `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID ?? "MISSING_ACCOUNT_ID"}/ai/v1`,
+    baseUrl: () => `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID ?? "MISSING_ACCOUNT_ID"}/ai/v1`,
     keyEnv: "CLOUDFLARE_API_TOKEN",
     models: {
       gemini: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", haiku: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
@@ -1137,7 +1144,7 @@ export async function callOpenAICompatible(
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 240_000);
     try {
-      const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+      const res = await fetch(`${providerBaseUrl(provider)}/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
         body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature: 0.7, stream: false }),
@@ -1218,7 +1225,7 @@ export async function callOpenAICompatibleStreaming(
   // stalls we'd rather bail fast to the robust non-streaming path than burn 240s.
   const t = setTimeout(() => ctrl.abort(), 120_000);
   try {
-    const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+    const res = await fetch(`${providerBaseUrl(provider)}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
       body: JSON.stringify({
