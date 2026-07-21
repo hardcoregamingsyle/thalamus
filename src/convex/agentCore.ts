@@ -863,6 +863,14 @@ Create/Edit files using these tags:
 <<DELETE="path">>
 <<RUN-CMD="command">>
 
+CRITICAL COMMAND RULE — IMPORTANT: Only commands wrapped in <<RUN-CMD="...">> execute. Writing bare shell commands like `cat`, `ls`, `npm install`, `grep`, etc. in plain text will NOT run them — they are silently ignored. Every command MUST use the correct syntax.
+
+✅ Correct: <<RUN-CMD="npm install 2>&1">>
+✅ Correct: <<RUN-CMD="ls -la src/">>
+❌ Wrong: run `npm install`  
+❌ Wrong: cat package.json
+❌ Wrong: ```npm test```
+
 CRITICAL RULES:
 - Every file must be 100% complete — no TODOs, no placeholders, no stubs
 - Every function fully implemented

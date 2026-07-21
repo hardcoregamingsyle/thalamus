@@ -792,7 +792,7 @@ export const runPipelineAction = internalAction({
               recentFeedback ? `## Previous Feedback (from Tester/Critic/Hacker)\n${recentFeedback}` : "",
               commandContext,
               `## Pipeline Context\n${context}`,
-              `## Tool Usage\nRun shell commands: <<RUN-CMD="command">>\nRequest API keys: <<REQUEST-API-KEY name="VAR" description="..." howToGet="...">>`,
+              `## Tool Usage\nIMPORTANT: Only wrapped commands execute. Bare shell commands (cat, ls, grep, curl, node, npm, cd, etc.) written in plain text will NOT run — they are ignored. Every command MUST be wrapped in <<RUN-CMD="...">>.\nCorrect: <<RUN-CMD="npm install 2>&1\n">>\nCorrect: <<RUN-CMD="cat package.json\n">>\nWrong: cat package.json\nWrong: npm install\nWrong: ls -la src/\n\nSyntax: <<RUN-CMD="your shell command here">>\nRequest API keys: <<REQUEST-API-KEY name="VAR" description="..." howToGet="...">>`,
               mcpToolSection,
             ].filter(Boolean).join("\n\n");
           }
