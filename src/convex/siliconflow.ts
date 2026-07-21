@@ -1,71 +1,104 @@
-// SiliconFlow API client — the sole AI provider for Thalamus.
-// OpenAI-compatible chat completions + image/video generation.
-// API key: set SILICONFLOW_API_KEY in Convex env vars.
-// Docs: https://docs.siliconflow.com
+// Ollama Cloud API client — sole AI provider for Thalamus.
+// Replaces the SiliconFlow implementation. Uses Ollama's native API directly.
+// Auth: Bearer token via OLLAMA_API_KEY env var.
+// Docs: https://docs.ollama.com/api/chat
 
 // ── Base URL & Auth ───────────────────────────────────────────────────────────
-const BASE_URL = "https://api.siliconflow.com/v1";
-const API_KEY = (process.env.SILICONFLOW_API_KEY ?? "").trim();
+const BASE_URL = "https://ollama.com";
+const API_KEY = (process.env.OLLAMA_API_KEY ?? "").trim();
 
 function requireKey(): string {
-  if (!API_KEY) throw new Error("SILICONFLOW_API_KEY not configured — set it in the Convex dashboard.");
+  if (!API_KEY) throw new Error("OLLAMA_API_KEY not configured — set it in the Convex dashboard.");
   return API_KEY;
 }
 
 // ── Model Catalog ─────────────────────────────────────────────────────────────
-// Every non-deprecated model from our supported list, grouped by capability.
-// The Dispatcher receives this catalog to make routing decisions.
+// Only models verified working on the Ollama Cloud free plan (no CC required).
+// Usage is measured by GPU time — light usage is included on the free plan.
+// 1 concurrent model on free.
 
 export interface ModelInfo {
-  id: string;                    // Full SiliconFlow model id
+  id: string;                    // Ollama model name
   name: string;                  // Human-readable name
   provider: string;              // Provider/organization
   capabilities: ModelCapability[];
-  contextWindow: number;         // Max context length in tokens
-  isReasoning: boolean;          // Has thinking/chain-of-thought mode
+  contextWindow: number;         // Max context length in tokens (approx)
+  isReasoning: boolean;          // Has thinking chain-of-thought support
   isMoE: boolean;                // Mixture of Experts architecture
-  parameterCount: string;        // e.g. "2.8T", "862B", "35B-A3B"
-  activeParams?: string;         // Activated parameters for MoE models
+  parameterCount: string;        // e.g. "120B", "31B", "20B"
+  usageLevel?: number;           // 1-4, how much GPU time this model uses
 }
 
-export type ModelCapability = "chat" | "code" | "reasoning" | "agent" | "vision" | "tool_use" | "image" | "video" | "multilingual";
+export type ModelCapability = "chat" | "code" | "reasoning" | "agent" | "vision" | "tool_use" | "multilingual";
 
 export const MODEL_CATALOG: ModelInfo[] = [
-  // ── Free Promotional Frontier Flagship ───────────────────────────────────
-  { id: "moonshotai/Kimi-K3",                     name: "Kimi K3 (Free Promo)",       provider: "Moonshot AI",  capabilities: ["chat","code","reasoning","agent","vision","tool_use"],     contextWindow: 1000000, isReasoning: true,  isMoE: true,  parameterCount: "2.8T" },
-
-  // ── High-Speed Reasoning ─────────────────────────────────────────────────
-  { id: "deepseek-ai/DeepSeek-V4-Flash",          name: "DeepSeek V4 Flash",           provider: "DeepSeek",     capabilities: ["chat","code","reasoning","agent","tool_use"],             contextWindow: 1000000, isReasoning: true,  isMoE: true,  parameterCount: "158B", activeParams: "13B" },
-
-  // ── Tencent Hunyuan ──────────────────────────────────────────────────────
-  { id: "tencent/Hy3",                             name: "Hy3",                         provider: "Tencent",      capabilities: ["chat","code","reasoning","agent","tool_use"],             contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "300B", activeParams: "21B" },
-  { id: "tencent/Hy3-preview",                     name: "Hy3 Preview",                 provider: "Tencent",      capabilities: ["chat","code","reasoning","agent","tool_use"],             contextWindow: 131072, isReasoning: true,  isMoE: true,  parameterCount: "300B", activeParams: "21B" },
-
-  // ── Moonshot Kimi Agentic — coding & vision ──────────────────────────────
-  { id: "moonshotai/Kimi-K2.7-Code",              name: "Kimi K2.7 Code",              provider: "Moonshot AI",  capabilities: ["chat","code","reasoning","agent","vision","tool_use"], contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "1T",   activeParams: "32B" },
-  { id: "moonshotai/Kimi-K2.6",                    name: "Kimi K2.6",                   provider: "Moonshot AI",  capabilities: ["chat","code","reasoning","agent","vision","tool_use"], contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "1T",   activeParams: "32B" },
-
-  // ── Meituan LongCat — agentic workloads ──────────────────────────────────
-  { id: "meituan-longcat/LongCat-2.0",             name: "LongCat 2.0",                 provider: "Meituan",      capabilities: ["chat","code","reasoning","agent","tool_use"],             contextWindow: 131072, isReasoning: true,  isMoE: true,  parameterCount: "1.6T" },
-
-  // ── Zhipu GLM-5 family — long-horizon agentic ────────────────────────────
-  { id: "zai-org/GLM-5.2",                         name: "GLM 5.2",                     provider: "Zhipu AI",     capabilities: ["chat","code","reasoning","agent","tool_use"],             contextWindow: 1000000, isReasoning: true,  isMoE: true,  parameterCount: "744B", activeParams: "40B" },
-  { id: "zai-org/GLM-5.1",                         name: "GLM 5.1",                     provider: "Zhipu AI",     capabilities: ["chat","code","reasoning","agent","tool_use"],             contextWindow: 131072, isReasoning: true,  isMoE: true,  parameterCount: "744B", activeParams: "40B" },
-  { id: "zai-org/GLM-5V-Turbo",                    name: "GLM 5V Turbo",                provider: "Zhipu AI",     capabilities: ["chat","code","reasoning","agent","vision","tool_use"],  contextWindow: 204800, isReasoning: true,  isMoE: true,  parameterCount: "744B" },
-
-  // ── Nex Agentic Thinking ─────────────────────────────────────────────────
-  { id: "nex-agi/Nex-N2-Pro",                      name: "Nex N2 Pro",                  provider: "Nex AGI",      capabilities: ["chat","code","reasoning","agent","vision","tool_use"],  contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "397B" },
-
-  // ── MiniMax M3 — multimodal coding & agentic ─────────────────────────────
-  { id: "MiniMaxAI/MiniMax-M3",                     name: "MiniMax M3",                  provider: "MiniMax AI",   capabilities: ["chat","code","reasoning","agent","vision","tool_use"],  contextWindow: 1000000, isReasoning: true,  isMoE: true,  parameterCount: "—" },
-
-  // ── Qwen 3.6 — latest efficient dense & MoE ──────────────────────────────
-  { id: "Qwen/Qwen3.6-35B-A3B",                    name: "Qwen 3.6 35B-A3B",            provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","vision","tool_use"],  contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "35B",  activeParams: "3B" },
-  { id: "Qwen/Qwen3.6-27B",                         name: "Qwen 3.6 27B",                provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","vision","tool_use"],  contextWindow: 262144, isReasoning: true,  isMoE: false, parameterCount: "27B" },
-
-  // ── Qwen 3.5 — large MoE workhorses ──────────────────────────────────────
-  { id: "Qwen/Qwen3.5-397B-A17B",                  name: "Qwen 3.5 397B-A17B",           provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","vision","tool_use"],  contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "397B", activeParams: "17B" },
-  { id: "Qwen/Qwen3.5-122B-A10B",                  name: "Qwen 3.5 122B-A10B",           provider: "Alibaba Qwen", capabilities: ["chat","code","reasoning","agent","vision","tool_use"],  contextWindow: 262144, isReasoning: true,  isMoE: true,  parameterCount: "122B", activeParams: "10B" },
+  // ── Frontier Models (Free Plan) ─────────────────────────────────────────
+  {
+    id: "gpt-oss:120b",
+    name: "GPT-OSS 120B",
+    provider: "OpenAI",
+    capabilities: ["chat","code","reasoning","agent","tool_use","multilingual"],
+    contextWindow: 131072,
+    isReasoning: true,
+    isMoE: true,
+    parameterCount: "120B",
+    usageLevel: 3,
+  },
+  {
+    id: "gpt-oss:20b",
+    name: "GPT-OSS 20B",
+    provider: "OpenAI",
+    capabilities: ["chat","code","reasoning","agent","tool_use","multilingual"],
+    contextWindow: 131072,
+    isReasoning: true,
+    isMoE: true,
+    parameterCount: "20B",
+    usageLevel: 2,
+  },
+  {
+    id: "gemma4:31b",
+    name: "Gemma 4 31B",
+    provider: "Google DeepMind",
+    capabilities: ["chat","code","reasoning","agent","tool_use","multilingual"],
+    contextWindow: 262144,
+    isReasoning: false,
+    isMoE: false,
+    parameterCount: "31B",
+    usageLevel: 2,
+  },
+  {
+    id: "minimax-m3",
+    name: "MiniMax M3",
+    provider: "MiniMax AI",
+    capabilities: ["chat","code","reasoning","agent","vision","tool_use","multilingual"],
+    contextWindow: 1000000,
+    isReasoning: true,
+    isMoE: true,
+    parameterCount: "—",
+    usageLevel: 3,
+  },
+  {
+    id: "minimax-m2.5",
+    name: "MiniMax M2.5",
+    provider: "MiniMax AI",
+    capabilities: ["chat","code","reasoning","agent","tool_use","multilingual"],
+    contextWindow: 204800,
+    isReasoning: true,
+    isMoE: true,
+    parameterCount: "229B",
+    usageLevel: 2,
+  },
+  {
+    id: "nemotron-3-nano:30b",
+    name: "Nemotron 3 Nano 30B",
+    provider: "NVIDIA",
+    capabilities: ["chat","code","reasoning","agent","tool_use","multilingual"],
+    contextWindow: 131072,
+    isReasoning: true,
+    isMoE: false,
+    parameterCount: "30B",
+    usageLevel: 2,
+  },
 ];
 
 // Fast lookup helpers
@@ -78,63 +111,58 @@ export function modelsByCapability(cap: ModelCapability): ModelInfo[] {
 }
 
 // ── Default Model Choices ─────────────────────────────────────────────────────
-// All models must be from the curated MODEL_CATALOG above.
+// All models from the verified free-plan catalog above.
 
-// The Dispatcher model — balanced and fast for routing decisions
 // The Dispatcher model — fast and smart for routing decisions
-export const DISPATCHER_MODEL = "Qwen/Qwen3.5-122B-A10B";
+export const DISPATCHER_MODEL = "gemma4:31b";
 
 // Default chat model — good general-purpose
-export const DEFAULT_CHAT_MODEL = "Qwen/Qwen3.6-35B-A3B";
+export const DEFAULT_CHAT_MODEL = "gemma4:31b";
 
 // Default code model — best for coding tasks
-export const DEFAULT_CODE_MODEL = "moonshotai/Kimi-K2.7-Code";
+export const DEFAULT_CODE_MODEL = "minimax-m3";
 
 // Default models for chat mode (fallback chain: high capability → low)
 export const CHAT_FALLBACK_CHAIN = [
-  "Qwen/Qwen3.5-122B-A10B",   // Strong all-rounder
-  "Qwen/Qwen3.6-35B-A3B",     // Efficient mid-tier
-  "Qwen/Qwen3.6-27B",         // Lightweight dense
+  "gpt-oss:120b",       // Strong all-rounder
+  "gemma4:31b",         // Fast & solid
+  "gpt-oss:20b",        // Lightweight
 ];
 
 // Default models for code mode (fallback chain)
 export const CODE_FALLBACK_CHAIN = [
-  "moonshotai/Kimi-K2.7-Code",        // Best for coding
-  "moonshotai/Kimi-K2.6",             // General agentic
-  "Qwen/Qwen3.5-397B-A17B",           // MoE workhorse
+  "minimax-m3",         // Best coding + agentic
+  "gpt-oss:120b",       // Strong secondary
+  "gemma4:31b",         // General fallback
 ];
 
 // Default models for reasoning (fallback chain)
 export const REASONING_FALLBACK_CHAIN = [
-  "deepseek-ai/DeepSeek-V4-Flash",     // Fast high-speed reasoning
-  "nex-agi/Nex-N2-Pro",                // Adaptive thinking
-  "zai-org/GLM-5.2",                   // 1M ctx long-horizon
+  "minimax-m3",         // Best reasoning on free plan
+  "gpt-oss:120b",       // Strong reasoning
+  "gpt-oss:20b",        // Compact reasoning
 ];
 
-// Image generation model
-export const DEFAULT_IMAGE_MODEL = "black-forest-labs/FLUX.1-dev";
+// No dedicated image/video generation models on Ollama Cloud free plan.
+// Multimodal models (minimax-m3) can *understand* images but not generate them.
 
-// Video generation model
-export const DEFAULT_VIDEO_MODEL = "Wan-AI/Wan2.2-T2V-A14B";
+// ── Ollama Chat API ───────────────────────────────────────────────────────────
+// POST https://ollama.com/api/chat
+// Uses Ollama's native format, NOT OpenAI-compatible.
 
-// ── Chat Completions ─────────────────────────────────────────────────────────
-// Standard OpenAI-compatible chat endpoint.
-
-interface SiliconFlowChatResponse {
-  id: string;
-  choices: Array<{
-    message: {
-      role: string;
-      content: string;
-      reasoning_content?: string;
-    };
-  }>;
-  usage: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-  };
+interface OllamaChatResponse {
   model: string;
+  created_at: string;
+  message: {
+    role: string;
+    content: string;
+    thinking?: string;
+  };
+  done: boolean;
+  done_reason?: string;
+  total_duration?: number;
+  prompt_eval_count?: number;
+  eval_count?: number;
 }
 
 export interface ChatResult {
@@ -145,7 +173,8 @@ export interface ChatResult {
 }
 
 /**
- * Call SiliconFlow chat completions (non-streaming).
+ * Call Ollama Cloud chat completions (non-streaming).
+ * Uses the native Ollama API at POST /api/chat.
  */
 export async function callSiliconFlow(
   prompt: string,
@@ -169,15 +198,17 @@ export async function callSiliconFlow(
   const body = JSON.stringify({
     model,
     messages,
-    max_tokens: maxTokens,
-    temperature: 0.7,
     stream: false,
+    options: {
+      temperature: 0.7,
+      num_predict: maxTokens,
+    },
   });
 
   const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), 240_000);
+  const timeout = setTimeout(() => ctrl.abort(), 300_000);
   try {
-    const res = await fetch(`${BASE_URL}/chat/completions`, {
+    const res = await fetch(`${BASE_URL}/api/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -189,23 +220,21 @@ export async function callSiliconFlow(
 
     const raw = await res.text();
     if (!res.ok) {
-      throw new Error(`SiliconFlow ${res.status}: ${raw.slice(0, 300)}`);
+      const msg = JSON.parse(raw);
+      throw new Error(`Ollama Cloud ${res.status}: ${msg.error ?? raw.slice(0, 300)}`);
     }
 
-    const data: SiliconFlowChatResponse = JSON.parse(raw);
-    const text = data.choices?.[0]?.message?.content ?? "";
-    // SiliconFlow reports prompt_tokens as completion tokens and vice versa.
-    // Swap them so inputTokens = what the model generated (completion) and
-    // outputTokens = what we sent (prompt). https://docs.siliconflow.com
+    const data: OllamaChatResponse = JSON.parse(raw);
+    const text = data.message?.content ?? "";
     return {
       text,
-      inputTokens: data.usage?.completion_tokens ?? 0,
-      outputTokens: data.usage?.prompt_tokens ?? 0,
+      inputTokens: data.prompt_eval_count ?? 0,
+      outputTokens: data.eval_count ?? 0,
       model: data.model ?? model,
     };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("SiliconFlow request timed out after 240s");
+      throw new Error("Ollama Cloud request timed out after 300s");
     }
     throw err;
   } finally {
@@ -214,7 +243,7 @@ export async function callSiliconFlow(
 }
 
 /**
- * Call SiliconFlow with simulated streaming — fetch full response, then
+ * Call Ollama Cloud with simulated streaming — fetch full response, then
  * deliver to onDelta in chunks (300 chars every 80ms) for UI streaming.
  */
 export async function callSiliconFlowStreaming(
@@ -225,7 +254,6 @@ export async function callSiliconFlowStreaming(
   maxTokens: number = 16384,
   history?: Array<{ role: "user" | "assistant"; content: string }>,
 ): Promise<ChatResult> {
-  // Fetch the full response first
   const result = await callSiliconFlow(prompt, systemPrompt, model, maxTokens, history);
 
   // Drip-feed to simulate streaming
@@ -242,155 +270,28 @@ export async function callSiliconFlowStreaming(
   return result;
 }
 
-// ── Image Generation ─────────────────────────────────────────────────────────
-// POST /v1/images/generations — returns one or more image URLs.
+// ── Image Generation (stub — not available on Ollama Cloud free plan) ─────────
+// Multimodal models like minimax-m3 can understand images but not generate them.
+// If image generation is needed, we'd need a separate provider.
 
-interface SiliconFlowImageResponse {
-  images: Array<{ url: string }>;
-  timings?: { inference: number };
-  seed?: number;
-}
-
-/**
- * Generate an image using SiliconFlow's image generation API.
- * Returns an array of image URLs.
- */
 export async function generateImage(
-  prompt: string,
-  model: string = DEFAULT_IMAGE_MODEL,
-  imageSize: string = "1024x1024",
-  count: number = 1,
+  _prompt: string,
+  _model?: string,
+  _imageSize?: string,
+  _count?: number,
 ): Promise<string[]> {
-  const apiKey = requireKey();
-
-  const body = JSON.stringify({
-    model,
-    prompt,
-    image_size: imageSize,
-    n: count,
-    output_format: "png",
-  });
-
-  const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), 120_000);
-  try {
-    const res = await fetch(`${BASE_URL}/images/generations`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body,
-      signal: ctrl.signal,
-    });
-
-    const raw = await res.text();
-    if (!res.ok) {
-      throw new Error(`SiliconFlow image generation error ${res.status}: ${raw.slice(0, 300)}`);
-    }
-
-    const data: SiliconFlowImageResponse = JSON.parse(raw);
-    return data.images?.map(img => img.url) ?? [];
-  } finally {
-    clearTimeout(timeout);
-  }
+  throw new Error("Image generation is not available on Ollama Cloud free plan. Consider adding a dedicated image generation provider.");
 }
 
-// ── Video Generation ─────────────────────────────────────────────────────────
-// Two-step: POST /v1/video/submit → get requestId → poll /v1/video/status.
+// ── Video Generation (stub — not available on Ollama Cloud free plan) ─────────
 
-interface VideoSubmitResponse {
-  requestId: string;
-}
-
-interface VideoStatusResponse {
-  status: "InQueue" | "InProgress" | "Succeed" | "Failed";
-  results?: Array<{ url: string }>;
-  error?: string;
-}
-
-/**
- * Generate a video using SiliconFlow's video generation API.
- * Submits the job and polls until completion.
- * Returns the video URL(s).
- */
 export async function generateVideo(
-  prompt: string,
-  model: string = DEFAULT_VIDEO_MODEL,
-  imageSize: string = "1280x720",
-  maxPollTimeMs: number = 300_000,
+  _prompt: string,
+  _model?: string,
+  _imageSize?: string,
+  _maxPollTimeMs?: number,
 ): Promise<string[]> {
-  const apiKey = requireKey();
-
-  // Step 1: Submit the video generation request
-  const submitBody = JSON.stringify({
-    model,
-    prompt,
-    image_size: imageSize,
-  });
-
-  const ctrl = new AbortController();
-  const submitTimeout = setTimeout(() => ctrl.abort(), 60_000);
-  let requestId: string;
-  try {
-    const res = await fetch(`${BASE_URL}/video/submit`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: submitBody,
-      signal: ctrl.signal,
-    });
-    const raw = await res.text();
-    if (!res.ok) {
-      throw new Error(`SiliconFlow video submit error ${res.status}: ${raw.slice(0, 300)}`);
-    }
-    const data: VideoSubmitResponse = JSON.parse(raw);
-    requestId = data.requestId;
-    if (!requestId) throw new Error("No requestId in video submit response");
-  } finally {
-    clearTimeout(submitTimeout);
-  }
-
-  // Step 2: Poll for status
-  const pollInterval = 5000; // 5 seconds
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < maxPollTimeMs) {
-    await new Promise(r => setTimeout(r, pollInterval));
-
-    try {
-      const statusBody = JSON.stringify({ requestId });
-      const res = await fetch(`${BASE_URL}/video/status`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-        },
-        body: statusBody,
-      });
-      const raw = await res.text();
-      if (!res.ok) continue;
-
-      const data: VideoStatusResponse = JSON.parse(raw);
-
-      if (data.status === "Succeed") {
-        return data.results?.map(r => r.url) ?? [];
-      }
-      if (data.status === "Failed") {
-        throw new Error(`Video generation failed: ${data.error ?? "unknown error"}`);
-      }
-      // "InQueue" or "InProgress" — keep polling
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("Video generation failed")) {
-        throw err;
-      }
-      // Network hiccup — keep polling
-    }
-  }
-
-  throw new Error(`Video generation timed out after ${maxPollTimeMs / 1000}s`);
+  throw new Error("Video generation is not available on Ollama Cloud free plan. Consider adding a dedicated video generation provider.");
 }
 
 // ── Model Router ──────────────────────────────────────────────────────────────
@@ -413,10 +314,10 @@ export function buildDispatchPrompt(
   fileCount: number,
   hasExistingCode: boolean,
 ): { systemPrompt: string; userPrompt: string } {
-  const chatModels = modelsByCapability("chat").filter(m => m.capabilities.includes("agent") || m.capabilities.includes("tool_use"));
+  const agentModels = modelsByCapability("agent").filter(m => m.capabilities.includes("tool_use"));
   const codeModels = modelsByCapability("code").filter(m => m.capabilities.includes("agent"));
 
-  const catalogSummary = chatModels.map(m => {
+  const catalogSummary = agentModels.map(m => {
     const tags = [
       m.isReasoning ? "reasoning" : "fast",
       m.isMoE ? `MoE(${m.parameterCount})` : `dense(${m.parameterCount})`,
@@ -435,16 +336,15 @@ export function buildDispatchPrompt(
     return `- "${m.id}" (${m.name}) ${m.provider} — ${tags}`;
   }).join("\n");
 
-  const systemPrompt = `You are a model router. Given a task description and a list of agent names, select the BEST model for each agent from the available catalog.
+  const systemPrompt = `You are a model router for a coding assistant. Given a task description and a list of agent names, select the BEST model for each agent from the available catalog.
 
 Rules:
-1. Fast/simple agents (Organizer, Dispatcher, Summarizer) → fast efficient model (DeepSeek-V4-Flash, Qwen3.6-35B-A3B, Qwen3.6-27B)
-2. Reasoning/coding agents (Coder, Analyser, Planner, Tester, Critic) → strong agentic model (Kimi-K2.7-Code, Kimi-K2.6, Nex-N2-Pro, GLM-5.2)
-3. Research agents (Researcher) → balanced large model (Qwen3.5-122B-A10B, Hy3, LongCat-2.0)
-4. Security agents (Hacker) → strong reasoning model (MiniMax-M3, GLM-5.2, Nex-N2-Pro)
-5. NEVER use image or video models for chat/agent roles
-6. Prefer models with "agent", "tool_use", and "reasoning" capabilities for pipeline agents
-7. Consider context window — tasks with many files need bigger context (GLM-5.2, Kimi-K3, MiniMax-M3 have 1M+ ctx)
+1. Fast/simple agents (Organizer, Dispatcher, Summarizer) → fast efficient model (gemma4:31b, gpt-oss:20b)
+2. Reasoning/coding agents (Coder, Analyser, Planner, Tester, Critic) → strong agentic model (minimax-m3, gpt-oss:120b)
+3. Research agents (Researcher) → balanced large model (gpt-oss:120b, minimax-m3)
+4. Security agents (Hacker) → strong model (minimax-m3, gpt-oss:120b)
+5. Prefer models with "agent", "tool_use", and "reasoning" capabilities for pipeline agents
+6. Consider context window — tasks with many files need bigger context (minimax-m3 has 1M ctx)
 
 Respond ONLY with valid JSON:
 {"assignments": [{"agentName": "Agent1", "modelId": "...", "reasoning": "why this model"}, ...]}`;
@@ -457,7 +357,7 @@ Respond ONLY with valid JSON:
     `## Context`,
     `Existing files: ${fileCount}${hasExistingCode ? " (has code)" : " (greenfield)"}`,
     ``,
-    `## Available Chat/Agent Models`,
+    `## Available Agent Models`,
     catalogSummary,
     ``,
     `## Available Code Models`,
@@ -500,7 +400,6 @@ export function calcAgentBucksForModel(
   if (!model) return 0;
 
   // Rough pricing tiers based on model type
-  // These are approximate per-1M-token costs in cents
   const sizeFactor = model.isMoE
     ? (model.activeParams ? parseInt(model.activeParams) / 10 : 5)
     : parseInt(model.parameterCount.replace(/[^0-9]/g, "")) / 10;

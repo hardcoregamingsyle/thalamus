@@ -22,8 +22,6 @@ export {
   DISPATCHER_MODEL,
   DEFAULT_CHAT_MODEL,
   DEFAULT_CODE_MODEL,
-  DEFAULT_IMAGE_MODEL,
-  DEFAULT_VIDEO_MODEL,
   buildDispatchPrompt,
   parseDispatchAssignments,
   calcAgentBucksForModel,
