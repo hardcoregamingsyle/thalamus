@@ -60,6 +60,8 @@ import type * as rag from "../rag.js";
 import type * as ragHelpers from "../ragHelpers.js";
 import type * as sandbox from "../sandbox.js";
 import type * as sandboxHelpers from "../sandboxHelpers.js";
+import type * as siliconflow from "../siliconflow.js";
+import type * as sketchfabMcp from "../sketchfabMcp.js";
 import type * as study from "../study.js";
 import type * as studyHelpers from "../studyHelpers.js";
 import type * as studyPrompt from "../studyPrompt.js";
@@ -126,6 +128,8 @@ declare const fullApi: ApiFromModules<{
   ragHelpers: typeof ragHelpers;
   sandbox: typeof sandbox;
   sandboxHelpers: typeof sandboxHelpers;
+  siliconflow: typeof siliconflow;
+  sketchfabMcp: typeof sketchfabMcp;
   study: typeof study;
   studyHelpers: typeof studyHelpers;
   studyPrompt: typeof studyPrompt;
