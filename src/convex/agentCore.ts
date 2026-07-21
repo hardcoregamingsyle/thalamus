@@ -981,6 +981,31 @@ export async function callAgentRouter(
 type OAIProvider = { baseUrl: string; keyEnv: string; models: Record<ModelTier, string> };
 
 const OPENAI_PROVIDERS: Record<string, OAIProvider> = {
+  // Google AI Studio Gemini via its OpenAI-compatible endpoint — free, no card, and
+  // the strongest free coder (2.5/3 Pro is Claude-competitive with a 1M-token context,
+  // which is what makes whole-repo coding work). GEMINI_API_KEYS may hold several
+  // comma-separated keys — each free key brings its own RPM, so stack a few. Ordered
+  // FIRST so it anchors the failover chain. Do NOT route private code here — Google
+  // logs free-tier prompts.
+  gemini: {
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    keyEnv: "GEMINI_API_KEYS",
+    models: {
+      gemini: "gemini-3.1-flash-lite", haiku: "gemini-3.1-flash-lite",
+      sonnet: "gemini-2.5-flash", opus46: "gemini-2.5-flash", opus48: "gemini-2.5-pro",
+    },
+  },
+  // Cloudflare Workers AI — free (10k neurons/day, no card), persistent (doesn't get
+  // pool-flagged like shared keys), Qwen2.5-Coder-32B is GPT-4o-class on code. Needs
+  // both CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (the id goes in the URL).
+  cloudflare: {
+    baseUrl: `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID ?? "MISSING_ACCOUNT_ID"}/ai/v1`,
+    keyEnv: "CLOUDFLARE_API_TOKEN",
+    models: {
+      gemini: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", haiku: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      sonnet: "@cf/qwen/qwen2.5-coder-32b-instruct", opus46: "@cf/qwen/qwen2.5-coder-32b-instruct", opus48: "@cf/qwen/qwen2.5-coder-32b-instruct",
+    },
+  },
   // SambaNova Cloud — free, no card, big daily token budget, US-hosted. Serves the
   // latest DeepSeek-V3.2 (verified live against the account's /v1/models).
   sambanova: {
@@ -991,26 +1016,27 @@ const OPENAI_PROVIDERS: Record<string, OAIProvider> = {
       sonnet: "DeepSeek-V3.2", opus46: "DeepSeek-V3.2", opus48: "DeepSeek-V3.2",
     },
   },
-  // Cerebras — ids valid but inference is BILLING-GATED on this account (402
-  // "payment required"), so it's not a $0 option here. Left wired in case billing
-  // is enabled later; GLM-4.7 is its strong coder.
-  cerebras: {
-    baseUrl: "https://api.cerebras.ai/v1",
-    keyEnv: "CEREBRAS_API_KEY",
-    models: {
-      gemini: "gemma-4-31b", haiku: "gemma-4-31b",
-      sonnet: "zai-glm-4.7", opus46: "zai-glm-4.7", opus48: "gpt-oss-120b",
-    },
-  },
   // Groq — free, no card, fast. Pinned to Llama-3.3-70B, which returns clean
   // content; its qwen3.6/gpt-oss models are reasoning models that leak <think>
-  // blocks / empty short-content and muddy the pipeline's tag parsing.
+  // blocks / empty short-content and muddy the pipeline's tag parsing. Cheap-seat
+  // grade, not a Coder — but a reliable chain member.
   groq: {
     baseUrl: "https://api.groq.com/openai/v1",
     keyEnv: "GROQ_API_KEY",
     models: {
       gemini: "llama-3.3-70b-versatile", haiku: "llama-3.3-70b-versatile",
       sonnet: "llama-3.3-70b-versatile", opus46: "llama-3.3-70b-versatile", opus48: "llama-3.3-70b-versatile",
+    },
+  },
+  // Cerebras — ids valid but inference is BILLING-GATED on this account (402
+  // "payment required"), so it's not a $0 option here. Ordered late so it doesn't
+  // waste a failover hop; GLM-4.7 is its strong coder if billing is ever enabled.
+  cerebras: {
+    baseUrl: "https://api.cerebras.ai/v1",
+    keyEnv: "CEREBRAS_API_KEY",
+    models: {
+      gemini: "gemma-4-31b", haiku: "gemma-4-31b",
+      sonnet: "zai-glm-4.7", opus46: "zai-glm-4.7", opus48: "gpt-oss-120b",
     },
   },
   // DeepSeek direct — PAID (needs a card/balance). Best DeepSeek quality (V3.2/reasoner).
