@@ -3,8 +3,9 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { callClaude } from "./agentCore";
+import { callSiliconFlow } from "./agentCore";
 import { buildStudySystemPrompt } from "./studyPrompt";
+
 
 // Gemini with Google Search Grounding
 interface GeminiGroundedResponse {
@@ -260,7 +261,7 @@ export const processFileResource = action({
         }
       } catch {
         try {
-          const result = await callClaude(
+          const result = await callSiliconFlow(
             `Please extract and summarize all content from this file for study purposes. File name: ${args.fileName}\n\nFile content (base64): ${args.fileDataBase64.slice(0, 50000)}`,
             "You are a study assistant that extracts and summarizes content from files.",
             "claude-haiku-4-5",
@@ -315,10 +316,9 @@ export const searchAndAddResource = action({
       }
     } else {
       try {
-        const result = await callClaude(
+        const result = await callSiliconFlow(
           `Provide comprehensive study notes about: ${args.query}`,
-          "You are a research assistant. Provide comprehensive, well-structured study notes.",
-          "claude-haiku-4-5"
+          "You are a research assistant. Provide comprehensive, well-structured study notes."
         );
         text = result.text;
       } catch {
@@ -442,7 +442,7 @@ export const sendStudyMessage = action({
         outputTokens = result.outputTokens;
       } catch {
         try {
-          const result = await callClaude(fullPrompt, systemPrompt, "claude-haiku-4-5");
+          const result = await callSiliconFlow(fullPrompt, systemPrompt);
           responseContent = result.text;
           inputTokens = result.inputTokens;
           outputTokens = result.outputTokens;
@@ -458,7 +458,7 @@ export const sendStudyMessage = action({
       }
     } else {
       try {
-        const result = await callClaude(fullPrompt, systemPrompt, "claude-haiku-4-5");
+        const result = await callSiliconFlow(fullPrompt, systemPrompt);
         responseContent = result.text;
         inputTokens = result.inputTokens;
         outputTokens = result.outputTokens;
@@ -550,7 +550,7 @@ export const generateMockTest = action({
 
     let responseContent = "";
     try {
-      const result = await callClaude(historyText, systemPrompt, "claude-haiku-4-5");
+      const result = await callSiliconFlow(historyText, systemPrompt);
       responseContent = result.text;
     } catch {
       const { vly } = await import("../lib/vly-integrations");
@@ -615,7 +615,7 @@ Output ONLY valid JSON:
 
     let responseContent = "";
     try {
-      const result = await callClaude(qaText, systemPrompt, "claude-haiku-4-5");
+      const result = await callSiliconFlow(qaText, systemPrompt);
       responseContent = result.text;
     } catch {
       const { vly } = await import("../lib/vly-integrations");
@@ -672,7 +672,7 @@ Output ONLY valid JSON array:
 
     let responseContent = "";
     try {
-      const result = await callClaude(historyText, systemPrompt, "claude-haiku-4-5");
+      const result = await callSiliconFlow(historyText, systemPrompt);
       responseContent = result.text;
     } catch {
       const { vly } = await import("../lib/vly-integrations");
@@ -716,7 +716,7 @@ Output ONLY a valid JSON array:
 
     let responseContent = "";
     try {
-      const result = await callClaude(historyText, systemPrompt, "claude-haiku-4-5");
+      const result = await callSiliconFlow(historyText, systemPrompt);
       responseContent = result.text;
     } catch {
       const { vly } = await import("../lib/vly-integrations");

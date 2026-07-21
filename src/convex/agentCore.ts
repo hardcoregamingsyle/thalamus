@@ -29,16 +29,114 @@ export {
   calcAgentBucksForModel,
 } from "./siliconflow";
 
-import { callSiliconFlow, DISPATCHER_MODEL } from "./siliconflow";
+import { callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL, DEFAULT_CODE_MODEL, calcAgentBucksForModel } from "./siliconflow";
+
+// ── Backward-compatible types and aliases ────────────────────────────────────
+// The old pipeline systems (agentPipeline.ts, codePipeline.ts) still reference
+// these types and constants. They're now thin wrappers over the new SiliconFlow
+// model catalog, not a separate tier system.
+export type ModelTier = string;
+export type RunMode = "cheap" | "balanced" | "powerful";
+
+// Old model-map constants — now just map agent names to reasonable model defaults.
+// The Dispatcher does the real model assignment; these are fallback defaults.
+export const AGENT_MODEL_MAP: Record<string, ModelTier> = {
+  Dispatcher: DISPATCHER_MODEL,
+  Researcher: DEFAULT_CHAT_MODEL,
+  ResearchPlanner: DEFAULT_CHAT_MODEL,
+  DataTaker: DEFAULT_CHAT_MODEL,
+  ResearchOrganiser: DEFAULT_CODE_MODEL,
+  Analyser: DEFAULT_CODE_MODEL,
+  Planner: DEFAULT_CODE_MODEL,
+  Coder: DEFAULT_CODE_MODEL,
+  Optimiser: DEFAULT_CODE_MODEL,
+  Organizer: DEFAULT_CHAT_MODEL,
+  Tester: DEFAULT_CODE_MODEL,
+  Hacker: DEFAULT_CODE_MODEL,
+  VulnerabilitySpotter: DEFAULT_CODE_MODEL,
+  VulnerabilityFixer: DEFAULT_CODE_MODEL,
+  DataCorruptor: DEFAULT_CODE_MODEL,
+  DataFixer: DEFAULT_CODE_MODEL,
+  ZeroDayExploiter: DEFAULT_CODE_MODEL,
+  ZeroDayRemover: DEFAULT_CODE_MODEL,
+  FrameworkAuditor: DEFAULT_CODE_MODEL,
+  FrameworkRefiner: DEFAULT_CODE_MODEL,
+  RedTeamOrchestrator: DEFAULT_CODE_MODEL,
+  Critic: DEFAULT_CODE_MODEL,
+};
+
+// Old difficulty-based coder model mapping — now all just use DEFAULT_CODE_MODEL.
+export const DIFFICULTY_CODER_MODEL: Record<string, ModelTier> = {
+  normal: DEFAULT_CODE_MODEL,
+  hard: DEFAULT_CODE_MODEL,
+  extreme: DEFAULT_CODE_MODEL,
+};
+
+// Old provider constants — all set to false since SiliconFlow is the only provider.
+export const AGENTROUTER_PRIMARY = false;
+export const OPENAI_PRIMARY = false;
+export const PRIMARY_PROVIDER = "siliconflow";
+
+// Old provider functions — these are dead code now but exported for backward compat.
+export async function callAgentRouter(
+  _prompt?: string,
+  _systemPrompt?: string,
+  _modelId?: string,
+  _maxTokens?: number,
+  _messages?: unknown[] | unknown,
+): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+  throw new Error("AgentRouter is no longer available. Use SiliconFlow instead.");
+}
+export function agentRouterModelForTier(_tier?: string): string { return ""; }
+export async function callOpenAIFailover(
+  _prompt?: string,
+  _systemPrompt?: string,
+  _modelId?: string,
+  _maxTokens?: number,
+  _messages?: unknown[] | unknown,
+): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+  throw new Error("OpenAI failover is no longer available. Use SiliconFlow instead.");
+}
+export async function callOpenAICompatibleStreaming(
+  prompt: string,
+  systemPrompt: string,
+  tier: ModelTier,
+  providerId: string,
+  onChunk?: (full: string) => Promise<void>,
+): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: string }> {
+  // Legacy mode — now just calls SiliconFlow directly
+  const result = await callSiliconFlow(prompt, systemPrompt, tier);
+  if (onChunk) await onChunk(result.text);
+  return { ...result, tier };
+}
+export function providerChain(): string[] { return []; }
+export function getAgentTier(agent: string, runMode?: RunMode): ModelTier {
+  return AGENT_MODEL_MAP[agent] ?? DEFAULT_CHAT_MODEL;
+}
+
+// The old callModel accepted (prompt, systemPrompt, tier, geminiKeys?, dbCreds?).
+// The new version accepts (prompt, systemPrompt, modelId). We export BOTH so old
+// code can still compile without rewrites.
+export async function callModelCompat(
+  prompt: string,
+  systemPrompt: string,
+  modelId: string = DEFAULT_CHAT_MODEL,
+): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: string }> {
+  return callModel(prompt, systemPrompt, modelId);
+}
 
 /**
  * Unified model caller — routes to SiliconFlow. This replaces all old
  * Bedrock/Gemini/AgentRouter callers. Takes a direct model id string.
  */
+export type TaskDifficulty = "normal" | "hard" | "extreme";
+
+// Accepts extra args for backward-compat with old code that passed (prompt, systemPrompt, tier, geminiKeys?, dbCreds?)
 export async function callModel(
   prompt: string,
   systemPrompt: string,
   modelId: string = "deepseek-ai/DeepSeek-V4-Flash",
+  ..._extra: unknown[]
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: string }> {
   try {
     const result = await callSiliconFlow(prompt, systemPrompt, modelId);
@@ -60,9 +158,6 @@ export function calcAgentBucksForTier(
   outputTokens: number,
 ): number {
   return calcAgentBucksForModel(tier, inputTokens, outputTokens);
-}
-
-
 }
 
 export async function performSearch(query: string, _keys?: string[]): Promise<string> {

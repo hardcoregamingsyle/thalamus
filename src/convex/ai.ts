@@ -3,7 +3,7 @@ import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { performSearch, FREE_UNLIMITED, AGENTROUTER_PRIMARY, callAgentRouter, agentRouterModelForTier, OPENAI_PRIMARY, PRIMARY_PROVIDER, callOpenAIFailover } from "./agentCore";
+import { performSearch, FREE_UNLIMITED, callSiliconFlow, callOpenAIFailover, callAgentRouter, agentRouterModelForTier, AGENTROUTER_PRIMARY, OPENAI_PRIMARY, PRIMARY_PROVIDER } from "./agentCore";
 
 // Gemini keys are loaded from the DB (admin-managed via Admin UI)
 async function getGeminiKeysFromDB(ctx: { runQuery: ActionCtx["runQuery"] }): Promise<string[]> {
