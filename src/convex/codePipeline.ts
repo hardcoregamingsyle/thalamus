@@ -99,24 +99,24 @@ function parseDispatcherOutput(
   }
 }
 
-function buildContext(messages: Array<{ agent: string; content: string }>, maxChars = 12000): string {
-  const recent = messages.slice(-12);
+function buildContext(messages: Array<{ agent: string; content: string }>, maxChars = 6000): string {
+  const recent = messages.slice(-6);
   let ctx = "";
   for (const m of recent) {
-    const line = `[${m.agent}]: ${m.content}\n\n`;
+    const line = `[${m.agent}]: ${m.content.slice(0, 2000)}\n\n`;
     if (ctx.length + line.length > maxChars) break;
     ctx += line;
   }
   return ctx;
 }
 
-function buildFileContext(files: Array<{ filepath: string; content: string }>, maxChars = 10000): string {
+function buildFileContext(files: Array<{ filepath: string; content: string }>, maxChars = 4000): string {
   if (files.length === 0) return "No files yet.";
-  let ctx = "## Current Project Files:\n\n";
+  let ctx = "## Project Files:\n";
   for (const f of files) {
-    const entry = `### ${f.filepath}\n\`\`\`\n${f.content.slice(0, 2000)}\n\`\`\`\n\n`;
+    const entry = `${f.filepath}:\n\`\`\`\n${f.content.slice(0, 800)}\n\`\`\`\n\n`;
     if (ctx.length + entry.length > maxChars) {
-      ctx += `... (${files.length} files total, showing first ${files.indexOf(f)} files)\n`;
+      ctx += `... (${files.length} files, showing ${files.indexOf(f)})\n`;
       break;
     }
     ctx += entry;

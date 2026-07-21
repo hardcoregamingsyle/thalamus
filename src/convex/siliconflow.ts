@@ -187,13 +187,13 @@ export async function callSiliconFlow(
   const apiKey = requireKey();
 
   const messages = [
-    { role: "system" as const, content: systemPrompt.slice(0, 32000) },
+    { role: "system" as const, content: systemPrompt.slice(0, 8000) },
     ...(history && history.length > 0
       ? [
-          ...history.map(m => ({ role: m.role, content: m.content.slice(0, 48000) })),
-          { role: "user" as const, content: prompt.slice(0, 48000) },
+          ...history.map(m => ({ role: m.role, content: m.content.slice(0, 8000) })),
+          { role: "user" as const, content: prompt.slice(0, 8000) },
         ]
-      : [{ role: "user" as const, content: prompt.slice(0, 48000) }]),
+      : [{ role: "user" as const, content: prompt.slice(0, 8000) }]),
   ];
 
   const body = JSON.stringify({
