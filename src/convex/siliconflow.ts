@@ -26,6 +26,7 @@ export interface ModelInfo {
   isReasoning: boolean;          // Has thinking chain-of-thought support
   isMoE: boolean;                // Mixture of Experts architecture
   parameterCount: string;        // e.g. "120B", "31B", "20B"
+  activeParams?: string;         // Activated parameters for MoE models (e.g. "13B")
   usageLevel?: number;           // 1-4, how much GPU time this model uses
 }
 
