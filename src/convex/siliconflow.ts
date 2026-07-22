@@ -7,22 +7,23 @@
 const BASE_URL = "https://ollama.com";
 
 // Key fallback chain: OLLAMA_API_KEY → OLLAMA_API_KEY_2 → OLLAMA_API_KEY_3 → ...
-function resolveApiKey(): string {
+function resolveAllApiKeys(): string[] {
+  const keys: string[] = [];
   for (let i = 1; ; i++) {
     const name = i === 1 ? "OLLAMA_API_KEY" : `OLLAMA_API_KEY_${i}`;
     const key = (process.env[name] ?? "").trim();
-    if (key) return key;
-    if (i > 10) break; // check up to _10
+    if (key) keys.push(key);
+    if (i > 10) break;
   }
-  throw new Error("OLLAMA_API_KEY not configured — set it in the Convex dashboard.");
+  return keys;
 }
 
-let _cachedKey: string | null = null;
-function requireKey(): string {
-  if (_cachedKey === null) {
-    _cachedKey = resolveApiKey();
+function requireAllKeys(): string[] {
+  const keys = resolveAllApiKeys();
+  if (keys.length === 0) {
+    throw new Error("OLLAMA_API_KEY not configured — set it in the Convex dashboard.");
   }
-  return _cachedKey;
+  return keys;
 }
 
 // ── Model Catalog ─────────────────────────────────────────────────────────────
@@ -197,7 +198,7 @@ export async function callSiliconFlow(
   maxTokens: number = 16384,
   history?: Array<{ role: "user" | "assistant"; content: string }>,
 ): Promise<ChatResult> {
-  const apiKey = requireKey();
+  const apiKeys = requireAllKeys();
 
   const messages = [
     { role: "system" as const, content: systemPrompt.slice(0, 8000) },
@@ -219,41 +220,57 @@ export async function callSiliconFlow(
     },
   });
 
-  const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), 300_000);
-  try {
-    const res = await fetch(`${BASE_URL}/api/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body,
-      signal: ctrl.signal,
-    });
+  let lastError: Error | null = null;
 
-    const raw = await res.text();
-    if (!res.ok) {
-      const msg = JSON.parse(raw);
-      throw new Error(`Ollama Cloud ${res.status}: ${msg.error ?? raw.slice(0, 300)}`);
-    }
+  for (let k = 0; k < apiKeys.length; k++) {
+    const apiKey = apiKeys[k];
 
-    const data: OllamaChatResponse = JSON.parse(raw);
-    const text = data.message?.content ?? "";
-    return {
-      text,
-      inputTokens: data.prompt_eval_count ?? 0,
-      outputTokens: data.eval_count ?? 0,
-      model: data.model ?? model,
-    };
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("Ollama Cloud request timed out after 300s");
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 300_000);
+    try {
+      const res = await fetch(`${BASE_URL}/api/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body,
+        signal: ctrl.signal,
+      });
+
+      const raw = await res.text();
+      if (!res.ok) {
+        const msg = JSON.parse(raw);
+        const err = new Error(`Ollama Cloud ${res.status} (key ${k + 1}/${apiKeys.length}): ${msg.error ?? raw.slice(0, 300)}`);
+        lastError = err;
+        clearTimeout(timeout);
+        // Rate limited / quota exceeded — try next key
+        if (res.status === 429 || res.status >= 500) continue;
+        throw err; // 4xx other than rate-limit is fatal for this key
+      }
+
+      const data: OllamaChatResponse = JSON.parse(raw);
+      const text = data.message?.content ?? "";
+      return {
+        text,
+        inputTokens: data.prompt_eval_count ?? 0,
+        outputTokens: data.eval_count ?? 0,
+        model: data.model ?? model,
+      };
+    } catch (err) {
+      clearTimeout(timeout);
+      if (err instanceof Error && err.name === "AbortError") {
+        lastError = new Error(`Ollama Cloud request timed out after 300s (key ${k + 1}/${apiKeys.length})`);
+        continue; // timeout — try next key
+      }
+      if (err === lastError) { /* already captured the non-ok response error above */ }
+      else { lastError = err instanceof Error ? err : new Error(String(err)); continue; }
+      throw err;
     }
-    throw err;
-  } finally {
-    clearTimeout(timeout);
   }
+
+  // All keys exhausted
+  throw lastError ?? new Error("Ollama Cloud request failed — no keys available");
 }
 
 /**
