@@ -1,7 +1,7 @@
-import { action, internalMutation, mutation, query } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { Doc } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import {
   contribTierFor,
   effectiveRefill,
@@ -25,56 +25,93 @@ async function requireAdmin(_ctx: unknown, adminToken: string) {
 
 const LEARNING_STATUSES = ["pending", "scored", "rejected", "duplicate"] as const;
 
-// Headline numbers: learnings, keys, users, credits. Scans are paginated but
-// bounded — fine at current scale, revisit with counters past ~15k users.
-export const adminStats = query({
+// Internal paginated query for learnings (actions call this via runQuery).
+export const paginateLearnings = internalQuery({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("aoLearnings")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: 2000 });
+  },
+});
+
+// Internal query for all AO keys.
+export const getAoKeys = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("aoApiKeys").take(10000);
+  },
+});
+
+// Internal paginated query for users (AO users only).
+export const paginateAoUsers = internalQuery({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: 500 });
+  },
+});
+
+// Headline numbers: learnings, keys, users, credits. Uses action + pagination
+// to get accurate counts across millions of learnings.
+export const adminStats = action({
   args: { adminToken: v.string() },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
 
-    const byStatus: Record<string, number> = {};
-    for (const status of LEARNING_STATUSES) {
-      const rows = await ctx.db
-        .query("aoLearnings")
-        .withIndex("by_status", (q) => q.eq("status", status))
-        .take(10000);
-      byStatus[status] = rows.length;
-    }
-    const scored = await ctx.db
-      .query("aoLearnings")
-      .withIndex("by_status", (q) => q.eq("status", "scored"))
-      .take(10000);
+    const byStatus: Record<string, number> = {
+      pending: 0,
+      scored: 0,
+      rejected: 0,
+      duplicate: 0,
+    };
     const byTier = { low: 0, medium: 0, gold: 0 };
-    for (const l of scored) {
-      if (l.tier === "low") byTier.low++;
-      else if (l.tier === "medium") byTier.medium++;
-      else if (l.tier === "gold") byTier.gold++;
-    }
 
-    const keys = await ctx.db.query("aoApiKeys").take(10000);
-
-    let aoUsers = 0;
-    let creditsInCirculation = 0;
-    let totalPoints = 0;
+    // Paginate through ALL learnings — no .take() cap
     let cursor: string | null = null;
     while (true) {
-      const batch: { page: Doc<"users">[]; isDone: boolean; continueCursor: string } = await ctx.db
-        .query("users")
-        .order("asc")
-        .paginate({ cursor, numItems: 500 });
-      for (const user of batch.page) {
-        if (user.aoCredits === undefined) continue;
-        aoUsers++;
-        creditsInCirculation += user.aoCredits;
-        totalPoints += user.aoContribPoints ?? 0;
+      const batch = await ctx.runQuery(internal.agentoverflowAdmin.paginateLearnings, {
+        cursor,
+      });
+      for (const l of batch.page) {
+        const s = l.status as string;
+        if (s in byStatus) byStatus[s]++;
+        if (s === "scored" && l.tier) {
+          if (l.tier === "low") byTier.low++;
+          else if (l.tier === "medium") byTier.medium++;
+          else if (l.tier === "gold") byTier.gold++;
+        }
       }
       if (batch.isDone) break;
       cursor = batch.continueCursor;
     }
 
+    const keyRows = await ctx.runQuery(internal.agentoverflowAdmin.getAoKeys, {});
+
+    let aoUsers = 0;
+    let creditsInCirculation = 0;
+    let totalPoints = 0;
+    let userCursor: string | null = null;
+    while (true) {
+      const batch = await ctx.runQuery(internal.agentoverflowAdmin.paginateAoUsers, {
+        cursor: userCursor,
+      });
+      for (const user of batch.page) {
+        if ((user as Record<string, unknown>).aoCredits === undefined) continue;
+        aoUsers++;
+        creditsInCirculation += (user as Record<string, unknown>).aoCredits as number;
+        totalPoints += (user as Record<string, unknown>).aoContribPoints as number ?? 0;
+      }
+      if (batch.isDone) break;
+      userCursor = batch.continueCursor;
+    }
+
     return {
       learnings: {
-        total: LEARNING_STATUSES.reduce((n, s) => n + byStatus[s], 0),
+        total: byStatus.pending + byStatus.scored + byStatus.rejected + byStatus.duplicate,
         pending: byStatus.pending,
         scored: byStatus.scored,
         rejected: byStatus.rejected,
@@ -82,8 +119,8 @@ export const adminStats = query({
         byTier,
       },
       keys: {
-        total: keys.length,
-        active: keys.filter((k) => k.isActive).length,
+        total: keyRows.length,
+        active: keyRows.filter((k) => k.isActive).length,
       },
       users: {
         total: aoUsers,
