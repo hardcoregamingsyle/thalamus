@@ -72,8 +72,9 @@ export const adminStats = action({
 
     // Paginate through ALL learnings — no .take() cap
     let cursor: string | null = null;
+    type PaginatedBatch<T> = { page: T[]; isDone: boolean; continueCursor: string };
     while (true) {
-      const batch = await ctx.runQuery(internal.agentoverflowAdmin.paginateLearnings, {
+      const batch: PaginatedBatch<Record<string, unknown>> = await ctx.runQuery(internal.agentoverflowAdmin.paginateLearnings, {
         cursor,
       });
       for (const l of batch.page) {
@@ -89,14 +90,14 @@ export const adminStats = action({
       cursor = batch.continueCursor;
     }
 
-    const keyRows = await ctx.runQuery(internal.agentoverflowAdmin.getAoKeys, {});
+    const keyRows: Record<string, unknown>[] = await ctx.runQuery(internal.agentoverflowAdmin.getAoKeys, {});
 
     let aoUsers = 0;
     let creditsInCirculation = 0;
     let totalPoints = 0;
     let userCursor: string | null = null;
     while (true) {
-      const batch = await ctx.runQuery(internal.agentoverflowAdmin.paginateAoUsers, {
+      const batch: PaginatedBatch<Record<string, unknown>> = await ctx.runQuery(internal.agentoverflowAdmin.paginateAoUsers, {
         cursor: userCursor,
       });
       for (const user of batch.page) {
@@ -120,7 +121,7 @@ export const adminStats = action({
       },
       keys: {
         total: keyRows.length,
-        active: keyRows.filter((k) => k.isActive).length,
+        active: keyRows.filter((k: Record<string, unknown>) => k.isActive).length,
       },
       users: {
         total: aoUsers,
