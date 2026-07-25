@@ -478,7 +478,7 @@ export interface NimChatResult {
  * Resolve NVIDIA NIM API keys from DB (nimKeys table).
  * Fallback to env var NVAPI_KEY for backward compat.
  */
-async function resolveNimKeys(ctx: { runQuery: Function }): Promise<string[]> {
+async function resolveNimKeys(ctx: { runQuery: ActionCtx["runQuery"] }): Promise<string[]> {
   const keys: string[] = [];
   try {
     const dbKeys = await ctx.runQuery(internal.admin.getNimKeysInternal, {});
@@ -494,7 +494,7 @@ async function resolveNimKeys(ctx: { runQuery: Function }): Promise<string[]> {
 }
 
 export async function callNim(
-  ctx: { runQuery: Function },
+  ctx: { runQuery: ActionCtx["runQuery"] },
   prompt: string,
   systemPrompt: string,
   model: string = NIM_DEFAULT_CHAT_MODEL,
@@ -581,7 +581,7 @@ export async function callNim(
  * Streaming variant — fetches full response then drip-feeds in chunks.
  */
 export async function callNimStreaming(
-  ctx: { runQuery: Function },
+  ctx: { runQuery: ActionCtx["runQuery"] },
   prompt: string,
   systemPrompt: string,
   model: string,

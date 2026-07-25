@@ -28,6 +28,17 @@ export default tseslint.config(
         "warn",
         { allowConstantExport: true },
       ],
+      // The codebase marks deliberately-unused params with a leading underscore
+      // (stub signatures, params kept to match an interface). Honour that instead
+      // of forcing them to be deleted and breaking the signature.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
     },
   },
   {

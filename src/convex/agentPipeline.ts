@@ -10,12 +10,8 @@ import {
   parseDifficultyFromPlannerOutput,
   AGENT_SYSTEM_PROMPTS,
   calcAgentBucksForTier,
-  DISPATCHER_MODEL,
-  DEFAULT_CHAT_MODEL,
-  DEFAULT_CODE_MODEL,
   AGENT_MODEL_MAP,
   DIFFICULTY_CODER_MODEL,
-  getAgentTier,
   type ModelTier,
   type TaskDifficulty,
 } from "./agentCore";

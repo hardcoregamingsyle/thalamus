@@ -1,7 +1,7 @@
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { Doc, Id } from "./_generated/dataModel";
+import { Doc } from "./_generated/dataModel";
 import {
   contribTierFor,
   effectiveRefill,
@@ -22,8 +22,6 @@ async function requireAdmin(_ctx: unknown, adminToken: string) {
   if (!ADMIN_TOKEN) throw new Error("ADMIN_TOKEN not configured on server");
   if (!adminToken || adminToken !== ADMIN_TOKEN) throw new Error("Unauthorized");
 }
-
-const LEARNING_STATUSES = ["pending", "scored", "rejected", "duplicate"] as const;
 
 // Internal paginated query for learnings (actions call this via runQuery).
 export const paginateLearnings = internalQuery({

@@ -4,12 +4,13 @@
 // Docs: https://docs.ollama.com/api/chat
 
 import { internal } from "./_generated/api";
+import type { ActionCtx } from "./_generated/server";
 
 // ── Base URL & Auth ───────────────────────────────────────────────────────────
 const BASE_URL = "https://ollama.com";
 
 // Key resolution: DB table ollamaKeys first, then OLLAMA_API_KEY env fallback
-async function resolveAllApiKeys(runQuery?: Function): Promise<string[]> {
+async function resolveAllApiKeys(runQuery?: ActionCtx["runQuery"]): Promise<string[]> {
   const keys: string[] = [];
   // First: try DB table
   if (runQuery) {
@@ -32,7 +33,7 @@ async function resolveAllApiKeys(runQuery?: Function): Promise<string[]> {
   return keys;
 }
 
-async function requireAllKeys(runQuery?: Function): Promise<string[]> {
+async function requireAllKeys(runQuery?: ActionCtx["runQuery"]): Promise<string[]> {
   const keys = await resolveAllApiKeys(runQuery);
   if (keys.length === 0) {
     throw new Error("OLLAMA_API_KEY not configured — add keys via /admin or set in the Convex dashboard.");
@@ -212,7 +213,7 @@ export async function callSiliconFlow(
   model: string = DEFAULT_CHAT_MODEL,
   maxTokens: number = 16384,
   history?: Array<{ role: "user" | "assistant"; content: string }>,
-  runQuery?: Function,
+  runQuery?: ActionCtx["runQuery"],
 ): Promise<ChatResult> {
   const apiKeys = await requireAllKeys(runQuery);
 
@@ -300,7 +301,7 @@ export async function callSiliconFlowStreaming(
   onDelta: (text: string) => Promise<void>,
   maxTokens: number = 16384,
   history?: Array<{ role: "user" | "assistant"; content: string }>,
-  runQuery?: Function,
+  runQuery?: ActionCtx["runQuery"],
 ): Promise<ChatResult> {
   const result = await callSiliconFlow(prompt, systemPrompt, model, maxTokens, history, runQuery);
 
