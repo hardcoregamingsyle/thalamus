@@ -1834,8 +1834,10 @@ function ModelConfigTab({ adminToken }: { adminToken: string }) {
 
 // ── AdMesh Tab ────────────────────────────────────────────────────────────
 function AdMeshTab({ adminToken }: { adminToken: string }) {
-  const existing = useQuery(api.gravityAds.getAdMeshConfig, { adminToken });
-  const saveConfig = useMutation(api.gravityAds.saveAdMeshConfig);
+  // Backend function names still say "Gravity" on purpose — the shipped .exe
+  // calls this module by string name, so only the labels moved to AdMesh.
+  const existing = useQuery(api.gravityAds.getGravityAdsConfig, { adminToken });
+  const saveConfig = useMutation(api.gravityAds.saveGravityAdsConfig);
   const [apiKey, setApiKey] = useState("");
   const [publisherId, setPublisherId] = useState("");
   const [adUnitIds, setAdUnitIds] = useState("");
@@ -1898,7 +1900,7 @@ function AdMeshTab({ adminToken }: { adminToken: string }) {
           </button>
         </div>
         <div>
-          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">GRAVITYADS API KEY</label>
+          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">ADMESH API KEY</label>
           <div className="relative">
             <input type={showKey ? "text" : "password"} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Enter your AdMesh API key"
               className="w-full bg-background border border-border rounded-xl px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors" />
@@ -1910,11 +1912,6 @@ function AdMeshTab({ adminToken }: { adminToken: string }) {
         <div>
           <label className="text-xs font-bold text-muted-foreground mb-1.5 block">PUBLISHER ID <span className="font-normal">(optional)</span></label>
           <input value={publisherId} onChange={e => setPublisherId(e.target.value)} placeholder="pub-xxxxxxxxxxxxxxxx"
-            className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors" />
-        </div>
-        <div>
-          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">GRAVITY PIXEL ID <span className="font-normal">(dashboard → Settings → Platform Settings; required for attribution &amp; payouts)</span></label>
-          <input value={pixelId} onChange={e => setPixelId(e.target.value)} placeholder="e.g. 3f9a2c10-…-uuid"
             className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors" />
         </div>
         <div>
