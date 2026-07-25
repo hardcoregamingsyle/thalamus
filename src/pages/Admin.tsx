@@ -1501,9 +1501,8 @@ function OllamaKeysTab({ adminToken }: { adminToken: string }) {
         className={`mb-6 p-4 rounded-xl border ${existing && existing.count > 0 ? "bg-blue-400/10 border-blue-400/30" : "bg-muted/10 border-border"}`}>
         <div className="flex items-center gap-2">
           {existing && existing.count > 0 ? (
-            <><CheckCircle className="h-4 w-4 text-blue-400" /><span className="text-sm font-bold text-blue-400">{existing.count} keys — Ollama backup ready</span></) : (
-            <><AlertCircle className="h-4 w-4 text-muted-foreground" /><span className="text-sm font-bold text-muted-foreground">No keys set — only NIM will be used</span></>
-          )}
+            <><CheckCircle className="h-4 w-4 text-blue-400" /><span className="text-sm font-bold text-blue-400">{existing.count} keys — Ollama backup ready</span></>) : (
+            <><AlertCircle className="h-4 w-4 text-muted-foreground" /><span className="text-sm font-bold text-muted-foreground">No keys set — only NIM will be used</span></>)}
         </div>
         {existing && existing.count > 0 && (
           <div className="mt-2 space-y-1 text-xs text-muted-foreground">
