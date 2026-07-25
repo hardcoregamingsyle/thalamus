@@ -33,7 +33,12 @@ const DOCS: Record<Doc, { title: string; metaTitle: string; description: string;
       { h: "How we use it", p: [
         "To provide the service: routing your requests to AI models, storing your conversations and projects, and metering credits.",
         "To improve reliability and prevent abuse. We do not sell your personal data.",
-        "AI model calls are processed by our model providers (AWS Bedrock, Google Gemini) solely to generate your response.",
+        "AI model calls are processed by third-party model providers solely to generate your response. The specific providers change as we tune for quality and cost; the current list is available on request.",
+      ] },
+      { h: "Advertising", p: [
+        "Thalamus is free to use, and sponsored placements help pay for it. Ads are served by our advertising partner, AdMesh, and are labelled as ads wherever they appear.",
+        "To pick something relevant, a trimmed slice of the current conversation (roughly the last six messages) and basic device signals (browser user-agent, IP address and country) are sent to that partner. We do not send your email, account identifiers, uploaded files, or study materials, and we do not sell your personal data.",
+        "Student and study-mode content is never used for advertising.",
       ] },
       { h: "Data retention and deletion", p: [
         "Your conversations and uploaded materials are retained while your account is active so you can return to them. You can delete individual conversations and study resources in-app at any time.",

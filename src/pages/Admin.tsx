@@ -187,7 +187,7 @@ export default function AdminPage() {
             { id: "aws", label: "AWS Bedrock", icon: Zap },
             { id: "gemini", label: "Gemini Keys", icon: Activity },
             { id: "models", label: "Model Config", icon: Cpu },
-            { id: "gravity-ads", label: "GravityAds", icon: Globe },
+            { id: "gravity-ads", label: "Ads (AdMesh)", icon: Globe },
             { id: "payments", label: "Payments", icon: Coins },
             { id: "vm-isos", label: "VM ISOs", icon: Database },
             { id: "corpus", label: "Corpus", icon: Search },
@@ -227,7 +227,7 @@ export default function AdminPage() {
               {tab === "ollama" && <OllamaKeysTab adminToken={adminToken} />}
               {tab === "modal" && <ModalEndpointsTab adminToken={adminToken} />}
               {tab === "models" && <ModelConfigTab adminToken={adminToken} />}
-              {tab === "gravity-ads" && <GravityAdsTab adminToken={adminToken} />}
+              {tab === "gravity-ads" && <AdMeshTab adminToken={adminToken} />}
               {tab === "payments" && <PaymentsTab adminToken={adminToken} />}
               {tab === "vm-isos" && <VmIsoCatalogTab adminToken={adminToken} />}
               {tab === "corpus" && <AgentOverflowTab adminToken={adminToken} />}
@@ -1832,10 +1832,10 @@ function ModelConfigTab({ adminToken }: { adminToken: string }) {
   );
 }
 
-// ── GravityAds Tab ────────────────────────────────────────────────────────────
-function GravityAdsTab({ adminToken }: { adminToken: string }) {
-  const existing = useQuery(api.gravityAds.getGravityAdsConfig, { adminToken });
-  const saveConfig = useMutation(api.gravityAds.saveGravityAdsConfig);
+// ── AdMesh Tab ────────────────────────────────────────────────────────────
+function AdMeshTab({ adminToken }: { adminToken: string }) {
+  const existing = useQuery(api.gravityAds.getAdMeshConfig, { adminToken });
+  const saveConfig = useMutation(api.gravityAds.saveAdMeshConfig);
   const [apiKey, setApiKey] = useState("");
   const [publisherId, setPublisherId] = useState("");
   const [adUnitIds, setAdUnitIds] = useState("");
@@ -1873,7 +1873,7 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
         isEnabled, showToGuests, showToFreeUsers, showToPaidUsers,
         restrictedCategories: restrictedCategories.trim() ? restrictedCategories.split("\n").map(s => s.trim()).filter(Boolean) : undefined,
         testAdMode, pixelId: pixelId.trim() || undefined });
-      toast.success("GravityAds config saved");
+      toast.success("AdMesh config saved");
     } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed"); }
     finally { setSaving(false); }
   };
@@ -1881,8 +1881,8 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h2 className="text-lg font-bold text-foreground">GravityAds Integration</h2>
-        <p className="text-sm text-muted-foreground mt-1">Once approved by GravityAds, enter your key here — ads go live immediately.</p>
+        <h2 className="text-lg font-bold text-foreground">AdMesh Integration</h2>
+        <p className="text-sm text-muted-foreground mt-1">Once approved by AdMesh, enter your key here — ads go live immediately.</p>
       </div>
       <div className="bg-card border border-border rounded-xl p-6 space-y-5">
         <div className="flex items-center justify-between">
@@ -1892,7 +1892,7 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
           </button>
         </div>
         <div className="flex items-center justify-between">
-          <div><p className="text-sm font-semibold text-amber-400">Test Ads</p><p className="text-xs text-muted-foreground">Show Gravity sample creatives (no billing) — use to verify placements render before real ads fill</p></div>
+          <div><p className="text-sm font-semibold text-amber-400">Test Ads</p><p className="text-xs text-muted-foreground">Ask AdMesh for sample creatives (no billing) — use to verify placements render before real ads fill</p></div>
           <button onClick={() => setTestAdMode(v => !v)} className={`relative w-10 h-5 rounded-full transition-all ${testAdMode ? "bg-amber-500" : "bg-muted"}`}>
             <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${testAdMode ? "left-5" : "left-0.5"}`} />
           </button>
@@ -1900,7 +1900,7 @@ function GravityAdsTab({ adminToken }: { adminToken: string }) {
         <div>
           <label className="text-xs font-bold text-muted-foreground mb-1.5 block">GRAVITYADS API KEY</label>
           <div className="relative">
-            <input type={showKey ? "text" : "password"} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Enter your GravityAds API key"
+            <input type={showKey ? "text" : "password"} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Enter your AdMesh API key"
               className="w-full bg-background border border-border rounded-xl px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors" />
             <button onClick={() => setShowKey(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
               {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
