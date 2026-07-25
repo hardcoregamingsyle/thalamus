@@ -609,6 +609,20 @@ const schema = defineSchema(
       updatedBy: v.optional(v.string()),
     }),
 
+    // NVIDIA NIM API keys pool (admin-managed — primary AI provider).
+    nimKeys: defineTable({
+      keys: v.array(v.string()),
+      updatedAt: v.number(),
+      updatedBy: v.optional(v.string()),
+    }),
+
+    // Ollama Cloud API keys pool (admin-managed — backup AI provider).
+    ollamaKeys: defineTable({
+      keys: v.array(v.string()),
+      updatedAt: v.number(),
+      updatedBy: v.optional(v.string()),
+    }),
+
     // Anti-evasion: tracks GitHub's immutable integer repo ID.
     // Prevents the same repo from re-entering under a new account after exhausting free tier.
     repoFingerprints: defineTable({

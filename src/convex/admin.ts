@@ -655,6 +655,118 @@ export const getGeminiKeysInternal = internalQuery({
   },
 });
 
+// —— NVIDIA NIM API Keys ——
+
+export const getNimKeys = query({
+  args: { adminToken: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const record = await ctx.db.query("nimKeys").take(1);
+    if (record.length === 0) return null;
+    return {
+      count: record[0].keys.length,
+      updatedAt: record[0].updatedAt,
+      maskedKeys: record[0].keys.map(k => k.slice(0, 8) + "..." + k.slice(-4)),
+    };
+  },
+});
+
+export const saveNimKeys = mutation({
+  args: {
+    adminToken: v.string(),
+    keys: v.array(v.string()),
+    append: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const existing = await ctx.db.query("nimKeys").take(1);
+    let finalKeys = args.keys;
+    if (args.append && existing.length > 0) {
+      const existingSet = new Set(existing[0].keys);
+      for (const k of args.keys) existingSet.add(k);
+      finalKeys = Array.from(existingSet);
+    }
+    if (existing.length > 0) {
+      await ctx.db.patch(existing[0]._id, {
+        keys: finalKeys,
+        updatedAt: Date.now(),
+        updatedBy: "admin",
+      });
+    } else {
+      await ctx.db.insert("nimKeys", {
+        keys: finalKeys,
+        updatedAt: Date.now(),
+        updatedBy: "admin",
+      });
+    }
+  },
+});
+
+export const getNimKeysInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const record = await ctx.db.query("nimKeys").take(1);
+    if (record.length === 0) return [];
+    return record[0].keys;
+  },
+});
+
+// —— Ollama Cloud API Keys ——
+
+export const getOllamaKeys = query({
+  args: { adminToken: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const record = await ctx.db.query("ollamaKeys").take(1);
+    if (record.length === 0) return null;
+    return {
+      count: record[0].keys.length,
+      updatedAt: record[0].updatedAt,
+      maskedKeys: record[0].keys.map(k => k.slice(0, 8) + "..." + k.slice(-4)),
+    };
+  },
+});
+
+export const saveOllamaKeys = mutation({
+  args: {
+    adminToken: v.string(),
+    keys: v.array(v.string()),
+    append: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const existing = await ctx.db.query("ollamaKeys").take(1);
+    let finalKeys = args.keys;
+    if (args.append && existing.length > 0) {
+      const existingSet = new Set(existing[0].keys);
+      for (const k of args.keys) existingSet.add(k);
+      finalKeys = Array.from(existingSet);
+    }
+    if (existing.length > 0) {
+      await ctx.db.patch(existing[0]._id, {
+        keys: finalKeys,
+        updatedAt: Date.now(),
+        updatedBy: "admin",
+      });
+    } else {
+      await ctx.db.insert("ollamaKeys", {
+        keys: finalKeys,
+        updatedAt: Date.now(),
+        updatedBy: "admin",
+      });
+    }
+  },
+});
+
+export const getOllamaKeysInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const record = await ctx.db.query("ollamaKeys").take(1);
+    if (record.length === 0) return [];
+    return record[0].keys;
+  },
+});
+
 // Agent Model Config
 export const listAgentModelConfigs = query({
   args: { adminToken: v.string() },
