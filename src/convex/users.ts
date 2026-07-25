@@ -4,7 +4,7 @@ import { v } from "convex/values";
 
 /**
  * Get the current signed in user. Returns null if the user is not signed in.
- * Usage: const signedInUser = await ctx.runQuery(api.authHelpers.currentUser);
+ * Usage: const signedInUser = await ctx.runQuery(api.users.currentUser);
  * THIS FUNCTION IS READ-ONLY. DO NOT MODIFY.
  */
 export const currentUser = query({

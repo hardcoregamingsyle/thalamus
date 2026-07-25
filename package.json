@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "bun install && ./node_modules/.bin/tsc -b && vite build",
     "type-check": "tsc -b --noEmit",
+    "check-refs": "node scripts/check-convex-refs.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "preview": "vite preview",
