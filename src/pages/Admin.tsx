@@ -1894,7 +1894,7 @@ function AdMeshTab({ adminToken }: { adminToken: string }) {
           </button>
         </div>
         <div className="flex items-center justify-between">
-          <div><p className="text-sm font-semibold text-amber-400">Test Ads</p><p className="text-xs text-muted-foreground">Ask AdMesh for sample creatives (no billing) — use to verify placements render before real ads fill</p></div>
+          <div><p className="text-sm font-semibold text-amber-400">Test Ads</p><p className="text-xs text-muted-foreground">Serve built-in placeholder ads — never calls AdMesh, never bills. Use to check slots and the ad disclosure render while real fill is empty.</p></div>
           <button onClick={() => setTestAdMode(v => !v)} className={`relative w-10 h-5 rounded-full transition-all ${testAdMode ? "bg-amber-500" : "bg-muted"}`}>
             <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${testAdMode ? "left-5" : "left-0.5"}`} />
           </button>

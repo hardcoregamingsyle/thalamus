@@ -174,7 +174,8 @@ export const requestAd = action({
     const config = await ctx.runQuery(internal.gravityAds.getGravityAdsConfigInternal, {});
     if (!config) { console.warn("[ads] no config row — save one in /admin"); return null; }
     if (!config.isEnabled) { console.warn("[ads] master switch is off"); return null; }
-    if (!config.apiKey) { console.warn("[ads] no api key stored"); return null; }
+    // Test mode never calls AdMesh, so it doesn't need a key.
+    if (!config.testAdMode && !config.apiKey) { console.warn("[ads] no api key stored"); return null; }
 
     // Audience gating: guests vs free vs paid users
     if (!args.token) {
@@ -202,6 +203,24 @@ export const requestAd = action({
     if (messages.length === 0) { console.warn("[ads] no messages to match on"); return null; }
 
     const count = Math.max(1, Math.min(6, Math.floor(args.count ?? 1)));
+
+    // Test mode: hand back placeholders instead of calling AdMesh, so the card
+    // and its ad disclosure can be checked on web and desktop while real fill
+    // is zero. Admin-only switch, and every field says "sample" out loud — this
+    // must never be mistakable for a real advertiser.
+    if (config.testAdMode) {
+      const samples = Array.from({ length: count }, (_, i) => ({
+        title: `Sample placement ${i + 1} — test ad`,
+        brandName: "Test Advertiser",
+        adText: "Placeholder used to verify ad slots render. Real ads appear here once AdMesh returns inventory.",
+        cta: "Learn more",
+        url: "https://useadmesh.com",
+        clickUrl: "https://useadmesh.com",
+        impUrl: undefined,
+        favicon: undefined,
+      }));
+      return count === 1 ? samples[0] : samples;
+    }
 
     // AdMesh matches on a natural-language query, not a placement vocabulary —
     // so the conversation gets flattened into one. The last user turn carries
