@@ -1052,6 +1052,23 @@ function PortalDesktop() {
   const messages = useQuery(api.conversations.getMessages, activeConvId && token ? { conversationId: activeConvId, token } : "skip") as Message[] | undefined;
   const studyResources = useQuery(api.studyHelpers.listResources, token ? { token } : "skip") as StudyResource[] | undefined;
 
+  // Ads only ever fired from the tail of a completed send, so opening an
+  // existing conversation — or flipping the admin switch and reloading — showed
+  // nothing until you typed a brand-new message. Request once per conversation
+  // as soon as there's history to match on. Same latch and adContextRef the send
+  // path and the refresh cadence use, so this adds an entry point, not a second
+  // stream of requests.
+  useEffect(() => {
+    if (!activeConvId || !token || adRequestedRef.current) return;
+    if (!messages || messages.length === 0) return;
+    const adMessages = messages.slice(-6).map(m => ({ role: m.role, content: (m.content ?? "").slice(0, 1000) }));
+    adRequestedRef.current = true;
+    adContextRef.current = { messages: adMessages, sessionId: activeConvId };
+    fetchSponsoredAd({ token, messages: adMessages, sessionId: activeConvId, count: 1 + railCount })
+      .then(ad => { if (ad) { applyAds(ad); lastAdRefreshRef.current = Date.now(); } })
+      .catch(() => {});
+  }, [activeConvId, messages, token, railCount]);
+
   const createConversation = useMutation(api.conversations.create);
   const deleteConversation = useMutation(api.conversations.remove);
   const sendMessage = useAction(api.ai.sendMessage);
