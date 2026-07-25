@@ -47,6 +47,11 @@
                                Foreground="{DynamicResource BlueBrush}"/>
                 </StackPanel>
             </Grid>
+            <!-- Same disclosure the web card carries, word for word. Static text,
+                 so there's no code-behind counterpart to keep in sync. -->
+            <TextBlock Text="Ad — sponsored placements help keep Thalamus AI free."
+                       FontSize="9" TextWrapping="Wrap" Margin="0,8,0,0"
+                       Foreground="{DynamicResource TextMutedBrush}"/>
         </StackPanel>
     </Border>
 </UserControl>

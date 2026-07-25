@@ -897,6 +897,11 @@ function SponsoredAdCard({ ad, rail = false }: { ad: GravityAd; rail?: boolean }
             {ad.cta && <span className="inline-block mt-1.5 text-primary font-bold">{ad.cta} →</span>}
           </div>
         </div>
+        {/* Every slot — in-chat and rail — renders this one component, so the
+            disclosure lands under all of them from here. */}
+        <p className="text-[9px] text-muted-foreground/50 mt-2 leading-snug">
+          Ad — sponsored placements help keep Thalamus AI free.
+        </p>
       </a>
     </motion.div>
   );
