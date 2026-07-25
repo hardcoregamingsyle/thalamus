@@ -46,8 +46,11 @@ export {
 } from "./nimClient";
 import type { TaskType } from "./nimClient";
 
+export { callModal, calcModalAgentBucks } from "./modalClient";
+
 import { callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL, DEFAULT_CODE_MODEL, calcAgentBucksForModel } from "./siliconflow";
 import { callNim, agentToTaskType, NIM_DEFAULT_CHAT_MODEL, calcNimAgentBucks } from "./nimClient";
+import { callModal, calcModalAgentBucks } from "./modalClient";
 
 // ── Backward-compatible types and aliases ────────────────────────────────────
 // The old pipeline systems (agentPipeline.ts, codePipeline.ts) still reference
@@ -169,6 +172,20 @@ export async function callModel(
   const taskType: TaskType = agentToTaskType(modelId);
 
   if (ctx) {
+    // Modal first when an admin has registered an endpoint. Which endpoint is
+    // decided by data (the isPrimary row comes back first), not by this code —
+    // so swapping the primary model is a click in /admin, not a deploy. Falls
+    // through to NIM → Ollama when nothing is registered or every endpoint errors.
+    try {
+      const result = await callModal(ctx, prompt, systemPrompt);
+      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modal:${result.model}` };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes("MODAL_NOT_CONFIGURED")) {
+        console.warn("Modal call failed, falling back to NIM:", msg);
+      }
+    }
+
     try {
       const nimModel = taskType === "dispatcher" ? "nvidia/nvidia-nemotron-nano-9b-v2"
         : taskType === "code" ? "qwen/qwen3-coder-480b-a35b-instruct"
@@ -219,6 +236,9 @@ export function calcAgentBucksForTier(
   inputTokens: number,
   outputTokens: number,
 ): number {
+  if (tier.startsWith("modal:")) {
+    return calcModalAgentBucks(inputTokens, outputTokens);
+  }
   if (tier.startsWith("nim:")) {
     return calcNimAgentBucks(tier.replace("nim:", ""), inputTokens, outputTokens);
   }

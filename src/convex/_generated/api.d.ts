@@ -53,6 +53,8 @@ import type * as http from "../http.js";
 import type * as mcpClient from "../mcpClient.js";
 import type * as mcpParse from "../mcpParse.js";
 import type * as mcpServers from "../mcpServers.js";
+import type * as modalClient from "../modalClient.js";
+import type * as nimClient from "../nimClient.js";
 import type * as obscureRepoGenerator from "../obscureRepoGenerator.js";
 import type * as payments from "../payments.js";
 import type * as qemuSandbox from "../qemuSandbox.js";
@@ -121,6 +123,8 @@ declare const fullApi: ApiFromModules<{
   mcpClient: typeof mcpClient;
   mcpParse: typeof mcpParse;
   mcpServers: typeof mcpServers;
+  modalClient: typeof modalClient;
+  nimClient: typeof nimClient;
   obscureRepoGenerator: typeof obscureRepoGenerator;
   payments: typeof payments;
   qemuSandbox: typeof qemuSandbox;

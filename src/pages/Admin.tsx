@@ -9,11 +9,11 @@ import {
   Plus, Trash2, Check, Edit2, Eye, EyeOff, Loader2,
   Coins, AlertCircle, CheckCircle, Star, TrendingDown, RefreshCw, Zap,
   Database, Globe, BookOpen, Upload, FileText,
-  TrendingUp, Activity, Cpu, Search, BookMarked,
+  TrendingUp, Activity, Cpu, Search, BookMarked, Server,
   type LucideIcon,
 } from "lucide-react";
 
-type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex" | "study-materials" | "dau" | "aws" | "gemini" | "nim" | "ollama" | "models" | "gravity-ads" | "payments" | "vm-isos" | "corpus";
+type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex" | "study-materials" | "dau" | "aws" | "gemini" | "nim" | "ollama" | "modal" | "models" | "gravity-ads" | "payments" | "vm-isos" | "corpus";
 
 const ADMIN_SESSION_KEY = "thalamus_admin_v2";
 
@@ -183,6 +183,7 @@ export default function AdminPage() {
             { id: "convex", label: "Convex", icon: Database },
             { id: "nim", label: "NVIDIA NIM", icon: Zap },
             { id: "ollama", label: "Ollama Cloud", icon: Cpu },
+            { id: "modal", label: "Modal", icon: Server },
             { id: "aws", label: "AWS Bedrock", icon: Zap },
             { id: "gemini", label: "Gemini Keys", icon: Activity },
             { id: "models", label: "Model Config", icon: Cpu },
@@ -224,6 +225,7 @@ export default function AdminPage() {
               {tab === "gemini" && <GeminiKeysTab adminToken={adminToken} />}
               {tab === "nim" && <NimKeysTab adminToken={adminToken} />}
               {tab === "ollama" && <OllamaKeysTab adminToken={adminToken} />}
+              {tab === "modal" && <ModalEndpointsTab adminToken={adminToken} />}
               {tab === "models" && <ModelConfigTab adminToken={adminToken} />}
               {tab === "gravity-ads" && <GravityAdsTab adminToken={adminToken} />}
               {tab === "payments" && <PaymentsTab adminToken={adminToken} />}
@@ -1537,6 +1539,145 @@ function OllamaKeysTab({ adminToken }: { adminToken: string }) {
             <li>Also checks OLLAMA_API_KEY env vars in Convex dashboard</li>
           </ul>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Modal Endpoints Tab ───────────────────────────────────────────────────────
+// Multi-row, unlike the key-pool tabs above: each row is a whole endpoint, and
+// exactly one is starred as primary. Adding a self-hosted Modal model later is
+// a row here — no deploy.
+// The row shape is spelled out rather than inferred: listModalEndpoints returns
+// a masked projection (maskedKey, never apiKey), and this file's api type sits
+// at TypeScript's instantiation-depth cliff, so the inferred element goes `any`.
+type ModalEndpointRow = {
+  _id: Id<"modalEndpoints">;
+  name: string;
+  baseUrl: string;
+  modelId: string;
+  maskedKey: string | null;
+  isPrimary: boolean;
+  isEnabled: boolean;
+  createdAt: number;
+};
+
+function ModalEndpointsTab({ adminToken }: { adminToken: string }) {
+  const endpoints = useQuery(api.admin.listModalEndpoints, { adminToken });
+  const addEndpoint = useMutation(api.admin.addModalEndpoint);
+  const setPrimary = useMutation(api.admin.setModalEndpointPrimary);
+  const setEnabled = useMutation(api.admin.setModalEndpointEnabled);
+  const deleteEndpoint = useMutation(api.admin.deleteModalEndpoint);
+
+  const [name, setName] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [modelId, setModelId] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleAdd = async () => {
+    if (!name.trim() || !baseUrl.trim() || !modelId.trim()) {
+      toast.error("Name, base URL and model ID are required");
+      return;
+    }
+    setSaving(true);
+    try {
+      await addEndpoint({
+        adminToken,
+        name: name.trim(),
+        baseUrl: baseUrl.trim(),
+        modelId: modelId.trim(),
+        apiKey: apiKey.trim() || undefined,
+      });
+      toast.success("Endpoint added");
+      setName(""); setBaseUrl(""); setModelId(""); setApiKey("");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed to add"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h2 className="text-lg font-bold text-foreground">Modal Endpoints</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          OpenAI-compatible endpoints served from Modal. The starred one is tried first;
+          the rest act as backups in order. Register a self-hosted serverless model here
+          and it goes live without a deploy.
+        </p>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-6 space-y-4">
+        <p className="text-xs font-bold text-muted-foreground">ADD ENDPOINT</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[11px] text-muted-foreground mb-1 block">NAME</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="vLLM Qwen A100"
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60" />
+          </div>
+          <div>
+            <label className="text-[11px] text-muted-foreground mb-1 block">MODEL ID</label>
+            <input value={modelId} onChange={e => setModelId(e.target.value)} placeholder="Qwen/Qwen3-Coder-30B"
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60" />
+          </div>
+        </div>
+        <div>
+          <label className="text-[11px] text-muted-foreground mb-1 block">BASE URL</label>
+          <input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://workspace--app.modal.run"
+            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:outline-none focus:border-primary/60" />
+          <p className="text-[11px] text-muted-foreground mt-1">Without the trailing <code>/v1</code> — it gets appended.</p>
+        </div>
+        <div>
+          <label className="text-[11px] text-muted-foreground mb-1 block">API KEY (OPTIONAL)</label>
+          <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Leave blank for keyless endpoints"
+            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:outline-none focus:border-primary/60" />
+        </div>
+        <button onClick={() => void handleAdd()} disabled={saving}
+          className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground rounded-lg px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Plus className="h-4 w-4" /> Add Endpoint</>}
+        </button>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-6">
+        <p className="text-xs font-bold text-muted-foreground mb-3">REGISTERED ({endpoints?.length ?? 0})</p>
+        {!endpoints || endpoints.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No endpoints yet. Requests fall through to NVIDIA NIM, then Ollama Cloud.</p>
+        ) : (
+          <div className="space-y-2">
+            {(endpoints as ModalEndpointRow[]).map((ep: ModalEndpointRow) => (
+              <div key={ep._id} className={`flex items-center gap-3 p-3 rounded-lg border ${ep.isPrimary ? "border-primary/50 bg-primary/5" : "border-border"} ${ep.isEnabled ? "" : "opacity-50"}`}>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-foreground truncate">{ep.name}</span>
+                    {ep.isPrimary && <span className="text-[10px] font-bold text-primary border border-primary/40 rounded px-1.5 py-0.5">PRIMARY</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">{ep.modelId} · {ep.baseUrl}</p>
+                  {ep.maskedKey && <p className="text-[11px] text-muted-foreground">key {ep.maskedKey}</p>}
+                </div>
+                <button
+                  title={ep.isPrimary ? "Already primary" : "Make primary"}
+                  onClick={() => void setPrimary({ adminToken, id: ep._id }).then(() => toast.success(`${ep.name} is now primary`))}
+                  className="p-2 rounded-md hover:bg-secondary transition-colors"
+                >
+                  <Star className={`h-4 w-4 ${ep.isPrimary ? "fill-primary text-primary" : "text-muted-foreground"}`} />
+                </button>
+                <button
+                  title={ep.isEnabled ? "Disable" : "Enable"}
+                  onClick={() => void setEnabled({ adminToken, id: ep._id, isEnabled: !ep.isEnabled })}
+                  className="p-2 rounded-md hover:bg-secondary transition-colors"
+                >
+                  {ep.isEnabled ? <Eye className="h-4 w-4 text-muted-foreground" /> : <EyeOff className="h-4 w-4 text-muted-foreground" />}
+                </button>
+                <button
+                  title="Delete"
+                  onClick={() => void deleteEndpoint({ adminToken, id: ep._id })}
+                  className="p-2 rounded-md hover:bg-destructive/10 transition-colors"
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

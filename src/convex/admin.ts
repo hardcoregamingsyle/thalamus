@@ -767,6 +767,112 @@ export const getOllamaKeysInternal = internalQuery({
   },
 });
 
+// —— Modal endpoints ——
+// Multi-row, unlike the key pools above: each row is a full endpoint (URL +
+// model + optional key), so pointing at a new self-hosted model is a row, not a
+// deploy. Exactly one row is primary and the runtime tries it first.
+
+export const listModalEndpoints = query({
+  args: { adminToken: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const rows = await ctx.db.query("modalEndpoints").take(50);
+    return rows.map((r) => ({
+      _id: r._id,
+      name: r.name,
+      baseUrl: r.baseUrl,
+      modelId: r.modelId,
+      // Never hand the raw key back to the browser — mask like the key pools do.
+      maskedKey: r.apiKey ? r.apiKey.slice(0, 6) + "..." + r.apiKey.slice(-4) : null,
+      isPrimary: r.isPrimary,
+      isEnabled: r.isEnabled,
+      createdAt: r.createdAt,
+    }));
+  },
+});
+
+export const addModalEndpoint = mutation({
+  args: {
+    adminToken: v.string(),
+    name: v.string(),
+    baseUrl: v.string(),
+    modelId: v.string(),
+    apiKey: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const name = args.name.trim();
+    // Strip a trailing slash (and a trailing /v1) — the client appends the path.
+    const baseUrl = args.baseUrl.trim().replace(/\/+$/, "").replace(/\/v1$/, "");
+    const modelId = args.modelId.trim();
+    if (!name || !baseUrl || !modelId) throw new Error("Name, base URL and model ID are required");
+
+    // First endpoint added becomes primary automatically, so a fresh install
+    // always has exactly one primary rather than none.
+    const existing = await ctx.db.query("modalEndpoints").take(50);
+    await ctx.db.insert("modalEndpoints", {
+      name,
+      baseUrl,
+      modelId,
+      apiKey: args.apiKey?.trim() || undefined,
+      isPrimary: existing.length === 0,
+      isEnabled: true,
+      createdAt: Date.now(),
+      updatedBy: "admin",
+    });
+  },
+});
+
+export const setModalEndpointPrimary = mutation({
+  args: { adminToken: v.string(), id: v.id("modalEndpoints") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    // Exclusive: clear the flag everywhere else, then set it on the target.
+    const rows = await ctx.db.query("modalEndpoints").take(50);
+    for (const r of rows) {
+      if (r._id !== args.id && r.isPrimary) await ctx.db.patch(r._id, { isPrimary: false });
+    }
+    await ctx.db.patch(args.id, { isPrimary: true, isEnabled: true });
+  },
+});
+
+export const setModalEndpointEnabled = mutation({
+  args: { adminToken: v.string(), id: v.id("modalEndpoints"), isEnabled: v.boolean() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    await ctx.db.patch(args.id, { isEnabled: args.isEnabled });
+  },
+});
+
+export const deleteModalEndpoint = mutation({
+  args: { adminToken: v.string(), id: v.id("modalEndpoints") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.adminToken);
+    const row = await ctx.db.get(args.id);
+    await ctx.db.delete(args.id);
+    // Don't leave the pool headless — promote the next endpoint if we just
+    // deleted the primary one.
+    if (row?.isPrimary) {
+      const rest = await ctx.db.query("modalEndpoints").take(50);
+      const next = rest.find((r) => r.isEnabled) ?? rest[0];
+      if (next) await ctx.db.patch(next._id, { isPrimary: true });
+    }
+  },
+});
+
+// Runtime read: enabled rows only, primary first. Ordering here means the client
+// just iterates the array — same shape as the key-pool rotation.
+export const getModalEndpointsInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query("modalEndpoints").take(50);
+    return rows
+      .filter((r) => r.isEnabled)
+      .sort((a, b) => (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0) || a.createdAt - b.createdAt)
+      .map((r) => ({ name: r.name, baseUrl: r.baseUrl, apiKey: r.apiKey, modelId: r.modelId }));
+  },
+});
+
 // Agent Model Config
 export const listAgentModelConfigs = query({
   args: { adminToken: v.string() },

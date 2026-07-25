@@ -623,6 +623,22 @@ const schema = defineSchema(
       updatedBy: v.optional(v.string()),
     }),
 
+    // Modal endpoints (admin-managed). Unlike the key-pool tables above, this is
+    // multi-row: one row per endpoint, each carrying its own URL and model, so a
+    // self-hosted Modal serverless deployment is a new row rather than new code.
+    // isPrimary is EXCLUSIVE — setModalEndpointPrimary clears it on every other
+    // row — and the runtime tries the primary first, then the rest as backups.
+    modalEndpoints: defineTable({
+      name: v.string(),               // admin label, e.g. "vLLM Qwen A100"
+      baseUrl: v.string(),            // https://<workspace>--<app>.modal.run (client appends /v1)
+      apiKey: v.optional(v.string()), // Modal web endpoints are often keyless
+      modelId: v.string(),            // sent as `model` in the request body
+      isPrimary: v.boolean(),
+      isEnabled: v.boolean(),
+      createdAt: v.number(),
+      updatedBy: v.optional(v.string()),
+    }),
+
     // Anti-evasion: tracks GitHub's immutable integer repo ID.
     // Prevents the same repo from re-entering under a new account after exhausting free tier.
     repoFingerprints: defineTable({
