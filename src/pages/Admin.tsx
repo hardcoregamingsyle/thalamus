@@ -13,7 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex" | "study-materials" | "dau" | "aws" | "gemini" | "models" | "gravity-ads" | "payments" | "vm-isos" | "corpus";
+type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex" | "study-materials" | "dau" | "aws" | "gemini" | "nim" | "ollama" | "models" | "gravity-ads" | "payments" | "vm-isos" | "corpus";
 
 const ADMIN_SESSION_KEY = "thalamus_admin_v2";
 
@@ -181,6 +181,8 @@ export default function AdminPage() {
             { id: "suggestion", label: "Suggestions", icon: Lightbulb },
             { id: "study-materials", label: "Study Materials", icon: BookOpen },
             { id: "convex", label: "Convex", icon: Database },
+            { id: "nim", label: "NVIDIA NIM", icon: Zap },
+            { id: "ollama", label: "Ollama Cloud", icon: Cpu },
             { id: "aws", label: "AWS Bedrock", icon: Zap },
             { id: "gemini", label: "Gemini Keys", icon: Activity },
             { id: "models", label: "Model Config", icon: Cpu },
@@ -220,6 +222,8 @@ export default function AdminPage() {
               {tab === "study-materials" && <StudyMaterialsTab adminToken={adminToken} />}
               {tab === "aws" && <AwsBedrockTab adminToken={adminToken} />}
               {tab === "gemini" && <GeminiKeysTab adminToken={adminToken} />}
+              {tab === "nim" && <NimKeysTab adminToken={adminToken} />}
+              {tab === "ollama" && <OllamaKeysTab adminToken={adminToken} />}
               {tab === "models" && <ModelConfigTab adminToken={adminToken} />}
               {tab === "gravity-ads" && <GravityAdsTab adminToken={adminToken} />}
               {tab === "payments" && <PaymentsTab adminToken={adminToken} />}
@@ -1399,6 +1403,146 @@ function GeminiKeysTab({ adminToken }: { adminToken: string }) {
   );
 }
 
+// ── NVIDIA NIM Keys Tab ─────────────────────────────────────────────────────────
+function NimKeysTab({ adminToken }: { adminToken: string }) {
+  const existing = useQuery(api.admin.getNimKeys, { adminToken });
+  const saveKeys = useMutation(api.admin.saveNimKeys);
+  const [keysText, setKeysText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+
+  const handleSave = async () => {
+    const newKeys = keysText.split(/[\n,]+/).map(k => k.trim()).filter(k => k.length > 10);
+    if (newKeys.length === 0) { toast.error("No valid NIM API keys found."); return; }
+    setSaving(true);
+    try { await saveKeys({ adminToken, keys: newKeys, append: true }); toast.success(`Added ${newKeys.length} NVIDIA NIM keys`); setKeysText(""); }
+    catch (err) { toast.error(err instanceof Error ? err.message : "Failed to save"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="max-w-2xl">
+      <div className="mb-6">
+        <h2 className="text-xl font-bold text-foreground">NVIDIA NIM API Keys</h2>
+        <p className="text-sm text-muted-foreground mt-1">Primary provider — free models via build.nvidia.com. Keys stored in DB.</p>
+      </div>
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+        className={`mb-6 p-4 rounded-xl border ${existing && existing.count > 0 ? "bg-emerald-400/10 border-emerald-400/30" : "bg-amber-400/10 border-amber-400/30"}`}>
+        <div className="flex items-center gap-2">
+          {existing && existing.count > 0 ? (
+            <><CheckCircle className="h-4 w-4 text-emerald-400" /><span className="text-sm font-bold text-emerald-400">{existing.count} keys — NIM is active</span></>
+          ) : (
+            <><AlertCircle className="h-4 w-4 text-amber-400" /><span className="text-sm font-bold text-amber-400">No keys — NIM unavailable, Ollama takes over</span></>
+          )}
+        </div>
+        {existing && existing.count > 0 && (
+          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+            <p>Last updated: <span className="text-foreground">{existing.updatedAt ? new Date(existing.updatedAt).toLocaleString() : "—"}</span></p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {existing.maskedKeys.slice(0, 6).map((k: string, i: number) => <span key={i} className="font-mono bg-muted/50 border border-border rounded px-1.5 py-0.5 text-[10px]">{k}</span>)}
+              {existing.maskedKeys.length > 6 && <span className="text-[10px] text-muted-foreground">+{existing.maskedKeys.length - 6} more</span>}
+            </div>
+          </div>
+        )}
+      </motion.div>
+      <div className="bg-card border border-border rounded-xl p-6 space-y-4">
+        <h3 className="text-sm font-bold text-foreground">Add Keys</h3>
+        <div>
+          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">PASTE NIM API KEYS (one per line)</label>
+          <textarea value={showKey ? keysText : keysText.replace(/[^\n,]/g, "*")} onChange={e => setKeysText(e.target.value)}
+            placeholder={"nvapi-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nnvapi-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"} rows={8}
+            className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors resize-none" />
+          <button onClick={() => setShowKey(v => !v)} className="text-[10px] text-muted-foreground hover:text-foreground mt-1.5 flex items-center gap-1">
+            {showKey ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}{showKey ? "hide keys" : "show keys"}
+          </button>
+        </div>
+        <button onClick={handleSave} disabled={saving || !keysText.trim()}
+          className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+          {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving...</> : <><Check className="h-4 w-4" />Save Keys</>}
+        </button>
+        <div className="p-3 bg-muted/30 border border-border rounded-xl text-xs text-muted-foreground">
+          <p className="font-bold mb-1">HOW IT WORKS</p>
+          <ul className="space-y-1 list-disc list-inside">
+            <li>Get free keys at <span className="text-foreground">build.nvidia.com</span> → API Keys</li>
+            <li>25+ free models: Nemotron, Llama, DeepSeek, Qwen, Kimi, Mistral, Phi-4</li>
+            <li>NIM is PRIMARY — every request tries NIM first, only falls back to Ollama if NIM fails</li>
+            <li>Dynamic routing picks the right model per task type automatically</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Ollama Cloud Keys Tab ──────────────────────────────────────────────────────
+function OllamaKeysTab({ adminToken }: { adminToken: string }) {
+  const existing = useQuery(api.admin.getOllamaKeys, { adminToken });
+  const saveKeys = useMutation(api.admin.saveOllamaKeys);
+  const [keysText, setKeysText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+
+  const handleSave = async () => {
+    const newKeys = keysText.split(/[\n,]+/).map(k => k.trim()).filter(k => k.length > 10);
+    if (newKeys.length === 0) { toast.error("No valid Ollama API keys found."); return; }
+    setSaving(true);
+    try { await saveKeys({ adminToken, keys: newKeys, append: true }); toast.success(`Added ${newKeys.length} Ollama Cloud keys`); setKeysText(""); }
+    catch (err) { toast.error(err instanceof Error ? err.message : "Failed to save"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="max-w-2xl">
+      <div className="mb-6">
+        <h2 className="text-xl font-bold text-foreground">Ollama Cloud API Keys</h2>
+        <p className="text-sm text-muted-foreground mt-1">Backup provider — activates when NIM is down or unavailable.</p>
+      </div>
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+        className={`mb-6 p-4 rounded-xl border ${existing && existing.count > 0 ? "bg-blue-400/10 border-blue-400/30" : "bg-muted/10 border-border"}`}>
+        <div className="flex items-center gap-2">
+          {existing && existing.count > 0 ? (
+            <><CheckCircle className="h-4 w-4 text-blue-400" /><span className="text-sm font-bold text-blue-400">{existing.count} keys — Ollama backup ready</span></) : (
+            <><AlertCircle className="h-4 w-4 text-muted-foreground" /><span className="text-sm font-bold text-muted-foreground">No keys set — only NIM will be used</span></>
+          )}
+        </div>
+        {existing && existing.count > 0 && (
+          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+            <p>Last updated: <span className="text-foreground">{existing.updatedAt ? new Date(existing.updatedAt).toLocaleString() : "—"}</span></p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {existing.maskedKeys.slice(0, 6).map((k: string, i: number) => <span key={i} className="font-mono bg-muted/50 border border-border rounded px-1.5 py-0.5 text-[10px]">{k}</span>)}
+              {existing.maskedKeys.length > 6 && <span className="text-[10px] text-muted-foreground">+{existing.maskedKeys.length - 6} more</span>}
+            </div>
+          </div>
+        )}
+      </motion.div>
+      <div className="bg-card border border-border rounded-xl p-6 space-y-4">
+        <h3 className="text-sm font-bold text-foreground">Add Keys</h3>
+        <div>
+          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">PASTE OLLAMA API KEYS (one per line)</label>
+          <textarea value={showKey ? keysText : keysText.replace(/[^\n,]/g, "*")} onChange={e => setKeysText(e.target.value)}
+            placeholder={"ollama-sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nollama-sk-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"} rows={8}
+            className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors resize-none" />
+          <button onClick={() => setShowKey(v => !v)} className="text-[10px] text-muted-foreground hover:text-foreground mt-1.5 flex items-center gap-1">
+            {showKey ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}{showKey ? "hide keys" : "show keys"}
+          </button>
+        </div>
+        <button onClick={handleSave} disabled={saving || !keysText.trim()}
+          className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+          {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving...</> : <><Check className="h-4 w-4" />Save Keys</>}
+        </button>
+        <div className="p-3 bg-muted/30 border border-border rounded-xl text-xs text-muted-foreground">
+          <p className="font-bold mb-1">BACKUP PROVIDER</p>
+          <ul className="space-y-1 list-disc list-inside">
+            <li>Ollama is the <span className="text-foreground">backup</span> — only called when NIM fails or is unconfigured</li>
+            <li>Get keys at <span className="text-foreground">ollama.com</span> → Account → API Keys</li>
+            <li>Also checks OLLAMA_API_KEY env vars in Convex dashboard</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Model Config Tab ──────────────────────────────────────────────────────────
 const AGENT_NAMES = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
 const RUN_MODES_LIST = ["cheap", "balanced", "powerful"] as const;
@@ -1412,6 +1556,30 @@ const GEMINI_MODELS_LIST = [
   { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
   { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite" },
   { id: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" },
+];
+
+const NIM_MODELS_LIST = [
+  { id: "nvidia/nemotron-3-super-120b-a12b", label: "Nemotron 3 Super 120B" },
+  { id: "nvidia/nemotron-3-nano-30b-a3b", label: "Nemotron 3 Nano 30B" },
+  { id: "nvidia/llama-3.3-nemotron-super-49b-v1.5", label: "Llama 3.3 Nemotron Super 49B" },
+  { id: "nvidia/llama-3.1-nemotron-ultra-253b-v1", label: "Llama 3.1 Nemotron Ultra 253B" },
+  { id: "nvidia/nvidia-nemotron-nano-9b-v2", label: "Nemotron Nano 9B v2" },
+  { id: "deepseek-ai/deepseek-v4-pro", label: "DeepSeek V4 Pro" },
+  { id: "deepseek-ai/deepseek-v4-flash", label: "DeepSeek V4 Flash" },
+  { id: "qwen/qwen3-coder-480b-a35b-instruct", label: "Qwen 3 Coder 480B" },
+  { id: "qwen/qwen3-next-80b-a3b-instruct", label: "Qwen 3 Next 80B" },
+  { id: "meta/llama-3.3-70b-instruct", label: "Llama 3.3 70B" },
+  { id: "meta/llama-3.1-70b-instruct", label: "Llama 3.1 70B" },
+  { id: "moonshotai/kimi-k2-instruct", label: "Kimi K2" },
+];
+
+const OLLAMA_MODELS_LIST = [
+  { id: "gpt-oss:120b", label: "GPT-OSS 120B" },
+  { id: "gpt-oss:20b", label: "GPT-OSS 20B" },
+  { id: "gemma4:31b", label: "Gemma 4 31B" },
+  { id: "minimax-m3", label: "MiniMax M3" },
+  { id: "minimax-m2.5", label: "MiniMax M2.5" },
+  { id: "nemotron-3-nano:30b", label: "Nemotron 3 Nano 30B" },
 ];
 
 function ModelConfigTab({ adminToken }: { adminToken: string }) {
@@ -1477,11 +1645,25 @@ function ModelConfigTab({ adminToken }: { adminToken: string }) {
                         {saving === key ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Check className="h-2.5 w-2.5" />}Save
                       </button>
                     </div>
-                    <select value={cfg.provider} onChange={e => setConfig(agentName, runMode, "provider", e.target.value)}
-                      className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none">
-                      <option value="bedrock">Bedrock (Claude)</option><option value="gemini">Gemini</option><option value="custom">Custom Endpoint</option>
-                    </select>
-                    {cfg.provider === "bedrock" && (
+<select value={cfg.provider} onChange={e => setConfig(agentName, runMode, "provider", e.target.value)}
+                       className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none">
+                       <option value="nim">NVIDIA NIM</option><option value="ollama">Ollama Cloud</option><option value="bedrock">Bedrock (Claude)</option><option value="gemini">Gemini</option><option value="custom">Custom Endpoint</option>
+                     </select>
+                     {cfg.provider === "nim" && (
+                       <select value={cfg.modelId} onChange={e => setConfig(agentName, runMode, "modelId", e.target.value)}
+                         className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none">
+                         <option value="">— default —</option>
+                         {NIM_MODELS_LIST.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                       </select>
+                     )}
+                     {cfg.provider === "ollama" && (
+                       <select value={cfg.modelId} onChange={e => setConfig(agentName, runMode, "modelId", e.target.value)}
+                         className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none">
+                         <option value="">— default —</option>
+                         {OLLAMA_MODELS_LIST.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                       </select>
+                     )}
+                     {cfg.provider === "bedrock" && (
                       <select value={cfg.modelId} onChange={e => setConfig(agentName, runMode, "modelId", e.target.value)}
                         className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none">
                         <option value="">— default —</option>
