@@ -279,18 +279,21 @@ export const adjustCredits = action({
   },
 });
 
-// Corpus VM health — the "is the whole read side alive" number.
+// Corpus VM health — returns source breakdown so admin can cross-reference:
+//   corpus.learnings → aoLearnings table (Convex)
+//   corpus.sources.learning → VM PostgreSQL (what actually made it to the corpus)
+// If aoLearnings shows 0 but sources.learning is > 0, docs came from a prior seed.
 export const adminCorpusHealth = action({
   args: { adminToken: v.string() },
   handler: async (
     ctx,
     args,
-  ): Promise<{ ok: boolean; qdrant?: boolean; postgres?: boolean; points?: number; error?: string }> => {
+  ): Promise<{ ok: boolean; qdrant?: boolean; postgres?: boolean; points?: number; sources?: Record<string, number>; error?: string }> => {
     await requireAdmin(ctx, args.adminToken);
     try {
       const res = await vmFetch("/internal/health", undefined, "GET");
       if (!res.ok) return { ok: false, error: `VM returned ${res.status}` };
-      return (await res.json()) as { ok: boolean; qdrant: boolean; postgres: boolean; points: number };
+      return (await res.json()) as { ok: boolean; qdrant: boolean; postgres: boolean; points: number; sources?: Record<string, number> };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { ok: false, error: msg === "AO_BACKEND_UNCONFIGURED" ? "VM not configured" : msg };
