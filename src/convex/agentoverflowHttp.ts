@@ -303,6 +303,7 @@ export async function runAnswer(
         "gemini",
         geminiKeys,
         dbCreds,
+        ctx,
       );
       await ctx.runMutation(internal.admin.deductPlatformCost, {
         modelName: result.tier === "gemini" ? "gemini-3.1-flash-lite" : "claude-haiku-4-5",

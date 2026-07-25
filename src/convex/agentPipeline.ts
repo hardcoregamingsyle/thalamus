@@ -159,7 +159,7 @@ export const runPipelineAction = internalAction({
       if (executionPhase === "dispatching" || currentPhase === "Dispatcher") {
         const dispatchPrompt = `## Task to analyse\n${task}\n\n## Existing project files\n${files.length > 0 ? files.map(f => `- ${f.filepath}`).join("\n") : "None (greenfield project)"}`;
         const dispatchTier = AGENT_MODEL_MAP["Dispatcher"] as ModelTier ?? "haiku";
-        const dispatchResult = await callModel(dispatchPrompt, AGENT_SYSTEM_PROMPTS["Dispatcher"] ?? "", dispatchTier, geminiKeys, dbCreds);
+        const dispatchResult = await callModel(dispatchPrompt, AGENT_SYSTEM_PROMPTS["Dispatcher"] ?? "", dispatchTier, geminiKeys, dbCreds, ctx);
 
         const ab = calcAgentBucksForTier(dispatchTier, dispatchResult.inputTokens, dispatchResult.outputTokens);
         await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId, agentBucksToDeduct: ab });
@@ -264,7 +264,7 @@ export const runPipelineAction = internalAction({
         const systemPrompt = AGENT_SYSTEM_PROMPTS["Planner"] ?? "";
         const prompt = `## Task\n${task}\n\n## Research Context\n${context}\n\n## Current Files\n${fileContext}`;
         const tier = AGENT_MODEL_MAP["Planner"] as ModelTier ?? "haiku";
-        const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+        const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds, ctx);
         agentOutput = result.text;
 
         const plannerOutput = parsePlannerOutput(agentOutput);
@@ -302,7 +302,7 @@ export const runPipelineAction = internalAction({
         }
 
         const tier = DIFFICULTY_CODER_MODEL[taskDifficulty] as ModelTier ?? "opus46";
-        const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+        const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds, ctx);
         agentOutput = result.text;
 
         const ab = calcAgentBucksForTier(tier, result.inputTokens, result.outputTokens);
@@ -331,7 +331,7 @@ export const runPipelineAction = internalAction({
         }
 
         const tier = AGENT_MODEL_MAP[currentPhase] as ModelTier ?? "haiku";
-        const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+        const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds, ctx);
         agentOutput = result.text;
 
         const ab = calcAgentBucksForTier(tier, result.inputTokens, result.outputTokens);
@@ -492,7 +492,7 @@ async function runResearchTeam(
     const systemPrompt = AGENT_SYSTEM_PROMPTS[subAgent] ?? `You are the ${subAgent} agent.`;
     const prompt = `## Task\n${task}\n\n## Context\n${researchContext}`;
     const tier = AGENT_MODEL_MAP[subAgent] as ModelTier ?? "gemini";
-    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds, ctx);
 
     // Deduct credits
     const ab = calcAgentBucksForTier(tier, result.inputTokens, result.outputTokens);
@@ -526,7 +526,7 @@ async function runSecurityTeam(
     const systemPrompt = AGENT_SYSTEM_PROMPTS[subAgent] ?? `You are the ${subAgent} security agent.`;
     const prompt = `## Task\n${task}\n\n## Files\n${fileContext}\n\n## Security Context\n${securityContext}`;
     const tier = AGENT_MODEL_MAP[subAgent] as ModelTier ?? "sonnet";
-    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds, ctx);
 
     // Deduct credits
     const ab = calcAgentBucksForTier(tier, result.inputTokens, result.outputTokens);

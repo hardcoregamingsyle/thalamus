@@ -905,7 +905,7 @@ http.route({
     const geminiKeys = await ctx.runQuery(internal.admin.getGeminiKeysInternal, {});
     let result: { text: string; inputTokens: number; outputTokens: number };
     try {
-      result = await callModel(conversation, systemPrompt, tier, geminiKeys, dbCreds ?? parseBedrockCredsFromEnv());
+      result = await callModel(conversation, systemPrompt, tier, geminiKeys, dbCreds ?? parseBedrockCredsFromEnv(), ctx);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Upstream model call failed";
       return apiError(502, msg, "api_error");

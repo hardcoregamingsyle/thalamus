@@ -225,7 +225,7 @@ async function callModelWithStreaming(
         if (streamed.text && streamed.text.trim()) return { ...streamed, tier };
       } catch { /* try the next provider's stream */ }
     }
-    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds, ctx);
     await ctx.runMutation(internal.codeBranches.setStreamingContent, { branchId, content: result.text, agentName });
     return result;
   }
@@ -233,7 +233,7 @@ async function callModelWithStreaming(
   if (AGENTROUTER_PRIMARY || tier === "gemini" || !BEDROCK_MODELS[tier]) {
     // A configured primary (AgentRouter) or Gemini: no token streaming available —
     // run the call and push the whole result once it lands.
-    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds, ctx);
     await ctx.runMutation(internal.codeBranches.setStreamingContent, {
       branchId, content: result.text, agentName,
     });
@@ -248,7 +248,7 @@ async function callModelWithStreaming(
     : dbCreds;
 
   if (!creds || (!creds.accessKeyId && !creds.secretAccessKey)) {
-    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds, ctx);
     return result;
   }
 
@@ -280,7 +280,7 @@ async function callModelWithStreaming(
     if (!isCustomKey) {
       // SigV4 required — fall back to non-streaming callModel which handles signing
       // but simulate streaming by splitting the result into chunks for the UI
-      const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+      const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds, ctx);
       // Drip-feed the result in 300-char chunks so the UI shows something incrementally
       const chunkSize = 300;
       let sent = 0;
@@ -330,7 +330,7 @@ async function callModelWithStreaming(
     return { text, inputTokens, outputTokens, tier };
   } catch {
     // Any streaming failure: fall back to non-streaming
-    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds);
+    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds, ctx);
     return result;
   }
 }

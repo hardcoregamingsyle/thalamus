@@ -904,7 +904,7 @@ export const scoreLearning = internalAction({
 
     let scored: { score: number; rationale: string } | null = null;
     try {
-      const result = await callModel(prompt, SCORING_SYSTEM_PROMPT, "gemini", geminiKeys, dbCreds);
+      const result = await callModel(prompt, SCORING_SYSTEM_PROMPT, "gemini", geminiKeys, dbCreds, ctx);
       await ctx.runMutation(internal.admin.deductPlatformCost, {
         modelName: result.tier === "gemini" ? "gemini-3.1-flash-lite" : "claude-haiku-4-5",
         inputTokens: result.inputTokens,
