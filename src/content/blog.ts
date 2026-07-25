@@ -146,6 +146,90 @@ The honest version of "free": Thalamus is free to use today, and you can even tr
 Pick something small and real: a utility you keep meaning to write, a script that would save you a repetitive chore, a tiny app you have described to a friend but never made. Open [Build mode](https://thalamus.aphantic.skinticals.com/portal/code), type it in plain English, and let the pipeline plan, write, and test it. If it is useful, keep going. If it is not, you have lost nothing — that is the point of free.`,
   },
   {
+    slug: "ai-research-assistant-live-web-search",
+    title: "AI Research Assistant With Live Web Search, Free",
+    metaDescription: "Thalamus Research mode is a free AI research assistant that answers from live web search — current sources, not stale training data. Pairs with Study mode.",
+    targetKeyword: "AI research assistant",
+    tags: ["AI research assistant", "live web search", "AI research tool", "Research mode", "Thalamus Research"],
+    readingMinutes: 6,
+    publishDate: "2026-07-25",
+    bodyMarkdown: `# AI Research Assistant With Live Web Search, Free
+
+Ask a plain chatbot to "research" something current and you hit the same wall every time: it answers from training data that stopped at some point in the past, and it rarely tells you when it is guessing. For anything that changed this week — a library version, a price, a policy, a release — that is not research. It is a confident summary of how the world used to be.
+
+Thalamus **Research** mode is built for the other job. It is an AI research assistant that answers from *live web search*, so the reply is grounded in what is on the web right now instead of what a model happened to memorize months ago. And it is free to use today.
+
+## Why a normal chatbot is a bad researcher
+
+The failure mode is subtle because the answer still *sounds* right. A general model will:
+
+- Answer confidently about events or versions that postdate its training cutoff.
+- Blend outdated facts with current ones without flagging which is which.
+- Invent plausible specifics — a config flag, a date, a statistic — when it has no real source.
+
+None of that is malice; it is just what happens when the only thing a model can draw on is a frozen snapshot. The moment your question depends on *now*, a static model is the wrong tool.
+
+## What real research actually requires
+
+Doing research — the kind you would trust enough to act on — means more than producing fluent text. It means:
+
+1. **Going to current sources** instead of reciting memory.
+2. **Synthesizing** several of those sources into one clear answer.
+3. **Staying honest** about what the sources actually say versus what would be convenient.
+4. **Being fast enough** that checking a fact is quicker than opening ten tabs yourself.
+
+That is the gap Research mode is designed to close.
+
+## How Thalamus Research mode works
+
+You use it exactly like Chat — you just ask. The difference is what happens underneath: instead of answering from training data alone, [Research mode](https://thalamus.aphantic.skinticals.com/portal/research) runs a live web search and builds its answer on what it finds. The result is an answer anchored to current material rather than a model's best recollection.
+
+That makes it the right mode for questions like:
+
+- "What is the current recommended way to set up X?"
+- "What changed in the latest release of this framework?"
+- "What are people actually saying about this approach in the last few months?"
+- "Summarize the state of this topic as it stands today."
+
+Because the search happens as part of answering — not as a separate step you have to trigger and paste back in — you stay in one conversation. You ask a follow-up, it researches again, and the thread keeps its context.
+
+## Research mode vs Chat mode
+
+They look similar and share an interface, but they are for different jobs, and knowing when to switch is most of the skill:
+
+- **Chat** is best for things the model already knows well: explaining a concept, rubber-ducking a design, rewriting text, reasoning through a problem. No search needed, so it is quick.
+- **Research** is best when the answer depends on current, external facts — anything where being *out of date* would make the answer wrong.
+
+A good habit: start in Chat for thinking, switch to Research the instant your question turns into "…as of right now." Both live under the same [portal](https://thalamus.aphantic.skinticals.com/portal), so switching costs nothing.
+
+## Grounded answers, fewer confident mistakes
+
+The real value of searching before answering is not speed — it is trust. When a reply is built from live sources, you are much less exposed to the classic AI failure of a fluent, wrong answer. You are reading a synthesis of current material instead of a monologue from memory. That does not make any AI infallible, and you should still sanity-check anything that matters. But starting from real, current sources beats starting from a guess every time.
+
+## Pair Research with Study for the full picture
+
+Research and [Study mode](https://thalamus.aphantic.skinticals.com/portal/study) are natural partners because they pull from opposite directions:
+
+- **Research** brings in the *outside* world — the live web, the current state of things.
+- **Study** works from *your* world — the notes, PDFs, and documents you upload, answering only from your own material.
+
+A realistic workflow uses both. Learn a topic from your uploaded reading in Study, then jump to Research to check it against the current, outside view — or research a subject broadly first, then bring your own files into Study to connect it to what you already have. Two modes, one account, no copy-pasting between apps.
+
+And if the answer you researched turns into something you want to *build*, [Build mode](https://thalamus.aphantic.skinticals.com/portal/code) runs a multi-agent pipeline that can use the same live-search capability to ground its plans — so research flows straight into working code.
+
+## Runs on frontier models, on the web or the desktop
+
+Under the hood, Thalamus runs a mix of frontier-grade Claude and Gemini models, and you never have to pick one — you ask your question and the platform routes it. Prefer working outside a browser tab? The same modes, Research included, ship in a native Windows desktop app that drives the same backend — a real app, not a wrapped web page.
+
+## Free right now — and you can try it as a guest
+
+Here is the honest version of "free": Thalamus is free to use today, and you can run a few prompts as a guest before you even make an account. For a research assistant, that is the ideal low-stakes trial, because the only test that matters is whether it answers *your* real question with *current* information. You find that out in about two minutes.
+
+## Ask it something that changed this week
+
+The fastest way to feel the difference is to ask a question a static chatbot would get wrong — something that changed recently, something where being out of date is obvious. Open [Research mode](https://thalamus.aphantic.skinticals.com/portal/research), ask it, and watch it answer from the live web instead of from memory. If the answer holds up, you have found your research assistant. It is free, so the only cost is the question.`,
+  },
+  {
     slug: "ai-study-tool-learn-from-your-files",
     title: "AI Study Tool: Learn From Your Own Files, Free",
     metaDescription: "Upload your notes and PDFs and let Thalamus Study mode answer, explain, and connect ideas from your own material — free, with live web Research too.",
