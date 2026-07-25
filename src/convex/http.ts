@@ -4,7 +4,7 @@ import { httpAction } from "./_generated/server";
 import { internal, api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
-import { callModel, calcAgentBucksForTier, FREE_UNLIMITED, AGENTROUTER_PRIMARY, callAgentRouter, agentRouterModelForTier, OPENAI_PRIMARY, PRIMARY_PROVIDER, callOpenAIFailover } from "./agentCore";
+import { callModel, calcAgentBucksForTier, FREE_UNLIMITED, callOpenAIFailover, callAgentRouter, agentRouterModelForTier, AGENTROUTER_PRIMARY, OPENAI_PRIMARY, PRIMARY_PROVIDER } from "./agentCore";
 import { buildStudySystemPrompt } from "./studyPrompt";
 import {
   aoOptions,
