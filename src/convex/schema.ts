@@ -756,6 +756,12 @@ const schema = defineSchema(
       // Required for attribution + payouts; loaded client-side when set.
       pixelId: v.optional(v.string()),
       testAdMode: v.optional(v.boolean()),
+      // AdMesh requires a session_id on every /agent/recommend call, minted by
+      // POST /agent/session/new and valid for ttl_seconds. The session is
+      // issued against our publisher key (the endpoint takes no body), so one
+      // is shared across requests and cached here rather than minted per ad.
+      adSessionId: v.optional(v.string()),
+      adSessionExpiresAt: v.optional(v.number()),
       updatedAt: v.number(),
       updatedBy: v.optional(v.string()),
     }),
