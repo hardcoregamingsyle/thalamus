@@ -145,6 +145,86 @@ async function ensureAdSession(ctx: ActionCtx, config: Doc<"gravityAdsConfig">, 
   return await mintAdSession(ctx, config.apiKey, signal);
 }
 
+// ── Steering the query at stocked shelves ─────────────────────────────────────
+// AdMesh's catalog is small and /agent/recommend takes no category filter, so
+// the free-text query is the only lever we have. Sending the raw chat turn
+// matches nothing; sending a category they actually stock at least aims at
+// inventory that exists. The user's turn still travels as previous_query so the
+// context isn't thrown away.
+
+const AD_CATEGORIES_TTL_MS = 24 * 60 * 60 * 1000;
+// How many of the best-stocked shelves to rotate through when the chat matches
+// none of them.
+const AD_FALLBACK_POOL = 8;
+// Words in half the category names — matching on these would match anything.
+const AD_STOPWORDS = new Set(["and", "the", "for", "tools", "software", "platform", "services", "solutions"]);
+
+type AdCategory = { name: string; count: number };
+
+export const saveAdCategoriesInternal = internalMutation({
+  args: { categories: v.array(v.object({ name: v.string(), count: v.number() })) },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.query("gravityAdsConfig").first();
+    if (!existing) return;
+    await ctx.db.patch(existing._id, {
+      adCategories: args.categories,
+      adCategoriesFetchedAt: Date.now(),
+    });
+  },
+});
+
+// Sorted by stock desc so a first-wins scan prefers the fullest shelf on a tie.
+// A failed refresh keeps the stale list — a day-old category name steers far
+// better than no steering.
+async function ensureAdCategories(ctx: ActionCtx, config: Doc<"gravityAdsConfig">, signal: AbortSignal): Promise<AdCategory[]> {
+  const cached = config.adCategories ?? [];
+  if (cached.length && Date.now() - (config.adCategoriesFetchedAt ?? 0) < AD_CATEGORIES_TTL_MS) return cached;
+  try {
+    const res = await fetch("https://api.useadmesh.com/categories/all", {
+      headers: { Authorization: `Bearer ${config.apiKey}` },
+      signal,
+    });
+    if (!res.ok) {
+      console.warn(`[ads] categories/all HTTP ${res.status} — keeping ${cached.length} cached`);
+      return cached;
+    }
+    const data = await res.json();
+    const list: AdCategory[] = (Array.isArray(data?.categories) ? data.categories : [])
+      .filter((c: { name?: unknown; product_count?: unknown }) => typeof c?.name === "string" && Number(c?.product_count) > 0)
+      .map((c: { name: string; product_count: number }) => ({ name: c.name, count: Number(c.product_count) }))
+      .sort((a: AdCategory, b: AdCategory) => b.count - a.count);
+    if (list.length === 0) { console.warn("[ads] categories/all returned nothing usable"); return cached; }
+    await ctx.runMutation(internal.gravityAds.saveAdCategoriesInternal, { categories: list });
+    return list;
+  } catch (err) {
+    console.warn(`[ads] categories/all threw: ${err instanceof Error ? err.message : String(err)} — keeping ${cached.length} cached`);
+    return cached;
+  }
+}
+
+// Whole category name in the text scores 10; each distinct meaningful token
+// scores 1. Categories arrive pre-sorted by stock, so ties fall to the fullest.
+function pickAdCategory(categories: AdCategory[], text: string, blocked: string[]): string | null {
+  const allowed = categories.filter((c) => !blocked.some((b) => b.toLowerCase().includes(c.name.toLowerCase()) || c.name.toLowerCase().includes(b.toLowerCase())));
+  if (allowed.length === 0) return null;
+  const hay = ` ${text.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
+  let best: string | null = null;
+  let bestScore = 0;
+  for (const c of allowed) {
+    const name = c.name.toLowerCase();
+    let score = hay.includes(` ${name} `) ? 10 : 0;
+    for (const tok of new Set(name.split(/[^a-z0-9]+/).filter((t) => t.length >= 4 && !AD_STOPWORDS.has(t)))) {
+      if (hay.includes(` ${tok} `)) score += 1;
+    }
+    if (score > bestScore) { bestScore = score; best = c.name; }
+  }
+  if (best) return best;
+  // Nothing matched — rotate the best-stocked shelves so consecutive turns
+  // don't all interrogate the same empty one.
+  const pool = allowed.slice(0, AD_FALLBACK_POOL);
+  return pool.length ? pool[Math.floor(Date.now() / 60_000) % pool.length].name : null;
+}
+
 // ── Ad request proxy (AdMesh REST API) ────────────────────────────────────────
 // POST https://api.useadmesh.com/agent/recommend, Authorization: Bearer <key>.
 // Path and request schema taken from https://api.useadmesh.com/openapi.json —
@@ -222,11 +302,13 @@ export const requestAd = action({
       return count === 1 ? samples[0] : samples;
     }
 
-    // AdMesh matches on a natural-language query, not a placement vocabulary —
-    // so the conversation gets flattened into one. The last user turn carries
-    // the intent; a little assistant context sharpens it.
+    // The last user turn carries the intent; it becomes previous_query so the
+    // real context still reaches AdMesh even though we no longer match on it.
     const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
-    const query = (lastUser || messages[messages.length - 1].content).slice(0, 1000);
+    const rawIntent = (lastUser || messages[messages.length - 1].content).slice(0, 1000);
+    // Whole conversation is the haystack for category matching — an earlier turn
+    // often names the domain better than the latest one does.
+    const convoText = messages.map((m) => m.content).join(" ").slice(0, 4000);
 
     // Only the fields AdMesh's own schema declares. Its request model is
     // FastAPI/pydantic, so unknown keys are at best ignored and at worst a 422 —
@@ -240,20 +322,29 @@ export const requestAd = action({
     // as session_id. One per request is right — each ad request is one turn.
     // source defaults to admesh_ui_sdk, which we are not — we call from the
     // backend, so the weave value is the honest one for attribution.
-    const body: Record<string, unknown> = {
-      query,
-      format: "auto",
-      message_id: crypto.randomUUID(),
-      source: "admesh_weave_node",
-    };
-
-    // Two fetches worst case (session mint + recommend, or a retry), so the
+    // Three fetches worst case (categories + session mint + recommend), so the
     // budget is wider than the single call it used to wrap.
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
       let session = await ensureAdSession(ctx, config, controller.signal);
       if (!session) return null; // already logged
+
+      // Steer at a shelf they stock. restrictedCategories finally earns its
+      // keep here: choosing which categories we'll ask for is exactly the
+      // competitor-blocking their API gave us no field for.
+      const categories = await ensureAdCategories(ctx, config, controller.signal);
+      const shelf = pickAdCategory(categories, convoText, config.restrictedCategories ?? []);
+      const query = shelf ? `best ${shelf} to buy` : rawIntent;
+      console.info(`[ads] query="${query}"${shelf ? ` (shelf: ${shelf}, of ${categories.length})` : " (raw intent — no category list)"}`);
+
+      const body: Record<string, unknown> = {
+        query,
+        format: "auto",
+        message_id: crypto.randomUUID(),
+        source: "admesh_weave_node",
+        ...(shelf && rawIntent ? { previous_query: rawIntent } : {}),
+      };
 
       const post = (sid: string) => fetch("https://api.useadmesh.com/agent/recommend", {
         method: "POST",

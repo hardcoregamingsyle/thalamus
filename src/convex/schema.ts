@@ -762,6 +762,12 @@ const schema = defineSchema(
       // is shared across requests and cached here rather than minted per ad.
       adSessionId: v.optional(v.string()),
       adSessionExpiresAt: v.optional(v.number()),
+      // /agent/recommend has no category filter — free-text `query` is the only
+      // lever, and the catalog behind it is tiny. Raw chat text matches none of
+      // it, so the query gets steered at a category they actually stock.
+      // GET /categories/all is publisher-key-authed and cheap; cached here.
+      adCategories: v.optional(v.array(v.object({ name: v.string(), count: v.number() }))),
+      adCategoriesFetchedAt: v.optional(v.number()),
       updatedAt: v.number(),
       updatedBy: v.optional(v.string()),
     }),
