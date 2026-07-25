@@ -36,7 +36,14 @@ dist-ssr
 # Deployment scripts with secrets — never commit these
 deploy-convex.sh
 *.deploy.sh
+convex-prod.ps1
 public/downloads/
+
+# Env files. *.local already covers .env.local, but the sync scripts run
+# `git add -A`, so spell out the rest before a stray .env gets pushed public.
+.env
+.env.*
+!.env.example
 
 # Core dumps (a 70MB one got committed once — never again)
 core
