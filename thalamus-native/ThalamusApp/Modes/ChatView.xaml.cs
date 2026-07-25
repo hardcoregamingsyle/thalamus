@@ -291,10 +291,19 @@ namespace ThalamusApp.Modes
                     messages.Add(new { role, content = text.Length > 1000 ? text[..1000] : text });
 
                 // count:1 → the action returns a single ad object, or null on no-fill.
-                var result = await _convex.CallActionAsync(
-                    "gravityAds:requestAd",
-                    new { token = _token, messages, sessionId = (string?)null, count = 1 },
-                    _token);
+                // Keys are built by hand because Convex's v.optional() means the key
+                // may be ABSENT — an explicit JSON null is a different type and fails
+                // argument validation, so the action never ran at all. The old
+                // anonymous type always wrote "sessionId":null (and "token":null when
+                // signed out), which is why desktop ads never appeared.
+                var adArgs = new Dictionary<string, object>
+                {
+                    ["messages"] = messages,
+                    ["count"] = 1,
+                };
+                if (!string.IsNullOrEmpty(_token)) adArgs["token"] = _token!;
+
+                var result = await _convex.CallActionAsync("gravityAds:requestAd", adArgs, _token);
 
                 if (result is not JsonObject ad) return;
 
