@@ -137,31 +137,24 @@ export const requestAd = action({
     if (messages.length === 0) return null;
 
     const count = Math.max(1, Math.min(6, Math.floor(args.count ?? 1)));
-    // Placement names MUST be from Gravity's fixed vocabulary (below_response,
-    // right_response, …). An unknown value like "sidebar" gets the whole
-    // request rejected — the in-chat card is below the reply, rail cards are
-    // to the right.
-    const placements = Array.from({ length: count }, (_, i) => ({
-      placement: i === 0 ? "below_response" : "right_response",
-      placement_id: config.adUnitIds?.[i] ?? (i === 0 ? "main" : `rail_${i}`),
-    }));
+
+    // AdMesh matches on a natural-language query, not a placement vocabulary —
+    // so the conversation gets flattened into one. The last user turn carries
+    // the intent; a little assistant context sharpens it.
+    const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+    const query = (lastUser || messages[messages.length - 1].content).slice(0, 1000);
+
     const body: Record<string, unknown> = {
-      messages,
-      sessionId: args.sessionId ?? `anon_${Date.now().toString(36)}`,
-      placements,
-      ...(config.restrictedCategories?.length ? { excludedTopics: config.restrictedCategories } : {}),
-      // Forward the client's device signals when supplied. Without a real UA,
-      // Gravity filters datacenter-originated requests as bots and 204s.
+      query,
+      format: "auto",
+      ...(config.restrictedCategories?.length ? { exclude_categories: config.restrictedCategories } : {}),
       ...(args.device ? { device: args.device } : {}),
-      // Admin "test ads" toggle → Gravity returns a sample creative regardless
-      // of demand or bot-filtering, so the whole render pipeline is verifiable.
-      ...(config.testAdMode ? { testAd: true } : {}),
     };
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
     try {
-      const res = await fetch("https://server.trygravity.ai/api/v1/ad", {
+      const res = await fetch("https://api.useadmesh.com/recommend", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -172,10 +165,13 @@ export const requestAd = action({
       });
       // 204 = no matching ad; anything non-OK = hide the slot. Ads must never break chat.
       if (res.status === 204 || !res.ok) return null;
-      const ads = await res.json();
-      if (!Array.isArray(ads) || ads.length === 0) return null;
+      const data = await res.json();
+      const recs = data?.response?.recommendations ?? data?.recommendations;
+      if (!Array.isArray(recs) || recs.length === 0) return null;
+      const ads = recs.slice(0, count).map(normalizeAd).filter(Boolean);
+      if (ads.length === 0) return null;
       // Backwards compatible: count omitted/1 → single ad object; else array.
-      return count === 1 ? ads[0] : ads.slice(0, count);
+      return count === 1 ? ads[0] : ads;
     } catch {
       return null;
     } finally {
@@ -183,3 +179,40 @@ export const requestAd = action({
     }
   },
 });
+
+// Map one AdMesh recommendation onto the card shape both renderers already
+// speak — web (Portal SponsoredAdCard) and desktop (SponsoredAdCard.xaml.cs).
+// Keeping the output shape identical is what makes the provider swap surgical:
+// neither renderer, the /ad route, nor requestAd.ts changes at all.
+//
+// title / reason / admesh_link are the fields AdMesh's own SDK documents. The
+// rest aren't in the public docs, so they're read defensively across the
+// plausible spellings and simply omitted when absent — both renderers already
+// guard every optional field, so a missing one degrades instead of breaking.
+function normalizeAd(rec: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!rec || typeof rec !== "object") return null;
+  const pick = (...keys: string[]): string | undefined => {
+    for (const k of keys) {
+      const v = rec[k];
+      if (typeof v === "string" && v.trim()) return v;
+    }
+    return undefined;
+  };
+
+  const link = pick("admesh_link", "url", "redirect_url", "link");
+  const title = pick("title", "product_name", "name");
+  if (!link || !title) return null; // nothing clickable or nothing to show
+
+  return {
+    title,
+    brandName: pick("brand_name", "brand", "advertiser", "company"),
+    adText: pick("reason", "description", "adText", "summary"),
+    cta: pick("cta", "call_to_action", "cta_text") ?? "Learn more",
+    url: link,
+    clickUrl: link,
+    // AdMesh tracks exposure through its own link; only set impUrl if it ever
+    // hands us a real pixel, otherwise the renderers skip the impression fetch.
+    impUrl: pick("impression_url", "impUrl", "tracking_url"),
+    favicon: pick("image_url", "favicon", "logo_url", "icon"),
+  };
+}
