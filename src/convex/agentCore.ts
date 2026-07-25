@@ -1,7 +1,7 @@
 // Pure utility module - no Convex imports, just logic
 // This keeps agentTeam.ts lean for faster module loading
 
-import { hfQueryVector } from "./hfRagSpace";
+import type { ActionCtx } from "./_generated/server";
 
 // Platform-wide free+unlimited switch for Thalamus AgentBucks. While true, no
 // user is charged and no usage cap blocks them. AgentOverflow's aoCredits are
@@ -55,6 +55,8 @@ import { callNim, agentToTaskType, NIM_DEFAULT_CHAT_MODEL, calcNimAgentBucks } f
 // dynamically; these are fallback defaults for code that bypasses callModel.
 export type ModelTier = string;
 export type RunMode = "cheap" | "balanced" | "powerful";
+// Keys of DIFFICULTY_CODER_MODEL, and what parseDifficultyFromPlannerOutput returns.
+export type TaskDifficulty = "normal" | "hard" | "extreme";
 
 // Old model-map constants — now just map agent names to reasonable model defaults.
 // The Dispatcher does the real model assignment; these are fallback defaults.
@@ -128,7 +130,7 @@ export async function callOpenAICompatibleStreaming(
   return { ...result, tier };
 }
 export function providerChain(): string[] { return []; }
-export function getAgentTier(agent: string, runMode?: RunMode): ModelTier {
+export function getAgentTier(agent: string, _runMode?: RunMode): ModelTier {
   return AGENT_MODEL_MAP[agent] ?? DEFAULT_CHAT_MODEL;
 }
 
@@ -156,10 +158,10 @@ export async function callModel(
   ..._extra: unknown[]
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: string }> {
   // Extract ctx if passed as the last extra arg
-  let ctx: { runQuery: Function } | undefined;
+  let ctx: { runQuery: ActionCtx["runQuery"] } | undefined;
   for (const arg of _extra) {
     if (arg && typeof arg === "object" && "runQuery" in (arg as Record<string,unknown>)) {
-      ctx = arg as { runQuery: Function };
+      ctx = arg as { runQuery: ActionCtx["runQuery"] };
       break;
     }
   }
