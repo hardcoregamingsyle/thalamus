@@ -1,14 +1,28 @@
-// Ollama Cloud API client — sole AI provider for Thalamus.
-// Replaces the SiliconFlow implementation. Uses Ollama's native API directly.
-// Auth: Bearer token via OLLAMA_API_KEY env var.
+// Ollama Cloud API client — backup AI provider for Thalamus.
+// NVIDIA NIM is primary; Ollama Cloud is the fallback when NIM is down/exhausted.
+// Auth: Bearer token via ollamaKeys DB table or OLLAMA_API_KEY env var.
 // Docs: https://docs.ollama.com/api/chat
+
+import { internal } from "./_generated/api";
 
 // ── Base URL & Auth ───────────────────────────────────────────────────────────
 const BASE_URL = "https://ollama.com";
 
-// Key fallback chain: OLLAMA_API_KEY → OLLAMA_API_KEY_2 → OLLAMA_API_KEY_3 → ...
-function resolveAllApiKeys(): string[] {
+// Key resolution: DB table ollamaKeys first, then OLLAMA_API_KEY env fallback
+async function resolveAllApiKeys(runQuery?: Function): Promise<string[]> {
   const keys: string[] = [];
+  // First: try DB table
+  if (runQuery) {
+    try {
+      const dbKeys = await runQuery(internal.admin.getOllamaKeysInternal, {});
+      if (Array.isArray(dbKeys)) {
+        for (const k of dbKeys) {
+          if (typeof k === "string" && k.trim()) keys.push(k.trim());
+        }
+      }
+    } catch { /* table might not exist yet — env fallback below */ }
+  }
+  // Fallback: env vars
   for (let i = 1; ; i++) {
     const name = i === 1 ? "OLLAMA_API_KEY" : `OLLAMA_API_KEY_${i}`;
     const key = (process.env[name] ?? "").trim();
@@ -18,10 +32,10 @@ function resolveAllApiKeys(): string[] {
   return keys;
 }
 
-function requireAllKeys(): string[] {
-  const keys = resolveAllApiKeys();
+async function requireAllKeys(runQuery?: Function): Promise<string[]> {
+  const keys = await resolveAllApiKeys(runQuery);
   if (keys.length === 0) {
-    throw new Error("OLLAMA_API_KEY not configured — set it in the Convex dashboard.");
+    throw new Error("OLLAMA_API_KEY not configured — add keys via /admin or set in the Convex dashboard.");
   }
   return keys;
 }
@@ -190,6 +204,7 @@ export interface ChatResult {
 /**
  * Call Ollama Cloud chat completions (non-streaming).
  * Uses the native Ollama API at POST /api/chat.
+ * runQuery is optional — pass ctx.runQuery to read keys from DB.
  */
 export async function callSiliconFlow(
   prompt: string,
@@ -197,8 +212,9 @@ export async function callSiliconFlow(
   model: string = DEFAULT_CHAT_MODEL,
   maxTokens: number = 16384,
   history?: Array<{ role: "user" | "assistant"; content: string }>,
+  runQuery?: Function,
 ): Promise<ChatResult> {
-  const apiKeys = requireAllKeys();
+  const apiKeys = await requireAllKeys(runQuery);
 
   const messages = [
     { role: "system" as const, content: systemPrompt.slice(0, 8000) },
@@ -284,8 +300,9 @@ export async function callSiliconFlowStreaming(
   onDelta: (text: string) => Promise<void>,
   maxTokens: number = 16384,
   history?: Array<{ role: "user" | "assistant"; content: string }>,
+  runQuery?: Function,
 ): Promise<ChatResult> {
-  const result = await callSiliconFlow(prompt, systemPrompt, model, maxTokens, history);
+  const result = await callSiliconFlow(prompt, systemPrompt, model, maxTokens, history, runQuery);
 
   // Drip-feed to simulate streaming
   const chunkSize = 300;

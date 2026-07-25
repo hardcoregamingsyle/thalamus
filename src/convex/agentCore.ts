@@ -8,9 +8,7 @@ import { hfQueryVector } from "./hfRagSpace";
 // a separate economy with their own switch.
 export const FREE_UNLIMITED = true;
 
-// ── Re-exports from SiliconFlow provider ─────────────────────────────────────
-// All AI model calls go through SiliconFlow now. These re-exports keep
-// downstream imports working while centralizing the provider.
+// ── Re-exports from SiliconFlow (backup) and NVIDIA NIM (primary) ────────────
 export {
   callSiliconFlow,
   callSiliconFlowStreaming,
@@ -27,12 +25,34 @@ export {
   calcAgentBucksForModel,
 } from "./siliconflow";
 
+// NIM exports (primary provider)
+export {
+  callNim,
+  callNimStreaming,
+  NIM_MODEL_CATALOG,
+  findNimModel,
+  nimModelsByCapability,
+  NIM_DISPATCHER_MODEL,
+  NIM_DEFAULT_CHAT_MODEL,
+  NIM_DEFAULT_CODE_MODEL,
+  NIM_CHAT_FALLBACK_CHAIN,
+  NIM_CODE_FALLBACK_CHAIN,
+  NIM_REASONING_FALLBACK_CHAIN,
+  modelsForTask,
+  agentToTaskType,
+  buildNimDispatchPrompt,
+  parseNimDispatchAssignments,
+  calcNimAgentBucks,
+} from "./nimClient";
+import type { TaskType } from "./nimClient";
+
 import { callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL, DEFAULT_CODE_MODEL, calcAgentBucksForModel } from "./siliconflow";
+import { callNim, agentToTaskType, NIM_DEFAULT_CHAT_MODEL, calcNimAgentBucks } from "./nimClient";
 
 // ── Backward-compatible types and aliases ────────────────────────────────────
 // The old pipeline systems (agentPipeline.ts, codePipeline.ts) still reference
-// these types and constants. They're now thin wrappers over the new SiliconFlow
-// model catalog, not a separate tier system.
+// these types and constants. callModel() now routes NIM primary → Ollama backup
+// dynamically; these are fallback defaults for code that bypasses callModel.
 export type ModelTier = string;
 export type RunMode = "cheap" | "balanced" | "powerful";
 
@@ -124,38 +144,83 @@ export async function callModelCompat(
 }
 
 /**
- * Unified model caller — routes to SiliconFlow. This replaces all old
- * Bedrock/Gemini/AgentRouter callers. Takes a direct model id string.
+ * Unified model caller — primary provider is NVIDIA NIM, Ollama Cloud is backup.
+ * Pass ctx for NIM DB-key access; without ctx, falls back to Ollama directly.
+ * Dynamic task-aware model selection: the modelId hints the task type; if
+ * modelId is an agent name, we map it to the best NIM model for that agent.
  */
-export type TaskDifficulty = "normal" | "hard" | "extreme";
-
-// Accepts extra args for backward-compat with old code that passed (prompt, systemPrompt, tier, geminiKeys?, dbCreds?)
 export async function callModel(
   prompt: string,
   systemPrompt: string,
   modelId: string = "deepseek-ai/DeepSeek-V4-Flash",
   ..._extra: unknown[]
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: string }> {
+  // Extract ctx if passed as the last extra arg
+  let ctx: { runQuery: Function } | undefined;
+  for (const arg of _extra) {
+    if (arg && typeof arg === "object" && "runQuery" in (arg as Record<string,unknown>)) {
+      ctx = arg as { runQuery: Function };
+      break;
+    }
+  }
+
+  const taskType: TaskType = agentToTaskType(modelId);
+
+  if (ctx) {
+    try {
+      const nimModel = taskType === "dispatcher" ? "nvidia/nvidia-nemotron-nano-9b-v2"
+        : taskType === "code" ? "qwen/qwen3-coder-480b-a35b-instruct"
+        : taskType === "reasoning" ? "nvidia/nemotron-3-super-120b-a12b"
+        : taskType === "agent" ? "deepseek-ai/deepseek-v4-pro"
+        : NIM_DEFAULT_CHAT_MODEL;
+
+      const result = await callNim(ctx, prompt, systemPrompt, nimModel);
+      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `nim:${result.model}` };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("NVIDIA_NIM_NOT_CONFIGURED")) {
+        console.warn("NIM not configured — falling back to Ollama Cloud");
+      } else {
+        console.warn(`NIM call failed, falling back to Ollama:`, msg);
+      }
+    }
+  }
+
+  const ollamaModel = mapModelIdToOllama(modelId);
   try {
-    const result = await callSiliconFlow(prompt, systemPrompt, modelId);
-    return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: modelId };
+    const result = await callSiliconFlow(prompt, systemPrompt, ollamaModel, 16384, undefined, ctx?.runQuery);
+    return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `ollama:${result.model}` };
   } catch (err) {
-    // Fallback to dispatcher model if the specified model fails
-    console.warn(`callModel: ${modelId} failed, falling back to ${DISPATCHER_MODEL}:`, err instanceof Error ? err.message : String(err));
-    const result = await callSiliconFlow(prompt, systemPrompt, DISPATCHER_MODEL);
-    return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: DISPATCHER_MODEL };
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("not configured")) {
+      throw new Error("No AI provider configured — add NIM keys via /admin (primary) or Ollama keys (backup)");
+    }
+    throw err;
   }
 }
 
+function mapModelIdToOllama(modelId: string): string {
+  const l = modelId.toLowerCase();
+  if (l.includes("dispatcher") || l.includes("organiser") || l.includes("summarizer")) return "gemma4:31b";
+  if (l.includes("coder") || l.includes("optimiser") || l.includes("architect")) return "minimax-m3";
+  if (l.includes("analyser") || l.includes("planner") || l.includes("critic") || l.includes("reasoning")) return "minimax-m3";
+  if (l.includes("researcher") || l.includes("research") || l.includes("scout")) return "gpt-oss:120b";
+  if (l.includes("tester") || l.includes("hacker") || l.includes("security")) return "minimax-m3";
+  return DEFAULT_CHAT_MODEL;
+}
+
 /**
- * Calculate AgentBucks for a model tier call (now delegates to SiliconFlow pricing).
+ * Calculate AgentBucks — tries NIM pricing first, falls back to SiliconFlow.
  */
 export function calcAgentBucksForTier(
   tier: string,
   inputTokens: number,
   outputTokens: number,
 ): number {
-  return calcAgentBucksForModel(tier, inputTokens, outputTokens);
+  if (tier.startsWith("nim:")) {
+    return calcNimAgentBucks(tier.replace("nim:", ""), inputTokens, outputTokens);
+  }
+  return calcAgentBucksForModel(tier.replace("ollama:", ""), inputTokens, outputTokens);
 }
 
 export async function performSearch(query: string, _keys?: string[]): Promise<string> {
