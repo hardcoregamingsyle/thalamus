@@ -24,13 +24,15 @@ async function requireAdmin(_ctx: unknown, adminToken: string) {
 }
 
 // Internal paginated query for learnings (actions call this via runQuery).
+// The cursor is genuinely null on the first page, so the validator has to say
+// so — v.optional() means "key absent", and an explicit null fails it outright.
 export const paginateLearnings = internalQuery({
-  args: { cursor: v.optional(v.string()) },
+  args: { cursor: v.union(v.string(), v.null()) },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("aoLearnings")
       .order("asc")
-      .paginate({ cursor: args.cursor ?? null, numItems: 2000 });
+      .paginate({ cursor: args.cursor, numItems: 2000 });
   },
 });
 
@@ -44,12 +46,12 @@ export const getAoKeys = internalQuery({
 
 // Internal paginated query for users (AO users only).
 export const paginateAoUsers = internalQuery({
-  args: { cursor: v.optional(v.string()) },
+  args: { cursor: v.union(v.string(), v.null()) },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("users")
       .order("asc")
-      .paginate({ cursor: args.cursor ?? null, numItems: 500 });
+      .paginate({ cursor: args.cursor, numItems: 500 });
   },
 });
 
