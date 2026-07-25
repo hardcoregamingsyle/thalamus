@@ -1530,8 +1530,8 @@ function PortalDesktop() {
     setIsAddingResource(true);
     const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
     const isImage = file.type.startsWith("image/");
-    if (isPdf) setUploadStatus("Claude Vision is reading your PDF — extracting text & images...");
-    else if (isImage) setUploadStatus("Claude Vision is analyzing your image...");
+    if (isPdf) setUploadStatus("Reading your PDF — extracting text & images...");
+    else if (isImage) setUploadStatus("Analyzing your image...");
     else setUploadStatus(`Processing ${file.name}...`);
     try {
       const arrayBuffer = await file.arrayBuffer();
@@ -1540,8 +1540,8 @@ function PortalDesktop() {
       for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
       const base64 = btoa(binary);
       await processFileResource({ token, fileName: file.name, fileType: file.type, fileDataBase64: base64 });
-      if (isPdf) toast.success(`PDF processed by Claude Vision: ${file.name}`);
-      else if (isImage) toast.success(`Image analyzed by Claude Vision: ${file.name}`);
+      if (isPdf) toast.success(`PDF processed: ${file.name}`);
+      else if (isImage) toast.success(`Image analyzed: ${file.name}`);
       else toast.success(`Processed: ${file.name}`);
     } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to process file"); }
     finally { setIsAddingResource(false); setUploadStatus(null); if (fileInputRef.current) fileInputRef.current.value = ""; }

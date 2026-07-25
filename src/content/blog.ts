@@ -62,9 +62,9 @@ The reason single-shot AI code so often disappoints is that generating code and 
 
 Build mode separates the two. After the Coder writes, the **Tester** can actually run the code in a sandbox rather than eyeballing it. The **Critic** then reviews the outcome, and if it is not satisfied it sends the work back for another attempt — a real retry loop, not a single guess. That back-and-forth is why the code you receive has usually already survived a round of criticism before you ever see it.
 
-## Claude and Gemini, matched to the task
+## The right horsepower for each step
 
-Under the hood, Thalamus runs both Claude and Gemini models and assigns each agent a model tier that fits its role. The dispatcher and the more mechanical steps can run on faster models; the heavy reasoning seats — planning, coding, criticism — get the stronger ones. You do not manage any of this. You describe the outcome; the pipeline decides how much horsepower each step deserves.
+Under the hood, Thalamus runs a mix of frontier-grade models and assigns each agent a tier that fits its role. The dispatcher and the more mechanical steps can run on faster models; the heavy reasoning seats — planning, coding, criticism — get the stronger ones. You do not manage any of this. You describe the outcome; the pipeline decides how much horsepower each step deserves.
 
 If a step needs current information from the web, the same live-search capability that powers [Research mode](https://thalamus.aphantic.skinticals.com/portal/research) feeds the Researcher agent, so plans are not built on stale assumptions.
 
@@ -182,9 +182,9 @@ Good studying is not keyword lookup. It is seeing how a concept in chapter two s
 
 Sometimes your own files are not enough — you need the current, outside picture. That is where switching to [Research mode](https://thalamus.aphantic.skinticals.com/portal/research) helps: it answers from live web search, so you can check your understanding against up-to-date sources, then come back to [Study mode](https://thalamus.aphantic.skinticals.com/portal/study) to relate it to your own notes. Two modes, one account, no copy-pasting between apps.
 
-## Built on Claude and Gemini
+## Why the explanations hold up
 
-Study mode runs on Claude and Gemini models, so the explanations are as capable as the questions you throw at them — whether you want a plain-language summary, a deeper walk-through, or a specific detail pulled from a single file. You do not choose or configure models; you just ask.
+Study mode runs on frontier-grade reasoning models, so the explanations are as capable as the questions you throw at them — whether you want a plain-language summary, a deeper walk-through, or a specific detail pulled from a single file. You do not choose or configure models; you just ask.
 
 ## More than one way to study
 

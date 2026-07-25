@@ -493,10 +493,10 @@ export default function CodeWorkspace() {
                   ))}
                   <span className="ml-auto text-xs text-muted-foreground self-center">
                     {(branch?.runMode ?? "balanced") === "cheap"
-                      ? "Gemini + DeepSeek — fast & affordable"
+                      ? "Lowest cost — fastest turnaround"
                       : (branch?.runMode ?? "balanced") === "balanced"
-                      ? "Sonnet + DeepSeek — best value"
-                      : "Opus + GPT-5 — maximum intelligence"}
+                      ? "Best value — quality per credit"
+                      : "Maximum intelligence — deepest reasoning"}
                   </span>
                 </div>
                 <div className="flex gap-2">

@@ -653,7 +653,7 @@ function MobileHomeScreen({
         <div className="flex items-center justify-between mb-3">
           <div>
             <p className="text-sm font-medium text-foreground">Thalamus AI</p>
-            <p className="text-xs text-muted-foreground">Claude 4.5 Sonnet</p>
+            <p className="text-xs text-muted-foreground">Multi-agent intelligence</p>
           </div>
           <button onClick={onSignOut}
             className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground rounded-lg active:bg-muted/30 transition-colors">
