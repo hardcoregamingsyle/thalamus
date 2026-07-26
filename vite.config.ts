@@ -66,7 +66,15 @@ export default defineConfig({
       'react',
       'react-dom',
       'react-router',
-      '@convex-dev/auth/react',
+      // Only reached from a lazily-imported route, so Vite does not see it at
+      // startup — it discovers it mid-session, re-runs the optimizer, and every
+      // dep's ?v= hash changes. Its own fix for that is to reload the page,
+      // which hmr:false below switches off, so the tab is left holding half the
+      // old chunks and half the new ones. That is two copies of React in one
+      // tree: "Invalid hook call" and a blank error screen on a cold start,
+      // with nothing in the message pointing here. Pre-bundling it at startup
+      // is the whole fix.
+      '@vly-ai/integrations',
     ],
     exclude: ['three', '@react-three/fiber'],
   },
