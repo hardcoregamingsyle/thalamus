@@ -184,7 +184,7 @@
                     </Border>
 
                     <!-- Open in Browser button -->
-                    <Button x:Name="OpenBrowserBtn"
+                    <Button
                             Style="{StaticResource PrimaryBtn}"
                             Width="220"
                             Click="OpenBrowser_Click">

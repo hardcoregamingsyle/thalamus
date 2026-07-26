@@ -18,10 +18,14 @@ namespace ThalamusInstaller
     public partial class InstallerWindow : Window
     {
         // Version stamped into install.json and the Add/Remove Programs entry.
-        private const string VERSION = "2.0.0";
+        // Keep in sync with ThalamusApp.csproj <Version>.
+        private const string VERSION = "2.4.0";
 
         // ── Download URLs ──────────────────────────────────────────────────────
-        private const string URL_APP    = "https://github.com/hardcoregamingsyle/thalamus/releases/download/thalamus-native-v1.0.0/Thalamus.exe";
+        // /releases/latest/download is the scheme every Thalamus download link
+        // uses — it always resolves to the newest Release asset named exactly
+        // Thalamus.exe. The old value was pinned to a dead v1.0.0 tag.
+        private const string URL_APP    = "https://github.com/hardcoregamingsyle/thalamus/releases/latest/download/Thalamus.exe";
         private const string URL_BRIDGE = "https://github.com/hardcoregamingsyle/thalamus/releases/download/vm-bridge-v3.5.0/thalamus-vm-bridge-v3.5.0.exe";
         private const string URL_QEMU   = "https://qemu.weilnetz.de/w64/2024/qemu-w64-setup-20241119.exe";
         private const string URL_VNC    = "https://github.com/nicowillis/tightvnc-portable/releases/download/v2.8.85/tvnviewer.exe";

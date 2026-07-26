@@ -105,7 +105,7 @@
                             VerticalAlignment="Bottom" Margin="0,0,36,26">
                     <Button Content="Cancel" Style="{StaticResource GhostBtn}"
                             Width="110" Height="40" Margin="0,0,12,0" Click="CloseBtn_Click"/>
-                    <Button x:Name="UninstallBtn" Content="Uninstall" Style="{StaticResource DangerBtn}"
+                    <Button Content="Uninstall" Style="{StaticResource DangerBtn}"
                             Width="140" Click="Uninstall_Click"/>
                 </StackPanel>
             </Grid>

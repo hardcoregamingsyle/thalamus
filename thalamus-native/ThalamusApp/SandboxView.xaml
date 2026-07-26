@@ -197,7 +197,6 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Text="Console" FontSize="11" FontWeight="SemiBold"
@@ -215,19 +214,6 @@
                                  FontFamily="Consolas" FontSize="11"
                                  TextWrapping="Wrap" AcceptsReturn="True"/>
                     </ScrollViewer>
-
-                    <Grid Grid.Row="2" Margin="0,6,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBox Grid.Column="0" x:Name="CommandInput"
-                                 Style="{StaticResource ThemedInput}"
-                                 Padding="8,5" FontFamily="Consolas" FontSize="11"
-                                 KeyDown="CommandInput_KeyDown"/>
-                        <Button Grid.Column="1" Content="Send" Style="{StaticResource GhostBtn}"
-                                Margin="8,0,0,0" Height="28" Padding="14,0" Click="SendCommand_Click"/>
-                    </Grid>
                 </Grid>
             </Border>
         </Grid>

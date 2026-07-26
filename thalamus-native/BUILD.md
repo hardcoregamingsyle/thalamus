@@ -83,7 +83,7 @@ ThalamusApp/
 ├── Styles/Theme.xaml          THE theme — every color, brush, and control
 │                              style, shared with the installer via a link.
 │                              Change a color here, both apps follow.
-├── MainWindow.xaml(.cs)       tabbed shell + system tray
+├── MainWindow.xaml(.cs)       tabbed shell + notify-only update check
 ├── Modes/
 │   ├── ChatView               streaming chat over SSE
 │   ├── ResearchView           web-search research with sources
@@ -96,8 +96,8 @@ ThalamusApp/
 ├── SandboxView + IsoLibrary + QemuBridgeManager + EmbeddedVncClient
 │                              OS catalog, ISO downloads, QEMU boot, and an
 │                              RFB 3.8 VNC client painting the framebuffer
-├── AutoUpdateSystem           checks GitHub Releases, self-updates
-└── Controls/MessageBubble     chat bubble
+└── Controls/                  HtmlToWpf (renders AI HTML into WPF inlines —
+                            no WebView2), SponsoredAdCard, BuyCreditsWindow
 ```
 
 The app talks to the Convex backend over HTTP/SSE. The VM Sandbox drives QEMU through `QemuBridgeManager` (native C# — it replaced the old Node bridge) and paints the framebuffer with an embedded RFB 3.8 VNC client. No external VNC viewer required.
@@ -112,7 +112,7 @@ The app talks to the Convex backend over HTTP/SSE. The VM Sandbox drives QEMU th
 
 `ThalamusInstaller` downloads and lays down the app, QEMU, TightVNC, and aria2, then copies **itself** into the install dir as `ThalamusSetup.exe` and registers `HKCU\...\Uninstall\Thalamus` so Windows' Add/Remove Programs shows a real entry. Running `ThalamusSetup.exe /uninstall` (which is exactly what that entry does) opens a themed confirmation window, kills running Thalamus processes, and removes files, shortcuts, and registry keys. VM disks and downloaded ISOs survive unless the user explicitly ticks the delete-my-data box. The exe hands its own deletion to a delayed `cmd.exe` because Windows won't let a running binary delete itself.
 
-To point the app at a different backend: **Settings → General** at runtime. No rebuild.
+To point the app at a different backend: edit `ConvexClient.CLOUD_URL` / `SITE_URL` and rebuild. There is no Settings screen and no runtime override — the deployment is compiled in.
 
 ---
 
@@ -124,7 +124,19 @@ gh release create v1.3.0 dist\Thalamus-Setup-v1.3.0.exe dist\checksums.txt `
   --repo hardcoregamingsyle/thalamus --title "Thalamus v1.3.0"
 ```
 
-Then update the download link on the website so people actually get the new one.
+`-Version` only stamps what MSBuild and Inno read. Bump the hand-written literals first, or the shipped exe will report the old number in the sidebar, the User-Agent, and the update check:
+
+| File | Literal |
+|---|---|
+| `ThalamusApp/ThalamusApp.csproj` | `<Version>` |
+| `ThalamusApp/MainWindow.xaml.cs` | `APP_VERSION` |
+| `ThalamusApp/MainWindow.xaml` | `VersionLabel` design-time `Text` (cosmetic, overwritten at runtime) |
+| `build.ps1` | `$Version` default |
+| `installer.iss` | `MyAppVersion` fallback (guarded by `#ifndef`, so `-Version` wins) |
+| `ThalamusInstaller/ThalamusInstaller.csproj` | `<Version>` |
+| `ThalamusInstaller/InstallerWindow.xaml.cs` | `VERSION` |
+
+The website download links point at `/releases/latest/download/Thalamus.exe`, so publishing a Release with an asset named exactly `Thalamus.exe` is all that's needed — no site edit.
 
 ---
 

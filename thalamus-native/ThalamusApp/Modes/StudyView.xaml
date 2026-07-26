@@ -294,7 +294,7 @@
                              Style="{StaticResource StudyInputStyle}"
                              Height="40"
                              KeyDown="StudyInput_KeyDown"/>
-                    <TextBlock x:Name="StudyPlaceholder" Text="Ask a question, share what you're learning…"
+                    <TextBlock Text="Ask a question, share what you're learning…"
                                IsHitTestVisible="False" FontSize="12.5" Foreground="{DynamicResource InputPlaceholderBrush}"
                                Margin="15,0,0,0" VerticalAlignment="Center">
                         <TextBlock.Style>

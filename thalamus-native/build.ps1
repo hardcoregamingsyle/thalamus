@@ -1,9 +1,12 @@
 # Thalamus AI -- Native Build Script
 # Builds the C# desktop app, native installer, and wraps everything with Inno Setup.
-# Usage: .\build.ps1 [-Version "1.0.0"] [-SkipInno] [-SkipInstaller]
+# Usage: .\build.ps1 [-Version "2.4.0"] [-SkipInno] [-SkipInstaller]
 
 param(
-    [string]$Version    = "1.0.0",
+    # Fallback when -Version is omitted. Keep in sync with ThalamusApp.csproj
+    # <Version>, MainWindow.APP_VERSION, installer.iss MyAppVersion, and
+    # ThalamusInstaller (csproj <Version> + InstallerWindow.VERSION).
+    [string]$Version    = "2.4.0",
     [switch]$SkipInno,
     [switch]$SkipInstaller,
     # Staging gate (Task 2): relative paths under installer-build\ that MUST be

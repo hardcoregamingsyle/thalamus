@@ -62,20 +62,11 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <!-- Border can only have one child — use a Grid to stack the accent bar and content -->
+                        <!-- No accent bar in the inactive template — SidebarBtnActive
+                             below carries the blue indicator. -->
                         <Border x:Name="Bd" Background="{TemplateBinding Background}"
                                 CornerRadius="8" Padding="{TemplateBinding Padding}">
-                            <Grid>
-                                <Border x:Name="ActiveBar"
-                                        Width="3" Height="0"
-                                        CornerRadius="2"
-                                        Background="{DynamicResource BlueGradient}"
-                                        HorizontalAlignment="Left"
-                                        VerticalAlignment="Center"
-                                        Margin="-16,0,0,0"
-                                        Opacity="0"/>
-                                <ContentPresenter VerticalAlignment="Center"/>
-                            </Grid>
+                            <ContentPresenter VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -236,7 +227,7 @@
                     </StackPanel>
 
                     <!-- Right: light/dark toggle (mirrors the website's theme switch) -->
-                    <Button Grid.Column="2" x:Name="BtnTheme" Click="ThemeToggle_Click"
+                    <Button Grid.Column="2" Click="ThemeToggle_Click"
                             Background="Transparent" BorderThickness="0" Cursor="Hand"
                             Width="34" Margin="0,0,10,0"
                             ToolTip="Toggle light / dark theme">
@@ -458,7 +449,7 @@
                                 <StackPanel Orientation="Horizontal">
                                     <Ellipse Width="5" Height="5" Fill="{DynamicResource GreenBrush}"
                                              VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                    <TextBlock x:Name="VersionLabel" Text="v1.0.0"
+                                    <TextBlock x:Name="VersionLabel" Text="v2.4.0"
                                                FontSize="9.5" FontFamily="{StaticResource MonoFontFamily}"
                                                Foreground="{DynamicResource TextMutedBrush}"/>
                                     <TextBlock Text="  ·  " FontSize="9.5"
@@ -482,7 +473,7 @@
                                                FontSize="8.5" FontWeight="Bold"
                                                VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextMutedBrush}"/>
-                                    <Button x:Name="BtnNewChat" Click="NewChat_Click"
+                                    <Button Click="NewChat_Click"
                                             HorizontalAlignment="Right"
                                             Background="Transparent" BorderThickness="0"
                                             Cursor="Hand" Padding="6,2"

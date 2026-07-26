@@ -38,27 +38,6 @@ namespace ThalamusApp.Services
             _gen++;
         }
 
-        // All of this account's conversations for this mode, newest first
-        // (server caps at 50). Returns empty on any failure.
-        public async Task<List<(string id, string title)>> ListAsync(string token)
-        {
-            var result = new List<(string id, string title)>();
-            try
-            {
-                var convs = await _convex.CallQueryAsync("conversations:list",
-                    new { mode = _mode, token }, token) as JsonArray;
-                if (convs == null) return result;
-                foreach (var c in convs)
-                {
-                    var id = c?["_id"]?.GetValue<string>();
-                    if (id == null) continue;
-                    result.Add((id, c?["title"]?.GetValue<string>() ?? "Untitled"));
-                }
-            }
-            catch { /* offline / expired token */ }
-            return result;
-        }
-
         // Load the most recent conversation for this mode and return its
         // messages (role, content) oldest-first. Sets ConversationId so
         // subsequent sends append to the same thread — UNLESS an explicit user

@@ -354,7 +354,10 @@ namespace ThalamusApp
             new BuyCreditsWindow(_sessionToken, _sessionEmail) { Owner = this }.ShowDialog();
         }
 
-        // ── Auto-update ───────────────────────────────────────────────────────
+        // ── Update check ──────────────────────────────────────────────────────
+        // Notify-only, on purpose: the app never downloads or installs anything
+        // for itself. All this does is compare the newest GitHub Release tag
+        // against APP_VERSION and change a label.
 
         private async Task CheckForUpdatesAsync()
         {
@@ -373,7 +376,8 @@ namespace ThalamusApp
                     {
                         UpdateLabel.Text = $"Update v{ver} available";
                         UpdateLabel.SetResourceReference(TextBlock.ForegroundProperty, "AmberBrush");
-                        UpdateSubLabel.Text = "Restart to update";
+                        // Nothing self-updates — say what actually has to happen.
+                        UpdateSubLabel.Text = "Download it from GitHub Releases";
                     });
                 }
             }

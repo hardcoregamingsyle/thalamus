@@ -11,7 +11,6 @@
          ═════════════════════════════════════════════════════════════════════ -->
 
     <!-- ── Colors — mirrors src/index.css .light (oklch → sRGB) ── -->
-    <Color x:Key="BgDeep">#eff2f5</Color>        <!-- css sidebar -->
     <Color x:Key="BgDarker">#f2f6f8</Color>      <!-- css background -->
     <Color x:Key="BgCard">#ffffff</Color>        <!-- css card -->
     <Color x:Key="BgInput">#e2e5e8</Color>       <!-- css input -->
@@ -25,14 +24,12 @@
     <Color x:Key="TextSecondary">#1b2328</Color> <!-- css secondary-fg -->
     <Color x:Key="TextMuted">#555f67</Color>     <!-- css muted-fg -->
     <Color x:Key="BlueAccent">#0065e0</Color>    <!-- css primary -->
-    <Color x:Key="BlueGlow">#0052b8</Color>
     <Color x:Key="GreenAccent">#059669</Color>   <!-- darkened for white surfaces -->
     <Color x:Key="AmberAccent">#d07600</Color>   <!-- css accent -->
     <Color x:Key="PurpleAccent">#7c3aed</Color>  <!-- darkened for white surfaces -->
     <Color x:Key="RedAccent">#c8003e</Color>     <!-- css destructive -->
 
     <!-- ── Brushes ── -->
-    <SolidColorBrush x:Key="BgDeepBrush"        Color="{StaticResource BgDeep}"/>
     <SolidColorBrush x:Key="BgDarkerBrush"      Color="{StaticResource BgDarker}"/>
     <SolidColorBrush x:Key="BgCardBrush"        Color="{StaticResource BgCard}"/>
     <SolidColorBrush x:Key="BgInputBrush"       Color="{StaticResource BgInput}"/>

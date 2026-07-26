@@ -10,7 +10,6 @@
 
     <!-- ── Colors — neutral soft-black (Claude Code dark), chroma 0. Matches
          src/index.css after the blue tint was removed. Only accents carry hue. -->
-    <Color x:Key="BgDeep">#181818</Color>        <!-- css sidebar        oklch(0.11 0 0) -->
     <Color x:Key="BgDarker">#141414</Color>      <!-- css background     oklch(0.10 0 0) -->
     <Color x:Key="BgCard">#1e1e1e</Color>        <!-- css card           oklch(0.13 0 0) -->
     <Color x:Key="BgInput">#1c1c1c</Color>       <!-- css input          oklch(0.15 0 0) -->
@@ -24,14 +23,12 @@
     <Color x:Key="TextSecondary">#c4c4c4</Color> <!-- css secondary-fg    oklch(0.82 0 0) -->
     <Color x:Key="TextMuted">#8a8a8a</Color>     <!-- css muted-fg        oklch(0.58 0 0) -->
     <Color x:Key="BlueAccent">#0088f1</Color>    <!-- css primary         oklch(0.62 .20 250) -->
-    <Color x:Key="BlueGlow">#0073d2</Color>      <!-- deeper primary for glows/gradients -->
     <Color x:Key="GreenAccent">#10b981</Color>
     <Color x:Key="AmberAccent">#e78c08</Color>   <!-- css accent          oklch(0.72 .16 65) -->
     <Color x:Key="PurpleAccent">#8b5cf6</Color>
     <Color x:Key="RedAccent">#de1c4e</Color>     <!-- css destructive     oklch(0.58 .22 15) -->
 
     <!-- ── Brushes ── -->
-    <SolidColorBrush x:Key="BgDeepBrush"        Color="{StaticResource BgDeep}"/>
     <SolidColorBrush x:Key="BgDarkerBrush"      Color="{StaticResource BgDarker}"/>
     <SolidColorBrush x:Key="BgCardBrush"        Color="{StaticResource BgCard}"/>
     <SolidColorBrush x:Key="BgInputBrush"       Color="{StaticResource BgInput}"/>

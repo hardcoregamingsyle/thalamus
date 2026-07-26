@@ -3,7 +3,12 @@
 ; Run: ISCC.exe installer.iss
 
 #define MyAppName      "Thalamus AI"
-#define MyAppVersion   "1.0.0"
+; #ifndef, not a bare #define — ISPP would otherwise reassign the symbol and
+; silently clobber build.ps1's /DMyAppVersion, stamping every installer 1.0.0.
+; Keep this fallback in sync with ThalamusApp.csproj <Version>.
+#ifndef MyAppVersion
+  #define MyAppVersion "2.4.0"
+#endif
 #define MyAppPublisher "Aphantic Corporations"
 #define MyAppURL       "https://thalamus.aphantic.skinticals.com"
 #define MyAppExeName   "Thalamus.exe"
@@ -103,15 +108,15 @@ Root: HKCU; \
   Tasks: startupbridge; Flags: uninsdeletevalue
 
 [Run]
-; Check and install WebView2 Runtime if missing
-Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; \
-  StatusMsg: "Installing WebView2 Runtime…"; \
-  Check: WebView2NotInstalled; Flags: waituntilterminated
+; No WebView2 step: the app is native WPF with zero browser runtime. The old
+; entry pointed at a bootstrapper no [Files] section ever staged.
 
-; Start the bridge immediately after install
+; Start the bridge immediately after install. skipifdoesntexist because the
+; [Files] entry above is skipifsourcedoesntexist — a build without the bridge
+; would otherwise try to run a file that was never installed.
 Filename: "{app}\thalamus-vm-bridge.exe"; \
   StatusMsg: "Starting VM Bridge…"; \
-  Flags: nowait runhidden
+  Flags: nowait runhidden skipifdoesntexist
 
 ; Launch app (optional — user can uncheck)
 Filename: "{app}\{#MyAppExeName}"; \
@@ -123,21 +128,6 @@ Filename: "taskkill"; Parameters: "/f /im Thalamus.exe /t";           Flags: run
 Filename: "taskkill"; Parameters: "/f /im thalamus-vm-bridge.exe /t"; Flags: runhidden waituntilterminated
 
 [Code]
-{ ──────────────────── WebView2 check ──────────────────── }
-function WebView2NotInstalled: Boolean;
-var
-  Version: String;
-begin
-  Result :=
-    not RegQueryStringValue(HKLM,
-      'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
-      'pv', Version)
-    and
-    not RegQueryStringValue(HKCU,
-      'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
-      'pv', Version);
-end;
-
 { ──────────────────── Welcome page ──────────────────── }
 procedure InitializeWizard;
 begin

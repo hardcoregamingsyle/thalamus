@@ -577,24 +577,6 @@ namespace ThalamusApp
 
         // ── Console ───────────────────────────────────────────────────────────
 
-        private void SendCommand_Click(object sender, RoutedEventArgs e)
-        {
-            if (string.IsNullOrWhiteSpace(CommandInput.Text)) return;
-            var cmd = CommandInput.Text.Trim();
-            CommandInput.Clear();
-            AppendConsole($"> {cmd}");
-            // QEMU monitor / serial would be wired here
-        }
-
-        private void CommandInput_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
-        {
-            if (e.Key == System.Windows.Input.Key.Return)
-            {
-                SendCommand_Click(this, new RoutedEventArgs());
-                e.Handled = true;
-            }
-        }
-
         private void AppendConsole(string line)
         {
             Dispatcher.Invoke(() =>

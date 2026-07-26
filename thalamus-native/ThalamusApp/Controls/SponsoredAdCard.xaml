@@ -6,7 +6,7 @@
     <!-- Whole card is one click target (opens clickUrl ?? url in the browser).
          Background/BorderBrush live in the Style so the hover trigger can win —
          a local BorderBrush value would out-rank the trigger. -->
-    <Border x:Name="CardBorder" Cursor="Hand" MaxWidth="520"
+    <Border Cursor="Hand" MaxWidth="520"
             CornerRadius="14" BorderThickness="1" Padding="16,12"
             MouseLeftButtonUp="Card_Click">
         <Border.Style>

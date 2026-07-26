@@ -22,7 +22,6 @@ namespace ThalamusApp.Auth
         // failed with "Connection error".
         private readonly ConvexClient _convex = new();
 
-        public bool IsAuthenticated { get; private set; }
         public string Token { get; private set; } = "";
         public string Email { get; private set; } = "";
 
@@ -36,7 +35,6 @@ namespace ThalamusApp.Auth
             {
                 Token = stored.Value.token;
                 Email = stored.Value.email;
-                IsAuthenticated = true;
                 return true;
             }
             return false;
@@ -98,7 +96,6 @@ namespace ThalamusApp.Auth
                     {
                         Token = value?["token"]?.GetValue<string>() ?? "";
                         Email = value?["email"]?.GetValue<string>() ?? "";
-                        IsAuthenticated = true;
                         return (true, Token, Email);
                     }
 
@@ -113,17 +110,6 @@ namespace ThalamusApp.Auth
             }
 
             return (false, "", "");
-        }
-
-        /// <summary>
-        /// Sign out: clear saved token and reset state.
-        /// </summary>
-        public void SignOut()
-        {
-            AuthManager.ClearToken();
-            IsAuthenticated = false;
-            Token = "";
-            Email = "";
         }
 
         public void Dispose() => GC.SuppressFinalize(this);

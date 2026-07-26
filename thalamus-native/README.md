@@ -14,7 +14,7 @@ A native Windows app that puts four AI tools and a full VM sandbox in one window
 - **Code** — describe what you want in plain English; a 9-agent pipeline (Researcher → Analyser → Planner → Coder → Optimiser → Organizer → Tester → Hacker → Critic) plans it, writes it, tests it, and tears it apart looking for bugs.
 - **VM Sandbox** — pick an OS, set RAM and cores, hit boot. It runs a real QEMU virtual machine and draws the screen right inside the app with a built-in VNC client. No external viewer.
 
-Plus the quiet stuff that makes it feel finished: system-tray minimize, and an auto-updater that watches GitHub Releases and updates itself.
+Plus the quiet stuff that makes it feel finished: an update check that watches GitHub Releases and tells you when a newer version is out.
 
 ---
 
@@ -58,7 +58,7 @@ Full details, flags, and the by-hand commands are in [BUILD.md](BUILD.md).
 
 ## How it's wired
 
-The app talks to the [Convex](https://convex.cloud) backend over HTTP and SSE — chat and research stream token-by-token; study and code lean on the backend's RAG and agent pipeline. The VM Sandbox is the fun part: `QemuBridgeManager` launches QEMU directly (native C#, no Node bridge), and an embedded RFB 3.8 VNC client decodes framebuffer updates and paints them onto the sandbox surface. Point it at a different backend anytime in **Settings → General** — no rebuild.
+The app talks to the [Convex](https://convex.cloud) backend over HTTP and SSE — chat and research stream token-by-token; study and code lean on the backend's RAG and agent pipeline. The VM Sandbox is the fun part: `QemuBridgeManager` launches QEMU directly (native C#, no Node bridge), and an embedded RFB 3.8 VNC client decodes framebuffer updates and paints them onto the sandbox surface. The backend deployment is compiled in (`ConvexClient.CLOUD_URL`); repointing it means a rebuild.
 
 Everything publishes self-contained and single-file, so the shipped binary has zero runtime dependencies. A clean build is 0 warnings, 0 errors, and it stays that way.
 
@@ -69,4 +69,4 @@ Everything publishes self-contained and single-file, so the shipped binary has z
 - Deployment: `befitting-wildebeest-866`
 - URL: `https://befitting-wildebeest-866.convex.cloud`
 
-Change it in-app under Settings → General if you're running your own.
+Running your own? Edit `ConvexClient.CLOUD_URL` / `SITE_URL` and rebuild — there is no in-app override.

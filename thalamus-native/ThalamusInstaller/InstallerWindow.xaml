@@ -128,7 +128,7 @@
                             <StackPanel>
                                 <TextBlock Text="What will be installed:" FontSize="12" FontWeight="SemiBold"
                                            Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,10"/>
-                                <TextBlock Text="• Thalamus AI desktop app (WebView2 native)" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0"/>
+                                <TextBlock Text="• Thalamus AI desktop app (native WPF)"      FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0"/>
                                 <TextBlock Text="• VM Bridge (controls QEMU locally)"         FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0"/>
                                 <TextBlock Text="• QEMU (full OS virtualisation engine)"       FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0"/>
                                 <TextBlock Text="• TightVNC viewer (VM display)"               FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0"/>

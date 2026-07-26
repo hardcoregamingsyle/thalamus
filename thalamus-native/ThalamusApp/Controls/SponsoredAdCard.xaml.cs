@@ -15,6 +15,13 @@ namespace ThalamusApp.Controls
     // defensive and a partial payload still shows something clickable.
     public partial class SponsoredAdCard : UserControl
     {
+        // One long-lived client for every card's impression pixel (same pattern as
+        // IsoLibrary). A fresh HttpClient per card leaks a socket handle each time.
+        // Deliberately NOT ConvexClient's client — that one carries our desktop
+        // User-Agent and is pooled against the Convex deployment, neither of which
+        // belongs on a request to a third-party ad host.
+        private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(5) };
+
         private string? _impUrl;
         private string? _clickTarget;
         private bool _impressionFired;
@@ -59,7 +66,7 @@ namespace ThalamusApp.Controls
             _impressionFired = true;
             // Fire-and-forget impression pixel — one GET, never awaited. Offline or a
             // dead pixel must stay silent; an unfired impression never affects the user.
-            try { _ = new HttpClient().GetAsync(_impUrl); }
+            try { _ = _http.GetAsync(_impUrl); }
             catch { /* swallow */ }
         }
 
