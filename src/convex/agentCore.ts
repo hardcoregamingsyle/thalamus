@@ -445,6 +445,20 @@ export function parseAgentOutput(content: string): ParsedOutput {
     cleanContent = cleanContent.replace(changeModeMatch[0], `[MODE SWITCH REQUESTED: ${changeMode}]`);
   }
 
+  // Final sweep: neutralise any sentinel the rules above did not consume.
+  //
+  // Every handler here matches a COMPLETE, well-formed pair, so anything the
+  // model half-emits survives untouched — an orphan <<END.CREATEFILE>> from a
+  // truncated block, an <<END.MCP-CALL>> whose opener was malformed (MCP is
+  // parsed in mcpParse.ts and unknown to this function), <<REQUEST-API-KEY …>>,
+  // or a <<RUN-COMMAND=…>> alias. Those went to the transcript verbatim, and
+  // the desktop app strips nothing of its own, so they reached the .exe too.
+  //
+  // Angle brackets are swapped for lookalikes rather than deleted: the text
+  // stays readable and honest about what the model wrote, and a leftover can
+  // never be re-parsed as a live directive on a later pass.
+  cleanContent = cleanContent.replace(/<<([^<>]{0,200}?)>>/g, "‹‹$1››");
+
   return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode };
 }
 

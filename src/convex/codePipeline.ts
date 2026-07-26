@@ -36,7 +36,7 @@ import { parseMcpCalls, stripMcpBlocks } from "./mcpParse";
 
 // MCP loop guard: how many times one agent may be re-run with tool results
 // before the pipeline advances anyway (prevents infinite call loops).
-const MAX_MCP_ROUNDS = 2;
+const MAX_MCP_ROUNDS = 5;
 const MAX_MCP_CALLS_PER_MESSAGE = 5;
 
 // All known agents in their natural order
@@ -143,7 +143,14 @@ function parseApiKeyRequests(content: string): Array<{variableName: string; desc
 // multi-task build (each task is a multi-agent sub-pipeline) isn't cut off; a
 // true loop is infinite and hits any finite ceiling anyway. (The transcript
 // that prompted this was past 200 and climbing.)
-const MAX_TOTAL_MESSAGES = 500;
+// Per-RUN message ceiling, not per agent step — the MCP path writes two
+// messages a round and a command pause writes another, so this counts turns
+// rather than progress. Raised from 500 because the Planner is told to emit
+// 15-25 tasks and each one costs roughly 25 messages, which put a normal large
+// build within sight of the old ceiling. Each step is its own action
+// invocation, so this costs wall-clock and provider quota and nothing
+// structural — no Convex per-invocation limit is anywhere near it.
+const MAX_TOTAL_MESSAGES = 2000;
 
 // How many times we'll ask the model to continue a file cut off at the token
 // limit before giving up. Kept at 2 (≤3 sequential model calls per step) so the
@@ -685,7 +692,37 @@ export const runPipelineAction = internalAction({
         await ctx.runMutation(internal.codeBranches.clearStreamingContent, { branchId });
       }
 
-      // Parse and handle commands
+      // Parse the output ONCE, here, and apply its file operations before
+      // anything below can pause and return.
+      //
+      // This used to run only on the terminal path. A reply that created a file
+      // AND asked to run a verification command — which the Coder and Tester
+      // prompts actively ask for — hit the command pause below and returned, so
+      // upsertFile never ran. codeFiles stayed empty, githubActionsRunner pushed
+      // a repo without the file, the agent's own `ls` failed, and it was handed
+      // a 2000-char slice of its raw previous message as context. It concluded
+      // it had been truncated mid-file and wrote the same file again. Forever.
+      // The old comment claimed "the re-run re-emits them"; the re-run had no
+      // way to know it already had.
+      const parsed = parseAgentOutput(agentOutput);
+      // MCP blocks aren't known to parseAgentOutput — strip them ourselves so
+      // ignored/over-cap calls don't litter the saved message.
+      parsed.cleanContent = stripMcpBlocks(parsed.cleanContent);
+      for (const op of parsed.fileOps) {
+        if (op.type === "create" || op.type === "edit") {
+          await ctx.runMutation(internal.codeBranches.upsertFile, {
+            branchId,
+            filepath: op.filepath,
+            content: op.content ?? "",
+            agent: agentName,
+          });
+        }
+      }
+
+      // Commands come from the RAW output, never from cleanContent:
+      // parseAgentOutput has already rewritten <<RUN-CMD=…>> into [CMD: …], so
+      // parsing the cleaned text would match nothing and this whole path would
+      // go silently dead.
       const commands = parseCommands(agentOutput);
       if (commands.length > 0) {
         // Queue commands
@@ -697,29 +734,37 @@ export const runPipelineAction = internalAction({
           });
         }
 
-        // Pause pipeline until commands complete
-        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-          branchId,
-          status: "paused",
-          currentAgent: agentName,
-        });
-
-        // Save partial message
+        // Save the partial message CLEANED. Saving raw agentOutput is what
+        // put <<CREATEFILE>>, <<END.CREATEFILE>>, <<RUN-CMD=…>> and orphaned
+        // <<END.MCP-CALL>> markers straight into the visible transcript — and
+        // into the desktop app, which does no stripping of its own.
         totalMessages++;
         await ctx.runMutation(internal.codeBranches.saveMessage, {
           branchId,
           agent: agentName,
-          content: agentOutput,
+          content: parsed.cleanContent,
           round,
           messageIndex: totalMessages,
+        });
+
+        // Pause until the commands come back. totalMessages MUST be persisted
+        // here: saveMessage only inserts into codeMessages and never touches
+        // the branch doc, so a pause path that omits it means these turns are
+        // invisible to the message ceiling and a command/resume loop runs
+        // completely unbounded.
+        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+          branchId,
+          status: "paused",
+          currentAgent: agentName,
+          totalMessages,
         });
 
         // Execute the queued commands on the web (Daytona sandbox — works with
         // no desktop app). This runs them and re-schedules runPipelineAction
         // when done. `phase` is left unchanged, so this SAME agent runs again
-        // on resume — with the command results now in its context. File ops in
-        // this partial output are intentionally not applied; the re-run
-        // re-emits them.
+        // on resume — with the command results now in its context. Its file
+        // ops have already been applied above, so the resumed run sees them in
+        // its inventory instead of an empty workspace.
         // Cloud branches hand the queue to Daytona. Local ones do not schedule
         // anything: the desktop app is polling for pending commands, runs them
         // on the user's machine, and resumes this pipeline itself through
@@ -744,20 +789,22 @@ export const runPipelineAction = internalAction({
           });
         }
 
-        // Pause pipeline until API keys provided
-        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-          branchId,
-          status: "paused",
-          currentAgent: agentName,
-        });
-
         totalMessages++;
         await ctx.runMutation(internal.codeBranches.saveMessage, {
           branchId,
           agent: agentName,
-          content: agentOutput,
+          content: parsed.cleanContent,
           round,
           messageIndex: totalMessages,
+        });
+
+        // Pause until the user supplies the key — same reason as above for
+        // persisting totalMessages on a pausing path.
+        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+          branchId,
+          status: "paused",
+          currentAgent: agentName,
+          totalMessages,
         });
 
         return;
@@ -772,10 +819,10 @@ export const runPipelineAction = internalAction({
       if (mcpCalls.length > 0 && mcpServers.length > 0) {
         const mcpRound = branch.mcpRoundCount ?? 0;
         if (mcpRound < MAX_MCP_ROUNDS) {
-          // Save the partial output as-is; the re-run re-emits file ops.
+          // Cleaned, and its file ops are already applied above.
           totalMessages++;
           await ctx.runMutation(internal.codeBranches.saveMessage, {
-            branchId, agent: agentName, content: agentOutput,
+            branchId, agent: agentName, content: parsed.cleanContent,
             round, messageIndex: totalMessages,
           });
 
@@ -817,22 +864,7 @@ export const runPipelineAction = internalAction({
         }
       }
 
-      // Parse file operations
-      const parsed = parseAgentOutput(agentOutput);
-      // MCP blocks aren't known to parseAgentOutput — strip them ourselves so
-      // ignored/over-cap calls don't litter the saved message.
-      parsed.cleanContent = stripMcpBlocks(parsed.cleanContent);
-      for (const op of parsed.fileOps) {
-        if (op.type === "create" || op.type === "edit") {
-          await ctx.runMutation(internal.codeBranches.upsertFile, {
-            branchId,
-            filepath: op.filepath,
-            content: op.content ?? "",
-            agent: agentName,
-          });
-        }
-      }
-
+      // Parsed and applied at the top of this block — every path shares it now.
       // Save message
       totalMessages++;
       await ctx.runMutation(internal.codeBranches.saveMessage, {
@@ -854,7 +886,7 @@ export const runPipelineAction = internalAction({
       // ── Critic retry loop ────────────────────────────────────────────────────
       // If the Critic says <<Fail>>, loop back to Coder (up to 2 retries) rather
       // than blindly advancing — this is the core L4.5 behavior improvement.
-      const MAX_CRITIC_RETRIES = 2;
+      const MAX_CRITIC_RETRIES = 3;
       if (currentPhase === "Critic" && parsed.criticResult === "fail") {
         // Persisted per-task counter, so the cap is actually enforced across the
         // separate runPipelineAction invocations each retry spans.
@@ -1034,7 +1066,11 @@ export const startPipeline = action({
     // Fresh run: clear any leftover Stop flag and reset the per-task Critic
     // retry budget so a previously-exhausted branch starts clean.
     await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-      branchId: args.branchId, stopRequested: false, criticRetryCount: 0, mcpRoundCount: 0,
+      // totalMessages resets too. Without it the ceiling is a per-branch
+      // LIFETIME budget: nothing else in the codebase ever writes it back to 0
+      // after creation, so the first run to trip it bricked that branch for
+      // good and every later run just re-printed the ceiling message.
+      branchId: args.branchId, stopRequested: false, criticRetryCount: 0, mcpRoundCount: 0, totalMessages: 0,
       ...(args.executor ? { executor: args.executor } : {}),
     });
 

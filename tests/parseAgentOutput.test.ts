@@ -56,3 +56,37 @@ describe("parseAgentOutput — files", () => {
     expect(parsed.fileOps[0].content).toContain(`emit <<CREATEFILE="path">> then content.`);
   });
 });
+
+describe("parseAgentOutput — leftover sentinels never reach the transcript", () => {
+  // A live Code-mode run showed raw <<END.CREATEFILE>> and <<END.MCP-CALL>>
+  // sitting in the visible message. Every handler matches a COMPLETE pair, so
+  // a half-emitted marker matched nothing and was printed verbatim — including
+  // on the desktop app, which does no stripping of its own.
+  it("neutralises an orphan END.CREATEFILE with no opener", () => {
+    const parsed = parseAgentOutput("Here is the page.<<END.CREATEFILE>>");
+    expect(parsed.cleanContent).not.toContain("<<");
+    expect(parsed.cleanContent).not.toContain(">>");
+  });
+
+  it("neutralises an END.MCP-CALL whose opener was malformed", () => {
+    // mcpParse.ts owns MCP blocks and requires server= and tool=; a near-miss
+    // opener leaves the closer behind, and parseAgentOutput has no MCP rule.
+    const parsed = parseAgentOutput(`<<MCP-CALL server='x'>>do a thing<<END.MCP-CALL>>`);
+    expect(parsed.cleanContent).not.toContain("<<END.MCP-CALL>>");
+  });
+
+  it("leaves a complete file block alone, marker syntax in its body included", () => {
+    // The sweep must not damage content that a real handler already consumed.
+    const out = `<<CREATEFILE="docs/m.md">>emit <<CREATEFILE="path">> to write.<<END.CREATEFILE>>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toHaveLength(1);
+    expect(parsed.fileOps[0].content).toContain(`emit <<CREATEFILE="path">> to write.`);
+    expect(parsed.cleanContent).toContain("[FILE CREATED: docs/m.md]");
+  });
+
+  it("still turns a well-formed RUN-CMD into its placeholder, not a sentinel", () => {
+    const parsed = parseAgentOutput(`<<RUN-CMD="ls -la">>`);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["ls -la"]);
+    expect(parsed.cleanContent).not.toContain("<<");
+  });
+});
