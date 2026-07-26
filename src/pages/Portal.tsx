@@ -20,7 +20,6 @@ import {
   FileText, Globe, Image, Upload, Sparkles,
   Hash, Lightbulb, Lock, ArrowRight, Sun, Moon, GraduationCap,
 } from "lucide-react";
-import TeamPortalInline from "./TeamPortalInline";
 import MobilePortal from "./MobilePortal";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTheme } from "@/hooks/use-theme";
@@ -1320,11 +1319,6 @@ function PortalDesktop() {
       userMessageSaved = true;
     } catch { /* non-critical */ }
 
-    // Code mode: handled entirely by TeamPortalInline — do not send here
-    if (activeMode === "code") {
-      return;
-    }
-
     // Chat, research, and study use the streaming HTTP endpoint.
     const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
     const siteUrl = convexUrl.replace(".convex.cloud", ".convex.site");
@@ -1747,13 +1741,6 @@ function PortalDesktop() {
             </motion.aside>
           )}
         </AnimatePresence>
-
-        {/* ── CODE mode ───────────────────────────────────────────────────── */}
-        {activeMode === "code" && (
-          <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-            <TeamPortalInline />
-          </div>
-        )}
 
         {/* ── Chat / Research / Study mode ────────────────────────────────── */}
         {activeMode !== "code" && (

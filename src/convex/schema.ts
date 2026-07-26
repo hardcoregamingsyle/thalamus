@@ -21,9 +21,6 @@ export type Role = Infer<typeof roleValidator>;
 // - NEW code system: codeProjects/codeBranches/codeMessages/codeFiles/
 //   codeCommands/codeApiKeys/codeApiKeyRequests (+githubConfigs) — driven by
 //   codePipeline.ts, served at /portal/code
-// - OLD code system: teamSessions/agentMessages/projectFiles/sessionBranchGroups
-//   (+sandboxes) — driven by agentPipeline.ts, served at /team. Still live;
-//   both systems share the same 9-agent pipeline but different data models.
 // - Platform economy & admin: creditBatches, promoCodes, modelPricing,
 //   platformBudget, awsCredentials, geminiKeys, agentModelConfig, userApiKeys
 // - Study mode / RAG: studyResources, adminStudyMaterials, ragChunks,
@@ -262,7 +259,7 @@ const schema = defineSchema(
       .index("by_branch", ["branchId"]),
 
     // Messages for `conversations` above (plain chat portal) — not related to
-    // codeMessages or agentMessages.
+    // codeMessages.
     messages: defineTable({
       conversationId: v.id("conversations"),
       userId: v.id("users"),
@@ -274,100 +271,6 @@ const schema = defineSchema(
       .index("by_conversation", ["conversationId"])
       .index("by_user", ["userId"]),
 
-    // ── OLD Team Portal code system ─────────────────────────────────────────
-    // teamSessions + agentMessages + projectFiles (+sessionBranchGroups,
-    // sandboxes). Superseded by the code* tables above but still in production
-    // for the /team route. Existing rows depend on the deprecated fields below —
-    // do not remove optional fields without a data migration.
-    teamSessions: defineTable({
-      userId: v.id("users"),
-      title: v.string(),
-      task: v.string(),
-      status: v.union(v.literal("running"), v.literal("completed"), v.literal("idle")),
-      currentAgent: v.optional(v.string()),
-      round: v.optional(v.number()),
-      loopCount: v.optional(v.number()),
-      phase: v.optional(v.string()),
-      totalMessages: v.optional(v.number()),
-      currentAgentOutput: v.optional(v.string()),
-      plannerTasksJson: v.optional(v.string()),
-      currentTaskIndex: v.optional(v.number()),
-      executionPhase: v.optional(v.string()),
-      dispatchedAgentsJson: v.optional(v.string()),  // Dispatcher's chosen agent list (dynamic pipeline)
-      agentModelsJson: v.optional(v.string()),        // Dispatcher's per-agent model tier assignment ({agent: tier})
-      finalReviewCoderEnabled: v.optional(v.boolean()),
-      deployCommandsJson: v.optional(v.string()),
-      taskSummariesJson: v.optional(v.string()),
-      currentTaskDifficulty: v.optional(v.string()),
-      taskMessageCount: v.optional(v.number()),
-      taskUpgradeActive: v.optional(v.boolean()),
-      taskUpgradeMessagesLeft: v.optional(v.number()),
-      unfixableTasksJson: v.optional(v.string()),
-      manualUpgradeEnabled: v.optional(v.boolean()),
-      customId: v.optional(v.string()),
-      techStackJson: v.optional(v.string()),
-      infoRequestJson: v.optional(v.string()),
-      instructionsJson: v.optional(v.string()),  // JSON array of instruction sets for user
-      runningAt: v.optional(v.number()),        // timestamp when status was set to "running"
-      // NEW: True branch system fields
-      currentBranch: v.optional(v.string()),    // Current active branch name (default: "main")
-      branchesJson: v.optional(v.string()),     // JSON array of branch metadata [{name, createdAt, createdFrom, gitBranch}]
-      // OLD: Branch group fields (deprecated, keep for migration — existing
-      // sessions created under the branch-group model still carry these)
-      branchGroupId: v.optional(v.string()),   // ID of the branch group this session belongs to
-      branchNumber: v.optional(v.number()),     // 1 = main, 2+ = branches
-      branchName: v.optional(v.string()),       // e.g. "Main Branch", "Android APK", "Windows EXE"
-      branchPurpose: v.optional(v.string()),    // AI-defined purpose of this branch
-      parentSessionId: v.optional(v.id("teamSessions")), // for branches, points to main branch
-      // GitHub sync fields
-      githubRepo: v.optional(v.string()),
-      githubBranch: v.optional(v.string()),
-      githubToken: v.optional(v.string()),
-      githubLastSyncAt: v.optional(v.number()),
-      githubLastCommitSha: v.optional(v.string()),
-      // VM sandbox mode
-      sandboxType: v.optional(v.union(v.literal("daytona"), v.literal("v86"), v.literal("qemu"))),  // Which sandbox to use
-      vmOS: v.optional(v.union(
-        v.literal("linux"), v.literal("windows"), v.literal("macos"), v.literal("freedos"),
-        v.literal("linux64"), v.literal("windows64"), v.literal("macos64"),
-        v.literal("windows11_home"), v.literal("windows11_pro"),
-        v.literal("windows10_home"), v.literal("windows10_pro"),
-        v.literal("macos26"), v.literal("android16"),
-        v.literal("ios18"), v.literal("hyperos"), v.literal("miui")
-      )),  // Selected OS for v86/qemu
-      vmRam: v.optional(v.number()),   // RAM in MB
-      vmDisk: v.optional(v.number()),  // Disk in GB
-      vmCores: v.optional(v.number()), // CPU cores
-      vmCommandQueueJson: v.optional(v.string()),  // Queue of commands waiting for VM execution
-    })
-      .index("by_user", ["userId"])
-      .index("by_custom_id", ["customId"])
-      .index("by_branch_group", ["branchGroupId"]),
-
-    agentMessages: defineTable({
-      sessionId: v.id("teamSessions"),
-      userId: v.id("users"),
-      agent: v.string(),
-      content: v.string(),
-      round: v.optional(v.number()),
-      messageIndex: v.optional(v.number()),
-      modelUsed: v.optional(v.string()),
-      agentBucksDeducted: v.optional(v.number()),
-    })
-      .index("by_session", ["sessionId"]),
-
-    projectFiles: defineTable({
-      sessionId: v.id("teamSessions"),
-      userId: v.id("users"),
-      filepath: v.string(),
-      content: v.string(),
-      lastModifiedBy: v.string(),
-      branch: v.optional(v.string()),           // NEW: Branch this file belongs to (default: "main")
-    })
-      .index("by_session", ["sessionId"])
-      .index("by_session_and_path", ["sessionId", "filepath"])
-      .index("by_session_and_branch", ["sessionId", "branch"]),  // NEW: Query files by branch
-
     creditBatches: defineTable({
       userId: v.id("users"),
       amount: v.number(),
@@ -378,42 +281,6 @@ const schema = defineSchema(
     })
       .index("by_user", ["userId"])
       .index("by_user_and_expiry", ["userId", "expiresAt"]),
-
-    // Cloud sandboxes tied to the OLD teamSessions system.
-    sandboxes: defineTable({
-      userId: v.id("users"),
-      sessionId: v.optional(v.id("teamSessions")),
-      sandboxId: v.string(),
-      status: v.union(v.literal("creating"), v.literal("running"), v.literal("stopped"), v.literal("error")),
-      label: v.optional(v.string()),
-      createdAt: v.number(),
-      stoppedAt: v.optional(v.number()),
-      costCents: v.optional(v.number()),
-      lastCommand: v.optional(v.string()),
-      lastOutput: v.optional(v.string()),
-      previewUrl: v.optional(v.string()),
-      customDomain: v.optional(v.string()),
-      deployedUrl: v.optional(v.string()),
-      isPublished: v.optional(v.boolean()),
-      publishedAt: v.optional(v.number()),
-      hostingCostAB: v.optional(v.number()),
-    })
-      .index("by_user", ["userId"])
-      .index("by_session", ["sessionId"])
-      .index("by_sandbox_id", ["sandboxId"]),
-
-    // Part of the deprecated branch-group model (OLD system) — see the
-    // "OLD: Branch group fields" on teamSessions. Kept for existing rows.
-    sessionBranchGroups: defineTable({
-      userId: v.id("users"),
-      groupName: v.string(),          // AI-decided group name
-      mainSessionId: v.id("teamSessions"),
-      branchSessionIds: v.array(v.id("teamSessions")),
-      projectSummary: v.optional(v.string()), // AI summary of the main project
-      createdAt: v.number(),
-    })
-      .index("by_user", ["userId"])
-      .index("by_main_session", ["mainSessionId"]),
 
     domainBlacklist: defineTable({
       domain: v.string(),
@@ -436,7 +303,6 @@ const schema = defineSchema(
     suggestions: defineTable({
       userId: v.optional(v.id("users")),
       userEmail: v.optional(v.string()),
-      sessionId: v.optional(v.id("teamSessions")),
       title: v.string(),
       description: v.string(),
       files: v.optional(v.array(v.object({

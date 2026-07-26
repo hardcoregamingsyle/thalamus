@@ -15,7 +15,6 @@ import {
   Trash2, Zap, LogOut, Cpu, ChevronRight,
   ArrowLeft, Paperclip, Settings, Moon, Sun, GraduationCap,
 } from "lucide-react";
-import TeamPortalInline from "./TeamPortalInline";
 
 type Mode = "chat" | "research" | "study" | "code";
 
@@ -719,22 +718,6 @@ export default function MobilePortal() {
         {!activeMode ? (
           <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, x: -20 }} className="flex-1 overflow-hidden h-full">
             <MobileHomeScreen token={token ?? ""} user={user} totalAB={totalAB} onModeSelect={handleModeSelect} onSignOut={signOut} />
-          </motion.div>
-        ) : activeMode === "code" ? (
-          <motion.div key="code" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="flex-1 flex flex-col h-full">
-            <div className="shrink-0 flex items-center gap-3 px-3 py-2 bg-card border-b border-border/50" style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}>
-              <button onClick={handleBack} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-muted/50 transition-colors">
-                <ArrowLeft className="h-5 w-5 text-foreground" />
-              </button>
-              <div className="w-9 h-9 rounded-full bg-violet-500/15 flex items-center justify-center text-lg shrink-0">⚡</div>
-              <div>
-                <p className="text-[14px] font-semibold text-foreground">Code Mode</p>
-                <p className="text-[11px] text-violet-400">9-agent system</p>
-              </div>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <TeamPortalInline />
-            </div>
           </motion.div>
         ) : (
           <motion.div key={activeMode} initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="flex-1 h-full">

@@ -241,7 +241,6 @@ export const submitSuggestion = mutation({
   args: {
     userId: v.optional(v.id("users")),
     userEmail: v.optional(v.string()),
-    sessionId: v.optional(v.id("teamSessions")),
     title: v.string(),
     description: v.string(),
     files: v.optional(v.array(v.object({
@@ -254,7 +253,6 @@ export const submitSuggestion = mutation({
     await ctx.db.insert("suggestions", {
       userId: args.userId,
       userEmail: args.userEmail,
-      sessionId: args.sessionId,
       title: args.title,
       description: args.description,
       files: args.files,

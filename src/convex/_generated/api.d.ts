@@ -10,8 +10,6 @@
 
 import type * as admin from "../admin.js";
 import type * as agentCore from "../agentCore.js";
-import type * as agentPipeline from "../agentPipeline.js";
-import type * as agentTeamHelpers from "../agentTeamHelpers.js";
 import type * as agentoverflow from "../agentoverflow.js";
 import type * as agentoverflowAdmin from "../agentoverflowAdmin.js";
 import type * as agentoverflowHttp from "../agentoverflowHttp.js";
@@ -26,7 +24,6 @@ import type * as codeApiKeys from "../codeApiKeys.js";
 import type * as codeAuth from "../codeAuth.js";
 import type * as codeBranches from "../codeBranches.js";
 import type * as codeCommands from "../codeCommands.js";
-import type * as codeMigration from "../codeMigration.js";
 import type * as codePipeline from "../codePipeline.js";
 import type * as codeProjects from "../codeProjects.js";
 import type * as conversations from "../conversations.js";
@@ -56,7 +53,6 @@ import type * as modalClient from "../modalClient.js";
 import type * as nimClient from "../nimClient.js";
 import type * as obscureRepoGenerator from "../obscureRepoGenerator.js";
 import type * as payments from "../payments.js";
-import type * as qemuSandbox from "../qemuSandbox.js";
 import type * as rag from "../rag.js";
 import type * as ragHelpers from "../ragHelpers.js";
 import type * as sandbox from "../sandbox.js";
@@ -68,7 +64,6 @@ import type * as studyHelpers from "../studyHelpers.js";
 import type * as studyPrompt from "../studyPrompt.js";
 import type * as userApiKeys from "../userApiKeys.js";
 import type * as users from "../users.js";
-import type * as v86Sandbox from "../v86Sandbox.js";
 
 import type {
   ApiFromModules,
@@ -79,8 +74,6 @@ import type {
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   agentCore: typeof agentCore;
-  agentPipeline: typeof agentPipeline;
-  agentTeamHelpers: typeof agentTeamHelpers;
   agentoverflow: typeof agentoverflow;
   agentoverflowAdmin: typeof agentoverflowAdmin;
   agentoverflowHttp: typeof agentoverflowHttp;
@@ -95,7 +88,6 @@ declare const fullApi: ApiFromModules<{
   codeAuth: typeof codeAuth;
   codeBranches: typeof codeBranches;
   codeCommands: typeof codeCommands;
-  codeMigration: typeof codeMigration;
   codePipeline: typeof codePipeline;
   codeProjects: typeof codeProjects;
   conversations: typeof conversations;
@@ -125,7 +117,6 @@ declare const fullApi: ApiFromModules<{
   nimClient: typeof nimClient;
   obscureRepoGenerator: typeof obscureRepoGenerator;
   payments: typeof payments;
-  qemuSandbox: typeof qemuSandbox;
   rag: typeof rag;
   ragHelpers: typeof ragHelpers;
   sandbox: typeof sandbox;
@@ -137,7 +128,6 @@ declare const fullApi: ApiFromModules<{
   studyPrompt: typeof studyPrompt;
   userApiKeys: typeof userApiKeys;
   users: typeof users;
-  v86Sandbox: typeof v86Sandbox;
 }>;
 
 /**
