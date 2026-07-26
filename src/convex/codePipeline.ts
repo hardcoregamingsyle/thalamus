@@ -186,9 +186,28 @@ async function callModelWithStreaming(
   // the model from that. Passing anything else (as the old tier strings did) misses
   // every branch of that map and silently lands on the generic chat model.
   const result = await callModel(prompt, systemPrompt, agentName, geminiKeys, dbCreds, ctx);
-  await ctx.runMutation(internal.codeBranches.setStreamingContent, {
-    branchId, content: result.text, agentName,
-  });
+
+  // Simulated streaming. A Convex action cannot stream tokens out to a client,
+  // so the finished response is drip-fed into streamingContent and the UI
+  // watches that document — the reply grows instead of landing in one block.
+  //
+  // This was here, and I deleted it by accident collapsing this function during
+  // the run-mode removal. One setStreamingContent with the whole string is
+  // functionally "correct" and silently removes the only streaming the product
+  // has, which is exactly the kind of regression no gate catches.
+  const CHUNK = 300;
+  if (!result.text) {
+    await ctx.runMutation(internal.codeBranches.setStreamingContent, { branchId, content: "", agentName });
+    return result;
+  }
+  let sent = 0;
+  while (sent < result.text.length) {
+    sent = Math.min(sent + CHUNK, result.text.length);
+    await ctx.runMutation(internal.codeBranches.setStreamingContent, {
+      branchId, content: result.text.slice(0, sent), agentName,
+    });
+    if (sent < result.text.length) await new Promise((r) => setTimeout(r, 80));
+  }
   return result;
 }
 

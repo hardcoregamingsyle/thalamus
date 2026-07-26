@@ -952,14 +952,20 @@ function PortalDesktop() {
   // Track user activity for the ad-refresh cadence. Passive listeners, ref
   // writes only — zero re-renders.
   useEffect(() => {
-    // Rail ad slots by viewport width. Total ads = 1 in-chat + rail, so a 2560px
-    // screen shows the full six the backend allows.
+    // One rail slot, on wide screens only. Never a stack.
     //
-    // The first tier MUST stay at 1280 to match the rail's `hidden xl:flex`.
-    // It used to start at 1024, so every viewport between 1024 and 1279 asked
-    // the ad server for a rail slot that Tailwind then refused to render — a
-    // request per refresh for a card nobody could ever see.
-    const calc = () => setRailCount(window.innerWidth >= 2560 ? 5 : window.innerWidth >= 1920 ? 4 : window.innerWidth >= 1536 ? 3 : window.innerWidth >= 1440 ? 2 : window.innerWidth >= 1280 ? 1 : 0);
+    // This used to climb to five. Gravity's brand-safety rules name "stacking
+    // multiple ads" as a viewability violation outright, and a column of five
+    // cards next to a chat is the textbook example — a reviewer looking at
+    // this account would read it as impression farming, which is the one thing
+    // you cannot afford while approval is still pending. It also would not
+    // have earned: a rail nobody looks at drags viewability and CTR down, and
+    // eCPM with them. The card under the reply is the placement Gravity's
+    // whole product is about; the rail is a bonus, not a wall.
+    //
+    // The threshold MUST stay at or above 1280 to match the rail's
+    // `hidden xl:flex`, or we request a slot Tailwind refuses to render.
+    const calc = () => setRailCount(window.innerWidth >= 1536 ? 1 : 0);
     calc();
     window.addEventListener("resize", calc, { passive: true });
     return () => window.removeEventListener("resize", calc);

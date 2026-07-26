@@ -214,22 +214,21 @@ export const requestAd = action({
 
     const count = Math.max(1, Math.min(6, Math.floor(args.count ?? 1)));
 
-    // Test mode: local placeholders, never a Gravity call.
+    // Test mode asks Gravity for its own test creative — a real advertiser,
+    // real copy, real logo — rather than inventing one. Fabricating a
+    // convincing ad for a company that never bought it would put a brand's
+    // name in front of users under false pretences, which is not ours to do.
     //
-    // Gravity's own testAd=true is not used here on purpose. It returns a real
-    // advertiser's creative with a live referral link, fills exactly one slot
-    // no matter how many you ask for, and is quota-limited — a burst of test
-    // requests starts answering 204 and stays there. None of that is any use
-    // for checking that six slots lay out correctly on a 4K screen. These are
-    // deterministic, fill every slot, cost nothing, and say "sample" in every
-    // field so they can never be mistaken for sold inventory. Gravity's own
-    // test path is exercised by checkGravityStatus instead, which is where
-    // integration checks belong.
-    if (config.testAdMode) {
+    // Their test path is quota-limited though: a burst of requests starts
+    // answering 204 and stays there for a while. So when it gives us nothing
+    // we fall back to an obvious placeholder rather than an empty slot, which
+    // is what made this look broken before. Real ad when there is one, clearly
+    // labelled sample when there is not, and never a fake brand.
+    const placeholders = () => {
       const samples = Array.from({ length: count }, (_, i) => ({
         title: `Sample placement ${i + 1} — test ad`,
         brandName: "Test Advertiser",
-        adText: "Placeholder used to verify ad slots render. Real ads appear here once Gravity approves the account.",
+        adText: "Placeholder shown because Gravity returned no test creative. Real ads appear here once the account is approved.",
         cta: "Learn more",
         url: "https://trygravity.ai",
         clickUrl: "https://trygravity.ai",
@@ -237,7 +236,8 @@ export const requestAd = action({
         favicon: undefined,
       }));
       return count === 1 ? samples[0] : samples;
-    }
+    };
+    if (config.testAdMode && !config.apiKey) return placeholders();
 
     // Slot 0 is the in-chat card, the rest are rail slots, in the same order as
     // the admin list so dashboard reporting lines up with where the ad rendered.
@@ -252,6 +252,9 @@ export const requestAd = action({
       // student's homework.
       ...(config.restrictedCategories?.length ? { excludedTopics: config.restrictedCategories } : {}),
       ...(args.device ? { device: args.device } : {}),
+      // Gravity's own sample creative, and the only thing that fills while the
+      // publisher account is still pending approval.
+      ...(config.testAdMode ? { testAd: true } : {}),
     };
 
     const controller = new AbortController();
@@ -266,27 +269,32 @@ export const requestAd = action({
         body: JSON.stringify(body),
         signal: controller.signal,
       });
+      // A miss hides the slot in production, but in test mode it falls back to
+      // a labelled placeholder — an empty rail is exactly what "the ads are
+      // broken" looks like, and test mode exists to prove the opposite.
+      const miss = () => (config.testAdMode ? placeholders() : null);
+
       // 204 is Gravity's no-fill, and it is also what an unapproved account
-      // and an exhausted quota look like — the body is empty either way, so
-      // do not read anything into it beyond "hide the slot".
-      if (res.status === 204) { console.warn("[ads] gravity: 204 no fill"); return null; }
+      // and an exhausted test quota look like — the body is empty either way,
+      // so do not read anything into it beyond "nothing to show".
+      if (res.status === 204) { console.warn("[ads] gravity: 204 no fill"); return miss(); }
       if (!res.ok) {
         // The body carries the actual reason (unapproved, bad key, bad field).
         const detail = await res.text().catch(() => "");
         console.warn(`[ads] gravity HTTP ${res.status}: ${detail.slice(0, 400)}`);
-        return null;
+        return miss();
       }
       const ads = await res.json();
       if (!Array.isArray(ads) || ads.length === 0) {
         console.warn("[ads] gravity returned 200 with no ads");
-        return null;
+        return miss();
       }
       // Backwards compatible: count omitted/1 → single ad object; else array.
       // The shipped .exe depends on this shape.
       return count === 1 ? ads[0] : ads.slice(0, count);
     } catch (err) {
       console.warn(`[ads] gravity request threw: ${err instanceof Error ? err.message : String(err)}`);
-      return null;
+      return config.testAdMode ? placeholders() : null;
     } finally {
       clearTimeout(timer);
     }
