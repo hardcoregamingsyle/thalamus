@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { callModel } from "./agentCore";
 import {
+  AO_FREE_UNLIMITED,
   contribTierFor,
   COST_ANSWER,
   COST_SEARCH,
@@ -119,7 +120,10 @@ export async function runSearch(
     return opError(400, "bad_request", '"query" must be a string of 3-2000 characters.');
   }
 
-  const charged = key.isAdmin ? 0 : cost;
+  // While AO_FREE_UNLIMITED is on, charge() deducts nothing — so reporting the
+  // nominal cost told every external caller it had been billed for something
+  // that was free, and contradicted the unchanged balance in the same body.
+  const charged = key.isAdmin || AO_FREE_UNLIMITED ? 0 : cost;
   let balance: number;
   try {
     balance = await ctx.runMutation(internal.agentoverflow.charge, {
@@ -237,7 +241,7 @@ export async function runAnswer(
     {},
   )) as boolean;
   const floorCost = Math.min(COST_SEARCH, cost);
-  let creditsCharged = budgetExhausted ? floorCost : cost;
+  let creditsCharged = AO_FREE_UNLIMITED ? 0 : budgetExhausted ? floorCost : cost;
 
   let balance: number;
   try {
