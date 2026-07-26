@@ -13,8 +13,11 @@
 //
 // The tradeoff versus a warm sandbox is honest and worth knowing: a dispatched
 // run takes roughly 20-60s to pick up a runner, where a live sandbox answers in
-// seconds. What you get for it is a real, disposable Ubuntu VM with the whole
-// toolchain, at no cost, with the run history visible in the repo.
+// seconds. What you get for it is a real, disposable machine with the whole
+// toolchain, for free, with every run visible in the repo — and, because GitHub
+// hosts ubuntu, windows and macos runners, a branch can be built and tested on
+// the OS it actually ships to rather than on whatever the container happened
+// to be. That is not something a single Linux sandbox can do at any price.
 
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -45,18 +48,25 @@ on:
       callback_url:
         description: Where to POST the result
         required: true
+      os:
+        description: Runner to execute on
+        required: false
+        default: ubuntu-latest
 
 jobs:
   run:
-    runs-on: ubuntu-latest
+    runs-on: \${{ inputs.os || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      # bash on every runner, Windows included — the Windows images ship git-bash,
+      # so one script covers ubuntu, windows and macos instead of three.
       - name: Run command
         id: run
+        shell: bash
         env:
           THALAMUS_CMD: \${{ inputs.command }}
         run: |
@@ -64,24 +74,33 @@ jobs:
           OUTPUT=$(bash -lc "$THALAMUS_CMD" 2>&1)
           CODE=$?
           echo "$OUTPUT"
-          echo "$OUTPUT" | head -c 20000 > /tmp/thalamus-output.txt
+          printf '%s' "$OUTPUT" | head -c 20000 > "$RUNNER_TEMP/thalamus-output.txt"
           echo "exit_code=$CODE" >> "$GITHUB_OUTPUT"
       - name: Report result
         if: always()
+        shell: bash
         env:
           CALLBACK: \${{ inputs.callback_url }}
           COMMAND_ID: \${{ inputs.command_id }}
           NONCE: \${{ inputs.nonce }}
           EXIT_CODE: \${{ steps.run.outputs.exit_code }}
         run: |
-          OUTPUT=$(cat /tmp/thalamus-output.txt 2>/dev/null || echo "")
-          jq -n --arg id "$COMMAND_ID" --arg nonce "$NONCE" --arg out "$OUTPUT" \\
-                --argjson code "\${EXIT_CODE:-1}" \\
-                '{commandId:$id, nonce:$nonce, output:$out, exitCode:$code}' \\
+          OUTPUT=$(cat "$RUNNER_TEMP/thalamus-output.txt" 2>/dev/null || echo "")
+          jq -n --arg id "$COMMAND_ID" --arg nonce "$NONCE" --arg out "$OUTPUT" \
+                --argjson code "\${EXIT_CODE:-1}" \
+                '{commandId:$id, nonce:$nonce, output:$out, exitCode:$code}' \
             | curl -sS -X POST "$CALLBACK" -H 'Content-Type: application/json' --data @-
 `;
 
 type GhConfig = { owner: string; repo: string; branch: string; githubToken?: string };
+
+// GitHub's hosted runners. The whole point of running here rather than in one
+// Linux container: a branch can be built and tested on the OS it ships to.
+const RUNNERS: Record<string, string> = {
+  ubuntu: "ubuntu-latest",
+  windows: "windows-latest",
+  macos: "macos-latest",
+};
 
 async function ensureWorkflow(octokit: Octokit, cfg: GhConfig): Promise<void> {
   let existingSha: string | undefined;
@@ -180,6 +199,7 @@ export const executeBranchCommandsViaActions = internalAction({
             command_id: cmd._id,
             nonce,
             callback_url: callbackUrl,
+            os: RUNNERS[branch.runnerOs ?? "ubuntu"] ?? RUNNERS.ubuntu,
           },
         });
         dispatched = true;

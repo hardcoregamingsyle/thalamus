@@ -166,6 +166,10 @@ const schema = defineSchema(
       // through codeCommands.completeCommand. Absent means cloud, so every
       // branch created before this field existed keeps its old behaviour.
       executor: v.optional(v.union(v.literal("cloud"), v.literal("local"))),
+      // Which GitHub-hosted runner a cloud build uses. The reason this is worth
+      // having: Actions gives ubuntu, windows and macos, so a branch can be
+      // tested on the OS it actually ships to. Absent means ubuntu.
+      runnerOs: v.optional(v.union(v.literal("ubuntu"), v.literal("windows"), v.literal("macos"))),
       // Daytona sandbox that runs this branch's shell commands on the web (no
       // desktop app required). Created lazily on the first command.
       sandboxId: v.optional(v.string()),
