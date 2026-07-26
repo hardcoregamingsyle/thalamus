@@ -172,7 +172,7 @@ function hasUnclosedFileBlock(content: string): boolean {
 // streaming is unavailable (Gemini, AgentRouter) or credentials are missing.
 // NOTE: "streaming" here is simulated — the full response is fetched first, then
 // drip-fed to streamingContent in 300-char chunks. True token streaming from
-// Bedrock proved unreliable inside Convex actions (see callClaude in agentCore).
+// Real token streaming proved unreliable inside Convex actions.
 async function callModelWithStreaming(
   ctx: { runMutation: ActionCtx["runMutation"]; runQuery: ActionCtx["runQuery"] },
   prompt: string,
@@ -358,7 +358,9 @@ export const runPipelineAction = internalAction({
         await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId: ownerUserId, agentBucksToDeduct: ab });
       }
       await ctx.runMutation(internal.admin.deductPlatformCost, {
-        modelName: `${label}-${r.tier}`, inputTokens: r.inputTokens, outputTokens: r.outputTokens,
+        // The tier as returned, unprefixed — pricing looks this up, and
+        // `${label}-${tier}` could never match a key in the table.
+        modelName: r.tier, inputTokens: r.inputTokens, outputTokens: r.outputTokens,
       });
     };
 

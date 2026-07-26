@@ -130,7 +130,7 @@ export async function callModel(
 
 function mapModelIdToOllama(modelId: string): string {
   const l = modelId.toLowerCase();
-  if (l.includes("dispatcher") || l.includes("organiser") || l.includes("summarizer")) return "gemma4:31b";
+  if (l.includes("dispatcher") || l.includes("organiser") || l.includes("organizer") || l.includes("summarizer")) return "gemma4:31b";
   if (l.includes("coder") || l.includes("optimiser") || l.includes("architect")) return "minimax-m3";
   if (l.includes("analyser") || l.includes("planner") || l.includes("critic") || l.includes("reasoning")) return "minimax-m3";
   if (l.includes("researcher") || l.includes("research") || l.includes("scout")) return "gpt-oss:120b";

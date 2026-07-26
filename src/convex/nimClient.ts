@@ -440,7 +440,9 @@ export function modelsForTask(task: TaskType): string[] {
  */
 export function agentToTaskType(agentName: string): TaskType {
   const name = agentName.toLowerCase();
-  if (name.includes("dispatcher") || name.includes("organiser") || name.includes("summarizer")) return "dispatcher";
+  // Both spellings: the pipeline names the agent "Organizer" (z), this map was
+  // written with "organiser" (s), so it silently missed every time.
+  if (name.includes("dispatcher") || name.includes("organiser") || name.includes("organizer") || name.includes("summarizer")) return "dispatcher";
   if (name.includes("coder") || name.includes("optimiser") || name.includes("architect")) return "code";
   if (name.includes("analyser") || name.includes("planner") || name.includes("critic")) return "reasoning";
   if (name.includes("researcher") || name.includes("research") || name.includes("scout")) return "research";

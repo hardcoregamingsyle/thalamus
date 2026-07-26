@@ -247,7 +247,7 @@ if (-not $SkipInstaller -and $instExe -and (Test-Path $instExe)) {
 
 Write-Host ""
 Write-Host "  Upload to GitHub Releases:" -ForegroundColor White
-Write-Host "    gh release create v$Version dist\Thalamus-Setup-v$Version.exe dist\checksums.txt" -ForegroundColor DarkGray
+Write-Host "    gh release create v$Version installer-build\Thalamus.exe dist\Thalamus-Setup-v$Version.exe dist\checksums.txt" -ForegroundColor DarkGray
 Write-Host "      --repo hardcoregamingsyle/thalamus --title `"Thalamus AI v$Version`"" -ForegroundColor DarkGray
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
