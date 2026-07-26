@@ -1,26 +1,29 @@
 # Thalamus Virtualization Engine
 
-**Run Windows 11, macOS, Ubuntu, and Android with 6-16GB RAM on your device.**
+**Run Windows 11, Ubuntu and Android locally, 6-16GB RAM.**
 
 This is a real, working WebSocket bridge that connects your browser to native virtual machines.
 
 ## Installation
 
-### 1. Install Virtualization Runtime
+### 1. Install QEMU
+
+The package names below are the real ones. Earlier revisions named
+`hypervisor-runtime` and `vm-runtime`, which do not exist on any registry.
 
 **macOS:**
 ```bash
-brew install hypervisor-runtime
+brew install qemu
 ```
 
 **Ubuntu/Debian:**
 ```bash
-sudo apt install vm-runtime libvirt-daemon
+sudo apt install qemu-system-x86
 ```
 
 **Windows:**
 ```bash
-choco install vm-runtime
+choco install qemu
 ```
 
 ### 2. Install Bridge
@@ -56,7 +59,6 @@ thalamus-qemu
 - **Windows 11** - 6GB RAM, 4 cores
 - **Windows 10** - 6GB RAM, 4 cores  
 - **Ubuntu 24.04** - 4GB RAM, 4 cores
-- **macOS Sequoia** - 6GB RAM, 4 cores
 - **Android 14** - 4GB RAM, 4 cores
 
 ## Usage
@@ -145,8 +147,8 @@ vncviewer localhost:5901
 
 **Bridge won't start:**
 ```bash
-# Check runtime installed
-which vm-runtime
+# Check QEMU is on PATH
+which qemu-system-x86_64
 
 # Check port available
 lsof -i :5900

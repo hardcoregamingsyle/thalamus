@@ -249,25 +249,6 @@ function startBridge() {
   });
 }
 
-// Check for updates
-async function checkForUpdates() {
-  try {
-    const response = await fetch("https://thalamus.dev/api/vm-version");
-    const data = (await response.json()) as { version: string; downloadUrl: string };
-
-    if (data.version > VERSION) {
-      console.log("");
-      console.log("🆕 Update available!");
-      console.log(`   Current: v${VERSION}`);
-      console.log(`   Latest: v${data.version}`);
-      console.log(`   Download: ${data.downloadUrl}`);
-      console.log("");
-    }
-  } catch {
-    // Silent fail - updates are optional
-  }
-}
-
 // Main entry point
 async function main() {
   console.clear();
@@ -278,7 +259,6 @@ async function main() {
   console.log("");
 
   // Check for updates (async, non-blocking)
-  checkForUpdates();
 
   // Check QEMU installation
   if (!checkQEMUInstalled()) {

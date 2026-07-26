@@ -1,23 +1,26 @@
 # Quick Setup - Thalamus Virtualization
 
-## 1. One-Command Install
+## 1. Install
 
-**Mac:**
+There is no hosted install script. Earlier revisions of this file told you to
+pipe `install.thalamus.dev` into a shell — that domain is not ours and never
+was, so those commands are gone rather than fixed.
+
+Build it from this directory:
+
 ```bash
-curl -fsSL https://install.thalamus.dev/mac | bash
+cd qemu-bridge
+npm install
+npm run build
+npm start
 ```
 
-**Linux (Ubuntu/Debian):**
-```bash
-curl -fsSL https://install.thalamus.dev/linux | bash
-```
+You need QEMU on PATH first — `brew install qemu` on macOS, `apt install qemu-system-x86`
+on Debian/Ubuntu, or the official Windows build from qemu.org.
 
-**Windows (PowerShell as Admin):**
-```powershell
-irm https://install.thalamus.dev/windows | iex
-```
-
-This automatically installs all dependencies and starts the service.
+The desktop app does not need any of this: it drives QEMU directly through
+`QemuBridgeManager.cs`, with no bridge process involved. This bridge exists only
+for the web app, which talks to it on `ws://localhost:5900`.
 
 ## 2. Manual Install (Advanced)
 
