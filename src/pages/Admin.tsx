@@ -1699,6 +1699,21 @@ function AdMeshTab({ adminToken }: { adminToken: string }) {
   const [pixelId, setPixelId] = useState("");
   const [saving, setSaving] = useState(false);
   const [showKey, setShowKey] = useState(false);
+  // Gravity account probe — the key is used for one request and never stored,
+  // because the saved apiKey belongs to AdMesh while it is the live provider.
+  const checkGravityStatus = useAction(api.gravityAds.checkGravityStatus);
+  const [gravityKey, setGravityKey] = useState("");
+  const [gravityStatus, setGravityStatus] = useState<{ state: string; http: number; detail: string } | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const handleCheckGravity = async () => {
+    setChecking(true);
+    setGravityStatus(null);
+    try {
+      setGravityStatus(await checkGravityStatus({ adminToken, apiKey: gravityKey.trim() }));
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Status check failed"); }
+    finally { setChecking(false); }
+  };
 
   useEffect(() => {
     if (existing) {
@@ -1769,6 +1784,12 @@ function AdMeshTab({ adminToken }: { adminToken: string }) {
             className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors resize-none" />
         </div>
         <div>
+          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">GRAVITY PIXEL ID <span className="font-normal">(UUID — Settings → Organization)</span></label>
+          <input value={pixelId} onChange={e => setPixelId(e.target.value)} placeholder="00000000-0000-0000-0000-000000000000"
+            className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors" />
+          <p className="text-xs text-muted-foreground mt-1.5">Loads the measurement pixel site-wide. Required before Gravity will approve ad serving. Fingerprinting and session replay are forced off in the loader.</p>
+        </div>
+        <div>
           <label className="text-xs font-bold text-muted-foreground mb-1.5 block">RESTRICTED ADVERTISER CATEGORIES <span className="font-normal">(one per line — never serve ads from these)</span></label>
           <textarea value={restrictedCategories} onChange={e => setRestrictedCategories(e.target.value)} placeholder={"AI coding assistants\nThalamus alternatives"} rows={4}
             className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors resize-none" />
@@ -1788,6 +1809,36 @@ function AdMeshTab({ adminToken }: { adminToken: string }) {
           className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
           {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : <><Check className="h-4 w-4" />Save Config</>}
         </button>
+      </div>
+      <div className="bg-card border border-border rounded-xl p-6 space-y-4">
+        <div>
+          <p className="text-sm font-semibold text-foreground">Gravity account status</p>
+          <p className="text-xs text-muted-foreground mt-1">Gravity's portal shows no approval state and their API has no account endpoint, so the only way to read it is to ask for a real ad. Key is used once and never stored.</p>
+        </div>
+        <div className="flex gap-2">
+          <input type="password" value={gravityKey} onChange={e => setGravityKey(e.target.value)} placeholder="Gravity API key"
+            className="flex-1 bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors" />
+          <button onClick={handleCheckGravity} disabled={checking || !gravityKey.trim()}
+            className="px-4 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center gap-2 shrink-0">
+            {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Check
+          </button>
+        </div>
+        {gravityStatus && (() => {
+          const map: Record<string, [string, string]> = {
+            serving: ["text-emerald-400", "Approved — ads are serving"],
+            approved_no_fill: ["text-emerald-400", "Approved — no fill for this request"],
+            pending_approval: ["text-amber-400", "Not approved yet — only testAd requests will fill"],
+            bad_key: ["text-red-400", "Key rejected"],
+            unreachable: ["text-red-400", "Could not reach Gravity"],
+          };
+          const [color, label] = map[gravityStatus.state] ?? ["text-muted-foreground", `Unexpected response (${gravityStatus.state})`];
+          return (
+            <div className="space-y-1.5">
+              <p className={`text-sm font-semibold ${color}`}>{label}</p>
+              <p className="text-xs text-muted-foreground font-mono break-all">HTTP {gravityStatus.http} {gravityStatus.detail}</p>
+            </div>
+          );
+        })()}
       </div>
       <div className="bg-muted/30 border border-border rounded-xl p-4 text-xs text-muted-foreground">
         The API key is stored encrypted — never sent to the browser. Ad display is controlled by the toggles above.

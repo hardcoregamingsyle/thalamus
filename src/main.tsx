@@ -5,6 +5,7 @@ import { StrictMode, Component, useEffect, lazy, Suspense, type ReactNode } from
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
 import { DauTracker } from "@/components/DauTracker";
+import { GravityPixel } from "@/components/GravityPixel";
 import "./index.css";
 import "./types/global.d.ts";
 
@@ -128,6 +129,7 @@ createRoot(document.getElementById("root")!).render(
           <RouteSyncer />
           <DauTracker />
           {/* Gravity measurement pixel — loads only when an admin sets a Pixel ID */}
+          <GravityPixel />
           <RouteErrorBoundary>
             <Suspense fallback={<RouteLoading />}>
               <Routes>

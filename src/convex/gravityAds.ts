@@ -83,6 +83,61 @@ export const getPublicAdsConfig = query({
   },
 });
 
+// The pixel's id, and nothing else — deliberately not folded into
+// getPublicAdsConfig, which returns null whenever the ads master switch is off.
+// Gravity gates ad serving on publisher approval, and their dashboard only
+// reports an account "Active" once the pixel has actually sent events, so
+// gating the pixel on `isEnabled` would park approval behind the one thing
+// approval unlocks. Loads whenever an id is set.
+export const getPixelId = query({
+  args: {},
+  handler: async (ctx) => {
+    const config = await ctx.db.query("gravityAdsConfig").first();
+    return config?.pixelId ?? null;
+  },
+});
+
+// ── Account status probe ──────────────────────────────────────────────────────
+// Gravity's portal shows no approval state anywhere, and the API has no account
+// endpoint — /api/v1/account, /publisher, /me, /status and /openapi.json all
+// 404, leaving only /health, which reports their server and not us. The one
+// signal that exists is how a real ad request answers, so this asks for an ad
+// and reports what came back. Deliberately omits testAd: test mode answers 200
+// for an unapproved account, which is exactly the question being asked.
+
+export const checkGravityStatus = action({
+  args: { adminToken: v.string(), apiKey: v.string() },
+  handler: async (_ctx, args): Promise<{ state: string; http: number; detail: string }> => {
+    requireAdmin(args.adminToken);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const res = await fetch("https://server.trygravity.ai/api/v1/ad", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${args.apiKey}` },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: "status probe" }],
+          sessionId: `status_${Date.now().toString(36)}`,
+          placements: [{ placement: "below_response", placement_id: "status-probe" }],
+        }),
+        signal: controller.signal,
+      });
+      const detail = (await res.text().catch(() => "")).slice(0, 400);
+      if (res.status === 200) return { state: "serving", http: 200, detail };
+      if (res.status === 204) return { state: "approved_no_fill", http: 204, detail };
+      if (res.status === 401) return { state: "bad_key", http: 401, detail };
+      if (res.status === 403 && detail.includes("publisher_not_approved")) {
+        return { state: "pending_approval", http: 403, detail };
+      }
+      return { state: "unexpected", http: res.status, detail };
+    } catch (err) {
+      return { state: "unreachable", http: 0, detail: err instanceof Error ? err.message : String(err) };
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+});
+
 // Internal: get full config including API key (for server-side ad requests)
 export const getGravityAdsConfigInternal = internalQuery({
   args: {},
