@@ -140,13 +140,21 @@
                             Background="{DynamicResource BgCardBrush}" BorderBrush="{DynamicResource TintGreenBorderBrush}" BorderThickness="1"
                             CornerRadius="12" Padding="18,14" Margin="0,0,0,16">
                         <StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <DockPanel Margin="0,0,0,12">
+                                <!-- Stop calls codePipeline:stopPipeline, the same action
+                                     the website's workspace uses. -->
+                                <Button DockPanel.Dock="Right" x:Name="StopBuildButton"
+                                        Content="Stop" Style="{StaticResource GhostBtn}"
+                                        Height="24" Padding="12,0" FontSize="11"
+                                        Click="StopBuild_Click"/>
                                 <TextBlock Text="Pipeline Running" FontSize="11.5" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource GreenBrush}" Margin="0,0,10,0"/>
+                                           Foreground="{DynamicResource GreenBrush}" Margin="0,0,10,0"
+                                           VerticalAlignment="Center"/>
                                 <TextBlock x:Name="AgentStageLabel" Text="Initializing…"
                                            FontSize="11.5" FontFamily="{StaticResource MonoFontFamily}"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-                            </StackPanel>
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                            </DockPanel>
                             <!-- Stage dots -->
                             <ItemsControl x:Name="AgentDots">
                                 <ItemsControl.ItemsPanel>

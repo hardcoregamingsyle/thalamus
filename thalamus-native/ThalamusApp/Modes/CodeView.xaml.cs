@@ -35,6 +35,24 @@ namespace ThalamusApp.Modes
         private const int PollMs = 1500;
         private static readonly TimeSpan BuildTimeout = TimeSpan.FromMinutes(20);
 
+        // The pipeline writes status "idle" between EVERY step while it
+        // self-reschedules, so "not running" is not a terminal signal on its own.
+        // What IS terminal is a branch that stopped moving: updateBranchStatus
+        // bumps lastActivityAt on every write, so if that timestamp is frozen
+        // while the branch is not running, nothing is going to resume it —
+        // a user Stop, an error abort, or a pause waiting on an API key the
+        // desktop has no UI to answer. 60 polls ≈ 90s of silence before we call it.
+        private const int StallPolls = 60;
+
+        // Same idea after the user presses Stop, but the pipeline only has to
+        // reach its next step and park, so ~9s of silence is enough.
+        private const int StopStallPolls = 6;
+
+        // Set the moment Stop is pressed so the poll loop reports "stopped"
+        // instead of blaming the pipeline for going quiet.
+        private bool _stopRequested;
+        private string? _activeBranchId;
+
         public CodeView()
         {
             InitializeComponent();
@@ -88,7 +106,10 @@ namespace ThalamusApp.Modes
             RenderAgentDots(AllAgents, currentAgent: null, allDone: false);
 
             _isBuilding = true;
+            _stopRequested = false;
+            _activeBranchId = null;
             BuildButton.IsEnabled = false;
+            StopBuildButton.IsEnabled = true;
             BuildStatusLabel.Text = "Building…";
             BuildStatusDot.SetResourceReference(Shape.FillProperty, "AmberBrush");
 
@@ -102,6 +123,7 @@ namespace ThalamusApp.Modes
                     new { token = _token, name = projectName, description = prompt }, _token);
                 var branchId = created?["branchId"]?.GetValue<string>()
                     ?? throw new Exception("Project creation returned no branch");
+                _activeBranchId = branchId;
 
                 // 2. Kick off the real pipeline
                 await _convex.CallActionAsync("codePipeline:startPipeline",
@@ -132,6 +154,8 @@ namespace ThalamusApp.Modes
             string[] pipelineAgents = AllAgents;
             TextBlock? liveBlock = null;
             Border? liveBorder = null;
+            double lastActivityAt = 0;
+            int stalledPolls = 0;
 
             while (true)
             {
@@ -143,6 +167,14 @@ namespace ThalamusApp.Modes
 
                 var status = branch["status"]?.GetValue<string>() ?? "idle";
                 var currentAgent = branch["currentAgent"]?.GetValue<string>();
+
+                // Stall detection — see StallPolls. Only counts while the branch
+                // is NOT running, so a single agent thinking for two minutes
+                // (status "running", timestamp frozen) is never mistaken for dead.
+                var activityAt = branch["lastActivityAt"]?.GetValue<double>() ?? 0;
+                if (status == "running" || activityAt > lastActivityAt) stalledPolls = 0;
+                else stalledPolls++;
+                lastActivityAt = activityAt;
 
                 // Dynamic pipeline: once the Dispatcher has picked agents, only
                 // show those. (dispatchedAgentsJson is set right after dispatch.)
@@ -202,9 +234,9 @@ namespace ThalamusApp.Modes
 
                 // Progress card
                 var stageAgent = streamingAgent ?? currentAgent;
-                AgentStageLabel.Text = status switch
+                AgentStageLabel.Text = _stopRequested ? "Stopping…" : status switch
                 {
-                    "paused" => "Waiting on sandbox commands…",
+                    "paused" => "Paused — waiting on a sandbox command or an API key…",
                     "completed" => "Finalizing…",
                     _ => stageAgent == "Dispatcher" ? "Dispatcher: routing your task…"
                        : stageAgent != null ? $"Agent: {stageAgent}"
@@ -219,7 +251,57 @@ namespace ThalamusApp.Modes
                     return;
                 }
 
+                // Parked for good — say so now instead of polling for 20 minutes
+                // and then calling it a timeout. After an explicit Stop we only
+                // need long enough for the pipeline to notice the flag and write
+                // its final "idle", so don't make the user sit through 90s.
+                if (stalledPolls >= (_stopRequested ? StopStallPolls : StallPolls))
+                {
+                    if (liveBorder != null) { BuildPanel.Children.Remove(liveBorder); }
+                    AgentProgressCard.Visibility = Visibility.Collapsed;
+                    if (_stopRequested)
+                    {
+                        AppendBuildError("Build stopped. The files written so far are saved on your project.");
+                        SetIdle("Stopped", error: false);
+                    }
+                    else if (status == "paused")
+                    {
+                        AppendBuildError("The pipeline is paused waiting for input — usually an API key. "
+                            + "Desktop can't answer that yet: open this project at /portal/code on the website to continue.");
+                        SetIdle("Paused", error: true);
+                    }
+                    else
+                    {
+                        AppendBuildError("The pipeline stopped early. Check this project on the website for the agent's last message.");
+                        SetIdle("Stopped", error: true);
+                    }
+                    return;
+                }
+
                 await Task.Delay(PollMs, ct);
+            }
+        }
+
+        // Stop the running pipeline. codePipeline:stopPipeline only sets a flag —
+        // the pipeline halts at its next step — so the poll loop keeps running
+        // until the branch actually goes quiet, and the stall check ends it.
+        private async void StopBuild_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_isBuilding || string.IsNullOrEmpty(_token) || _activeBranchId == null) return;
+
+            StopBuildButton.IsEnabled = false;
+            _stopRequested = true;
+            AgentStageLabel.Text = "Stopping…";
+            try
+            {
+                await _convex.CallActionAsync("codePipeline:stopPipeline",
+                    new { token = _token!, branchId = _activeBranchId }, _token);
+            }
+            catch (Exception ex)
+            {
+                AppendBuildError($"Could not stop the build: {ex.Message}");
+                StopBuildButton.IsEnabled = true;
+                _stopRequested = false;
             }
         }
 
