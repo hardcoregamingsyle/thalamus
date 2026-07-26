@@ -1,6 +1,5 @@
 import { Toaster } from "@/components/ui/sonner";
 import { InstrumentationProvider } from "@/instrumentation.tsx";
-import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
 import { StrictMode, Component, useEffect, lazy, Suspense, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
@@ -119,7 +118,6 @@ createRoot(document.getElementById("root")!).render(
   !convex ? <ConfigError /> :
   <StrictMode>
     <InstrumentationProvider>
-      <ConvexAuthProvider client={convex}>
         <BrowserRouter>
           <RouteSyncer />
           <DauTracker />
@@ -158,7 +156,6 @@ createRoot(document.getElementById("root")!).render(
           </RouteErrorBoundary>
         </BrowserRouter>
         <Toaster />
-      </ConvexAuthProvider>
     </InstrumentationProvider>
   </StrictMode>,
 );

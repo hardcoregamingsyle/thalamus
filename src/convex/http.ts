@@ -1,5 +1,4 @@
 import { httpRouter } from "convex/server";
-import { auth } from "./auth";
 import { httpAction } from "./_generated/server";
 import { internal, api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
@@ -25,7 +24,6 @@ import {
 
 const http = httpRouter();
 
-auth.addHttpRoutes(http);
 
 // Decode state helper
 function decodeStateHttp(state: string): string | null {

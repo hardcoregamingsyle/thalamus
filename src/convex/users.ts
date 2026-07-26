@@ -1,37 +1,5 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
-import { mutation, query, QueryCtx } from "./_generated/server";
+import { mutation } from "./_generated/server";
 import { v } from "convex/values";
-
-/**
- * Get the current signed in user. Returns null if the user is not signed in.
- * Usage: const signedInUser = await ctx.runQuery(api.users.currentUser);
- * THIS FUNCTION IS READ-ONLY. DO NOT MODIFY.
- */
-export const currentUser = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
-
-    if (user === null) {
-      return null;
-    }
-
-    return user;
-  },
-});
-
-/**
- * Use this function internally to get the current user data. Remember to handle the null user case.
- * @param ctx
- * @returns
- */
-export const getCurrentUser = async (ctx: QueryCtx) => {
-  const userId = await getAuthUserId(ctx);
-  if (userId === null) {
-    return null;
-  }
-  return await ctx.db.get(userId);
-};
 
 export const completeOnboarding = mutation({
   args: { token: v.string() },
@@ -66,23 +34,5 @@ export const saveStudyProfile = mutation({
       studyLanguage: args.language,
     });
     return { success: true };
-  },
-});
-
-export const getStudyProfile = mutation({
-  args: { token: v.string() },
-  handler: async (ctx, args) => {
-    const session = await ctx.db
-      .query("customSessions")
-      .withIndex("by_token", q => q.eq("token", args.token))
-      .unique();
-    if (!session || session.expiresAt < Date.now()) return null;
-    const user = await ctx.db.get(session.userId);
-    if (!user) return null;
-    return {
-      grade: (user as { studyGrade?: string }).studyGrade ?? null,
-      board: (user as { studyBoard?: string }).studyBoard ?? null,
-      language: (user as { studyLanguage?: string }).studyLanguage ?? null,
-    };
   },
 });

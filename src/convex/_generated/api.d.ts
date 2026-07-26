@@ -18,8 +18,6 @@ import type * as agentoverflowPublic from "../agentoverflowPublic.js";
 import type * as ai from "../ai.js";
 import type * as aiHelpers from "../aiHelpers.js";
 import type * as antiEvasionDb from "../antiEvasionDb.js";
-import type * as auth from "../auth.js";
-import type * as auth_emailOtp from "../auth/emailOtp.js";
 import type * as codeApiKeys from "../codeApiKeys.js";
 import type * as codeAuth from "../codeAuth.js";
 import type * as codeBranches from "../codeBranches.js";
@@ -81,8 +79,6 @@ declare const fullApi: ApiFromModules<{
   ai: typeof ai;
   aiHelpers: typeof aiHelpers;
   antiEvasionDb: typeof antiEvasionDb;
-  auth: typeof auth;
-  "auth/emailOtp": typeof auth_emailOtp;
   codeApiKeys: typeof codeApiKeys;
   codeAuth: typeof codeAuth;
   codeBranches: typeof codeBranches;
