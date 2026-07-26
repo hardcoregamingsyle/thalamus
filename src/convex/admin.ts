@@ -1,13 +1,15 @@
 import { query, mutation, action, internalMutation, internalQuery } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 
 // Admin auth helper
 // Set the token via: npx convex env set ADMIN_TOKEN <strong-random-password>
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";
 
 async function requireAdmin(_ctx: unknown, adminToken: string) {
-  if (!ADMIN_TOKEN) throw new Error("ADMIN_TOKEN not configured on server");
-  if (!adminToken || adminToken !== ADMIN_TOKEN) throw new Error("Unauthorized");
+  // ConvexError, not Error: production redacts a plain Error to a bare "Server
+  // Error", so an admin with a stale token saw a crash instead of "Unauthorized".
+  if (!ADMIN_TOKEN) throw new ConvexError("ADMIN_TOKEN not configured on server");
+  if (!adminToken || adminToken !== ADMIN_TOKEN) throw new ConvexError("Unauthorized");
 }
 
 // ── Admin login: password + security questions ────────────────────────────────
@@ -277,7 +279,10 @@ const PLATFORM_PRICING: Record<string, { input: number; output: number }> = {
 const BUDGET_THRESHOLD = 5.0; // disable at $5 remaining
 
 export function calcPlatformCost(modelName: string, inputTokens: number, outputTokens: number): number {
-  const pricing = PLATFORM_PRICING[modelName];
+  // Names arrive provider-prefixed ("nim:qwen/...", "ollama:gemma4:31b"). Anything
+  // not in the table costs us nothing to serve — the current providers are free
+  // tiers — so it contributes 0 on purpose rather than by accident.
+  const pricing = PLATFORM_PRICING[modelName] ?? PLATFORM_PRICING[modelName.split(":").slice(1).join(":")];
   if (!pricing) return 0;
   return parseFloat(
     ((inputTokens / 1_000_000) * pricing.input + (outputTokens / 1_000_000) * pricing.output).toFixed(8)

@@ -1,5 +1,5 @@
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Doc } from "./_generated/dataModel";
 import {
@@ -19,8 +19,9 @@ import {
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";
 
 async function requireAdmin(_ctx: unknown, adminToken: string) {
-  if (!ADMIN_TOKEN) throw new Error("ADMIN_TOKEN not configured on server");
-  if (!adminToken || adminToken !== ADMIN_TOKEN) throw new Error("Unauthorized");
+  // ConvexError survives production redaction; a plain Error does not.
+  if (!ADMIN_TOKEN) throw new ConvexError("ADMIN_TOKEN not configured on server");
+  if (!adminToken || adminToken !== ADMIN_TOKEN) throw new ConvexError("Unauthorized");
 }
 
 // Internal paginated query for learnings (actions call this via runQuery).

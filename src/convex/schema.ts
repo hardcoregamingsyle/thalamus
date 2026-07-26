@@ -702,7 +702,7 @@ const schema = defineSchema(
     aoCreditLedger: defineTable({
       userId: v.id("users"),
       delta: v.number(),
-      reason: v.string(),  // search | answer | learning_reward | learning_penalty | daily_refill
+      reason: v.string(),  // search | answer | learning_reward | learning_penalty | daily_refill | admin
       refId: v.optional(v.string()),
       createdAt: v.number(),
     }).index("by_user", ["userId"]),

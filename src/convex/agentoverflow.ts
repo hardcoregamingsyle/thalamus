@@ -374,7 +374,7 @@ async function adminSystemUserId(ctx: MutationCtx): Promise<Id<"users">> {
 }
 
 // Mint an admin key: unlimited requests, no credit charge, gold-tier visible.
-// Called only from the admin backend (see agentoverflowAdmin.adminCreateApiKey),
+// Called only from the admin backend (see agentoverflowAdmin.createAdminKey),
 // never the dashboard — MAX_ACTIVE_KEYS doesn't apply.
 export const insertAdminKey = internalMutation({
   args: { keyId: v.string(), keyHash: v.string(), keyPrefix: v.string(), name: v.string() },
@@ -906,7 +906,9 @@ export const scoreLearning = internalAction({
     try {
       const result = await callModel(prompt, SCORING_SYSTEM_PROMPT, "gemini", geminiKeys, dbCreds, ctx);
       await ctx.runMutation(internal.admin.deductPlatformCost, {
-        modelName: result.tier === "gemini" ? "gemini-3.1-flash-lite" : "claude-haiku-4-5",
+        // The tier callModel actually returned ("modal:*"/"nim:*"/"ollama:*").
+        // The old ternary guessed from a vocabulary callModel stopped using.
+        modelName: result.tier,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
       });

@@ -310,7 +310,9 @@ export async function runAnswer(
         ctx,
       );
       await ctx.runMutation(internal.admin.deductPlatformCost, {
-        modelName: result.tier === "gemini" ? "gemini-3.1-flash-lite" : "claude-haiku-4-5",
+        // The tier callModel actually returned ("modal:*"/"nim:*"/"ollama:*").
+        // The old ternary guessed from a vocabulary callModel stopped using.
+        modelName: result.tier,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
       });
