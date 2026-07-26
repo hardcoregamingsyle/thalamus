@@ -13,7 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex" | "study-materials" | "dau" | "aws" | "gemini" | "nim" | "ollama" | "modal" | "models" | "gravity-ads" | "payments" | "vm-isos" | "corpus";
+type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex" | "study-materials" | "dau" | "aws" | "gemini" | "nim" | "ollama" | "modal" | "gravity-ads" | "payments" | "vm-isos" | "corpus";
 
 const ADMIN_SESSION_KEY = "thalamus_admin_v2";
 
@@ -186,7 +186,6 @@ export default function AdminPage() {
             { id: "modal", label: "Modal", icon: Server },
             { id: "aws", label: "AWS Bedrock", icon: Zap },
             { id: "gemini", label: "Gemini Keys", icon: Activity },
-            { id: "models", label: "Model Config", icon: Cpu },
             { id: "gravity-ads", label: "Ads (AdMesh)", icon: Globe },
             { id: "payments", label: "Payments", icon: Coins },
             { id: "vm-isos", label: "VM ISOs", icon: Database },
@@ -226,7 +225,6 @@ export default function AdminPage() {
               {tab === "nim" && <NimKeysTab adminToken={adminToken} />}
               {tab === "ollama" && <OllamaKeysTab adminToken={adminToken} />}
               {tab === "modal" && <ModalEndpointsTab adminToken={adminToken} />}
-              {tab === "models" && <ModelConfigTab adminToken={adminToken} />}
               {tab === "gravity-ads" && <AdMeshTab adminToken={adminToken} />}
               {tab === "payments" && <PaymentsTab adminToken={adminToken} />}
               {tab === "vm-isos" && <VmIsoCatalogTab adminToken={adminToken} />}
@@ -1678,155 +1676,6 @@ function ModalEndpointsTab({ adminToken }: { adminToken: string }) {
             ))}
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ── Model Config Tab ──────────────────────────────────────────────────────────
-const AGENT_NAMES = ["Researcher", "Analyser", "Planner", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
-const RUN_MODES_LIST = ["cheap", "balanced", "powerful"] as const;
-const BEDROCK_MODELS = [
-  { id: "us.anthropic.claude-haiku-4-5-20251001-v1:0", label: "Claude Haiku 4.5" },
-  { id: "us.anthropic.claude-sonnet-4-6-20251001-v1:0", label: "Claude Sonnet 4.6" },
-  { id: "us.anthropic.claude-opus-4-6-20250514-v1:0", label: "Claude Opus 4.6" },
-  { id: "us.anthropic.claude-opus-4-8-20251101-v1:0", label: "Claude Opus 4.8" },
-];
-const GEMINI_MODELS_LIST = [
-  { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-  { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite" },
-  { id: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" },
-];
-
-const NIM_MODELS_LIST = [
-  { id: "nvidia/nemotron-3-super-120b-a12b", label: "Nemotron 3 Super 120B" },
-  { id: "nvidia/nemotron-3-nano-30b-a3b", label: "Nemotron 3 Nano 30B" },
-  { id: "nvidia/llama-3.3-nemotron-super-49b-v1.5", label: "Llama 3.3 Nemotron Super 49B" },
-  { id: "nvidia/llama-3.1-nemotron-ultra-253b-v1", label: "Llama 3.1 Nemotron Ultra 253B" },
-  { id: "nvidia/nvidia-nemotron-nano-9b-v2", label: "Nemotron Nano 9B v2" },
-  { id: "deepseek-ai/deepseek-v4-pro", label: "DeepSeek V4 Pro" },
-  { id: "deepseek-ai/deepseek-v4-flash", label: "DeepSeek V4 Flash" },
-  { id: "qwen/qwen3-coder-480b-a35b-instruct", label: "Qwen 3 Coder 480B" },
-  { id: "qwen/qwen3-next-80b-a3b-instruct", label: "Qwen 3 Next 80B" },
-  { id: "meta/llama-3.3-70b-instruct", label: "Llama 3.3 70B" },
-  { id: "meta/llama-3.1-70b-instruct", label: "Llama 3.1 70B" },
-  { id: "moonshotai/kimi-k2-instruct", label: "Kimi K2" },
-];
-
-const OLLAMA_MODELS_LIST = [
-  { id: "gpt-oss:120b", label: "GPT-OSS 120B" },
-  { id: "gpt-oss:20b", label: "GPT-OSS 20B" },
-  { id: "gemma4:31b", label: "Gemma 4 31B" },
-  { id: "minimax-m3", label: "MiniMax M3" },
-  { id: "minimax-m2.5", label: "MiniMax M2.5" },
-  { id: "nemotron-3-nano:30b", label: "Nemotron 3 Nano 30B" },
-];
-
-function ModelConfigTab({ adminToken }: { adminToken: string }) {
-  const existingConfigs = useQuery(api.admin.listAgentModelConfigs, { adminToken });
-  const saveConfig = useMutation(api.admin.saveAgentModelConfig);
-  const [saving, setSaving] = useState<string | null>(null);
-  const [configs, setConfigs] = useState<Record<string, { modelId: string; provider: string; customEndpoint?: string }>>({});
-
-  useEffect(() => {
-    if (existingConfigs) {
-      const map: typeof configs = {};
-      existingConfigs.forEach((c: Doc<"agentModelConfig">) => {
-        map[`${c.agentName}::${c.runMode}`] = { modelId: c.modelId, provider: c.provider, customEndpoint: c.customEndpoint };
-      });
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- seeds the editable config form from the DB once configs load; the form is also user-editable so it cannot be derived during render
-      setConfigs(map);
-    }
-  }, [existingConfigs]);
-
-  const handleSave = async (agentName: string, runMode: string) => {
-    const key = `${agentName}::${runMode}`;
-    const cfg = configs[key];
-    if (!cfg) return;
-    setSaving(key);
-    try {
-      await saveConfig({ adminToken, agentName, runMode, modelId: cfg.modelId, provider: cfg.provider, customEndpoint: cfg.customEndpoint });
-      toast.success(`Saved ${agentName} (${runMode})`);
-    } catch { toast.error("Save failed"); }
-    finally { setSaving(null); }
-  };
-
-  const getConfig = (agentName: string, runMode: string) => configs[`${agentName}::${runMode}`] ?? { modelId: "", provider: "bedrock" };
-  const setConfig = (agentName: string, runMode: string, field: string, value: string) => {
-    const key = `${agentName}::${runMode}`;
-    setConfigs(prev => ({ ...prev, [key]: { ...getConfig(agentName, runMode), [field]: value } }));
-  };
-
-  return (
-    <div className="space-y-6 max-w-4xl">
-      <div>
-        <h2 className="text-lg font-bold text-foreground">Model Configuration</h2>
-        <p className="text-sm text-muted-foreground mt-1">Override the default model for each agent and run mode.</p>
-      </div>
-      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-xs text-amber-400">
-        <strong>Note:</strong> Changes take effect on the next pipeline run. Select "Custom Endpoint" for self-hosted or fine-tuned models.
-      </div>
-      <div className="space-y-3">
-        {AGENT_NAMES.map(agentName => (
-          <div key={agentName} className="bg-card border border-border rounded-xl overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-border bg-muted/30">
-              <span className="text-sm font-bold text-foreground">{agentName}</span>
-            </div>
-            <div className="grid grid-cols-3 divide-x divide-border">
-              {RUN_MODES_LIST.map(runMode => {
-                const key = `${agentName}::${runMode}`;
-                const cfg = getConfig(agentName, runMode);
-                return (
-                  <div key={runMode} className="p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className={`text-[10px] font-bold uppercase ${runMode === "cheap" ? "text-green-500" : runMode === "balanced" ? "text-blue-400" : "text-purple-400"}`}>{runMode}</span>
-                      <button onClick={() => handleSave(agentName, runMode)} disabled={saving === key || !cfg.modelId}
-                        className="text-[10px] px-2 py-0.5 rounded bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-40 flex items-center gap-1">
-                        {saving === key ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Check className="h-2.5 w-2.5" />}Save
-                      </button>
-                    </div>
-<select value={cfg.provider} onChange={e => setConfig(agentName, runMode, "provider", e.target.value)}
-                       className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none">
-                       <option value="nim">NVIDIA NIM</option><option value="ollama">Ollama Cloud</option><option value="bedrock">Bedrock (Claude)</option><option value="gemini">Gemini</option><option value="custom">Custom Endpoint</option>
-                     </select>
-                     {cfg.provider === "nim" && (
-                       <select value={cfg.modelId} onChange={e => setConfig(agentName, runMode, "modelId", e.target.value)}
-                         className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none">
-                         <option value="">— default —</option>
-                         {NIM_MODELS_LIST.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                       </select>
-                     )}
-                     {cfg.provider === "ollama" && (
-                       <select value={cfg.modelId} onChange={e => setConfig(agentName, runMode, "modelId", e.target.value)}
-                         className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none">
-                         <option value="">— default —</option>
-                         {OLLAMA_MODELS_LIST.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                       </select>
-                     )}
-                     {cfg.provider === "bedrock" && (
-                      <select value={cfg.modelId} onChange={e => setConfig(agentName, runMode, "modelId", e.target.value)}
-                        className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none">
-                        <option value="">— default —</option>
-                        {BEDROCK_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                      </select>
-                    )}
-                    {cfg.provider === "gemini" && (
-                      <select value={cfg.modelId} onChange={e => setConfig(agentName, runMode, "modelId", e.target.value)}
-                        className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none">
-                        <option value="">— default —</option>
-                        {GEMINI_MODELS_LIST.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                      </select>
-                    )}
-                    {cfg.provider === "custom" && (
-                      <input value={cfg.customEndpoint ?? ""} onChange={e => setConfig(agentName, runMode, "customEndpoint", e.target.value)}
-                        placeholder="https://your-model/v1" className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-[10px] font-mono text-foreground focus:outline-none" />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );

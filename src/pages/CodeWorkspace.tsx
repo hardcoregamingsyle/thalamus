@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useQuery, useAction, useMutation } from "convex/react";
+import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Doc } from "@/convex/_generated/dataModel";
 import { useNavigate, useParams } from "react-router";
@@ -272,7 +272,6 @@ export default function CodeWorkspace() {
   const [isSending, setIsSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const setRunMode = useMutation(api.codeBranches.setRunMode);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -471,34 +470,6 @@ export default function CodeWorkspace() {
             {/* Input Area */}
             <div className="border-t bg-background p-4">
               <div className="max-w-4xl mx-auto">
-                {/* Run Mode selector */}
-                <div className="flex gap-2 mb-3">
-                  {(["cheap", "balanced", "powerful"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => branchId && setRunMode({ token, branchId, runMode: mode })}
-                      className={cn(
-                        "px-3 py-1 rounded-full text-xs font-medium border transition-colors",
-                        (branch?.runMode ?? "balanced") === mode
-                          ? mode === "cheap"
-                            ? "bg-emerald-500/20 border-emerald-500 text-emerald-400"
-                            : mode === "balanced"
-                            ? "bg-blue-500/20 border-blue-500 text-blue-400"
-                            : "bg-purple-500/20 border-purple-500 text-purple-400"
-                          : "border-muted text-muted-foreground hover:border-foreground/50"
-                      )}
-                    >
-                      {mode === "cheap" ? "⚡ Cheap" : mode === "balanced" ? "⚖️ Balanced" : "🔥 Powerful"}
-                    </button>
-                  ))}
-                  <span className="ml-auto text-xs text-muted-foreground self-center">
-                    {(branch?.runMode ?? "balanced") === "cheap"
-                      ? "Lowest cost — fastest turnaround"
-                      : (branch?.runMode ?? "balanced") === "balanced"
-                      ? "Best value — quality per credit"
-                      : "Maximum intelligence — deepest reasoning"}
-                  </span>
-                </div>
                 <div className="flex gap-2">
                   <Textarea
                     placeholder={

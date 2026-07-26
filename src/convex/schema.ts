@@ -22,7 +22,7 @@ export type Role = Infer<typeof roleValidator>;
 //   codeCommands/codeApiKeys/codeApiKeyRequests (+githubConfigs) — driven by
 //   codePipeline.ts, served at /portal/code
 // - Platform economy & admin: creditBatches, promoCodes, modelPricing,
-//   platformBudget, awsCredentials, geminiKeys, agentModelConfig, userApiKeys
+//   platformBudget, awsCredentials, geminiKeys, userApiKeys
 // - Study mode / RAG: studyResources, adminStudyMaterials, ragChunks,
 //   graphNodes, graphEdges, graphHealthChecks
 const schema = defineSchema(
@@ -149,7 +149,6 @@ const schema = defineSchema(
       vmRam: v.optional(v.number()),
       vmCores: v.optional(v.number()),
       vmOs: v.optional(v.string()),
-      runMode: v.optional(v.union(v.literal("cheap"), v.literal("balanced"), v.literal("powerful"))),
       // Dynamic pipeline — Dispatcher chooses which agents to run for this task.
       // Stored as a JSON array of agent names, e.g. '["Coder","Tester","Critic"]'.
       // Null/missing means "full pipeline" (first-time backwards compat).
@@ -551,23 +550,6 @@ const schema = defineSchema(
       .index("by_key_hash", ["keyHash"]),
 
     // Agent model config — per-agent model overrides (admin-managed)
-    agentModelConfig: defineTable({
-      agentName: v.string(),     // e.g. "Coder", "Researcher"
-      runMode: v.string(),       // "cheap" | "balanced" | "powerful" | "default"
-      modelId: v.string(),       // Bedrock model ID or "gemini-flash" etc.
-      provider: v.string(),      // "bedrock" | "gemini" | "custom"
-      customEndpoint: v.optional(v.string()),  // For future self-trained models
-      customApiKey: v.optional(v.string()),     // Encrypted key for custom endpoint
-      updatedAt: v.number(),
-      updatedBy: v.optional(v.string()),
-    })
-      .index("by_agent", ["agentName"])
-      .index("by_agent_and_mode", ["agentName", "runMode"]),
-
-    // Payment ledger (Buy Me a Coffee). One row per sale — the sale_id is the
-    // replay guard: a sale can only ever credit AgentBucks once, no matter how
-    // many webhook deliveries arrive. "unclaimed" rows exist when the buyer's
-    // email didn't match an account.
     payments: defineTable({
       provider: v.string(),            // "buymeacoffee"
       saleId: v.string(),              // provider sale/support id — unique per purchase

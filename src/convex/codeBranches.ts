@@ -1,7 +1,6 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { requireBranchOwner } from "./codeAuth";
 
 function generateBranchId(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -433,21 +432,6 @@ export const updatePlannerTasks = internalMutation({
   },
 });
 
-// Set run mode (Cheap / Balanced / Powerful)
-export const setRunMode = mutation({
-  args: {
-    token: v.string(),
-    branchId: v.string(),
-    runMode: v.union(v.literal("cheap"), v.literal("balanced"), v.literal("powerful")),
-  },
-  handler: async (ctx, args) => {
-    // runMode selects the model tier for every future run, so flipping another
-    // user's branch to "powerful" would burn their credits — owner-only.
-    const { branch } = await requireBranchOwner(ctx, args.token, args.branchId);
-    await ctx.db.patch(branch._id, { runMode: args.runMode });
-  },
-});
-
 // Delete file (for cleanup)
 export const deleteFile = internalMutation({
   args: {
@@ -487,7 +471,6 @@ export const setDispatchedAgents = internalMutation({
     branchId: v.string(),
     agentsJson: v.string(),
     // The Dispatcher's per-agent model tier map ({agent: tier}), if it assigned one.
-    agentModelsJson: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const branch = await ctx.db
@@ -497,7 +480,6 @@ export const setDispatchedAgents = internalMutation({
     if (!branch) return;
     await ctx.db.patch(branch._id, {
       dispatchedAgentsJson: args.agentsJson,
-      ...(args.agentModelsJson !== undefined ? { agentModelsJson: args.agentModelsJson } : {}),
     });
   },
 });

@@ -28,14 +28,8 @@ import {
   parseAgentOutput,
   parsePlannerOutput,
   AGENT_SYSTEM_PROMPTS,
-  getAgentTier,
   calcAgentBucksForTier,
-  AGENTROUTER_PRIMARY,
-  OPENAI_PRIMARY,
-  providerChain,
-  callOpenAICompatibleStreaming,
   type ModelTier,
-  type RunMode,
 } from "./agentCore";
 import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./mcpClient";
 import { parseMcpCalls, stripMcpBlocks } from "./mcpParse";
@@ -66,12 +60,10 @@ function buildTaskPipeline(dispatched: string[]): string[] {
   return ALL_TASK_AGENTS.filter(a => dispatched.includes(a));
 }
 
-const VALID_MODEL_TIERS = new Set(["gemini", "haiku", "sonnet", "opus46", "opus48"]);
-
 /** Parse and validate the Dispatcher's JSON output. Returns null on failure. */
 function parseDispatcherOutput(
   text: string,
-): { tier: string; agents: string[]; models: Record<string, string> } | null {
+): { tier: string; agents: string[] } | null {
   try {
     // Strip markdown fences if the model wrapped them anyway
     const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
@@ -82,18 +74,7 @@ function parseDispatcherOutput(
     // Always guarantee Coder and Critic
     if (!agents.includes("Coder"))  agents.push("Coder");
     if (!agents.includes("Critic")) agents.push("Critic");
-    // Per-agent model assignment: keep only known agents mapped to a valid tier.
-    // Anything the Dispatcher omits or mis-names falls back to getAgentTier later.
-    const models: Record<string, string> = {};
-    const rawModels = parsed.models;
-    if (rawModels && typeof rawModels === "object" && !Array.isArray(rawModels)) {
-      for (const [agent, tier] of Object.entries(rawModels)) {
-        if (VALID.has(agent) && typeof tier === "string" && VALID_MODEL_TIERS.has(tier)) {
-          models[agent] = tier;
-        }
-      }
-    }
-    return { tier: parsed.tier ?? "medium", agents, models };
+    return { tier: parsed.tier ?? "medium", agents };
   } catch {
     return null;
   }
@@ -196,143 +177,19 @@ async function callModelWithStreaming(
   ctx: { runMutation: ActionCtx["runMutation"]; runQuery: ActionCtx["runQuery"] },
   prompt: string,
   systemPrompt: string,
-  tier: ModelTier,
   branchId: string,
   agentName: string,
   geminiKeys: string[],
   dbCreds: { accessKeyId: string; secretAccessKey: string; region: string } | null,
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: ModelTier }> {
-  // Only Bedrock Claude tiers support token-level streaming from the pipeline
-  const BEDROCK_MODELS: Record<string, string> = {
-    haiku:  "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-    sonnet: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-    opus46: "us.anthropic.claude-opus-4-1-20250805-v1:0",
-    opus48: "us.anthropic.claude-opus-4-1-20250805-v1:0",
-  };
-  if (OPENAI_PRIMARY) {
-    // Real token streaming — the agent's output fills in live (first token ~0.5s)
-    // instead of a blank wait. Stream across the provider chain: if the primary is
-    // rate-limited, roll to the next provider's stream. Best-effort — if every
-    // stream fails, drop to the non-streaming path (retry + self-heal + failover).
-    for (const providerId of providerChain()) {
-      try {
-        const streamed = await callOpenAICompatibleStreaming(
-          prompt, systemPrompt, tier, providerId,
-          async (full) => {
-            await ctx.runMutation(internal.codeBranches.setStreamingContent, { branchId, content: full, agentName });
-          },
-        );
-        if (streamed.text && streamed.text.trim()) return { ...streamed, tier };
-      } catch { /* try the next provider's stream */ }
-    }
-    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds, ctx);
-    await ctx.runMutation(internal.codeBranches.setStreamingContent, { branchId, content: result.text, agentName });
-    return result;
-  }
-
-  if (AGENTROUTER_PRIMARY || tier === "gemini" || !BEDROCK_MODELS[tier]) {
-    // A configured primary (AgentRouter) or Gemini: no token streaming available —
-    // run the call and push the whole result once it lands.
-    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds, ctx);
-    await ctx.runMutation(internal.codeBranches.setStreamingContent, {
-      branchId, content: result.text, agentName,
-    });
-    return result;
-  }
-
-  // Bedrock streaming
-  const envKey = (process.env.AWS_BEDROCK_API_KEY ?? "").trim();
-  const isCustomKey = envKey.startsWith("ABSK");
-  const creds = isCustomKey
-    ? { accessKeyId: envKey, secretAccessKey: "", region: "us-east-1" }
-    : dbCreds;
-
-  if (!creds || (!creds.accessKeyId && !creds.secretAccessKey)) {
-    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds, ctx);
-    return result;
-  }
-
-  const modelId = BEDROCK_MODELS[tier];
-  const region = creds.region || "us-east-1";
-  const rawUrl = `https://bedrock-runtime.${region}.amazonaws.com/model/${modelId}/invoke`;
-  const requestBody = JSON.stringify({
-    anthropic_version: "bedrock-2023-05-31",
-    system: systemPrompt.length > 8000 ? systemPrompt.slice(0, 8000) : systemPrompt,
-    messages: [{ role: "user", content: prompt.length > 48000 ? prompt.slice(0, 48000) : prompt }],
-    // 16384, mirroring MAX_OUTPUT_TOKENS in agentCore. This is the LIVE cap on
-    // the preferred ABSK path (the SigV4 path delegates to callModel, which
-    // reads MAX_OUTPUT_TOKENS). Leaving it at 8192 here silently kept the Coder
-    // truncating large files on the exact path most deployments use.
-    max_tokens: 16384,
-    temperature: 0.7,
+  // The agent name IS the routing key: callModel maps it to a task type and picks
+  // the model from that. Passing anything else (as the old tier strings did) misses
+  // every branch of that map and silently lands on the generic chat model.
+  const result = await callModel(prompt, systemPrompt, agentName, geminiKeys, dbCreds, ctx);
+  await ctx.runMutation(internal.codeBranches.setStreamingContent, {
+    branchId, content: result.text, agentName,
   });
-
-  const buildHeaders = async (): Promise<Record<string, string>> => {
-    if (isCustomKey) {
-      return { "Content-Type": "application/json", "Authorization": `Bearer ${creds.accessKeyId}`, "x-api-key": creds.accessKeyId };
-    }
-    // SigV4 sign using callModel's signing logic — just delegate to the non-streaming invoke
-    return { "Content-Type": "application/json" };
-  };
-
-  try {
-    const headers = await buildHeaders();
-    if (!isCustomKey) {
-      // SigV4 required — fall back to non-streaming callModel which handles signing
-      // but simulate streaming by splitting the result into chunks for the UI
-      const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds, ctx);
-      // Drip-feed the result in 300-char chunks so the UI shows something incrementally
-      const chunkSize = 300;
-      let sent = 0;
-      while (sent < result.text.length) {
-        sent = Math.min(sent + chunkSize, result.text.length);
-        await ctx.runMutation(internal.codeBranches.setStreamingContent, {
-          branchId, content: result.text.slice(0, sent), agentName,
-        });
-        if (sent < result.text.length) {
-          await new Promise(r => setTimeout(r, 80));
-        }
-      }
-      return result;
-    }
-
-    const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 120_000);
-    let response: Response;
-    try {
-      response = await fetch(rawUrl, { method: "POST", headers, body: requestBody, signal: ctrl.signal });
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    if (!response.ok) {
-      throw new Error(`Bedrock ${response.status}`);
-    }
-
-    const data = await response.json() as {
-      content?: Array<{ type: string; text?: string }>;
-      usage?: { input_tokens?: number; output_tokens?: number };
-    };
-    const text = data.content?.find(c => c.type === "text")?.text ?? "";
-    const inputTokens = data.usage?.input_tokens ?? 0;
-    const outputTokens = data.usage?.output_tokens ?? 0;
-
-    // Drip-feed the result in 300-char chunks for UI
-    const chunkSize = 300;
-    let sent = 0;
-    while (sent < text.length) {
-      sent = Math.min(sent + chunkSize, text.length);
-      await ctx.runMutation(internal.codeBranches.setStreamingContent, {
-        branchId, content: text.slice(0, sent), agentName,
-      });
-      if (sent < text.length) await new Promise(r => setTimeout(r, 80));
-    }
-    return { text, inputTokens, outputTokens, tier };
-  } catch {
-    // Any streaming failure: fall back to non-streaming
-    const result = await callModel(prompt, systemPrompt, tier, geminiKeys, dbCreds, ctx);
-    return result;
-  }
+  return result;
 }
 
 // Main pipeline runner
@@ -558,7 +415,6 @@ export const runPipelineAction = internalAction({
 
     const executionPhase = branch.executionPhase ?? "dispatching";
     const currentTaskIndex = branch.currentTaskIndex ?? 0;
-    const runMode: RunMode = (branch.runMode as RunMode) ?? "balanced";
 
     // Parse the previously saved dispatched-agent list (set by Dispatcher phase).
     let dispatchedAgents: string[] = [];
@@ -568,15 +424,6 @@ export const runPipelineAction = internalAction({
       }
     } catch { /* ignored */ }
 
-    // The Dispatcher's per-agent model assignment ({agent: tier}). Each agent's
-    // model is resolved from this first, falling back to getAgentTier(runMode)
-    // for any agent the Dispatcher didn't assign.
-    let agentModels: Record<string, string> = {};
-    try {
-      if (branch.agentModelsJson) {
-        agentModels = JSON.parse(branch.agentModelsJson);
-      }
-    } catch { /* ignored */ }
 
     // Mark as running
     await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
@@ -625,9 +472,9 @@ export const runPipelineAction = internalAction({
           phase: "Dispatcher",
         });
 
-        const dispatchPrompt = `## Task to analyse\n${task}\n\n## Existing project files\n${files.length > 0 ? files.map(f => `- ${f.filepath}`).join("\n") : "None (greenfield project)"}\n\n## Budget preference: ${runMode}\ncheap → prefer gemini/haiku, sonnet only where reasoning is essential. balanced → sonnet by default, opus48 only for the hardest seat(s). powerful → opus48 for the heavy reasoning seats. Assign each agent a model within this budget.`;
+        const dispatchPrompt = `## Task to analyse\n${task}\n\n## Existing project files\n${files.length > 0 ? files.map(f => `- ${f.filepath}`).join("\n") : "None (greenfield project)"}`;
         const dispatchResult = await callModelWithStreaming(
-          ctx, dispatchPrompt, AGENT_SYSTEM_PROMPTS["Dispatcher"] ?? "", "haiku",
+          ctx, dispatchPrompt, AGENT_SYSTEM_PROMPTS["Dispatcher"] ?? "",
           branchId, "Dispatcher", geminiKeys, dbCreds,
         );
         await bill("dispatcher", dispatchResult);
@@ -636,24 +483,16 @@ export const runPipelineAction = internalAction({
         const dispatched = parseDispatcherOutput(dispatchResult.text);
         const agents = dispatched?.agents ?? ["Analyser", "Planner", "Coder", "Tester", "Critic"];
         const tier = dispatched?.tier ?? "medium";
-        const models = dispatched?.models ?? {};
 
-        // Persist so every subsequent pipeline invocation can read both the agent
-        // list and the Dispatcher's per-agent model choices.
+        // Persist so every subsequent pipeline invocation can read the agent list.
         await ctx.runMutation(internal.codeBranches.setDispatchedAgents, {
           branchId,
           agentsJson: JSON.stringify(agents),
-          agentModelsJson: JSON.stringify(models),
         });
         dispatchedAgents = agents;
-        agentModels = models;
 
-        // Post a visible message so the user can see the routing decision AND the
-        // model each agent got (falling back to the run-mode default where the
-        // Dispatcher didn't assign one).
-        const routeLine = agents
-          .map((a) => `${a} (${models[a] ?? getAgentTier(a, runMode)})`)
-          .join(" → ");
+        // Post a visible message so the user can see the routing decision.
+        const routeLine = agents.join(" → ");
         totalMessages++;
         await ctx.runMutation(internal.codeBranches.saveMessage, {
           branchId,
@@ -735,9 +574,7 @@ export const runPipelineAction = internalAction({
       if (currentPhase === "Planner") {
         const systemPrompt = AGENT_SYSTEM_PROMPTS["Planner"] ?? "";
         const prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
-        // Dispatcher-assigned model first; run-mode default if it didn't pick one.
-        const tier = (agentModels["Planner"] ?? getAgentTier("Planner", runMode)) as ModelTier;
-        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, tier, branchId, "Planner", geminiKeys, dbCreds);
+        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, "Planner", geminiKeys, dbCreds);
         agentOutput = result.text;
         await bill("planner", result);
         await ctx.runMutation(internal.codeBranches.clearStreamingContent, { branchId });
@@ -798,9 +635,7 @@ export const runPipelineAction = internalAction({
           }
         }
 
-        // Dispatcher-assigned model first; run-mode default if it didn't pick one.
-        const tier = (agentModels[currentPhase] ?? getAgentTier(currentPhase, runMode)) as ModelTier;
-        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, tier, branchId, currentPhase, geminiKeys, dbCreds);
+        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds);
         agentOutput = result.text;
         await bill(currentPhase.toLowerCase(), result);
 
@@ -820,7 +655,7 @@ export const runPipelineAction = internalAction({
             `## Continue`,
             `Emit ONLY the remaining content, picking up at the exact character where the tail stops — do NOT repeat anything above, do NOT re-open the <<CREATEFILE/EDITFILE tag. Finish the file and close it with <<END.CREATEFILE>>. If you still had more files or commands to emit after it, continue with those.`,
           ].join("\n\n");
-          const cont = await callModelWithStreaming(ctx, contPrompt, systemPrompt, tier, branchId, currentPhase, geminiKeys, dbCreds);
+          const cont = await callModelWithStreaming(ctx, contPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds);
           if (!cont.text.trim()) break;
           agentOutput += cont.text;
           await bill(`${currentPhase.toLowerCase()}-cont`, cont);
