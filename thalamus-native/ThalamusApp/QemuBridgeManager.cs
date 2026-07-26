@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -19,7 +20,11 @@ namespace ThalamusApp
     {
         private readonly string _installDir;
         private readonly string _dataDir;
-        private readonly Dictionary<string, VMInstance> _activeVMs = new();
+        // Concurrent, not a plain Dictionary: the boot path runs on a thread-pool
+        // thread and the per-VM exit monitor removes entries from another one, so
+        // a guest shutting itself down while the user boots a second VM would
+        // otherwise be a concurrent write into the same bucket array.
+        private readonly ConcurrentDictionary<string, VMInstance> _activeVMs = new();
         private const int MAX_VNC_PORTS = 100;
 
         public class VMInstance
@@ -50,22 +55,6 @@ namespace ThalamusApp
                 "Thalamus", "VMs");
             
             Directory.CreateDirectory(_dataDir);
-        }
-
-        /// <summary>
-        /// Check if QEMU is installed and accessible.
-        /// </summary>
-        public bool IsQemuInstalled()
-        {
-            try
-            {
-                var qemuPath = Path.Combine(_installDir, "qemu", "qemu-system-x86_64.exe");
-                return File.Exists(qemuPath);
-            }
-            catch
-            {
-                return false;
-            }
         }
 
         /// <summary>
@@ -171,10 +160,18 @@ namespace ThalamusApp
         /// The caller resolves the ISO path (catalog download, eval pick, or
         /// custom file) via <see cref="IsoLibrary"/> and passes it in.
         /// </summary>
-        public async Task<BootResult> BootVMAsync(string osId, string isoPath, int ram = 4096, int cores = 4)
+        public Task<BootResult> BootVMAsync(string osId, string isoPath, int ram = 4096, int cores = 4)
         {
-            // Launch QEMU off the UI thread; Process.Start itself is synchronous.
-            await Task.Yield();
+            // Task.Run, NOT Task.Yield: the caller is a UI click handler, and
+            // Yield reposts the continuation to the SAME dispatcher — everything
+            // below (qemu-img create + WaitForExit, a 100-socket port scan,
+            // Process.Start) would run on the UI thread and freeze the window
+            // for as long as the first-ever disk creation takes.
+            return Task.Run(() => BootVM(osId, isoPath, ram, cores));
+        }
+
+        private BootResult BootVM(string osId, string isoPath, int ram, int cores)
+        {
             try
             {
                 // Check if VM is already running — at most one VM per OS. A repeat
@@ -211,12 +208,13 @@ namespace ThalamusApp
 
                 // Start QEMU process
                 var qemuBinary = GetQemuBinary();
+                // No stdout/stderr redirection: nothing ever reads those pipes, and
+                // a long-running QEMU that fills the 4 KB pipe buffer would block
+                // on its own write and hang the guest.
                 var psi = new ProcessStartInfo(qemuBinary, args)
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
                     WorkingDirectory = _installDir
                 };
 
@@ -247,11 +245,16 @@ namespace ThalamusApp
                 // Monitor process for exit on a background task: the user can shut
                 // the guest down (or QEMU can crash) at any time, and blocking here
                 // would stall the boot response. Self-removal keeps ListActiveVMs
-                // accurate and frees the VNC port for reuse.
+                // accurate and frees the VNC port for reuse. This task is also the
+                // sole owner of the Process handle: it disposes once WaitForExit
+                // returns, whether the guest powered itself off or Stop killed it.
+                // Keeping disposal in one place is what makes a Stop that lands at
+                // the same moment as a guest shutdown safe.
                 _ = Task.Run(() =>
                 {
-                    process.WaitForExit();
-                    _activeVMs.Remove(vmId);
+                    try { process.WaitForExit(); } catch { /* already gone */ }
+                    _activeVMs.TryRemove(vmId, out _);
+                    process.Dispose();
                 });
 
                 return new BootResult
@@ -274,24 +277,30 @@ namespace ThalamusApp
         /// <summary>
         /// Stop a running virtual machine.
         /// </summary>
-        public async Task<bool> StopVMAsync(string vmId)
+        public Task<bool> StopVMAsync(string vmId)
         {
-            await Task.Yield();
-            try
+            // Kill() and the wait behind it are blocking — keep them off the UI
+            // thread for the same reason BootVMAsync does.
+            return Task.Run(() =>
             {
-                if (_activeVMs.TryGetValue(vmId, out var instance))
+                try
                 {
-                    instance.Process?.Kill();
-                    _activeVMs.Remove(vmId);
-                    return true;
-                }
+                    // Remove-then-kill, and deliberately no Dispose here: the exit
+                    // monitor started in BootVM owns the handle and disposes it
+                    // once this Kill makes WaitForExit return.
+                    if (_activeVMs.TryRemove(vmId, out var instance))
+                    {
+                        instance.Process?.Kill();
+                        return true;
+                    }
 
-                return false;
-            }
-            catch
-            {
-                return false;
-            }
+                    return false;
+                }
+                catch
+                {
+                    return false;
+                }
+            });
         }
 
         /// <summary>

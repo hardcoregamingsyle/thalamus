@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Text;
@@ -38,16 +39,24 @@ namespace ThalamusApp.Services
             foreach (var (role, text) in history)
                 messages.Add(new { role, content = text });
 
-            var bodyObj = new
+            // Built as a dictionary, not an anonymous type: a C# null serializes
+            // as an explicit JSON null, and an explicit null is a different type
+            // from an absent key to Convex argument validation. /stream-chat is
+            // an unvalidated httpAction today, but the same shape is what every
+            // other desktop call has to use, so keep it honest here too.
+            var bodyObj = new Dictionary<string, object>
             {
-                content,
-                mode,
-                history    = messages,
-                systemPrompt,
-                token,
-                conversationId,
-                preferClaude = true,
+                ["content"]      = content,
+                ["mode"]         = mode,
+                ["history"]      = messages,
+                ["systemPrompt"] = systemPrompt,
+                ["preferClaude"] = true,
+                // Same date/time/timezone context the website sends (Portal.tsx),
+                // so desktop replies know what "today" means.
+                ["userContext"]  = new { datetime = LocalDateTimeString(), timezone = LocalTimeZoneId() },
             };
+            if (!string.IsNullOrEmpty(token)) bodyObj["token"] = token!;
+            if (!string.IsNullOrEmpty(conversationId)) bodyObj["conversationId"] = conversationId!;
 
             var bodyJson = JsonSerializer.Serialize(bodyObj);
             using var req = new HttpRequestMessage(HttpMethod.Post, _convex.SiteUrl + "/stream-chat")
@@ -57,18 +66,25 @@ namespace ThalamusApp.Services
 
             // ResponseHeadersRead is essential: the default would buffer the whole
             // SSE body before returning, defeating the point of streaming.
-            using var resp = await _convex.HttpClient.SendAsync(
-                req, HttpCompletionOption.ResponseHeadersRead, ct);
+            // ConfigureAwait(false) throughout: this is called from UI event
+            // handlers, so without it every await resumes on the WPF dispatcher
+            // and the read loop below blocks the window between chunks.
+            using var resp = await _convex.StreamingHttpClient.SendAsync(
+                req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             resp.EnsureSuccessStatusCode();
 
-            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
             using var reader = new StreamReader(stream);
 
             string fullText = "";
 
-            while (!reader.EndOfStream && !ct.IsCancellationRequested)
+            // Never StreamReader.EndOfStream here — it fills the buffer with a
+            // SYNCHRONOUS read when empty, i.e. it blocks on the network for the
+            // whole gap between chunks. ReadLineAsync returning null is the
+            // end-of-stream signal.
+            while (!ct.IsCancellationRequested
+                   && await reader.ReadLineAsync(ct).ConfigureAwait(false) is { } line)
             {
-                var line = await reader.ReadLineAsync(ct);
                 if (string.IsNullOrEmpty(line) || !line.StartsWith("data: ")) continue;
 
                 var payload = line[6..];
@@ -98,6 +114,27 @@ namespace ThalamusApp.Services
             }
 
             return fullText;
+        }
+
+        // Mirrors the website's toLocaleString("en-US", { weekday, year, month,
+        // day, hour, minute, timeZoneName }) — the server pastes this straight
+        // into the system prompt, so it just has to read naturally.
+        private static string LocalDateTimeString()
+        {
+            var now = DateTimeOffset.Now;
+            var off = now.Offset;
+            var sign = off < TimeSpan.Zero ? "-" : "+";
+            return now.ToString("dddd, MMMM d, yyyy 'at' hh:mm tt", CultureInfo.InvariantCulture)
+                 + $" GMT{sign}{Math.Abs(off.Hours):00}:{Math.Abs(off.Minutes):00}";
+        }
+
+        // The web sends an IANA zone ("Asia/Kolkata"); Windows stores its own
+        // ids, so convert when we can and fall back to the Windows name.
+        private static string LocalTimeZoneId()
+        {
+            var local = TimeZoneInfo.Local;
+            if (local.HasIanaId) return local.Id;
+            return TimeZoneInfo.TryConvertWindowsIdToIanaId(local.Id, out var iana) ? iana : local.Id;
         }
     }
 }

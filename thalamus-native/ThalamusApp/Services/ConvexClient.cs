@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace ThalamusApp.Services
@@ -18,11 +19,20 @@ namespace ThalamusApp.Services
         private const string SITE_URL   = "https://befitting-wildebeest-866.convex.site";
 
         private readonly HttpClient _http;
+        private readonly HttpClient _streamHttp;
 
         public ConvexClient()
         {
             _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
             _http.DefaultRequestHeaders.UserAgent.ParseAdd("ThalamusDesktop/1.0");
+
+            // SSE needs its own client. HttpClient.Timeout is a deadline on the
+            // WHOLE exchange, including reads from a ResponseHeadersRead body —
+            // so the 30s ceiling above would abort any answer that streams for
+            // longer, mid-reply. The per-request CancellationTokenSource the
+            // mode views create is the real deadline for streaming.
+            _streamHttp = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+            _streamHttp.DefaultRequestHeaders.UserAgent.ParseAdd("ThalamusDesktop/1.0");
         }
 
         // ── Core callers ──────────────────────────────────────────────────────
@@ -65,7 +75,10 @@ namespace ThalamusApp.Services
         // ── Streaming chat endpoint (SSE on convex.site) ──────────────────────
 
         public string SiteUrl => SITE_URL;
-        public HttpClient HttpClient => _http;
+
+        // Infinite-timeout client, for SSE only. Function calls keep the 30s
+        // client so a dead network fails fast instead of hanging the app.
+        public HttpClient StreamingHttpClient => _streamHttp;
     }
 
     public class ConvexException : Exception
