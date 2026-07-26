@@ -126,8 +126,10 @@ namespace ThalamusApp.Modes
                 _activeBranchId = branchId;
 
                 // 2. Kick off the real pipeline
+                // "local" tells the backend not to hand this branch's commands to a
+                // cloud sandbox — we run them here, on this machine, and report back.
                 await _convex.CallActionAsync("codePipeline:startPipeline",
-                    new { token = _token, branchId, userPrompt = prompt }, _token);
+                    new { token = _token, branchId, userPrompt = prompt, executor = "local" }, _token);
 
                 // 3. Poll the branch until the pipeline completes
                 await PollPipelineAsync(branchId, _cts.Token);
@@ -251,6 +253,16 @@ namespace ThalamusApp.Modes
                     return;
                 }
 
+                // Commands the agents queued run right here, in this branch's own
+                // workspace, and reporting a result resumes the pipeline server-side.
+                // Doing it before the stall check matters: a build that installs
+                // dependencies is legitimately quiet for minutes, and counting that
+                // as death would kill every real project.
+                if (status == "paused" && !_stopRequested)
+                {
+                    if (await RunPendingCommandsAsync(branchId, ct)) { stalledPolls = 0; }
+                }
+
                 // Parked for good — say so now instead of polling for 20 minutes
                 // and then calling it a timeout. After an explicit Stop we only
                 // need long enough for the pipeline to notice the flag and write
@@ -280,6 +292,63 @@ namespace ThalamusApp.Modes
 
                 await Task.Delay(PollMs, ct);
             }
+        }
+
+        /// <summary>
+        /// Runs everything the branch is waiting on, locally. Returns true if it
+        /// ran at least one command, which the caller treats as activity.
+        /// </summary>
+        private async Task<bool> RunPendingCommandsAsync(string branchId, CancellationToken ct)
+        {
+            var pending = await _convex.CallQueryAsync("codeCommands:listPendingForBranch",
+                new { token = _token!, branchId }, _token) as JsonArray;
+            if (pending == null || pending.Count == 0) return false;
+
+            // Seed the workspace from the branch's files so `npm test` and friends
+            // run against the real code instead of an empty directory.
+            var files = await _convex.CallQueryAsync("codeBranches:watchFiles",
+                new { branchId }, _token) as JsonArray;
+            if (files != null)
+            {
+                var pairs = new List<(string, string)>();
+                foreach (var f in files)
+                {
+                    var fp = f?["filepath"]?.GetValue<string>();
+                    var content = f?["content"]?.GetValue<string>();
+                    if (fp != null && content != null) pairs.Add((fp, content));
+                }
+                await Task.Run(() => LocalCommandRunner.SyncFiles(branchId, pairs), ct);
+            }
+
+            foreach (var item in pending)
+            {
+                ct.ThrowIfCancellationRequested();
+                var commandId = item?["id"]?.GetValue<string>();
+                var command = item?["command"]?.GetValue<string>();
+                if (commandId == null || command == null) continue;
+
+                AppendLocalCommand(command);
+                var (output, exitCode) = await LocalCommandRunner.RunAsync(branchId, command, ct);
+                AppendLocalCommandResult(output, exitCode);
+
+                // completeCommand resumes the pipeline once nothing is pending, so
+                // a throw here would strand the branch — report the failure instead.
+                try
+                {
+                    await _convex.CallMutationAsync("codeCommands:completeCommand",
+                        new { token = _token!, commandId, output, exitCode }, _token);
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        await _convex.CallMutationAsync("codeCommands:failCommand",
+                            new { token = _token!, commandId, output = $"Local runner could not report a result: {ex.Message}" }, _token);
+                    }
+                    catch { /* the stall check will surface it */ }
+                }
+            }
+            return true;
         }
 
         // Stop the running pipeline. codePipeline:stopPipeline only sets a flag —
@@ -408,6 +477,55 @@ namespace ThalamusApp.Modes
                 }
             };
             BuildPanel.Children.Add(bubble);
+        }
+
+        // What we are about to run on this machine. Shown before it runs, not
+        // after, so the user is never surprised by something already executing.
+        private void AppendLocalCommand(string command)
+        {
+            BuildPanel.Children.Add(new Border
+            {
+                Background = (Brush)FindResource("BgCardBrush"),
+                BorderBrush = (Brush)FindResource("BorderSubtleBrush"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 8, 12, 8),
+                Margin = new Thickness(0, 0, 0, 6),
+                Child = new TextBlock
+                {
+                    Text = "> " + command,
+                    FontFamily = new FontFamily("Consolas, Cascadia Mono, monospace"),
+                    FontSize = 11.5,
+                    Foreground = (Brush)FindResource("TextPrimaryBrush"),
+                    TextWrapping = TextWrapping.Wrap
+                }
+            });
+            BuildScroll.ScrollToBottom();
+        }
+
+        private void AppendLocalCommandResult(string output, int exitCode)
+        {
+            var shown = output.Length > 4000 ? output[..4000] + Environment.NewLine + "… (truncated for display)" : output;
+            if (string.IsNullOrWhiteSpace(shown)) shown = exitCode == 0 ? "(no output)" : $"(no output, exit {exitCode})";
+
+            BuildPanel.Children.Add(new Border
+            {
+                Background = (Brush)FindResource("ConsoleBgBrush"),
+                BorderBrush = (Brush)FindResource(exitCode == 0 ? "BorderSubtleBrush" : "TintRedBorderBrush"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 8, 12, 8),
+                Margin = new Thickness(0, 0, 0, 12),
+                Child = new TextBlock
+                {
+                    Text = shown,
+                    FontFamily = new FontFamily("Consolas, Cascadia Mono, monospace"),
+                    FontSize = 11,
+                    Foreground = (Brush)FindResource("ConsoleTextBrush"),
+                    TextWrapping = TextWrapping.Wrap
+                }
+            });
+            BuildScroll.ScrollToBottom();
         }
 
         // A saved agent message — labeled card so the user can follow the hand-offs.
