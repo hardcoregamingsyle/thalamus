@@ -136,6 +136,58 @@ export const recordCommandResult = internalMutation({
   },
 });
 
+export const setCallbackNonce = internalMutation({
+  args: { commandId: v.id("codeCommands"), nonce: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.commandId, { callbackNonce: args.nonce });
+  },
+});
+
+// The GitHub Actions callback lands here. The run is on a public repo and the
+// endpoint is unauthenticated by necessity, so the nonce is the whole security
+// story: it is single-use, generated per dispatch, and cleared on spend — a
+// replay or a guess finds nothing to match.
+export const completeFromRunner = internalMutation({
+  args: {
+    commandId: v.id("codeCommands"),
+    nonce: v.string(),
+    output: v.string(),
+    exitCode: v.number(),
+  },
+  handler: async (ctx, args): Promise<boolean> => {
+    const command = await ctx.db.get(args.commandId);
+    if (!command || !command.callbackNonce || command.callbackNonce !== args.nonce) return false;
+
+    await ctx.db.patch(args.commandId, {
+      status: args.exitCode === 0 ? "completed" : "failed",
+      output: args.output.slice(0, 20000),
+      exitCode: args.exitCode,
+      completedAt: Date.now(),
+      callbackNonce: undefined,
+    });
+
+    const stillPending = await ctx.db
+      .query("codeCommands")
+      .withIndex("by_branch_and_status", (q) =>
+        q.eq("branchId", command.branchId).eq("status", "pending")
+      )
+      .first();
+    const stillRunning = await ctx.db
+      .query("codeCommands")
+      .withIndex("by_branch_and_status", (q) =>
+        q.eq("branchId", command.branchId).eq("status", "running")
+      )
+      .first();
+
+    if (!stillPending && !stillRunning) {
+      await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, {
+        branchId: command.branchId,
+      });
+    }
+    return true;
+  },
+});
+
 // Watch commands (reactive)
 export const watchCommands = query({
   args: { branchId: v.string() },

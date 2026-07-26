@@ -208,6 +208,9 @@ const schema = defineSchema(
       exitCode: v.optional(v.number()),
       createdAt: v.number(),
       completedAt: v.optional(v.number()),
+      // One-time token handed to a GitHub Actions run so its callback can prove
+      // the result is really ours. Cleared the moment it is spent.
+      callbackNonce: v.optional(v.string()),
     })
       .index("by_branch", ["branchId"])
       .index("by_branch_and_status", ["branchId", "status"]),

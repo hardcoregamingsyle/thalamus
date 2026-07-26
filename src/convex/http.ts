@@ -942,6 +942,38 @@ http.route({
 // server's source IP) for geo/targeting/bot-filtering in server-side fetching,
 // so ads fill for the actual user, not our datacenter. The Gravity key never
 // leaves the server.
+// Where a GitHub Actions run reports the result of a build command. It has to
+// be unauthenticated — the job runs on a public repo with no secret of ours —
+// so the per-command nonce carries the whole weight: single-use, issued at
+// dispatch, cleared on spend. An unmatched nonce is a silent 404, because
+// telling a caller which command ids exist is free reconnaissance.
+http.route({
+  path: "/code/command-result",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    let body: { commandId?: string; nonce?: string; output?: string; exitCode?: number };
+    try {
+      body = await request.json();
+    } catch {
+      return new Response("Bad request", { status: 400 });
+    }
+    if (!body.commandId || !body.nonce) {
+      return new Response("Bad request", { status: 400 });
+    }
+
+    const accepted = await ctx.runMutation(internal.codeCommands.completeFromRunner, {
+      commandId: body.commandId as Id<"codeCommands">,
+      nonce: body.nonce,
+      output: typeof body.output === "string" ? body.output : "",
+      exitCode: typeof body.exitCode === "number" ? body.exitCode : 1,
+    });
+
+    return accepted
+      ? new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } })
+      : new Response("Not found", { status: 404 });
+  }),
+});
+
 http.route({
   path: "/ad",
   method: "OPTIONS",

@@ -707,7 +707,7 @@ export const runPipelineAction = internalAction({
         // codeCommands.completeCommand. Scheduling Daytona here as well would
         // race it and run every command twice.
         if (branch.executor !== "local") {
-          await ctx.scheduler.runAfter(0, internal.sandbox.executeBranchCommands, { branchId });
+          await ctx.scheduler.runAfter(0, internal.githubActionsRunner.executeBranchCommandsViaActions, { branchId });
         }
         return;
       }

@@ -35,6 +35,7 @@ import type * as desktopAuthActions from "../desktopAuthActions.js";
 import type * as desktopIsoCatalog from "../desktopIsoCatalog.js";
 import type * as fileSync from "../fileSync.js";
 import type * as github from "../github.js";
+import type * as githubActionsRunner from "../githubActionsRunner.js";
 import type * as githubAutoCreate from "../githubAutoCreate.js";
 import type * as githubHelpers from "../githubHelpers.js";
 import type * as githubQueries from "../githubQueries.js";
@@ -96,6 +97,7 @@ declare const fullApi: ApiFromModules<{
   desktopIsoCatalog: typeof desktopIsoCatalog;
   fileSync: typeof fileSync;
   github: typeof github;
+  githubActionsRunner: typeof githubActionsRunner;
   githubAutoCreate: typeof githubAutoCreate;
   githubHelpers: typeof githubHelpers;
   githubQueries: typeof githubQueries;
