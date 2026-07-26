@@ -4,9 +4,24 @@
 
 | Component | Where it Deploys | How |
 |-----------|-----------------|-----|
-| Web Frontend | Any static host (Vercel, Netlify, etc.) | `bun run build` → upload `dist/` |
-| Backend (Convex) | Convex Cloud | `npx convex deploy` |
-| Desktop App (.exe) | GitHub Releases | GitHub Actions on tag push |
+| Web Frontend | Cloudflare Pages | Builds from `main` with `npm ci` — keep `package-lock.json` in sync with `package.json` |
+| Backend (Convex) | Convex Cloud (`befitting-wildebeest-866`) | `npx convex deploy` |
+| Desktop App (.exe) | GitHub Releases | GitHub Actions on `v*` tag push |
+
+## GitHub Actions — CI
+
+**File:** `.github/workflows/ci.yml`
+
+Runs on every push and pull request targeting `main`. Two jobs:
+
+| Job | Steps |
+|-----|-------|
+| `web` (ubuntu) | Checkout this repo → checkout `hardcoregamingsyle/agentoverflow` into `.agentoverflow` → `npm ci --dry-run` (lockfile sync) → `bun install --frozen-lockfile` → `bun run type-check` → `bun run lint` → `bun run check-refs` (with `AGENTOVERFLOW_DIR` pointed at the sibling checkout) → `bun test` → `bun run build` |
+| `desktop` (windows) | Checkout → setup .NET 8 → `dotnet build thalamus-native/ThalamusApp/ThalamusApp.csproj -c Release` |
+
+`check-refs` exists because the generated Convex `api`/`internal` objects exceed TypeScript's instantiation depth and degrade to `any`, and because three callers — the shipped `.exe`, the AgentOverflow repo, and crons — reach the backend by plain string. It is the only gate on those names, which is why CI checks out the other repo.
+
+CI does not run on tags and does not deploy anything.
 
 ## GitHub Actions — Desktop Release
 
@@ -58,10 +73,6 @@ cd thalamus-native
 
 See `thalamus-native/BUILD.md` for details.
 
-### Stale Workflows Warning
-
-`.github/workflows/build-installer.yml` and `build-thalamus-native.yml` still reference the old Qt 6 C++ build (vcpkg/CMake) that no longer exists. They trigger on pushes touching `thalamus-native/**` and fail. `release.yml` is the live workflow; the other two should be deleted or rewritten.
-
 ## Convex Backend Deployment
 
 ### Production Deploy
@@ -72,31 +83,43 @@ npx convex deploy
 
 This pushes all functions in `src/convex/` to the production Convex deployment. It's a zero-downtime deployment — the new functions replace old ones atomically.
 
+Note for the maintainer's machine: `.env.local` points at a different (dev) deployment, so a bare `npx convex …` targets the wrong project. The gitignored `convex-prod.ps1` wrapper forces the production deploy key — `.\convex-prod.ps1 deploy -y`.
+
 ### Environment Variables (Server-Side)
 
 Managed in the Convex Dashboard (NOT `.env` files):
 
 | Variable | Purpose |
 |----------|---------|
-| `AWS_BEDROCK_API_KEY` | Claude API via Bedrock |
-| `AGENTROUTER_API_KEY` | VLY agent router gateway |
+| `NVAPI_KEY` | NVIDIA NIM — fallback when the `nimKeys` table is empty |
+| `OLLAMA_API_KEY`, `OLLAMA_API_KEY_2`…`_10` | Ollama Cloud — fallback when the `ollamaKeys` table is empty |
+| `MODAL_ENDPOINT_URL` / `MODAL_MODEL` / `MODAL_API_KEY` | A single Modal endpoint — fallback when `modalEndpoints` is empty |
+| `AWS_BEDROCK_API_KEY` | Claude via Bedrock — chat, study and `/stream-chat` only |
+| `GEMINI_API_KEY` / `GOOGLE_AI_API_KEY` | RAG embeddings (`rag.ts` reads env, not the `geminiKeys` table) |
+| `GOOGLE_API_KEY` + `GOOGLE_CX` | Google Custom Search behind `performSearch` |
+| `DAYTONA_API_KEY` | Cloud sandbox for pipeline `<<RUN-CMD>>` |
+| `SKETCHFAB_API_TOKEN` / `SKETCHFAB_MCP_URL` | Built-in Sketchfab MCP server |
+| `HF_RAG_SPACE_URL` / `HF_RAG_BASE_URL` | GraphRAG space override |
 | `ADMIN_TOKEN` | Admin authentication |
-| `GITHUB_CLIENT_ID` | GitHub OAuth app |
-| `GITHUB_CLIENT_SECRET` | GitHub OAuth app |
-| `JWKS` | JSON Web Key Set (legacy) |
-| `JWT_PRIVATE_KEY` | JWT signing (legacy) |
-| `SITE_URL` | Base URL for OAuth callbacks |
-| `BREVO_EMAIL_SENDER` | Brevo API key for OTP emails |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | GitHub OAuth app |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth app |
+| `GITHUB_TOKEN` | Repo-sync fallback token |
+| `FRONTEND_URL` | Base URL for OAuth callbacks |
+| `BREVO_EMAIL_SENDER` | Brevo API key for OTP emails (the name is misleading) |
+| `BMAC_WEBHOOK_SECRET` | Buy Me a Coffee webhook verification |
 | `API_KEY_ENCRYPTION_SECRET` | AES-256-GCM key for user-supplied provider keys at rest (storage fails closed without it) |
+| `AO_VM_URL` / `AO_INTERNAL_SECRET` / `AO_FRONTEND_URL` / `AO_MCP_API_KEY` / `AO_MCP_URL` | AgentOverflow — corpus VM, OAuth allowlist, built-in MCP key |
 
-Additionally, AWS credentials and Gemini keys can be managed through the `/admin` panel and stored in database tables (`awsCredentials`, `geminiKeys`). Database values take priority over environment variables.
+`CONVEX_SITE_URL` is provided by Convex itself and does not need to be set.
+
+Every model provider prefers its database table over the environment variable: `nimKeys`, `ollamaKeys`, `modalEndpoints`, `awsCredentials`, `geminiKeys` — all managed through the `/admin` panel. `paymentsConfig.webhookSecret` likewise takes priority over `BMAC_WEBHOOK_SECRET`.
 
 ### Dev vs Production
 
 - **Dev:** `npx convex dev` (starts local watcher, pushes on file changes)
 - **Prod:** `npx convex deploy` (one-time push, no watcher)
 
-Both point at the same cloud deployment but dev mode auto-syncs as you code.
+Which deployment each targets comes from `CONVEX_DEPLOYMENT` in `.env.local`, so they do not necessarily point at the same project — confirm the target before deploying.
 
 ## Web Frontend Deployment
 
@@ -107,16 +130,13 @@ bun run build
 # Output: dist/ folder (static assets)
 ```
 
-### Self-Hosted Deploy
+### Cloudflare Pages
 
-```bash
-bun run deploy:selfhosted
-# Runs scripts/deploy-selfhosted.sh
-```
+Pushing to `main` is the deploy. Pages installs with `npm ci`, which is why `package-lock.json` must stay in sync with `package.json` — CI gates on exactly that.
 
-### Static Host Deploy
+### Any Other Static Host
 
-Upload the `dist/` folder to any static host. The app is a pure SPA — configure the host to serve `index.html` for all routes (SPA fallback).
+The app is a pure SPA — upload `dist/` and configure the host to serve `index.html` for all routes (SPA fallback).
 
 Required environment at build time:
 ```
@@ -131,9 +151,10 @@ VITE_CONVEX_URL=https://befitting-wildebeest-866.convex.cloud
 
 ## Release Workflow (Full)
 
-1. Make code changes, test locally
+1. Make code changes; run the quality gates locally (`type-check`, `lint`, `check-refs`, `bun test`, `bun run build`)
 2. `npx convex deploy` (push backend)
-3. `bun run build` + deploy frontend
-4. If desktop changes: `git tag v2.x.x && git push origin v2.x.x` (triggers CI)
-5. Verify GitHub Release has the new .exe
-6. Update the website download links AND the update endpoint the desktop app polls (`https://thalamus.dev/api/latest-version`) — otherwise auto-update never sees the new version
+3. Push to `main` — Cloudflare Pages builds the frontend
+4. If desktop changes: `git tag v2.x.x && git push origin v2.x.x` (triggers `release.yml`)
+5. Verify the GitHub Release carries an asset named exactly `Thalamus.exe`
+
+Step 5 is the whole job. Every website download link and the installer's own `URL_APP` point at `releases/latest/download/Thalamus.exe`, so a release published without that asset name 404s for everyone. There is no separate version endpoint to update — the desktop app's update check reads the GitHub Releases API directly and only shows a notice.

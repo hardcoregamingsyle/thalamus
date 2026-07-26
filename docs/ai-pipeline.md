@@ -2,13 +2,13 @@
 
 ## Overview
 
-Thalamus uses a sequential multi-agent pipeline to build software. Each agent has a specific role, runs on a specific model tier, and passes its output to the next agent in the chain.
+Thalamus uses a sequential multi-agent pipeline to build software. Each agent has a specific role, is routed to a model by its own name, and passes its output to the next agent in the chain. The implementation is `src/convex/codePipeline.ts`.
 
 ## The Dispatcher (Gate Agent)
 
 Before the pipeline runs, a **Dispatcher** agent classifies the task:
 
-- **Model**: Always Haiku (cheapest)
+- **Model**: whatever `agentToTaskType("Dispatcher")` resolves to — the `dispatcher` task type (see Model Configuration below)
 - **Input**: User's task description + file inventory
 - **Output**: JSON `{ tier: "trivial"|"simple"|"medium"|"complex"|"full", reasoning: "...", agents: [...] }`
 - **Rules**:
@@ -34,13 +34,13 @@ Researcher isn't a tier of its own — it gets added to any tier when the task n
 
 ### Phase 1: Planning (if selected)
 
-Model tiers shown are for the default "balanced" run mode (see `MODE_MATRIX` in `agentCore.ts`):
+The "task type" column is what `agentToTaskType()` returns for that agent name; it is the only thing that selects a model (see Model Configuration below).
 
-| Agent | Role | Model Tier (balanced) |
+| Agent | Role | Task type |
 |-------|------|-----------|
-| Researcher | Gathers context, reads docs, searches web | gemini |
-| Analyser | Understands the codebase, identifies dependencies | sonnet |
-| Planner | Creates a structured task list as JSON | sonnet |
+| Researcher | Gathers context, reads docs, searches web | research |
+| Analyser | Understands the codebase, identifies dependencies | reasoning |
+| Planner | Creates a structured task list as JSON | reasoning |
 
 The Planner outputs:
 ```json
@@ -62,18 +62,16 @@ The Planner outputs:
 
 For each task in the plan, the selected execution agents run in order:
 
-| Agent | Role | Model Tier (balanced) |
+| Agent | Role | Task type |
 |-------|------|-----------|
-| Researcher | Looks up relevant docs/APIs for this specific task | gemini |
-| Analyser | Analyzes which files need changing | sonnet |
-| **Coder** | Writes the actual code (creates/edits files) | **sonnet** (opus48 in "powerful" mode) |
-| Optimiser | Improves performance, removes redundancy | sonnet |
-| Organizer | Ensures file structure is clean | haiku |
-| Tester | Writes and validates tests | sonnet |
-| Hacker | Security audit (only if explicitly requested) | sonnet |
-| **Critic** | Validates everything, passes or fails | sonnet |
-
-In the legacy pipeline (`agentPipeline.ts`), the Hacker slot expands into a Red Team of security sub-agents (VulnerabilitySpotter/Fixer, DataCorruptor/Fixer, ZeroDayExploiter/Remover, FrameworkAuditor/Refiner, RedTeamOrchestrator), and the Researcher slot into a Research Team (ResearchPlanner, DataTaker, ResearchOrganiser). All have entries in `AGENT_MODEL_MAP`.
+| Researcher | Looks up relevant docs/APIs for this specific task | research |
+| Analyser | Analyzes which files need changing | reasoning |
+| **Coder** | Writes the actual code (creates/edits files) | **code** |
+| Optimiser | Improves performance, removes redundancy | code |
+| Organizer | Ensures file structure is clean | dispatcher |
+| Tester | Writes and validates tests | agent |
+| Hacker | Security audit (only if explicitly requested) | agent |
+| **Critic** | Validates everything, passes or fails | reasoning |
 
 ### Critic Retry Loop
 
@@ -118,72 +116,60 @@ export const Button = () => <button>Click me</button>;
 <<REQUEST-API-KEY name="STRIPE_SECRET" description="Stripe API key for payments" howToGet="Get from stripe.com/dashboard">>
 ```
 
-Commands and API key requests **pause the pipeline** until the user responds. When the last pending command finishes (`codeCommands.ts`) or the last requested key is supplied (`codeApiKeys.ts`), the pipeline is automatically resumed via a scheduled `runPipelineAction`. User-supplied provider keys are encrypted at rest (AES-256-GCM, keyed by the `API_KEY_ENCRYPTION_SECRET` deployment secret — storage fails closed if it's missing).
+Both markers **pause the pipeline**, but only one of them waits on a human.
+
+- `<<RUN-CMD>>` queues rows into `codeCommands`, sets the branch to `paused`, and schedules `sandbox.executeBranchCommands`. That action runs the commands in a Daytona sandbox and reschedules `runPipelineAction` from its own `finally` block, so the branch resumes even if execution throws.
+- `<<REQUEST-API-KEY>>` writes a `codeApiKeyRequests` row and genuinely blocks until the user submits the key; `codeApiKeys.fulfillApiKeyRequest` reschedules `runPipelineAction`.
+
+If a branch looks stuck, check `codeCommands` and `codeApiKeyRequests` for rows still marked `pending`. User-supplied provider keys are encrypted at rest (AES-256-GCM, keyed by the `API_KEY_ENCRYPTION_SECRET` deployment secret — storage fails closed if it's missing).
 
 ## Model Configuration
 
-### Run Modes
+There are no model tiers, no per-branch run mode, and no admin override grid. If you find `MODE_MATRIX`, `AGENT_MODEL_MAP`, `getAgentTier`, `DIFFICULTY_CODER_MODEL`, `codeBranches.runMode`, an `agentModelConfig` table or an `/admin` Model Config tab referenced anywhere, none of them exist in the code.
 
-Each branch has a `runMode` field (default "balanced") that selects a column of `MODE_MATRIX` in `agentCore.ts`:
+### Routing by agent name
 
-| Mode | Coder Model | Cost | Speed |
-|------|-------------|------|-------|
-| cheap | Sonnet | $ | Fast |
-| balanced | Sonnet | $$ | Medium |
-| powerful | Opus 4.8 | $$$$ | Slow |
+`codePipeline.ts` passes the **agent name** into `callModel()` as the third argument. `agentToTaskType()` (`nimClient.ts`) turns that name into a task type by substring match, and the task type picks the model:
 
-If no mode matrix entry exists for an agent, `AGENT_MODEL_MAP` is the fallback (Coder: opus46, Critic: haiku, most others sonnet/haiku).
+| Task type | Matched on (case-insensitive substring) | NIM model |
+|-----------|------------------------------------------|-----------|
+| dispatcher | `dispatcher`, `organiser`, `summarizer` | `nvidia/nvidia-nemotron-nano-9b-v2` |
+| code | `coder`, `optimiser`, `architect` | `qwen/qwen3-coder-480b-a35b-instruct` |
+| reasoning | `analyser`, `planner`, `critic` | `nvidia/nemotron-3-super-120b-a12b` |
+| research | `researcher`, `research`, `scout` | (chat fallback chain) |
+| agent | `tester`, `hacker`, `auditor`, `security` | `deepseek-ai/deepseek-v4-pro` |
+| chat | anything unmatched | `NIM_DEFAULT_CHAT_MODEL` |
 
-### Difficulty Override (legacy pipeline only)
+> Note: the `dispatcher` row matches `organiser` (s), while the pipeline agent is named `Organizer` (z). The Organizer therefore falls through to the `chat` task type.
 
-The Planner marks tasks with a difficulty. In the legacy pipeline (`agentPipeline.ts`), `DIFFICULTY_CODER_MODEL` overrides the Coder model per task:
+The Ollama leg uses `mapModelIdToOllama()` in `agentCore.ts` over the same agent names: `gemma4:31b` for dispatcher-ish names, `minimax-m3` for coder/optimiser/analyser/planner/critic/tester/hacker, `gpt-oss:120b` for researcher, `DEFAULT_CHAT_MODEL` otherwise.
 
-| Difficulty | Coder Model |
-|-----------|-------------|
-| normal | opus46 |
-| hard | opus46 |
-| extreme | opus48 |
+### Provider order
 
-The newer `codePipeline.ts` does not apply this override — it uses the run-mode matrix only.
+`callModel()` tries, in order: Modal (any row in `modalEndpoints`, primary first) → NVIDIA NIM → Ollama Cloud. Modal and NIM both require a Convex `ctx`; a ctx-less caller goes straight to Ollama. The return value carries a provider-tagged tier string — `modal:<model>`, `nim:<model>`, `ollama:<model>` — which is what the billing helpers read.
 
-### AWS Bedrock Model IDs
+Keys resolve DB-first in every case: `modalEndpoints` > `MODAL_ENDPOINT_URL`, `nimKeys` > `NVAPI_KEY`, `ollamaKeys` > `OLLAMA_API_KEY`/`OLLAMA_API_KEY_2..10`. All three tables are managed from `/admin`.
 
-The internal names map to older Bedrock IDs in the pipeline (`agentCore.ts` / `codePipeline.ts`):
+### Pricing
 
-| Internal Name | Bedrock Model ID (pipeline) |
-|--------------|-----------------|
-| claude-haiku-4-5 | us.anthropic.claude-haiku-4-5-20251001-v1:0 |
-| claude-sonnet-4-6 | us.anthropic.claude-sonnet-4-5-20250929-v1:0 |
-| claude-opus-4-6 | us.anthropic.claude-opus-4-1-20250805-v1:0 |
-| claude-opus-4-8 | us.anthropic.claude-opus-4-1-20250805-v1:0 |
+AgentBucks per call are computed by `calcAgentBucksForTier()` in `agentCore.ts`, which dispatches on the tier prefix to `calcModalAgentBucks` / `calcNimAgentBucks` / `calcAgentBucksForModel`. The `modelPricing` table is admin-editable but is not read by any billing path.
 
-Chat mode (`ai.ts`) maps the same internal names to newer IDs (e.g. `claude-sonnet-4-6` → `us.anthropic.claude-sonnet-4-6-20251101-v1:0`). Yes, the same name resolves to different models depending on the code path — check the file you're touching.
+Deduction is currently a no-op: `FREE_UNLIMITED` in `agentCore.ts` is `true`. `admin.deductPlatformCost` is still called on every model call but its `PLATFORM_PRICING` map contains only Claude and Gemini names, so current provider names price at 0.
 
-### Model Pricing (AgentBucks per million tokens, `TIER_PRICING` in agentCore.ts)
+### Bedrock (not used by this pipeline)
 
-| Tier | Input | Output |
-|-------|-------|--------|
-| gemini | 0.60 | 2.40 |
-| haiku | 1.80 | 7.20 |
-| sonnet | 5.40 | 26.50 |
-| opus46 | 7.44 | 42.00 |
-| opus48 | 12.00 | 60.00 |
+The pipeline contains no Bedrock code. Bedrock remains on the plain-chat, study and `/stream-chat` paths only; see [architecture.md](./architecture.md#legacy-provider-paths-not-the-pipeline) for those chains and their separate model-ID maps.
 
-## Chat Mode Search (ai.ts)
+## Chat & Research Mode Search (ai.ts)
 
-Chat mode has a search tool loop:
-1. System prompt tells AI it can search using `<<SEARCH-TOOL="query">>`
-2. After AI responds, if search tags are found:
-   - Execute up to 3 searches via `performSearch()` (Gemini-powered)
+Chat and Research mode are single-call handlers, not pipelines. Both use the same search-tool loop:
+1. System prompt tells the model it can search using `<<SEARCH-TOOL="query">>`
+2. After it responds, if search tags are found:
+   - Execute up to 3 searches via `performSearch()` (Google Custom Search when `GOOGLE_API_KEY` + `GOOGLE_CX` are set, otherwise a model-knowledge answer)
    - Inject results back as a follow-up user message
-   - Re-call AI for final answer incorporating search results
+   - Re-call the model for a final answer incorporating search results
 
-## Research Mode Sub-Pipeline
-
-Research mode uses 3 specialized sub-agents:
-1. **ResearchPlanner** — Breaks topic into 8-15 search queries
-2. **DataTaker** — Executes searches and scrapes, collects raw data
-3. **ResearchOrganiser** — Synthesizes findings into a structured report
+Research mode differs from chat only in its system prompt (report structure, always search for factual data).
 
 ## Pipeline State Machine
 

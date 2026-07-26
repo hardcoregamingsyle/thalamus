@@ -9,7 +9,7 @@ Everything you need to run, extend, and not break Thalamus. Written by the guy w
 - **One backend**: Convex (`src/convex/`). Every serverless function, the schema, the cron jobs, the model routing — all of it.
 - **Two frontends**: the web app (`src/`, React 19 + Vite) and a native Windows app (`thalamus-native/`, WPF on .NET 8). The desktop app is NOT a web wrapper — it's real XAML talking to the same Convex backend over HTTP/SSE. Feature parity is a standing rule: the desktop shows the live AgentBucks balance, lists and reopens cloud conversations per mode (same `conversations`/`messages` tables), and has a runtime light/dark toggle (`Theme.xaml` dark + `Theme.Light.xaml` overlay via `ThemeManager`, everything DynamicResource).
 - **Four modes**: Chat, Research, Study, Build. Build runs the dynamic agent pipeline — a Dispatcher picks which of the nine agents a task actually needs (Coder and Critic are always in).
-- **Money**: AgentBucks. Users burn credits per token; pricing lives in the `modelPricing` table; `/admin` is mission control.
+- **Money**: AgentBucks — and right now, nothing. The platform is free and unlimited on purpose (`FREE_UNLIMITED` in `agentCore.ts`, `PAYMENTS_DISABLED` in `payments.ts`), so the per-token deduction is a no-op and the buy flow is off. The meter still computes real numbers — per-token rates live in `calcAgentBucksForTier`, not in the `modelPricing` table, which nothing reads. `/admin` is mission control.
 - **AgentOverflow**: a second product riding this same backend — a Stack Overflow for AI agents with its own site (separate repo), its own `ao_` keys, and its own credit economy (`aoCredits`, not AgentBucks). Backend half, one file per concern: `agentoverflow.ts` (economy + keys + learnings), `agentoverflowHttp.ts` (REST, and the shared `run*` core both transports use), `agentoverflowMcp.ts` (MCP server — free calls, still rate-limited), `agentoverflowPublic.ts` (SEO surface: public docs + sitemaps), `agentoverflowAdmin.ts` (admin panel backend), plus the `ao*` tables.
 
 If you remember nothing else: **`agentCore.ts` is the heart.** Model routing, credit deduction, and every agent's system prompt live there. Break it and everything breaks.
@@ -18,27 +18,21 @@ If you remember nothing else: **`agentCore.ts` is the heart.** Model routing, cr
 
 ## 2. Things that will bite you if nobody tells you
 
-### There are TWO code-mode systems. Yes, two.
+### There is ONE code-mode system now
 
-| | OLD (Team Portal) | NEW (Code Mode) |
-|---|---|---|
-| Tables | `teamSessions`, `agentMessages`, `projectFiles` | `codeProjects`, `codeBranches`, `codeMessages`, `codeFiles` |
-| Pipeline | `agentPipeline.ts` | `codePipeline.ts` |
-| UI | `TeamPortalInline.tsx` (rendered inside `Portal`) | `CodeProjects/CodeBranches/CodeWorkspace` at `/portal/code` |
+There used to be two. The old Team Portal half — `teamSessions`/`agentMessages`/`projectFiles`, `agentPipeline.ts`, `agentTeamHelpers.ts`, `TeamPortalInline.tsx`, and the tables behind them — is deleted. React-router had already made its UI unreachable (`/portal/code` matched the static route, so the inline mount never rendered), so it was dead weight pretending to be a migration problem. If you find a doc, comment or memory that says "two code systems", it's stale.
 
-Both dispatch dynamically now: a Dispatcher phase (haiku, one call) runs first and picks the agent subset; the pick is persisted as `dispatchedAgentsJson` on the branch/session and both pipelines filter their phase lists against it. They evolved in parallel and both hold live user data. **Direction: NEW is canonical.** (Yes, the Dispatcher went into BOTH — deliberate parity so the OLD system's users aren't paying for nine agents on typo fixes. That's the one exception to "new features go into NEW only"; don't make a habit of it.) The old system keeps working until its data is migrated, but new features go into `codePipeline.ts` / the `code*` tables only. Don't add features to both. Don't "quickly fix" something in one and forget the twin exists.
+What's left: `codeProjects`/`codeBranches`/`codeMessages`/`codeFiles`, driven by `codePipeline.ts`, at `/portal/code/*` in `CodeProjects` → `CodeBranches` → `CodeWorkspace`. A Dispatcher phase runs first and picks the agent subset; the pick is persisted as `dispatchedAgentsJson` on the branch and the pipeline filters its phase lists against it.
 
-One more twin-system landmine: **the desktop app's Build mode drives the NEW system** over Convex's public HTTP API — `codeProjects:createProject` → `codePipeline:startPipeline`, then polls `codeBranches:getBranch` / `watchMessages` / `watchFiles` (see `thalamus-native/.../Modes/CodeView.xaml.cs`). It used to fake the pipeline with a single chat completion; now it's real, which means changing those public function signatures breaks shipped desktop builds. Treat them as API.
-
-Consolidation plan when you're ready: (1) write a migration for `teamSessions` → `codeProjects` (a dead-code migration file existed once — `codeMigration.ts` — resurrect the idea, not the code), (2) point Portal's code mode at the NEW UI, (3) delete `agentPipeline.ts`, `agentTeamHelpers.ts`, `TeamPortalInline.tsx` (~7k lines gone). Do it in that order, verify at each step, and do NOT do it the week of a launch.
+**The desktop app's Build mode drives this same system** over Convex's public HTTP API — `codeProjects:createProject` → `codePipeline:startPipeline`, then polls `codeBranches:getBranch` / `watchMessages` / `watchFiles`, and stops with `codePipeline:stopPipeline` (see `thalamus-native/.../Modes/CodeView.xaml.cs`). Changing those public signatures breaks shipped desktop builds. Treat them as API — and remember `tsc` cannot see those call sites at all, which is what `bun run check-refs` is for.
 
 ### The sandbox has three backends
 
-`sandboxType` in the schema is `daytona | v86 | qemu`. Daytona (`sandbox.ts`) runs cloud sandboxes; v86 runs x86-in-WASM in the browser; QEMU needs the local bridge (`qemu-bridge/`, port 5900) or, on desktop, `QemuBridgeManager` launches QEMU directly. Three ways to do one job is two too many — v86 is the weakest and least used. If you're looking for something to delete, start your investigation there, but *measure usage first*.
+`sandboxType` in the schema is `daytona | v86 | qemu`. Daytona (`sandbox.ts`) runs the cloud sandboxes that pipeline `<<RUN-CMD>>` calls land in; v86 runs x86-in-WASM in the browser (everything — wasm, BIOS, disk images — streamed from the copy.sh CDN, nothing local); QEMU needs the local bridge (`qemu-bridge/`, port 5900) or, on desktop, `QemuBridgeManager` launches QEMU directly. Three ways to do one job is two too many — v86 is the weakest and least used. If you're looking for something to delete, start your investigation there, but *measure usage first*.
 
-### Schema has fossil fields
+### Everything is free, and that's five switches
 
-`teamSessions` carries both the live branch model (`currentBranch`, `branchesJson`) and a deprecated branch-group model (`branchGroupId`, `branchNumber`, `parentSessionId`, plus the `sessionBranchGroups` table). The deprecated fields exist so old rows don't explode. When the OLD system dies, they die with it.
+Free and unlimited is the product, permanently — but it's five separate booleans that don't know about each other: `FREE_UNLIMITED` (`agentCore.ts`), `AO_FREE_UNLIMITED` (`agentoverflow.ts`), `PAYMENTS_DISABLED` (`payments.ts`), `GUEST_UNLIMITED` (`Portal.tsx`), and `FREE_UNLIMITED` in the agentoverflow repo's `api/app/keystore.py`. CLAUDE.md §4 has the full table and the flip checklist. The reason it matters: several billing paths are quietly broken (platform-cost pricing doesn't recognise any current model name, chat billing is hardcoded to Gemini rates), and they're only harmless while every switch is on. Don't flip one in isolation.
 
 ### The desktop installer is picky
 
@@ -56,33 +50,38 @@ The giant template literals in `agentCore.ts` are the agents' system prompts. Th
 
 ## 3. Security model (the short version)
 
-- **Auth**: email OTP via `@convex-dev/auth`, plus `customSessions` tokens for the desktop app and API. GitHub OAuth for repo sync.
+- **Auth**: custom token auth end-to-end. `customAuth.sendOtp`/`verifyOtp` mint a 64-hex `customSessions` token (30-day expiry) that web, desktop and API all pass as an explicit `{token}` argument — nothing is inferred from the connection. `@convex-dev/auth` (`auth.ts`, `ConvexAuthProvider`) is vestigial: its routes are still mounted and two dead fallbacks still read `ctx.auth`, but no live sign-in ever populates it. GitHub OAuth for repo sync.
 - **User provider keys** (`codeApiKeys`): AES-256-GCM encrypted at rest with `API_KEY_ENCRYPTION_SECRET`. The write path **fails closed** — no secret configured, no key stored. `listApiKeys` never returns values.
 - **Platform API keys** (`/api-keys`, `thal_*`): SHA-256 hashed before storage; only the hash is kept.
-- **AgentOverflow keys** (`ao_*`): same rule — SHA-256 hashed, hash-only storage, 30 req/min per key. Their credits (`aoCredits`) are a separate economy from AgentBucks; the two never mix.
+- **AgentOverflow keys** (`ao_*`): same rule — SHA-256 hashed, hash-only storage, 60 req/min per key by default (overridable per account via `users.aoCustomRateLimit`, and currently bypassed entirely by `AO_FREE_UNLIMITED`). Their credits (`aoCredits`) are a separate economy from AgentBucks; the two never mix.
 - **Admin**: gated by `ADMIN_TOKEN` (Convex env var). The `/admin` route is hidden in desktop builds.
-- **Model keys**: Bedrock/Gemini credentials live in the Convex dashboard or the DB (DB wins). Never in the repo. The repo has zero secrets and it stays that way.
+- **Model keys**: NIM / Ollama / Modal credentials come first (`nimKeys`, `ollamaKeys`, `modalEndpoints` tables, env vars as fallback); Bedrock and Gemini are still live for chat, study and `/stream-chat`. DB beats env everywhere. Never in the repo — with one exception worth knowing about: `src/lib/vly-integrations.ts` carries a hardcoded fallback key for the VLY completion provider.
 
 ---
 
 ## 4. Ops runbook
 
-### Deploy the web app
+### Deploy
 
 ```bash
 bun run build                  # verify green locally first
-bash scripts/deploy-selfhosted.sh
+# web: push to main — Cloudflare Pages builds from package-lock.json with `npm ci`
+npx convex deploy              # backend → Convex Cloud (befitting-wildebeest-866)
 ```
+
+On this machine `.env.local` points at a different (dev) deployment, so a bare `npx convex …` targets the wrong project. Use the gitignored `convex-prod.ps1` wrapper — `.\convex-prod.ps1 deploy -y` — which forces the prod deploy key without touching `.env.local`.
 
 ### Ship a desktop release
 
 ```powershell
 cd thalamus-native
 .\build.ps1 -Version "X.Y.Z"   # builds app + installer + Inno + checksums
-gh release create vX.Y.Z dist\Thalamus-Setup-vX.Y.Z.exe dist\checksums.txt --repo hardcoregamingsyle/thalamus
+gh release create vX.Y.Z installer-build\Thalamus.exe dist\Thalamus-Setup-vX.Y.Z.exe dist\checksums.txt --repo hardcoregamingsyle/thalamus
 ```
 
-Or push a `vX.Y.Z` tag and let `.github/workflows/release.yml` do it. **Either way: update the website's download links after.** A release nobody can download didn't happen.
+Or push a `vX.Y.Z` tag and let `.github/workflows/release.yml` do it — that path attaches the bare `Thalamus.exe` and nothing else.
+
+**The bare `Thalamus.exe` asset is not optional.** Every download link on the site — and the installer's own `URL_APP` — points at `releases/latest/download/Thalamus.exe`, so a release carrying only the Setup exe 404s for every visitor and every install. `build.ps1` leaves the bare exe in `installer-build\`, not `dist\`; the hint it prints at the end lists only the `dist\` artifacts, so don't copy-paste it blindly. Get that asset name right and there is nothing to update on the website.
 
 ### When the pipeline stalls
 
@@ -90,7 +89,7 @@ A branch's pipeline pauses for two legit reasons: waiting on API keys (`codeApiK
 
 ### Credits misbehaving
 
-Daily AgentBucks reset is a cron at 18:30 UTC (midnight IST) — `crons.ts` → `dailyReset.resetDailyAgentBucks`. Pricing per model tier is the `modelPricing` table, editable from `/admin`. Deduction happens inside `agentCore.ts` after each call, from actual token counts.
+Daily AgentBucks reset is a cron at 18:30 UTC (midnight IST) — `crons.ts` → `dailyReset.resetDailyAgentBucks`. Per-token rates are computed by `calcAgentBucksForTier` in `agentCore.ts` from actual token counts, branching on the provider prefix (`modal:` / `nim:` / `ollama:`). The `modelPricing` table is editable from `/admin` but read by nothing, so don't debug a billing number by looking at it. And while `FREE_UNLIMITED` is on, the deduction never lands — if someone reports "my credits went down", that's the bug, not the other way round.
 
 AgentOverflow credits refill on the same cron clock (`agentoverflow.dailyRefillAoCredits`) — a top-up to the user's tier refill (10–50/day by `aoContribPoints`, ladder in `CONTRIB_TIERS`), never a reset down. The same cron decays contribution points ~1%/day, so tiers slide when people stop contributing; trash submissions also cost a point at settlement. Every credit movement lands in `aoCreditLedger`, so when someone claims they were shorted a credit, the ledger settles it.
 
@@ -102,20 +101,23 @@ AgentOverflow credits refill on the same cron clock (`agentoverflow.dailyRefillA
 |---|---|---|
 | Types | `bun run type-check` | exit 0 |
 | Lint | `bun run lint` | 0 problems |
+| Convex refs | `bun run check-refs` | exit 0 — the only thing tsc can't do for you |
+| Tests | `bun test` | green |
 | Web build | `bun run build` | green |
 | Desktop | `dotnet build` both csproj | 0 warnings / 0 errors |
 | TODOs | grep the repo | 0 |
 
-These were all driven to green the hard way. The bar is: leave them green. A PR that adds a warning is a PR that isn't done. `src/components/ui/` is vendored shadcn and exempt from a few React lint rules by config — that's intentional, don't "fix" vendored code.
+CI (`.github/workflows/ci.yml`) runs all of these on every push to `main`, and checks out the sibling `agentoverflow` repo so `check-refs` can see its string-based calls too. These were all driven to green the hard way. The bar is: leave them green. A PR that adds a warning is a PR that isn't done. `src/components/ui/` is vendored shadcn and exempt from a few React lint rules by config — that's intentional, don't "fix" vendored code.
 
 ---
 
 ## 6. Known debt (honest list)
 
-1. **Two code-mode systems** — biggest item, plan in §2. ~8k lines of duplication with a live-data migration in the way.
-2. **Triple sandbox stack** — consolidation candidate after usage measurement.
-3. **`teamSessions` fossil fields + `sessionBranchGroups`** — dies with the OLD system.
-4. **`TeamPortalInline.tsx` is ~3.9k lines** — it works, but it's a monolith. If you must touch it, extract as you go; don't grow it.
+1. **Platform cost tracking is blind.** `admin.deductPlatformCost` prices against `PLATFORM_PRICING`, which only knows Claude and Gemini names, while every pipeline call now hands it something like `Coder-nim:qwen3-coder-480b`. It scores 0, logs a warning, and `platformBudget` never moves — so the "auto-disable under $5" guard can't trip on Thalamus usage. Harmless while everything is free; the first thing to fix if that ever changes.
+2. **Chat billing in `ai.ts`** is hardcoded to Gemini-ish rates no matter which model answered. Same category, same excuse.
+3. **`modelPricing` is an orphan table** — an admin can edit rows that nothing reads.
+4. **Triple sandbox stack** (`daytona | v86 | qemu`) — consolidation candidate after usage measurement.
+5. **`src/lib/vly-integrations.ts` carries a hardcoded fallback API key** for the VLY completion provider. It shouldn't.
 
 That's the whole list. Everything else that looked like debt was deleted, not documented.
 
@@ -124,8 +126,8 @@ That's the whole list. Everything else that looked like debt was deleted, not do
 ## 7. Map of who talks to what
 
 ```
-Browser ──HTTP/WS──> Convex (src/convex) ──HTTPS──> Bedrock / AgentRouter / Gemini
-   │                        │
+Browser ──HTTP/WS──> Convex (src/convex) ──HTTPS──> Modal / NVIDIA NIM / Ollama Cloud   (pipeline)
+   │                        │                 └──> Bedrock / Gemini / VLY              (chat, study)
    │ v86 (WASM, in-tab)     └── GitHub API (OAuth, repo sync, webhooks)
    └─WS──> qemu-bridge (localhost:5900) ──> QEMU
 

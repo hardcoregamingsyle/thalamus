@@ -89,8 +89,9 @@ npx convex dev       # Convex backend — required alongside the dev server
 bun run build        # bun install + tsc -b + vite build → dist/
 bun run type-check   # tsc -b --noEmit
 bun run lint         # ESLint
+bun run check-refs   # scripts/check-convex-refs.mjs — every Convex function reference resolves
 bun run format       # Prettier (writes files)
-bun test             # bun:test — suites in tests/ (mcpParse, studyPrompt)
+bun test             # bun:test — suites in tests/ (mcpParse, parseAgentOutput, studyPrompt)
 bun test --watch     # Watch mode
 ```
 
@@ -99,9 +100,10 @@ Things that will bite you:
 * **No hot reload.** `vite.config.ts` sets `server.hmr: false` — refresh the browser manually after changes.
 * **Dual lockfiles.** Both `bun.lock` and `package-lock.json` are committed. Cloudflare Pages deploys the web app with `npm ci`, and CI gates on `npm ci --dry-run` staying in sync — after any `bun add`/`bun remove`, regenerate `package-lock.json` too or the Pages deploy breaks.
 * **The build script is POSIX** (`./node_modules/.bin/tsc`, `bash scripts/…`) — run it from Git Bash on Windows.
-* **`bun run convex:deploy` does NOT deploy production.** It (and its alias `deploy:selfhosted`) runs `scripts/deploy-selfhosted.sh`, which targets a *self-hosted* Convex instance and hard-fails without `CONVEX_SELF_HOSTED_URL` + `CONVEX_SELF_HOSTED_ADMIN_KEY`. Production backend is Convex Cloud (`befitting-wildebeest-866`), deployed with plain `npx convex deploy`.
+* **Production is Convex Cloud (`befitting-wildebeest-866`), deployed with `npx convex deploy`.** There is no self-hosted target and no deploy wrapper script in the repo. On this machine `.env.local` points at a *different* (dev) deployment, so a bare `npx convex …` hits the wrong project — use the gitignored `convex-prod.ps1` wrapper, which forces the prod deploy key without touching `.env.local`.
 * **`src/convex/_generated/` is committed.** A fresh clone type-checks without running Convex; `npx convex dev` regenerates these files, so commit their diffs together with the schema/function change that caused them.
-* **CI (`.github/workflows/ci.yml`)** runs lockfile-sync check + type-check + lint + a desktop `dotnet build`. It does **not** run `bun test` — run tests yourself before pushing.
+* **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects blow past TypeScript's instantiation depth and quietly degrade to `any`, and three callers reach the backend by plain string anyway — the shipped `.exe`, the AgentOverflow repo (`makeFunctionReference`), and crons. `bun run check-refs` is the only gate on them.
+* **CI (`.github/workflows/ci.yml`)** runs on every push/PR to `main`. Web job: npm-lockfile sync → type-check → lint → `check-refs` → `bun test` → `bun run build`. Desktop job: `dotnet build` of `ThalamusApp`. The web job also checks out the sibling `agentoverflow` repo into the workspace and passes it as `AGENTOVERFLOW_DIR`, so cross-repo string refs are actually verified.
 * Desktop release CI (`.github/workflows/release.yml`): a `v*` tag builds and attaches the bare `Thalamus.exe` only. The installer (`ThalamusSetup.exe` / Inno `Thalamus-Setup-*.exe`) exists only via local `thalamus-native/build.ps1` + manual upload.
 
 ### Environment Variables
@@ -115,13 +117,14 @@ VITE_CONVEX_URL=https://your-deployment.convex.cloud
 
 **Server-side secrets** live strictly in the Convex dashboard, *not* `.env`. Verified-referenced in `src/convex/`:
 
-* Models: `AWS_BEDROCK_API_KEY` (an `ABSK…` bearer key, preferred over SigV4), `AGENTROUTER_API_KEY` (last-resort fallback), `GEMINI_API_KEY`/`GOOGLE_AI_API_KEY` (**rag.ts embeddings only** — everything else reads Gemini keys from the DB `geminiKeys` table), `DAYTONA_API_KEY` (cloud sandbox), `HF_RAG_SPACE_URL`/`HF_RAG_BASE_URL`.
-* Pipeline tools: `SKETCHFAB_API_TOKEN` (optional — the built-in Sketchfab 3D-model MCP server at `/sketchfab/mcp`, attached to gamedev runs; search/model-info work without it, only `download_model` needs it).
+* Pipeline models: `NVAPI_KEY` (NVIDIA NIM), `OLLAMA_API_KEY` + `OLLAMA_API_KEY_2`…`_10` (Ollama Cloud — built dynamically in `siliconflow.ts`, so a literal grep misses them), `MODAL_ENDPOINT_URL`/`MODAL_MODEL`/`MODAL_API_KEY` (a single Modal endpoint). All three are *fallbacks* — see DB-beats-env below.
+* Legacy chat/study models (still live on `/stream-chat`, `ai.ts` and `study.ts`, not on the pipeline): `AWS_BEDROCK_API_KEY` (an `ABSK…` bearer key or `key:secret:region`), `GEMINI_API_KEY`/`GOOGLE_AI_API_KEY` (**rag.ts embeddings only** — everything else reads Gemini keys from the DB `geminiKeys` table).
+* Tools: `GOOGLE_API_KEY` + `GOOGLE_CX` (Google Custom Search behind `performSearch`; without both it degrades to a model-knowledge answer), `DAYTONA_API_KEY` (cloud sandbox), `HF_RAG_SPACE_URL`/`HF_RAG_BASE_URL`, `SKETCHFAB_API_TOKEN` and optional `SKETCHFAB_MCP_URL` (the built-in Sketchfab 3D-model MCP server at `/sketchfab/mcp`, attached to **every** pipeline run — the agent decides whether to call it; search/model-info work without the token, only `download_model` needs it).
 * Auth/infra: `ADMIN_TOKEN`, `BREVO_EMAIL_SENDER` (despite the name, this is the **Brevo API key**), `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, `GITHUB_TOKEN` (repo-sync fallback), `FRONTEND_URL`, `BMAC_WEBHOOK_SECRET`, `API_KEY_ENCRYPTION_SECRET` (AES-256-GCM for user-supplied provider keys in `codeApiKeys`; `fulfillApiKeyRequest` fails closed without it).
 * AgentOverflow: `AO_VM_URL`, `AO_INTERNAL_SECRET`, `AO_FRONTEND_URL` (OAuth redirect allowlist), `AO_MCP_API_KEY` (+ optional `AO_MCP_URL`).
 * `CONVEX_SITE_URL` is Convex-built-in (OAuth redirects, sitemap base, MCP default URL).
 
-**DB beats env:** `awsCredentials` table > `AWS_BEDROCK_API_KEY`; `geminiKeys` table is the Gemini source; `paymentsConfig.webhookSecret` > `BMAC_WEBHOOK_SECRET`. AWS/Gemini keys are managed via `/admin`.
+**DB beats env:** `nimKeys` > `NVAPI_KEY`; `ollamaKeys` > `OLLAMA_API_KEY*`; `modalEndpoints` > `MODAL_ENDPOINT_URL`; `awsCredentials` > `AWS_BEDROCK_API_KEY`; `geminiKeys` is the Gemini source; `paymentsConfig.webhookSecret` > `BMAC_WEBHOOK_SECRET`. Every one of those tables is managed from `/admin` (NVIDIA NIM · Ollama Cloud · Modal · AWS Bedrock · Gemini Keys tabs), so swapping a provider is a click, not a deploy.
 
 ---
 
@@ -132,7 +135,8 @@ One Convex backend, two frontends (web + native Windows), two products (Thalamus
 ### Frontend (React 19 + Vite 7)
 
 * **`src/main.tsx`:** entry — all routes lazy-loaded, chunk-failure auto-reload boundary, iframe route-sync.
-* **`src/pages/`:** `Landing`, `Auth`, `AuthDesktop`, `Portal` (modes chat|research|code|study from `/portal/:mode`; guest mode 3 prompts/day), `MobilePortal` (<768px), `TeamPortalInline` (legacy code mode, embedded — no standalone route), `CodeProjects` → `CodeBranches` → `CodeWorkspace` (`/portal/code/*`), `Admin`, `ApiPage`, `Sync`, `Refer`, `Legal`, `NotFound`.
+* **`src/pages/`:** `Landing`, `Auth`, `AuthDesktop`, `Portal` (modes chat|research|study from `/portal/:mode`), `MobilePortal` (<768px), `CodeProjects` → `CodeBranches` → `CodeWorkspace` (`/portal/code/*`), `Blog` + `BlogPost` (`/blog`, `/blog/:slug` — posts are static in `src/content/blog.ts`, and `public/sitemap.xml` is hand-maintained, so a new post needs both files), `Admin`, `ApiPage` (`/api-keys`), `Sync`, `Refer`, `Legal` (one component serving `/privacy`, `/terms`, `/refund`, `/contact` via a `doc` prop), `NotFound`.
+* **Guest mode** is nominally 3 prompts/day (`GUEST_LIMIT` in `Portal.tsx`, `GUEST_DAILY_LIMIT` in `ai.ts`/`aiHelpers.ts`) but currently uncapped — see the free/unlimited switches below. Usage is still counted into `guestUsage` while the switch is on, so flipping it back enforces immediately against real numbers.
 * **Auth is custom, not @convex-dev/auth.** The live flow is `src/hooks/use-auth.ts` → `api.customAuth.sendOtp/verifyOtp` + Google/GitHub OAuth via the Convex HTTP router; the session token sits in localStorage `agentai_session_token` and is passed as an explicit `{token}` arg to nearly every Convex call. `ConvexAuthProvider`/`auth.ts` are vestigial wiring — do not migrate code onto `ctx.auth`.
 * **UI:** shadcn/ui (new-york) on Radix + Tailwind v4 (CSS-variable oklch theme in `src/index.css`, dark default, no tailwind.config). `src/components/ui/` is vendored — **do not customize**; wrap or pass className.
 * **`src/lib/sanitizeHtml.ts`:** AI replies are raw HTML; `sanitizeAiHtml` (DOMPurify) is mandatory before any `dangerouslySetInnerHTML` — session/admin/GitHub tokens live in localStorage.
@@ -140,9 +144,9 @@ One Convex backend, two frontends (web + native Windows), two products (Thalamus
 
 ### Backend (Convex — `src/convex/`)
 
-* **`schema.ts`:** ~40 tables, `schemaValidation: false` (legacy rows would block deploys — don't trust the validator to catch drift, and don't remove optional fields without a migration).
-* **`agentCore.ts`:** the model brain — pricing, `MODE_MATRIX`/`AGENT_MODEL_MAP` tier tables, SigV4 signer, `callModel`/`callClaude`/`callGemini`/`callAgentRouter`, the inline `<<TAG>>` tool-marker parser, and every agent system prompt (treat prompt edits like schema migrations).
-* **`agentPipeline.ts`** (OLD system) / **`codePipeline.ts`** (NEW system): dispatcher-driven dynamic 9-agent pipelines — a Haiku Dispatcher picks the minimum agent subset per task (Coder + Critic always forced) from Researcher → Analyser → Planner → Coder → Optimiser → Organizer → Tester → Hacker → Critic. One agent step per invocation, state on the session/branch doc, self-reschedule via `ctx.scheduler.runAfter(0, …)` — fully resumable.
+* **`schema.ts`:** 50 tables plus the 6 spread in from `authTables`, `schemaValidation: false` (legacy rows would block deploys — don't trust the validator to catch drift, and don't remove optional fields without a migration).
+* **`agentCore.ts`:** the model brain — the `FREE_UNLIMITED` switch, `callModel` (the one router), `mapModelIdToOllama`, `calcAgentBucksForTier`, `performSearch`/`performScrape`, the inline `<<TAG>>` tool-marker parser, and every agent system prompt (treat prompt edits like schema migrations). It re-exports the actual provider clients from `siliconflow.ts` (Ollama Cloud — the filename is a leftover, its header and base URL say Ollama), `nimClient.ts` and `modalClient.ts`. No Bedrock code lives here any more; the SigV4 signers are in `http.ts`, `ai.ts` and `study.ts`.
+* **`codePipeline.ts`:** the dispatcher-driven dynamic 9-agent pipeline — a Dispatcher picks the minimum agent subset per task (Coder + Critic always forced) from Researcher → Analyser → Planner → Coder → Optimiser → Organizer → Tester → Hacker → Critic. One agent step per invocation, state on the branch doc, self-reschedule via `ctx.scheduler.runAfter(0, …)` — fully resumable. `stopPipeline` sets `stopRequested`; the runner halts without rescheduling and clears the flag.
 * **`ai.ts`/`aiHelpers.ts`:** plain chat/research/study portal (no agents). **`rag.ts`:** study-mode vector + GraphRAG (Gemini text-embedding-004, 1536-d).
 * **`customAuth.ts`/`customAuthHelpers.ts`:** the real auth (OTP, temp-mail blocking, `customSessions` 64-hex tokens, 30-day expiry, OAuth state, referral wheel, domain auto-ban).
 * **`http.ts`:** SSE `/stream-chat`, OAuth callbacks, BMAC payment webhook, OpenAI-compatible `/api/v1/chat/completions` (`thal_` keys), `/ad` proxy, and all `/ao/*` routes.
@@ -151,38 +155,59 @@ One Convex backend, two frontends (web + native Windows), two products (Thalamus
 
 ### Model Routing (source of truth: `agentCore.ts`, not any doc)
 
-* Tiers: `gemini | haiku | sonnet | opus46 | opus48`. Per-agent tier = `MODE_MATRIX[runMode][agent]` (cheap/balanced/powerful) falling back to `AGENT_MODEL_MAP`. Balanced mode: Dispatcher haiku, Researcher gemini, Organizer haiku, everything else sonnet. Powerful promotes the heavy seats to opus48. `DIFFICULTY_CODER_MODEL` overrides the Coder **in the OLD pipeline only**.
-* Claude tiers: Bedrock → AgentRouter. The `gemini` tier: Gemini DB-key pool → AgentRouter (inside `callGemini`); only if that throws/returns empty does it fall back to Bedrock Haiku, billed as haiku.
-* Bedrock model IDs are intentionally inconsistent: `agentCore.ts` maps opus-4-6/opus-4-8 → the opus-4-1 profile and sonnet-4-6 → sonnet-4-5 (4.6/4.8 aren't on Bedrock yet); `ai.ts` keeps its own separate ID map. Check the file you're touching.
-* Every model call bills twice: user AgentBucks (`deductAgentBucks`) **and** `platformBudget` (`deductPlatformCost`; serving auto-disables under $5 remaining). Exchange rate: 1 USD provider cost = 1,500,000 AB.
+* One entry point: `callModel(prompt, systemPrompt, agentName, …, ctx)`. **The agent name is the routing key.** `agentToTaskType()` (`nimClient.ts`) maps it to a task type — dispatcher | code | reasoning | research | agent | chat — and that picks the model. Pass anything else (an old tier string, a raw model id) and every branch of the map misses, silently landing on the generic chat model.
+* Provider order when a `ctx` is passed: **Modal** (admin-registered `modalEndpoints`, primary row first) → **NVIDIA NIM** → **Ollama Cloud**. Without a `ctx` it goes straight to Ollama. `callModel` returns a provider-tagged tier string (`modal:…`/`nim:…`/`ollama:…`) and the billing helpers branch on that prefix.
+* Task type → NIM model: dispatcher `nemotron-nano-9b-v2`, code `qwen3-coder-480b`, reasoning `nemotron-3-super-120b`, agent `deepseek-v4-pro`, else `NIM_DEFAULT_CHAT_MODEL`. Ollama's equivalent is `mapModelIdToOllama` in `agentCore.ts` (gemma4:31b / minimax-m3 / gpt-oss:120b).
+* Both maps match by substring and both spell it `organiser` (s), while the pipeline agent is `Organizer` (z) — so the Organizer misses every branch and falls through to the chat model. Worth knowing before you debug why one seat behaves oddly.
+* **There are no run modes and no model tiers.** `MODE_MATRIX`, `AGENT_MODEL_MAP`, `getAgentTier`, `DIFFICULTY_CODER_MODEL`, `codeBranches.runMode`, the `agentModelConfig` table and the `/admin` Model Config tab are all deleted. `ModelTier` is now just `string`. Nothing to mirror on desktop — the WPF app never had a run-mode control.
+* AWS Bedrock and Gemini survive only on the legacy chat/study paths, never in the pipeline: `/stream-chat` in `http.ts` (hand-rolled SigV4 + AWS binary event-stream parsing, falling back Bedrock → Gemini → VLY), `ai.ts` `callAI` (Bedrock → Gemini, with its own `BEDROCK_MODEL_IDS` map), and `study.ts` PDF/image extraction. Each keeps its own credential parser and ID map — check the file you're touching. `rag.ts` embeddings are Gemini `text-embedding-004`.
+* Billing is wired on every pipeline call — `sandboxHelpers.deductAgentBucks` for the user, `admin.deductPlatformCost` for the platform — but neither moves a number today. `FREE_UNLIMITED` makes the first a no-op, and the second is handed names shaped `<agent>-nim:<model>`, which aren't in `PLATFORM_PRICING`, so `calcPlatformCost` returns 0 and logs a "Zero cost" warning. The budget guard (`isPlatformBudgetExhausted`, auto-disable under $5) is still consulted on every run; the only spend that actually reaches `platformBudget` is AgentOverflow's scoring/answer path, which mis-bills at `claude-haiku-4-5` rates. Exchange rate where it applies: 1 USD provider cost = 1,500,000 AB.
 
-### Two Parallel "Code Mode" Systems
+### Free & Unlimited (five kill switches — the product decision, not a temporary state)
 
-1. **OLD:** `teamSessions`/`agentMessages`/`projectFiles` — `agentPipeline.ts`, rendered inline by `TeamPortalInline` inside Portal/MobilePortal.
-2. **NEW (canonical):** `codeProjects`/`codeBranches`/`codeMessages`/`codeFiles` — `codePipeline.ts`, `/portal/code` routes, `CodeWorkspace.tsx`.
+Free and unlimited is the product, permanently. It is implemented as five independent booleans, none of which know about each other. A dozen latent billing bugs are harmless only while all five are on, so treat flipping any of them as a coordinated change, not a one-line edit.
 
-New features go into the NEW system only. The two pipeline files are near-duplicates — always confirm which one you're editing. NEW-only behaviors: MCP tool calls (built-in AgentOverflow server, bounded rounds), `<<RUN-CMD>>` Daytona execution and `<<REQUEST-API-KEY>>` pause/resume (branch pauses without rescheduling; `codeCommands.completeCommand`/`codeApiKeys` resume it — check those two tables first when a branch looks stuck), Critic retry loop (max 2), simulated streaming (batch response drip-fed in 300-char chunks — real token streaming was abandoned as unreliable in Convex actions).
+| Switch | File | What it gates |
+|---|---|---|
+| `FREE_UNLIMITED` | `src/convex/agentCore.ts` | AgentBucks deduction (`sandboxHelpers`), the per-user and guest caps (`ai.ts`, `aiHelpers.ts`), the `thal_` API-key credit check (`http.ts`) |
+| `AO_FREE_UNLIMITED` | `src/convex/agentoverflow.ts` | AgentOverflow search/answer charge, the 60/min per-key rate limit, the anonymous per-IP daily cap |
+| `PAYMENTS_DISABLED` | `src/convex/payments.ts` | Forces `getPublicPaymentsConfig` to `{isEnabled:false}` regardless of the admin toggle — the web credits modal opens straight into "unavailable" and desktop hides the Buy Credits button |
+| `GUEST_UNLIMITED` | `src/pages/Portal.tsx` | The client-side guest prompt counter and the copy around it |
+| `FREE_UNLIMITED` | `agentoverflow` repo, `api/app/keystore.py` | The corpus VM's own per-key burst and daily quota — the search hot path never calls Convex, so this one has to flip too |
+
+Flip checklist, in order: `agentCore.FREE_UNLIMITED` and `Portal.GUEST_UNLIMITED` together (server + client, or the UI lies); `agentoverflow.AO_FREE_UNLIMITED` and the VM's `keystore.FREE_UNLIMITED` together (cross-repo, both deploys); `PAYMENTS_DISABLED` last, since there is no point re-arming a charge nobody can top up. Before any of that, fix the two things that make metering meaningless anyway — the `PLATFORM_PRICING` miss described above, and `ai.ts` chat billing, which is hardcoded to Gemini-ish rates. **Docs must not advertise purchasable credits or paid tiers as live.**
+
+### Code Mode (one system — the old one is gone)
+
+`codeProjects`/`codeBranches`/`codeMessages`/`codeFiles` — `codePipeline.ts`, the `/portal/code/*` routes, `CodeWorkspace.tsx`. The OLD system (`teamSessions`/`agentMessages`/`projectFiles`, `agentPipeline.ts`, `TeamPortalInline.tsx`) was deleted along with its tables; any doc, comment or memory that still mentions "two code systems" is stale.
+
+Behaviors worth knowing: MCP tool calls (user-connected servers plus the built-in AgentOverflow and Sketchfab servers, bounded rounds), `<<RUN-CMD>>` Daytona execution, `<<REQUEST-API-KEY>>` pause/resume, Critic retry loop (max 2), simulated streaming (the batch response is drip-fed to `streamingContent` in 300-char chunks — real token streaming was abandoned as unreliable in Convex actions).
+
+`<<RUN-CMD>>` queues into `codeCommands`, parks the branch as `paused`, then schedules `sandbox.executeBranchCommands`, which reschedules `runPipelineAction` from its own `finally` — so it self-resumes even when the sandbox throws. `<<REQUEST-API-KEY>>` is the one that genuinely blocks on the user; `codeApiKeys.fulfillApiKeyRequest` reschedules it. When a branch looks stuck, check `codeCommands` and `codeApiKeyRequests` first.
 
 ### VM & Sandbox Environments (three backends)
 
 * **Daytona** — cloud sandbox for pipeline `<<RUN-CMD>>` (`sandbox.ts`).
-* **v86** — browser WASM x86. **Not an npm package:** `SandboxView.tsx` injects `libv86.js` from the copy.sh CDN at runtime (`window.V86`).
+* **v86** — browser WASM x86. **Not an npm package and not a local asset:** `SandboxView.tsx` injects `libv86.js` from the copy.sh CDN at runtime (`window.V86`), and pulls `v86.wasm`, the SeaBIOS/VGA BIOS blobs and every disk image from copy.sh too. Nothing v86-related ships in `public/`.
 * **QEMU** — web app speaks the legacy Node bridge protocol on `ws://localhost:5900` via `src/lib/vmLauncher.ts` (JSON, **no request IDs** — listener-order correlation; read the header comment before touching). `qemu-bridge/` is that legacy bridge's source. The native app drives QEMU directly (`QemuBridgeManager.cs`) with no bridge process. Port map: 5900 = bridge socket, VNC displays from 5901 up.
 
 ### Desktop & Native Apps (`thalamus-native/`)
 
 * **Parity rule (§1): every website change ships to the desktop app too, in the same task.**
 * WPF/.NET 8, self-contained single-file, **zero NuGet packages in the app** (HTTP/SSE/RFB-VNC hand-rolled; installer allows exactly one — System.Text.Json). Build via `build.ps1` (handles the WPF `_wpftmp` publish race); full instructions in `thalamus-native/BUILD.md`.
-* It drives the NEW code system through Convex's public HTTP API — public function signatures used by shipped builds (`codeProjects:createProject`, `codePipeline:startPipeline`, `codeBranches:getBranch/watchMessages/watchFiles`, …) are a public API. Don't break them.
+* It drives the code system through Convex's public HTTP API — function signatures used by shipped builds (`codeProjects:createProject`, `codePipeline:startPipeline`, `codePipeline:stopPipeline`, `codeBranches:getBranch/watchMessages/watchFiles`, `gravityAds:requestAd`, `payments:getPublicPaymentsConfig`, `conversations:*`, `desktopAuthActions:createCode`, `desktopAuth:pollCode`, …) are a public API. Don't break them — and remember `tsc` cannot see those call sites at all, which is what `bun run check-refs` covers.
 * `ConvexClient.cs` hardcodes the prod deployment (`befitting-wildebeest-866`); repointing requires a rebuild.
-* Version is stamped in four places (`ThalamusApp.csproj`, `MainWindow` `APP_VERSION`, `build.ps1` default, `installer.iss`) — keep them in sync on release. In-app update check is notify-only; `AutoUpdateSystem.cs` is dead code polling a domain we don't own — don't wire it up.
+* Version is stamped in **seven** places — `thalamus-native/BUILD.md` has the authoritative table, follow it rather than guessing. Short version: `ThalamusApp.csproj` `<Version>` and `MainWindow.xaml.cs` `APP_VERSION` are the ones that matter (APP_VERSION drives the sidebar label and the update comparison); `build.ps1` and `installer.iss` carry defaults that `-Version` overrides (`installer.iss` is `#ifndef`-guarded); `MainWindow.xaml`'s `VersionLabel` is cosmetic and overwritten at runtime; `ThalamusInstaller` has its own csproj `<Version>` and `InstallerWindow.xaml.cs` `VERSION`.
+* The in-app update check is **notify-only** — `MainWindow.CheckForUpdatesAsync` hits the GitHub Releases API and sets a label. It downloads and installs nothing. There is no auto-updater and no update server; don't build one unasked.
 * Shared WPF resources go in `App.xaml` `Application.Resources`, never `Window.Resources` (child UserControls crash at parse otherwise).
 * ISO catalog (`IsoLibrary.cs` + admin-managed `desktopIsoCatalog` table) is legal-sources-only: verified official URLs, never preactivated Windows/macOS/iOS images.
 * The web app is web-only — no desktop-wrapper detection.
 
 ### Platform Credits (AgentBucks)
 
-Deducted per-token per the `modelPricing`/`TIER_PRICING` tables. The live spendable paths touch `dailyAgentBucks` + `purchasedAgentBucks` + `creditBatches` (90-day expiry, soonest-first) — `users.agentBucksBalance` is *not* the spendable balance. Daily reset: 10M AB at midnight IST. Top-ups: Buy Me a Coffee webhook (`/bmac/webhook`), promo codes, referral wheel. Admin panel (`/admin`) manages keys, pricing, budgets.
+Per-token cost comes from `calcAgentBucksForTier` in `agentCore.ts`, which branches on the provider prefix into `calcModalAgentBucks` / `calcNimAgentBucks` / `calcAgentBucksForModel`. The `modelPricing` table is admin-editable but **no billing path reads it**. The spendable paths touch `dailyAgentBucks` + `purchasedAgentBucks` + `creditBatches` (90-day expiry, soonest-first) — `users.agentBucksBalance` is *not* the spendable balance. Daily reset: 10M AB at midnight IST.
+
+Every deduction is currently a no-op (`FREE_UNLIMITED`, above), and purchases are off (`PAYMENTS_DISABLED`). The inbound Buy Me a Coffee webhook (`/bmac/webhook`) stays live so anyone who already paid still gets credited; promo codes and the referral wheel are unaffected. Admin panel (`/admin`) manages provider keys, pricing rows and budgets.
 
 ---
 
@@ -191,8 +216,9 @@ Deducted per-token per the `modelPricing`/`TIER_PRICING` tables. The live spenda
 A second product on this same deployment: Stack Overflow for AI agents. The separate repo (`hardcoregamingsyle/agentoverflow`, checked out at `../agentoverflow`, **which has its own CLAUDE.md**) holds the website, corpus ingestion, and the GCP VM search API. **This repo holds its entire backend:**
 
 * `agentoverflow.ts` — `ao_` keys (CSPRNG, SHA-256 hash-only storage), the `aoCredits` economy (10/day refill, search/answer = 1 credit), LLM-scored learning submissions, contribution tiers (`CONTRIB_TIERS`, ~1%/day point decay), `aoLimitRequests`.
-* `agentoverflowHttp.ts` — `/ao/v1/*` REST + the shared `run*` operation core (charge-before-fetch, refund on failure). Rate limit: 60 req/min/key.
+* `agentoverflowHttp.ts` — `/ao/v1/*` REST + the shared `run*` operation core (charge-before-fetch, refund on failure). Rate limit: 60 req/min/key by default, overridable per account via `users.aoCustomRateLimit`.
 * `agentoverflowMcp.ts` — `/ao/mcp` stateless MCP server. Tool calls are **free** (still metered for rate limiting); keyless callers get the anonymous tier (1000/IP/day, gold docs hidden).
+* **`AO_FREE_UNLIMITED = true` currently bypasses all of that.** The charge is forced to 0 (so the insufficient-credits check can never fire), the per-key rate limit is skipped, and the anonymous per-IP cap still counts but never throws. Learning scoring is *not* bypassed — it patches `aoCredits` and contribution points directly, so rewards and spam penalties are live right now. The constants (`COST_SEARCH`/`COST_ANSWER` = 1, `DAILY_REFILL` = 10, `RATE_LIMIT_PER_MIN` = 60, `AO_ANON_DAILY_LIMIT` = 1000) are the design the switch re-arms.
 * `agentoverflowPublic.ts` — SEO doc payloads + sitemaps. `agentoverflowAdmin.ts` — admin backend (same `ADMIN_TOKEN`).
 * Search/answer proxy to the corpus VM via `AO_VM_URL` + `AO_INTERNAL_SECRET` (15s timeout; unset → `AO_BACKEND_UNCONFIGURED`, endpoints 503 with refunds). A 2-minute cron pushes key-hash snapshots to the VM, so the search hot path never touches Convex — and key changes take up to one interval to land.
 * **`aoCredits` and AgentBucks are completely separate economies. Never mix them.**
@@ -202,10 +228,11 @@ A second product on this same deployment: Stack Overflow for AI agents. The sepa
 
 ## 6. Known Landmines
 
-* Two auth systems coexist; only the custom-token one is live (§4). Don't "modernize" onto `ctx.auth`.
-* Two code-mode systems coexist; NEW is canonical (§4). Don't add features to both.
-* `/github/webhook` does no signature verification. `userApiKeys.generateApiKey` uses `Math.random` while `generateAoKey` uses CSPRNG — the asymmetry is known, not yours to normalize unasked.
+* Two auth systems coexist; only the custom-token one is live (§4). Don't "modernize" onto `ctx.auth`. `auth.ts` still registers its `/api/auth/*` routes from `http.ts` and `users.ts` still imports `getAuthUserId`, so it isn't deletable — it's just never the thing that signs anyone in.
+* There is now exactly **one** code-mode system (§4). If something tells you otherwise, it's stale.
+* `/github/webhook` does no signature verification. `userApiKeys.generateApiKey` uses `Math.random` for the `thal_` key body while `generateAoKey` uses CSPRNG — the asymmetry is known, not yours to normalize unasked. The 6-digit email OTP is also `Math.random`.
 * `rag.ts` reads Gemini keys from env while everything else reads the DB — if only DB keys are set, RAG silently returns no context.
-* Chat billing in `ai.ts` is hardcoded to Gemini-ish pricing regardless of the answering model — known quirk.
+* Chat billing in `ai.ts` is hardcoded to Gemini-ish pricing regardless of the answering model, and `admin.deductPlatformCost` can't price any current provider name (§4) — known quirks, both currently masked by free mode.
+* `src/lib/vly-integrations.ts` ships a hardcoded fallback `sk_…` key when `VLY_INTEGRATION_KEY` is unset. VLY is the last-resort completion provider for `/stream-chat` and several `study.ts` paths.
 * `scripts/study-eval.ts` and `scripts/mcp-smoke.ts` hit the live backend and cost real credits/keys — not free unit tests. `scripts/sync-to-github.sh` force-commits everything with a PAT — don't run casually.
-* Deployment targets: web = Cloudflare Pages, backend = Convex Cloud (`npx convex deploy`), desktop = GitHub Releases (`v*` tag). Docs in `docs/` are neutral reference but several pages lag the code — when a doc and the code disagree, the code wins; fix the doc in passing only if it's the file you're already touching.
+* Deployment targets: web = Cloudflare Pages, backend = Convex Cloud (`npx convex deploy`), desktop = GitHub Releases (`v*` tag). Docs in `docs/` are neutral reference; when a doc and the code disagree, the code wins — fix the doc in passing if it's the file you're already touching.

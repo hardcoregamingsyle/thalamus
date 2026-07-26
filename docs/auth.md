@@ -2,6 +2,8 @@
 
 Thalamus uses three auth mechanisms depending on the client: Email OTP (primary), GitHub OAuth (for repo access), and a custom session token system.
 
+All of it is hand-rolled in `customAuth.ts` / `customAuthHelpers.ts`. `@convex-dev/auth` (`src/convex/auth.ts`, `ConvexAuthProvider` in `main.tsx`) is still wired up and its `/api/auth/*` routes are still registered, but nothing signs in through it — no live path populates `ctx.auth`. Do not migrate code onto it.
+
 ## Email OTP (Primary Login)
 
 ### Flow
@@ -84,7 +86,7 @@ GitHub OAuth is used solely for connecting user repositories to code projects. I
 The native Windows app (`thalamus-native/`) uses a device-code style flow — it never asks for the OTP itself:
 
 1. `LoginWindow.xaml` — Shows a short auth code and status while waiting
-2. `LoginHandler.cs` — Calls `desktopAuthActions:createCode` on Convex, opens the default browser at `/auth/desktop?code=...`, then polls `desktopAuth:pollCode` every 2s (5-minute timeout)
+2. `LoginHandler.cs` — Calls `desktopAuthActions:createCode` on Convex, opens the default browser at `/auth/desktop?code=...`, then polls `desktopAuth:pollCode` every 2s (5-minute timeout). The code is 8 alphanumeric characters with the ambiguous ones (I, O, 0, 1) removed, generated with `crypto.getRandomValues` — it's the only thing standing between a caller and a 30-day session token, and `createCode` is a public action
 3. The user signs in on the website (normal email OTP) and authorizes the code — `desktopAuth.authorizeCode` mints a session token and attaches it to the code
 4. `AuthManager.cs` — Persists the returned token DPAPI-encrypted in `%LOCALAPPDATA%\Thalamus\session.dat`
 5. Token injected into `ConvexClient` and `StreamingClient` requests
@@ -102,9 +104,11 @@ The desktop app ends up with the same `customSessions` token as the web app — 
 
 ## Security Notes
 
-- OTP codes expire in 15 minutes
+- OTP codes expire in 15 minutes. The 6-digit code itself is generated with `Math.random`, unlike the desktop auth code and `ao_` keys, which use `crypto.getRandomValues` — a known asymmetry
 - Sessions expire in 30 days
 - Max 10 sessions per user (prevents token accumulation)
+- `/auth?token=` (the OAuth hand-back) validates the token against `/^[0-9a-f]{64}$/` before adopting it, so a malformed query string can't be stored as a session
+- The session token is passed as an explicit `{token}` argument to nearly every Convex call — nothing is inferred from the connection
 - GitHub state parameter encodes userId directly (stateless verification)
 - No password storage anywhere in the system
-- Admin role checked server-side for all admin operations
+- Admin role checked server-side for all admin operations; `/admin` functions string-compare `ADMIN_TOKEN`

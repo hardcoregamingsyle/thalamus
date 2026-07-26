@@ -19,7 +19,7 @@ Built and maintained by one person. Yes, all of it.
 
 ## The pipeline
 
-The pipeline is **dynamic**. Before anything runs, a Dispatcher (cheapest model, one call) classifies the task — trivial, simple, medium, complex, or full — and picks the minimum agent set. A typo fix gets `Coder → Critic`. A greenfield app gets all nine. Coder and Critic are always in; everything else has to earn its slot. Both pipeline systems (Team Portal and Code Mode) dispatch the same way and draw from the same nine agents:
+The pipeline is **dynamic**. Before anything runs, a Dispatcher classifies the task — trivial, simple, medium, complex, or full — and picks the minimum agent set. A typo fix gets `Coder → Critic`. A greenfield app gets all nine. Coder and Critic are always in; everything else has to earn its slot. There's one pipeline (`codePipeline.ts`) and one set of nine:
 
 | Agent | Job |
 |---|---|
@@ -44,15 +44,14 @@ The Hacker's whole job is to break what the Coder wrote before you ever see it. 
 src/                    web app (React 19 + Vite + TypeScript + Tailwind)
 ├── convex/             the entire backend — Convex serverless functions
 │   ├── schema.ts       database schema + indexes (standard and vector)
-│   ├── agentCore.ts    model routing, credit metering, agent prompts
-│   ├── codePipeline.ts dynamic agent pipeline (Code Mode)
-│   ├── agentPipeline.ts dynamic agent pipeline (Team Portal — older twin)
+│   ├── agentCore.ts    model routing, credit math, agent prompts
+│   ├── codePipeline.ts the dynamic agent pipeline (Build mode)
 │   ├── ai.ts           chat / research / study handlers
-│   ├── auth.ts         email OTP auth (@convex-dev/auth)
+│   ├── customAuth.ts   the real auth — OTP + customSessions tokens
 │   ├── github.ts       GitHub OAuth + repo sync
-│   └── http.ts         HTTP routes: /stream-chat, /github/*
+│   └── http.ts         every HTTP route (see below)
 ├── components/         feature components (ui/ = vendored shadcn, hands off)
-└── pages/              routes — Landing, Portal, CodeWorkspace, Admin, …
+└── pages/              routes — Landing, Portal, CodeWorkspace, Blog, Admin, …
 
 thalamus-native/        Windows desktop app — WPF on .NET 8. Native XAML views,
 ├── ThalamusApp/        no web wrapper. Thalamus.exe, self-contained single file
@@ -62,6 +61,8 @@ thalamus-native/        Windows desktop app — WPF on .NET 8. Native XAML views
 qemu-bridge/            local Node bridge for QEMU VM control (web sandbox)
 docs/                   reference docs per subsystem
 ```
+
+`http.ts` owns more than the name suggests: `/stream-chat` (SSE), the Google and GitHub OAuth callbacks, `/github/webhook`, the Buy Me a Coffee webhook, the OpenAI-compatible `/api/v1/chat/completions`, the `/ad` proxy, `/sketchfab/mcp`, and every `/ao/*` route (handlers live in the `agentoverflow*` files, registration lives here). `auth.ts` is vestigial `@convex-dev/auth` wiring — its routes are still mounted, but nothing signs in through it.
 
 Deep-dive docs live in [docs/](docs/). Desktop build: [thalamus-native/BUILD.md](thalamus-native/BUILD.md). Full handover context: [HANDOVER.md](HANDOVER.md).
 
@@ -90,6 +91,7 @@ Everything else that matters:
 bun run build         # type-check + production build → dist/
 bun run type-check    # tsc only
 bun run lint          # eslint
+bun run check-refs    # every Convex function reference resolves (tsc can't see these)
 bun run format        # prettier
 bun test              # tests
 ```
@@ -104,17 +106,21 @@ cd thalamus-native; .\build.ps1
 
 ## Model routing
 
-Every model call funnels through `agentCore.ts`:
+Every pipeline call funnels through one function, `callModel` in `agentCore.ts`:
 
-1. **AWS Bedrock** — Claude Haiku 4.5 / Sonnet 4.6 / Opus 4.6 / Opus 4.8
-2. **AgentRouter** — relief gateway when Bedrock is unavailable
-3. **Google Gemini** — gemini-tier tasks try Gemini first (DB-managed keys via the Admin panel) and fall back to Bedrock Haiku if every key is down
+1. **Modal** — admin-registered endpoints (`modalEndpoints`), tried first whenever one exists. Which endpoint wins is data, not code, so swapping the primary model is a click in `/admin`.
+2. **NVIDIA NIM** — the default primary.
+3. **Ollama Cloud** — the backup, and the only provider reachable without a Convex `ctx`.
 
-Each pipeline agent is pinned to a model tier appropriate to its job — the Organizer doesn't need Opus, and paying Opus prices for it would be malpractice. The Admin panel's **Model Config** tab can override any agent's model per run mode (Cheap / Balanced / Powerful).
+There are no model tiers and no Cheap/Balanced/Powerful toggle. **The agent's name is the routing key**: `agentToTaskType` turns "Coder" into a code task, "Analyser" into a reasoning task, "Dispatcher" into a dispatcher task, and each task type has its own model. One less knob for a user to get wrong, and one less thing to keep in sync with a pricing table.
+
+AWS Bedrock and Gemini didn't go away, they just left the pipeline — plain chat (`/stream-chat`), the OpenAI-compatible API, and study-mode PDF extraction still run on them, each with its own credential parser. If you're hunting the SigV4 signer, it's in `http.ts`, `ai.ts` and `study.ts`, not `agentCore.ts`.
 
 ### Credits
 
-Usage is metered in **AgentBucks**: per-token deduction against the `modelPricing` table, balances on `users`, a free daily allocation reset by cron, and platform-wide spend tracked in `platformBudget`. `/admin` manages keys, pricing, and budgets.
+Usage is denominated in **AgentBucks** — per-token rates live in `calcAgentBucksForTier` (`agentCore.ts`), balances on `users` (`dailyAgentBucks` + `purchasedAgentBucks`, plus `creditBatches`), a 10M free daily allocation reset by cron at midnight IST, and platform-wide spend tracked in `platformBudget`.
+
+Right now none of it costs anything. `FREE_UNLIMITED` in `agentCore.ts` makes the deduction a no-op and `PAYMENTS_DISABLED` in `payments.ts` turns the buy flow off, on purpose — free and unlimited is the product. The meter still runs, so the day that changes it changes cleanly. Two honest caveats while it's off: the `modelPricing` table is admin-editable but nothing reads it, and `deductPlatformCost` doesn't recognise the current provider model names, so `platformBudget` isn't actually accruing Thalamus spend.
 
 User-supplied provider keys (deploys, integrations) are encrypted at rest — AES-256-GCM — and the write path refuses to store anything if `API_KEY_ENCRYPTION_SECRET` isn't configured. Plaintext keys in a database is a rookie move; we don't do that here.
 
@@ -126,27 +132,34 @@ Server-side secrets live in the **Convex dashboard**, never in files:
 
 | Variable | What it's for |
 |---|---|
-| `AWS_BEDROCK_API_KEY` | Bedrock credentials (`key:secret:region` or ABSK token) |
-| `AGENTROUTER_API_KEY` | Fallback model gateway |
+| `NVAPI_KEY` | NVIDIA NIM — fallback for when the `nimKeys` table is empty |
+| `OLLAMA_API_KEY` … `OLLAMA_API_KEY_10` | Ollama Cloud — fallback for when the `ollamaKeys` table is empty |
+| `MODAL_ENDPOINT_URL` / `MODAL_MODEL` / `MODAL_API_KEY` | A single Modal endpoint — fallback for when `modalEndpoints` is empty |
+| `AWS_BEDROCK_API_KEY` | Bedrock credentials (`key:secret:region` or ABSK token) — chat, study and the `/stream-chat` route |
+| `GEMINI_API_KEY` / `GOOGLE_AI_API_KEY` | RAG embeddings (`rag.ts` only — everything else reads the `geminiKeys` table) |
+| `GOOGLE_API_KEY` + `GOOGLE_CX` | Google Custom Search behind `performSearch` |
+| `DAYTONA_API_KEY` | Cloud sandbox for `<<RUN-CMD>>` |
+| `SKETCHFAB_API_TOKEN` | Built-in Sketchfab MCP server (only `download_model` needs it) |
 | `API_KEY_ENCRYPTION_SECRET` | AES-256-GCM key for encrypting user provider keys at rest |
 | `ADMIN_TOKEN` | Admin portal access |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | GitHub OAuth app |
-| `JWKS` / `JWT_PRIVATE_KEY` | Auth token signing |
-| `BREVO_EMAIL_SENDER` | OTP transactional email |
-| `SITE_URL` | Public URL for OAuth callbacks |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth app |
+| `BREVO_EMAIL_SENDER` | Brevo API key for OTP transactional email |
+| `FRONTEND_URL` | Public URL for OAuth callbacks |
+| `BMAC_WEBHOOK_SECRET` | Buy Me a Coffee webhook verification |
 | `AO_VM_URL` | AgentOverflow corpus VM (`http://<vm-ip>:8080`) |
 | `AO_INTERNAL_SECRET` | Shared secret between Convex and the corpus VM |
 | `AO_FRONTEND_URL` | AgentOverflow site origin — joins the OAuth redirect allowlist |
 | `AO_MCP_API_KEY` | `ao_` key that gives every pipeline run built-in AgentOverflow MCP tools |
 | `AO_MCP_URL` | Override for the AgentOverflow MCP endpoint (defaults to this deployment's `/ao/mcp`) |
 
-Gemini keys and AWS credentials can also be managed in the Admin panel (stored in the DB, which takes priority over env vars).
+Every model provider prefers its DB table over the env var: `nimKeys`, `ollamaKeys`, `modalEndpoints`, `awsCredentials`, `geminiKeys` — all managed from the Admin panel. The env vars are the fallback, not the source of truth.
 
 ---
 
 ## Admin panel & external API
 
-`/admin` (web only, needs `ADMIN_TOKEN`): Users · DAU · Credits · Promo Codes · Suggestions · Study Materials · AWS Bedrock · Gemini Keys · Model Config · GravityAds.
+`/admin` (web only, needs `ADMIN_TOKEN`): Users · DAU · Credits · Promo Codes · Suggestions · Study Materials · Convex · NVIDIA NIM · Ollama Cloud · Modal · AWS Bedrock · Gemini Keys · Ads (AdMesh) · Payments · VM ISOs · Corpus.
 
 Users can mint their own API keys at `/api-keys` — prefixed `thal_`, SHA-256 hashed before storage, scoped to a credit allocation. The API is OpenAI-compatible, so it drops into Cursor, Claude Code, Codex, or anything else that takes a custom endpoint.
 
@@ -156,7 +169,9 @@ Users can mint their own API keys at `/api-keys` — prefixed `thal_`, SHA-256 h
 
 Stack Overflow, except the users are AI agents. Separate site, separate repo ([`agentoverflow`](https://github.com/hardcoregamingsyle/agentoverflow)), same Convex deployment — one account, one database, zero new OAuth apps to register. When an agent solves something hard, it writes the learning up; when an agent hits a wall, it searches here before burning tokens rediscovering a known fix.
 
-The half that lives in this repo: `agentoverflow.ts` (`ao_` keys, the credit economy, learnings + Gemini scoring, tier-increase applications), `agentoverflowHttp.ts` (the `/ao/v1/*` REST API), `agentoverflowMcp.ts` (the `/ao/mcp` MCP server — Claude Code plugs in with one command, and MCP calls are **free**, rate-limited but never billed), and `agentoverflowPublic.ts` (crawlable doc payloads + sitemaps for the site's `/q/` pages). The corpus itself — a filtered, scored, graph-linked slice of the Jan 2026 Stack Overflow dump plus every learning agents have taught it since — lives on a GCP VM (Qdrant + Postgres) reached via `AO_VM_URL`.
+The half that lives in this repo: `agentoverflow.ts` (`ao_` keys, the credit economy, LLM-scored learnings, tier-increase applications), `agentoverflowHttp.ts` (the `/ao/v1/*` REST API), `agentoverflowMcp.ts` (the `/ao/mcp` MCP server — Claude Code plugs in with one command, and MCP calls are **free**, rate-limited but never billed), and `agentoverflowPublic.ts` (crawlable doc payloads + sitemaps for the site's `/q/` pages). The corpus itself — a filtered, scored, graph-linked slice of the Jan 2026 Stack Overflow dump plus every learning agents have taught it since — lives on a GCP VM (Qdrant + Postgres) reached via `AO_VM_URL`.
+
+Same deal as AgentBucks: **AgentOverflow is free and unlimited right now.** `AO_FREE_UNLIMITED` in `agentoverflow.ts` zeroes the search/answer charge, skips the per-key rate limit, and stops the anonymous per-IP cap from ever throwing. Learning scoring is the exception — rewards and spam penalties move credits and contribution points for real today. The table below is the design the switch re-arms, not a bill anyone is currently paying.
 
 The economy, in one table:
 
@@ -176,9 +191,9 @@ Everyone starts at 10 credits a day, topped back up at midnight IST — but the 
 
 ## VM sandbox
 
-Code Mode can execute commands in an isolated sandbox. Two backends:
+Two different things wear the word "sandbox". Pipeline `<<RUN-CMD>>` calls run in a **Daytona** cloud sandbox — that's the one agents use. The Sandbox tab boots whole operating systems, and it has two backends:
 
-- **Browser VMs** — `v86` (x86 in WebAssembly), zero setup
+- **Browser VMs** — `v86` (x86 in WebAssembly), zero setup, everything streamed from the copy.sh CDN
 - **QEMU VMs** — real virtualization via the local bridge (`qemu-bridge/`, port 5900)
 
 The desktop app goes further: it launches QEMU directly and renders the VM display with a built-in RFB 3.8 VNC client. No external viewer.

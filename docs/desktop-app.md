@@ -2,7 +2,7 @@
 
 ## Overview
 
-The native Windows desktop app is a WPF application targeting .NET 8. It provides the same core modes as the web app (Chat, Research, Study, Code). A VM Sandbox UserControl with an embedded VNC viewer also exists for running full OS instances locally via QEMU (not currently wired into the main window navigation).
+The native Windows desktop app is a WPF application targeting .NET 8. It provides the same core modes as the web app — Code, Chat, Research, Study — plus a Sandbox mode that boots full OS instances locally via QEMU and renders them through an embedded VNC viewer.
 
 ## Project Structure
 
@@ -13,24 +13,30 @@ thalamus-native/
 │   ├── App.xaml / App.xaml.cs    # Application resources + global exception handler
 │   ├── MainWindow.xaml / .cs     # Shell: sidebar navigation + mode panels
 │   ├── AssemblyInfo.cs           # Assembly metadata
-│   ├── AutoUpdateSystem.cs       # Update checker (polls thalamus.dev/api/latest-version)
+│   ├── IsoLibrary.cs             # Built-in ISO catalog (legal sources only)
 │   ├── QemuBridgeManager.cs      # Launches/manages qemu-system-x86_64.exe directly
 │   ├── VncIntegration.cs         # EmbeddedVncClient — RFB 3.8 VNC protocol client
-│   ├── VncViewerControl.cs       # ExternalVncViewer — TightVNC launcher fallback
 │   ├── Auth/
-│   │   ├── LoginWindow.xaml/.cs  # OTP login UI
+│   │   ├── LoginWindow.xaml/.cs  # Device-code login UI (shows the code, waits)
 │   │   ├── AuthManager.cs        # Token management + session persistence
-│   │   └── LoginHandler.cs       # OTP request/verify flow
+│   │   └── LoginHandler.cs       # Device-code request + poll flow
 │   ├── Modes/
 │   │   ├── ChatView.xaml/.cs     # Streaming AI chat
-│   │   ├── CodeView.xaml/.cs     # 9-agent pipeline UI
+│   │   ├── CodeView.xaml/.cs     # 9-agent pipeline UI (start + stop)
 │   │   ├── ResearchView.xaml/.cs # Deep research mode
 │   │   └── StudyView.xaml/.cs    # RAG-based study mode
 │   ├── Controls/
-│   │   └── MessageBubble.xaml/.cs # Reusable chat message component
+│   │   ├── HtmlToWpf.cs          # Renders the backend's HTML replies into WPF elements
+│   │   ├── BuyCreditsWindow.xaml/.cs  # Credits purchase window (hidden while payments are off)
+│   │   └── SponsoredAdCard.xaml/.cs   # Sponsored-ad card
 │   ├── Services/
 │   │   ├── ConvexClient.cs       # HTTP client for Convex mutations/queries
-│   │   └── StreamingClient.cs    # SSE client for real-time AI responses
+│   │   ├── StreamingClient.cs    # SSE client for real-time AI responses
+│   │   ├── ConversationStore.cs  # Cloud conversation list/history per mode
+│   │   └── ThemeManager.cs       # Runtime light/dark switching
+│   ├── Styles/
+│   │   ├── Theme.xaml            # Dark palette (the default)
+│   │   └── Theme.Light.xaml      # Light overlay dictionary
 │   ├── SandboxView.xaml/.cs      # VM Sandbox: OS selector + embedded VNC display
 │   └── Assets/
 │       ├── icon.ico              # App icon
@@ -80,17 +86,18 @@ Sidebar modes:
 - Chat
 - Research
 - Study
+- Sandbox
 
-Navigation (`Nav_Click`) toggles visibility of the four mode panels. Sign In / Sign Out buttons live in the sidebar footer, along with an `AuthDot` Border indicating auth status. There is no Sandbox nav item — `SandboxView` exists as a UserControl but isn't mounted in the shell.
+Navigation (`Nav_Click`) toggles visibility of the five mode panels. Sign In / Sign Out buttons live in the sidebar footer, along with an `AuthDot` Border indicating auth status, a theme toggle, and the live AgentBucks balance.
 
 ### Modes
 
 Each mode is a UserControl loaded into the content area:
 
-- **ChatView** — Text input + message list. Uses `StreamingClient` for SSE token streaming. Messages rendered as `MessageBubble` controls.
-- **CodeView** — Task input + agent progress display. Shows which agents have run, streaming output, generated files.
+- **ChatView** — Text input + message list. Uses `StreamingClient` for SSE token streaming; replies arrive as HTML and are rendered by `Controls/HtmlToWpf`.
+- **CodeView** — Task input + agent progress display. Shows which agents have run, streaming output, generated files. Drives the backend via `codeProjects:createProject` → `codePipeline:startPipeline`, polls `codeBranches:getBranch`/`watchMessages`/`watchFiles`, and halts with `codePipeline:stopPipeline` (which sets a flag the pipeline checks between steps, so a stop is not instant).
 - **ResearchView** — Topic input + structured report output with section headers.
-- **StudyView** — Document upload + Q&A interface with RAG-enhanced responses.
+- **StudyView** — Q&A interface with RAG-enhanced responses. There is no document upload control in the desktop build; materials are added on the web.
 
 ### Services
 
@@ -104,13 +111,13 @@ Each mode is a UserControl loaded into the content area:
 
 **VncIntegration (`EmbeddedVncClient`)** — Raw TCP implementation of the RFB 3.8 protocol. Handles handshake, authentication (none), framebuffer updates. Fires `FrameUpdated` events with pixel data.
 
-**VncViewerControl (`ExternalVncViewer`)** — Static helper that launches an external TightVNC viewer (`tvnviewer.exe`) if present; retained as a fallback. The embedded rendering path lives in `SandboxView`, which writes VNC frames into a `WriteableBitmap` shown in an `Image` element.
+**SandboxView** — UI for picking an OS (grouped Windows / Android / Linux / Custom, sourced from `IsoLibrary.cs` and the admin-managed `desktopIsoCatalog` table), setting RAM/cores via sliders, and viewing the running VM. It writes VNC frames into a `WriteableBitmap` shown in an `Image` element. Reachable from the sidebar as the Sandbox mode.
 
-**SandboxView** — UI for picking an OS (grouped Windows / Linux / macOS / Android), setting RAM/cores via sliders, and viewing the running VM through the embedded VNC display. Not currently reachable from the MainWindow sidebar.
+The catalog is legal-sources-only: verified official URLs, never preactivated Windows or macOS/iOS images.
 
-### Auto-Update
+### Update Check
 
-`AutoUpdateSystem.cs` polls `https://thalamus.dev/api/latest-version`. The response carries version, download URL, SHA-256 checksum, and optional delta-update metadata; downloads are verified before install.
+`MainWindow.CheckForUpdatesAsync` queries the GitHub Releases API for `hardcoregamingsyle/thalamus` and compares the tag against `APP_VERSION`. It is **notify-only** — it sets a label in the sidebar and downloads nothing. There is no auto-updater and no update server.
 
 ## Building
 
@@ -144,7 +151,7 @@ dotnet publish thalamus-native/ThalamusApp/ThalamusApp.csproj `
 # Output: thalamus-native/ThalamusApp/bin/Release/net8.0-windows/win-x64/publish/Thalamus.exe
 ```
 
-See `thalamus-native/BUILD.md` for the full story, including the `_wpftmp` gotcha when publishing the installer project.
+See `thalamus-native/BUILD.md` for the full story, including the `_wpftmp` gotcha when publishing the installer project and the authoritative table of the seven places the version string is stamped (`-Version` only overrides some of them).
 
 ### CI Build (GitHub Actions)
 

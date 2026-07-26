@@ -15,7 +15,7 @@
 Provider hierarchy (outermost to innermost):
 1. `StrictMode`
 2. `InstrumentationProvider`
-3. `ConvexAuthProvider` (wraps Convex client pointed at `VITE_CONVEX_URL`)
+3. `ConvexAuthProvider` (wraps Convex client pointed at `VITE_CONVEX_URL`) — the provider is mounted, but auth actually runs on the custom-token path in `src/hooks/use-auth.ts`; see [auth.md](./auth.md)
 4. `BrowserRouter` with all route definitions
 
 ## Pages & Routes
@@ -29,13 +29,18 @@ Provider hierarchy (outermost to innermost):
 | `/portal/code/:projectId` | CodeBranches | Branches (builds) within a project |
 | `/portal/code/:projectId/:branchId` | CodeWorkspace | Full build workspace with live agent output |
 | `/portal/code/:projectId/:branchId/:subpage` | CodeWorkspace | Workspace sub-views (editor, deploy, logs, ...) |
-| `/portal`, `/portal/:mode`, `/portal/:mode/:sessionId` | Portal | Chat, Research, Study modes (+ legacy team code mode via TeamPortalInline) |
-| `/admin` | Admin | API keys, model config, budget (admin only, hidden in desktop mode) |
+| `/portal`, `/portal/:mode`, `/portal/:mode/:sessionId` | Portal | Chat, Research, Study modes |
+| `/blog`, `/blog/:slug` | Blog, BlogPost | Static posts from `src/content/blog.ts` |
+| `/privacy`, `/terms`, `/refund`, `/contact` | Legal | One component, four routes, selected by a `doc` prop |
+| `/admin` | Admin | Provider keys, credits, budgets, ads, ISOs (admin only, hidden in desktop mode) |
 | `/api-keys` | ApiPage | External API key management |
 | `/sync` | Sync | GitHub sync status |
 | `/refer` | Refer | Referral program |
+| `*` | NotFound | Catch-all |
 
-All route components are lazy-loaded via `React.lazy()`.
+All route components are lazy-loaded via `React.lazy()`. `MobilePortal` is not a route — `Portal` swaps to it under 768px.
+
+`public/sitemap.xml` is a committed file, not generated. Adding a blog post to `src/content/blog.ts` without editing the sitemap leaves it unindexed.
 
 ## Key Components
 
@@ -49,7 +54,9 @@ The main build mode UI. Contains:
 - Git sync controls
 
 ### Portal (`src/pages/Portal.tsx`)
-Unified page for Chat, Research, and Study modes. Mode determined by route parameter. The legacy team code mode UI (`src/pages/TeamPortalInline.tsx`, backed by teamSessions/agentMessages/projectFiles) renders inside the Portal — its old standalone `/team` route no longer exists.
+Unified page for Chat, Research, and Study modes; the mode comes from the route parameter. Code mode is not part of Portal — it has its own `/portal/code/*` routes and pages. The legacy inline team-code UI was removed along with its backend.
+
+Guest mode has a `GUEST_LIMIT` of 3 prompts/day, currently unenforced because `GUEST_UNLIMITED` is `true` (mirroring `FREE_UNLIMITED` in the backend). Usage still counts into `guestUsage`, so re-arming the flag enforces immediately against real numbers.
 
 ### Code Workspace Sub-Views (`src/components/code-workspace/`)
 
@@ -89,7 +96,7 @@ Subscriptions are the killer feature — when any agent writes to a branch docum
 ## VM Integration
 
 ### Browser VMs (v86)
-- x86 WebAssembly emulation via v86 (`libv86.js` is loaded from the copy.sh CDN at runtime; the `v86` npm package is in package.json but the workspace loads the CDN build)
+- x86 WebAssembly emulation via v86. **Not an npm dependency and not a local asset** — `libv86.js`, `v86.wasm`, the SeaBIOS/VGA BIOS blobs and every disk image are all fetched from the copy.sh CDN at runtime (`window.V86`)
 - No server-side bridge needed
 - Component: `src/components/code-workspace/SandboxView.tsx` (the old standalone QEMUScreen/VMScreen components were removed)
 
@@ -107,5 +114,5 @@ No Redux/Zustand — Convex IS the state management. All shared state lives in t
 ```bash
 bun run build        # Full production build (type-check + Vite build → dist/)
 bun run type-check   # TypeScript only (no emit)
-bun run dev          # Dev server (hot reload)
+bun run dev          # Dev server — HMR is OFF (vite.config.ts sets server.hmr: false), refresh manually
 ```

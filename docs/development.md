@@ -36,7 +36,9 @@ You need TWO terminals running simultaneously:
 # Terminal 1: Convex backend (watches for changes, syncs to cloud)
 npx convex dev
 
-# Terminal 2: Vite frontend (hot reload)
+# Terminal 2: Vite frontend
+# NOTE: vite.config.ts sets server.hmr: false — there is no hot reload.
+# Refresh the browser manually after every change.
 bun run dev
 ```
 
@@ -51,11 +53,11 @@ The frontend connects to the Convex deployment specified in `VITE_CONVEX_URL`. B
 | `bun run build` | Type-check + production build → `dist/` |
 | `bun run type-check` | TypeScript check only (no emit) |
 | `bun run lint` | ESLint |
+| `bun run check-refs` | Verify every Convex function reference resolves — including the string-based calls from the desktop app, AgentOverflow and crons, which `tsc` cannot see |
 | `bun run format` | Prettier (writes files in-place) |
 | `bun test` | Run tests |
 | `bun test --watch` | Watch mode for tests |
 | `npx convex deploy` | Deploy backend to production |
-| `bun run deploy:selfhosted` | Deploy frontend (self-hosted) |
 
 ## Project Layout
 
@@ -158,11 +160,15 @@ To add a new tool marker:
 
 ## Testing
 
+Suites live in `tests/` — `mcpParse.test.ts`, `parseAgentOutput.test.ts`, `studyPrompt.test.ts`.
+
 ```bash
-bun test                 # Run all tests
-bun test --watch         # Watch mode
-bun test src/convex/     # Test specific directory
+bun test                        # Run all tests
+bun test --watch                # Watch mode
+bun test tests/mcpParse.test.ts # Single suite
 ```
+
+`scripts/study-eval.ts` and `scripts/mcp-smoke.ts` are not unit tests — they call the live backend and consume real credits and API keys.
 
 ## Type Checking
 
@@ -198,5 +204,7 @@ dotnet build ThalamusApp/ThalamusApp.csproj -c Debug   # dev loop
 | "Cannot find module convex/_generated" | Run `npx convex dev` to generate types |
 | Convex subscription shows `undefined` | Check auth — user might not be logged in |
 | Vite build fails on types | Run `bun run type-check` to see specific errors |
-| "Rate limited" from Bedrock | Check AWS credentials in admin panel or env vars |
+| Pipeline says "No AI provider configured" | Add NIM keys at `/admin` → NVIDIA NIM (primary), or Ollama Cloud keys (backup) |
+| "Rate limited" in chat or study mode | Those paths still run on Bedrock/Gemini — check AWS credentials and Gemini keys in the admin panel or env vars |
+| A Convex call fails at runtime but `tsc` was clean | Run `bun run check-refs` — the generated `api` object degrades to `any`, so wrong function names only surface at runtime |
 | Desktop app crashes on launch | Resources must be in App.xaml, not Window.Resources |

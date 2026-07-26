@@ -8,7 +8,7 @@ Thalamus AI is a full-stack AI coding assistant platform built by Aphantic Corpo
 |----------|----------------|
 | [Architecture](./architecture.md) | System overview, tech stack, how all pieces connect |
 | [Frontend](./frontend.md) | React app structure, pages, routing, UI components |
-| [Backend](./backend.md) | Convex functions, database schema, all 40+ tables |
+| [Backend](./backend.md) | Convex functions, database schema, all 50 tables |
 | [AI Pipeline](./ai-pipeline.md) | The 9-agent system, Dispatcher, model routing, tools |
 | [Desktop App](./desktop-app.md) | WPF native app, build process, XAML architecture |
 | [Authentication](./auth.md) | Email OTP, GitHub OAuth, desktop auth, sessions |
@@ -34,8 +34,12 @@ Thalamus AI is a full-stack AI coding assistant platform built by Aphantic Corpo
 │         ┌──────────────┼──────────────┐                    │
 │         ▼              ▼              ▼                    │
 │  ┌────────────┐ ┌───────────┐ ┌───────────┐              │
-│  │ AWS Bedrock│ │  Gemini   │ │AgentRouter│              │
-│  │ (Claude)   │ │  (Flash)  │ │(last rsrt)│              │
+│  │   Modal    │ │NVIDIA NIM │ │  Ollama   │  pipeline    │
+│  │ (optional) │ │ (primary) │ │  (backup) │              │
+│  └────────────┘ └───────────┘ └───────────┘              │
+│  ┌────────────┐ ┌───────────┐ ┌───────────┐              │
+│  │AWS Bedrock │ │  Gemini   │ │    VLY    │  chat/study  │
+│  │  (Claude)  │ │  (Flash)  │ │(last rsrt)│              │
 │  └────────────┘ └───────────┘ └───────────┘              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -46,7 +50,8 @@ Thalamus AI is a full-stack AI coding assistant platform built by Aphantic Corpo
 |-------|-----------|
 | Frontend | React 19, Vite 7, TailwindCSS 4, Shadcn UI, Framer Motion |
 | Backend | Convex (serverless functions + database) |
-| AI Models | AWS Bedrock (Claude Opus/Sonnet/Haiku), Google Gemini Flash Lite, AgentRouter fallback |
+| AI Models — pipeline | NVIDIA NIM (primary), Modal (admin-registered endpoints, tried first when present), Ollama Cloud (backup) |
+| AI Models — chat / study / RAG | AWS Bedrock (Claude), Google Gemini Flash, VLY (last resort) |
 | Desktop | WPF (.NET 8), C#, self-contained single-file exe |
 | Auth | Email OTP via Brevo, GitHub OAuth |
 | Package Manager | Bun |
