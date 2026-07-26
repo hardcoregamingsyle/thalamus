@@ -1,6 +1,6 @@
 import { Toaster } from "@/components/ui/sonner";
 import { InstrumentationProvider } from "@/instrumentation.tsx";
-import { ConvexReactClient } from "convex/react";
+import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { StrictMode, Component, useEffect, lazy, Suspense, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
@@ -118,6 +118,12 @@ createRoot(document.getElementById("root")!).render(
   !convex ? <ConfigError /> :
   <StrictMode>
     <InstrumentationProvider>
+      {/* Every useQuery in the app gets its client from here. This used to come
+          from ConvexAuthProvider, which wrapped ConvexProvider internally — so
+          removing that vestigial auth wrapper took the client out of the tree
+          with it and every page threw "Could not find Convex client". It is
+          explicit now, and no longer depends on an auth system we do not use. */}
+      <ConvexProvider client={convex}>
         <BrowserRouter>
           <RouteSyncer />
           <DauTracker />
@@ -156,6 +162,7 @@ createRoot(document.getElementById("root")!).render(
           </RouteErrorBoundary>
         </BrowserRouter>
         <Toaster />
+      </ConvexProvider>
     </InstrumentationProvider>
   </StrictMode>,
 );
