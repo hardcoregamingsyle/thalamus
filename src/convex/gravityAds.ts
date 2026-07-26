@@ -129,13 +129,36 @@ export const checkGravityStatus = action({
 const GRAVITY_AD_URL = "https://server.trygravity.ai/api/v1/ad";
 
 // Gravity validates `placement` against a fixed vocabulary and 422s on anything
-// else, so these two are not free-form: the in-chat card sits under the reply,
-// rail cards sit to the right. `placement_id` is not validated the same way —
-// it is resolved against the placements registered in the dashboard, and a
-// registered id is preferred over an unregistered one, so only slots you have
-// actually created will fill.
-const SLOT_IN_CHAT = "below_response";
-const SLOT_RAIL = "right_response";
+// else. `placement_id` is not validated the same way — it is resolved against
+// the placements registered in the dashboard, and a registered id is preferred
+// over an unregistered one, so only slots that actually exist there will fill.
+//
+// Both halves have to match the dashboard, which is why the admin list carries
+// `type:id` per line rather than just an id: a slot registered as "Right of
+// Page" will not fill a request that declares right_response.
+const GRAVITY_PLACEMENTS = new Set([
+  "above_response", "below_response", "inline_response", "left_response",
+  "right_response", "search_result", "center_page", "top_page", "bottom_page",
+  "left_page", "right_page", "group_chat", "search_suggest",
+]);
+
+// Where our UI actually puts each slot, used when a line omits the type.
+// Slot 0 is the card under the reply; the rest live in the right-hand rail.
+const DEFAULT_SLOT_TYPE = (i: number) => (i === 0 ? "below_response" : "right_page");
+
+// "below_response:desktop-response-1" → both halves. A bare id keeps the
+// positional default. An unknown type falls back rather than 422ing the whole
+// request and taking every other slot down with it.
+function parseSlot(line: string | undefined, i: number): { placement: string; placement_id: string } {
+  const raw = (line ?? "").trim();
+  const at = raw.indexOf(":");
+  const type = at > 0 ? raw.slice(0, at).trim() : "";
+  const id = at > 0 ? raw.slice(at + 1).trim() : raw;
+  return {
+    placement: GRAVITY_PLACEMENTS.has(type) ? type : DEFAULT_SLOT_TYPE(i),
+    placement_id: id || `desktop-response-${i + 1}`,
+  };
+}
 
 export const requestAd = action({
   args: {
@@ -216,13 +239,9 @@ export const requestAd = action({
       return count === 1 ? samples[0] : samples;
     }
 
-    // Slot 0 is the in-chat card, the rest are rail slots. Ids come from the
-    // admin list in the same order so dashboard reporting lines up with where
-    // the ad actually rendered.
-    const placements = Array.from({ length: count }, (_, i) => ({
-      placement: i === 0 ? SLOT_IN_CHAT : SLOT_RAIL,
-      placement_id: config.adUnitIds?.[i]?.trim() || `desktop-response-${i + 1}`,
-    }));
+    // Slot 0 is the in-chat card, the rest are rail slots, in the same order as
+    // the admin list so dashboard reporting lines up with where the ad rendered.
+    const placements = Array.from({ length: count }, (_, i) => parseSlot(config.adUnitIds?.[i], i));
 
     const body: Record<string, unknown> = {
       messages,

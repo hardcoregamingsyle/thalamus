@@ -10,6 +10,8 @@ import { sanitizeAiHtml } from "@/lib/sanitizeHtml";
 import { useTheme } from "@/hooks/use-theme";
 import CreditModal from "@/components/CreditModal";
 import ThinkingPanel from "@/components/ThinkingPanel";
+import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
+import { fetchSponsoredAd } from "@/lib/requestAd";
 import {
   MessageSquare, Search, BookOpen, Users, Plus, Send, Loader2,
   Trash2, Zap, LogOut, Cpu, ChevronRight,
@@ -148,6 +150,21 @@ function MobileChatView({
 
   const conversations = useQuery(api.conversations.list, token ? { token } : "skip") as Conversation[] | undefined;
   const messages = useQuery(api.conversations.getMessages, activeConvId && token ? { conversationId: activeConvId, token } : "skip") as Message[] | undefined;
+
+  // Mobile had no ad slot at all — every viewport under 768px routes here
+  // instead of PortalDesktop, so the majority surface was serving nothing.
+  // One card only: this is a single narrow column, so there is no rail to fill.
+  const [sponsoredAd, setSponsoredAd] = useState<GravityAd | null>(null);
+  const adRequestedRef = useRef(false);
+  useEffect(() => {
+    if (!activeConvId || !token || adRequestedRef.current) return;
+    if (!messages || messages.length === 0) return;
+    adRequestedRef.current = true;
+    const adMessages = messages.slice(-6).map(m => ({ role: m.role, content: (m.content ?? "").slice(0, 1000) }));
+    fetchSponsoredAd({ token, messages: adMessages, sessionId: activeConvId, count: 1 })
+      .then(ad => { if (ad) setSponsoredAd(Array.isArray(ad) ? ad[0] as GravityAd : ad as GravityAd); })
+      .catch(() => {});
+  }, [activeConvId, messages, token]);
 
   const createConversation = useMutation(api.conversations.create);
   const deleteConversation = useMutation(api.conversations.remove);
@@ -472,6 +489,9 @@ function MobileChatView({
               </motion.div>
             )}
           </>
+        )}
+        {sponsoredAd && !isThinking && (
+          <div className="px-3 pb-2"><SponsoredAdCard ad={sponsoredAd} /></div>
         )}
         <div ref={messagesEndRef} />
       </div>
