@@ -288,6 +288,118 @@ Study mode is free to use right now, and you can try a few prompts as a guest be
 
 The test is quick: bring one file you actually need to understand — a reading, a spec, a set of notes — into [Study mode](https://thalamus.aphantic.skinticals.com/portal/study) and ask it the question you would ask a tutor. If the answer comes back grounded in your own material, you have found your study partner. It is free, so there is nothing to lose but the confusion.`,
   },
+  {
+    slug: "how-to-prompt-ai-to-write-code",
+    title: "How to Prompt AI to Write Code That Works",
+    metaDescription: "Nine practical rules for prompting an AI coding agent — how to scope, constrain, and verify a request so you get code that runs, not code that compiles.",
+    targetKeyword: "how to prompt AI to write code",
+    tags: ["AI coding prompts", "prompt engineering", "AI code generation", "AI agents", "Thalamus Build"],
+    readingMinutes: 7,
+    publishDate: "2026-07-26",
+    bodyMarkdown: `# How to Prompt AI to Write Code That Works
+
+Most bad AI code comes from a good model answering a bad question. The model was never confused — it just filled in six decisions you never made, guessed a runtime, invented a file layout, and handed back something that is technically an answer to what you typed.
+
+Prompting a coding agent is closer to writing a ticket than talking to a chatbot. Below are the rules that actually move the hit rate, written from watching a multi-agent pipeline succeed and fail on real requests. They apply to any AI coding tool; where a rule maps onto something specific in [Thalamus Build mode](https://thalamus.aphantic.skinticals.com/portal/code), I say so.
+
+## 1. State the runtime before you state the feature
+
+The single most common cause of unusable output is an unstated environment. "Write a function that reads a config file" is answered differently for Node 22, Python 3.12, Go, or a browser with no filesystem at all.
+
+Front-load it in one clause: language, version if it matters, framework, and where the code will run. *"In TypeScript for Node 22, using only the standard library…"* costs you eight words and removes the biggest source of rework.
+
+## 2. One goal per request
+
+A request with three goals gets you three half-implementations. Agents allocate their attention roughly the way a person does — the last thing you mentioned gets the least.
+
+Split it:
+
+- Bad: *"Add auth, fix the pagination bug, and clean up the logging."*
+- Good: three requests, in that order, each one landing before the next starts.
+
+This matters more with a pipeline than with a single model. In Build mode a dispatcher reads your request and picks the minimum set of specialist agents for it — Coder and Critic always, plus a Planner, Tester, Hacker or others when the task warrants. A muddled three-in-one request produces a muddled team assignment. A sharp single goal gets a team shaped for that goal.
+
+## 3. Define "done" so something can check it
+
+This is the rule people skip and then complain about tests. If you do not say what correct output looks like, a Tester has nothing to test against — it can only confirm the code runs, not that it is right.
+
+Give it an oracle. One line is enough:
+
+> *Given a folder with two identical PNGs and one different, it should print exactly one duplicate group containing the two matching files.*
+
+Now the pipeline has a target. In Build mode that matters concretely: the Tester can execute the code in a sandbox and read back real output, and the Critic decides whether the result is good enough or sends it back for another pass. Both of those are far more useful when they know what "good enough" means.
+
+## 4. Describe the failure, not your diagnosis
+
+When something is broken, people tend to prompt their theory: *"the async handler isn't awaiting properly."* If the theory is wrong — and it often is, or you would have fixed it — you have just pointed the model at the wrong file.
+
+Prompt the observation instead: what you ran, what you expected, what happened. Let the Analyser work out the cause. If you have a strong hunch, add it at the end as a hunch, not as the premise.
+
+## 5. Paste the real error, whole
+
+Paraphrased errors lose the stack frame that mattered. Paste the actual output — the full traceback, the failing assertion, the exit code — rather than "it throws a type error somewhere in the parser."
+
+Same for versions. A dependency conflict is unsolvable from prose and trivial from a lockfile line.
+
+## 6. Constrain the shape, not every line
+
+There is a sweet spot between "build me an app" and dictating an implementation you could have typed yourself.
+
+Constrain the things you actually care about:
+
+- Interfaces and signatures other code depends on
+- Libraries you must or must not use
+- Output format, file names, where things live
+- Hard limits: no network calls, no new dependencies, must run offline
+
+Leave the rest open. Over-specifying the internals wastes the part of the tool that is genuinely better than you at boilerplate — and it usually produces worse code, because you have taken options away from the Optimiser for no reason.
+
+## 7. Say what it must not touch
+
+Agents are helpful in ways you may not want. Left unbounded, a request to fix one function can come back with a reorganized module and a renamed export that breaks three call sites.
+
+Draw the fence explicitly: *"Change only src/parser.ts. Do not modify the public API or add dependencies."* One sentence, and the diff stays reviewable.
+
+## 8. Iterate in follow-ups instead of restating the world
+
+The instinct after a bad answer is to rewrite the whole prompt from scratch. Usually the better move is a narrow correction — *"Good, but it fails on empty input; make it return an empty array instead of throwing"* — because the conversation still carries the plan, the files, and the decisions already made.
+
+Restart from zero only when the approach itself was wrong. Correcting a good approach is cheap; re-deriving one is not.
+
+## 9. Ask for a plan first when the task is big
+
+For anything past a couple of files, ask for the plan before the code. You get to correct a wrong approach in ten seconds instead of reading 400 lines to discover it.
+
+Build mode's pipeline already runs a Planner ahead of the Coder on substantial work, but asking for the plan explicitly puts it in front of you, where you can veto it. That is the cheapest review you will ever do.
+
+## A template worth stealing
+
+For a non-trivial request, this shape covers almost everything above:
+
+1. **Context** — language, version, framework, where it runs.
+2. **Goal** — one sentence, one outcome.
+3. **Done means** — the observable result that proves it works.
+4. **Constraints** — libraries, interfaces, files it may touch, hard limits.
+5. **Evidence** — the real error, the failing input, the current behaviour.
+
+You do not need all five every time. A one-line fix needs the goal and the fence. A new feature needs all of them, and takes ninety seconds to write.
+
+## Pick the right mode before you prompt
+
+Half of prompting well is asking in the right place:
+
+- **Chat** — reasoning through a design, explaining a concept, rubber-ducking. No search, so it is quick.
+- **[Research](https://thalamus.aphantic.skinticals.com/portal/research)** — anything where being out of date makes the answer wrong: current library versions, the recommended way to do something today. Answers from live web search.
+- **[Build](https://thalamus.aphantic.skinticals.com/portal/code)** — when you want planned, written, and tested code rather than a snippet to copy.
+
+A workflow that works: settle the approach in Chat, check the current best practice in Research, then hand Build a request that already has its context, goal, and definition of done nailed down. All three sit in the same [portal](https://thalamus.aphantic.skinticals.com/portal), so switching costs nothing.
+
+## Try it on a prompt you already wrote badly
+
+The fastest way to prove any of this is to take a request you have already handed an AI and gotten mush back from, and rewrite it with a runtime, one goal, and a definition of done. Then run it in [Build mode](https://thalamus.aphantic.skinticals.com/portal/code) and compare.
+
+Thalamus is free right now, and you can run a few prompts as a guest before making an account — which makes a controlled experiment on your own prompt cost nothing but the rewrite.`,
+  },
 ];
 
 export function getPostBySlug(slug: string): BlogPost | undefined {
