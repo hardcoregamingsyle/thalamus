@@ -44,7 +44,6 @@ import type * as githubSync from "../githubSync.js";
 import type * as githubSyncHelpers from "../githubSyncHelpers.js";
 import type * as githubWebhooks from "../githubWebhooks.js";
 import type * as gravityAds from "../gravityAds.js";
-import type * as hfRagSpace from "../hfRagSpace.js";
 import type * as http from "../http.js";
 import type * as mcpClient from "../mcpClient.js";
 import type * as mcpParse from "../mcpParse.js";
@@ -108,7 +107,6 @@ declare const fullApi: ApiFromModules<{
   githubSyncHelpers: typeof githubSyncHelpers;
   githubWebhooks: typeof githubWebhooks;
   gravityAds: typeof gravityAds;
-  hfRagSpace: typeof hfRagSpace;
   http: typeof http;
   mcpClient: typeof mcpClient;
   mcpParse: typeof mcpParse;

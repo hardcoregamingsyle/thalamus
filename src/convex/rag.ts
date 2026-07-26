@@ -5,7 +5,6 @@ import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { hfAddDocument, hfRunGraphRagIndex, hfQueryVector } from "./hfRagSpace";
 
 // Embedding generation using Gemini text-embedding-004 (keys from env)
 let embKeyIdx = 0;
@@ -240,19 +239,6 @@ export const vectorizeResource = action({
       graphIndexed: nodesCreated > 0,
     });
 
-    // Hugging Face Space: Chroma + GraphRAG index (shared with team portal)
-    try {
-      const studyDocId = `study:${userId}:${args.resourceId}`;
-      const docBody = `${resource.title}\n\n${resource.content.slice(0, 28000)}`;
-      await hfAddDocument(studyDocId, docBody);
-      await Promise.race([
-        hfRunGraphRagIndex(),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2500)),
-      ]);
-    } catch {
-      /* HF Space cold or unreachable — non-fatal */
-    }
-
     return { chunksCreated, nodesCreated, edgesCreated };
   },
 });
@@ -324,17 +310,6 @@ export const vectorizeResourceInternal = internalAction({
       graphIndexed: nodeIdMap.size > 0,
     });
 
-    try {
-      const studyDocId = `study:${args.userId}:${args.resourceId}`;
-      const docBody = `${resource.title}\n\n${resource.content.slice(0, 28000)}`;
-      await hfAddDocument(studyDocId, docBody);
-      await Promise.race([
-        hfRunGraphRagIndex(),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2500)),
-      ]);
-    } catch {
-      /* HF Space optional */
-    }
   },
 });
 
@@ -342,7 +317,6 @@ async function buildChunkRagContext(
   ctx: ActionCtx,
   userId: Id<"users">,
   queryEmbedding: number[],
-  hfDocs: string[],
 ): Promise<string> {
   const chunkResults = await ctx.vectorSearch("ragChunks", "by_embedding", {
     vector: queryEmbedding,
@@ -356,7 +330,7 @@ async function buildChunkRagContext(
     if (chunk?.text) convexTexts.push(chunk.text);
   }
 
-  const merged = dedupeSnippets([...hfDocs, ...convexTexts], 750);
+  const merged = dedupeSnippets(convexTexts, 750);
   if (merged.length === 0) return "";
 
   let body = merged.map((t, i) => `[${i + 1}] ${t}`).join("\n\n");
@@ -364,7 +338,7 @@ async function buildChunkRagContext(
     body = body.slice(0, MAX_RAG_CONTEXT_CHARS) + "\n...[RAG context capped for token budget]";
   }
   const label =
-    "## Relevant knowledge (Hugging Face Chroma / vector RAG + Convex per-user chunks)";
+    "## Relevant knowledge (from this student's own uploaded material)";
   return `${label}\n${body}`;
 }
 
@@ -419,12 +393,9 @@ export const getStudyContextInternal = internalAction({
     let graphContext = "";
 
     try {
-      const [hfDocs, queryEmbedding] = await Promise.all([
-        hfQueryVector(args.query, 6, { timeoutMs: 2800 }),
-        generateEmbedding(args.query),
-      ]);
+      const queryEmbedding = await generateEmbedding(args.query);
       const [ragBlock, graphBlock] = await Promise.all([
-        buildChunkRagContext(ctx, args.userId, queryEmbedding, hfDocs),
+        buildChunkRagContext(ctx, args.userId, queryEmbedding),
         buildGraphRagContextSection(ctx, args.userId, queryEmbedding),
       ]);
       ragContext = ragBlock;
@@ -597,7 +568,6 @@ export const checkGraphHealth = action({
     if (chunks.length === 0 && nodes.length === 0) {
       issues.push("No RAG index found — no resources have been vectorized");
       recommendations.push("Upload study materials and run vectorize; set GEMINI_API_KEY on Convex for embeddings.");
-      recommendations.push("Study docs are also pushed to the Hugging Face RAG Space (HF_RAG_SPACE_URL) for Chroma + GraphRAG.");
     }
 
     // Determine status
@@ -645,12 +615,9 @@ export const getStudyContext = action({
     let graphContext = "";
 
     try {
-      const [hfDocs, queryEmbedding] = await Promise.all([
-        hfQueryVector(args.query, 6, { timeoutMs: 2800 }),
-        generateEmbedding(args.query),
-      ]);
+      const queryEmbedding = await generateEmbedding(args.query);
       const [ragBlock, graphBlock] = await Promise.all([
-        buildChunkRagContext(ctx, userId, queryEmbedding, hfDocs),
+        buildChunkRagContext(ctx, userId, queryEmbedding),
         buildGraphRagContextSection(ctx, userId, queryEmbedding),
       ]);
       ragContext = ragBlock;
