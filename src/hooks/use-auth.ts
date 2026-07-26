@@ -12,16 +12,20 @@ export function useAuth() {
     return null;
   });
 
+  // A token too short to be a session (64 hex) is junk — a truncated paste, a
+  // stale format. The query has to skip it, which means `user` stays undefined
+  // forever, so it must not count as "still loading" or the app spins for good.
+  const hasUsableToken = !!token && token.length >= 32;
   const user = useQuery(
     api.customAuthHelpers.getUserByToken,
-    token && token.length >= 32 ? { token } : "skip"
+    hasUsableToken ? { token } : "skip"
   );
 
   const signOutMutation = useMutation(api.customAuthHelpers.signOut);
   const sendOtpAction = useAction(api.customAuth.sendOtp);
   const verifyOtpAction = useAction(api.customAuth.verifyOtp);
 
-  const isLoading = token !== null && user === undefined;
+  const isLoading = hasUsableToken && user === undefined;
   const isAuthenticated = !!user;
 
   const signIn = async (provider: string, formData: FormData) => {

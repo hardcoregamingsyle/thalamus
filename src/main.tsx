@@ -37,8 +37,13 @@ class RouteErrorBoundary extends Component<{ children: ReactNode }, { failed: bo
   }
   componentDidCatch(error: Error) {
     const isChunkError = /Failed to fetch dynamically imported module|Loading chunk|error loading dynamically imported/i.test(error.message);
-    if (isChunkError && !sessionStorage.getItem("chunk-reload")) {
-      sessionStorage.setItem("chunk-reload", "1");
+    // Time-boxed rather than a one-shot flag: RouteSyncer used to clear the flag
+    // on every boot, so a chunk that genuinely cannot be fetched reloaded, booted,
+    // re-armed, failed and reloaded again — forever. If we reloaded for this in the
+    // last 30s, the retry already failed; show the error instead of looping.
+    const lastReload = Number(sessionStorage.getItem("chunk-reload") ?? 0);
+    if (isChunkError && Date.now() - lastReload > 30_000) {
+      sessionStorage.setItem("chunk-reload", String(Date.now()));
       window.location.reload();
     }
   }
@@ -89,10 +94,6 @@ function ConfigError() {
 // eslint-disable-next-line react-refresh/only-export-components -- app entry point; HMR component boundaries don't apply here
 function RouteSyncer() {
   const location = useLocation();
-  // App booted fine — re-arm the one-shot chunk-failure auto-reload
-  useEffect(() => {
-    sessionStorage.removeItem("chunk-reload");
-  }, []);
   useEffect(() => {
     window.parent.postMessage(
       { type: "iframe-route-change", path: location.pathname },

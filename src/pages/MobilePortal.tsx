@@ -181,8 +181,11 @@ function MobileChatView({
   const handleNewConversation = async () => {
     if (!token) return;
     try {
-      const result = await createConversation({ title: `New ${modeInfo.label}`, mode, token }) as unknown as Id<"conversations">;
-      setActiveConvId(result);
+      // create returns { id, customId } — storing the whole object made the very
+      // next getMessages call fail argument validation and dumped the user on the
+      // error screen. The cast was hiding it from tsc.
+      const result = await createConversation({ title: `New ${modeInfo.label}`, mode, token }) as { id: Id<"conversations">; customId: string };
+      setActiveConvId(result.id);
       setShowConvList(false);
     } catch { toast.error("Failed to create conversation"); }
   };
