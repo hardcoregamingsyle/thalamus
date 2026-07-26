@@ -1002,9 +1002,14 @@ function PortalDesktop() {
   // Track user activity for the ad-refresh cadence. Passive listeners, ref
   // writes only — zero re-renders.
   useEffect(() => {
-    // Rail ad slots by viewport width. Total ads = 1 in-chat + rail, so wide
-    // screens show up to 5. Narrow screens stay light (in-chat card only).
-    const calc = () => setRailCount(window.innerWidth >= 1920 ? 4 : window.innerWidth >= 1536 ? 3 : window.innerWidth >= 1280 ? 2 : window.innerWidth >= 1024 ? 1 : 0);
+    // Rail ad slots by viewport width. Total ads = 1 in-chat + rail, so a 2560px
+    // screen shows the full six the backend allows.
+    //
+    // The first tier MUST stay at 1280 to match the rail's `hidden xl:flex`.
+    // It used to start at 1024, so every viewport between 1024 and 1279 asked
+    // the ad server for a rail slot that Tailwind then refused to render — a
+    // request per refresh for a card nobody could ever see.
+    const calc = () => setRailCount(window.innerWidth >= 2560 ? 5 : window.innerWidth >= 1920 ? 4 : window.innerWidth >= 1536 ? 3 : window.innerWidth >= 1440 ? 2 : window.innerWidth >= 1280 ? 1 : 0);
     calc();
     window.addEventListener("resize", calc, { passive: true });
     return () => window.removeEventListener("resize", calc);

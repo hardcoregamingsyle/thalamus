@@ -36,7 +36,7 @@ const DOCS: Record<Doc, { title: string; metaTitle: string; description: string;
         "AI model calls are processed by third-party model providers solely to generate your response. The specific providers change as we tune for quality and cost; the current list is available on request.",
       ] },
       { h: "Advertising", p: [
-        "Thalamus is free to use, and sponsored placements help pay for it. Ads are served by our advertising partner, AdMesh, and are labelled as ads wherever they appear.",
+        "Thalamus is free to use, and sponsored placements help pay for it. Ads are served by our advertising partner, Gravity, and are labelled as ads wherever they appear.",
         "To pick something relevant, a trimmed slice of the current conversation (roughly the last six messages) and basic device signals (browser user-agent, IP address and country) are sent to that partner. We do not send your email, account identifiers, uploaded files, or study materials, and we do not sell your personal data.",
         "Measurement: the website loads a measurement pixel from Gravity, an advertising partner. It sets a first-party visitor identifier and reports page views — the page address and title, the referring page, and your browser's user-agent, language and screen size — so that ad impressions and clicks can be attributed. We explicitly switch off its device-fingerprinting and session-recording capabilities. It never receives your chat, research or study content, and it honours Global Privacy Control.",
         "Student and study-mode content is never used for advertising.",

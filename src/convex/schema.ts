@@ -593,35 +593,24 @@ const schema = defineSchema(
       createdAt: v.number(),
     }).index("by_state", ["state"]),
 
-    // GravityAds configuration (admin-managed)
+    // Gravity ads configuration (admin-managed)
     gravityAdsConfig: defineTable({
-      apiKey: v.string(),           // GravityAds API key
-      publisherId: v.optional(v.string()),
+      apiKey: v.string(),           // Gravity publisher API key
+      // Gravity placement ids in slot order: [0] is the in-chat card, the rest
+      // are rail slots. Only ids registered in the Gravity dashboard fill.
       adUnitIds: v.optional(v.array(v.string())),
       isEnabled: v.boolean(),
       showToGuests: v.boolean(),    // Show ads to unauthenticated users
       showToFreeUsers: v.boolean(), // Show ads to authenticated free-tier users
       showToPaidUsers: v.boolean(), // Show ads to paid users
-      // Advertiser categories we refuse to serve (competitors: AI coding
-      // platforms, assistants, Thalamus alternatives). Applied when ad
-      // requests are made to the GravityAds API.
+      // Advertiser categories we refuse to serve — competitors plus everything
+      // no Thalamus user is here for. Sent as `excludedTopics`, which is the
+      // only content lever Gravity's request schema gives us.
       restrictedCategories: v.optional(v.array(v.string())),
       // Gravity measurement Pixel ID (a dashboard UUID, separate from apiKey).
       // Required for attribution + payouts; loaded client-side when set.
       pixelId: v.optional(v.string()),
       testAdMode: v.optional(v.boolean()),
-      // AdMesh requires a session_id on every /agent/recommend call, minted by
-      // POST /agent/session/new and valid for ttl_seconds. The session is
-      // issued against our publisher key (the endpoint takes no body), so one
-      // is shared across requests and cached here rather than minted per ad.
-      adSessionId: v.optional(v.string()),
-      adSessionExpiresAt: v.optional(v.number()),
-      // /agent/recommend has no category filter — free-text `query` is the only
-      // lever, and the catalog behind it is tiny. Raw chat text matches none of
-      // it, so the query gets steered at a category they actually stock.
-      // GET /categories/all is publisher-key-authed and cheap; cached here.
-      adCategories: v.optional(v.array(v.object({ name: v.string(), count: v.number() }))),
-      adCategoriesFetchedAt: v.optional(v.number()),
       updatedAt: v.number(),
       updatedBy: v.optional(v.string()),
     }),
