@@ -170,13 +170,6 @@ const schema = defineSchema(
       // having: Actions gives ubuntu, windows and macos, so a branch can be
       // tested on the OS it actually ships to. Absent means ubuntu.
       runnerOs: v.optional(v.union(v.literal("ubuntu"), v.literal("windows"), v.literal("macos"))),
-      // Daytona sandbox that runs this branch's shell commands on the web (no
-      // desktop app required). Created lazily on the first command.
-      sandboxId: v.optional(v.string()),
-      // When the sandbox filesystem was last seeded from codeFiles. Lets the
-      // executor push only files changed since, so build/test commands run
-      // against the real generated code instead of an empty disk.
-      lastSandboxSyncAt: v.optional(v.number()),
     })
       .index("by_project", ["projectId"])
       .index("by_branch_id", ["branchId"])

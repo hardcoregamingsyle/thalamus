@@ -355,7 +355,7 @@ export const runPipelineAction = internalAction({
     const bill = async (label: string, r: { tier: ModelTier; inputTokens: number; outputTokens: number }) => {
       if (ownerUserId) {
         const ab = calcAgentBucksForTier(r.tier, r.inputTokens, r.outputTokens);
-        await ctx.runMutation(internal.sandboxHelpers.deductAgentBucks, { userId: ownerUserId, agentBucksToDeduct: ab });
+        await ctx.runMutation(internal.credits.deductAgentBucks, { userId: ownerUserId, agentBucksToDeduct: ab });
       }
       await ctx.runMutation(internal.admin.deductPlatformCost, {
         // The tier as returned, unprefixed — pricing looks this up, and

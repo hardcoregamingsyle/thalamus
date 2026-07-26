@@ -138,7 +138,6 @@ Server-side secrets live in the **Convex dashboard**, never in files:
 | `AWS_BEDROCK_API_KEY` | Bedrock credentials (`key:secret:region` or ABSK token) — chat, study and the `/stream-chat` route |
 | `GEMINI_API_KEY` / `GOOGLE_AI_API_KEY` | RAG embeddings (`rag.ts` only — everything else reads the `geminiKeys` table) |
 | `GOOGLE_API_KEY` + `GOOGLE_CX` | Google Custom Search behind `performSearch` |
-| `DAYTONA_API_KEY` | Cloud sandbox for `<<RUN-CMD>>` |
 | `SKETCHFAB_API_TOKEN` | Built-in Sketchfab MCP server (only `download_model` needs it) |
 | `API_KEY_ENCRYPTION_SECRET` | AES-256-GCM key for encrypting user provider keys at rest |
 | `ADMIN_TOKEN` | Admin portal access |
@@ -191,7 +190,7 @@ Everyone starts at 10 credits a day, topped back up at midnight IST — but the 
 
 ## VM sandbox
 
-Two different things wear the word "sandbox". Pipeline `<<RUN-CMD>>` calls run in a **Daytona** cloud sandbox — that's the one agents use. The Sandbox tab boots whole operating systems, and it has two backends:
+Two different things wear the word "sandbox". Pipeline `<<RUN-CMD>>` calls run on **GitHub Actions** from the web, or on **your own machine** from the desktop app — that's the one agents use. The Sandbox tab boots whole operating systems, and it has two backends:
 
 - **Browser VMs** — `v86` (x86 in WebAssembly), zero setup, everything streamed from the copy.sh CDN
 - **QEMU VMs** — real virtualization via the local bridge (`qemu-bridge/`, port 5900)

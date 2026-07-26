@@ -1,15 +1,13 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated data-model types exceed TS instantiation depth (TS2589) in this module; checked builds require this suppression. */
-// @ts-nocheck
+// AgentBucks deduction. This lived in sandboxHelpers.ts back when it shared a
+// file with the Daytona plumbing; that plumbing is gone and the name was only
+// ever misleading. Purchased credits drain first, closest expiry first, then
+// the daily allowance.
 import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 // Free+unlimited switch lives in agentCore (the one pure module every runtime
-// can import). While true, these AgentBucks deduction paths are no-ops.
+// can import). While true, this is a no-op.
 import { FREE_UNLIMITED } from "./agentCore";
 
-/**
- * Deduct AgentBucks directly (used by new cost formula).
- * Purchased credits are deducted first (closest expiry), then daily credits.
- */
 export const deductAgentBucks = internalMutation({
   args: {
     userId: v.id("users"),

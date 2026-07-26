@@ -297,9 +297,6 @@ export const deleteBranch = mutation({
 
     // Deleting the branch would orphan its cloud sandbox (billing forever,
     // findable only in the Daytona console) — tear it down first.
-    if (branch.sandboxId) {
-      await ctx.scheduler.runAfter(0, internal.sandbox.destroyBranchSandbox, { sandboxId: branch.sandboxId });
-    }
 
     await ctx.db.delete(branch._id);
   },
@@ -322,7 +319,6 @@ export const updateBranchStatus = internalMutation({
     criticRetryCount: v.optional(v.number()),
     mcpRoundCount: v.optional(v.number()),
     stopRequested: v.optional(v.boolean()),
-    lastSandboxSyncAt: v.optional(v.number()),
     executor: v.optional(v.union(v.literal("cloud"), v.literal("local"))),
   },
   handler: async (ctx, args) => {
@@ -348,15 +344,10 @@ export const updateBranchStatus = internalMutation({
     if (args.mcpRoundCount !== undefined) updates.mcpRoundCount = args.mcpRoundCount;
     if (args.stopRequested !== undefined) updates.stopRequested = args.stopRequested;
     if (args.executor !== undefined) updates.executor = args.executor;
-    if (args.lastSandboxSyncAt !== undefined) updates.lastSandboxSyncAt = args.lastSandboxSyncAt;
 
     // A finished branch must not keep a cloud sandbox running (~$54/month
     // each). Tear it down and clear the reference — a later re-run simply
     // creates a fresh one lazily.
-    if (args.status === "completed" && branch.sandboxId) {
-      await ctx.scheduler.runAfter(0, internal.sandbox.destroyBranchSandbox, { sandboxId: branch.sandboxId });
-      updates.sandboxId = undefined;
-    }
 
     await ctx.db.patch(branch._id, updates);
   },

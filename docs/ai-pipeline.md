@@ -118,7 +118,10 @@ export const Button = () => <button>Click me</button>;
 
 Both markers **pause the pipeline**, but only one of them waits on a human.
 
-- `<<RUN-CMD>>` queues rows into `codeCommands`, sets the branch to `paused`, and schedules `sandbox.executeBranchCommands`. That action runs the commands in a Daytona sandbox and reschedules `runPipelineAction` from its own `finally` block, so the branch resumes even if execution throws.
+- `<<RUN-CMD>>` queues rows into `codeCommands` and sets the branch to `paused`. Where it runs depends on `codeBranches.executor`:
+  - `cloud` (default) schedules `githubActionsRunner.executeBranchCommandsViaActions`, which pushes the branch's files, ensures the runner workflow exists, and dispatches one workflow run per command. The job POSTs its result to `/code/command-result` with a single-use nonce; that resumes the pipeline. `runnerOs` selects ubuntu, windows or macos.
+  - `local` schedules nothing. The desktop app polls `codeCommands:listPendingForBranch`, runs each command in a per-branch workspace on the user's machine, and calls `completeCommand`, which resumes the pipeline once nothing is outstanding.
+  - Either way a failure to dispatch records a failed result and reschedules `runPipelineAction`, so a branch is never left paused with nobody coming for it.
 - `<<REQUEST-API-KEY>>` writes a `codeApiKeyRequests` row and genuinely blocks until the user submits the key; `codeApiKeys.fulfillApiKeyRequest` reschedules `runPipelineAction`.
 
 If a branch looks stuck, check `codeCommands` and `codeApiKeyRequests` for rows still marked `pending`. User-supplied provider keys are encrypted at rest (AES-256-GCM, keyed by the `API_KEY_ENCRYPTION_SECRET` deployment secret — storage fails closed if it's missing).

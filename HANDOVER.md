@@ -28,7 +28,7 @@ What's left: `codeProjects`/`codeBranches`/`codeMessages`/`codeFiles`, driven by
 
 ### The sandbox has three backends
 
-`sandboxType` in the schema is `daytona | v86 | qemu`. Daytona (`sandbox.ts`) runs the cloud sandboxes that pipeline `<<RUN-CMD>>` calls land in; v86 runs x86-in-WASM in the browser (everything — wasm, BIOS, disk images — streamed from the copy.sh CDN, nothing local); QEMU needs the local bridge (`qemu-bridge/`, port 5900) or, on desktop, `QemuBridgeManager` launches QEMU directly. Three ways to do one job is two too many — v86 is the weakest and least used. If you're looking for something to delete, start your investigation there, but *measure usage first*.
+Pipeline `<<RUN-CMD>>` calls do not use any of these — they run on GitHub Actions from the web (`githubActionsRunner.ts`) or on your own machine from the desktop app. What is left here boots whole operating systems in the Sandbox tab: v86 runs x86-in-WASM in the browser (everything — wasm, BIOS, disk images — streamed from the copy.sh CDN, nothing local); QEMU needs the local bridge (`qemu-bridge/`, port 5900) or, on desktop, `QemuBridgeManager` launches QEMU directly. Three ways to do one job is two too many — v86 is the weakest and least used. If you're looking for something to delete, start your investigation there, but *measure usage first*.
 
 ### Everything is free, and that's five switches
 

@@ -96,28 +96,6 @@ export const countCommands = internalQuery({
   },
 });
 
-export const getBranchSandboxId = internalQuery({
-  args: { branchId: v.string() },
-  handler: async (ctx, args) => {
-    const b = await ctx.db
-      .query("codeBranches")
-      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
-      .first();
-    return b?.sandboxId ?? null;
-  },
-});
-
-export const setBranchSandboxId = internalMutation({
-  args: { branchId: v.string(), sandboxId: v.string() },
-  handler: async (ctx, args) => {
-    const b = await ctx.db
-      .query("codeBranches")
-      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
-      .first();
-    if (b) await ctx.db.patch(b._id, { sandboxId: args.sandboxId });
-  },
-});
-
 // Record a command's result without the client token — the executor is trusted.
 export const recordCommandResult = internalMutation({
   args: {

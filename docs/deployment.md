@@ -97,7 +97,6 @@ Managed in the Convex Dashboard (NOT `.env` files):
 | `AWS_BEDROCK_API_KEY` | Claude via Bedrock — chat, study and `/stream-chat` only |
 | `GEMINI_API_KEY` / `GOOGLE_AI_API_KEY` | RAG embeddings (`rag.ts` reads env, not the `geminiKeys` table) |
 | `GOOGLE_API_KEY` + `GOOGLE_CX` | Google Custom Search behind `performSearch` |
-| `DAYTONA_API_KEY` | Cloud sandbox for pipeline `<<RUN-CMD>>` |
 | `SKETCHFAB_API_TOKEN` / `SKETCHFAB_MCP_URL` | Built-in Sketchfab MCP server |
 | `HF_RAG_SPACE_URL` / `HF_RAG_BASE_URL` | GraphRAG space override |
 | `ADMIN_TOKEN` | Admin authentication |
