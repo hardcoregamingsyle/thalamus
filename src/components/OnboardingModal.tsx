@@ -83,16 +83,19 @@ const MODES = [
   },
 ];
 
+// The nine agents the Dispatcher can actually pick from — keep this in step with
+// ALL_TASK_AGENTS in convex/codePipeline.ts. It used to advertise a Red Team and
+// a Summarizer that no dispatcher could select, and left Analyser out entirely.
 const CODE_AGENTS = [
   { name: "Researcher", role: "Gathers context and requirements", color: "text-blue-400" },
+  { name: "Analyser", role: "Maps the architecture before code", color: "text-sky-400" },
   { name: "Planner", role: "Breaks task into structured steps", color: "text-amber-400" },
   { name: "Coder", role: "Writes the application code", color: "text-violet-400" },
   { name: "Optimiser", role: "Improves performance & security", color: "text-emerald-400" },
-  { name: "Tester", role: "Writes and runs test suites", color: "text-cyan-400" },
-  { name: "Red Team", role: "Finds vulnerabilities & edge cases", color: "text-red-400" },
-  { name: "Critic", role: "Reviews and challenges decisions", color: "text-orange-400" },
-  { name: "Summarizer", role: "Distills key insights", color: "text-pink-400" },
   { name: "Organizer", role: "Structures final output", color: "text-teal-400" },
+  { name: "Tester", role: "Writes and runs test suites", color: "text-cyan-400" },
+  { name: "Hacker", role: "Audits for vulnerabilities", color: "text-red-400" },
+  { name: "Critic", role: "Reviews and challenges decisions", color: "text-orange-400" },
 ];
 
 export default function OnboardingModal({ onComplete, userName }: OnboardingModalProps) {
