@@ -323,6 +323,7 @@ export const updateBranchStatus = internalMutation({
     mcpRoundCount: v.optional(v.number()),
     stopRequested: v.optional(v.boolean()),
     lastSandboxSyncAt: v.optional(v.number()),
+    executor: v.optional(v.union(v.literal("cloud"), v.literal("local"))),
   },
   handler: async (ctx, args) => {
     const branch = await ctx.db
@@ -346,6 +347,7 @@ export const updateBranchStatus = internalMutation({
     if (args.criticRetryCount !== undefined) updates.criticRetryCount = args.criticRetryCount;
     if (args.mcpRoundCount !== undefined) updates.mcpRoundCount = args.mcpRoundCount;
     if (args.stopRequested !== undefined) updates.stopRequested = args.stopRequested;
+    if (args.executor !== undefined) updates.executor = args.executor;
     if (args.lastSandboxSyncAt !== undefined) updates.lastSandboxSyncAt = args.lastSandboxSyncAt;
 
     // A finished branch must not keep a cloud sandbox running (~$54/month

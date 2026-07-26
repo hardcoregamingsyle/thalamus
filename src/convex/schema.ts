@@ -160,6 +160,12 @@ const schema = defineSchema(
       streamingContent: v.optional(v.string()),
       streamingAgent: v.optional(v.string()),
       streamingAt: v.optional(v.number()),
+      // Where <<RUN-CMD>> actually executes. "cloud" (default) queues the
+      // command for the Daytona sandbox; "local" leaves it pending for the
+      // desktop app, which runs it on the user's own machine and reports back
+      // through codeCommands.completeCommand. Absent means cloud, so every
+      // branch created before this field existed keeps its old behaviour.
+      executor: v.optional(v.union(v.literal("cloud"), v.literal("local"))),
       // Daytona sandbox that runs this branch's shell commands on the web (no
       // desktop app required). Created lazily on the first command.
       sandboxId: v.optional(v.string()),

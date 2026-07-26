@@ -701,7 +701,14 @@ export const runPipelineAction = internalAction({
         // on resume — with the command results now in its context. File ops in
         // this partial output are intentionally not applied; the re-run
         // re-emits them.
-        await ctx.scheduler.runAfter(0, internal.sandbox.executeBranchCommands, { branchId });
+        // Cloud branches hand the queue to Daytona. Local ones do not schedule
+        // anything: the desktop app is polling for pending commands, runs them
+        // on the user's machine, and resumes this pipeline itself through
+        // codeCommands.completeCommand. Scheduling Daytona here as well would
+        // race it and run every command twice.
+        if (branch.executor !== "local") {
+          await ctx.scheduler.runAfter(0, internal.sandbox.executeBranchCommands, { branchId });
+        }
         return;
       }
 
@@ -987,7 +994,14 @@ export const runPipelineAction = internalAction({
 
 // Public action: start pipeline
 export const startPipeline = action({
-  args: { token: v.string(), branchId: v.string(), userPrompt: v.optional(v.string()) },
+  args: {
+    token: v.string(),
+    branchId: v.string(),
+    userPrompt: v.optional(v.string()),
+    // The desktop app sends "local" to run commands on the user's own machine.
+    // Omitted (every shipped build before this) means cloud.
+    executor: v.optional(v.union(v.literal("cloud"), v.literal("local"))),
+  },
   handler: async (ctx, args): Promise<void> => {
     // Verify authentication AND that the caller owns this branch — otherwise any
     // signed-in user could inject a prompt into, and start, another user's build.
@@ -1002,6 +1016,7 @@ export const startPipeline = action({
     // retry budget so a previously-exhausted branch starts clean.
     await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
       branchId: args.branchId, stopRequested: false, criticRetryCount: 0, mcpRoundCount: 0,
+      ...(args.executor ? { executor: args.executor } : {}),
     });
 
     // Save user message if provided

@@ -191,6 +191,35 @@ export const completeCommand = mutation({
   },
 });
 
+// What the desktop app polls: the commands this branch is waiting on, for a
+// branch the caller owns. The internal getPendingCommands above is the
+// pipeline's own resume guard and is not reachable from a client, so the local
+// executor needs its own door — owner-checked, because the reply tells the
+// caller what shell commands to run and on which machine.
+export const listPendingForBranch = query({
+  args: { token: v.string(), branchId: v.string() },
+  handler: async (ctx, args) => {
+    const session = await requireSession(ctx, args.token);
+    await assertBranchOwner(ctx, session.userId, args.branchId);
+
+    const branch = await ctx.db
+      .query("codeBranches")
+      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
+      .first();
+    // Only local branches are the desktop's to run. A cloud branch's queue
+    // belongs to Daytona, and handing it out here would run everything twice.
+    if (!branch || branch.executor !== "local") return [];
+
+    const pending = await ctx.db
+      .query("codeCommands")
+      .withIndex("by_branch_and_status", (q) =>
+        q.eq("branchId", args.branchId).eq("status", "pending")
+      )
+      .take(20);
+    return pending.map((c) => ({ id: c._id, command: c.command, agent: c.agent }));
+  },
+});
+
 // Mark command as failed
 export const failCommand = mutation({
   args: {
