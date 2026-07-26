@@ -89,7 +89,7 @@ export const createApiKey = action({
   },
 });
 
-export const insertApiKey = mutation({
+export const insertApiKey = internalMutation({
   args: {
     userId: v.id("users"),
     keyId: v.string(),
@@ -115,7 +115,7 @@ export const insertApiKey = mutation({
   },
 });
 
-export const deductCredits = mutation({
+export const deductCredits = internalMutation({
   args: { userId: v.id("users"), amount: v.number() },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
@@ -127,7 +127,7 @@ export const deductCredits = mutation({
   },
 });
 
-export const getUserBalance = query({
+export const getUserBalance = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);

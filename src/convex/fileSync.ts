@@ -1,5 +1,6 @@
 "use node";
 import { action } from "./_generated/server";
+import { api } from "./_generated/api";
 import { v } from "convex/values";
 import * as fs from "fs";
 import * as path from "path";
@@ -51,10 +52,15 @@ function getAllFiles(dir: string, baseDir: string): { path: string; content: str
   return results;
 }
 
-// Returns a batch of files starting at offset, with batchSize files per call
+// Returns a batch of files starting at offset, with batchSize files per call.
+// Admin-only: this walks the deployment's own working directory and returns file
+// contents, so without a check it is an unauthenticated source dump for anyone
+// who has the deployment URL — and that URL ships in the frontend bundle.
 export const getProjectFilesBatch = action({
-  args: { offset: v.number(), batchSize: v.number() },
-  handler: async (_ctx, args): Promise<{ files: { path: string; content: string }[]; total: number; done: boolean }> => {
+  args: { token: v.string(), offset: v.number(), batchSize: v.number() },
+  handler: async (ctx, args): Promise<{ files: { path: string; content: string }[]; total: number; done: boolean }> => {
+    const user = await ctx.runQuery(api.customAuthHelpers.getUserByToken, { token: args.token });
+    if (!user || user.role !== "admin") throw new Error("Not authorized");
     const projectRoot = path.resolve(process.cwd());
     const allFiles = getAllFiles(projectRoot, projectRoot);
     const batch = allFiles.slice(args.offset, args.offset + args.batchSize);

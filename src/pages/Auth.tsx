@@ -24,21 +24,24 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const [step, setStep] = useState<"signIn" | { email: string }>("signIn");
   const [otp, setOtp] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Anything the OAuth redirect wants to say is known at first render, so it is
+  // the initial state rather than an effect that sets state after mounting.
+  // A session token is 64 hex chars; adopting whatever the query string carries
+  // would let any link swap a visitor into someone else's session, or wedge the
+  // app on a token useAuth can never resolve.
+  const [error, setError] = useState<string | null>(() => {
+    const t = searchParams.get("token");
+    if (t && !/^[0-9a-f]{64}$/.test(t)) return "That sign-in link is malformed. Please try signing in again.";
+    return searchParams.get("oauth_error");
+  });
 
   // OAuth (Google/GitHub) lands back here with ?token= — adopt it as the
   // session and hard-reload so every localStorage reader picks it up.
   useEffect(() => {
     const oauthToken = searchParams.get("token");
-    const oauthError = searchParams.get("oauth_error");
-    if (oauthToken) {
+    if (oauthToken && /^[0-9a-f]{64}$/.test(oauthToken)) {
       localStorage.setItem("agentai_session_token", oauthToken);
       window.location.replace(redirectAfterAuth || "/portal");
-      return;
-    }
-    if (oauthError) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot adoption of an error passed via redirect URL
-      setError(oauthError);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount for URL params
   }, []);

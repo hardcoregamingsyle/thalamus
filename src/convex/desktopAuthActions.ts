@@ -7,9 +7,14 @@ import { internal } from "./_generated/api";
 // Generate an 8-char alphanumeric code (no ambiguous chars)
 function generateCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // No I,O,0,1
+  // CSPRNG, not Math.random: this code is the only thing between a caller and a
+  // 30-day session token, and V8's PRNG state is recoverable from a handful of
+  // outputs — which a public createCode hands out on request.
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
   let code = "";
   for (let i = 0; i < 8; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
+    code += chars[bytes[i] % chars.length];
   }
   return code;
 }

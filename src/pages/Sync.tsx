@@ -75,7 +75,7 @@ export default function SyncPage() {
     let total = 0;
 
     while (!done) {
-      const result = await getProjectFilesBatch({ offset, batchSize: BATCH_SIZE });
+      const result = await getProjectFilesBatch({ token, offset, batchSize: BATCH_SIZE });
       allFiles.push(...result.files);
       total = result.total;
       done = result.done;

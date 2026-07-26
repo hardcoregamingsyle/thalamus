@@ -41,7 +41,7 @@ export const completeOnboarding = mutation({
       .query("customSessions")
       .withIndex("by_token", q => q.eq("token", args.token))
       .unique();
-    if (!session) throw new Error("Invalid session");
+    if (!session || session.expiresAt < Date.now()) throw new Error("Invalid session");
     await ctx.db.patch(session.userId, { hasOnboarded: true });
     return { success: true };
   },
@@ -59,7 +59,7 @@ export const saveStudyProfile = mutation({
       .query("customSessions")
       .withIndex("by_token", q => q.eq("token", args.token))
       .unique();
-    if (!session) throw new Error("Invalid session");
+    if (!session || session.expiresAt < Date.now()) throw new Error("Invalid session");
     await ctx.db.patch(session.userId, {
       studyGrade: args.grade,
       studyBoard: args.board,
@@ -76,7 +76,7 @@ export const getStudyProfile = mutation({
       .query("customSessions")
       .withIndex("by_token", q => q.eq("token", args.token))
       .unique();
-    if (!session) return null;
+    if (!session || session.expiresAt < Date.now()) return null;
     const user = await ctx.db.get(session.userId);
     if (!user) return null;
     return {

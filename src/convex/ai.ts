@@ -428,27 +428,6 @@ export const generateConversationTitle = action({
   },
 });
 
-export const testVlyHaiku = action({
-  args: { model: v.optional(v.string()) },
-  handler: async (_ctx, args): Promise<{ success: boolean; response?: string; error?: string; raw?: unknown }> => {
-    const { vly } = await import("../lib/vly-integrations");
-    const modelName = args.model ?? "claude-haiku-4-5";
-    try {
-      const result = await vly.ai.completion({
-        model: modelName,
-        messages: [{ role: "user", content: "Say hello in one sentence." }],
-        maxTokens: 100
-      });
-      if (result.success && result.data) {
-        return { success: true, response: result.data.choices[0]?.message?.content ?? "No content", raw: result };
-      }
-      return { success: false, error: result.error ?? "Unknown error", raw: result };
-    } catch (e) {
-      return { success: false, error: e instanceof Error ? e.message : String(e) };
-    }
-  },
-});
-
 export const vlyFallbackCompletion = internalAction({
   args: {
     systemPrompt: v.string(),
@@ -528,22 +507,3 @@ Use: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <blockquote>. Highlight key fa
   },
 });
 
-export const testBedrockDirect = action({
-  args: { adminToken: v.string(), model: v.optional(v.string()) },
-  handler: async (ctx, args): Promise<{ success: boolean; response?: string; error?: string; region?: string; model?: string }> => {
-    const modelName = args.model ?? "claude-haiku-4-5";
-    const modelId = BEDROCK_MODEL_IDS[modelName] ?? BEDROCK_MODEL_IDS["claude-haiku-4-5"];
-    try {
-      const result = await callBedrockClaude(
-        ctx,
-        "You are a helpful assistant.",
-        [{ role: "user", content: `Say hello in one sentence and confirm you are ${modelName} running on AWS Bedrock.` }],
-        200,
-        modelName,
-      );
-      return { success: true, response: result.text, region: "us-east-1", model: modelId };
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : String(err), region: "us-east-1", model: modelId };
-    }
-  },
-});
