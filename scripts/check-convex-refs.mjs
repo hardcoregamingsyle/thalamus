@@ -19,8 +19,12 @@ import { join, relative, resolve, sep } from "node:path";
 const ROOT = resolve(import.meta.dirname, "..");
 const CONVEX_DIR = join(ROOT, "src", "convex");
 // The sibling AgentOverflow checkout holds no backend of its own — it calls
-// this deployment by string. Optional, because CI clones only this repo.
-const AO_DIR = resolve(ROOT, "..", "agentoverflow");
+// this deployment by string. Defaults to the sibling directory used locally;
+// AGENTOVERFLOW_DIR overrides it, because GitHub Actions can only check a repo
+// out underneath the workspace, never as a sibling.
+const AO_DIR = process.env.AGENTOVERFLOW_DIR
+  ? resolve(process.env.AGENTOVERFLOW_DIR)
+  : resolve(ROOT, "..", "agentoverflow");
 
 const JSON_OUT = process.argv.includes("--json");
 
@@ -91,13 +95,23 @@ for (const file of walk(join(ROOT, "thalamus-native"), [".cs"])) {
   for (const m of src.matchAll(STRING_RE)) add(m[1], rel, "desktop-string");
 }
 
-// 2c. makeFunctionReference("module:function") in the AgentOverflow repo.
+// 2c. makeFunctionReference("module:function") — in the AgentOverflow repo AND
+// in this one. Both reach Convex by string, so both need checking.
 const MFR_RE = /makeFunctionReference\s*<[\s\S]*?>\s*\(\s*"([^"]+)"\s*\)|makeFunctionReference\s*\(\s*"([^"]+)"\s*\)/g;
-if (existsSync(AO_DIR)) {
+for (const file of walk(join(ROOT, "src"), [".ts", ".tsx"])) {
+  if (file.includes(`${sep}_generated${sep}`)) continue;
+  const rel = relative(ROOT, file);
+  const src = readFileSync(file, "utf8");
+  for (const m of src.matchAll(MFR_RE)) add(m[1] ?? m[2], rel, "in-repo-string");
+}
+
+const aoPresent = existsSync(AO_DIR);
+let aoRefCount = 0;
+if (aoPresent) {
   for (const file of walk(AO_DIR, [".ts", ".tsx"])) {
     const rel = `../agentoverflow/${relative(AO_DIR, file).split(sep).join("/")}`;
     const src = readFileSync(file, "utf8");
-    for (const m of src.matchAll(MFR_RE)) add(m[1] ?? m[2], rel, "agentoverflow");
+    for (const m of src.matchAll(MFR_RE)) { add(m[1] ?? m[2], rel, "agentoverflow"); aoRefCount++; }
   }
 }
 
@@ -161,6 +175,18 @@ if (JSON_OUT) {
   console.log(JSON.stringify({ defined: defined.size, refs: refs.length, broken: unique }, null, 2));
 } else {
   console.log(`convex refs: ${defined.size} functions defined, ${refs.length} references checked`);
+  if (aoPresent) {
+    console.log(`agentoverflow: ${aoRefCount} cross-repo references checked`);
+  } else {
+    // Never let a missing sibling checkout read as a pass. AgentOverflow reaches
+    // this backend by string with no codegen, so those are precisely the names
+    // that break silently at runtime — the ones worth checking most.
+    console.log("");
+    console.log("WARNING: ../agentoverflow is not checked out, so ZERO cross-repo");
+    console.log("references were verified. A rename that breaks the AgentOverflow site");
+    console.log("would pass this run. Clone it next to this repo for a complete check.");
+    console.log("");
+  }
   if (unique.length === 0) {
     console.log("all references resolve");
   } else {

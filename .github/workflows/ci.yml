@@ -16,10 +16,18 @@ concurrency:
 
 jobs:
   web:
-    name: Web — type-check + lint
+    name: Web — type-check + lint + test + build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # AgentOverflow reaches this backend by string with no codegen, so its 27
+      # references are the ones that break silently at runtime. Without this
+      # checkout the ref checker cannot see them and would pass regardless.
+      - name: Check out agentoverflow (for cross-repo ref checking)
+        uses: actions/checkout@v4
+        with:
+          repository: hardcoregamingsyle/agentoverflow
+          path: .agentoverflow
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -32,6 +40,19 @@ jobs:
         run: bun run type-check
       - name: Lint
         run: bun run lint
+      # tsc cannot catch a wrong Convex function name — the generated api object
+      # exceeds TS instantiation depth and degrades to `any` — and three callers
+      # reach the backend by plain string anyway. This is the only gate on them.
+      - name: Check Convex references
+        run: bun run check-refs
+        env:
+          AGENTOVERFLOW_DIR: ${{ github.workspace }}/.agentoverflow
+      - name: Test
+        run: bun test
+      # tsc does not see Vite-stage failures (lazy chunk resolution, asset
+      # imports, plugin config). Without this the Pages deploy finds them first.
+      - name: Build
+        run: bun run build
 
   desktop:
     name: Desktop — dotnet build

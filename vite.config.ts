@@ -50,7 +50,7 @@ export default defineConfig({
           'framer-motion': ['framer-motion'],
           'three': ['three', '@react-three/fiber'],
           'charts': ['recharts'],
-          'forms': ['react-hook-form', '@hookform/resolvers'],
+          'forms': ['react-hook-form'],
         },
         chunkFileNames: 'assets/[name]-[hash].js',
         entryFileNames: 'assets/[name]-[hash].js',
