@@ -52,63 +52,11 @@ import { callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL, calcAgentBucksFo
 import { callNim, agentToTaskType, NIM_DEFAULT_CHAT_MODEL, calcNimAgentBucks } from "./nimClient";
 import { callModal, calcModalAgentBucks } from "./modalClient";
 
-// ── Backward-compatible types and aliases ────────────────────────────────────
-// The old pipeline systems (agentPipeline.ts, codePipeline.ts) still reference
-// these types and constants. callModel() now routes NIM primary → Ollama backup
-// dynamically; these are fallback defaults for code that bypasses callModel.
+// The only tier-ish type left: callModel returns a provider-tagged string
+// ("nim:<model>", "ollama:<model>", "modal:<model>") that the billing helpers read.
 export type ModelTier = string;
 // What parseDifficultyFromPlannerOutput returns.
 export type TaskDifficulty = "normal" | "hard" | "extreme";
-
-// Old provider constants — all set to false since SiliconFlow is the only provider.
-export const AGENTROUTER_PRIMARY = false;
-export const OPENAI_PRIMARY = false;
-export const PRIMARY_PROVIDER = "siliconflow";
-
-// Old provider functions — these are dead code now but exported for backward compat.
-export async function callAgentRouter(
-  _prompt?: string,
-  _systemPrompt?: string,
-  _modelId?: string,
-  _maxTokens?: number,
-  _messages?: unknown[] | unknown,
-): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
-  throw new Error("AgentRouter is no longer available. Use SiliconFlow instead.");
-}
-export function agentRouterModelForTier(_tier?: string): string { return ""; }
-export async function callOpenAIFailover(
-  _prompt?: string,
-  _systemPrompt?: string,
-  _modelId?: string,
-  _maxTokens?: number,
-  _messages?: unknown[] | unknown,
-): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
-  throw new Error("OpenAI failover is no longer available. Use SiliconFlow instead.");
-}
-export async function callOpenAICompatibleStreaming(
-  prompt: string,
-  systemPrompt: string,
-  tier: ModelTier,
-  providerId: string,
-  onChunk?: (full: string) => Promise<void>,
-): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: string }> {
-  // Legacy mode — now just calls SiliconFlow directly
-  const result = await callSiliconFlow(prompt, systemPrompt, tier);
-  if (onChunk) await onChunk(result.text);
-  return { ...result, tier };
-}
-export function providerChain(): string[] { return []; }
-
-// The old callModel accepted (prompt, systemPrompt, tier, geminiKeys?, dbCreds?).
-// The new version accepts (prompt, systemPrompt, modelId). We export BOTH so old
-// code can still compile without rewrites.
-export async function callModelCompat(
-  prompt: string,
-  systemPrompt: string,
-  modelId: string = DEFAULT_CHAT_MODEL,
-): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: string }> {
-  return callModel(prompt, systemPrompt, modelId);
-}
 
 /**
  * Unified model caller — primary provider is NVIDIA NIM, Ollama Cloud is backup.
