@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using ThalamusApp.Controls;
 using ThalamusApp.Services;
 
 namespace ThalamusApp.Modes
@@ -52,6 +53,11 @@ namespace ThalamusApp.Modes
         // instead of blaming the pipeline for going quiet.
         private bool _stopRequested;
         private string? _activeBranchId;
+
+        // One sponsored card per session (mirrors the web adRequestedRef and
+        // ChatView's _adRequested), plus the turns we send as ad context.
+        private bool _adRequested;
+        private readonly List<(string role, string text)> _adContext = new();
 
         public CodeView()
         {
@@ -100,6 +106,7 @@ namespace ThalamusApp.Modes
             BuildInputBox.Text = "";
             EmptyState.Visibility = Visibility.Collapsed;
             AppendProjectBrief(prompt);
+            _adContext.Add(("user", prompt));
 
             AgentProgressCard.Visibility = Visibility.Visible;
             AgentStageLabel.Text = "Creating project…";
@@ -213,7 +220,10 @@ namespace ThalamusApp.Modes
                         var agent = messages[i]?["agent"]?.GetValue<string>() ?? "Agent";
                         var content = messages[i]?["content"]?.GetValue<string>() ?? "";
                         if (agent != "User")
+                        {
                             AppendAgentMessage(agent, content);
+                            _adContext.Add(("assistant", content));
+                        }
                     }
                     renderedMessages = messages.Count;
                     // A saved message supersedes whatever was streaming
@@ -396,6 +406,52 @@ namespace ThalamusApp.Modes
             AppendSuccessBanner(fileCount);
             SetIdle("Done", error: false);
             BuildScroll.ScrollToBottom();
+
+            _ = MaybeRequestAdAsync();
+        }
+
+        // Mirrors ChatView.MaybeRequestAdAsync — one card per session, requested
+        // only once a build has actually produced something, never mid-run.
+        private async Task MaybeRequestAdAsync()
+        {
+            if (_adRequested) return;
+            _adRequested = true;
+
+            try
+            {
+                // Last ~6 turns, each capped ~1000 chars — the same window the
+                // backend trims to. Build mode has no chat history object, so the
+                // context is the prompt plus what the agents reported.
+                var recent = _adContext.Count > 6
+                    ? _adContext.GetRange(_adContext.Count - 6, 6)
+                    : _adContext;
+                if (recent.Count == 0) return;
+
+                var messages = new List<object>();
+                foreach (var (role, text) in recent)
+                    messages.Add(new { role, content = text.Length > 1000 ? text[..1000] : text });
+
+                // Keys built by hand: Convex v.optional() means an ABSENT key is
+                // not the same as an explicit null, and a null fails validation.
+                var adArgs = new Dictionary<string, object>
+                {
+                    ["messages"] = messages,
+                    ["count"] = 1,
+                };
+                if (!string.IsNullOrEmpty(_token)) adArgs["token"] = _token!;
+
+                var result = await _convex.CallActionAsync("gravityAds:requestAd", adArgs, _token);
+                if (result is not JsonObject ad) return;
+
+                Dispatcher.Invoke(() =>
+                {
+                    var card = new SponsoredAdCard();
+                    card.Populate(ad);
+                    BuildPanel.Children.Add(card);
+                    BuildScroll.ScrollToBottom();
+                });
+            }
+            catch { /* ads must never break a build — any failure just shows no card */ }
         }
 
         private void SetIdle(string label, bool error)
