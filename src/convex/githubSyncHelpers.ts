@@ -82,7 +82,11 @@ export const saveGithubConfigWithToken = internalMutation({
   },
 });
 
-export const getGithubConfigInternal = internalMutation({
+// internalQuery, not internalMutation: it only reads, and three of its five
+// callers already invoke it with ctx.runQuery — which throws against a
+// mutation. Those call sites were dead on arrival, taking the Actions runner's
+// config lookup down with them.
+export const getGithubConfigInternal = internalQuery({
   args: {
     projectId: v.string(),
     branchId: v.string(),

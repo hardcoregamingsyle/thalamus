@@ -162,7 +162,7 @@ export const pushToGithub = action({
     if (!userId) throw new Error("Not authenticated");
 
     try {
-      const config = await ctx.runMutation(internal.githubSyncHelpers.getGithubConfigInternal, {
+      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: args.projectId,
         branchId: args.branchId,
       });
@@ -359,7 +359,7 @@ export const pullFromGithub = action({
     if (!userId) throw new Error("Not authenticated");
 
     try {
-      const config = await ctx.runMutation(internal.githubSyncHelpers.getGithubConfigInternal, {
+      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: args.projectId,
         branchId: args.branchId,
       });
