@@ -15,9 +15,25 @@ export const getGithubConfig = query({
     });
     if (!userId) return null;
 
-    return await ctx.db
+    const config = await ctx.db
       .query("githubConfigs")
       .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
       .first();
+    if (!config) return null;
+
+    // Field-by-field on purpose: the row stores the OAuth token this repo was
+    // created with, and returning the document wholesale handed it to the
+    // browser. Never spread this document.
+    return {
+      projectId: config.projectId,
+      branchId: config.branchId,
+      repoUrl: config.repoUrl,
+      owner: config.owner,
+      repo: config.repo,
+      branch: config.branch,
+      lastSync: config.lastSync,
+      sourceRepoUrl: config.sourceRepoUrl ?? null,
+      sourceBranch: config.sourceBranch ?? null,
+    };
   },
 });

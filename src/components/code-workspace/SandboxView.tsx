@@ -1,889 +1,295 @@
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Doc } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
-import { Monitor, Terminal, Send, Loader2, Maximize2, Minimize2, Power, RotateCcw, Settings } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Terminal, Send, Loader2, ExternalLink, Cpu, Laptop, Cloud,
+  CheckCircle2, XCircle, Clock, GitBranch,
+} from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { vmLauncher } from "@/lib/vmLauncher";
-import { VMSetupDialog } from "./VMSetupDialog";
 
 interface SandboxViewProps {
+  projectId: string;
   branchId: string;
 }
 
-interface CommandLog {
-  id: string;
-  command: string;
-  output?: string;
-  error?: string;
-  timestamp: number;
-  isRunning?: boolean;
-}
+type RunnerOs = "ubuntu" | "windows" | "macos";
 
-interface VMConfig {
-  os: string;
-  ram: number;
-  cores: number;
-  cdrom?: string;
-  hda?: { url: string; async?: boolean; size?: number };
-  fda?: { url: string; async?: boolean };
-  name: string;
-  description: string;
-  is64Bit?: boolean;
-}
+const RUNNERS: Array<{ value: RunnerOs; label: string; hint: string }> = [
+  { value: "ubuntu", label: "Linux", hint: "Servers, containers, most web builds" },
+  { value: "windows", label: "Windows", hint: "Desktop apps, .NET, Windows-only toolchains" },
+  { value: "macos", label: "macOS", hint: "Apple platforms, Swift, iOS builds" },
+];
 
-interface V86Emulator {
-  stop: () => void;
-  restart: () => void;
-  serial0_send: (data: string) => void;
-}
+export function SandboxView({ projectId, branchId }: SandboxViewProps) {
+  const token = localStorage.getItem("agentai_session_token") || "";
 
-interface V86Options {
-  wasm_path: string;
-  memory_size: number;
-  vga_memory_size: number;
-  screen_container: HTMLDivElement | null;
-  bios: { url: string };
-  vga_bios: { url: string };
-  autostart: boolean;
-  cdrom?: { url: string };
-  hda?: { url: string; async?: boolean; size?: number };
-  fda?: { url: string; async?: boolean };
-}
+  const branch = useQuery(api.codeBranches.getBranch, token ? { token, branchId } : "skip");
+  const config = useQuery(
+    api.githubQueries.getGithubConfig,
+    token ? { token, projectId, branchId } : "skip",
+  );
+  const commands = useQuery(api.codeCommands.watchCommands, { branchId });
+  const updateBranch = useMutation(api.codeBranches.updateBranch);
+  const runManualCommand = useMutation(api.codeCommands.runManualCommand);
 
-declare global {
-  interface Window {
-    V86?: new (options: V86Options) => V86Emulator;
-  }
-}
-
-const OS_CONFIGS: Record<string, VMConfig> = {
-  "windows-11": {
-    os: "windows-11",
-    ram: 6144,
-    cores: 4,
-    name: "Windows 11",
-    description: "Windows 11 (6GB RAM, requires bridge)",
-    is64Bit: true,
-  },
-  "windows-10": {
-    os: "windows-10",
-    ram: 6144,
-    cores: 4,
-    name: "Windows 10",
-    description: "Windows 10 (6GB RAM, requires bridge)",
-    is64Bit: true,
-  },
-  "macos-18": {
-    os: "macos-18",
-    ram: 8192,
-    cores: 4,
-    name: "macOS 15 Sequoia",
-    description: "macOS 15 Sequoia (8GB RAM, requires bridge)",
-    is64Bit: true,
-  },
-  "macos-17": {
-    os: "macos-17",
-    ram: 8192,
-    cores: 4,
-    name: "macOS 14 Sonoma",
-    description: "macOS 14 Sonoma (8GB RAM, requires bridge)",
-    is64Bit: true,
-  },
-  "macos-16": {
-    os: "macos-16",
-    ram: 8192,
-    cores: 4,
-    name: "macOS 13 Ventura",
-    description: "macOS 13 Ventura (8GB RAM, requires bridge)",
-    is64Bit: true,
-  },
-  "macos-15": {
-    os: "macos-15",
-    ram: 8192,
-    cores: 4,
-    name: "macOS 12 Monterey",
-    description: "macOS 12 Monterey (8GB RAM, requires bridge)",
-    is64Bit: true,
-  },
-  "macos-14": {
-    os: "macos-14",
-    ram: 8192,
-    cores: 4,
-    name: "macOS 11 Big Sur",
-    description: "macOS 11 Big Sur (8GB RAM, requires bridge)",
-    is64Bit: true,
-  },
-  "android-14": {
-    os: "android-14",
-    ram: 4096,
-    cores: 4,
-    name: "Android 14",
-    description: "Android x86_64 (4GB RAM, requires bridge)",
-    is64Bit: true,
-  },
-  "android-13": {
-    os: "android-13",
-    ram: 4096,
-    cores: 4,
-    name: "Android 13",
-    description: "Android x86_64 (4GB RAM, requires bridge)",
-    is64Bit: true,
-  },
-  "ubuntu-24": {
-    os: "ubuntu-24",
-    ram: 4096,
-    cores: 4,
-    name: "Ubuntu 24.04 LTS",
-    description: "Ubuntu Desktop (4GB RAM, requires bridge)",
-    is64Bit: true,
-  },
-  "debian-12": {
-    os: "debian-12",
-    ram: 2048,
-    cores: 2,
-    name: "Debian 12 Bookworm",
-    description: "Debian stable (2GB RAM, requires bridge)",
-    is64Bit: true,
-  },
-  "kali-2024": {
-    os: "kali-2024",
-    ram: 4096,
-    cores: 4,
-    name: "Kali Linux 2024",
-    description: "Kali Linux (4GB RAM, requires bridge)",
-    is64Bit: true,
-  },
-  "linux-alpine": {
-    os: "Linux Alpine",
-    ram: 256,
-    cores: 1,
-    cdrom: "https://copy.sh/v86/images/linux4.iso",
-    name: "Alpine Linux (Browser)",
-    description: "Lightweight Linux (256MB, instant, browser)",
-    is64Bit: false,
-  },
-  "linux-arch": {
-    os: "Linux Arch",
-    ram: 512,
-    cores: 2,
-    cdrom: "https://copy.sh/v86/images/archlinux.iso",
-    name: "Arch Linux (Browser)",
-    description: "Full Linux (512MB, browser)",
-    is64Bit: false,
-  },
-  "windows-98": {
-    os: "Windows 98",
-    ram: 256,
-    cores: 1,
-    hda: { url: "https://copy.sh/v86/images/windows98.img", async: true, size: 300 * 1024 * 1024 },
-    name: "Windows 98 (Browser)",
-    description: "Classic Windows (256MB, browser)",
-    is64Bit: false,
-  },
-  "kolibrios": {
-    os: "KolibriOS",
-    ram: 64,
-    cores: 1,
-    fda: { url: "https://copy.sh/v86/images/kolibri.img", async: false },
-    name: "KolibriOS (Browser)",
-    description: "Tiny OS (64MB, instant, browser)",
-    is64Bit: false,
-  },
-};
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- branchId is part of the component's public API; the caller in src/pages passes it
-export function SandboxView({ branchId }: SandboxViewProps) {
   const [command, setCommand] = useState("");
-  const [commandLogs, setCommandLogs] = useState<CommandLog[]>([]);
-  const [isExecuting, setIsExecuting] = useState(false);
-  const [vmStatus, setVmStatus] = useState<"booting" | "running" | "stopped">("stopped");
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isConfigOpen, setIsConfigOpen] = useState(false);
-  const [selectedOS, setSelectedOS] = useState("windows-11");
-  const [customRam, setCustomRam] = useState(6144);
-  const [customCores, setCustomCores] = useState(4);
-  const [v86Loaded, setV86Loaded] = useState(false);
-  const [bridgeConnected, setBridgeConnected] = useState(false);
-  const [bridgeChecking, setBridgeChecking] = useState(true);
-  const [bridgeVersion, setBridgeVersion] = useState<string>();
-  const [currentVmId, setCurrentVmId] = useState<string | null>(null);
-  const [currentVncPort, setCurrentVncPort] = useState<number>(5901);
-  const [isoNeededPath, setIsoNeededPath] = useState<string | null>(null);
-  const [showSetupDialog, setShowSetupDialog] = useState(false);
-  const emulatorRef = useRef<V86Emulator | null>(null);
-  const screenContainerRef = useRef<HTMLDivElement>(null);
+  const [sending, setSending] = useState(false);
 
-  useEffect(() => {
-    const loadV86 = () => {
-      if (window.V86) {
-        setV86Loaded(true);
-        return;
-      }
+  const isLocal = branch?.executor === "local";
+  const runnerOs = (branch?.runnerOs ?? "ubuntu") as RunnerOs;
 
-      const existingScript = document.querySelector('script[src*="libv86.js"]');
-      if (existingScript) {
-        return;
-      }
-
-      const script = document.createElement('script');
-      script.src = 'https://copy.sh/v86/libv86.js';
-      script.async = true;
-      script.onload = () => {
-        console.log("v86 loaded successfully");
-        setV86Loaded(true);
-        toast.success("v86 emulator ready");
-      };
-      script.onerror = () => {
-        console.error("Failed to load v86");
-        setV86Loaded(false);
-        toast.error("Failed to load v86 emulator");
-      };
-      document.body.appendChild(script);
-    };
-
-    loadV86();
-
-    return () => {
-      if (emulatorRef.current) {
-        try {
-          emulatorRef.current.stop();
-        } catch (err) {
-          console.error("Error stopping emulator:", err);
-        }
-      }
-    };
-  }, []);
-
-  const refreshBridgeStatus = async (showToast = false) => {
-    setBridgeChecking(true);
-    const status = await vmLauncher.checkStatus();
-    setBridgeConnected(status.functional);
-    setBridgeVersion(status.version);
-    setBridgeChecking(false);
-
-    if (showToast) {
-      if (status.functional) {
-        toast.success("Local VM executable is ready.");
-      } else {
-        toast.info("Download and run the required files to enable Boot OS.");
-      }
-    }
-  };
-
-  useEffect(() => {
-    const initialCheck = setTimeout(() => void refreshBridgeStatus(), 0);
-    const interval = setInterval(() => refreshBridgeStatus(), 5000);
-    return () => {
-      clearTimeout(initialCheck);
-      clearInterval(interval);
-    };
-  }, []);
-
-  const handleLaunchVNC = () => {
-    // Try to open VNC viewer via installer's HTTP endpoint (localhost:7891)
-    fetch(`http://localhost:7891/api/launch-vnc?port=${currentVncPort}`)
-      .then(() => toast.success(`VNC viewer launched for localhost:${currentVncPort}`))
-      .catch(() => {
-        // Installer not running — copy address and show instructions
-        navigator.clipboard.writeText(`localhost:${currentVncPort}`).catch(() => {});
-        toast.info(
-          `VNC address copied: localhost:${currentVncPort}\n\nOpen tvnviewer.exe from C:\\Users\\[you]\\AppData\\Local\\Thalamus\\`,
-          { duration: 15000 }
-        );
-      });
-  };
-
-  const handleBootVM = async () => {
-    const config = OS_CONFIGS[selectedOS];
-
-    // 64-bit systems need VM launcher
-    if (config.is64Bit) {
-      setVmStatus("booting");
-      toast.info(`Booting ${config.name}...`);
-
-      // Try WebSocket first (bridge already running)
-      const result = await vmLauncher.bootVM(config.os, customRam, customCores);
-
-      if (!result.success) {
-        // Bridge not running — try thalamus:// URI scheme (if installer was run)
-        toast.info("Launching VM bridge via thalamus:// protocol...", { duration: 4000 });
-        vmLauncher.launchViaUriScheme(config.os, customRam, customCores);
-
-        // Poll for bridge to come up (up to 15 seconds)
-        let bridgeUp = false;
-        for (let i = 0; i < 10; i++) {
-          await new Promise(r => setTimeout(r, 1500));
-          const status = await vmLauncher.checkStatus();
-          if (status.functional) {
-            bridgeUp = true;
-            setBridgeConnected(true);
-            setBridgeVersion(status.version);
-            break;
-          }
-        }
-
-        if (!bridgeUp) {
-          // URI scheme didn't work — show installer dialog
-          setShowSetupDialog(true);
-          setVmStatus("stopped");
-          return;
-        }
-
-        // Bridge is now up — retry boot
-        const retry = await vmLauncher.bootVM(config.os, customRam, customCores);
-        if (!retry.success) {
-          toast.error(retry.error || "Failed to boot VM");
-          setVmStatus("stopped");
-          return;
-        }
-        setVmStatus("running");
-        setCurrentVmId(retry.vmId || null);
-        setCurrentVncPort(retry.vncPort || 5901);
-        setIsoNeededPath(retry.isoNeeded || null);
-        if (retry.isoNeeded) {
-          toast.warning(`No ISO found. VM shows BIOS only.`, { duration: 10000 });
-        } else {
-          toast.success(`${config.name} booting! VNC: localhost:${retry.vncPort}`);
-        }
-        return;
-      }
-
-      setVmStatus("running");
-      setCurrentVmId(result.vmId || null);
-      setCurrentVncPort(result.vncPort || 5901);
-      setIsoNeededPath(result.isoNeeded || null);
-
-      if (result.isoNeeded) {
-        toast.warning(`No ISO found. VM shows BIOS only. Place ISO at: ${result.isoNeeded}`, { duration: 15000 });
-      } else {
-        toast.success(`${config.name} booting! VNC: localhost:${result.vncPort}`);
-      }
-      toast.info(`Connect VNC viewer to localhost:${result.vncPort}`, {
-        duration: 10000,
-        action: {
-          label: "Copy",
-          onClick: () => {
-            navigator.clipboard.writeText(`localhost:${result.vncPort}`);
-            toast.success("VNC address copied!");
-          },
-        },
-      });
-
-      return;
-    }
-
-    // 32-bit systems use v86
-    if (!window.V86) {
-      toast.error("v86 library not loaded yet. Please wait a moment.");
-      return;
-    }
-
-    setVmStatus("booting");
-    toast.info(`Booting ${config.name}...`);
-
+  const handleRunnerChange = async (value: string) => {
     try {
-      const vmConfig: V86Options = {
-        wasm_path: "https://copy.sh/v86/v86.wasm",
-        memory_size: customRam * 1024 * 1024,
-        vga_memory_size: 8 * 1024 * 1024,
-        screen_container: screenContainerRef.current,
-        bios: {
-          url: "https://copy.sh/v86/bios/seabios.bin",
-        },
-        vga_bios: {
-          url: "https://copy.sh/v86/bios/vgabios.bin",
-        },
-        autostart: true,
-      };
-
-      if (config.cdrom) {
-        vmConfig.cdrom = { url: config.cdrom };
-      }
-      if (config.hda) {
-        vmConfig.hda = config.hda;
-      }
-      if (config.fda) {
-        vmConfig.fda = config.fda;
-      }
-
-      const emulator = new window.V86(vmConfig);
-      emulatorRef.current = emulator;
-
-      // Auto-detect when VM is ready
-      const bootDelay = config.os === "KolibriOS" || config.os === "FreeDOS" ? 2000 :
-                        config.os === "Linux Alpine" ? 5000 :
-                        config.os === "Linux Arch" ? 30000 :
-                        90000; // Windows 98/XP
-
-      setTimeout(() => {
-        setVmStatus("running");
-        toast.success(`${config.name} is ready! Click display to interact.`);
-      }, bootDelay);
+      await updateBranch({ token, branchId, runnerOs: value as RunnerOs });
+      toast.success(`Builds will run on ${RUNNERS.find((r) => r.value === value)?.label}`);
     } catch (err) {
-      console.error("VM boot error:", err);
-      toast.error("Failed to boot VM: " + (err instanceof Error ? err.message : "Unknown error"));
-      setVmStatus("stopped");
+      toast.error(err instanceof Error ? err.message : "Could not change the runner");
     }
   };
 
-  const handleStopVM = async () => {
-    const config = OS_CONFIGS[selectedOS];
-
-    if (config.is64Bit && currentVmId) {
-      await vmLauncher.stopVM(currentVmId);
-      setCurrentVmId(null);
-    } else if (emulatorRef.current) {
-      try {
-        emulatorRef.current.stop();
-        emulatorRef.current = null;
-      } catch (err) {
-        console.error("Error stopping VM:", err);
-      }
-    }
-    setVmStatus("stopped");
-    toast.info("VM stopped");
-  };
-
-  const handleResetVM = () => {
-    if (emulatorRef.current) {
-      try {
-        emulatorRef.current.restart();
-        setVmStatus("booting");
-        toast.info("Resetting VM...");
-        setTimeout(() => {
-          setVmStatus("running");
-          toast.success("VM reset complete");
-        }, 3000);
-      } catch (err) {
-        console.error("Error resetting VM:", err);
-        toast.error("Failed to reset VM");
-      }
-    } else {
-      handleBootVM();
-    }
-  };
-
-  const handleExecute = async () => {
-    if (!command.trim() || vmStatus !== "running") return;
-
-    const logId = Date.now().toString();
-    const newLog: CommandLog = {
-      id: logId,
-      command: command.trim(),
-      timestamp: Date.now(),
-      isRunning: true,
-    };
-
-    setCommandLogs((prev) => [...prev, newLog]);
+  const handleSend = async () => {
     const cmd = command.trim();
-    setCommand("");
-    setIsExecuting(true);
-
+    if (!cmd || sending) return;
+    setSending(true);
     try {
-      if (emulatorRef.current) {
-        emulatorRef.current.serial0_send(cmd + "\n");
-
-        setTimeout(() => {
-          setCommandLogs((prev) =>
-            prev.map((log) =>
-              log.id === logId
-                ? {
-                    ...log,
-                    isRunning: false,
-                    output: "Command sent to VM. Check VM display for output.",
-                  }
-                : log
-            )
-          );
-          setIsExecuting(false);
-          toast.success("Command sent");
-        }, 500);
-      }
-    } catch {
-      setCommandLogs((prev) =>
-        prev.map((log) =>
-          log.id === logId
-            ? {
-                ...log,
-                isRunning: false,
-                error: "Failed to execute command",
-              }
-            : log
-        )
-      );
-      setIsExecuting(false);
-      toast.error("Command failed");
+      await runManualCommand({ token, branchId, command: cmd });
+      setCommand("");
+      toast.success(isLocal ? "Queued for your machine" : "Dispatched to the build runner");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not run the command");
+    } finally {
+      setSending(false);
     }
   };
 
-  const formatTimestamp = (ts: number) => {
-    return new Date(ts).toLocaleTimeString();
+  const statusBadge = (cmd: Doc<"codeCommands">) => {
+    switch (cmd.status) {
+      case "completed":
+        return (
+          <Badge variant="outline" className="gap-1 border-primary/40 text-primary">
+            <CheckCircle2 className="h-3 w-3" />exit {cmd.exitCode ?? 0}
+          </Badge>
+        );
+      case "failed":
+        return (
+          <Badge variant="outline" className="gap-1 border-destructive/40 text-destructive">
+            <XCircle className="h-3 w-3" />exit {cmd.exitCode ?? 1}
+          </Badge>
+        );
+      case "running":
+        return (
+          <Badge variant="outline" className="gap-1 border-amber-400/40 text-amber-400">
+            <Loader2 className="h-3 w-3 animate-spin" />running
+          </Badge>
+        );
+      default:
+        return (
+          <Badge variant="outline" className="gap-1 text-muted-foreground">
+            <Clock className="h-3 w-3" />queued
+          </Badge>
+        );
+    }
   };
-
-  const currentConfig = OS_CONFIGS[selectedOS];
-  const maxRamForCurrentOS = currentConfig.is64Bit ? 16384 : 2048;
 
   return (
-    <div className="h-full flex flex-col">
-      <div className={cn("border-b transition-all", isFullscreen ? "h-full" : "h-[60vh]")}>
-        <div className="border-b bg-muted/50 px-4 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Monitor className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">{currentConfig.name}</span>
-            <Badge
-              variant={vmStatus === "running" ? "default" : "secondary"}
-              className={cn(
-                vmStatus === "running" && "bg-green-500",
-                vmStatus === "booting" && "bg-yellow-500"
-              )}
-            >
-              {vmStatus === "running" && "Running"}
-              {vmStatus === "booting" && "Booting..."}
-              {vmStatus === "stopped" && "Stopped"}
-            </Badge>
-            {!v86Loaded && !currentConfig.is64Bit && (
-              <Badge variant="outline" className="bg-orange-500/10 text-orange-600">
-                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                Loading v86...
-              </Badge>
-            )}
-            {currentConfig.is64Bit && (
-              <Badge
-                variant="outline"
-                className={bridgeConnected ? "bg-green-500/10 text-green-600" : "bg-orange-500/10 text-orange-600"}
-                style={{ cursor: bridgeConnected ? "default" : "pointer" }}
-                onClick={!bridgeConnected ? () => {
-                  window.location.href = "thalamus://start";
-                  toast.info("Launching bridge... wait 5 seconds then click 'Check Bridge'", { duration: 6000 });
-                  setTimeout(() => void refreshBridgeStatus(), 5000);
-                } : undefined}
-              >
-                {bridgeChecking ? "Checking..." : bridgeConnected ? `Bridge Ready${bridgeVersion ? ` v${bridgeVersion}` : ""}` : "⚡ Click to Start Bridge"}
-              </Badge>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-xs">{customRam} MB RAM</Badge>
-            <Badge variant="outline" className="text-xs">{customCores} vCPU</Badge>
-
-            {vmStatus === "running" && currentConfig.is64Bit && (
-              <Button size="sm" variant="default" className="gap-2 bg-blue-600 hover:bg-blue-700" onClick={handleLaunchVNC}>
-                <Monitor className="h-3 w-3" />
-                Launch VNC Viewer
-              </Button>
-            )}
-
-            {vmStatus === "stopped" && (
-              <>
-                <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" variant="outline" className="gap-2">
-                      <Settings className="h-3 w-3" />
-                      Configure
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>VM Configuration</DialogTitle>
-                      <DialogDescription>
-                        Choose operating system and hardware specs
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                      <div className="space-y-2">
-                        <Label>Operating System</Label>
-                        <Select
-                          value={selectedOS}
-                          onValueChange={(value) => {
-                            setSelectedOS(value);
-                            const config = OS_CONFIGS[value];
-                            setCustomRam(config.ram);
-                            setCustomCores(config.cores);
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(OS_CONFIGS).map(([key, config]) => (
-                              <SelectItem key={key} value={key}>
-                                <div className="flex flex-col">
-                                  <span className="font-medium">{config.name}</span>
-                                  <span className="text-xs text-muted-foreground">{config.description}</span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="ram">RAM (MB)</Label>
-                        <Input
-                          id="ram"
-                          type="number"
-                          value={customRam}
-                          onChange={(e) => setCustomRam(Math.max(64, Math.min(maxRamForCurrentOS, parseInt(e.target.value) || 256)))}
-                          min={64}
-                          max={maxRamForCurrentOS}
-                        />
-                        <p className="text-xs text-muted-foreground">Max: {maxRamForCurrentOS} MB</p>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="cores">CPU Cores</Label>
-                        <Input
-                          id="cores"
-                          type="number"
-                          value={customCores}
-                          onChange={(e) => setCustomCores(Math.max(1, Math.min(currentConfig.is64Bit ? 16 : 4, parseInt(e.target.value) || 1)))}
-                          min={1}
-                          max={currentConfig.is64Bit ? 16 : 4}
-                        />
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button onClick={() => setIsConfigOpen(false)}>Save Configuration</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-
-                <Button size="sm" onClick={handleBootVM} className="gap-2">
-                  <Power className="h-3 w-3" />
-                  Boot OS
-                </Button>
-              </>
-            )}
-
-            {vmStatus === "running" && (
-              <>
-                <Button size="sm" variant="outline" onClick={handleResetVM} className="gap-2">
-                  <RotateCcw className="h-3 w-3" />
-                  Reset
-                </Button>
-                <Button size="sm" variant="destructive" onClick={handleStopVM} className="gap-2">
-                  <Power className="h-3 w-3" />
-                  Stop
-                </Button>
-              </>
-            )}
-
-            {vmStatus === "booting" && (
-              <Button size="sm" variant="outline" disabled className="gap-2">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Booting...
-              </Button>
-            )}
-
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setIsFullscreen(!isFullscreen)}
-              className="gap-2"
-            >
-              {isFullscreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
-            </Button>
-          </div>
-        </div>
-
-        <div className="relative h-full bg-black">
-          {vmStatus === "stopped" && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10">
-              <Monitor className="h-16 w-16 mb-4 opacity-20" />
-              <p className="text-lg font-medium mb-2 opacity-60">VM Stopped</p>
-              <p className="text-sm text-white/40 mb-6">Select an OS and click Boot OS to start</p>
-              {!bridgeConnected && currentConfig.is64Bit && (
-                <div className="text-center max-w-sm">
-                  <p className="text-xs text-orange-400 mb-3">Bridge not running — click below to start it</p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-orange-400/50 text-orange-400 hover:bg-orange-400/10"
-                    onClick={() => {
-                      window.location.href = "thalamus://start";
-                      toast.info("Starting bridge... checking in 5 seconds", { duration: 6000 });
-                      setTimeout(() => void refreshBridgeStatus(), 5000);
-                    }}
-                  >
-                    ⚡ Start Bridge
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {vmStatus === "booting" && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10">
-              <Loader2 className="h-12 w-12 mb-4 animate-spin opacity-60" />
-              <p className="text-lg font-medium mb-2">Booting {currentConfig.name}...</p>
-              <p className="text-sm text-white/40">QEMU is starting the virtual machine</p>
-            </div>
-          )}
-
-          {vmStatus === "running" && currentConfig.is64Bit && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10 bg-black/80">
-              <Monitor className="h-16 w-16 mb-4" />
-              <p className="text-lg font-medium mb-2">{currentConfig.name} Running</p>
-              <p className="text-sm text-white/60 mb-4">
-                {customRam}MB RAM · {customCores} vCPU
-              </p>
-              {isoNeededPath ? (
-                <div className="text-center max-w-sm">
-                  <p className="text-xs text-yellow-400 mb-2 font-medium">⚠ No OS ISO found — VM shows BIOS only</p>
-                  <p className="text-xs text-white/50 mb-1">To install {currentConfig.name}, place the ISO at:</p>
-                  <code className="bg-black/60 px-3 py-1.5 rounded text-xs break-all block mb-3">
-                    {isoNeededPath}
-                  </code>
-                  <p className="text-xs text-white/40">Then restart the VM</p>
-                </div>
-              ) : (
-                <div className="text-center">
-                  <p className="text-xs text-green-400 mb-3 font-medium">✓ VM is running — click below to view it</p>
-                  <Button
-                    onClick={handleLaunchVNC}
-                    className="bg-blue-600 hover:bg-blue-700 text-white gap-2 mb-4"
-                  >
-                    <Monitor className="h-4 w-4" />
-                    Launch VNC Viewer
-                  </Button>
-                  <p className="text-xs text-white/40 mb-1">Or connect manually:</p>
-                  <code className="bg-black/50 px-4 py-2 rounded text-sm block">
-                    localhost:{currentVncPort}
-                  </code>
-                  <p className="text-xs text-white/30 mt-2">
-                    VNC viewer is at: AppData\Local\Thalamus\tvnviewer.exe
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div ref={screenContainerRef} className="w-full h-full" />
-        </div>
+    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+      <div>
+        <h2 className="text-xl font-semibold flex items-center gap-2">
+          <Terminal className="h-5 w-5 text-primary" />
+          Build Runner
+        </h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Commands from the agents — and from you — run on a clean machine, then report back here.
+        </p>
       </div>
 
-      {!isFullscreen && (
-        <div className="flex-1 flex flex-col min-h-0 p-6 space-y-4">
-          <div>
-            <h3 className="text-lg font-semibold flex items-center gap-2">
-              <Terminal className="h-5 w-5" />
-              Send Commands to VM
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Type commands to send directly to the VM serial terminal
-            </p>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Execute Command</CardTitle>
-              <CardDescription>
-                Send commands to the running {currentConfig.name}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="ls, pwd, uname -a, etc..."
-                  value={command}
-                  onChange={(e) => setCommand(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleExecute();
-                    }
-                  }}
-                  className="font-mono"
-                  disabled={isExecuting || vmStatus !== "running"}
-                />
-                <Button
-                  onClick={handleExecute}
-                  disabled={!command.trim() || isExecuting || vmStatus !== "running"}
-                  className="gap-2"
-                >
-                  {isExecuting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  Send
-                </Button>
-              </div>
-              {vmStatus !== "running" && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  Boot the VM to send commands
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="flex-1 min-h-0">
-            <CardHeader>
-              <CardTitle className="text-base">Command History</CardTitle>
-              <CardDescription>Commands sent to VM serial port</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[200px]">
-                {commandLogs.length === 0 ? (
-                  <div className="text-center text-muted-foreground py-8">
-                    No commands sent yet
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {commandLogs.map((log, idx) => (
-                      <motion.div
-                        key={log.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: idx * 0.05 }}
-                        className="border rounded-lg p-3"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs text-muted-foreground">
-                            {formatTimestamp(log.timestamp)}
-                          </span>
-                          {log.isRunning && (
-                            <Badge className="bg-blue-500">
-                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                              Sending
-                            </Badge>
-                          )}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Where commands run */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              {isLocal ? <Laptop className="h-4 w-4" /> : <Cloud className="h-4 w-4" />}
+              {isLocal ? "This machine" : "Cloud runner"}
+            </CardTitle>
+            <CardDescription>
+              {isLocal
+                ? "The desktop app is running this branch's commands locally."
+                : "A fresh machine per command, with the full toolchain already installed."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {!isLocal && (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">Build and test on</p>
+                <Select value={runnerOs} onValueChange={handleRunnerChange}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {RUNNERS.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>
+                        <div className="flex items-center gap-2">
+                          <Cpu className="h-3.5 w-3.5" />
+                          {r.label}
                         </div>
-                        <div className="bg-muted/50 rounded p-2 mb-2">
-                          <code className="text-sm font-mono">$ {log.command}</code>
-                        </div>
-                        {log.output && (
-                          <div className="bg-background border rounded p-2">
-                            <pre className="text-xs font-mono whitespace-pre-wrap">{log.output}</pre>
-                          </div>
-                        )}
-                        {log.error && (
-                          <div className="bg-red-500/10 border border-red-500/20 rounded p-2">
-                            <pre className="text-xs font-mono text-red-500 whitespace-pre-wrap">{log.error}</pre>
-                          </div>
-                        )}
-                      </motion.div>
+                      </SelectItem>
                     ))}
-                  </div>
-                )}
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {RUNNERS.find((r) => r.value === runnerOs)?.hint}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-      {/* VM Setup Dialog */}
-      <VMSetupDialog
-        open={showSetupDialog}
-        onOpenChange={setShowSetupDialog}
-        onComplete={() => {
-          toast.success("VM bridge ready! You can now boot VMs.");
-          handleBootVM(); // Retry booting
-        }}
-      />
+        {/* Source control for this branch */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <GitBranch className="h-4 w-4" />
+              Source control
+            </CardTitle>
+            <CardDescription>
+              {config
+                ? "Every agent change is committed here before it runs."
+                : "Setting up — this appears once the branch's repository is ready."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {config ? (
+              <>
+                <Button asChild variant="outline" size="sm" className="w-full gap-2">
+                  <a href={config.repoUrl} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Open repository
+                  </a>
+                </Button>
+                <Button asChild variant="outline" size="sm" className="w-full gap-2">
+                  <a href={`${config.repoUrl}/actions`} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Open build history
+                  </a>
+                </Button>
+                {config.sourceRepoUrl && (
+                  <p className="text-xs text-muted-foreground pt-1">
+                    Imported from{" "}
+                    <a
+                      href={config.sourceRepoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary underline underline-offset-2"
+                    >
+                      {config.sourceRepoUrl.replace("https://github.com/", "")}
+                      {config.sourceBranch ? `@${config.sourceBranch}` : ""}
+                    </a>
+                  </p>
+                )}
+              </>
+            ) : (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Preparing this branch
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Run a command */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Run a command</CardTitle>
+          <CardDescription>
+            Runs against this branch's files, exactly like the agents do.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2">
+            <Input
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleSend();
+                }
+              }}
+              placeholder="npm test, cargo build, pytest…"
+              className="font-mono text-sm"
+              disabled={sending}
+            />
+            <Button onClick={handleSend} disabled={!command.trim() || sending} className="gap-2">
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Run
+            </Button>
+          </div>
+          {!isLocal && (
+            <p className="text-xs text-muted-foreground mt-2">
+              A fresh machine takes a moment to pick the job up — output lands below when it does.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* History */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Output</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {commands === undefined ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : commands.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">
+              Nothing has run on this branch yet.
+            </p>
+          ) : (
+            <ScrollArea className="h-[380px] pr-4">
+              <div className="space-y-3">
+                {commands.map((cmd: Doc<"codeCommands">) => (
+                  <motion.div
+                    key={cmd._id}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="border rounded-lg overflow-hidden"
+                  >
+                    <div className="flex items-center justify-between gap-2 px-3 py-2 bg-muted/40">
+                      <code className="text-xs font-mono truncate">$ {cmd.command}</code>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs text-muted-foreground">{cmd.agent}</span>
+                        {statusBadge(cmd)}
+                      </div>
+                    </div>
+                    {cmd.output && (
+                      <pre
+                        className={cn(
+                          "text-xs font-mono p-3 whitespace-pre-wrap break-all max-h-56 overflow-y-auto",
+                          cmd.status === "failed" ? "text-destructive" : "text-muted-foreground",
+                        )}
+                      >
+                        {cmd.output}
+                      </pre>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

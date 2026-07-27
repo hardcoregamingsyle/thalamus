@@ -222,6 +222,10 @@ export const updateBranch = mutation({
     branchId: v.string(),
     name: v.optional(v.string()),
     description: v.optional(v.string()),
+    // Which hosted runner this branch's commands build on. The whole point of
+    // running on GitHub's runners rather than one container: a branch can be
+    // built and tested on the OS it actually ships to.
+    runnerOs: v.optional(v.union(v.literal("ubuntu"), v.literal("windows"), v.literal("macos"))),
   },
   handler: async (ctx, args) => {
     const sessions = await ctx.db
@@ -248,6 +252,7 @@ export const updateBranch = mutation({
     const updates: Record<string, unknown> = { lastActivityAt: Date.now() };
     if (args.name !== undefined) updates.name = args.name;
     if (args.description !== undefined) updates.description = args.description;
+    if (args.runnerOs !== undefined) updates.runnerOs = args.runnerOs;
 
     await ctx.db.patch(branch._id, updates);
   },

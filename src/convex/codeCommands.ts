@@ -250,6 +250,42 @@ export const listPendingForBranch = query({
   },
 });
 
+// Run a one-off command on the branch's runner, outside the pipeline.
+//
+// Cloud branches dispatch to GitHub Actions; local branches are left alone
+// because the desktop app is already polling listPendingForBranch and would
+// otherwise run the same command twice.
+export const runManualCommand = mutation({
+  args: { token: v.string(), branchId: v.string(), command: v.string() },
+  handler: async (ctx, args) => {
+    const session = await requireSession(ctx, args.token);
+    await assertBranchOwner(ctx, session.userId, args.branchId);
+
+    const command = args.command.trim();
+    if (!command) throw new Error("Command is empty");
+
+    const branch = await ctx.db
+      .query("codeBranches")
+      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (!branch) throw new Error("Branch not found");
+
+    await ctx.db.insert("codeCommands", {
+      branchId: args.branchId,
+      agent: "You",
+      command,
+      status: "pending",
+      createdAt: Date.now(),
+    });
+
+    if (branch.executor !== "local") {
+      await ctx.scheduler.runAfter(0, internal.githubActionsRunner.executeBranchCommandsViaActions, {
+        branchId: args.branchId,
+      });
+    }
+  },
+});
+
 // Mark command as failed
 export const failCommand = mutation({
   args: {

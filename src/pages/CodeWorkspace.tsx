@@ -20,6 +20,8 @@ import { UsageView } from "@/components/code-workspace/UsageView";
 import { VersionView } from "@/components/code-workspace/VersionView";
 import { GitSyncView } from "@/components/code-workspace/GitSyncView";
 import { DeployView } from "@/components/code-workspace/DeployView";
+import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
+import { fetchSponsoredAd } from "@/lib/requestAd";
 
 // ── Planner message rendering ──────────────────────────────────────────────────
 interface PlannerTask {
@@ -273,9 +275,33 @@ export default function CodeWorkspace() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // One sponsored card per session, same contract as the chat surfaces: it is
+  // requested only once the branch has produced a reply, and never rendered
+  // while the pipeline is mid-run.
+  const [sponsoredAd, setSponsoredAd] = useState<GravityAd | null>(null);
+  const adRequestedRef = useRef(false);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (adRequestedRef.current || !messages || messages.length === 0) return;
+    // Agent turns carry an `agent` name rather than a role — anything that is
+    // not the user reads as the assistant side of the conversation.
+    const adMessages = messages.slice(-6).map((m: Doc<"codeMessages">) => ({
+      role: m.agent === "User" ? "user" : "assistant",
+      content: (m.content ?? "").slice(0, 1000),
+    })).filter((m: { role: string; content: string }) => m.content.length > 0);
+    if (adMessages.length === 0 || !adMessages.some((m: { role: string }) => m.role === "assistant")) return;
+
+    adRequestedRef.current = true;
+    fetchSponsoredAd({ token: token || undefined, messages: adMessages, count: 1 })
+      .then((ad) => {
+        if (ad) setSponsoredAd(Array.isArray(ad) ? (ad[0] as GravityAd) : (ad as GravityAd));
+      })
+      .catch(() => {});
+  }, [messages, token]);
 
   const handleSend = async () => {
     if (!input.trim() || !branchId || isSending) return;
@@ -361,7 +387,7 @@ export default function CodeWorkspace() {
       case "deploy":
         return <DeployView projectId={projectId} branchId={branchId} />;
       case "sandbox":
-        return <SandboxView branchId={branchId} />;
+        return <SandboxView projectId={projectId} branchId={branchId} />;
       case "keys":
         return <KeysView projectId={projectId} branchId={branchId} />;
       default:
@@ -463,6 +489,9 @@ export default function CodeWorkspace() {
                     </span>
                   </div>
                 </div>
+              )}
+              {sponsoredAd && branch?.status !== "running" && (
+                <SponsoredAdCard ad={sponsoredAd} rail />
               )}
               <div ref={messagesEndRef} />
             </div>
