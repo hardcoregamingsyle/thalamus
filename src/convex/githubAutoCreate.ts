@@ -107,15 +107,19 @@ export const autoCreateRepoForBranch = action({
     const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
     if (!userId) throw new Error("Not authenticated");
 
+    // No connected GitHub account? Fall back to the platform's own token so
+    // the repo (and the GitHub Actions VM it doubles as) still gets created —
+    // just owned by the platform account instead of the user's.
     const githubAccount = await ctx.runQuery(internal.githubHelpers.getGithubToken, { userId });
-    if (!githubAccount) throw new Error("No GitHub account connected.");
+    const githubToken = githubAccount?.accessToken || process.env.GITHUB_TOKEN;
+    if (!githubToken) throw new Error("No GitHub account connected and no platform GitHub token configured.");
 
     return ctx.runAction(internal.githubAutoCreate.createObscureRepo, {
       token: args.token,
       projectId: args.projectId,
       branchId: args.branchId,
       projectName: args.projectName,
-      githubToken: githubAccount.accessToken,
+      githubToken,
     });
   },
 });

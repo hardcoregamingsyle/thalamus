@@ -8,6 +8,17 @@ import { Id } from "./_generated/dataModel";
 import { Octokit } from "@octokit/rest";
 import crypto from "crypto";
 
+// The user's own OAuth-connected token beats an explicitly-passed one (there's
+// no PAT-entry UI left to pass one anyway) beats the platform's fallback token.
+async function resolveGithubToken(
+  ctx: { runQuery: (ref: unknown, args: unknown) => Promise<unknown> },
+  userId: Id<"users">,
+  explicit?: string,
+): Promise<string | undefined> {
+  const account = await ctx.runQuery(internal.githubHelpers.getGithubToken, { userId }) as { accessToken: string } | null;
+  return account?.accessToken || explicit || process.env.GITHUB_TOKEN;
+}
+
 // SHA-256 over sorted file paths, ignoring build artifacts.
 // Path-only (no content) so trivial edits don't evade the fingerprint.
 const IGNORE_PREFIXES = [
@@ -44,7 +55,7 @@ export const cloneRepository = action({
       const [, owner, repo] = urlMatch;
 
       const octokit = new Octokit({
-        auth: args.githubToken || process.env.GITHUB_TOKEN,
+        auth: await resolveGithubToken(ctx, userId, args.githubToken),
       });
 
       const { data: repoData } = await octokit.repos.get({ owner, repo });
@@ -163,7 +174,7 @@ export const pushToGithub = action({
       });
 
       const octokit = new Octokit({
-        auth: args.githubToken || process.env.GITHUB_TOKEN,
+        auth: await resolveGithubToken(ctx, userId, args.githubToken),
       });
 
       const { data: refData } = await octokit.git.getRef({
@@ -356,7 +367,7 @@ export const pullFromGithub = action({
       if (!config) throw new Error("No GitHub repository connected");
 
       const octokit = new Octokit({
-        auth: args.githubToken || process.env.GITHUB_TOKEN,
+        auth: await resolveGithubToken(ctx, userId, args.githubToken),
       });
 
       const { data: tree } = await octokit.git.getTree({
