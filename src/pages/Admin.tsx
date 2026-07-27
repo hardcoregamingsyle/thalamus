@@ -13,9 +13,43 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex" | "study-materials" | "dau" | "aws" | "gemini" | "nim" | "ollama" | "modal" | "gravity-ads" | "payments" | "vm-isos" | "corpus";
+type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex" | "study-materials" | "dau" | "providerD" | "providerE" | "providerA" | "providerB" | "providerC" | "gravity-ads" | "payments" | "vm-isos" | "corpus";
 
 const ADMIN_SESSION_KEY = "thalamus_admin_v2";
+
+// Provider names, model rosters and our cost basis are served by
+// adminMeta.getAdminUiMeta behind the admin token, never bundled — this route
+// is code-split into a publicly fetchable /assets/Admin-<hash>.js, and the
+// password screen only gates rendering, not the download. Neutral slugs are
+// all that ships; everything readable comes back at runtime.
+type ProviderSlug = "providerA" | "providerB" | "providerC" | "providerD" | "providerE";
+
+interface ProviderMeta {
+  tabLabel: string;
+  title: string;
+  subtitle: string;
+  emptyWarning?: string;
+  readyLabel?: string;
+  namePlaceholder?: string;
+  modelPlaceholder?: string;
+  emptyHint?: string;
+  regionHint?: string;
+  iamPolicy?: string;
+  keyPrefix?: string;
+  keyPlaceholder?: string;
+  help: string[];
+}
+
+function useAdminMeta(adminToken: string) {
+  return useQuery(api.adminMeta.getAdminUiMeta, adminToken ? { adminToken } : "skip");
+}
+
+function useProviderMeta(adminToken: string, slug: ProviderSlug): ProviderMeta {
+  const meta = useAdminMeta(adminToken);
+  return (meta?.providers?.[slug] as ProviderMeta | undefined) ?? {
+    tabLabel: "Provider", title: "Provider", subtitle: "", help: [],
+  };
+}
 
 export default function AdminPage() {
   const [adminToken, setAdminToken] = useState(() => {
@@ -26,6 +60,9 @@ export default function AdminPage() {
   const [showPass, setShowPass] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [tab, setTab] = useState<AdminTab>("users");
+  const uiMeta = useAdminMeta(adminToken);
+  const providerLabel = (slug: ProviderSlug) =>
+    (uiMeta?.providers?.[slug] as ProviderMeta | undefined)?.tabLabel ?? "Provider";
   // 2FA step: after the password, three security questions gate the login.
   const [loginStep, setLoginStep] = useState<"password" | "questions">("password");
   const [answers, setAnswers] = useState(["", "", ""]);
@@ -181,11 +218,11 @@ export default function AdminPage() {
             { id: "suggestion", label: "Suggestions", icon: Lightbulb },
             { id: "study-materials", label: "Study Materials", icon: BookOpen },
             { id: "convex", label: "Convex", icon: Database },
-            { id: "nim", label: "NVIDIA NIM", icon: Zap },
-            { id: "ollama", label: "Ollama Cloud", icon: Cpu },
-            { id: "modal", label: "Modal", icon: Server },
-            { id: "aws", label: "AWS Bedrock", icon: Zap },
-            { id: "gemini", label: "Gemini Keys", icon: Activity },
+            { id: "providerA", label: providerLabel("providerA"), icon: Zap },
+            { id: "providerB", label: providerLabel("providerB"), icon: Cpu },
+            { id: "providerC", label: providerLabel("providerC"), icon: Server },
+            { id: "providerD", label: providerLabel("providerD"), icon: Zap },
+            { id: "providerE", label: providerLabel("providerE"), icon: Activity },
             { id: "gravity-ads", label: "Ads (Gravity)", icon: Globe },
             { id: "payments", label: "Payments", icon: Coins },
             { id: "vm-isos", label: "VM ISOs", icon: Database },
@@ -220,11 +257,11 @@ export default function AdminPage() {
               {tab === "promo-codes" && <PromoCodesTab adminToken={adminToken} />}
               {tab === "suggestion" && <SuggestionsTab adminToken={adminToken} />}
               {tab === "study-materials" && <StudyMaterialsTab adminToken={adminToken} />}
-              {tab === "aws" && <AwsBedrockTab adminToken={adminToken} />}
-              {tab === "gemini" && <GeminiKeysTab adminToken={adminToken} />}
-              {tab === "nim" && <NimKeysTab adminToken={adminToken} />}
-              {tab === "ollama" && <OllamaKeysTab adminToken={adminToken} />}
-              {tab === "modal" && <ModalEndpointsTab adminToken={adminToken} />}
+              {tab === "providerD" && <ProviderDCredentialsTab adminToken={adminToken} />}
+              {tab === "providerE" && <ProviderEKeysTab adminToken={adminToken} />}
+              {tab === "providerA" && <ProviderAKeysTab adminToken={adminToken} />}
+              {tab === "providerB" && <ProviderBKeysTab adminToken={adminToken} />}
+              {tab === "providerC" && <ProviderCEndpointsTab adminToken={adminToken} />}
               {tab === "gravity-ads" && <AdsTab adminToken={adminToken} />}
               {tab === "payments" && <PaymentsTab adminToken={adminToken} />}
               {tab === "vm-isos" && <VmIsoCatalogTab adminToken={adminToken} />}
@@ -562,17 +599,14 @@ function DauTab({ adminToken }: { adminToken: string }) {
   );
 }
 
-// ── Platform pricing rates ($ per million tokens) ─────────────────────────────
-const PLATFORM_PRICING = [
-  { modelId: "gemini-3.1-flash-lite", displayName: "Gemini 3.1 Flash Lite", input: 0.60, output: 2.40 },
-  { modelId: "claude-haiku-4-5",  displayName: "Claude Haiku 4.5",  input: 1.80,  output: 7.20  },
-  { modelId: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6", input: 5.40,  output: 26.50 },
-  { modelId: "claude-opus-4-6",   displayName: "Claude Opus 4.6",   input: 7.44,  output: 42.00 },
-  { modelId: "claude-opus-4-8",   displayName: "Claude Opus 4.8",   input: 12.00, output: 60.00 },
-];
+// Platform pricing rates ($ per million tokens) come from
+// adminMeta.getAdminUiMeta — our cost basis is not something to ship in a
+// publicly downloadable chunk.
+interface PricingRow { modelId: string; displayName: string; input: number; output: number }
 
 // ── Credits Tab ───────────────────────────────────────────────────────────────
 function CreditsTab({ adminToken }: { adminToken: string }) {
+  const platformPricing = (useAdminMeta(adminToken)?.platformPricing ?? []) as PricingRow[];
   const budget = useQuery(api.admin.getPlatformBudget, { adminToken });
   const setPlatformBudget = useMutation(api.admin.setPlatformBudget);
   const resetPlatformSpend = useMutation(api.admin.resetPlatformSpend);
@@ -752,7 +786,7 @@ function CreditsTab({ adminToken }: { adminToken: string }) {
         <p className="text-sm font-bold text-foreground mb-1">Model Pricing Reference</p>
         <p className="text-xs text-muted-foreground mb-4">Cost rates used for deduction ($ per million tokens, 8 decimal precision)</p>
         <div className="space-y-2">
-          {PLATFORM_PRICING.map(m => (
+          {platformPricing.map((m: PricingRow) => (
             <div key={m.modelId} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
               <div>
                 <p className="text-sm font-bold text-foreground">{m.displayName}</p>
@@ -1147,10 +1181,11 @@ function SuggestionsTab({ adminToken }: { adminToken: string }) {
   );
 }
 
-// ── AWS Bedrock Tab ───────────────────────────────────────────────────────────
-function AwsBedrockTab({ adminToken }: { adminToken: string }) {
-  const existing = useQuery(api.admin.getAwsCredentials, { adminToken });
-  const saveCredentials = useMutation(api.admin.saveAwsCredentials);
+// ── Legacy-path credentials ───────────────────────────────────────────────────
+function ProviderDCredentialsTab({ adminToken }: { adminToken: string }) {
+  const meta = useProviderMeta(adminToken, "providerD");
+  const existing = useQuery(api.admin.getProviderDCredentials, { adminToken });
+  const saveCredentials = useMutation(api.admin.saveProviderDCredentials);
   const [accessKeyId, setAccessKeyId] = useState("");
   const [secretAccessKey, setSecretAccessKey] = useState("");
   const [region, setRegion] = useState<string>("ap-southeast-1");
@@ -1171,7 +1206,7 @@ function AwsBedrockTab({ adminToken }: { adminToken: string }) {
     setSaving(true);
     try {
       await saveCredentials({ adminToken, accessKeyId: accessKeyId.trim(), secretAccessKey: secretAccessKey.trim(), region: region.trim() });
-      toast.success("AWS Bedrock credentials saved");
+      toast.success("Credentials saved");
       setAccessKeyId("");
       setSecretAccessKey("");
     } catch (err) {
@@ -1184,8 +1219,8 @@ function AwsBedrockTab({ adminToken }: { adminToken: string }) {
   return (
     <div className="max-w-2xl">
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-foreground">AWS Bedrock Credentials</h2>
-        <p className="text-sm text-muted-foreground mt-1">IAM credentials used for Claude Bedrock API calls (streaming chat, study mode, code mode)</p>
+        <h2 className="text-xl font-bold text-foreground">{meta.title}</h2>
+        <p className="text-sm text-muted-foreground mt-1">{meta.subtitle}</p>
       </div>
 
       {/* Current status */}
@@ -1203,7 +1238,7 @@ function AwsBedrockTab({ adminToken }: { adminToken: string }) {
           ) : (
             <>
               <AlertCircle className="h-4 w-4 text-amber-400" />
-              <span className="text-sm font-bold text-amber-400">No credentials set — Bedrock calls will fail</span>
+              <span className="text-sm font-bold text-amber-400">{meta.emptyWarning ?? "No credentials set"}</span>
             </>
           )}
         </div>
@@ -1273,30 +1308,24 @@ function AwsBedrockTab({ adminToken }: { adminToken: string }) {
         </button>
 
         <p className="text-xs text-muted-foreground">
-          Credentials are stored server-side only. Select the region where your Bedrock model access is enabled.
+          {meta.regionHint ?? "Credentials are stored server-side only."}
         </p>
       </div>
 
       {/* IAM permissions info */}
       <div className="mt-4 bg-muted/30 border border-border rounded-xl p-4">
         <p className="text-xs font-bold text-muted-foreground mb-2">REQUIRED IAM PERMISSIONS</p>
-        <pre className="text-xs text-foreground font-mono bg-background rounded-lg p-3 overflow-x-auto">{`{
-  "Effect": "Allow",
-  "Action": [
-    "bedrock:InvokeModel",
-    "bedrock:InvokeModelWithResponseStream"
-  ],
-  "Resource": "arn:aws:bedrock:*::foundation-model/anthropic.claude*"
-}`}</pre>
+        <pre className="text-xs text-foreground font-mono bg-background rounded-lg p-3 overflow-x-auto">{meta.iamPolicy ?? "—"}</pre>
       </div>
     </div>
   );
 }
 
-// ── Gemini Keys Tab ───────────────────────────────────────────────────────────
-function GeminiKeysTab({ adminToken }: { adminToken: string }) {
-  const existing = useQuery(api.admin.getGeminiKeys, { adminToken });
-  const saveKeys = useMutation(api.admin.saveGeminiKeys);
+// ── Embedding / legacy-fallback keys ──────────────────────────────────────────
+function ProviderEKeysTab({ adminToken }: { adminToken: string }) {
+  const meta = useProviderMeta(adminToken, "providerE");
+  const existing = useQuery(api.admin.getProviderEKeys, { adminToken });
+  const saveKeys = useMutation(api.admin.saveProviderEKeys);
   const [keysText, setKeysText] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -1304,15 +1333,15 @@ function GeminiKeysTab({ adminToken }: { adminToken: string }) {
     const newKeys = keysText
       .split(/[\n,]+/)
       .map(k => k.trim())
-      .filter(k => k.startsWith("AIza") && k.length > 20);
+      .filter(k => k.startsWith(meta.keyPrefix ?? "") && k.length > 20);
     if (newKeys.length === 0) {
-      toast.error("No valid Gemini API keys found. Keys must start with 'AIza'.");
+      toast.error("No valid API keys found.");
       return;
     }
     setSaving(true);
     try {
       await saveKeys({ adminToken, keys: newKeys, append: true });
-      toast.success(`Added ${newKeys.length} Gemini API keys`);
+      toast.success(`Added ${newKeys.length} keys`);
       setKeysText("");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save");
@@ -1324,7 +1353,7 @@ function GeminiKeysTab({ adminToken }: { adminToken: string }) {
   return (
     <div className="max-w-2xl">
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-foreground">Gemini API Keys</h2>
+        <h2 className="text-xl font-bold text-foreground">{meta.title}</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Keys are stored securely in the database — never in source code or git.
         </p>
@@ -1344,7 +1373,7 @@ function GeminiKeysTab({ adminToken }: { adminToken: string }) {
           ) : (
             <>
               <AlertCircle className="h-4 w-4 text-amber-400" />
-              <span className="text-sm font-bold text-amber-400">No keys set — Gemini fallback will fail</span>
+              <span className="text-sm font-bold text-amber-400">{meta.emptyWarning ?? "No keys set"}</span>
             </>
           )}
         </div>
@@ -1372,7 +1401,7 @@ function GeminiKeysTab({ adminToken }: { adminToken: string }) {
           <textarea
             value={keysText}
             onChange={e => setKeysText(e.target.value)}
-            placeholder={"AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\nAIzaSyYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY"}
+            placeholder={meta.keyPlaceholder ?? "one key per line"}
             rows={8}
             className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors resize-none"
           />
@@ -1403,19 +1432,20 @@ function GeminiKeysTab({ adminToken }: { adminToken: string }) {
   );
 }
 
-// ── NVIDIA NIM Keys Tab ─────────────────────────────────────────────────────────
-function NimKeysTab({ adminToken }: { adminToken: string }) {
-  const existing = useQuery(api.admin.getNimKeys, { adminToken });
-  const saveKeys = useMutation(api.admin.saveNimKeys);
+// ── Primary provider keys ─────────────────────────────────────────────────────
+function ProviderAKeysTab({ adminToken }: { adminToken: string }) {
+  const meta = useProviderMeta(adminToken, "providerA");
+  const existing = useQuery(api.admin.getProviderAKeys, { adminToken });
+  const saveKeys = useMutation(api.admin.saveProviderAKeys);
   const [keysText, setKeysText] = useState("");
   const [saving, setSaving] = useState(false);
   const [showKey, setShowKey] = useState(false);
 
   const handleSave = async () => {
     const newKeys = keysText.split(/[\n,]+/).map(k => k.trim()).filter(k => k.length > 10);
-    if (newKeys.length === 0) { toast.error("No valid NIM API keys found."); return; }
+    if (newKeys.length === 0) { toast.error("No valid API keys found."); return; }
     setSaving(true);
-    try { await saveKeys({ adminToken, keys: newKeys, append: true }); toast.success(`Added ${newKeys.length} NVIDIA NIM keys`); setKeysText(""); }
+    try { await saveKeys({ adminToken, keys: newKeys, append: true }); toast.success(`Added ${newKeys.length} keys`); setKeysText(""); }
     catch (err) { toast.error(err instanceof Error ? err.message : "Failed to save"); }
     finally { setSaving(false); }
   };
@@ -1423,16 +1453,16 @@ function NimKeysTab({ adminToken }: { adminToken: string }) {
   return (
     <div className="max-w-2xl">
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-foreground">NVIDIA NIM API Keys</h2>
-        <p className="text-sm text-muted-foreground mt-1">Primary provider — free models via build.nvidia.com. Keys stored in DB.</p>
+        <h2 className="text-xl font-bold text-foreground">{meta.title}</h2>
+        <p className="text-sm text-muted-foreground mt-1">{meta.subtitle}</p>
       </div>
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
         className={`mb-6 p-4 rounded-xl border ${existing && existing.count > 0 ? "bg-emerald-400/10 border-emerald-400/30" : "bg-amber-400/10 border-amber-400/30"}`}>
         <div className="flex items-center gap-2">
           {existing && existing.count > 0 ? (
-            <><CheckCircle className="h-4 w-4 text-emerald-400" /><span className="text-sm font-bold text-emerald-400">{existing.count} keys — NIM is active</span></>
+            <><CheckCircle className="h-4 w-4 text-emerald-400" /><span className="text-sm font-bold text-emerald-400">{existing.count} {meta.readyLabel ?? "keys active"}</span></>
           ) : (
-            <><AlertCircle className="h-4 w-4 text-amber-400" /><span className="text-sm font-bold text-amber-400">No keys — NIM unavailable, Ollama takes over</span></>
+            <><AlertCircle className="h-4 w-4 text-amber-400" /><span className="text-sm font-bold text-amber-400">{meta.emptyWarning ?? "No keys configured"}</span></>
           )}
         </div>
         {existing && existing.count > 0 && (
@@ -1448,9 +1478,9 @@ function NimKeysTab({ adminToken }: { adminToken: string }) {
       <div className="bg-card border border-border rounded-xl p-6 space-y-4">
         <h3 className="text-sm font-bold text-foreground">Add Keys</h3>
         <div>
-          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">PASTE NIM API KEYS (one per line)</label>
+          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">PASTE API KEYS (one per line)</label>
           <textarea value={showKey ? keysText : keysText.replace(/[^\n,]/g, "*")} onChange={e => setKeysText(e.target.value)}
-            placeholder={"nvapi-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nnvapi-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"} rows={8}
+            placeholder={"one key per line"} rows={8}
             className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors resize-none" />
           <button onClick={() => setShowKey(v => !v)} className="text-[10px] text-muted-foreground hover:text-foreground mt-1.5 flex items-center gap-1">
             {showKey ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}{showKey ? "hide keys" : "show keys"}
@@ -1463,9 +1493,7 @@ function NimKeysTab({ adminToken }: { adminToken: string }) {
         <div className="p-3 bg-muted/30 border border-border rounded-xl text-xs text-muted-foreground">
           <p className="font-bold mb-1">HOW IT WORKS</p>
           <ul className="space-y-1 list-disc list-inside">
-            <li>Get free keys at <span className="text-foreground">build.nvidia.com</span> → API Keys</li>
-            <li>25+ free models: Nemotron, Llama, DeepSeek, Qwen, Kimi, Mistral, Phi-4</li>
-            <li>NIM is PRIMARY — every request tries NIM first, only falls back to Ollama if NIM fails</li>
+            {meta.help.map((line, i) => <li key={i}>{line}</li>)}
             <li>Dynamic routing picks the right model per task type automatically</li>
           </ul>
         </div>
@@ -1474,19 +1502,20 @@ function NimKeysTab({ adminToken }: { adminToken: string }) {
   );
 }
 
-// ── Ollama Cloud Keys Tab ──────────────────────────────────────────────────────
-function OllamaKeysTab({ adminToken }: { adminToken: string }) {
-  const existing = useQuery(api.admin.getOllamaKeys, { adminToken });
-  const saveKeys = useMutation(api.admin.saveOllamaKeys);
+// ── Fallback provider keys ────────────────────────────────────────────────────
+function ProviderBKeysTab({ adminToken }: { adminToken: string }) {
+  const meta = useProviderMeta(adminToken, "providerB");
+  const existing = useQuery(api.admin.getProviderBKeys, { adminToken });
+  const saveKeys = useMutation(api.admin.saveProviderBKeys);
   const [keysText, setKeysText] = useState("");
   const [saving, setSaving] = useState(false);
   const [showKey, setShowKey] = useState(false);
 
   const handleSave = async () => {
     const newKeys = keysText.split(/[\n,]+/).map(k => k.trim()).filter(k => k.length > 10);
-    if (newKeys.length === 0) { toast.error("No valid Ollama API keys found."); return; }
+    if (newKeys.length === 0) { toast.error("No valid API keys found."); return; }
     setSaving(true);
-    try { await saveKeys({ adminToken, keys: newKeys, append: true }); toast.success(`Added ${newKeys.length} Ollama Cloud keys`); setKeysText(""); }
+    try { await saveKeys({ adminToken, keys: newKeys, append: true }); toast.success(`Added ${newKeys.length} keys`); setKeysText(""); }
     catch (err) { toast.error(err instanceof Error ? err.message : "Failed to save"); }
     finally { setSaving(false); }
   };
@@ -1494,14 +1523,14 @@ function OllamaKeysTab({ adminToken }: { adminToken: string }) {
   return (
     <div className="max-w-2xl">
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-foreground">Ollama Cloud API Keys</h2>
-        <p className="text-sm text-muted-foreground mt-1">Backup provider — activates when NIM is down or unavailable.</p>
+        <h2 className="text-xl font-bold text-foreground">{meta.title}</h2>
+        <p className="text-sm text-muted-foreground mt-1">{meta.subtitle}</p>
       </div>
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
         className={`mb-6 p-4 rounded-xl border ${existing && existing.count > 0 ? "bg-blue-400/10 border-blue-400/30" : "bg-muted/10 border-border"}`}>
         <div className="flex items-center gap-2">
           {existing && existing.count > 0 ? (
-            <><CheckCircle className="h-4 w-4 text-blue-400" /><span className="text-sm font-bold text-blue-400">{existing.count} keys — Ollama backup ready</span></>) : (
+            <><CheckCircle className="h-4 w-4 text-blue-400" /><span className="text-sm font-bold text-blue-400">{existing.count} {meta.readyLabel ?? "keys active"}</span></>) : (
             <><AlertCircle className="h-4 w-4 text-muted-foreground" /><span className="text-sm font-bold text-muted-foreground">No keys set — only NIM will be used</span></>)}
         </div>
         {existing && existing.count > 0 && (
@@ -1517,9 +1546,9 @@ function OllamaKeysTab({ adminToken }: { adminToken: string }) {
       <div className="bg-card border border-border rounded-xl p-6 space-y-4">
         <h3 className="text-sm font-bold text-foreground">Add Keys</h3>
         <div>
-          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">PASTE OLLAMA API KEYS (one per line)</label>
+          <label className="text-xs font-bold text-muted-foreground mb-1.5 block">PASTE API KEYS (one per line)</label>
           <textarea value={showKey ? keysText : keysText.replace(/[^\n,]/g, "*")} onChange={e => setKeysText(e.target.value)}
-            placeholder={"ollama-sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nollama-sk-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"} rows={8}
+            placeholder={"one key per line"} rows={8}
             className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors resize-none" />
           <button onClick={() => setShowKey(v => !v)} className="text-[10px] text-muted-foreground hover:text-foreground mt-1.5 flex items-center gap-1">
             {showKey ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}{showKey ? "hide keys" : "show keys"}
@@ -1532,9 +1561,8 @@ function OllamaKeysTab({ adminToken }: { adminToken: string }) {
         <div className="p-3 bg-muted/30 border border-border rounded-xl text-xs text-muted-foreground">
           <p className="font-bold mb-1">BACKUP PROVIDER</p>
           <ul className="space-y-1 list-disc list-inside">
-            <li>Ollama is the <span className="text-foreground">backup</span> — only called when NIM fails or is unconfigured</li>
-            <li>Get keys at <span className="text-foreground">ollama.com</span> → Account → API Keys</li>
-            <li>Also checks OLLAMA_API_KEY env vars in Convex dashboard</li>
+            {meta.help.map((line, i) => <li key={i}>{line}</li>)}
+            <li>Env-var keys in the Convex dashboard are also checked</li>
           </ul>
         </div>
       </div>
@@ -1542,11 +1570,11 @@ function OllamaKeysTab({ adminToken }: { adminToken: string }) {
   );
 }
 
-// ── Modal Endpoints Tab ───────────────────────────────────────────────────────
+// ── Self-hosted endpoints tab ─────────────────────────────────────────────────
 // Multi-row, unlike the key-pool tabs above: each row is a whole endpoint, and
-// exactly one is starred as primary. Adding a self-hosted Modal model later is
+// exactly one is starred as primary. Adding a self-hosted model later is
 // a row here — no deploy.
-// The row shape is spelled out rather than inferred: listModalEndpoints returns
+// The row shape is spelled out rather than inferred: listProviderCEndpoints returns
 // a masked projection (maskedKey, never apiKey), and this file's api type sits
 // at TypeScript's instantiation-depth cliff, so the inferred element goes `any`.
 type ModalEndpointRow = {
@@ -1560,12 +1588,13 @@ type ModalEndpointRow = {
   createdAt: number;
 };
 
-function ModalEndpointsTab({ adminToken }: { adminToken: string }) {
-  const endpoints = useQuery(api.admin.listModalEndpoints, { adminToken });
-  const addEndpoint = useMutation(api.admin.addModalEndpoint);
-  const setPrimary = useMutation(api.admin.setModalEndpointPrimary);
-  const setEnabled = useMutation(api.admin.setModalEndpointEnabled);
-  const deleteEndpoint = useMutation(api.admin.deleteModalEndpoint);
+function ProviderCEndpointsTab({ adminToken }: { adminToken: string }) {
+  const meta = useProviderMeta(adminToken, "providerC");
+  const endpoints = useQuery(api.admin.listProviderCEndpoints, { adminToken });
+  const addEndpoint = useMutation(api.admin.addProviderCEndpoint);
+  const setPrimary = useMutation(api.admin.setProviderCEndpointPrimary);
+  const setEnabled = useMutation(api.admin.setProviderCEndpointEnabled);
+  const deleteEndpoint = useMutation(api.admin.deleteProviderCEndpoint);
 
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
@@ -1596,12 +1625,8 @@ function ModalEndpointsTab({ adminToken }: { adminToken: string }) {
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h2 className="text-lg font-bold text-foreground">Modal Endpoints</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          OpenAI-compatible endpoints served from Modal. The starred one is tried first;
-          the rest act as backups in order. Register a self-hosted serverless model here
-          and it goes live without a deploy.
-        </p>
+        <h2 className="text-lg font-bold text-foreground">{meta.title}</h2>
+        <p className="text-sm text-muted-foreground mt-1">{meta.subtitle}</p>
       </div>
 
       <div className="bg-card border border-border rounded-xl p-6 space-y-4">
@@ -1609,18 +1634,18 @@ function ModalEndpointsTab({ adminToken }: { adminToken: string }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-[11px] text-muted-foreground mb-1 block">NAME</label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="vLLM Qwen A100"
+            <input value={name} onChange={e => setName(e.target.value)} placeholder={meta.namePlaceholder ?? "endpoint name"}
               className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60" />
           </div>
           <div>
             <label className="text-[11px] text-muted-foreground mb-1 block">MODEL ID</label>
-            <input value={modelId} onChange={e => setModelId(e.target.value)} placeholder="Qwen/Qwen3-Coder-30B"
+            <input value={modelId} onChange={e => setModelId(e.target.value)} placeholder={meta.modelPlaceholder ?? "model id"}
               className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60" />
           </div>
         </div>
         <div>
           <label className="text-[11px] text-muted-foreground mb-1 block">BASE URL</label>
-          <input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://workspace--app.modal.run"
+          <input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://your-endpoint.example.com"
             className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:outline-none focus:border-primary/60" />
           <p className="text-[11px] text-muted-foreground mt-1">Without the trailing <code>/v1</code> — it gets appended.</p>
         </div>
@@ -1638,7 +1663,7 @@ function ModalEndpointsTab({ adminToken }: { adminToken: string }) {
       <div className="bg-card border border-border rounded-xl p-6">
         <p className="text-xs font-bold text-muted-foreground mb-3">REGISTERED ({endpoints?.length ?? 0})</p>
         {!endpoints || endpoints.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No endpoints yet. Requests fall through to NVIDIA NIM, then Ollama Cloud.</p>
+          <p className="text-sm text-muted-foreground">{meta.emptyHint ?? "No endpoints yet."}</p>
         ) : (
           <div className="space-y-2">
             {(endpoints as ModalEndpointRow[]).map((ep: ModalEndpointRow) => (

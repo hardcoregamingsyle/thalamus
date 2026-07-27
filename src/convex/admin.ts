@@ -542,7 +542,7 @@ export const getAdminStudyMaterials = internalQuery({
 });
 
 // AWS Bedrock Credentials
-export const getAwsCredentials = query({
+export const getProviderDCredentials = query({
   args: { adminToken: v.string() },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
@@ -557,7 +557,7 @@ export const getAwsCredentials = query({
   },
 });
 
-export const saveAwsCredentials = mutation({
+export const saveProviderDCredentials = mutation({
   args: {
     adminToken: v.string(),
     accessKeyId: v.string(),
@@ -602,7 +602,7 @@ export const getAwsCredentialsInternal = internalQuery({
 });
 
 // Gemini API Keys
-export const getGeminiKeys = query({
+export const getProviderEKeys = query({
   args: { adminToken: v.string() },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
@@ -617,7 +617,7 @@ export const getGeminiKeys = query({
   },
 });
 
-export const saveGeminiKeys = mutation({
+export const saveProviderEKeys = mutation({
   args: {
     adminToken: v.string(),
     keys: v.array(v.string()),
@@ -660,7 +660,7 @@ export const getGeminiKeysInternal = internalQuery({
 
 // —— NVIDIA NIM API Keys ——
 
-export const getNimKeys = query({
+export const getProviderAKeys = query({
   args: { adminToken: v.string() },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
@@ -674,7 +674,7 @@ export const getNimKeys = query({
   },
 });
 
-export const saveNimKeys = mutation({
+export const saveProviderAKeys = mutation({
   args: {
     adminToken: v.string(),
     keys: v.array(v.string()),
@@ -716,7 +716,7 @@ export const getNimKeysInternal = internalQuery({
 
 // —— Ollama Cloud API Keys ——
 
-export const getOllamaKeys = query({
+export const getProviderBKeys = query({
   args: { adminToken: v.string() },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
@@ -730,7 +730,7 @@ export const getOllamaKeys = query({
   },
 });
 
-export const saveOllamaKeys = mutation({
+export const saveProviderBKeys = mutation({
   args: {
     adminToken: v.string(),
     keys: v.array(v.string()),
@@ -775,7 +775,7 @@ export const getOllamaKeysInternal = internalQuery({
 // model + optional key), so pointing at a new self-hosted model is a row, not a
 // deploy. Exactly one row is primary and the runtime tries it first.
 
-export const listModalEndpoints = query({
+export const listProviderCEndpoints = query({
   args: { adminToken: v.string() },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
@@ -794,7 +794,7 @@ export const listModalEndpoints = query({
   },
 });
 
-export const addModalEndpoint = mutation({
+export const addProviderCEndpoint = mutation({
   args: {
     adminToken: v.string(),
     name: v.string(),
@@ -826,7 +826,7 @@ export const addModalEndpoint = mutation({
   },
 });
 
-export const setModalEndpointPrimary = mutation({
+export const setProviderCEndpointPrimary = mutation({
   args: { adminToken: v.string(), id: v.id("modalEndpoints") },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
@@ -839,7 +839,7 @@ export const setModalEndpointPrimary = mutation({
   },
 });
 
-export const setModalEndpointEnabled = mutation({
+export const setProviderCEndpointEnabled = mutation({
   args: { adminToken: v.string(), id: v.id("modalEndpoints"), isEnabled: v.boolean() },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
@@ -847,7 +847,7 @@ export const setModalEndpointEnabled = mutation({
   },
 });
 
-export const deleteModalEndpoint = mutation({
+export const deleteProviderCEndpoint = mutation({
   args: { adminToken: v.string(), id: v.id("modalEndpoints") },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
