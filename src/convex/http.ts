@@ -271,7 +271,7 @@ http.route({
       userContext?: { datetime: string; timezone: string };
       token?: string;
       conversationId?: string;
-      preferClaude?: boolean;
+      preferHighTier?: boolean;
       skipUserSave?: boolean;
     };
 
@@ -281,7 +281,7 @@ http.route({
       return new Response("Bad request", { status: 400, headers: corsHeaders() });
     }
 
-    const { content, mode, history, systemPrompt, userContext, token, conversationId, preferClaude, skipUserSave } = body;
+    const { content, mode, history, systemPrompt, userContext, token, conversationId, preferHighTier, skipUserSave } = body;
 
     // Auth gate: this endpoint drives paid models (Bedrock/Gemini) with the
     // platform's own credentials, so it must not be an open proxy. Every real
@@ -364,7 +364,7 @@ http.route({
     let geminiStreamBody = "";
 
     // Try Claude (non-streaming invoke first to get full text, then stream it).
-    if (!streamSuccess && hasBedrock && bedrockCreds && preferClaude !== false) {
+    if (!streamSuccess && hasBedrock && bedrockCreds && preferHighTier !== false) {
       try {
         const result = await streamClaudeWithCreds(bedrockCreds, fullSystem, messages, () => {});
         fullText = result.fullText;
@@ -840,8 +840,15 @@ function apiError(status: number, message: string, type: string): Response {
 
 // Requested model string → internal tier. Accepts our tier names as well as
 // familiar aliases (e.g. "gpt-4o" from generic OpenAI clients → sonnet).
+// Public model names are ours, not the upstream provider's. `thalamus-fast`,
+// `thalamus-pro` and `thalamus-max` are what we document; the provider-shaped
+// names below still resolve so anything already pointed at this endpoint keeps
+// working, but nothing here should ever be echoed back to a caller.
 function modelToTier(model: string | undefined): "gemini" | "haiku" | "sonnet" | "opus46" | "opus48" {
   const m = (model ?? "").toLowerCase();
+  if (m.includes("max")) return "opus48";
+  if (m.includes("pro")) return "sonnet";
+  if (m.includes("fast") || m.includes("lite")) return "haiku";
   if (m.includes("opus")) return m.includes("4-6") || m.includes("4.6") ? "opus46" : "opus48";
   if (m.includes("sonnet") || m.includes("gpt-4")) return "sonnet";
   if (m.includes("gemini") || m.includes("flash")) return "gemini";
@@ -915,7 +922,10 @@ http.route({
     // 5. Respond in OpenAI format
     const completionId = `chatcmpl-${key.keyId.slice(5)}${Date.now().toString(36)}`;
     const created = Math.floor(Date.now() / 1000);
-    const modelName = body.model ?? tier;
+    // Echo back what the caller asked for, never the tier — `tier` is an
+    // internal provider-shaped name and returning it as `model` told every API
+    // consumer exactly what we run underneath.
+    const modelName = body.model ?? "thalamus-fast";
     const usage = {
       prompt_tokens: result.inputTokens,
       completion_tokens: result.outputTokens,

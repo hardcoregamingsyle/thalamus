@@ -33,7 +33,7 @@ const DOCS: Record<Doc, { title: string; metaTitle: string; description: string;
       { h: "How we use it", p: [
         "To provide the service: routing your requests to AI models, storing your conversations and projects, and metering credits.",
         "To improve reliability and prevent abuse. We do not sell your personal data.",
-        "AI model calls are processed by third-party model providers solely to generate your response. The specific providers change as we tune for quality and cost; the current list is available on request.",
+        "AI model calls are processed by third-party model providers solely to generate your response. The set of providers we use changes over time; a current list is available on request.",
       ] },
       { h: "Advertising", p: [
         "Thalamus is free to use, and sponsored placements help pay for it. Ads are served by our advertising partner, Gravity, and are labelled as ads wherever they appear.",

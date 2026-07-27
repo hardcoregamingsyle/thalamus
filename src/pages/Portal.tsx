@@ -1326,7 +1326,7 @@ function PortalDesktop() {
           userContext,
           token,
           conversationId: convId,
-          preferClaude: true,
+          preferHighTier: true,
           skipUserSave: userMessageSaved,
         }),
       });

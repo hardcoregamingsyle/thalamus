@@ -283,7 +283,7 @@ function MobileChatView({
         userContext,
         token,
         conversationId: convId,
-        preferClaude: true,
+        preferHighTier: true,
         skipUserSave: userMessageSaved,
       }, (text) => {
         setIsThinking(false);

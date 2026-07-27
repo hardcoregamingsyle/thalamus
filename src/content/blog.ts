@@ -64,7 +64,7 @@ Build mode separates the two. After the Coder writes, the **Tester** can actuall
 
 ## The right horsepower for each step
 
-Under the hood, Thalamus runs a mix of frontier-grade models and assigns each agent a tier that fits its role. The dispatcher and the more mechanical steps can run on faster models; the heavy reasoning seats — planning, coding, criticism — get the stronger ones. You do not manage any of this. You describe the outcome; the pipeline decides how much horsepower each step deserves.
+Under the hood, Thalamus runs frontier-grade models and gives every agent what its job actually needs — quick steps stay quick, and the heavy reasoning seats get room to think. You do not manage any of this. You describe the outcome; the pipeline decides how much horsepower each step deserves.
 
 If a step needs current information from the web, the same live-search capability that powers [Research mode](https://thalamus.aphantic.skinticals.com/portal/research) feeds the Researcher agent, so plans are not built on stale assumptions.
 
@@ -219,7 +219,7 @@ And if the answer you researched turns into something you want to *build*, [Buil
 
 ## Runs on frontier models, on the web or the desktop
 
-Under the hood, Thalamus runs a mix of frontier-grade Claude and Gemini models, and you never have to pick one — you ask your question and the platform routes it. Prefer working outside a browser tab? The same modes, Research included, ship in a native Windows desktop app that drives the same backend — a real app, not a wrapped web page.
+Under the hood, Thalamus runs frontier-grade models, and you never have to pick one — you ask your question and the platform routes it. Prefer working outside a browser tab? The same modes, Research included, ship in a native Windows desktop app that drives the same backend — a real app, not a wrapped web page.
 
 ## Free right now — and you can try it as a guest
 

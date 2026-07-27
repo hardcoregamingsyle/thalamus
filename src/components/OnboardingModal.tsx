@@ -322,7 +322,7 @@ export default function OnboardingModal({ onComplete, userName }: OnboardingModa
                       {
                         icon: "",
                         title: "Pay Per Use",
-                        desc: "Agent Bucks are deducted based on the AI model used. Lighter models cost less; powerful models cost more.",
+                        desc: "Agent Bucks are deducted as you use the platform. Short, simple tasks cost less; long or complex ones cost more.",
                         color: "border-blue-400/30 bg-blue-400/5",
                       },
                       {

@@ -280,10 +280,15 @@ export default function ApiPage() {
   -H "Authorization: Bearer thal_your_key_here" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "thalamus-sonnet",
+    "model": "thalamus-pro",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'`}
           </pre>
+          <p className="text-xs text-muted-foreground mt-3">
+            Models: <code className="text-primary">thalamus-fast</code>,{" "}
+            <code className="text-primary">thalamus-pro</code>,{" "}
+            <code className="text-primary">thalamus-max</code> — in increasing order of capability and cost.
+          </p>
         </div>
       </div>
 
