@@ -25,21 +25,37 @@ import {
 const http = httpRouter();
 
 
-// Decode state helper
-function decodeStateHttp(state: string): string | null {
+// Decode state helper — mirrors encodeState/decodeState in github.ts. Kept as
+// a separate copy because this file runs in the HTTP-action runtime, which
+// can't import from a "use node" module.
+// State format: hex(userId) + "." + randomHex + "." + hex(returnPath)
+function decodeHexHttp(hex: string): string | null {
+  if (hex.length === 0 || hex.length % 2 !== 0) return null;
+  const bytes: number[] = [];
+  for (let i = 0; i < hex.length; i += 2) {
+    const byte = parseInt(hex.slice(i, i + 2), 16);
+    if (isNaN(byte)) return null;
+    bytes.push(byte);
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+function decodeStateHttp(state: string): { userId: string; returnPath: string | null } | null {
   try {
-    const dotIdx = state.indexOf(".");
-    if (dotIdx === -1) return null;
-    const userIdHex = state.slice(0, dotIdx);
-    if (userIdHex.length === 0 || userIdHex.length % 2 !== 0) return null;
-    const bytes: number[] = [];
-    for (let i = 0; i < userIdHex.length; i += 2) {
-      const byte = parseInt(userIdHex.slice(i, i + 2), 16);
-      if (isNaN(byte)) return null;
-      bytes.push(byte);
-    }
-    return new TextDecoder().decode(new Uint8Array(bytes));
+    const [userIdHex, , pathHex] = state.split(".");
+    const userId = userIdHex ? decodeHexHttp(userIdHex) : null;
+    if (!userId) return null;
+    const returnPath = pathHex ? decodeHexHttp(pathHex) : null;
+    return { userId, returnPath };
   } catch { return null; }
+}
+
+// Only a same-site, single-leading-slash path is ever honored as a post-OAuth
+// redirect target — this blocks protocol-relative ("//host/...") tricks that
+// could otherwise ride in through the state param.
+function safeReturnPath(path: string | null): string {
+  if (path && path.startsWith("/") && !path.startsWith("//")) return path;
+  return "/portal/code";
 }
 
 // CORS headers
@@ -486,8 +502,7 @@ http.route({
     const state = url.searchParams.get("state");
     const error = url.searchParams.get("error");
 
-    // The frontend origin is the app URL — stored in state as a suffix after the userId
-    // Fall back to the known production domain
+    // Falls back to the known production domain if unset
     const origin = process.env.FRONTEND_URL ?? "https://thalamus.aphantic.skinticals.com";
 
     if (error || !code || !state) {
@@ -532,9 +547,14 @@ http.route({
         const primary = Array.isArray(emails) ? emails.find((e) => e.primary && e.verified) ?? emails.find((e) => e.verified) : undefined;
         if (!primary) throw new Error("No verified email on this GitHub account");
 
+        // The `repo` scope requested above rides along on this same token, so
+        // signing in with GitHub connects repo access in the same step — save
+        // it onto the user record instead of discarding it after login.
         const session = await ctx.runMutation(internal.customAuthHelpers.createOAuthSession, {
           email: primary.email,
           name: ghUser.name || ghUser.login,
+          githubAccessToken: data.access_token,
+          githubUsername: ghUser.login,
         });
         const sep = st.redirect.includes("?") ? "&" : "?";
         return new Response(null, {
@@ -543,8 +563,10 @@ http.route({
         });
       }
 
-      const userId = decodeStateHttp(state);
-      if (!userId) throw new Error("Invalid state. Please try connecting again.");
+      const decoded = decodeStateHttp(state);
+      if (!decoded) throw new Error("Invalid state. Please try connecting again.");
+      const { userId } = decoded;
+      const returnPath = safeReturnPath(decoded.returnPath);
 
       // Validate the decoded userId is actually a user (not a sandbox or other table ID)
       // Convex IDs are base32-encoded and all IDs for a given table share the same format
@@ -573,9 +595,10 @@ http.route({
         username: ghUser.login,
       });
 
+      const sep = returnPath.includes("?") ? "&" : "?";
       return new Response(null, {
         status: 302,
-        headers: { Location: `${origin}/portal/code?github_connected=${encodeURIComponent(ghUser.login)}` },
+        headers: { Location: `${origin}${returnPath}${sep}github_connected=${encodeURIComponent(ghUser.login)}` },
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "OAuth failed";
@@ -717,10 +740,12 @@ http.route({
     await ctx.runMutation(internal.customAuthHelpers.createOAuthState, { state, redirect, provider: "github" });
 
     // Rides the app's single registered callback (/github/callback) with a
-    // login_ state prefix — see the sign-in branch in that handler.
+    // login_ state prefix — see the sign-in branch in that handler. Scope
+    // includes `repo` so signing in with GitHub also connects repo access —
+    // no separate "connect GitHub" step and no PAT needed to import a repo.
     const params = new URLSearchParams({
       client_id: clientId,
-      scope: "user:email",
+      scope: "user:email repo",
       state: `login_${state}`,
     });
     return new Response(null, {

@@ -188,7 +188,12 @@ export const consumeOAuthState = internalMutation({
 // Get-or-create a user from a verified OAuth identity, then issue a session.
 // The email MUST already be verified by the provider — callers enforce that.
 export const createOAuthSession = internalMutation({
-  args: { email: v.string(), name: v.optional(v.string()) },
+  args: {
+    email: v.string(),
+    name: v.optional(v.string()),
+    githubAccessToken: v.optional(v.string()),
+    githubUsername: v.optional(v.string()),
+  },
   handler: async (ctx, args): Promise<{ token: string; isNewUser: boolean }> => {
     const email = args.email.toLowerCase().trim();
 
@@ -230,6 +235,14 @@ export const createOAuthSession = internalMutation({
         referralSpins: 0,
         ...(isSchoolAccount ? { isStudyFree: true } : {}),
         ...(isTeacher ? { isTeacher: true } : {}),
+      });
+    }
+
+    if (args.githubAccessToken && args.githubUsername) {
+      await ctx.db.patch(userId, {
+        githubAccessToken: args.githubAccessToken,
+        githubUsername: args.githubUsername,
+        githubConnectedAt: Date.now(),
       });
     }
 
