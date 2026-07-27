@@ -1,28 +1,21 @@
 import { useState, useEffect } from "react";
+import { useQuery, useAction } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { useAuth } from "@/hooks/use-auth";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Github, Loader2, GitBranch, Plus, Check } from "lucide-react";
+import { Github, Loader2, GitBranch, Check } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
-
-interface GitHubAccount {
-  id: string;
-  username: string;
-  token: string;
-}
 
 interface GitHubRepo {
   name: string;
   full_name: string;
-  description: string | null;
-  default_branch: string;
   private: boolean;
+  default_branch: string;
 }
 
 interface GitHubBranch {
@@ -35,105 +28,42 @@ interface GitHubBranch {
 interface GitHubImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onImport: (account: string, repo: string, branches: string[]) => Promise<void>;
+  onImport: (repo: string, branches: string[]) => Promise<void>;
   mode: "project" | "branch";
 }
 
 export function GitHubImportDialog({ open, onOpenChange, onImport, mode }: GitHubImportDialogProps) {
-  const [step, setStep] = useState<"accounts" | "repos" | "branches">("accounts");
-  const [accounts, setAccounts] = useState<GitHubAccount[]>([]);
-  const [selectedAccount, setSelectedAccount] = useState<string>("");
+  const { token } = useAuth();
+  const githubStatus = useQuery(api.githubHelpers.getGithubStatus, token ? { token } : "skip");
+  const getAuthorizationUrl = useAction(api.github.getAuthorizationUrl);
+  const listUserRepos = useAction(api.github.listUserRepos);
+  const listRepoBranches = useAction(api.github.listRepoBranches);
+
+  const [step, setStep] = useState<"repos" | "branches">("repos");
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
+  const [reposLoaded, setReposLoaded] = useState(false);
   const [selectedRepo, setSelectedRepo] = useState<string>("");
   const [branches, setBranches] = useState<GitHubBranch[]>([]);
   const [selectedBranches, setSelectedBranches] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
-  const [newAccountToken, setNewAccountToken] = useState("");
-  const [showAddAccount, setShowAddAccount] = useState(false);
+  const [connecting, setConnecting] = useState(false);
 
-  const loadAccounts = () => {
-    // Load saved GitHub accounts from localStorage
-    const saved = localStorage.getItem("github_accounts");
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setAccounts(parsed);
-      if (parsed.length > 0) {
-        setSelectedAccount(parsed[0].id);
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- loads saved accounts from localStorage when the dialog opens; a render-time read would change when accounts refresh
-      loadAccounts();
-    }
-  }, [open]);
-
-  const saveAccounts = (accts: GitHubAccount[]) => {
-    localStorage.setItem("github_accounts", JSON.stringify(accts));
-    setAccounts(accts);
-  };
-
-  const handleAddAccount = async () => {
-    if (!newAccountToken.trim()) {
-      toast.error("Please enter a GitHub token");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // Verify token and get username
-      const response = await fetch("https://api.github.com/user", {
-        headers: {
-          Authorization: `Bearer ${newAccountToken}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Invalid GitHub token");
-      }
-
-      const user = await response.json();
-
-      const newAccount: GitHubAccount = {
-        id: user.login,
-        username: user.login,
-        token: newAccountToken,
-      };
-
-      const updated = [...accounts, newAccount];
-      saveAccounts(updated);
-      setSelectedAccount(newAccount.id);
-      setNewAccountToken("");
-      setShowAddAccount(false);
-      toast.success(`Connected ${user.login}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to add account");
-    } finally {
-      setLoading(false);
-    }
+  const resetState = () => {
+    setStep("repos");
+    setRepos([]);
+    setReposLoaded(false);
+    setSelectedRepo("");
+    setBranches([]);
+    setSelectedBranches(new Set());
   };
 
   const handleLoadRepos = async () => {
-    const account = accounts.find((a) => a.id === selectedAccount);
-    if (!account) return;
-
+    if (!token) return;
     setLoading(true);
     try {
-      const response = await fetch("https://api.github.com/user/repos?per_page=100&sort=updated", {
-        headers: {
-          Authorization: `Bearer ${account.token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch repositories");
-      }
-
-      const data = await response.json();
+      const data = await listUserRepos({ token });
       setRepos(data);
-      setStep("repos");
+      setReposLoaded(true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load repositories");
     } finally {
@@ -141,33 +71,39 @@ export function GitHubImportDialog({ open, onOpenChange, onImport, mode }: GitHu
     }
   };
 
-  const handleSelectRepo = async (repoFullName: string) => {
-    setSelectedRepo(repoFullName);
-    const account = accounts.find((a) => a.id === selectedAccount);
-    if (!account) return;
+  useEffect(() => {
+    if (open && githubStatus?.connected && !reposLoaded) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- kicks off the repo fetch the moment we know the account is connected; a render-time fetch can't do this
+      void handleLoadRepos();
+    }
+    if (!open) {
+      resetState();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when the dialog opens or connection status changes, not on every repo/loading state change
+  }, [open, githubStatus?.connected]);
 
+  const handleConnectGithub = async () => {
+    if (!token) return;
+    setConnecting(true);
+    try {
+      const returnPath = window.location.pathname;
+      const url = await getAuthorizationUrl({ token, returnPath });
+      window.location.href = url;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start GitHub connection");
+      setConnecting(false);
+    }
+  };
+
+  const handleSelectRepo = async (repoFullName: string) => {
+    if (!token) return;
+    setSelectedRepo(repoFullName);
     setLoading(true);
     try {
-      const response = await fetch(`https://api.github.com/repos/${repoFullName}/branches`, {
-        headers: {
-          Authorization: `Bearer ${account.token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch branches");
-      }
-
-      const data = await response.json();
+      const data = await listRepoBranches({ token, repo: repoFullName });
       setBranches(data);
-
-      if (data.length === 1) {
-        // Only one branch, auto-select it
-        setSelectedBranches(new Set([data[0].name]));
-      } else {
-        // Multiple branches, show selection
-        setStep("branches");
-      }
+      setSelectedBranches(data.length === 1 ? new Set([data[0].name]) : new Set());
+      setStep("branches");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load branches");
     } finally {
@@ -199,12 +135,9 @@ export function GitHubImportDialog({ open, onOpenChange, onImport, mode }: GitHu
       return;
     }
 
-    const account = accounts.find((a) => a.id === selectedAccount);
-    if (!account) return;
-
     setLoading(true);
     try {
-      await onImport(account.token, selectedRepo, Array.from(selectedBranches));
+      await onImport(selectedRepo, Array.from(selectedBranches));
       onOpenChange(false);
       resetState();
     } catch (err) {
@@ -212,13 +145,6 @@ export function GitHubImportDialog({ open, onOpenChange, onImport, mode }: GitHu
     } finally {
       setLoading(false);
     }
-  };
-
-  const resetState = () => {
-    setStep("accounts");
-    setSelectedRepo("");
-    setBranches([]);
-    setSelectedBranches(new Set());
   };
 
   return (
@@ -237,194 +163,138 @@ export function GitHubImportDialog({ open, onOpenChange, onImport, mode }: GitHu
         </DialogHeader>
 
         <ScrollArea className="h-[500px] pr-4">
-          <AnimatePresence mode="wait">
-            {/* Step 1: Select Account */}
-            {step === "accounts" && (
-              <motion.div
-                key="accounts"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-4"
-              >
-                <div className="space-y-2">
-                  <Label>GitHub Account</Label>
-                  {accounts.length > 0 ? (
-                    <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {accounts.map((account) => (
-                          <SelectItem key={account.id} value={account.id}>
-                            <div className="flex items-center gap-2">
-                              <Github className="h-4 w-4" />
-                              {account.username}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No GitHub accounts connected</p>
-                  )}
-                </div>
-
-                {showAddAccount ? (
-                  <div className="space-y-3 border rounded-lg p-4">
-                    <Label>GitHub Personal Access Token</Label>
-                    <Input
-                      type="password"
-                      placeholder="ghp_xxxxxxxxxxxx"
-                      value={newAccountToken}
-                      onChange={(e) => setNewAccountToken(e.target.value)}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Create token at: github.com/settings/tokens (needs 'repo' scope)
-                    </p>
-                    <div className="flex gap-2">
-                      <Button onClick={handleAddAccount} disabled={loading} className="flex-1">
-                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                        Add Account
-                      </Button>
-                      <Button variant="outline" onClick={() => setShowAddAccount(false)}>
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <Button variant="outline" onClick={() => setShowAddAccount(true)} className="w-full gap-2">
-                    <Plus className="h-4 w-4" />
-                    Connect Another Account
-                  </Button>
-                )}
-
-                <Button
-                  onClick={handleLoadRepos}
-                  disabled={!selectedAccount || loading}
-                  className="w-full"
+          {githubStatus === undefined ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : !githubStatus.connected ? (
+            <div className="flex flex-col items-center gap-4 text-center py-12">
+              <div className="rounded-full bg-primary/10 p-4">
+                <Github className="h-8 w-8 text-primary" />
+              </div>
+              <div>
+                <p className="font-medium">Connect your GitHub account</p>
+                <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+                  Sign in with GitHub via OAuth to browse and import your repositories — no personal access token needed.
+                </p>
+              </div>
+              <Button onClick={handleConnectGithub} disabled={connecting} className="gap-2">
+                {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Github className="h-4 w-4" />}
+                Connect GitHub
+              </Button>
+            </div>
+          ) : (
+            <AnimatePresence mode="wait">
+              {/* Step 1: Select Repository */}
+              {step === "repos" && (
+                <motion.div
+                  key="repos"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-4"
                 >
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Next: Select Repository
-                </Button>
-              </motion.div>
-            )}
-
-            {/* Step 2: Select Repository */}
-            {step === "repos" && (
-              <motion.div
-                key="repos"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-4"
-              >
-                <div className="flex items-center justify-between">
-                  <Label>Select Repository</Label>
-                  <Button variant="ghost" size="sm" onClick={() => setStep("accounts")}>
-                    Back
-                  </Button>
-                </div>
-
-                {loading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      Connected as <span className="font-medium text-foreground">@{githubStatus.username}</span>
+                    </p>
                   </div>
-                ) : repos.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">No repositories found</p>
-                ) : (
-                  <div className="space-y-2">
-                    {repos.map((repo) => (
-                      <button
-                        key={repo.full_name}
-                        onClick={() => handleSelectRepo(repo.full_name)}
-                        className="w-full text-left border rounded-lg p-4 hover:bg-muted/50 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium truncate">{repo.name}</p>
-                            {repo.description && (
-                              <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
-                                {repo.description}
-                              </p>
-                            )}
-                            <div className="flex items-center gap-2 mt-2">
-                              <Badge variant="outline" className="text-xs">
-                                {repo.default_branch}
-                              </Badge>
-                              {repo.private && (
-                                <Badge variant="secondary" className="text-xs">
-                                  Private
+
+                  {loading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : repos.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">No repositories found</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {repos.map((repo) => (
+                        <button
+                          key={repo.full_name}
+                          onClick={() => handleSelectRepo(repo.full_name)}
+                          className="w-full text-left border rounded-lg p-4 hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{repo.name}</p>
+                              <div className="flex items-center gap-2 mt-2">
+                                <Badge variant="outline" className="text-xs">
+                                  {repo.default_branch}
                                 </Badge>
-                              )}
+                                {repo.private && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    Private
+                                  </Badge>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {/* Step 2: Select Branches */}
+              {step === "branches" && (
+                <motion.div
+                  key="branches"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium">Select Branches</p>
+                    <Button variant="ghost" size="sm" onClick={() => setStep("repos")}>
+                      Back
+                    </Button>
+                  </div>
+
+                  <div className="border rounded-lg p-4 bg-muted/30">
+                    <p className="font-medium">{selectedRepo}</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {branches.length} branch{branches.length !== 1 ? "es" : ""} available
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between border-b pb-2">
+                    <p className="text-sm font-medium">Branches to import</p>
+                    <Button variant="ghost" size="sm" onClick={toggleAllBranches}>
+                      {selectedBranches.size === branches.length ? "Deselect All" : "Select All"}
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {branches.map((branch) => (
+                      <div
+                        key={branch.name}
+                        className="flex items-center gap-3 border rounded-lg p-3 hover:bg-muted/50 cursor-pointer"
+                        onClick={() => toggleBranch(branch.name)}
+                      >
+                        <Checkbox
+                          checked={selectedBranches.has(branch.name)}
+                          onCheckedChange={() => toggleBranch(branch.name)}
+                        />
+                        <GitBranch className="h-4 w-4 text-muted-foreground" />
+                        <span className="flex-1">{branch.name}</span>
+                      </div>
                     ))}
                   </div>
-                )}
-              </motion.div>
-            )}
 
-            {/* Step 3: Select Branches */}
-            {step === "branches" && (
-              <motion.div
-                key="branches"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-4"
-              >
-                <div className="flex items-center justify-between">
-                  <Label>Select Branches</Label>
-                  <Button variant="ghost" size="sm" onClick={() => setStep("repos")}>
-                    Back
+                  <Button
+                    onClick={handleImport}
+                    disabled={selectedBranches.size === 0 || loading}
+                    className="w-full"
+                  >
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
+                    Import {selectedBranches.size} Branch{selectedBranches.size !== 1 ? "es" : ""}
                   </Button>
-                </div>
-
-                <div className="border rounded-lg p-4 bg-muted/30">
-                  <p className="font-medium">{selectedRepo}</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {branches.length} branch{branches.length !== 1 ? "es" : ""} available
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between border-b pb-2">
-                  <Label>Branches to import</Label>
-                  <Button variant="ghost" size="sm" onClick={toggleAllBranches}>
-                    {selectedBranches.size === branches.length ? "Deselect All" : "Select All"}
-                  </Button>
-                </div>
-
-                <div className="space-y-2">
-                  {branches.map((branch) => (
-                    <div
-                      key={branch.name}
-                      className="flex items-center gap-3 border rounded-lg p-3 hover:bg-muted/50 cursor-pointer"
-                      onClick={() => toggleBranch(branch.name)}
-                    >
-                      <Checkbox
-                        checked={selectedBranches.has(branch.name)}
-                        onCheckedChange={() => toggleBranch(branch.name)}
-                      />
-                      <GitBranch className="h-4 w-4 text-muted-foreground" />
-                      <span className="flex-1">{branch.name}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <Button
-                  onClick={handleImport}
-                  disabled={selectedBranches.size === 0 || loading}
-                  className="w-full"
-                >
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Import {selectedBranches.size} Branch{selectedBranches.size !== 1 ? "es" : ""}
-                </Button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          )}
         </ScrollArea>
       </DialogContent>
     </Dialog>

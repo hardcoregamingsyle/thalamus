@@ -30,7 +30,7 @@ export default function CodeProjects() {
     navigate(`/portal/code/${result.projectId}`);
   };
 
-  const handleImportGitHub = async (githubToken: string, repo: string, branches: string[]) => {
+  const handleImportGitHub = async (repo: string, branches: string[]) => {
     // Create project first
     const projectName = repo.split("/")[1] || repo;
     const result = await createProject({
@@ -49,7 +49,6 @@ export default function CodeProjects() {
           projectId,
           branchId: result.mainBranchId, // Will create branches dynamically
           repoUrl: `https://github.com/${repo}`,
-          githubToken,
         });
         toast.success(`Imported branch: ${branch}`);
       } catch (err) {

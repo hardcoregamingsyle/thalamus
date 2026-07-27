@@ -14,7 +14,7 @@ interface NewProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreateScratch: (name: string, description?: string) => Promise<void>;
-  onImportGitHub: (token: string, repo: string, branches: string[]) => Promise<void>;
+  onImportGitHub: (repo: string, branches: string[]) => Promise<void>;
 }
 
 export function NewProjectDialog({
@@ -48,10 +48,10 @@ export function NewProjectDialog({
     }
   };
 
-  const handleImportGitHub = async (token: string, repo: string, branches: string[]) => {
+  const handleImportGitHub = async (repo: string, branches: string[]) => {
     setLoading(true);
     try {
-      await onImportGitHub(token, repo, branches);
+      await onImportGitHub(repo, branches);
       setShowGitHubDialog(false);
       onOpenChange(false);
       resetState();

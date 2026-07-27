@@ -36,7 +36,7 @@ export default function CodeBranches() {
     navigate(`/portal/code/${projectId}/${result.branchId}`);
   };
 
-  const handleImportGitHub = async (githubToken: string, repo: string, branches: string[]) => {
+  const handleImportGitHub = async (repo: string, branches: string[]) => {
     if (!projectId) return;
 
     // Import each selected branch
@@ -54,7 +54,6 @@ export default function CodeBranches() {
           projectId,
           branchId: result.branchId,
           repoUrl: `https://github.com/${repo}`,
-          githubToken,
         });
         toast.success(`Imported branch: ${branchName}`);
       } catch (err) {

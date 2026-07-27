@@ -50,8 +50,7 @@ export default function SyncPage() {
   const handleConnectGithub = async () => {
     if (!token) return;
     try {
-      const redirectUri = `${window.location.origin}/sync`;
-      const url = await getAuthorizationUrl({ token, redirectUri });
+      const url = await getAuthorizationUrl({ token });
       window.location.href = url;
     } catch (err) {
       addLog(`✗ ERROR: ${err instanceof Error ? err.message : "Failed to get auth URL"}`, "error");
