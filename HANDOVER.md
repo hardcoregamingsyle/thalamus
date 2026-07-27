@@ -63,10 +63,17 @@ The giant template literals in `agentCore.ts` are the agents' system prompts. Th
 
 ### Deploy
 
+Push to main and both halves ship themselves: Cloudflare Pages builds the
+frontend from `package-lock.json` with `npm ci`, and
+`.github/workflows/convex-deploy.yml` runs `npx convex deploy` on GitHub's own
+runners once the CI workflow goes green on that commit — needs a
+`CONVEX_DEPLOY_KEY` repo secret (Settings → Secrets and variables → Actions)
+or it just fails loudly instead of shipping nothing silently. Also wired to
+`workflow_dispatch` for a manual re-run.
+
 ```bash
 bun run build                  # verify green locally first
-# web: push to main — Cloudflare Pages builds from package-lock.json with `npm ci`
-npx convex deploy              # backend → Convex Cloud (befitting-wildebeest-866)
+npx convex deploy              # backend → Convex Cloud (befitting-wildebeest-866), manual/local path
 ```
 
 On this machine `.env.local` points at a different (dev) deployment, so a bare `npx convex …` targets the wrong project. Use the gitignored `convex-prod.ps1` wrapper — `.\convex-prod.ps1 deploy -y` — which forces the prod deploy key without touching `.env.local`.
