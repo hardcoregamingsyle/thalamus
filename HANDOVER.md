@@ -26,9 +26,9 @@ What's left: `codeProjects`/`codeBranches`/`codeMessages`/`codeFiles`, driven by
 
 **The desktop app's Build mode drives this same system** over Convex's public HTTP API — `codeProjects:createProject` → `codePipeline:startPipeline`, then polls `codeBranches:getBranch` / `watchMessages` / `watchFiles`, and stops with `codePipeline:stopPipeline` (see `thalamus-native/.../Modes/CodeView.xaml.cs`). Changing those public signatures breaks shipped desktop builds. Treat them as API — and remember `tsc` cannot see those call sites at all, which is what `bun run check-refs` is for.
 
-### The sandbox has three backends
+### The sandbox has two executors
 
-Pipeline `<<RUN-CMD>>` calls do not use any of these — they run on GitHub Actions from the web (`githubActionsRunner.ts`) or on your own machine from the desktop app. What is left here boots whole operating systems in the Sandbox tab: v86 runs x86-in-WASM in the browser (everything — wasm, BIOS, disk images — streamed from the copy.sh CDN, nothing local); QEMU needs the local bridge (`qemu-bridge/`, port 5900) or, on desktop, `QemuBridgeManager` launches QEMU directly. Three ways to do one job is two too many — v86 is the weakest and least used. If you're looking for something to delete, start your investigation there, but *measure usage first*.
+`<<RUN-CMD>>` runs on GitHub Actions from the web (`githubActionsRunner.ts`) or on your own machine from the desktop app — and the Sandbox tab now shows exactly that: which runner the branch builds on, links into its repo and build history, a box for one-off commands, and the live output of everything that has run. It used to be a v86 screen asking you to start a bridge that had nothing to do with how commands actually execute; that's gone, along with every v86 asset. QEMU survives on the desktop, where `QemuBridgeManager` launches it directly.
 
 ### Everything is free, and that's five switches
 
@@ -123,7 +123,6 @@ CI (`.github/workflows/ci.yml`) runs all of these on every push to `main`, and c
 1. **Platform cost tracking is blind.** `admin.deductPlatformCost` prices against `PLATFORM_PRICING`, which only knows Claude and Gemini names, while every pipeline call now hands it something like `Coder-nim:qwen3-coder-480b`. It scores 0, logs a warning, and `platformBudget` never moves — so the "auto-disable under $5" guard can't trip on Thalamus usage. Harmless while everything is free; the first thing to fix if that ever changes.
 2. **Chat billing in `ai.ts`** is hardcoded to Gemini-ish rates no matter which model answered. Same category, same excuse.
 3. **`modelPricing` is an orphan table** — an admin can edit rows that nothing reads.
-4. **Triple sandbox stack** (`daytona | v86 | qemu`) — consolidation candidate after usage measurement.
 5. **`src/lib/vly-integrations.ts` carries a hardcoded fallback API key** for the VLY completion provider. It shouldn't.
 
 That's the whole list. Everything else that looked like debt was deleted, not documented.
@@ -135,7 +134,7 @@ That's the whole list. Everything else that looked like debt was deleted, not do
 ```
 Browser ──HTTP/WS──> Convex (src/convex) ──HTTPS──> Modal / NVIDIA NIM / Ollama Cloud   (pipeline)
    │                        │                 └──> Bedrock / Gemini / VLY              (chat, study)
-   │ v86 (WASM, in-tab)     └── GitHub API (OAuth, repo sync, webhooks)
+   │                        └── GitHub API (OAuth, repo sync, webhooks)
    └─WS──> qemu-bridge (localhost:5900) ──> QEMU
 
 Thalamus.exe ──HTTP/SSE──> same Convex backend

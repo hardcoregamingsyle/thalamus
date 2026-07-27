@@ -185,12 +185,12 @@ Behaviors worth knowing: MCP tool calls (user-connected servers plus the built-i
 
 `<<RUN-CMD>>` queues into `codeCommands`, parks the branch as `paused`, then schedules `sandbox.executeBranchCommands`, which reschedules `runPipelineAction` from its own `finally` — so it self-resumes even when the sandbox throws. `<<REQUEST-API-KEY>>` is the one that genuinely blocks on the user; `codeApiKeys.fulfillApiKeyRequest` reschedules it. When a branch looks stuck, check `codeCommands` and `codeApiKeyRequests` first.
 
-### VM & Sandbox Environments (three backends)
+### VM & Sandbox Environments (two executors)
 
 * **GitHub Actions** — where cloud `<<RUN-CMD>>` calls run (`githubActionsRunner.ts`). Each branch already has its own public repo from `githubAutoCreate.ts`, and public repos get unlimited Actions minutes on standard runners, so the repo is also the VM. The runner workflow is committed to the branch and dispatched once per command; the job POSTs its result to `/code/command-result` with a single-use nonce, which resumes the pipeline. `runnerOs` on the branch picks ubuntu, windows or macos, so a build can be tested on the OS it ships to.
 * **The user's own machine** — the desktop app sets `executor: "local"` on `startPipeline`, polls `codeCommands:listPendingForBranch`, runs each command in a per-branch workspace under LocalAppData, and reports back through `completeCommand`. Nothing is scheduled server-side for a local branch, so the two executors can never race.
-* **v86** — browser WASM x86. **Not an npm package and not a local asset:** `SandboxView.tsx` injects `libv86.js` from the copy.sh CDN at runtime (`window.V86`), and pulls `v86.wasm`, the SeaBIOS/VGA BIOS blobs and every disk image from copy.sh too. Nothing v86-related ships in `public/`.
-* **QEMU** — web app speaks the legacy Node bridge protocol on `ws://localhost:5900` via `src/lib/vmLauncher.ts` (JSON, **no request IDs** — listener-order correlation; read the header comment before touching). `qemu-bridge/` is that legacy bridge's source. The native app drives QEMU directly (`QemuBridgeManager.cs`) with no bridge process. Port map: 5900 = bridge socket, VNC displays from 5901 up.
+* The **Sandbox tab** (`SandboxView.tsx`) is a view onto the two executors above — linked repo, runner OS picker, one-off commands, live output. The v86 browser-WASM emulator it used to host is gone; nothing v86-related ships anywhere.
+* **QEMU** — desktop only in practice. The web app can still speak the legacy Node bridge protocol on `ws://localhost:5900` via `src/lib/vmLauncher.ts` (JSON, **no request IDs** — listener-order correlation; read the header comment before touching). `qemu-bridge/` is that legacy bridge's source. The native app drives QEMU directly (`QemuBridgeManager.cs`) with no bridge process. Port map: 5900 = bridge socket, VNC displays from 5901 up.
 
 ### Desktop & Native Apps (`thalamus-native/`)
 
