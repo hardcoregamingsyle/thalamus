@@ -1,0 +1,36 @@
+name: Convex Deploy
+
+# Pushes the Convex backend (src/convex/*) to production. Runs after CI goes
+# green on main, so nothing reaches prod that failed type-check/lint/tests/
+# build — plus workflow_dispatch for a manual trigger. The frontend deploys
+# separately via Cloudflare Pages' own git integration; this only covers the
+# backend, which otherwise only ever shipped by someone running
+# `npx convex deploy` by hand.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: convex-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy backend to Convex
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Deploy to Convex
+        run: npx convex deploy
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
