@@ -35,13 +35,22 @@ function computeStructureHash(filePaths: string[]): string {
   return crypto.createHash("sha256").update(filtered.join("\n")).digest("hex");
 }
 
-// Clone repository and sync files to branch
+// Import a GitHub repo into a Thalamus branch.
+//
+// The source repo is READ-ONLY here. Source control for the branch stays on
+// the platform-side repo we create for it (see ensureRepoForBranch) — that is
+// what agents commit to and what GitHub Actions runs commands in. Writing the
+// user's own repo into githubConfigs, as this used to, pointed every
+// subsequent agent push and workflow dispatch at their real repository.
 export const cloneRepository = action({
   args: {
     token: v.string(),
     projectId: v.string(),
     branchId: v.string(),
     repoUrl: v.string(),
+    // Which branch of the source repo to import. Defaults to its default branch.
+    sourceBranch: v.optional(v.string()),
+    projectName: v.optional(v.string()),
     githubToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -59,12 +68,12 @@ export const cloneRepository = action({
       });
 
       const { data: repoData } = await octokit.repos.get({ owner, repo });
-      const defaultBranch = repoData.default_branch;
+      const sourceBranch = args.sourceBranch || repoData.default_branch;
 
       const { data: tree } = await octokit.git.getTree({
         owner,
         repo,
-        tree_sha: defaultBranch,
+        tree_sha: sourceBranch,
         recursive: "true",
       });
 
@@ -125,21 +134,39 @@ export const cloneRepository = action({
         }
       }
 
-      await ctx.runMutation(internal.githubSyncHelpers.saveGithubConfig, {
+      // Give the branch its own platform repo (idempotent) and record where
+      // the code came from. Only after this does the branch have somewhere to
+      // push to and somewhere for Actions to run.
+      const platform = await ctx.runAction(internal.githubAutoCreate.ensureRepoForBranch, {
+        userId,
         projectId: args.projectId,
         branchId: args.branchId,
-        repoUrl: args.repoUrl,
-        owner,
-        repo,
-        branch: defaultBranch,
-        lastSync: Date.now(),
+        projectName: args.projectName || repo,
       });
+
+      await ctx.runMutation(internal.githubSyncHelpers.saveImportSource, {
+        branchId: args.branchId,
+        sourceRepoUrl: args.repoUrl,
+        sourceBranch,
+      });
+
+      // Seed the platform repo with what we just imported, so source control
+      // and the Actions runner start from the real code rather than an empty
+      // README. Non-fatal: the files are already in Convex either way.
+      if (platform) {
+        await ctx.runAction(internal.githubSync.autoPushToGithub, {
+          branchId: args.branchId,
+          commitMessage: `Import ${owner}/${repo}@${sourceBranch}`,
+        });
+      }
 
       return {
         success: true,
         filesCloned,
-        repo: `${owner}/${repo}`,
-        branch: defaultBranch,
+        source: `${owner}/${repo}`,
+        sourceBranch,
+        repo: platform ? `${platform.owner}/${platform.repo}` : null,
+        branch: platform?.branch ?? null,
       };
     } catch (err) {
       console.error("Clone error:", err);

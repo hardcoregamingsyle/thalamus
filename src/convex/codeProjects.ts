@@ -1,5 +1,6 @@
 import { mutation, query, internalQuery, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 
 // Internal: load a project by its public projectId (used by action-context
 // ownership checks in codePipeline, which can't touch the db directly).
@@ -33,6 +34,9 @@ export const createProject = mutation({
     token: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
+    // Imports create the repo themselves once the files are in place, so they
+    // opt out here rather than race the scheduled creation.
+    autoCreateRepo: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const sessions = await ctx.db
@@ -71,6 +75,19 @@ export const createProject = mutation({
       round: 0,
       vmOs: "windows11_pro",
     });
+
+    // The main branch needs a repo like any other — it is both the branch's
+    // source control and the machine GitHub Actions runs its commands on.
+    // Only createBranch used to do this, so every project's main branch came
+    // up with nowhere to push and nowhere to build.
+    if (args.autoCreateRepo !== false) {
+      await ctx.scheduler.runAfter(0, internal.githubAutoCreate.autoCreateRepoForBranch, {
+        token: args.token,
+        projectId,
+        branchId,
+        projectName: args.name,
+      });
+    }
 
     return { projectId, branchId, projectDbId };
   },

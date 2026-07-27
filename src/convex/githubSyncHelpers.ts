@@ -99,6 +99,28 @@ export const getGithubConfigInternal = internalQuery({
   },
 });
 
+// Records where an imported branch was cloned from. Deliberately separate from
+// saveGithubConfig: the import source is reference material, never the push
+// target, and conflating the two sent agent commits into the user's own repo.
+export const saveImportSource = internalMutation({
+  args: {
+    branchId: v.string(),
+    sourceRepoUrl: v.string(),
+    sourceBranch: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const config = await ctx.db
+      .query("githubConfigs")
+      .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (!config) return;
+    await ctx.db.patch(config._id, {
+      sourceRepoUrl: args.sourceRepoUrl,
+      sourceBranch: args.sourceBranch,
+    });
+  },
+});
+
 export const updateLastSync = internalMutation({
   args: {
     projectId: v.string(),

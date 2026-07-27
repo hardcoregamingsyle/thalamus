@@ -250,6 +250,11 @@ const schema = defineSchema(
       .index("by_branch", ["branchId"])
       .index("by_branch_and_status", ["branchId", "status"]),
 
+    // owner/repo/branch are ALWAYS the platform-side repo we created for this
+    // branch — the thing agents push to and GitHub Actions runs in. When a
+    // branch was imported, where it came from is recorded in the source*
+    // fields instead. Pointing this at the user's own repo would hand agent
+    // commits and workflow dispatches straight into their real repository.
     githubConfigs: defineTable({
       projectId: v.string(),
       branchId: v.string(),
@@ -259,6 +264,8 @@ const schema = defineSchema(
       branch: v.string(),
       lastSync: v.number(),
       githubToken: v.optional(v.string()),
+      sourceRepoUrl: v.optional(v.string()),
+      sourceBranch: v.optional(v.string()),
     })
       .index("by_project", ["projectId"])
       .index("by_branch", ["branchId"]),

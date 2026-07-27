@@ -64,7 +64,11 @@ export const createObscureRepo = internalAction({
         events: ["push"],
       });
 
-      await ctx.runMutation(internal.githubSyncHelpers.saveGithubConfig, {
+      // Store the token that created the repo alongside it. Every later
+      // operation — agent pushes, Actions dispatch, webhook handling — has to
+      // act as the identity that owns it; falling back to the platform's
+      // GITHUB_TOKEN would try to write a user-owned repo and get a 404.
+      await ctx.runMutation(internal.githubSyncHelpers.saveGithubConfigWithToken, {
         projectId: args.projectId,
         branchId: args.branchId,
         repoUrl: repo.html_url,
@@ -72,6 +76,7 @@ export const createObscureRepo = internalAction({
         repo: repoName,
         branch: branchName,
         lastSync: Date.now(),
+        githubToken: args.githubToken,
       });
 
       // Seed a README so the repo isn't empty

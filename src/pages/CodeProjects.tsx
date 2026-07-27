@@ -16,6 +16,8 @@ export default function CodeProjects() {
   const projects = useQuery(api.codeProjects.listProjects, token ? { token } : "skip");
   const createProject = useMutation(api.codeProjects.createProject);
   const deleteProject = useMutation(api.codeProjects.deleteProject);
+  const createBranch = useMutation(api.codeBranches.createBranch);
+  const updateBranch = useMutation(api.codeBranches.updateBranch);
   const cloneRepository = useAction(api.githubSync.cloneRepository);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -31,31 +33,48 @@ export default function CodeProjects() {
   };
 
   const handleImportGitHub = async (repo: string, branches: string[]) => {
-    // Create project first
     const projectName = repo.split("/")[1] || repo;
-    const result = await createProject({
+    // autoCreateRepo:false — cloneRepository makes the platform repo once the
+    // imported files are in, so it can seed it with real code instead of an
+    // empty README (and so the two paths can't race into two repos).
+    const project = await createProject({
       token,
       name: projectName,
       description: `Imported from GitHub: ${repo}`,
+      autoCreateRepo: false,
     });
 
-    const projectId = result.projectId;
+    const projectId = project.projectId;
 
-    // Import each branch
-    for (const branch of branches) {
+    // The project already has a "main" branch — the first imported branch
+    // takes it, the rest get their own.
+    let imported = 0;
+    for (const [i, branchName] of branches.entries()) {
       try {
+        let branchId: string;
+        if (i === 0) {
+          // Reuse the project's auto-created branch, renamed to match source.
+          branchId = project.branchId;
+          if (branchName !== "main") await updateBranch({ token, branchId, name: branchName });
+        } else {
+          branchId = (await createBranch({ token, projectId, name: branchName, autoCreateRepo: false })).branchId;
+        }
+
         await cloneRepository({
           token,
           projectId,
-          branchId: result.mainBranchId, // Will create branches dynamically
+          branchId,
           repoUrl: `https://github.com/${repo}`,
+          sourceBranch: branchName,
+          projectName,
         });
-        toast.success(`Imported branch: ${branch}`);
+        imported++;
       } catch (err) {
-        toast.error(`Failed to import ${branch}: ${err instanceof Error ? err.message : "Unknown error"}`);
+        toast.error(`Failed to import ${branchName}: ${err instanceof Error ? err.message : "Unknown error"}`);
       }
     }
 
+    if (imported > 0) toast.success(`Imported ${imported} branch${imported === 1 ? "" : "es"} from ${repo}`);
     navigate(`/portal/code/${projectId}`);
   };
 

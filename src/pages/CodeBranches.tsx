@@ -39,30 +39,36 @@ export default function CodeBranches() {
   const handleImportGitHub = async (repo: string, branches: string[]) => {
     if (!projectId) return;
 
-    // Import each selected branch
+    // Import each selected branch. autoCreateRepo:false — cloneRepository
+    // makes the platform repo once the files are in, so it can seed it with
+    // real code instead of an empty README.
+    let imported = 0;
     for (const branchName of branches) {
-      const result = await createBranch({
-        token,
-        projectId,
-        name: branchName,
-        description: `Imported from GitHub: ${repo}/${branchName}`,
-      });
-
       try {
+        const result = await createBranch({
+          token,
+          projectId,
+          name: branchName,
+          description: `Imported from GitHub: ${repo}/${branchName}`,
+          autoCreateRepo: false,
+        });
+
         await cloneRepository({
           token,
           projectId,
           branchId: result.branchId,
           repoUrl: `https://github.com/${repo}`,
+          sourceBranch: branchName,
+          projectName: project?.name,
         });
-        toast.success(`Imported branch: ${branchName}`);
+        imported++;
       } catch (err) {
         toast.error(`Failed to import ${branchName}: ${err instanceof Error ? err.message : "Unknown error"}`);
       }
     }
 
-    // Navigate to first imported branch
-    if (branches.length > 0) {
+    if (imported > 0) {
+      toast.success(`Imported ${imported} branch${imported === 1 ? "" : "es"} from ${repo}`);
       navigate(`/portal/code/${projectId}`);
     }
   };

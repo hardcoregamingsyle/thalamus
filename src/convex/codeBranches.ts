@@ -18,6 +18,9 @@ export const createBranch = mutation({
     projectId: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
+    // Imports create the repo themselves once the files are in place, so they
+    // opt out here rather than race the scheduled creation.
+    autoCreateRepo: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const sessions = await ctx.db
@@ -70,15 +73,14 @@ export const createBranch = mutation({
     await ctx.db.patch(project._id, { lastActivityAt: now });
 
     // Auto-create obscure GitHub repo in background (don't block branch creation)
-    ctx.scheduler.runAfter(0, internal.githubAutoCreate.autoCreateRepoForBranch, {
-      token: args.token,
-      projectId: args.projectId,
-      branchId,
-      projectName: project.name,
-    }).catch((err) => {
-      console.log("Failed to auto-create GitHub repo:", err);
-      // Non-blocking - branch still works without GitHub
-    });
+    if (args.autoCreateRepo !== false) {
+      await ctx.scheduler.runAfter(0, internal.githubAutoCreate.autoCreateRepoForBranch, {
+        token: args.token,
+        projectId: args.projectId,
+        branchId,
+        projectName: project.name,
+      });
+    }
 
     return { branchId };
   },
