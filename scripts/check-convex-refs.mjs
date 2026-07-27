@@ -66,22 +66,64 @@ const add = (ref, where, style) => refs.push({ ref, where, style });
 // a known module before falling back to the two-segment form.
 // The lookbehind matters: without it, every "https://api.github.com" URL in the
 // repo reads as a reference to a module called `github`.
-const DOTTED_RE = /(?<![/\w.])(?:api|internal)\.((?:[A-Za-z0-9_]+\.)+[A-Za-z0-9_]+)/g;
+const DOTTED_RE = /(?<![/\w.])(api|internal)\.((?:[A-Za-z0-9_]+\.)+[A-Za-z0-9_]+)/g;
+
+// "convex.dir.file.fn" -> "dir/file:fn", preferring the longest path that is a
+// real module (nested modules read as api.dir.file.fn).
+function resolveDotted(dotted) {
+  const parts = dotted.split(".");
+  for (let i = parts.length - 1; i >= 1; i--) {
+    const mod = parts.slice(0, i).join("/");
+    if (moduleNames.has(mod)) return `${mod}:${parts.slice(i).join(".")}`;
+  }
+  return `${parts.slice(0, -1).join("/")}:${parts[parts.length - 1]}`;
+}
+
 for (const file of walk(join(ROOT, "src"), [".ts", ".tsx"])) {
   if (file.includes(`${sep}_generated${sep}`)) continue;
   const rel = relative(ROOT, file);
   const src = readFileSync(file, "utf8");
   for (const m of src.matchAll(DOTTED_RE)) {
-    const parts = m[1].split(".");
-    let matched = null;
-    for (let i = parts.length - 1; i >= 1; i--) {
-      const mod = parts.slice(0, i).join("/");
-      if (moduleNames.has(mod)) {
-        matched = `${mod}:${parts.slice(i).join(".")}`;
-        break;
-      }
+    refs.push({ ref: resolveDotted(m[2]), where: rel, style: "typed", root: m[1] });
+  }
+}
+
+// 2a-ii. The same references, but checked for *how* they are invoked.
+//
+// Two mistakes are invisible to everything else in the toolchain and fail only
+// at runtime, in production, usually inside a catch that swallows them:
+//   - reaching a public function through `internal.*` (or vice versa), which
+//     does not resolve at all;
+//   - running a function with the wrong executor — ctx.runQuery against a
+//     mutation, useMutation against an action, and so on.
+// Several convex modules are @ts-nocheck'd for TS2589, so tsc sees neither.
+const INVOKE_RE =
+  /\b(runQuery|runMutation|runAction|useQuery|useMutation|useAction)\s*\(\s*(api|internal)\.((?:[A-Za-z0-9_]+\.)+[A-Za-z0-9_]+)/g;
+// scheduler.runAfter(delayMs, ref) / runAt(timestamp, ref) — ref is the 2nd arg.
+const SCHEDULE_RE =
+  /\b(runAfter|runAt)\s*\(\s*[^,]+,\s*(api|internal)\.((?:[A-Za-z0-9_]+\.)+[A-Za-z0-9_]+)/g;
+
+const KINDS_FOR_INVOKE = {
+  runQuery: ["query", "internalQuery"],
+  useQuery: ["query", "internalQuery"],
+  runMutation: ["mutation", "internalMutation"],
+  useMutation: ["mutation", "internalMutation"],
+  runAction: ["action", "internalAction"],
+  useAction: ["action", "internalAction"],
+  // The scheduler takes mutations and actions; a query has nothing to schedule.
+  runAfter: ["mutation", "internalMutation", "action", "internalAction"],
+  runAt: ["mutation", "internalMutation", "action", "internalAction"],
+};
+
+const invocations = []; // { ref, where, root, via }
+for (const file of walk(join(ROOT, "src"), [".ts", ".tsx"])) {
+  if (file.includes(`${sep}_generated${sep}`)) continue;
+  const rel = relative(ROOT, file);
+  const src = readFileSync(file, "utf8");
+  for (const re of [INVOKE_RE, SCHEDULE_RE]) {
+    for (const m of src.matchAll(re)) {
+      invocations.push({ ref: resolveDotted(m[3]), where: rel, root: m[2], via: m[1] });
     }
-    add(matched ?? `${parts.slice(0, -1).join("/")}:${parts[parts.length - 1]}`, rel, "typed");
   }
 }
 
@@ -137,6 +179,53 @@ for (const b of broken) {
 }
 const unique = [...byRef.values()];
 
+// ── 3b. Visibility + executor-kind mismatches ────────────────────────────────
+// Both resolve to a real export, so section 3 waves them through — and both
+// still blow up at runtime.
+const isInternalKind = (k) => k.startsWith("internal");
+const mismatches = [];
+
+for (const r of refs) {
+  const def = defined.get(r.ref);
+  if (!def || !r.root) continue;
+  if (def.kind === "httpAction") continue; // routed in http.ts, never referenced this way
+  const wantInternal = r.root === "internal";
+  if (isInternalKind(def.kind) !== wantInternal) {
+    mismatches.push({
+      ref: r.ref,
+      where: r.where,
+      why: `declared ${def.kind} but referenced through \`${r.root}.\` — `
+        + `use \`${wantInternal ? "internal" : "api"}\` only for ${wantInternal ? "internal*" : "public"} functions`,
+    });
+  }
+}
+
+for (const inv of invocations) {
+  const def = defined.get(inv.ref);
+  if (!def) continue;
+  const allowed = KINDS_FOR_INVOKE[inv.via];
+  if (allowed && !allowed.includes(def.kind)) {
+    mismatches.push({
+      ref: inv.ref,
+      where: inv.where,
+      why: `declared ${def.kind} but invoked via ${inv.via}() — expected ${allowed.join(" or ")}`,
+    });
+  }
+}
+
+// Same ref reported from several files collapses to one entry per reason.
+const mismatchKey = (m) => `${m.ref}|${m.why}`;
+const uniqueMismatches = [];
+const seenMismatch = new Map();
+for (const m of mismatches) {
+  const k = mismatchKey(m);
+  if (!seenMismatch.has(k)) {
+    seenMismatch.set(k, { ...m, sites: [] });
+    uniqueMismatches.push(seenMismatch.get(k));
+  }
+  if (!seenMismatch.get(k).sites.includes(m.where)) seenMismatch.get(k).sites.push(m.where);
+}
+
 // Reverse direction: functions nothing appears to call. This is a HINT, not a
 // verdict — a function can still be reached through an httpAction route, a cron,
 // or a caller outside both repos. Opt in with --unused; it never fails the build.
@@ -172,9 +261,12 @@ if (process.argv.includes("--unused")) {
 }
 
 if (JSON_OUT) {
-  console.log(JSON.stringify({ defined: defined.size, refs: refs.length, broken: unique }, null, 2));
+  console.log(JSON.stringify({
+    defined: defined.size, refs: refs.length, broken: unique, mismatches: uniqueMismatches,
+  }, null, 2));
 } else {
-  console.log(`convex refs: ${defined.size} functions defined, ${refs.length} references checked`);
+  console.log(`convex refs: ${defined.size} functions defined, ${refs.length} references checked`
+    + ` (${invocations.length} invocations kind-checked)`);
   if (aoPresent) {
     console.log(`agentoverflow: ${aoRefCount} cross-repo references checked`);
   } else {
@@ -198,6 +290,19 @@ if (JSON_OUT) {
       console.log("");
     }
   }
+
+  if (uniqueMismatches.length === 0) {
+    console.log("all references use the right visibility and executor");
+  } else {
+    console.log(`\n${uniqueMismatches.length} visibility/executor mismatch(es) — these resolve to a real`);
+    console.log("export but still fail at runtime:\n");
+    for (const m of uniqueMismatches) {
+      console.log(`  ${m.ref}`);
+      console.log(`    ${m.why}`);
+      for (const s of m.sites) console.log(`    called from ${s}`);
+      console.log("");
+    }
+  }
 }
 
-process.exit(unique.length === 0 ? 0 : 1);
+process.exit(unique.length === 0 && uniqueMismatches.length === 0 ? 0 : 1);
