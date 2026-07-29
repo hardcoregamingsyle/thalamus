@@ -10,6 +10,14 @@ import type { ActionCtx } from "./_generated/server";
 const BASE_URL = "https://ollama.com";
 
 // Key resolution: DB table ollamaKeys first, then OLLAMA_API_KEY env fallback
+function stripQuotes(s: string): string {
+  s = s.trim();
+  while ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
 async function resolveAllApiKeys(runQuery?: ActionCtx["runQuery"]): Promise<string[]> {
   const keys: string[] = [];
   // First: try DB table
@@ -18,7 +26,7 @@ async function resolveAllApiKeys(runQuery?: ActionCtx["runQuery"]): Promise<stri
       const dbKeys = await runQuery(internal.admin.getOllamaKeysInternal, {});
       if (Array.isArray(dbKeys)) {
         for (const k of dbKeys) {
-          if (typeof k === "string" && k.trim()) keys.push(k.trim());
+          if (typeof k === "string" && k.trim()) keys.push(stripQuotes(k));
         }
       }
     } catch { /* table might not exist yet — env fallback below */ }

@@ -260,7 +260,7 @@ body::after {
 .prose-html ul, .prose-html ol { margin: 0.3em 0 0.3em 1.4em; }
 .prose-html li { margin: 0.15em 0; }
 .prose-html pre { overflow-x: auto; margin: 0.5em 0; }
-.prose-html table { width: 100%; border-collapse: collapse; margin: 0.8em 0; overflow: hidden; border-radius: 8px; }
+.prose-html table { width: 100%; border-collapse: collapse; margin: 0.8em 0; overflow-x: auto; border-radius: 8px; display: block; }
 .prose-html th {
   background: oklch(0.18 0.015 250);
   color: oklch(0.96 0.008 240);

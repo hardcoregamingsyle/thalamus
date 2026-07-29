@@ -98,7 +98,7 @@ export default function ApiPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background overflow-x-hidden">
       <title>Thalamus API — OpenAI-compatible API keys</title>
       <meta name="description" content="Create Thalamus API keys and use them in Cursor, Claude Code, or any OpenAI-compatible client. Pay-as-you-go with AgentBucks credits." />
       <link rel="canonical" href="https://thalamus.aphantic.skinticals.com/api-keys" />
@@ -220,7 +220,7 @@ export default function ApiPage() {
         </AnimatePresence>
 
         {/* Keys table */}
-        <div className="rounded-xl border border-border overflow-hidden">
+        <div className="rounded-xl border border-border overflow-x-auto">
           <div className="bg-card/60 px-4 py-3 border-b border-border flex items-center justify-between">
             <span className="text-sm font-semibold text-foreground">Your API Keys</span>
             <span className="text-xs text-muted-foreground">{keys?.length ?? 0} key{keys?.length !== 1 ? "s" : ""}</span>

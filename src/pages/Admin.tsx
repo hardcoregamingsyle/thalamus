@@ -189,7 +189,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col overflow-x-hidden">
       <header className="shrink-0 border-b border-border bg-card/90 backdrop-blur-md">
         <div className="flex items-center justify-between px-6 h-14">
           <div className="flex items-center gap-3">
@@ -332,7 +332,7 @@ function UsersTab({ adminToken }: { adminToken: string }) {
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search by email or name..."
-          className="bg-background border border-border rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors w-64"
+          className="bg-background border border-border rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors w-full sm:w-64"
         />
       </div>
 

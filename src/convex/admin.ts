@@ -674,6 +674,14 @@ export const getProviderAKeys = query({
   },
 });
 
+function stripQuotes(s: string): string {
+  s = s.trim();
+  while ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
 export const saveProviderAKeys = mutation({
   args: {
     adminToken: v.string(),
@@ -682,11 +690,12 @@ export const saveProviderAKeys = mutation({
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
+    const cleaned = args.keys.map(stripQuotes).filter(Boolean);
     const existing = await ctx.db.query("nimKeys").take(1);
-    let finalKeys = args.keys;
+    let finalKeys = cleaned;
     if (args.append && existing.length > 0) {
       const existingSet = new Set(existing[0].keys);
-      for (const k of args.keys) existingSet.add(k);
+      for (const k of cleaned) existingSet.add(k);
       finalKeys = Array.from(existingSet);
     }
     if (existing.length > 0) {
@@ -738,11 +747,12 @@ export const saveProviderBKeys = mutation({
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
+    const cleaned = args.keys.map(stripQuotes).filter(Boolean);
     const existing = await ctx.db.query("ollamaKeys").take(1);
-    let finalKeys = args.keys;
+    let finalKeys = cleaned;
     if (args.append && existing.length > 0) {
       const existingSet = new Set(existing[0].keys);
-      for (const k of args.keys) existingSet.add(k);
+      for (const k of cleaned) existingSet.add(k);
       finalKeys = Array.from(existingSet);
     }
     if (existing.length > 0) {

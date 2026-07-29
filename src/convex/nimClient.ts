@@ -480,13 +480,21 @@ export interface NimChatResult {
  * Resolve NVIDIA NIM API keys from DB (nimKeys table).
  * Fallback to env var NVAPI_KEY for backward compat.
  */
+function stripQuotes(s: string): string {
+  s = s.trim();
+  while ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
 async function resolveNimKeys(ctx: { runQuery: ActionCtx["runQuery"] }): Promise<string[]> {
   const keys: string[] = [];
   try {
     const dbKeys = await ctx.runQuery(internal.admin.getNimKeysInternal, {});
     if (Array.isArray(dbKeys)) {
       for (const k of dbKeys) {
-        if (typeof k === "string" && k.trim()) keys.push(k.trim());
+        if (typeof k === "string" && k.trim()) keys.push(stripQuotes(k));
       }
     }
   } catch { /* nimKeys table might not exist yet — ok */ }
