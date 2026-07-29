@@ -428,6 +428,7 @@ const TASK_MODEL_MAP: Record<TaskType, string[]> = {
     "qwen/qwq-32b",
   ],
   agent: [
+    "deepseek-ai/deepseek-v4-pro",
     "meta/llama-3.1-8b-instruct",
     "nvidia/nemotron-3-super-120b-a12b",
     "openai/gpt-oss-120b",
@@ -521,6 +522,30 @@ async function resolveNimKeys(ctx: { runQuery: ActionCtx["runQuery"] }): Promise
   return Array.from(new Set(keys)); // Deduplicate
 }
 
+function parseSseResponse(raw: string, defaultModel: string): NimChatResult | null {
+  if (!raw.startsWith("data: ")) return null;
+  let text = "";
+  let modelName = defaultModel;
+  let promptTokens = 0;
+  let completionTokens = 0;
+  for (const line of raw.split("\n")) {
+    if (!line.startsWith("data: ")) continue;
+    const payload = line.slice(6).trim();
+    if (payload === "[DONE]") continue;
+    try {
+      const chunk = JSON.parse(payload);
+      const delta = chunk.choices?.[0]?.delta;
+      if (delta?.content) text += delta.content;
+      if (chunk.model) modelName = chunk.model;
+      if (chunk.usage) {
+        promptTokens = chunk.usage.prompt_tokens ?? promptTokens;
+        completionTokens = chunk.usage.completion_tokens ?? completionTokens;
+      }
+    } catch { /* json parse skip */ }
+  }
+  return { text, inputTokens: promptTokens, outputTokens: completionTokens, model: modelName };
+}
+
 export async function callNim(
   ctx: { runQuery: ActionCtx["runQuery"] },
   prompt: string,
@@ -551,7 +576,7 @@ export async function callNim(
     max_tokens: maxTokens,
     temperature,
     top_p: 1,
-    stream: false,
+    stream: true,
   });
 
   let lastError: Error | null = null;
@@ -560,7 +585,7 @@ export async function callNim(
     const apiKey = apiKeys[k];
 
     const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 300_000);
+    const timeout = setTimeout(() => ctrl.abort(), 500_000);
     try {
       const res = await fetch(`${BASE_URL}/chat/completions`, {
         method: "POST",
@@ -583,6 +608,9 @@ export async function callNim(
         throw err;
       }
 
+      const result = parseSseResponse(raw, model);
+      if (result) return result;
+
       const data: NimChatResponse = JSON.parse(raw);
       const text = data.choices?.[0]?.message?.content ?? "";
       return {
@@ -594,7 +622,7 @@ export async function callNim(
     } catch (err) {
       clearTimeout(timeout);
       if (err instanceof Error && err.name === "AbortError") {
-        lastError = new Error(`NIM request timed out after 300s (key ${k + 1})`);
+        lastError = new Error(`NIM request timed out after 500s (key ${k + 1})`);
         continue;
       }
       if (err !== lastError) lastError = err instanceof Error ? err : new Error(String(err));

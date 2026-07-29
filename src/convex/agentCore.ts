@@ -100,7 +100,7 @@ export async function callModel(
       const nimModel = taskType === "dispatcher" ? "meta/llama-3.2-3b-instruct"
         : taskType === "code" ? "meta/llama-3.1-8b-instruct"
         : taskType === "reasoning" ? "nvidia/nemotron-3-super-120b-a12b"
-        : taskType === "agent" ? "meta/llama-3.1-8b-instruct"
+        : taskType === "agent" ? "deepseek-ai/deepseek-v4-pro"
         : NIM_DEFAULT_CHAT_MODEL;
 
       const result = await callNim(ctx, prompt, systemPrompt, nimModel);
