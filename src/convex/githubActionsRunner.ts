@@ -371,7 +371,7 @@ export const startSandbox = internalAction({
     const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
     const runnerOs = (branch as Record<string,unknown>)?.runnerOs ?? "ubuntu";
 
-    const { data: dispatch } = await octokit.actions.createWorkflowDispatch({
+    await octokit.actions.createWorkflowDispatch({
       owner: cfg.owner,
       repo: cfg.repo,
       workflow_id: SANDBOX_WORKFLOW_FILE,
@@ -384,12 +384,24 @@ export const startSandbox = internalAction({
       },
     });
 
-    // Store the sandbox run ID from the dispatched workflow
+    // Poll briefly for the run ID (dispatch is async so the run may not exist yet).
+    let runId: number | null = null;
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      try {
+        const { data: runs } = await octokit.actions.listWorkflowRuns({
+          owner: cfg.owner, repo: cfg.repo, workflow_id: SANDBOX_WORKFLOW_FILE,
+          branch: cfg.branch, per_page: 1,
+        });
+        if (runs.total_count && runs.workflow_runs?.[0]) {
+          runId = runs.workflow_runs[0].id;
+          break;
+        }
+      } catch { /* retry */ }
+    }
+
     await ctx.runMutation(internal.codeBranches.setSandboxInfo, {
-      branchId: args.branchId,
-      url: null,
-      status: "starting",
-      runId: null,
+      branchId: args.branchId, url: null, status: "starting", runId,
     });
   },
 });
@@ -401,25 +413,36 @@ export const stopSandbox = internalAction({
   },
   handler: async (ctx, args) => {
     const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
-    const runId = (branch as Record<string,unknown>)?.sandboxRunId;
-    if (!runId) {
-      await ctx.runMutation(internal.codeBranches.setSandboxInfo, {
-        branchId: args.branchId, url: null, status: "stopped", runId: null,
-      });
-      return;
-    }
+    let runId = (branch as Record<string,unknown>)?.sandboxRunId as number | undefined;
+
     const cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
       projectId: args.projectId, branchId: args.branchId,
     }) as GhConfig | null;
-    if (!cfg) return;
-    const token = cfg.githubToken || process.env.GITHUB_TOKEN;
-    if (!token) return;
-    const octokit = new Octokit({ auth: token });
-    try {
-      await octokit.actions.cancelWorkflowRun({
-        owner: cfg.owner, repo: cfg.repo, run_id: runId as number,
-      });
-    } catch { /* already finished or not found */ }
+
+    if (cfg) {
+      const token = cfg.githubToken || process.env.GITHUB_TOKEN;
+      if (token) {
+        const octokit = new Octokit({ auth: token });
+        // If we don't have a stored run ID, try to find the active run.
+        if (!runId) {
+          try {
+            const { data: runs } = await octokit.actions.listWorkflowRuns({
+              owner: cfg.owner, repo: cfg.repo, workflow_id: SANDBOX_WORKFLOW_FILE,
+              branch: cfg.branch, per_page: 5, status: "in_progress",
+            });
+            if (runs.workflow_runs?.[0]) runId = runs.workflow_runs[0].id;
+          } catch { /* not found */ }
+        }
+        if (runId) {
+          try {
+            await octokit.actions.cancelWorkflowRun({
+              owner: cfg.owner, repo: cfg.repo, run_id: runId,
+            });
+          } catch { /* already finished or not found */ }
+        }
+      }
+    }
+
     await ctx.runMutation(internal.codeBranches.setSandboxInfo, {
       branchId: args.branchId, url: null, status: "stopped", runId: null,
     });
