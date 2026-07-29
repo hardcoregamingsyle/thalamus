@@ -67,7 +67,7 @@ export default function ThinkingPanel({
             className="overflow-hidden"
           >
             <div className="mt-2 mx-0.5 rounded-xl border border-border/50 bg-muted/20 backdrop-blur-sm">
-              <div className="px-4 py-3 max-h-60 overflow-y-auto">
+              <div className="px-4 py-3 max-h-60 overflow-auto">
                 <p className="text-[11px] leading-relaxed text-muted-foreground/80 whitespace-pre-wrap font-mono">
                   {content.trim()}
                 </p>

@@ -242,7 +242,7 @@ export default function AdminPage() {
           ))}
         </nav>
 
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-auto p-6">
           <AnimatePresence mode="wait">
             <motion.div
               key={tab}

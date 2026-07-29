@@ -371,7 +371,7 @@ function GuestPortal() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4 max-w-4xl mx-auto w-full">
+      <div className="flex-1 overflow-auto min-h-0 px-4 py-4 max-w-4xl mx-auto w-full">
         {(thinkingContent || isThinking) && (
           <div className="mb-3 sticky top-0 z-10 bg-background/90 backdrop-blur-sm rounded-xl">
             <ThinkingPanel
@@ -624,7 +624,7 @@ function SuggestionFormModal({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
         transition={{ duration: 0.2 }}
-        className="relative z-10 bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+        className="relative z-10 bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-auto"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
@@ -1672,7 +1672,7 @@ function PortalDesktop() {
               </div>
 
               {/* Conversations list */}
-              <div className="flex-1 overflow-y-auto min-h-0">
+              <div className="flex-1 overflow-auto min-h-0">
                 <div className="px-2 pb-2 space-y-0.5">
                   {filteredConvs.length === 0 ? (
                     <div className="text-center py-6">
@@ -1741,7 +1741,7 @@ function PortalDesktop() {
 
               {/* Messages + sponsored rail (rail only on 1280px+ viewports) */}
               <div className="flex-1 min-h-0 flex">
-              <div className="flex-1 overflow-y-auto min-h-0">
+              <div className="flex-1 overflow-auto min-h-0">
                 <div className="p-4 space-y-4 max-w-4xl mx-auto">
                   {(thinkingContent || isThinking) && (
                     <div className="sticky top-2 z-10">
@@ -1846,7 +1846,7 @@ function PortalDesktop() {
                 </div>
               </div>
               {railAds.length > 0 && activeConvId && (
-                <aside className="hidden xl:flex flex-col gap-3 w-64 shrink-0 p-4 overflow-y-auto border-l border-border/40">
+                <aside className="hidden xl:flex flex-col gap-3 w-64 shrink-0 p-4 overflow-auto border-l border-border/40">
                   {railAds.slice(0, railCount).map((ad, i) => (
                     <SponsoredAdCard key={ad.impUrl ?? `rail-${i}`} ad={ad} rail />
                   ))}
@@ -1979,7 +1979,7 @@ function PortalDesktop() {
                   </div>
 
                   {/* Resources list */}
-                  <div className="flex-1 overflow-y-auto min-h-0 p-2 space-y-1.5">
+                  <div className="flex-1 overflow-auto min-h-0 p-2 space-y-1.5">
                     {!studyResources ? (
                       <div className="flex items-center justify-center py-8"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
                     ) : studyResources.length === 0 ? (

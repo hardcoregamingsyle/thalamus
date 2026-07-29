@@ -450,7 +450,7 @@ export function FileTreeView({
         </div>
       )}
       <div
-        className="flex-1 overflow-y-auto min-h-0"
+        className="flex-1 overflow-auto min-h-0"
         onDragOver={e => e.preventDefault()}
         onDrop={handleRootDrop}
       >

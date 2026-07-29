@@ -101,7 +101,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+    <div className="flex-1 overflow-auto p-6 space-y-4">
       <div>
         <h2 className="text-xl font-semibold flex items-center gap-2">
           <Terminal className="h-5 w-5 text-primary" />
@@ -276,7 +276,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
                     {cmd.output && (
                       <pre
                         className={cn(
-                          "text-xs font-mono p-3 whitespace-pre-wrap break-all max-h-56 overflow-y-auto",
+                          "text-xs font-mono p-3 whitespace-pre-wrap break-all max-h-56 overflow-auto",
                           cmd.status === "failed" ? "text-destructive" : "text-muted-foreground",
                         )}
                       >

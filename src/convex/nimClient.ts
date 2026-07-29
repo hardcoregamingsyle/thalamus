@@ -492,7 +492,14 @@ async function resolveNimKeys(ctx: { runQuery: ActionCtx["runQuery"] }): Promise
   } catch { /* nimKeys table might not exist yet — ok */ }
   const envKey = (process.env.NVAPI_KEY ?? "").trim();
   if (envKey) keys.push(envKey);
-  return keys;
+
+  // Shuffle keys to distribute load (round-robin)
+  for (let i = keys.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [keys[i], keys[j]] = [keys[j], keys[i]];
+  }
+
+  return Array.from(new Set(keys)); // Deduplicate
 }
 
 export async function callNim(
@@ -553,7 +560,7 @@ export async function callNim(
         const err = new Error(`NVIDIA NIM ${res.status} (key ${k + 1}/${apiKeys.length}): ${errMsg}`);
         lastError = err;
         clearTimeout(timeout);
-        if (res.status === 429 || res.status >= 500) continue;
+        if (res.status === 401 || res.status === 403 || res.status === 429 || res.status >= 500) continue;
         throw err;
       }
 

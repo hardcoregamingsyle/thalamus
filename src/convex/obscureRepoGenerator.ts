@@ -2,10 +2,11 @@
 // functionally undiscoverable by enumeration. Public repos are free;
 // the random name is the only access control needed.
 
+import crypto from "crypto";
+
 export function generateObscureRepoName(): string {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_";
-  const randomValues = new Uint8Array(251);
-  crypto.getRandomValues(randomValues);
+  const randomValues = crypto.randomBytes(251);
 
   let name = "repo-";
   for (const b of randomValues) {
@@ -16,8 +17,7 @@ export function generateObscureRepoName(): string {
 
 export function generateObscureBranchName(): string {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_/";
-  const randomValues = new Uint8Array(193);
-  crypto.getRandomValues(randomValues);
+  const randomValues = crypto.randomBytes(193);
 
   let name = "branch-";
   for (const b of randomValues) {

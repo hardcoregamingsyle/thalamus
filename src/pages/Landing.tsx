@@ -154,7 +154,7 @@ function SuggestionModal({
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96 }}
-        className="relative z-10 w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg border border-border bg-card shadow-2xl"
+        className="relative z-10 w-full max-w-md max-h-[90vh] overflow-auto rounded-lg border border-border bg-card shadow-2xl"
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div className="flex items-center gap-2">

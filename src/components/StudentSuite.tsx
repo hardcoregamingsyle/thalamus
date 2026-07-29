@@ -383,7 +383,7 @@ export default function StudentSuite({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="flex-1 overflow-auto min-h-0">
           <AnimatePresence mode="wait">
 
             {/* ── MENU ── */}

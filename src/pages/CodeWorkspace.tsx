@@ -394,7 +394,7 @@ export default function CodeWorkspace() {
         // Chat view
         return (
           <div className="flex-1 flex flex-col h-full">
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div className="flex-1 overflow-auto p-6 space-y-4">
               {messages === undefined ? (
                 <div className="flex items-center justify-center h-full">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -467,7 +467,7 @@ export default function CodeWorkspace() {
                         generating…
                       </span>
                     </div>
-                    <div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap font-mono max-h-64 overflow-y-auto">
+                    <div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap font-mono max-h-64 overflow-auto">
                       {branch.streamingContent}
                       <span className="inline-block w-0.5 h-3 bg-primary ml-0.5 animate-pulse" />
                     </div>
@@ -577,7 +577,7 @@ export default function CodeWorkspace() {
         </div>
 
         {/* Sidebar Content */}
-        <div className="flex-1 overflow-y-auto p-2">
+        <div className="flex-1 overflow-auto p-2">
           {sidebarSections.map((section) => (
             <div key={section.title} className="mb-6">
               <h3 className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">

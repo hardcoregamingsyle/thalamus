@@ -408,7 +408,7 @@ echo "✓ Done! Check: https://github.com/$(gh api user --jq .login)/$REPO_NAME"
                 {status === "success" && <CheckCircle className="h-3 w-3 text-primary ml-auto" />}
                 {status === "error" && <XCircle className="h-3 w-3 text-destructive ml-auto" />}
               </div>
-              <div className="p-4 space-y-1 max-h-64 overflow-y-auto">
+              <div className="p-4 space-y-1 max-h-64 overflow-auto">
                 {logs.map((log, i) => (
                   <div key={i} className={`text-xs font-mono ${
                     log.type === "success" ? "text-primary" :

@@ -381,7 +381,7 @@ function MobileChatView({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto min-h-0 px-3 py-3 space-y-3">
+      <div className="flex-1 overflow-auto min-h-0 px-3 py-3 space-y-3">
         {(thinkingContent || isThinking) && (
           <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-sm rounded-xl">
             <ThinkingPanel
@@ -566,7 +566,7 @@ function MobileChatView({
                   <Plus className="h-4 w-4" />New
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
+              <div className="flex-1 overflow-auto px-3 py-2 space-y-1">
                 {filteredConvs.length === 0 ? (
                   <div className="text-center py-8">
                     <p className="text-[14px] text-muted-foreground">No sessions yet</p>
@@ -621,7 +621,7 @@ function MobileHomeScreen({
   const displayName = typedUser?.name ?? typedUser?.email?.split("@")[0] ?? "there";
 
   return (
-    <div className="flex flex-col h-full bg-background overflow-y-auto" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+    <div className="flex flex-col h-full bg-background overflow-auto" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       {/* Header */}
       <div className="px-4 pt-5 pb-4">
         <div className="flex items-center justify-between mb-4">
