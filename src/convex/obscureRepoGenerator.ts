@@ -1,3 +1,4 @@
+"use node";
 // Generates cryptographically random repo and branch names that are
 // functionally undiscoverable by enumeration. Public repos are free;
 // the random name is the only access control needed.
