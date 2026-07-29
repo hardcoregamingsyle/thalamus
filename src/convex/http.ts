@@ -1009,6 +1009,41 @@ http.route({
   }),
 });
 
+// Callback from the sandbox GitHub Actions workflow — reports the tunnel URL
+// so Thalamus can display the preview link.
+http.route({
+  path: "/code/sandbox-callback",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    let body: { tunnelUrl?: string; status?: string; error?: string };
+    try {
+      body = await request.json();
+    } catch {
+      return new Response("Bad request", { status: 400 });
+    }
+    const url = new URL(request.url);
+    const branchId = url.searchParams.get("branchId");
+    if (!branchId) return new Response("Missing branchId", { status: 400 });
+    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
+    if (!branch) return new Response("Branch not found", { status: 404 });
+    if (body.status === "running" && body.tunnelUrl) {
+      await ctx.runMutation(internal.codeBranches.setSandboxInfo, {
+        branchId,
+        url: body.tunnelUrl,
+        status: "running",
+        runId: null,
+      });
+    } else if (body.status === "failed") {
+      await ctx.runMutation(internal.codeBranches.setSandboxInfo, {
+        branchId, url: null, status: "stopped", runId: null,
+      });
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    });
+  }),
+});
+
 http.route({
   path: "/ad",
   method: "OPTIONS",

@@ -501,6 +501,27 @@ export const setDispatchedModels = internalMutation({
   },
 });
 
+export const setSandboxInfo = internalMutation({
+  args: {
+    branchId: v.string(),
+    url: v.optional(v.union(v.string(), v.null())),
+    status: v.optional(v.union(v.literal("idle"), v.literal("starting"), v.literal("running"), v.literal("stopped"))),
+    runId: v.optional(v.union(v.number(), v.null())),
+  },
+  handler: async (ctx, args) => {
+    const branch = await ctx.db
+      .query("codeBranches")
+      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (!branch) return;
+    const patch: Record<string, unknown> = {};
+    if (args.url !== undefined) patch.sandboxUrl = args.url ?? undefined;
+    if (args.status !== undefined) patch.sandboxStatus = args.status;
+    if (args.runId !== undefined) patch.sandboxRunId = args.runId ?? undefined;
+    await ctx.db.patch(branch._id, patch);
+  },
+});
+
 // Clear streaming content (called after message is saved to DB)
 export const clearStreamingContent = internalMutation({
   args: { branchId: v.string() },

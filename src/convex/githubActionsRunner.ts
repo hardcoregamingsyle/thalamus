@@ -23,9 +23,101 @@ import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { Octokit } from "@octokit/rest";
+import crypto from "crypto";
 
 const WORKFLOW_PATH = ".github/workflows/thalamus-run.yml";
 const WORKFLOW_FILE = "thalamus-run.yml";
+
+const SANDBOX_WORKFLOW_PATH = ".github/workflows/thalamus-sandbox.yml";
+const SANDBOX_WORKFLOW_FILE = "thalamus-sandbox.yml";
+
+// Sandbox workflow — starts a dev server and exposes it via Cloudflare tunnel.
+// Stays alive for up to 360 minutes (6h max on public repos); cancel the run
+// from the Actions tab or Thalamus UI to tear it down.
+const SANDBOX_WORKFLOW_YAML = `# Managed by Thalamus. Starts a dev server + Cloudflare tunnel for live preview.
+name: Thalamus Sandbox
+
+on:
+  workflow_dispatch:
+    inputs:
+      callback_url:
+        description: Where to POST the tunnel URL
+        required: true
+      os:
+        description: Runner OS
+        required: false
+        default: ubuntu-latest
+      start_command:
+        description: Command to start the dev server
+        required: false
+        default: npm run dev --
+      port:
+        description: Port the dev server listens on
+        required: false
+        default: '3000'
+
+jobs:
+  sandbox:
+    runs-on: \${{ inputs.os || 'ubuntu-latest' }}
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          if [ -f package.json ]; then npm install; fi
+
+      - name: Download and install cloudflared
+        run: |
+          curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
+          chmod +x /tmp/cloudflared
+
+      - name: Start tunnel and dev server
+        shell: bash
+        run: |
+          PORT="\${{ inputs.port }}"
+          CMD="\${{ inputs.start_command }}"
+
+          # Start cloudflared tunnel in background
+          /tmp/cloudflared tunnel --url "http://localhost:\$PORT" > /tmp/tunnel.log 2>&1 &
+          CLOUD_PID=\$!
+
+          # Wait up to 60s for tunnel URL
+          TUNNEL_URL=""
+          for i in \$(seq 1 30); do
+            TUNNEL_URL=\$(grep -oP 'https?://[a-zA-Z0-9.-]+\\.trycloudflare\\.com' /tmp/tunnel.log | head -1)
+            if [ -n "\$TUNNEL_URL" ]; then break; fi
+            sleep 2
+          done
+
+          # Start dev server in background
+          echo "Starting: \$CMD --host 0.0.0.0 --port \$PORT"
+          if echo "\$CMD" | grep -q "vite\\|dev\\|next\\|start"; then
+            eval "\$CMD --host 0.0.0.0 --port \$PORT" > /tmp/devserver.log 2>&1 &
+          else
+            eval "\$CMD" > /tmp/devserver.log 2>&1 &
+          fi
+          DEV_PID=\$!
+
+          # Report tunnel URL back to Thalamus
+          if [ -n "\$TUNNEL_URL" ]; then
+            echo "Tunnel URL: \$TUNNEL_URL"
+            curl -sS -X POST "\${{ inputs.callback_url }}" \\
+              -H 'Content-Type: application/json' \\
+              -d "\$(jq -n --arg url "\$TUNNEL_URL" --arg pid "\$DEV_PID" '{tunnelUrl: \$url, status: "running", devPid: \$pid}')"
+          else
+            echo "No tunnel URL found — sandbox has no public endpoint"
+            curl -sS -X POST "\${{ inputs.callback_url }}" \\
+              -H 'Content-Type: application/json' \\
+              -d '{"status":"failed","error":"tunnel-not-established"}'
+          fi
+
+          # Keep alive — wait for dev server to exit (or Actions to cancel us)
+          wait \$DEV_PID 2>/dev/null || true
+`;
 
 // The command arrives through `env:`, never interpolated into the `run:` script.
 // Substituting it directly would let a stray quote break the YAML and a
@@ -220,5 +312,116 @@ export const executeBranchCommandsViaActions = internalAction({
         await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId: args.branchId });
       }
     }
+  },
+});
+
+async function ensureSandboxWorkflow(octokit: Octokit, cfg: GhConfig): Promise<void> {
+  let existingSha: string | undefined;
+  try {
+    const { data } = await octokit.repos.getContent({
+      owner: cfg.owner, repo: cfg.repo, path: SANDBOX_WORKFLOW_PATH, ref: cfg.branch,
+    });
+    if (!Array.isArray(data) && "sha" in data) {
+      if ("content" in data && typeof data.content === "string") {
+        const current = Buffer.from(data.content, "base64").toString("utf8");
+        if (current === SANDBOX_WORKFLOW_YAML) return;
+      }
+      existingSha = data.sha;
+    }
+  } catch { /* not there yet */ }
+
+  await octokit.repos.createOrUpdateFileContents({
+    owner: cfg.owner,
+    repo: cfg.repo,
+    path: SANDBOX_WORKFLOW_PATH,
+    message: "ci: thalamus sandbox preview",
+    content: Buffer.from(SANDBOX_WORKFLOW_YAML, "utf8").toString("base64"),
+    branch: cfg.branch,
+    ...(existingSha ? { sha: existingSha } : {}),
+  });
+}
+
+export const startSandbox = internalAction({
+  args: {
+    branchId: v.string(),
+    projectId: v.string(),
+    startCommand: v.optional(v.string()),
+    port: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+      projectId: args.projectId, branchId: args.branchId,
+    }) as GhConfig | null;
+    if (!cfg) {
+      throw new Error("No GitHub repo configured for this branch — cannot start sandbox");
+    }
+    const token = cfg.githubToken || process.env.GITHUB_TOKEN;
+    if (!token) throw new Error("No GitHub token available");
+
+    const octokit = new Octokit({ auth: token });
+
+    await ctx.runAction(internal.githubSync.autoPushToGithub, {
+      branchId: args.branchId,
+      commitMessage: "build: sync before sandbox",
+    });
+    await ensureSandboxWorkflow(octokit, cfg);
+
+    const callbackUrl = `${process.env.CONVEX_SITE_URL}/code/sandbox-callback?branchId=${encodeURIComponent(args.branchId)}`;
+
+    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
+    const runnerOs = (branch as Record<string,unknown>)?.runnerOs ?? "ubuntu";
+
+    const { data: dispatch } = await octokit.actions.createWorkflowDispatch({
+      owner: cfg.owner,
+      repo: cfg.repo,
+      workflow_id: SANDBOX_WORKFLOW_FILE,
+      ref: cfg.branch,
+      inputs: {
+        callback_url: callbackUrl,
+        os: RUNNERS[runnerOs as string] ?? RUNNERS.ubuntu,
+        start_command: args.startCommand ?? "npm run dev",
+        port: String(args.port ?? 3000),
+      },
+    });
+
+    // Store the sandbox run ID from the dispatched workflow
+    await ctx.runMutation(internal.codeBranches.setSandboxInfo, {
+      branchId: args.branchId,
+      url: null,
+      status: "starting",
+      runId: null,
+    });
+  },
+});
+
+export const stopSandbox = internalAction({
+  args: {
+    branchId: v.string(),
+    projectId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
+    const runId = (branch as Record<string,unknown>)?.sandboxRunId;
+    if (!runId) {
+      await ctx.runMutation(internal.codeBranches.setSandboxInfo, {
+        branchId: args.branchId, url: null, status: "stopped", runId: null,
+      });
+      return;
+    }
+    const cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+      projectId: args.projectId, branchId: args.branchId,
+    }) as GhConfig | null;
+    if (!cfg) return;
+    const token = cfg.githubToken || process.env.GITHUB_TOKEN;
+    if (!token) return;
+    const octokit = new Octokit({ auth: token });
+    try {
+      await octokit.actions.cancelWorkflowRun({
+        owner: cfg.owner, repo: cfg.repo, run_id: runId as number,
+      });
+    } catch { /* already finished or not found */ }
+    await ctx.runMutation(internal.codeBranches.setSandboxInfo, {
+      branchId: args.branchId, url: null, status: "stopped", runId: null,
+    });
   },
 });

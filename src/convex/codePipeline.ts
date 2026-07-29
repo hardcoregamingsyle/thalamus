@@ -1155,6 +1155,50 @@ export const stopPipeline = action({
     });
   },
 });
+
+// ── Sandbox (live preview) actions ──────────────────────────────────────────────
+
+export const startBranchSandbox = action({
+  args: {
+    token: v.string(),
+    branchId: v.string(),
+    startCommand: v.optional(v.string()),
+    port: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
+    if (!userId) throw new Error("Not authenticated");
+    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
+    if (!branch) throw new Error("Branch not found");
+    const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: branch.projectId });
+    if (!project || project.userId !== userId) throw new Error("Not authorized");
+
+    await ctx.runAction(internal.githubActionsRunner.startSandbox, {
+      branchId: args.branchId,
+      projectId: branch.projectId,
+      startCommand: args.startCommand,
+      port: args.port,
+    });
+  },
+});
+
+export const stopBranchSandbox = action({
+  args: { token: v.string(), branchId: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
+    if (!userId) throw new Error("Not authenticated");
+    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
+    if (!branch) throw new Error("Branch not found");
+    const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: branch.projectId });
+    if (!project || project.userId !== userId) throw new Error("Not authorized");
+
+    await ctx.runAction(internal.githubActionsRunner.stopSandbox, {
+      branchId: args.branchId,
+      projectId: branch.projectId,
+    });
+  },
+});
+
 // ── MCP tool-cache refresh ───────────────────────────────────────────────────
 // Lives here (not in mcpClient.ts) on purpose: the api type of this codebase
 // sits at TypeScript's instantiation-depth cliff, and registering an action in

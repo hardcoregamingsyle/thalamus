@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Doc } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Terminal, Send, Loader2, ExternalLink, Cpu, Laptop, Cloud,
-  CheckCircle2, XCircle, Clock, GitBranch,
+  CheckCircle2, XCircle, Clock, GitBranch, Globe, StopCircle, Play,
 } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -41,11 +41,38 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
   const updateBranch = useMutation(api.codeBranches.updateBranch);
   const runManualCommand = useMutation(api.codeCommands.runManualCommand);
 
+  const startSandbox = useAction(api.codePipeline.startBranchSandbox);
+  const stopSandbox = useAction(api.codePipeline.stopBranchSandbox);
+
   const [command, setCommand] = useState("");
   const [sending, setSending] = useState(false);
+  const [sandboxStarting, setSandboxStarting] = useState(false);
 
   const isLocal = branch?.executor === "local";
   const runnerOs = (branch?.runnerOs ?? "ubuntu") as RunnerOs;
+  const sandboxUrl = branch?.sandboxUrl;
+  const sandboxStatus = branch?.sandboxStatus;
+
+  const handleStartSandbox = async () => {
+    setSandboxStarting(true);
+    try {
+      await startSandbox({ token, branchId });
+      toast.success("Sandbox preview starting — link will appear here when ready");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not start sandbox");
+    } finally {
+      setSandboxStarting(false);
+    }
+  };
+
+  const handleStopSandbox = async () => {
+    try {
+      await stopSandbox({ token, branchId });
+      toast.success("Sandbox stopped");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not stop sandbox");
+    }
+  };
 
   const handleRunnerChange = async (value: string) => {
     try {
@@ -205,6 +232,72 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Live preview */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Globe className="h-4 w-4" />
+            Live preview
+          </CardTitle>
+          <CardDescription>
+            A running dev server, accessible from anywhere — the AI sees it too.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {sandboxStatus === "running" && sandboxUrl ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="border-green-500/40 text-green-500 gap-1">
+                  <Globe className="h-3 w-3" />
+                  live
+                </Badge>
+              </div>
+              <Button asChild variant="default" size="sm" className="w-full gap-2">
+                <a href={sandboxUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open preview
+                </a>
+              </Button>
+              <Button variant="outline" size="sm" className="w-full gap-2" onClick={handleStopSandbox}>
+                <StopCircle className="h-3.5 w-3.5" />
+                Stop preview
+              </Button>
+            </div>
+          ) : sandboxStatus === "starting" || sandboxStarting ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Starting sandbox — setting up dev server and tunnel…
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Starts a dev server on a GitHub Actions runner and exposes it via a
+                Cloudflare tunnel. Takes ~30s after the runner picks up the job.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-2"
+                onClick={handleStartSandbox}
+                disabled={sandboxStarting || !config}
+              >
+                {sandboxStarting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Play className="h-3.5 w-3.5" />
+                )}
+                Start preview
+              </Button>
+              {!config && (
+                <p className="text-xs text-muted-foreground">
+                  Waiting for the branch's GitHub repo to be ready…
+                </p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Run a command */}
       <Card>

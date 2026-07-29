@@ -174,6 +174,12 @@ const schema = defineSchema(
       // having: Actions gives ubuntu, windows and macos, so a branch can be
       // tested on the OS it actually ships to. Absent means ubuntu.
       runnerOs: v.optional(v.union(v.literal("ubuntu"), v.literal("windows"), v.literal("macos"))),
+      // Live sandbox preview — a GitHub Actions workflow that runs a dev server
+      // and exposes it via a Cloudflare tunnel so the AI and humans can interact
+      // with the running app. Stopped by cancelling the GitHub Actions run.
+      sandboxUrl: v.optional(v.string()),
+      sandboxStatus: v.optional(v.union(v.literal("idle"), v.literal("starting"), v.literal("running"), v.literal("stopped"))),
+      sandboxRunId: v.optional(v.number()), // GitHub Actions run ID, for cancellation
     })
       .index("by_project", ["projectId"])
       .index("by_branch_id", ["branchId"])
