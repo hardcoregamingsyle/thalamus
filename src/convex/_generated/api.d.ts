@@ -9,6 +9,7 @@
  */
 
 import type * as admin from "../admin.js";
+import type * as adminMeta from "../adminMeta.js";
 import type * as agentCore from "../agentCore.js";
 import type * as agentoverflow from "../agentoverflow.js";
 import type * as agentoverflowAdmin from "../agentoverflowAdmin.js";
@@ -70,6 +71,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
+  adminMeta: typeof adminMeta;
   agentCore: typeof agentCore;
   agentoverflow: typeof agentoverflow;
   agentoverflowAdmin: typeof agentoverflowAdmin;
