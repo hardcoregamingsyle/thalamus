@@ -484,6 +484,23 @@ export const setDispatchedAgents = internalMutation({
   },
 });
 
+export const setDispatchedModels = internalMutation({
+  args: {
+    branchId: v.string(),
+    modelsJson: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const branch = await ctx.db
+      .query("codeBranches")
+      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (!branch) return;
+    await ctx.db.patch(branch._id, {
+      dispatchedModelsJson: args.modelsJson,
+    });
+  },
+});
+
 // Clear streaming content (called after message is saved to DB)
 export const clearStreamingContent = internalMutation({
   args: { branchId: v.string() },

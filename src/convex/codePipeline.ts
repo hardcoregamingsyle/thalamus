@@ -63,7 +63,7 @@ function buildTaskPipeline(dispatched: string[]): string[] {
 /** Parse and validate the Dispatcher's JSON output. Returns null on failure. */
 function parseDispatcherOutput(
   text: string,
-): { tier: string; agents: string[] } | null {
+): { tier: string; agents: string[]; models?: Record<string, string> } | null {
   try {
     // Strip markdown fences if the model wrapped them anyway
     const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
@@ -74,7 +74,20 @@ function parseDispatcherOutput(
     // Always guarantee Coder and Critic
     if (!agents.includes("Coder"))  agents.push("Coder");
     if (!agents.includes("Critic")) agents.push("Critic");
-    return { tier: parsed.tier ?? "medium", agents };
+
+    // Extract per-agent model assignments if the Dispatcher provided them
+    let models: Record<string, string> | undefined;
+    if (parsed.assignments && Array.isArray(parsed.assignments)) {
+      models = {};
+      for (const a of parsed.assignments) {
+        if (a.agentName && agents.includes(a.agentName) && a.modelId) {
+          models[a.agentName] = a.modelId;
+        }
+      }
+      if (Object.keys(models).length === 0) models = undefined;
+    }
+
+    return { tier: parsed.tier ?? "medium", agents, models };
   } catch {
     return null;
   }
@@ -188,11 +201,13 @@ async function callModelWithStreaming(
   agentName: string,
   geminiKeys: string[],
   dbCreds: { accessKeyId: string; secretAccessKey: string; region: string } | null,
+  agentModelAssignments?: Record<string, string>,
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: ModelTier }> {
-  // The agent name IS the routing key: callModel maps it to a task type and picks
-  // the model from that. Passing anything else (as the old tier strings did) misses
-  // every branch of that map and silently lands on the generic chat model.
-  const result = await callModel(prompt, systemPrompt, agentName, geminiKeys, dbCreds, ctx);
+  // If the Dispatcher assigned a specific model for this agent, pass it as an
+  // override so callModel uses it directly instead of the hardcoded task-type map.
+  const assignedModel = agentModelAssignments?.[agentName];
+  const modelArg = assignedModel ? { assignedModel } : undefined;
+  const result = await callModel(prompt, systemPrompt, agentName, geminiKeys, dbCreds, ctx, modelArg);
 
   // Simulated streaming. A Convex action cannot stream tokens out to a client,
   // so the finished response is drip-fed into streamingContent and the UI
@@ -444,14 +459,21 @@ export const runPipelineAction = internalAction({
     const executionPhase = branch.executionPhase ?? "dispatching";
     const currentTaskIndex = branch.currentTaskIndex ?? 0;
 
-    // Parse the previously saved dispatched-agent list (set by Dispatcher phase).
+    // Parse the previously saved dispatched-agent list and model assignments
+    // (both set by the Dispatcher phase).
     let dispatchedAgents: string[] = [];
+    const agentModelAssignments: Record<string, string> = {};
     try {
       if (branch.dispatchedAgentsJson) {
         dispatchedAgents = JSON.parse(branch.dispatchedAgentsJson);
       }
+      if (branch.dispatchedModelsJson) {
+        const parsed = JSON.parse(branch.dispatchedModelsJson);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          Object.assign(agentModelAssignments, parsed);
+        }
+      }
     } catch { /* ignored */ }
-
 
     // Mark as running
     await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
@@ -511,13 +533,26 @@ export const runPipelineAction = internalAction({
         const dispatched = parseDispatcherOutput(dispatchResult.text);
         const agents = dispatched?.agents ?? ["Analyser", "Planner", "Coder", "Tester", "Critic"];
         const tier = dispatched?.tier ?? "medium";
+        const modelAssignments = dispatched?.models;
 
-        // Persist so every subsequent pipeline invocation can read the agent list.
+        // Persist so every subsequent pipeline invocation can read the agent list
+        // and per-agent model assignments.
         await ctx.runMutation(internal.codeBranches.setDispatchedAgents, {
           branchId,
           agentsJson: JSON.stringify(agents),
         });
+        if (modelAssignments) {
+          await ctx.runMutation(internal.codeBranches.setDispatchedModels, {
+            branchId,
+            modelsJson: JSON.stringify(modelAssignments),
+          });
+        }
         dispatchedAgents = agents;
+        if (modelAssignments) {
+          for (const [agent, model] of Object.entries(modelAssignments)) {
+            agentModelAssignments[agent] = model;
+          }
+        }
 
         // Post a visible message so the user can see the routing decision.
         const routeLine = agents.join(" → ");
@@ -602,7 +637,7 @@ export const runPipelineAction = internalAction({
       if (currentPhase === "Planner") {
         const systemPrompt = AGENT_SYSTEM_PROMPTS["Planner"] ?? "";
         const prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
-        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, "Planner", geminiKeys, dbCreds);
+        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, "Planner", geminiKeys, dbCreds, agentModelAssignments);
         agentOutput = result.text;
         await bill("planner", result);
         await ctx.runMutation(internal.codeBranches.clearStreamingContent, { branchId });
@@ -663,7 +698,7 @@ export const runPipelineAction = internalAction({
           }
         }
 
-        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds);
+        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments);
         agentOutput = result.text;
         await bill(currentPhase.toLowerCase(), result);
 
@@ -683,7 +718,7 @@ export const runPipelineAction = internalAction({
             `## Continue`,
             `Emit ONLY the remaining content, picking up at the exact character where the tail stops — do NOT repeat anything above, do NOT re-open the <<CREATEFILE/EDITFILE tag. Finish the file and close it with <<END.CREATEFILE>>. If you still had more files or commands to emit after it, continue with those.`,
           ].join("\n\n");
-          const cont = await callModelWithStreaming(ctx, contPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds);
+          const cont = await callModelWithStreaming(ctx, contPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments);
           if (!cont.text.trim()) break;
           agentOutput += cont.text;
           await bill(`${currentPhase.toLowerCase()}-cont`, cont);

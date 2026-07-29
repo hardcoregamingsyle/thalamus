@@ -70,12 +70,16 @@ export async function callModel(
   modelId: string = "deepseek-ai/DeepSeek-V4-Flash",
   ..._extra: unknown[]
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: string }> {
-  // Extract ctx if passed as the last extra arg
+  // Extract ctx and optional assignedModel override from _extra
   let ctx: { runQuery: ActionCtx["runQuery"] } | undefined;
+  let assignedModel: string | undefined;
   for (const arg of _extra) {
     if (arg && typeof arg === "object" && "runQuery" in (arg as Record<string,unknown>)) {
       ctx = arg as { runQuery: ActionCtx["runQuery"] };
-      break;
+    }
+    if (arg && typeof arg === "object" && "assignedModel" in (arg as Record<string,unknown>)) {
+      const maybe = (arg as Record<string,unknown>).assignedModel;
+      if (typeof maybe === "string" && maybe) assignedModel = maybe;
     }
   }
 
@@ -97,11 +101,12 @@ export async function callModel(
     }
 
     try {
-      const nimModel = taskType === "dispatcher" ? "meta/llama-3.2-3b-instruct"
-        : taskType === "code" ? "meta/llama-3.1-8b-instruct"
-        : taskType === "reasoning" ? "nvidia/nemotron-3-super-120b-a12b"
-        : taskType === "agent" ? "deepseek-ai/deepseek-v4-pro"
-        : NIM_DEFAULT_CHAT_MODEL;
+      const nimModel = assignedModel
+        ?? (taskType === "dispatcher" ? "meta/llama-3.2-3b-instruct"
+          : taskType === "code" ? "meta/llama-3.1-8b-instruct"
+          : taskType === "reasoning" ? "nvidia/nemotron-3-super-120b-a12b"
+          : taskType === "agent" ? "deepseek-ai/deepseek-v4-pro"
+          : NIM_DEFAULT_CHAT_MODEL);
 
       const result = await callNim(ctx, prompt, systemPrompt, nimModel);
       return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `nim:${result.model}` };

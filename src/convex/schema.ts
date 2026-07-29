@@ -153,6 +153,10 @@ const schema = defineSchema(
       // Stored as a JSON array of agent names, e.g. '["Coder","Tester","Critic"]'.
       // Null/missing means "full pipeline" (first-time backwards compat).
       dispatchedAgentsJson: v.optional(v.string()),
+      // Model assignments per agent, set by the Dispatcher. Stored as a JSON
+      // object mapping agent names to NIM model IDs, e.g. '{"Coder":"meta/llama-3.1-8b-instruct"}'.
+      // Null/missing means the pipeline falls back to the hardcoded task-type map.
+      dispatchedModelsJson: v.optional(v.string()),
       // MCP tool-call loop guard — how many times the current agent has been
       // re-run with MCP results this phase. Reset to 0 on every phase advance.
       mcpRoundCount: v.optional(v.number()),
