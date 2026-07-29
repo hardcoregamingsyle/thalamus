@@ -131,6 +131,18 @@ export const NIM_MODEL_CATALOG: NimModelInfo[] = [
     isFree: true,
   },
   {
+    id: "meta/llama-3.2-3b-instruct",
+    name: "Llama 3.2 3B Instruct",
+    provider: "Meta",
+    capabilities: ["chat","code","agent","multilingual"],
+    contextWindow: 131072,
+    isReasoning: false,
+    isMoE: false,
+    parameterCount: "3B",
+    usageLevel: 1,
+    isFree: true,
+  },
+  {
     id: "meta/llama-3.1-8b-instruct",
     name: "Llama 3.1 8B Instruct",
     provider: "Meta",
@@ -353,11 +365,11 @@ export function nimModelsByCapability(cap: ModelCapability): NimModelInfo[] {
 
 // ── Default Model Choices ─────────────────────────────────────────────────────
 
-export const NIM_DISPATCHER_MODEL = "nvidia/nvidia-nemotron-nano-9b-v2";
+export const NIM_DISPATCHER_MODEL = "meta/llama-3.2-3b-instruct";
 
 export const NIM_DEFAULT_CHAT_MODEL = "nvidia/nemotron-3-super-120b-a12b";
 
-export const NIM_DEFAULT_CODE_MODEL = "qwen/qwen3-coder-480b-a35b-instruct";
+export const NIM_DEFAULT_CODE_MODEL = "meta/llama-3.1-8b-instruct";
 
 export const NIM_CHAT_FALLBACK_CHAIN = [
   "nvidia/nemotron-3-super-120b-a12b",
@@ -367,9 +379,9 @@ export const NIM_CHAT_FALLBACK_CHAIN = [
 ];
 
 export const NIM_CODE_FALLBACK_CHAIN = [
-  "qwen/qwen3-coder-480b-a35b-instruct",
-  "deepseek-ai/deepseek-v4-pro",
+  "meta/llama-3.1-8b-instruct",
   "nvidia/nemotron-3-super-120b-a12b",
+  "meta/llama-3.3-70b-instruct",
 ];
 
 export const NIM_REASONING_FALLBACK_CHAIN = [
@@ -391,9 +403,9 @@ export type TaskType = "dispatcher" | "chat" | "code" | "reasoning" | "agent" | 
 
 const TASK_MODEL_MAP: Record<TaskType, string[]> = {
   dispatcher: [
-    "nvidia/nvidia-nemotron-nano-9b-v2",
+    "meta/llama-3.2-3b-instruct",
+    "meta/llama-3.1-8b-instruct",
     "nvidia/nemotron-mini-4b-instruct",
-    "microsoft/phi-4-mini-instruct",
   ],
   chat: [
     "nvidia/nemotron-3-super-120b-a12b",
@@ -402,9 +414,9 @@ const TASK_MODEL_MAP: Record<TaskType, string[]> = {
     "meta/llama-3.1-8b-instruct",
   ],
   code: [
-    "qwen/qwen3-coder-480b-a35b-instruct",
-    "deepseek-ai/deepseek-v4-pro",
+    "meta/llama-3.1-8b-instruct",
     "nvidia/nemotron-3-super-120b-a12b",
+    "meta/llama-3.3-70b-instruct",
     "openai/gpt-oss-120b",
     "qwen/qwq-32b",
   ],
@@ -416,8 +428,7 @@ const TASK_MODEL_MAP: Record<TaskType, string[]> = {
     "qwen/qwq-32b",
   ],
   agent: [
-    "qwen/qwen3-coder-480b-a35b-instruct",
-    "deepseek-ai/deepseek-v4-pro",
+    "meta/llama-3.1-8b-instruct",
     "nvidia/nemotron-3-super-120b-a12b",
     "openai/gpt-oss-120b",
     "mistralai/mistral-nemotron",
