@@ -360,11 +360,26 @@ export const startSandbox = internalAction({
 
     const octokit = new Octokit({ auth: token });
 
-    await ctx.runAction(internal.githubSync.autoPushToGithub, {
-      branchId: args.branchId,
-      commitMessage: "build: sync before sandbox",
-    });
-    await ensureSandboxWorkflow(octokit, cfg);
+    try {
+      await ctx.runAction(internal.githubSync.autoPushToGithub, {
+        branchId: args.branchId,
+        commitMessage: "build: sync before sandbox",
+      });
+    } catch (pushErr) {
+      console.error("autoPushToGithub failed, attempting sandbox workflow anyway:", pushErr);
+    }
+    try {
+      await ensureSandboxWorkflow(octokit, cfg);
+    } catch (wfErr) {
+      // Branch may not exist yet — create it from the default branch.
+      const defaultBranch = cfg.branch.replace(/^dev\//, "").split("-")[0] || "main";
+      try {
+        const { data: defaultRef } = await octokit.git.getRef({ owner: cfg.owner, repo: cfg.repo, ref: `heads/${defaultBranch}` });
+        await octokit.git.createRef({ owner: cfg.owner, repo: cfg.repo, ref: `refs/heads/${cfg.branch}`, sha: defaultRef.object.sha });
+      } catch { /* branch may already exist now */ }
+      // Retry workflow file creation.
+      await ensureSandboxWorkflow(octokit, cfg);
+    }
 
     const callbackUrl = `${process.env.CONVEX_SITE_URL}/code/sandbox-callback?branchId=${encodeURIComponent(args.branchId)}`;
 

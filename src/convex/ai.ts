@@ -240,7 +240,7 @@ export const sendMessage = action({
   args: {
     conversationId: v.id("conversations"),
     content: v.string(),
-    mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("designing"), v.literal("strategising"), v.literal("creative-writing"), v.literal("marketing"), v.literal("idea-generation"), v.literal("naming")),
+    mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("study"), v.literal("designing"), v.literal("strategising"), v.literal("creative-writing"), v.literal("marketing"), v.literal("idea-generation"), v.literal("naming")),
     token: v.optional(v.string()),
     model: v.optional(v.string()),
     skipUserSave: v.optional(v.boolean()),
@@ -588,7 +588,7 @@ function adhdToTemperature(adhd: number): number {
 export const guestSendMessage = action({
   args: {
     content: v.string(),
-    mode: v.union(v.literal("chat"), v.literal("study"), v.literal("research"), v.literal("designing"), v.literal("strategising"), v.literal("creative-writing"), v.literal("marketing"), v.literal("idea-generation"), v.literal("naming")),
+    mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("study"), v.literal("designing"), v.literal("strategising"), v.literal("creative-writing"), v.literal("marketing"), v.literal("idea-generation"), v.literal("naming")),
     history: v.array(v.object({ role: v.union(v.literal("user"), v.literal("assistant")), content: v.string() })),
     userContext: v.optional(v.object({
       datetime: v.string(),

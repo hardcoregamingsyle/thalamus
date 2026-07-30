@@ -322,23 +322,18 @@ export const autoPushToGithub = internalAction({
 
       const baseTreeSha = commitData.tree.sha;
 
-      const tree = await Promise.all(
-        files.map(async (file) => {
-          const { data: blob } = await octokit.git.createBlob({
-            owner: config.owner,
-            repo: config.repo,
-            content: Buffer.from(file.content).toString("base64"),
-            encoding: "base64",
-          });
-
-          return {
-            path: file.filepath,
-            mode: "100644" as const,
-            type: "blob" as const,
-            sha: blob.sha,
-          };
-        })
-      );
+      // Sequential blob creation with 50ms spacing to avoid GitHub secondary rate limits.
+      const tree: Array<{ path: string; mode: "100644"; type: "blob"; sha: string }> = [];
+      for (const file of files) {
+        const { data: blob } = await octokit.git.createBlob({
+          owner: config.owner,
+          repo: config.repo,
+          content: Buffer.from(file.content).toString("base64"),
+          encoding: "base64",
+        });
+        tree.push({ path: file.filepath, mode: "100644" as const, type: "blob" as const, sha: blob.sha });
+        await new Promise((r) => setTimeout(r, 50));
+      }
 
       const { data: newTree } = await octokit.git.createTree({
         owner: config.owner,
