@@ -1,10 +1,40 @@
-// MCP tool-call block parsing — pure module (no "use node", no Convex
-// imports) so it is unit-testable with `bun test` and shared between the
-// pipeline and test harnesses. Block form (mirrors CREATEFILE):
-//   <<MCP-CALL server="name" tool="toolName">>
-//   {"json": "arguments"}
-//   <<END.MCP-CALL>>
-export const MCP_CALL_REGEX = /<<MCP-CALL\s+server="([^"]+)"\s+tool="([^"]+)">>\s*([\s\S]*?)<<END\.MCP-CALL>>/g;
+// Unified tool-block parsing — pure module.
+//
+// Agents output tool calls as JSON wrapped in block markers. The old
+// tag-per-tool format (<<RUN-CMD="...">>) was too error-prone — models kept
+// using Unicode guillemets (‹‹...››) or missing closing brackets. The block
+// format is simpler and the same for every tool type:
+//
+//   <<TOOL>>
+//   {"type": "cmd", "command": "npm install"}
+//   <<END.TOOL>>
+//
+//   <<TOOL>>
+//   {"type": "mcp", "server": "agentoverflow", "tool": "search", "args": {...}}
+//   <<END.TOOL>>
+//
+//   <<TOOL>>
+//   {"type": "search", "query": "..."}
+//   <<END.TOOL>>
+//
+//   <<TOOL>>
+//   {"type": "scrape", "url": "https://..."}
+//   <<END.TOOL>>
+//
+// Backwards-compatible: the old tag formats (<<RUN-CMD>>, <<SEARCH-TOOL>>,
+// <<MCP-CALL>>, etc.) are still parsed for existing agent messages, but the
+// prompts now teach the block format only.
+
+// Match any bracket variant agents might output: <<, ‹‹, «
+const O = "(?:<<|‹‹|«|‹)";
+const C = "(?:>>|››|»|›)";
+
+// Unified block: <<TOOL>> JSON body <<END.TOOL>>
+export const TOOL_BLOCK_REGEX = new RegExp(O + "TOOL" + C + "\\s*([\\s\\S]*?)" + O + "END\\.TOOL" + C + "?", "g");
+
+// Legacy MCP-CALL block: <<MCP-CALL server="x" tool="y">> JSON <<END.MCP-CALL>>
+// Accepts Unicode brackets and optional missing close bracket on END tag.
+export const LEGACY_MCP_REGEX = new RegExp(O + "MCP-CALL\\s+server=\"([^\"]+)\"\\s+tool=\"([^\"]+)\"" + C + "\\s*([\\s\\S]*?)" + O + "END\\.MCP-CALL" + C + "?", "g");
 
 export interface ParsedMcpCall {
   server: string;
@@ -12,22 +42,49 @@ export interface ParsedMcpCall {
   args: Record<string, unknown>;
 }
 
+function parseJsonBody(body: string): Record<string, unknown> {
+  try { return JSON.parse(body) as Record<string, unknown>; }
+  catch { return { _raw: body.slice(0, 2000) }; }
+}
+
+export interface ParsedToolCall {
+  type: string;
+  server?: string;
+  tool?: string;
+  command?: string;
+  query?: string;
+  url?: string;
+  args?: Record<string, unknown>;
+}
+
 export function parseMcpCalls(content: string): ParsedMcpCall[] {
   const calls: ParsedMcpCall[] = [];
+
+  // Parse legacy MCP-CALL blocks
+  const legacy = new RegExp(LEGACY_MCP_REGEX.source, "g");
   let match;
-  const regex = new RegExp(MCP_CALL_REGEX.source, "g");
-  while ((match = regex.exec(content)) !== null) {
-    let args: Record<string, unknown> = {};
-    const body = match[3].trim();
-    if (body) {
-      try { args = JSON.parse(body) as Record<string, unknown>; }
-      catch { args = { _raw: body.slice(0, 2000) }; }
-    }
-    calls.push({ server: match[1], tool: match[2], args });
+  while ((match = legacy.exec(content)) !== null) {
+    calls.push({ server: match[1], tool: match[2], args: parseJsonBody(match[3]) });
   }
+
+  // Parse unified TOOL blocks with type=mcp
+  const unified = new RegExp(TOOL_BLOCK_REGEX.source, "g");
+  while ((match = unified.exec(content)) !== null) {
+    const parsed = parseJsonBody(match[1]);
+    if (parsed.type === "mcp" && parsed.server && parsed.tool) {
+      calls.push({
+        server: parsed.server as string,
+        tool: parsed.tool as string,
+        args: (parsed.args as Record<string, unknown>) ?? {},
+      });
+    }
+  }
+
   return calls;
 }
 
 export function stripMcpBlocks(content: string): string {
-  return content.replace(new RegExp(MCP_CALL_REGEX.source, "g"), "").trim();
+  const legacy = new RegExp(LEGACY_MCP_REGEX.source, "g");
+  const unified = new RegExp(TOOL_BLOCK_REGEX.source, "g");
+  return content.replace(legacy, "").replace(unified, "").trim();
 }

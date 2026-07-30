@@ -10,7 +10,7 @@ function generateCustomId(): string {
 
 export const list = query({
   args: {
-    mode: v.optional(v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("study"))),
+    mode: v.optional(v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("study"), v.literal("designing"), v.literal("strategising"), v.literal("creative-writing"), v.literal("marketing"), v.literal("idea-generation"), v.literal("naming"))),
     token: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -63,7 +63,7 @@ export const getByCustomId = query({
 export const create = mutation({
   args: {
     title: v.string(),
-    mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("study")),
+    mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("study"), v.literal("designing"), v.literal("strategising"), v.literal("creative-writing"), v.literal("marketing"), v.literal("idea-generation"), v.literal("naming")),
     token: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -156,7 +156,7 @@ export const getMessages = query({
 export const importGuestConversation = mutation({
   args: {
     token: v.string(),
-    mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("study")),
+    mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("study"), v.literal("designing"), v.literal("strategising"), v.literal("creative-writing"), v.literal("marketing"), v.literal("idea-generation"), v.literal("naming")),
     messages: v.array(v.object({
       role: v.union(v.literal("user"), v.literal("assistant")),
       content: v.string(),

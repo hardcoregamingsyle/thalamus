@@ -25,6 +25,7 @@ import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import {
   callModel,
+  findJsonOps,
   parseAgentOutput,
   parsePlannerOutput,
   performSearch,
@@ -34,32 +35,44 @@ import {
   type ModelTier,
 } from "./agentCore";
 import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./mcpClient";
-import { parseMcpCalls, stripMcpBlocks } from "./mcpParse";
+import { parseMcpCalls, stripMcpBlocks, type ParsedMcpCall } from "./mcpParse";
 
 // MCP loop guard: how many times one agent may be re-run with tool results
 // before the pipeline advances anyway (prevents infinite call loops).
 const MAX_MCP_ROUNDS = 5;
 const MAX_MCP_CALLS_PER_MESSAGE = 5;
 
-// All known agents in their natural order
-const ALL_PLANNING_AGENTS = ["Researcher", "FactCheck", "Analyser", "Planner"] as const;
-const ALL_TASK_AGENTS     = ["Researcher", "FactCheck", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"] as const;
+// All known agents in their natural order.
+// Researcher is a three-agent team: ResearchPlanner → Researcher (data gatherer) → ReportMaker.
+const ALL_PLANNING_AGENTS = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Planner"] as const;
+const ALL_TASK_AGENTS     = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"] as const;
 
 // The full fallback pipelines (used when no Dispatcher output exists)
-const DEFAULT_PLANNING_PIPELINE = ["Researcher", "FactCheck", "Analyser", "Planner"];
-const DEFAULT_TASK_PIPELINE     = ["Researcher", "FactCheck", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
+const DEFAULT_PLANNING_PIPELINE = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Planner"];
+const DEFAULT_TASK_PIPELINE     = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
+
+/** Ensure the research team is always included as a group. */
+function expandResearchTeam(agents: string[]): string[] {
+  const hasAny = agents.some(a => a === "ResearchPlanner" || a === "Researcher" || a === "ReportMaker");
+  if (!hasAny) return agents;
+  const set = new Set(agents);
+  set.add("ResearchPlanner");
+  set.add("Researcher");
+  set.add("ReportMaker");
+  return [...set];
+}
 
 /** Build the actual planning pipeline from the Dispatcher's chosen agent list. */
 function buildPlanningPipeline(dispatched: string[]): string[] {
   if (!dispatched || dispatched.length === 0) return DEFAULT_PLANNING_PIPELINE;
-  return ALL_PLANNING_AGENTS.filter(a => dispatched.includes(a));
+  return ALL_PLANNING_AGENTS.filter(a => expandResearchTeam(dispatched).includes(a));
 }
 
 /** Build the actual task pipeline from the Dispatcher's chosen agent list.
  *  Coder and Critic are always guaranteed to appear (they were enforced at dispatch time). */
 function buildTaskPipeline(dispatched: string[]): string[] {
   if (!dispatched || dispatched.length === 0) return DEFAULT_TASK_PIPELINE;
-  return ALL_TASK_AGENTS.filter(a => dispatched.includes(a));
+  return ALL_TASK_AGENTS.filter(a => expandResearchTeam(dispatched).includes(a));
 }
 
 /** Parse and validate the Dispatcher's JSON output. Returns null on failure. */
@@ -71,7 +84,7 @@ function parseDispatcherOutput(
     const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
     const parsed = JSON.parse(cleaned);
     if (!Array.isArray(parsed.agents) || parsed.agents.length === 0) return null;
-    const VALID = new Set(["Researcher","FactCheck","Analyser","Planner","Coder","Optimiser","Organizer","Tester","Hacker","Critic"]);
+    const VALID = new Set(["ResearchPlanner","Researcher","ReportMaker","FactCheck","Analyser","Planner","Coder","Optimiser","Organizer","Tester","Hacker","Critic"]);
     const agents = (parsed.agents as string[]).filter(a => VALID.has(a));
     // Always guarantee Coder and Critic
     if (!agents.includes("Coder"))  agents.push("Coder");
@@ -120,9 +133,9 @@ function buildFileContext(files: Array<{ filepath: string; content: string }>, m
   return ctx;
 }
 
-// Parse commands from agent output
-// Agents are instructed (in AGENT_SYSTEM_PROMPTS) to emit <<RUN-CMD="...">>.
-// Accept the legacy <<RUN-COMMAND="...">> spelling too so older prompts still work.
+// Parse commands from agent output.
+// Primary format (JSON ops): {"op":"cmd","command":"npm install"}
+// Legacy formats: <<TOOL>> ... <<END.TOOL>>, <<RUN-CMD="...">>, <<RUN-COMMAND="...">>
 // The capture accepts any char (newlines included) plus any quote NOT followed
 // by `>>`, terminating precisely at the closing `">>`. So a command may contain
 // double quotes — `node -e 'console.log("ok")' 2>&1` and the like — or span
@@ -130,11 +143,27 @@ function buildFileContext(files: Array<{ filepath: string; content: string }>, m
 // command with embedded quotes (the exact shape the prompts' own examples use).
 function parseCommands(content: string): string[] {
   const commands: string[] = [];
-  const regex = /<<RUN-(?:CMD|COMMAND)="((?:[^"]|"(?!>>))*)">>/g;
+
+  // Legacy tag format: <<RUN-CMD="...">>
+  const legacy = /<<RUN-(?:CMD|COMMAND)="((?:[^"]|"(?!>>))*)">>/g;
   let match;
-  while ((match = regex.exec(content)) !== null) {
+  while ((match = legacy.exec(content)) !== null) {
     commands.push(match[1]);
   }
+
+  // New unified block format: <<TOOL>> {"type":"cmd","command":"..."} <<END.TOOL>>
+  const O = "(?:<<|‹‹|«|‹)";
+  const C = "(?:>>|››|»|›)";
+  const block = new RegExp(O + "TOOL" + C + "\\s*([\\s\\S]*?)" + O + "END\\.TOOL" + C + "?", "g");
+  while ((match = block.exec(content)) !== null) {
+    try {
+      const parsed = JSON.parse(match[1].trim());
+      if (parsed.type === "cmd" && parsed.command) {
+        commands.push(parsed.command);
+      }
+    } catch { /* not valid JSON — skip */ }
+  }
+
   return commands;
 }
 
@@ -230,7 +259,7 @@ async function callModelWithStreaming(
     await ctx.runMutation(internal.codeBranches.setStreamingContent, {
       branchId, content: result.text.slice(0, sent), agentName,
     });
-    if (sent < result.text.length) await new Promise((r) => setTimeout(r, 80));
+    if (sent < result.text.length) await new Promise((r) => setTimeout(r, 20));
   }
   return result;
 }
@@ -515,7 +544,8 @@ export const runPipelineAction = internalAction({
       // command themselves, so nothing here reaches out to an MCP on their behalf.
 
       // ── Dispatcher phase ──────────────────────────────────────────────────
-      // Runs once at the very start to decide which agents are needed.
+      // Runs at the start AND between every task to decide which agents are
+      // needed for the current subtask (agents are re-evaluated per-task).
       if (executionPhase === "dispatching" || currentPhase === "Dispatcher") {
         await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
           branchId,
@@ -524,7 +554,18 @@ export const runPipelineAction = internalAction({
           phase: "Dispatcher",
         });
 
-        const dispatchPrompt = `## Task to analyse\n${task}\n\n## Existing project files\n${files.length > 0 ? files.map(f => `- ${f.filepath}`).join("\n") : "None (greenfield project)"}`;
+        // Build subtask context so the Dispatcher can make a per-task decision
+        let subtaskContext = "";
+        let plannerTasks: Array<{ title: string; description: string; dependencies?: string[] }> = [];
+        try { plannerTasks = JSON.parse(branch.plannerTasksJson || "[]"); } catch { /* ignore */ }
+        if (plannerTasks.length > 0 && currentTaskIndex >= 0 && currentTaskIndex < plannerTasks.length) {
+          const ct = plannerTasks[currentTaskIndex];
+          const completed = plannerTasks.slice(0, currentTaskIndex);
+          subtaskContext = `\n## Overall Plan (${plannerTasks.length} tasks)\n${plannerTasks.map((t, i) => `${i < currentTaskIndex ? "✓" : (i === currentTaskIndex ? "→" : "○")} Task ${i + 1}: ${t.title}`).join("\n")}\n\n## Current Task (${currentTaskIndex + 1}/${plannerTasks.length}): ${ct.title}\n${ct.description}\n\n### Already completed (${completed.length} done)\n${completed.map((t, i) => `${i + 1}. ${t.title}`).join("\n")}`;
+        }
+
+        const dispatchPrompt = `## Project Goal\n${task}${subtaskContext}\n\n## Existing project files\n${files.length > 0 ? files.map(f => `- ${f.filepath}`).join("\n") : "None (greenfield project)"}
+\n## Previously dispatched agents\n${dispatchedAgents.length > 0 ? dispatchedAgents.join(", ") : "None yet (first dispatch)"}`;
         const dispatchResult = await callModelWithStreaming(
           ctx, dispatchPrompt, AGENT_SYSTEM_PROMPTS["Dispatcher"] ?? "",
           branchId, "Dispatcher", geminiKeys, dbCreds,
@@ -696,7 +737,7 @@ export const runPipelineAction = internalAction({
               recentFeedback ? `## Previous Feedback (from Tester/Critic/Hacker)\n${recentFeedback}` : "",
               commandContext,
               `## Pipeline Context\n${context}`,
-              `## Tool Usage\nIMPORTANT: Only wrapped commands execute. Bare shell commands (cat, ls, grep, curl, node, npm, cd, etc.) written in plain text will NOT run — they are ignored. Every command MUST be wrapped in <<RUN-CMD="...">>.\nCorrect: <<RUN-CMD="npm install 2>&1\n">>\nCorrect: <<RUN-CMD="cat package.json\n">>\nWrong: cat package.json\nWrong: npm install\nWrong: ls -la src/\n\nSyntax: <<RUN-CMD="your shell command here">>\nRequest API keys: <<REQUEST-API-KEY name="VAR" description="..." howToGet="...">>`,
+              `## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">> (legacy format, no longer supported)`,
               mcpToolSection,
             ].filter(Boolean).join("\n\n");
           }
@@ -781,7 +822,7 @@ export const runPipelineAction = internalAction({
           .map((r, i) => `[RESULT ${i + 1} for "${r.query}"]:\n${r.result}`)
           .join("\n\n---\n\n");
         // Re-call the same agent with search results appended
-        const searchPrompt = `${agentOutput}\n\n---\n\nSEARCH RESULTS:\n${searchContext}\n\nNow continue your work using the above information. Do NOT emit any more <<SEARCH-TOOL>> or <<SCRAPE-URL>> tags.`;
+        const searchPrompt = `${agentOutput}\n\n---\n\nSEARCH RESULTS:\n${searchContext}\n\nNow continue your work using the above information. Do NOT emit any more <<TOOL>> blocks for search or scrape.`;
         const searchCall = await callModelWithStreaming(ctx, searchPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments);
         agentOutput = searchCall.text;
         await bill(`${currentPhase.toLowerCase()}-search`, searchCall);
@@ -899,7 +940,13 @@ export const runPipelineAction = internalAction({
       // and re-run the SAME agent so it can use them. Bounded by
       // MAX_MCP_ROUNDS; past the cap the calls are stripped and the pipeline
       // advances normally (results from earlier rounds stay in context).
-      const mcpCalls = parseMcpCalls(agentOutput);
+      // Supports both legacy <<MCP-CALL>> / <<TOOL>> blocks and JSON ops format
+      // ({"op":"mcp","server":"...","tool":"...","args":{...}}).
+      const legacyMcpCalls = parseMcpCalls(agentOutput);
+      const jsonMcpCalls = (parsed.mcpOps ?? [])
+        .filter((op) => op.server && op.tool)
+        .map((op) => ({ server: op.server, tool: op.tool, args: op.args ?? {} }));
+      const mcpCalls: ParsedMcpCall[] = legacyMcpCalls.length > 0 ? legacyMcpCalls : jsonMcpCalls;
       if (mcpCalls.length > 0 && mcpServers.length > 0) {
         const mcpRound = branch.mcpRoundCount ?? 0;
         if (mcpRound < MAX_MCP_ROUNDS) {
@@ -1056,20 +1103,23 @@ export const runPipelineAction = internalAction({
 
           const nextTaskIndex = currentTaskIndex + 1;
           if (nextTaskIndex < plannerTasks.length) {
-            // More tasks — restart task pipeline from first agent
-            const taskPipeline = buildTaskPipeline(dispatchedAgents);
-            const firstTaskAgent = taskPipeline[0] ?? "Coder";
+            // Re-run the Dispatcher before every new task so it can decide the
+            // optimal agent set for this specific subtask — earlier agents may
+            // have finished their work, and later tasks may need a different
+            // mix (e.g. after Coder writes code, Tester may not be needed for
+            // a documentation task). The saved dispatchedAgentsJson is preserved;
+            // the Dispatcher re-evaluates against the fresh task context.
             round++;
             await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
               branchId,
               status: "idle",
-              currentAgent: firstTaskAgent,
-              phase: firstTaskAgent,
-              executionPhase: "executing",
+              currentAgent: "Dispatcher",
+              phase: "Dispatcher",
+              executionPhase: "dispatching",
               round,
               totalMessages,
               currentTaskIndex: nextTaskIndex,
-              criticRetryCount: 0, // fresh task — reset the Critic retry budget
+              criticRetryCount: 0,
               mcpRoundCount: 0,
             });
 

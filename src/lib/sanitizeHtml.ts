@@ -14,9 +14,9 @@ const ALLOWED_TAGS = [
   "h1", "h2", "h3", "h4", "h5", "h6", "p", "br", "hr", "span", "div",
   "strong", "b", "em", "i", "u", "s", "del", "mark", "sub", "sup", "small",
   "ul", "ol", "li", "blockquote", "pre", "code", "kbd",
-  "a", "table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption",
+  "a", "table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption", "input",
 ];
-const ALLOWED_ATTR = ["style", "class", "href", "title", "target", "rel", "colspan", "rowspan", "align"];
+const ALLOWED_ATTR = ["style", "class", "href", "title", "target", "rel", "colspan", "rowspan", "align", "type", "value", "data-ask", "data-mcq", "disabled"];
 
 let hookInstalled = false;
 function ensureHook() {

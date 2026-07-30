@@ -6,7 +6,7 @@ import { useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Send, Loader2, CheckCircle2, Pause, Play, FileCode, Database, Activity, Code2, Monitor, Key, BarChart3, GitBranch, Rocket, ChevronRight, Menu, X } from "lucide-react";
+import { ArrowLeft, Send, Loader2, CheckCircle2, Pause, Play, FileCode, Database, Activity, Code2, Monitor, Key, BarChart3, GitBranch, Rocket, ChevronRight, Menu, X, LayoutDashboard } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -610,7 +610,14 @@ export default function CodeWorkspace() {
         </div>
 
         {/* Sidebar Footer */}
-        <div className="p-3 border-t shrink-0">
+        <div className="p-3 border-t shrink-0 space-y-1">
+          <button
+            onClick={() => navigate("/portal/chat")}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors hover:bg-muted text-muted-foreground hover:text-foreground"
+          >
+            <LayoutDashboard className="h-4 w-4 shrink-0" />
+            <span className="flex-1 text-left">Portal</span>
+          </button>
           <button
             onClick={() => navigate(`/portal/code/${projectId}/${branchId}`)}
             className={cn(

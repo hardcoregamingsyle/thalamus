@@ -466,7 +466,7 @@ export function agentToTaskType(agentName: string): TaskType {
   if (name.includes("factcheck") || name.includes("fact.check") || name.includes("fact_check") || name.includes("verifier")) return "factcheck";
   if (name.includes("coder") || name.includes("optimiser") || name.includes("architect")) return "code";
   if (name.includes("analyser") || name.includes("planner") || name.includes("critic")) return "reasoning";
-  if (name.includes("researcher") || name.includes("research") || name.includes("scout")) return "research";
+  if (name.includes("researcher") || name.includes("research") || name.includes("reportmaker") || name.includes("scout")) return "research";
   if (name.includes("tester") || name.includes("hacker") || name.includes("auditor") || name.includes("security")) return "agent";
   return "chat"; // default for unknown agents
 }

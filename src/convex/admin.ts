@@ -130,14 +130,6 @@ export const listUsers = query({
   },
 });
 
-export const getUserCreditBatches = query({
-  args: { adminToken: v.string(), userId: v.id("users") },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx, args.adminToken);
-    return await ctx.db.query("creditBatches").withIndex("by_user", q => q.eq("userId", args.userId)).take(50);
-  },
-});
-
 export const setDailyAllowance = mutation({
   args: { adminToken: v.string(), userId: v.id("users"), dailyAgentBucks: v.number() },
   handler: async (ctx, args) => {
@@ -187,54 +179,6 @@ export const deleteSuggestion = mutation({
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.adminToken);
     await ctx.db.delete(args.id);
-  },
-});
-
-// Model Pricing
-export const listModelPricing = query({
-  args: { adminToken: v.string() },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx, args.adminToken);
-    return await ctx.db.query("modelPricing").take(50);
-  },
-});
-
-export const upsertModelPricing = mutation({
-  args: {
-    adminToken: v.string(),
-    modelId: v.string(),
-    displayName: v.string(),
-    inputCentsPerMillion: v.number(),
-    outputCentsPerMillion: v.number(),
-    abMultiplier: v.number(),
-    isActive: v.boolean(),
-    updatedBy: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx, args.adminToken);
-    const existing = await ctx.db.query("modelPricing").withIndex("by_model", q => q.eq("modelId", args.modelId)).take(1);
-    if (existing.length > 0) {
-      await ctx.db.patch(existing[0]._id, {
-        displayName: args.displayName,
-        inputCentsPerMillion: args.inputCentsPerMillion,
-        outputCentsPerMillion: args.outputCentsPerMillion,
-        abMultiplier: args.abMultiplier,
-        isActive: args.isActive,
-        updatedAt: Date.now(),
-        updatedBy: args.updatedBy,
-      });
-    } else {
-      await ctx.db.insert("modelPricing", {
-        modelId: args.modelId,
-        displayName: args.displayName,
-        inputCentsPerMillion: args.inputCentsPerMillion,
-        outputCentsPerMillion: args.outputCentsPerMillion,
-        abMultiplier: args.abMultiplier,
-        isActive: args.isActive,
-        updatedAt: Date.now(),
-        updatedBy: args.updatedBy,
-      });
-    }
   },
 });
 

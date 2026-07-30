@@ -473,6 +473,18 @@ export const sendStudyMessage = action({
       }
     }
 
+    // Process JSON-format ask ops into interactive HTML elements
+    responseContent = responseContent
+      .replace(/\{"op":"ask-question","question":"([^"]+)"\}/g, (_, question) =>
+        `<div class="thalamus-ask" data-ask='${JSON.stringify({type:"question",question})}' style="border:1px solid #6366f1;border-radius:8px;padding:1em;margin:0.8em 0;background:rgba(99,102,241,0.08)"><p style="margin:0 0 0.5em;font-weight:bold;color:#e5e7eb">Question:</p><p style="margin:0 0 0.8em;color:#d1d5db">${question}</p><input type="text" style="width:100%;padding:0.5em;border:1px solid #4b5563;border-radius:6px;background:#1f2937;color:#e5e7eb" placeholder="Type your answer here..." disabled /><p style="margin:0.5em 0 0;font-size:0.8em;color:#9ca3af">Type your answer and send - I'll grade it.</p></div>`
+      )
+      .replace(/\{"op":"ask-mcq","question":"([^"]+)","options":(\[[^\]]+\]),"correct":(\d+)\}/g, (_, question, optionsJson, correctIdx) => {
+        try {
+          const opts = JSON.parse(optionsJson) as string[];
+          return `<div class="thalamus-mcq" data-mcq='${JSON.stringify({type:"mcq",question,options:opts,correct:parseInt(correctIdx,10)})}' style="border:1px solid #6366f1;border-radius:8px;padding:1em;margin:0.8em 0;background:rgba(99,102,241,0.08)"><p style="margin:0 0 0.5em;font-weight:bold;color:#e5e7eb">Multiple Choice:</p><p style="margin:0 0 0.8em;color:#d1d5db">${question}</p>${opts.map((opt,i) => `<div style="padding:0.4em 0.6em;margin:0.2em 0;border:1px solid #4b5563;border-radius:6px;background:#1f2937;color:#d1d5db"><input type="radio" disabled /> ${opt}</div>`).join("")}<p style="margin:0.5em 0 0;font-size:0.8em;color:#9ca3af">Select an option and send - I'll tell you if you're right.</p></div>`;
+        } catch { return `<p>[MCQ: ${question}]</p>`; }
+      });
+
     const tokensUsed = inputTokens + outputTokens;
     const inputCostCents = (inputTokens / 1_000_000) * 60;
     const outputCostCents = (outputTokens / 1_000_000) * 240;

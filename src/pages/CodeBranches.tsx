@@ -6,7 +6,7 @@ import { useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Plus, GitBranch, Clock, Play, Pause, CheckCircle2, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, GitBranch, Clock, Play, Pause, CheckCircle2, Loader2, LayoutDashboard } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { NewBranchDialog } from "@/components/code/NewBranchDialog";
@@ -122,10 +122,16 @@ export default function CodeBranches() {
                 {project?.description || "Manage your project branches"}
               </p>
             </div>
-            <Button size="lg" className="gap-2" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="h-5 w-5" />
-              New Branch
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/portal/chat")}>
+                <LayoutDashboard className="h-4 w-4" />
+                Portal
+              </Button>
+              <Button size="lg" className="gap-2" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="h-5 w-5" />
+                New Branch
+              </Button>
+            </div>
 
             <NewBranchDialog
               open={isCreateOpen}

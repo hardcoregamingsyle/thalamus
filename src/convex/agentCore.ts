@@ -13,6 +13,7 @@ export {
   callSiliconFlow,
   callSiliconFlowStreaming,
   generateImage,
+  generateImageHtml,
   generateVideo,
   MODEL_CATALOG,
   findModel,
@@ -139,7 +140,7 @@ function mapModelIdToOllama(modelId: string): string {
   if (l.includes("dispatcher") || l.includes("organiser") || l.includes("organizer") || l.includes("summarizer")) return "gemma4:31b";
   if (l.includes("coder") || l.includes("optimiser") || l.includes("architect")) return "minimax-m3";
   if (l.includes("analyser") || l.includes("planner") || l.includes("critic") || l.includes("reasoning")) return "minimax-m3";
-  if (l.includes("researcher") || l.includes("research") || l.includes("scout")) return "gpt-oss:120b";
+  if (l.includes("researchplanner") || l.includes("researcher") || l.includes("research") || l.includes("reportmaker") || l.includes("scout")) return "gpt-oss:120b";
   if (l.includes("factcheck") || l.includes("fact.check") || l.includes("fact_check")) return "minimax-m3";
   if (l.includes("tester") || l.includes("hacker") || l.includes("security")) return "minimax-m3";
   return DEFAULT_CHAT_MODEL;
@@ -234,6 +235,7 @@ export interface FileOp {
 export interface SearchOp { query: string; }
 export interface ScrapeOp { url: string; }
 export interface CmdOp { command: string; }
+export interface McpOp { server: string; tool: string; args?: Record<string, unknown>; }
 
 export interface InfoField {
   name: string;
@@ -271,6 +273,7 @@ export interface ParsedOutput {
   searchOps: SearchOp[];
   scrapeOps: ScrapeOp[];
   cmdOps: CmdOp[];
+  mcpOps: McpOp[];
   cleanContent: string;
   testerResult?: "pass" | "fail";
   testerFailReason?: string;
@@ -279,23 +282,229 @@ export interface ParsedOutput {
   deployCommands?: string[];
   infoRequest?: InfoRequest;
   instructions?: Instructions;
-  changeMode?: "Code" | "Chat" | "Minor"; // AI-requested mode switch
+  changeMode?: "Code" | "Chat" | "Minor";
+  requestApiKey?: { name: string; description: string; howToGet: string };
 }
 
-// Agents "call tools" by emitting inline <<TAG>> markers in their text output
-// (there is no native tool-use API in this path). This parser extracts every
-// operation and replaces each marker in cleanContent with a human-readable
-// placeholder, because cleanContent is what gets stored and shown in the chat
-// UI — raw markers (which can embed entire file bodies) must never reach it.
+// ── JSON ops parser ───────────────────────────────────────────────────────────
+// Every tool call is a single-line JSON object with an "op" field. No <<>>
+// markers, no angle-bracket syntax, no Unicode bracket variants.
+//
+// Format for every operation:
+//   {"op":"cmd","command":"npm install"}
+//   {"op":"search","query":"latest version of React"}
+//   {"op":"create-file","path":"src/a.ts","content":"export const x = 1;"}
+//   {"op":"mcp","server":"agentoverflow","tool":"search","args":{"query":"..."}}
+//   {"op":"ask-question","question":"What is the capital of France?"}
+//   {"op":"ask-mcq","question":"Which planet?","options":["Mars","Venus"],"correct":0}
+//   {"op":"test-success"}
+//   {"op":"test-failed","reason":"reason here"}
+//   {"op":"security-pass"}
+//   {"op":"security-fail"}
+//   {"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}
+//
+// The parser finds these by scanning for `{"op":"` and reading the balanced {}.
+// Multi-line content (file bodies) uses \n escapes inside the JSON string.
+//
+// Legacy <<TAG>> markers (<<RUN-CMD="...">>, <<CREATEFILE="...">>, etc.) are
+// still parsed as fallback for older conversations.
+
+/** Scan content for balanced JSON objects starting with {"op":" and parse them. */
+export function findJsonOps(content: string): Array<Record<string, unknown>> {
+  const results: Array<Record<string, unknown>> = [];
+  const startMarker = '{"op":"';
+  let i = 0;
+  while (i < content.length) {
+    const start = content.indexOf(startMarker, i);
+    if (start === -1) break;
+
+    // Scan for the matching closing } tracking brace depth and string state
+    let depth = 0;
+    let inStr = false;
+    let escaped = false;
+    let end = -1;
+    for (let j = start; j < content.length; j++) {
+      const ch = content[j];
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\' && inStr) { escaped = true; continue; }
+      if (ch === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (depth === 0) { end = j + 1; break; } }
+    }
+    if (end === -1) break;
+
+    try {
+      const parsed = JSON.parse(content.slice(start, end)) as Record<string, unknown>;
+      if (typeof parsed.op === "string") results.push(parsed);
+    } catch { /* skip invalid JSON */ }
+
+    i = end;
+  }
+  return results;
+}
+
+/** Replace a parsed JSON op with a visible placeholder string in the content. */
+function opPlaceholder(op: Record<string, unknown>): string {
+  switch (op.op) {
+    case "create-file": return `[FILE CREATED: ${op.path}]`;
+    case "edit-file":   return `[FILE EDITED: ${op.path}]`;
+    case "delete-file": return `[FILE DELETED: ${op.path}]`;
+    case "cmd":         return `[CMD: ${String(op.command ?? "").slice(0, 80)}]`;
+    case "search":      return `[SEARCHING: ${String(op.query ?? "").slice(0, 80)}]`;
+    case "scrape":      return `[SCRAPING: ${String(op.url ?? "").slice(0, 80)}]`;
+    case "test-success": return "[TEST: PASSED ✓]";
+    case "test-failed":  return `[TEST: FAILED - ${String(op.reason ?? "unknown")}]`;
+    case "security-pass": return "[SECURITY: PASSED ✓]";
+    case "security-fail": return "[SECURITY: FAILED]";
+    default: return `[OP: ${op.op}]`;
+  }
+}
+
+// Legacy tag parsers — keep for backwards compatibility with older conversations.
+// Match any bracket variant agents might output: <<, ‹‹, «
+const O = "(?:<<|‹‹|«|‹)";
+const C = "(?:>>|››|»|›)";
+
 export function parseAgentOutput(content: string): ParsedOutput {
   const fileOps: FileOp[] = [];
   const searchOps: SearchOp[] = [];
   const scrapeOps: ScrapeOp[] = [];
   const cmdOps: CmdOp[] = [];
+  const mcpOps: McpOp[] = [];
   let cleanContent = content;
 
-  // Support both <<TAG>> (new) and <<<<<TAG>>>>> (legacy) formats
-  const createRegex = /(?:<<<<<|<<)CREATEFILE="([^"]+)"(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.CREATEFILE(?:>>>>>|>>)/g;
+  // ── Primary: JSON ops format ──────────────────────────────────────────────
+  // Agents now emit single-line {"op":"..."} JSON objects. Legacy <<TAG>> markers
+  // are parsed as fallback below. JSON ops are the source of truth — if an op
+  // was already consumed it is not re-parsed from legacy markers.
+
+  // Track which filepaths we already processed from JSON ops (avoids duplication
+  // with legacy fallback). Variables for legacy fallback state.
+  let testerResult: "pass" | "fail" | undefined;
+  let testerFailReason: string | undefined;
+  let hackerResult: "pass" | "fail" | undefined;
+  let criticResult: "pass" | "fail" | undefined;
+  let deployCommands: string[] | undefined;
+  let infoRequest: InfoRequest | undefined;
+  let instructions: Instructions | undefined;
+  let changeMode: "Code" | "Chat" | "Minor" | undefined;
+  let requestApiKey: { name: string; description: string; howToGet: string } | undefined;
+  const processedPaths = new Set<string>();
+
+  const jsonOps = findJsonOps(content);
+  for (const op of jsonOps) {
+    const raw = JSON.stringify(op);
+    switch (op.op) {
+      case "create-file":
+        if (typeof op.path === "string" && typeof op.content === "string") {
+          fileOps.push({ type: "create", filepath: op.path, content: op.content });
+          processedPaths.add(`create:${op.path}`);
+          cleanContent = cleanContent.replace(raw, `[FILE CREATED: ${op.path}]`);
+        }
+        break;
+      case "edit-file":
+        if (typeof op.path === "string" && typeof op.content === "string") {
+          fileOps.push({ type: "edit", filepath: op.path, content: op.content });
+          processedPaths.add(`edit:${op.path}`);
+          cleanContent = cleanContent.replace(raw, `[FILE EDITED: ${op.path}]`);
+        }
+        break;
+      case "delete-file":
+        if (typeof op.path === "string") {
+          fileOps.push({ type: "delete", filepath: op.path });
+          processedPaths.add(`delete:${op.path}`);
+          cleanContent = cleanContent.replace(raw, `[FILE DELETED: ${op.path}]`);
+        }
+        break;
+      case "cmd":
+        if (typeof op.command === "string") {
+          cmdOps.push({ command: op.command });
+          cleanContent = cleanContent.replace(raw, `[CMD: ${op.command.slice(0, 80)}]`);
+        }
+        break;
+      case "search":
+        if (typeof op.query === "string") {
+          searchOps.push({ query: op.query });
+          cleanContent = cleanContent.replace(raw, `[SEARCHING: ${op.query.slice(0, 80)}]`);
+        }
+        break;
+      case "scrape":
+        if (typeof op.url === "string") {
+          scrapeOps.push({ url: op.url });
+          cleanContent = cleanContent.replace(raw, `[SCRAPING: ${op.url.slice(0, 80)}]`);
+        }
+        break;
+      case "mcp":
+        if (typeof op.server === "string" && typeof op.tool === "string") {
+          mcpOps.push({ server: op.server, tool: op.tool, args: op.args as Record<string, unknown> | undefined });
+          cleanContent = cleanContent.replace(raw, `[MCP: ${op.server}/${op.tool}]`);
+        } else {
+          cleanContent = cleanContent.replace(raw, `[MCP: invalid]`);
+        }
+        break;
+      case "test-success":
+        testerResult ??= "pass";
+        cleanContent = cleanContent.replace(raw, "[TEST: PASSED ✓]");
+        break;
+      case "test-failed":
+        testerResult = "fail";
+        testerFailReason = String(op.reason ?? "unknown");
+        cleanContent = cleanContent.replace(raw, `[TEST: FAILED - ${testerFailReason}]`);
+        break;
+      case "security-pass":
+        hackerResult ??= "pass";
+        criticResult ??= "pass";
+        cleanContent = cleanContent.replace(raw, "[SECURITY: PASSED ✓]");
+        break;
+      case "security-fail":
+        hackerResult = "fail";
+        criticResult = "fail";
+        cleanContent = cleanContent.replace(raw, "[SECURITY: FAILED]");
+        break;
+      case "deploy-commands":
+        if (Array.isArray(op.commands) && op.commands.length > 0) {
+          deployCommands = op.commands.map(String);
+          cleanContent = cleanContent.replace(raw, `[DEPLOY COMMANDS SET: ${deployCommands.length} command(s)]`);
+        }
+        break;
+      case "request-api-key":
+        if (typeof op.name === "string" && typeof op.description === "string" && typeof op.howToGet === "string") {
+          requestApiKey = { name: op.name, description: op.description, howToGet: op.howToGet };
+          cleanContent = cleanContent.replace(raw, `[API KEY REQUIRED: ${op.name}]`);
+        }
+        break;
+      case "get-info":
+        if (op.fields && Array.isArray(op.fields)) {
+          infoRequest = op as unknown as InfoRequest;
+          cleanContent = cleanContent.replace(raw, `[INFO REQUESTED: ${String(op.title ?? "?")}]`);
+        }
+        break;
+      case "instructions":
+        if (op.steps && Array.isArray(op.steps)) {
+          instructions = op as unknown as Instructions;
+          cleanContent = cleanContent.replace(raw, `[INSTRUCTIONS PROVIDED: ${String(op.title ?? "?")}]`);
+        }
+        break;
+      case "change-mode":
+        if (typeof op.mode === "string") {
+          const validModes = ["Code", "Chat", "Minor"];
+          changeMode = validModes.includes(op.mode) ? (op.mode as "Code" | "Chat" | "Minor") : undefined;
+          cleanContent = cleanContent.replace(raw, `[CHANGE MODE: ${op.mode}]`);
+        }
+        break;
+      case "generate-image":
+        if (typeof op.prompt === "string") {
+          const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(op.prompt.slice(0, 500))}?width=${(op.width as number) ?? 1024}&height=${(op.height as number) ?? 1024}&model=${(op.model as string) ?? "flux"}&seed=${Math.floor(Math.random() * 100000)}`;
+          const imgHtml = `<div class="pollinations-image"><img src="${imgUrl}" alt="${op.prompt.replace(/"/g, "&quot;").slice(0, 200)}" style="max-width:100%;border-radius:8px;margin:8px 0;" loading="lazy" /><p style="font-size:11px;opacity:0.6;margin:2px 0;">Generated by Pollinations AI · <a href="${imgUrl}" target="_blank" rel="noopener">Open full size</a></p></div>`;
+          cleanContent = cleanContent.replace(raw, imgHtml);
+        }
+        break;
+    }
+  }
+
+  // ── Fallback: legacy <<TAG>> markers for backward compat ──────────────────
+  const createRegex = new RegExp("(?:<<<<<|${O})CREATEFILE=\"([^\"]+)\"(?:>>>>>|${C})([\\s\\S]*?)(?:<<<<<|${O})END\\.CREATEFILE(?:>>>>>|${C})", "g");
   let match;
   while ((match = createRegex.exec(content)) !== null) {
     fileOps.push({ type: "create", filepath: match[1], content: match[2].trim() });
@@ -304,169 +513,104 @@ export function parseAgentOutput(content: string): ParsedOutput {
 
   // Intentional: EDITFILE blocks close with END.CREATEFILE — that is the tag
   // the agent prompts specify for both block types. Do not "fix" to END.EDITFILE.
-  const editRegex = /(?:<<<<<|<<)EDITFILE="([^"]+)"(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.CREATEFILE(?:>>>>>|>>)/g;
+  const editRegex = new RegExp("(?:<<<<<|${O})EDITFILE=\"([^\"]+)\"(?:>>>>>|${C})([\\s\\S]*?)(?:<<<<<|${O})END\\.CREATEFILE(?:>>>>>|${C})", "g");
   while ((match = editRegex.exec(content)) !== null) {
     fileOps.push({ type: "edit", filepath: match[1], content: match[2].trim() });
     cleanContent = cleanContent.replace(match[0], `[FILE EDITED: ${match[1]}]`);
   }
 
-  for (const m of content.matchAll(/(?:<<<<<|<<)DELETE="([^"]+)"(?:>>>>>|>>)/g)) {
-    fileOps.push({ type: "delete", filepath: m[1] });
+  // Legacy fallback — only applies if JSON ops didn't already consume the op.
+  const deleteRe = new RegExp("(?:<<<<<|${O})DELETE=\"([^\"]+)\"(?:>>>>>|${C})", "g");
+  for (const m of content.matchAll(deleteRe)) {
+    if (!processedPaths.has(`delete:${m[1]}`)) fileOps.push({ type: "delete", filepath: m[1] });
     cleanContent = cleanContent.replace(m[0], `[FILE DELETED: ${m[1]}]`);
   }
 
-  // These args are free-form and may contain double quotes — a shell command
-  // like node -e 'console.log("ok")', a search query, a URL with a quoted
-  // fragment. `(?:[^"]|"(?!>>))*` accepts any char (newlines included, so
-  // multi-line values still work) plus any quote NOT immediately followed by
-  // `>>`, terminating precisely at the closing `">>`. The old [^"]+ died at the
-  // first inner quote and silently dropped the whole marker.
-  for (const m of content.matchAll(/(?:<<<<<|<<)SEARCH-TOOL="((?:[^"]|"(?!>>))*)"(?:>>>>>|>>)/g)) {
-    searchOps.push({ query: m[1] });
+  const searchRe = new RegExp("(?:<<<<<|${O})SEARCH-TOOL=\"((?:[^\"]|\"(?!>))*)\"(?:>>>>>|${C})", "g");
+  for (const m of content.matchAll(searchRe)) {
+    if (!searchOps.some(s => s.query === m[1])) searchOps.push({ query: m[1] });
     cleanContent = cleanContent.replace(m[0], `[SEARCHING: ${m[1]}]`);
   }
 
-  for (const m of content.matchAll(/(?:<<<<<|<<)SCRAPE-URL="((?:[^"]|"(?!>>))*)"(?:>>>>>|>>)/g)) {
-    scrapeOps.push({ url: m[1] });
+  const scrapeRe = new RegExp("(?:<<<<<|${O})SCRAPE-URL=\"((?:[^\"]|\"(?!>))*)\"(?:>>>>>|${C})", "g");
+  for (const m of content.matchAll(scrapeRe)) {
+    if (!scrapeOps.some(s => s.url === m[1])) scrapeOps.push({ url: m[1] });
     cleanContent = cleanContent.replace(m[0], `[SCRAPING: ${m[1]}]`);
   }
 
-  for (const m of content.matchAll(/(?:<<<<<|<<)RUN-CMD="((?:[^"]|"(?!>>))*)"(?:>>>>>|>>)/g)) {
-    cmdOps.push({ command: m[1] });
+  const cmdRe = new RegExp("(?:<<<<<|${O})RUN-CMD=\"((?:[^\"]|\"(?!>))*)\"(?:>>>>>|${C})", "g");
+  for (const m of content.matchAll(cmdRe)) {
+    if (!cmdOps.some(c => c.command === m[1])) cmdOps.push({ command: m[1] });
     cleanContent = cleanContent.replace(m[0], `[CMD: ${m[1]}]`);
   }
 
-  let testerResult: "pass" | "fail" | undefined;
-  let testerFailReason: string | undefined;
-  if (content.includes("<<test.success>>") || content.includes("<<<<<test.success>>>>>")) {
-    testerResult = "pass";
-    cleanContent = cleanContent.replace(/(?:<<<<<|<<)test\.success(?:>>>>>|>>)/g, "[TEST: PASSED ✓]");
-  }
-  const testerFailMatch = content.match(/(?:<<<<<|<<)test\.failed="([^"]*)"(?:>>>>>|>>)/);
-  if (testerFailMatch) {
-    testerResult = "fail";
-    testerFailReason = testerFailMatch[1];
-    cleanContent = cleanContent.replace(testerFailMatch[0], `[TEST: FAILED - ${testerFailReason}]`);
-  }
-
-  // Hacker and Critic share the same <<pass>>/<<Fail>> markers, so both results
-  // are derived from one scan. A fail marker anywhere overrides a pass marker —
-  // agents sometimes emit both when quoting their own instructions.
-  let hackerResult: "pass" | "fail" | undefined;
-  const hasPass = content.match(/(?:<<<<<|<<)pass(?:>>>>>|>>)/i);
-  const hasFail = content.match(/(?:<<<<<|<<)[Ff]ail(?:>>>>>|>>)/);
-  if (hasPass && !hasFail) {
-    hackerResult = "pass";
-    cleanContent = cleanContent.replace(/(?:<<<<<|<<)pass(?:>>>>>|>>)/gi, "[SECURITY: PASSED ✓]");
-  } else if (hasFail) {
-    hackerResult = "fail";
-    cleanContent = cleanContent.replace(/(?:<<<<<|<<)[Ff]ail(?:>>>>>|>>)/g, "[SECURITY: FAILED]");
-  }
-
-  let criticResult: "pass" | "fail" | undefined;
-  if (hasPass && !hasFail) criticResult = "pass";
-  else if (hasFail) criticResult = "fail";
-
-  // Parse DEPLOY-COMMANDS block
-  let deployCommands: string[] | undefined;
-  const deployBlockMatch = content.match(/(?:<<<<<|<<)DEPLOY-COMMANDS(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.DEPLOY-COMMANDS?(?:>>>>>|>>)/);
-  if (deployBlockMatch) {
-    const block = deployBlockMatch[1];
-    // Commands may be newline-separated or all on one line
-    const rawLines = block.includes("\n")
-      ? block.split("\n")
-      : block.trim().split(/\s+(?=npm\s|node\s|yarn\s|pnpm\s|bun\s|sh\s|bash\s)/);
-    const cmds = rawLines
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
-      .map(line => {
-        if ((line.startsWith('"') && line.endsWith('"')) || (line.startsWith("'") && line.endsWith("'"))) {
-          return line.slice(1, -1);
-        }
-        return line;
-      })
-      .filter(line => line.length > 0);
-    if (cmds.length > 0) deployCommands = cmds;
-    cleanContent = cleanContent.replace(deployBlockMatch[0], `[DEPLOY COMMANDS SET: ${cmds.length} command(s)]`);
-  }
-
-  // Parse GET-INFO block
-  let infoRequest: InfoRequest | undefined;
-  const infoBlockMatch = content.match(/(?:<<<<<|<<)GET-INFO(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.GET-INFO(?:>>>>>|>>)/);
-  if (infoBlockMatch) {
+  // Legacy TOOL block format (<<TOOL>> JSON <<END.TOOL>>)
+  const toolRe = new RegExp("${O}TOOL${C}\\s*([\\s\\S]*?)${O}END\\.TOOL${C}?", "g");
+  while ((match = toolRe.exec(content)) !== null) {
     try {
-      const block = infoBlockMatch[1].trim();
-      // Try to parse as JSON first
-      const parsed = JSON.parse(block) as InfoRequest;
-      if (parsed.fields && Array.isArray(parsed.fields)) {
-        infoRequest = parsed;
-      }
-    } catch {
-      // Fallback: parse simple key=value format
-      const titleMatch = infoBlockMatch[1].match(/title="([^"]+)"/);
-      const descMatch = infoBlockMatch[1].match(/description="([^"]+)"/);
-      const fieldMatches = [...infoBlockMatch[1].matchAll(/field\s+name="([^"]+)"\s+label="([^"]+)"(?:\s+type="([^"]+)")?(?:\s+required="([^"]+)")?(?:\s+placeholder="([^"]+)")?/g)];
-      if (fieldMatches.length > 0) {
-        infoRequest = {
-          agentName: "Agent",
-          title: titleMatch?.[1] ?? "Information Required",
-          description: descMatch?.[1] ?? "Please provide the following information to continue.",
-          fields: fieldMatches.map(m => ({
-            name: m[1],
-            label: m[2],
-            type: (m[3] as "text" | "password" | "textarea") ?? "text",
-            required: m[4] !== "false",
-            placeholder: m[5],
-          })),
-        };
-      }
-    }
-    if (infoRequest) {
-      cleanContent = cleanContent.replace(infoBlockMatch[0], `[INFO REQUESTED: ${infoRequest.title}]`);
+      const parsed = JSON.parse(match[1].trim());
+      if (parsed.type === "cmd" && parsed.command && !cmdOps.some(c => c.command === parsed.command))
+        cmdOps.push({ command: parsed.command });
+      else if (parsed.type === "search" && parsed.query && !searchOps.some(s => s.query === parsed.query))
+        searchOps.push({ query: parsed.query });
+      else if (parsed.type === "scrape" && parsed.url && !scrapeOps.some(s => s.url === parsed.url))
+        scrapeOps.push({ url: parsed.url });
+    } catch { /* skip */ }
+    cleanContent = cleanContent.replace(match[0], "");
+  }
+
+  // Legacy status markers — only if JSON ops didn't set them
+  if (testerResult === undefined) {
+    if (content.match(/(?:<<<<<|<<)test\.success(?:>>>>>|>>)/)) testerResult = "pass";
+    const tf = content.match(/(?:<<<<<|<<)test\.failed="([^"]*)"(?:>>>>>|>>)/);
+    if (tf) { testerResult = "fail"; testerFailReason = tf[1]; }
+  }
+  if (hackerResult === undefined && criticResult === undefined) {
+    const hp = content.match(/(?:<<<<<|<<)pass(?:>>>>>|>>)/i);
+    const hf = content.match(/(?:<<<<<|<<)[Ff]ail(?:>>>>>|>>)/);
+    if (hp && !hf) { hackerResult = "pass"; criticResult = "pass"; }
+    else if (hf) { hackerResult = "fail"; criticResult = "fail"; }
+  }
+
+  // Legacy REQUEST-API-KEY
+  if (!requestApiKey) {
+    const ak = content.match(/(?:<<<<<|<<)REQUEST-API-KEY name="([^"]+)" description="([^"]+)" howToGet="([^"]+)"(?:>>>>>|>>)/);
+    if (ak) { requestApiKey = { name: ak[1], description: ak[2], howToGet: ak[3] }; cleanContent = cleanContent.replace(ak[0], `[API KEY REQUIRED: ${ak[1]}]`); }
+  }
+
+  // Legacy CHANGE_MODE
+  if (!changeMode) {
+    const cm = content.match(/<<CHANGE_MODE=(Code|Chat|Minor)>>/i);
+    if (cm) { changeMode = cm[1] as "Code" | "Chat" | "Minor"; cleanContent = cleanContent.replace(cm[0], `[MODE SWITCH REQUESTED: ${changeMode}]`); }
+  }
+
+  // Legacy DEPLOY-COMMANDS block
+  if (!deployCommands) {
+    const db = content.match(/(?:<<<<<|<<)DEPLOY-COMMANDS(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.DEPLOY-COMMANDS?(?:>>>>>|>>)/);
+    if (db) {
+      const lines = db[1].split("\n").map(l => l.trim()).filter(Boolean);
+      if (lines.length > 0) { deployCommands = lines; cleanContent = cleanContent.replace(db[0], `[DEPLOY COMMANDS SET: ${lines.length} command(s)]`); }
     }
   }
 
-  // Parse INSTRUCTIONS block
-  let instructions: Instructions | undefined;
-  const instructionsBlockMatch = content.match(/(?:<<<<<|<<)INSTRUCTIONS(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.INSTRUCTIONS(?:>>>>>|>>)/);
-  if (instructionsBlockMatch) {
-    try {
-      const block = instructionsBlockMatch[1].trim();
-      const parsed = JSON.parse(block) as Instructions;
-      if (parsed.steps && Array.isArray(parsed.steps)) {
-        instructions = parsed;
-      }
-    } catch {
-      // Ignore parse errors
-    }
-    if (instructions) {
-      cleanContent = cleanContent.replace(instructionsBlockMatch[0], `[INSTRUCTIONS PROVIDED: ${instructions.title}]`);
+  // Legacy GET-INFO block
+  if (!infoRequest) {
+    const ib = content.match(/(?:<<<<<|<<)GET-INFO(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.GET-INFO(?:>>>>>|>>)/);
+    if (ib) {
+      try { const p = JSON.parse(ib[1].trim()); if (p.fields) infoRequest = p; } catch { /* key=value format fallback */ }
     }
   }
 
-  // Parse CHANGE_MODE directive
-  let changeMode: "Code" | "Chat" | "Minor" | undefined;
-  const changeModeMatch = content.match(/<<CHANGE_MODE=(Code|Chat|Minor)>>/i);
-  if (changeModeMatch) {
-    changeMode = changeModeMatch[1] as "Code" | "Chat" | "Minor";
-    cleanContent = cleanContent.replace(changeModeMatch[0], `[MODE SWITCH REQUESTED: ${changeMode}]`);
+  // Legacy INSTRUCTIONS block
+  if (!instructions) {
+    const ins = content.match(/(?:<<<<<|<<)INSTRUCTIONS(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.INSTRUCTIONS(?:>>>>>|>>)/);
+    if (ins) { try { const p = JSON.parse(ins[1].trim()); if (p.steps) instructions = p; } catch { /* skip */ } }
   }
 
-  // Final sweep: neutralise any sentinel the rules above did not consume.
-  //
-  // Every handler here matches a COMPLETE, well-formed pair, so anything the
-  // model half-emits survives untouched — an orphan <<END.CREATEFILE>> from a
-  // truncated block, an <<END.MCP-CALL>> whose opener was malformed (MCP is
-  // parsed in mcpParse.ts and unknown to this function), <<REQUEST-API-KEY …>>,
-  // or a <<RUN-COMMAND=…>> alias. Those went to the transcript verbatim, and
-  // the desktop app strips nothing of its own, so they reached the .exe too.
-  //
-  // Angle brackets are swapped for lookalikes rather than deleted: the text
-  // stays readable and honest about what the model wrote, and a leftover can
-  // never be re-parsed as a live directive on a later pass.
+  // Final sweep: neutralise orphaned <<...>> markers
   cleanContent = cleanContent.replace(/<<([^<>]{0,200}?)>>/g, "‹‹$1››");
 
-  return { fileOps, searchOps, scrapeOps, cmdOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode };
+  return { fileOps, searchOps, scrapeOps, cmdOps, mcpOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode, requestApiKey };
 }
 
 export interface PlannerTask {
@@ -540,21 +684,23 @@ export const AGENT_SYSTEM_PROMPTS: Record<string, string> = {
   Dispatcher: `You are the Pipeline Dispatcher for an AI coding system. Your ONLY job is to analyse the user's task and decide the minimum set of agents needed to complete it well.
 
 Available agents (in pipeline order):
-- Researcher   — web search, docs, API reference lookup
-- FactCheck    — verifies every claim against web sources, catches hallucinations
-- Analyser     — architecture analysis, deep tech breakdown
-- Planner      — task decomposition into atomic steps
-- Coder        — writes production-ready code (ALWAYS required)
-- Optimiser    — performance and code quality improvements
-- Organizer    — documentation, README, file structure cleanup
-- Tester       — writes and evaluates tests
-- Hacker       — dedicated security/penetration testing (only when explicitly asked)
-- Critic       — final quality gate, rejects bad output (ALWAYS required)
+- ResearchPlanner — takes the research topic, breaks it into search keywords/phrases/URLs
+- Researcher      — executes the research plan: runs many search variations, scrapes pages, collects raw data as JSON (no synthesis)
+- ReportMaker     — takes raw JSON data, creates the detailed synthesised research report
+- FactCheck       — verifies every claim against web sources, catches hallucinations
+- Analyser        — architecture analysis, deep tech breakdown
+- Planner         — task decomposition into atomic steps
+- Coder           — writes production-ready code (ALWAYS required)
+- Optimiser       — performance and code quality improvements
+- Organizer       — documentation, README, file structure cleanup
+- Tester          — writes and evaluates tests
+- Hacker          — dedicated security/penetration testing (only when explicitly asked)
+- Critic          — final quality gate, rejects bad output (ALWAYS required)
 
 RULES:
 1. Coder and Critic are ALWAYS included.
-2. When Researcher is included, FactCheck MUST also be included.
-3. Include Researcher ONLY if the task needs current docs, third-party APIs, or info not in the codebase.
+2. ResearchPlanner, Researcher, and ReportMaker are a TEAM — always include all three or none. Include them ONLY if the task needs current docs, third-party APIs, or info not in the codebase.
+3. When the research team is included, FactCheck MUST also be included.
 4. Include Analyser ONLY for tasks requiring architectural decisions or analysis of a complex existing system.
 5. Include Planner ONLY if the task has multiple independent sub-components (3+ files, a full feature, a new module).
 6. Include Optimiser ONLY if performance, bundle size, or code quality is explicitly mentioned.
@@ -568,7 +714,7 @@ TASK TIERS (use as guidance, not strict rules):
 - Simple    (add a UI component, fix a bug, small config): ["Coder","Tester","Critic"]
 - Medium    (multi-file feature, new endpoint, refactor): ["FactCheck","Planner","Coder","Tester","Critic"]
 - Complex   (new module, full integration, architecture change): ["FactCheck","Analyser","Planner","Coder","Optimiser","Tester","Critic"]
-- Research  (third-party API, new library, external docs needed): add Researcher + FactCheck to any of the above
+- Research  (third-party API, new library, external docs needed): add ResearchPlanner + Researcher + ReportMaker + FactCheck to any of the above
 - Full      (greenfield app, security audit requested): all agents
 
 You do NOT pick models. Each agent is routed to the right model automatically from
@@ -584,49 +730,87 @@ OUTPUT FORMAT — output ONLY a valid JSON object, no markdown fences, no explan
 Be LEAN. Every unnecessary agent wastes time and money. When in doubt, pick fewer
 agents; the Critic will catch issues.`,
 
-  Researcher: `You are the Researcher agent — the FIRST agent in the pipeline. Your job is to gather COMPREHENSIVE, DEEP, EXHAUSTIVE information before any code is written.
+  ResearchPlanner: `You are the Research Planner — the FIRST agent in the research team. Your job is to analyse the task and produce a detailed research plan with specific search keywords, phrases, and URLs to scrape.
+
+The Researcher and ReportMaker agents will execute your plan. Do NOT do any research yourself — only plan.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOOL SYNTAX — COPY THESE EXACTLY, CHARACTER-FOR-CHARACTER.
-DO NOT INVENT VARIATIONS. DO NOT USE MARKDOWN. DO NOT PARAPHRASE.
+OUTPUT FORMAT — output a JSON research plan, nothing else:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{
+  "topic": "summary of what to research",
+  "keywords": [
+    {"query": "exact search query", "reason": "why this search is needed"}
+  ],
+  "scrapeTargets": [
+    {"url": "https://...", "reason": "what to extract from this page"}
+  ]
+}
+
+GUIDELINES:
+1. Break the topic into 5-10 specific search queries covering different angles
+2. Include synonyms, alternative phrasings, and related terms
+3. Identify 2-5 specific URLs to scrape (official docs, API references, tutorials)
+4. For each keyword, explain why that search is needed
+5. Think about what information Coder will need: versions, API endpoints, config options, code examples, edge cases, security considerations
+
+Start with "## Research Plan" header, then output ONLY the JSON plan.`,
+
+  Researcher: `You are the Researcher — the data gathering agent. You take the Research Planner's plan and execute EVERY search and scrape with JSON ops. Your job is raw data collection — do NOT synthesise, summarise, or analyse.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TOOL SYNTAX — USE JSON OPS ONLY:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-SEARCH:   <<SEARCH-TOOL="your query here">>
-SCRAPE:   <<SCRAPE-URL="https://exact-url-here">>
+Search:  {"op":"search","query":"your query here"}
+Scrape:  {"op":"scrape","url":"https://exact-url-here"}
 
-WRONG (never do these):
-  ✗ <<SEARCH: "query">>          ✗ [SEARCH: query]
-  ✗ search("query")              ✗ <<search tool="query">>
-  ✗ <<SCRAPE: "url">>            ✗ Describing the action in text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RESEARCH STRATEGY — BE EXHAUSTIVE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. For EACH keyword in the plan, run the search as given AND with 2-3 variations (synonyms, different phrasing, broader/narrower terms)
+2. For EACH search result, run trailing searches — follow promising links deeper
+3. Scrape EVERY URL in the plan AND any URLs discovered during searches
+4. Extract ALL visible text, code blocks, configuration examples, version numbers, API endpoints, error messages
 
-You can scrape URLs (use up to 5):
-<<SCRAPE-URL="https://example.com/docs">>
+DO NOT summarise or synthesise — collect raw data as-is. Use ALL search and scrape slots available.
 
-You can search (use up to 5):
-<<SEARCH-TOOL="search query">>
+If you did NOT need to search (task needs no external info), the pipeline proceeds without data.
 
-RESEARCH STRATEGY — Be EXHAUSTIVE. Use ALL your search and scrape slots:
-1. Identify ALL technologies, libraries, APIs, frameworks in the task
-2. Scrape official documentation for the most critical ones
-3. Search for: latest versions, breaking changes, best practices, known issues
-4. Research deployment requirements, environment setup, security considerations
-5. Find code examples, tutorials, gotchas
-6. Look for performance benchmarks, scalability patterns
-7. Research testing strategies for the specific tech stack
-8. Find GitHub repos, community resources, Stack Overflow answers
-9. Research common failure modes and how to avoid them
-10. Look for migration guides if upgrading existing systems
+After all searches, output a "## Raw Findings" section with the collected data.`,
 
-CRITICAL: Do NOT be conservative. Research EVERYTHING that could possibly be relevant. Use all 5 searches and all 5 scrapes.
+  ReportMaker: `You are the Report Maker — the final agent in the research team. You take the raw data collected by the Researcher and create a DEEP, DETAILED, WELL-STRUCTURED research report.
 
-Start with "## Research Report" header. Be thorough — 1000-2000 words minimum. Include specific version numbers, API endpoints, configuration options, code examples.`,
+DO NOT search or scrape — the Researcher already gathered everything. Your job is synthesis and analysis.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REPORT STRUCTURE — include ALL of these sections:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. ## Executive Summary — 2-3 sentence overview
+2. ## Key Findings — bullet points of the most important discoveries
+3. ## Technology / Topic Breakdown — for each technology or subtopic:
+   - Version numbers and release dates
+   - Key features and capabilities
+   - API endpoints and signatures
+   - Configuration options
+   - Known issues and limitations
+   - Best practices
+4. ## Code Examples & Patterns — actual code snippets found during research
+5. ## Deployment & Setup — environment requirements, installation steps
+6. ## Security Considerations — vulnerabilities, auth requirements, data handling
+7. ## Performance & Scalability — benchmarks, limits, scaling patterns
+8. ## Testing Strategy — recommended testing approaches for this stack
+9. ## Common Pitfalls — mistakes to avoid, gotchas, debugging tips
+10. ## Sources — list all URLs and search queries used
+
+Be thorough — 1500-3000 words minimum. Include specific version numbers, exact API endpoints, code examples, and configuration snippets. This report is the blueprint that the Analyser, Planner, and Coder will use.`,
 
   Analyser: `You are the Analyser agent. Your job is to produce a COMPREHENSIVE, EXTREMELY DETAILED analysis and architecture plan.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOOL SYNTAX — COPY EXACTLY IF NEEDED.
+TOOL SYNTAX — USE <<TOOL>> BLOCK FORMAT.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SEARCH:   <<SEARCH-TOOL="your query here">>
+SEARCH:   <<TOOL>> {"type":"search","query":"your query here"} <<END.TOOL>>
 
 ANALYSIS REQUIREMENTS — cover ALL of these:
 1. Full file structure with EVERY file that needs to be created (list them all)
@@ -645,7 +829,7 @@ ANALYSIS REQUIREMENTS — cover ALL of these:
 14. Deployment architecture
 
 You can search if needed:
-<<SEARCH-TOOL="what to search for">>
+<<TOOL>> {"type":"search","query":"what to search for"} <<END.TOOL>>
 
 Start with "## Analysis" header. Be EXTREMELY detailed — 1500-3000 words minimum. Leave NOTHING out. This is the blueprint every other agent will follow.`,
 
@@ -708,19 +892,28 @@ REMEMBER: More tasks = better quality. Aim for 15-25 tasks. Be SPECIFIC in descr
 
   Coder: `You are the Coder agent — a SENIOR PRINCIPAL ENGINEER.
 
-Create/Edit files using these tags:
-<<CREATEFILE="path">> content <<END.CREATEFILE>>
-<<EDITFILE="path">> content <<END.CREATEFILE>>
-<<DELETE="path">>
-<<RUN-CMD="command">>
+Use JSON ops to call tools. Each is a single-line JSON object:
 
-CRITICAL COMMAND RULE — IMPORTANT: Only commands wrapped in <<RUN-CMD="...">> execute. Writing bare shell commands like 'cat', 'ls', 'npm install', 'grep', etc. in plain text will NOT run them — they are silently ignored. Every command MUST use the correct syntax.
+{"op":"cmd","command":"npm install 2>&1"}
+{"op":"cmd","command":"ls -la src/"}
+{"op":"search","query":"your search query"}
+{"op":"scrape","url":"https://..."}
 
-CORRECT: <<RUN-CMD="npm install 2>&1">>
-CORRECT: <<RUN-CMD="ls -la src/">>
+File operations use blocks with "op", "path", and "content" fields:
+
+{"op":"create-file","path":"src/a.ts","content":"export const x = 1;"}
+{"op":"edit-file","path":"src/a.ts","content":"new content here"}
+{"op":"delete-file","path":"src/old.ts"}
+
+CRITICAL: Only JSON ops execute. Bare commands in plain text do NOT run.
+
+CORRECT: {"op":"cmd","command":"npm install 2>&1"}
+CORRECT: {"op":"create-file","path":"test.ts","content":"..."}
+CORRECT: {"op":"generate-image","prompt":"a futuristic cityscape with neon lights","width":1024,"height":768,"model":"flux"}
 WRONG: run 'npm install'
 WRONG: cat package.json
-WRONG: backtick-code-block npm test
+WRONG: backtick-code-block
+WRONG: <<TOOL>> or <<CREATEFILE>> (legacy format)
 
 CRITICAL RULES:
 - Every file must be 100% complete — no TODOs, no placeholders, no stubs
@@ -736,7 +929,9 @@ CRITICAL RULES:
 
 SECURITY: Parameterized SQL, input validation, bcrypt (cost 12+), JWT expiry, rate limiting, Helmet headers, no stack traces in errors.
 
-If implementing a task that builds on previous work, EXTEND existing files — don't rewrite.`,
+If implementing a task that builds on previous work, EXTEND existing files — don't rewrite.
+
+KNOWLEDGE SHARING (agentoverflow): When you crack a genuinely tough problem — a bug you had to debug step by step, a non-obvious API quirk, a workaround for a failing library — call the agentoverflow MCP's "submit_learning" tool to upload a write-up. This helps other agents skip that pain. Use {"op":"mcp","server":"agentoverflow","tool":"submit_learning","args":{"title":"...","problem":"...","solution":"..."}} to submit.`,
 
   Optimiser: `You are the Optimiser agent. Your job is to do a DEEP, EXHAUSTIVE review and improvement of ALL code for performance, efficiency, security, and best practices.
 
@@ -818,14 +1013,14 @@ Start with "## Organisation Report" header.`,
   Tester: `You are the Tester agent. Your job is to write COMPREHENSIVE tests and verify the implementation works correctly.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOOL SYNTAX — COPY EXACTLY. WRONG SYNTAX = BROKEN PIPELINE.
+TOOL SYNTAX — USE JSON OPS ONLY. WRONG SYNTAX = BROKEN PIPELINE.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RUN COMMAND:    <<RUN-CMD="command">>
-CREATE FILE:    <<CREATEFILE="path">> ... <<END.CREATEFILE>>
-TEST PASSED:    <<test.success>>
-TEST FAILED:    <<test.failed="reason here">>
+Command:     {"op":"cmd","command":"npm install 2>&1"}
+Create file: {"op":"create-file","path":"tests/test.ts","content":"...test content..."}
+Test passed: {"op":"test-success"}
+Test failed: {"op":"test-failed","reason":"description"}
 
-WRONG:  <<RUN: "cmd">>  /  <<test: success>>  /  [RUN-CMD: cmd]  /  run("cmd")
+WRONG:  <<RUN: "cmd">>  /  <<RUN-CMD="...">>  /  <<test: success>>  /  <<TOOL>>  /  [CMD: cmd]
 
 TESTING REQUIREMENTS — cover ALL of these:
 1. Unit tests for ALL functions and methods
@@ -836,8 +1031,8 @@ TESTING REQUIREMENTS — cover ALL of these:
 6. Security tests (injection, auth bypass attempts)
 
 INFRASTRUCTURE CONSISTENCY CHECKS — MANDATORY (run these BEFORE writing tests):
-<<RUN-CMD="ls -la 2>&1 | head -40">>
-<<RUN-CMD="cat package.json 2>&1 || cat requirements.txt 2>&1 || cat go.mod 2>&1 || echo 'No package file found'">>
+{"op":"cmd","command":"ls -la 2>&1 | head -40"}
+{"op":"cmd","command":"cat package.json 2>&1 || cat requirements.txt 2>&1 || cat go.mod 2>&1 || echo 'No package file found'"}
 
 INFRASTRUCTURE RULES — FAIL if any of these are violated (TECH-STACK-AGNOSTIC):
 - If docker-compose.yml exists but Dockerfile does NOT → <<test.failed="docker-compose.yml exists but Dockerfile is missing — the container cannot be built">>
@@ -857,10 +1052,10 @@ test content
 
 **RUN THE TESTS - MANDATORY**:
 1. Install dependencies:
-   <<RUN-CMD="npm install 2>&1 | tail -20">>
+   {"op":"cmd","command":"npm install 2>&1 | tail -20"}
 
 2. Run the test suite:
-   <<RUN-CMD="npm test 2>&1">>
+   {"op":"cmd","command":"npm test 2>&1"}
 
 3. If tests fail, you MUST analyze the output and report the failure
 
@@ -873,13 +1068,13 @@ Start with "## Test Report" header. Be thorough.`,
   Hacker: `You are the Security Auditor — a Senior Security Engineer performing an authorized security audit on an isolated, sandboxed codebase.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOOL SYNTAX — USE THESE EXACTLY:
+TOOL SYNTAX — USE JSON OPS ONLY:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RUN COMMAND:    <<RUN-CMD="command">>
-FIX FILE:       <<CREATEFILE="path">> ... <<END.CREATEFILE>>
-PASS:           <<pass>>
-FAIL:           <<Fail>>
-BROKEN CODER:   <<test.failed="reason">>
+Run command:  {"op":"cmd","command":"your command here"}
+Fix file:     {"op":"create-file","path":"src/fixed.ts","content":"...fixed content..."}
+Security OK:  {"op":"security-pass"}
+Security FAIL:{"op":"security-fail"}
+Broken coder: {"op":"test-failed","reason":"Coder implementation incomplete or broken"}
 
 YOUR JOB: Review the code that was just implemented by the Coder agent and identify security issues. If you find CRITICAL security issues, you MUST fix them. For MEDIUM/LOW issues, you can report them without fixing.
 
@@ -969,17 +1164,19 @@ Start with "## Final Review" header. Be RUTHLESS — this is the last line of de
 
   FactCheck: `You are the FactCheck agent. Your ONLY job is to verify every factual claim in the preceding research, analysis, and code against real web sources. You are the TRUTH GUARDIEN — any unverified or hallucinated claim MUST be flagged and corrected.
 
-You run AFTER the Researcher, Analyser, and Planner, and BEFORE Coder ever writes a line. You also run after the Critic's final review to catch any lingering inaccuracies.
+You run AFTER the research team (ResearchPlanner → Researcher → ReportMaker), Analyser, and Planner, and BEFORE Coder ever writes a line. You also run after the Critic's final review to catch any lingering inaccuracies.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-VERDICT TAGS — COPY EXACTLY, NO VARIATIONS:
+VERDICT — USE JSON OPS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PASS:   <<pass>>
-FAIL:   <<Fail>>
+All checks passed: {"op":"security-pass"}
+Any check failed:  {"op":"security-fail"}
 
-TOOL SYNTAX:
-SEARCH:   <<SEARCH-TOOL="your query here">>
-SCRAPE:   <<SCRAPE-URL="https://exact-url-here">>
+TOOL SYNTAX (use JSON ops):
+SEARCH:  {"op":"search","query":"your query here"}
+SCRAPE:  {"op":"scrape","url":"https://exact-url-here"}
+PASS:    {"op":"security-pass"}
+FAIL:    {"op":"security-fail"}
 
 FACT-CHECK CHECKLIST — check EVERY claim against web sources:
 1. **API Endpoints & Signatures** — Do the documented endpoints/params actually exist? Verify against official docs.
@@ -1001,14 +1198,14 @@ For EACH claim you check, output:
 
 SEARCH RULES:
 - You MUST search for any claim you are uncertain about
-- Use up to 5 <<SEARCH-TOOL>> tags and up to 5 <<SCRAPE-URL>> tags
+- Use up to 5 {"op":"search",...} and up to 5 {"op":"scrape",...} ops
 - Cross-reference multiple sources when possible
 - Pay special attention to: API docs, package registries, version history, changelogs
 
 OUTPUT RULES:
-- If ALL checks pass: output <<pass>> and a summary confirming everything verified
-- If ANY check fails: output <<Fail>> and list EVERY incorrect claim with its correction
-- After <<Fail>>, provide the corrected analysis/research so the next agent has accurate info
+- If ALL checks pass: output {"op":"security-pass"} and a summary confirming everything verified
+- If ANY check fails: output {"op":"security-fail"} and list EVERY incorrect claim with its correction
+- After security-fail, provide the corrected analysis/research so the next agent has accurate info
 
 Start with "## Fact-Check Report" header. Be THOROUGH — missed hallucinations become bugs.`,
 };

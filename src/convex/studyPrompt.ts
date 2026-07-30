@@ -3,6 +3,104 @@
 // "use node", no Convex imports) so it is unit-testable with `bun test` and
 // importable from both the default-runtime http router and node actions.
 //
+// Also exports ASK-QUESTION / ASK-MCQ tool parsers so the backend can detect
+// and strip interactive question tags from AI responses.
+
+export interface AskQuestion {
+  type: "question";
+  question: string;
+}
+
+export interface AskMcq {
+  type: "mcq";
+  question: string;
+  options: string[];
+  correct: number;
+}
+
+export type AskBlock = AskQuestion | AskMcq;
+
+const O = "(?:<<|‹‹|«|‹)";
+const C = "(?:>>|››|»|›)";
+
+/** Regex for <<ASK-QUESTION question="..." /> */
+const ASK_Q_REGEX = new RegExp(O + "ASK-QUESTION\\s+question=\"([^\"]+)\"\\s*/?" + C, "g");
+
+/** Regex for <<ASK-MCQ question="..." options='[...]' correct="N" /> */
+const ASK_MCQ_REGEX = new RegExp(O + "ASK-MCQ\\s+question=\"([^\"]+)\"\\s+options='([^']+)'\\s+correct=\"([^\"]+)\"\\s*/?" + C, "g");
+
+/**
+ * Scan for JSON ops with op="ask-question" or op="ask-mcq".
+ * Uses brace-depth counting to find balanced JSON objects starting with {"op":"ask-.
+ */
+function parseAskJsonOps(content: string): AskBlock[] {
+  const blocks: AskBlock[] = [];
+  let i = 0;
+  while (i < content.length) {
+    const start = content.indexOf('{"op":"ask-', i);
+    if (start === -1) break;
+
+    let depth = 0, inStr = false, escaped = false, end = -1;
+    for (let j = start; j < content.length; j++) {
+      const ch = content[j];
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\' && inStr) { escaped = true; continue; }
+      if (ch === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (depth === 0) { end = j + 1; break; } }
+    }
+    if (end === -1) break;
+    try {
+      const parsed = JSON.parse(content.slice(start, end)) as Record<string, unknown>;
+      if (parsed.op === "ask-question" && typeof parsed.question === "string") {
+        blocks.push({ type: "question", question: parsed.question });
+      } else if (parsed.op === "ask-mcq" && typeof parsed.question === "string" && Array.isArray(parsed.options) && typeof parsed.correct === "number") {
+        blocks.push({ type: "mcq", question: parsed.question, options: parsed.options as string[], correct: parsed.correct });
+      }
+    } catch { /* skip */ }
+    i = end;
+  }
+  return blocks;
+}
+
+/** Parse all ASK-QUESTION, ASK-MCQ and JSON-format ask ops from content. */
+export function parseAskBlocks(content: string): AskBlock[] {
+  const blocks: AskBlock[] = [];
+
+  // JSON ops format (primary)
+  blocks.push(...parseAskJsonOps(content));
+
+  // Legacy <<ASK-QUESTION>> / <<ASK-MCQ>> format (fallback)
+  let legacyMatch: RegExpExecArray | null;
+  const qRe = new RegExp(ASK_Q_REGEX.source, "g");
+  while ((legacyMatch = qRe.exec(content)) !== null) {
+    if (!blocks.some(b => b.type === "question" && b.question === legacyMatch![1])) {
+      blocks.push({ type: "question", question: legacyMatch![1] });
+    }
+  }
+  const mcqRe = new RegExp(ASK_MCQ_REGEX.source, "g");
+  while ((legacyMatch = mcqRe.exec(content)) !== null) {
+    try {
+      const options = JSON.parse(legacyMatch![2]) as string[];
+      const correct = parseInt(legacyMatch![3], 10);
+      if (!blocks.some(b => b.type === "mcq" && b.question === legacyMatch![1])) {
+        blocks.push({ type: "mcq", question: legacyMatch![1], options, correct });
+      }
+    } catch { /* skip malformed MCQ */ }
+  }
+  return blocks;
+}
+
+/** Strip all ASK-QUESTION, ASK-MCQ, and JSON-format ask ops from content. */
+export function stripAskBlocks(content: string): string {
+  // Strip legacy <<ASK-QUESTION>> / <<ASK-MCQ>> tags
+  let result = content.replace(new RegExp(ASK_Q_REGEX.source, "g"), "").replace(new RegExp(ASK_MCQ_REGEX.source, "g"), "");
+  // Strip JSON ops with op="ask-"
+  result = result.replace(/\{"op":"ask-(?:question|mcq)[^}]*\}/g, "");
+  return result.trim();
+}
+//
 // Design goals, in order:
 // 1. Answers pitched at the student's actual level (grade 6 ≠ PhD).
 // 2. Exam answers that match the student's board conventions and marking
@@ -214,8 +312,8 @@ You are not here to make students study more. You are here to make every minute 
 
 TEACH — DON'T JUST HAND OVER ANSWERS:
 A student who reads your perfect answer and nods has learned nothing they will keep. Marks come from what the student can reproduce ALONE in the exam hall, and that is built by doing, not reading. So you are a tutor running a loop, not an answer machine:
-1. After explaining, end with one short "Your turn" practice question on the exact same point — one rep now beats an hour of re-reading. Keep it small enough to attempt immediately.
-2. When the student attempts something, grade the attempt FIRST: name what they got right, find the exact step where it went wrong, fix that one step, then give a similar quick question to confirm the fix stuck.
+1. After explaining, use a JSON op to test understanding — see TOOL SYNTAX below. Ask one short "Your turn" question.
+2. When the student attempts something, grade the attempt FIRST: name what they got right, find the exact step where it went wrong, fix that one step, then give another question to confirm the fix stuck.
 3. When the student says "I don't get it", do not repeat the same explanation louder — change the route: a simpler example, an analogy from daily life, a smaller step.
 4. Check understanding at natural points with one-line questions ("so what would happen if...?") instead of assuming the nod.
 5. Push active recall: tell the student to answer from memory before peeking, and to re-test themselves tomorrow rather than re-read tonight.
@@ -228,7 +326,7 @@ HOW TO ANSWER:
    - a "Quick revision" key-facts box (3-6 bullet points — the exam-night summary),
    - 2-3 likely exam questions on this topic in the board's own style (highest-frequency patterns first),
    - a mnemonic or memory hook when one genuinely helps,
-   - the "Your turn" practice question from the teaching loop above.
+   - the "Your turn" practice question from the teaching loop above (use a JSON op for this — see TOOL SYNTAX).
 5. Address the classic misconceptions that COST marks before the student falls into them.
 6. Keep momentum: the practice question IS the next step — don't lecture about studying, get them doing it.`,
   ];
@@ -250,6 +348,25 @@ HOW TO ANSWER:
   }
 
   sections.push(`NEVER ask for clarification. Answer immediately based on context.`);
+
+  // Interactive question tools — parsed by the system for interactive rendering
+  const TOOL_SYNTAX = `TOOL SYNTAX — use JSON ops to ask interactive questions:
+
+{"op":"ask-question","question":"What is the capital of France?"}
+
+{"op":"ask-mcq","question":"Which planet is known as the Red Planet?","options":["Mars","Venus","Jupiter","Saturn"],"correct":0}
+
+- {"op":"ask-question",...} creates an open-ended text input question. The system will present an input field and wait for the student's answer.
+- {"op":"ask-mcq",...} creates a multiple-choice question. The options array is the list of choices. The correct field is the 0-based index of the right answer.
+- Use ask-question when you want the student to explain, describe, or write out something.
+- Use ask-mcq when you want quick comprehension checks on facts, definitions, or simple concepts.
+- The system handles the question/answer flow — you do NOT need to provide the answer in your response. The student will answer, and the system will show you their reply.
+- Place each JSON op ON A NEW LINE by itself — do not embed it inside HTML tags.`;
+
+  // Legacy <<ASK-QUESTION>> / <<ASK-MCQ>> tags — replaced by JSON ops above.
+  // Keeping the old regex parsers for backward compat with existing messages.`;
+
+  sections.push(TOOL_SYNTAX);
   sections.push(HTML_CONTRACT);
 
   return sections.filter(Boolean).join("\n\n");

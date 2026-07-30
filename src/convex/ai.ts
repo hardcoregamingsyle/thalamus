@@ -121,6 +121,7 @@ async function callBedrockClaude(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   maxTokens = 4096,
   modelName = "claude-haiku-4-5",
+  temperature = 0.7,
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const creds = await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {}) as { accessKeyId: string; secretAccessKey: string; region: string } | null;
   if (!creds) throw new Error("No AWS credentials configured");
@@ -139,7 +140,7 @@ async function callBedrockClaude(
     system: systemPrompt,
     messages,
     max_tokens: effectiveMaxTokens,
-    temperature: 0.7,
+    temperature,
   });
 
   const headers = await signBedrockHeaders("POST", host, canonicalPath, requestBody, accessKeyId, secretAccessKey, region);
@@ -165,7 +166,8 @@ async function callGeminiChat(
   ctx: { runQuery: ActionCtx["runQuery"] },
   systemPrompt: string,
   messages: Array<{ role: "user" | "assistant"; content: string }>,
-  maxTokens = 4096
+  maxTokens = 4096,
+  temperature = 0.7,
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const keys = await getGeminiKeysFromDB(ctx);
   if (keys.length === 0) throw new Error("No Gemini API keys configured. Add keys via Admin.");
@@ -188,7 +190,7 @@ async function callGeminiChat(
           body: JSON.stringify({
             system_instruction: { parts: [{ text: systemPrompt }] },
             contents,
-            generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
+            generationConfig: { maxOutputTokens: maxTokens, temperature },
           }),
         }
       );
@@ -217,14 +219,15 @@ async function callAI(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   maxTokens = 4096,
   modelName = "claude-haiku-4-5",
+  temperature = 0.7,
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; provider: string }> {
   try {
-    const result = await callBedrockClaude(ctx, systemPrompt, messages, maxTokens, modelName);
+    const result = await callBedrockClaude(ctx, systemPrompt, messages, maxTokens, modelName, temperature);
     return { ...result, provider: "bedrock" };
   } catch (bedrockErr) {
     console.warn("Bedrock failed, falling back to Gemini:", bedrockErr instanceof Error ? bedrockErr.message : String(bedrockErr));
     try {
-      const result = await callGeminiChat(ctx, systemPrompt, messages, maxTokens);
+      const result = await callGeminiChat(ctx, systemPrompt, messages, maxTokens, temperature);
       return { ...result, provider: "gemini" };
     } catch (geminiErr) {
       console.warn("Gemini failed:", geminiErr instanceof Error ? geminiErr.message : String(geminiErr));
@@ -237,7 +240,7 @@ export const sendMessage = action({
   args: {
     conversationId: v.id("conversations"),
     content: v.string(),
-    mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code")),
+    mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("designing"), v.literal("strategising"), v.literal("creative-writing"), v.literal("marketing"), v.literal("idea-generation"), v.literal("naming")),
     token: v.optional(v.string()),
     model: v.optional(v.string()),
     skipUserSave: v.optional(v.boolean()),
@@ -281,7 +284,10 @@ export const sendMessage = action({
 
 Use: <h2>, <h3> headings, <p> paragraphs, <ul>/<ol> lists, <strong> bold, <code> inline code, <pre><code> blocks, <blockquote> quotes, <a> links.
 
-SEARCH TOOL: Include <<SEARCH-TOOL="query">> in your response when you need current data. System will search and ask you to give the final answer. Use up to 3 searches. Always search when uncertain about facts, events, or recent info.`,
+SEARCH TOOL: Include <<SEARCH-TOOL="query">> in your response when you need current data. System will search and ask you to give the final answer. Use up to 3 searches. Always search when uncertain about facts, events, or recent info.
+
+IMAGE GENERATION: To generate an image, emit: {"op":"generate-image","prompt":"your detailed description","width":1024,"height":768,"model":"flux"}
+The image will appear in the chat automatically. Use this when the user asks for a visual, diagram, illustration, or concept art.`,
 
       research: `You are Thalamus AI Research Mode — a professional research analyst. Your job is to produce EXHAUSTIVE, MULTI-ANGLE, DEEPLY-SOURCED research reports. Every factual claim MUST be backed by a web search.
 
@@ -309,6 +315,30 @@ FORMAT: Respond ONLY in clean semantic HTML. No markdown, no backticks.`,
       code: `You are Thalamus AI Code Mode — an expert software engineer. Respond ONLY in clean semantic HTML. No markdown, no backticks.
 
 Use <pre><code> for code blocks, <code> for inline code, <h2> sections, <p> explanations, <ul>/<li> steps. Explain all code before and after blocks.`,
+
+      designing: `You are Thalamus AI in Designing / Product Designing mode — a creative design thinker with ADHD Level 2/5 (moderately focused). Help users brainstorm and refine product designs, UI/UX concepts, and visual ideas. Be practical but open to creative tangents.
+
+Respond ONLY in clean semantic HTML. Use <h2>, <h3>, <p>, <ul>/<ol>, <strong>, <code>, <pre><code>, <blockquote>. No markdown, no backticks.`,
+
+      strategising: `You are Thalamus AI in Strategising and Planning mode — a strategic analyst with ADHD Level 2/5. Help create structured strategies, roadmaps, and plans. Think step by step but allow space for creative divergence when useful.
+
+Respond ONLY in clean semantic HTML. Use <h2>, <h3>, <p>, <ul>/<ol>, <strong>, <code>, <pre><code>, <blockquote>. No markdown, no backticks.`,
+
+      "creative-writing": `You are Thalamus AI in Creative Writing mode — a creative writer with ADHD Level 2.5/5. Write stories, poems, scripts, and creative content. Embrace imaginative language, vivid descriptions, and narrative flow.
+
+Respond ONLY in clean semantic HTML. Use <h2>, <h3>, <p>, <ul>/<ol>, <strong>, <code>, <pre><code>, <blockquote>. No markdown, no backticks.`,
+
+      marketing: `You are Thalamus AI in Marketing and Ads Idea Generation mode — a marketing creative with ADHD Level 2.5/5. Generate ad concepts, marketing strategies, campaign ideas, and persuasive copy. Balance creativity with practical audience targeting.
+
+Respond ONLY in clean semantic HTML. Use <h2>, <h3>, <p>, <ul>/<ol>, <strong>, <code>, <pre><code>, <blockquote>. No markdown, no backticks.`,
+
+      "idea-generation": `You are Thalamus AI in Idea Generation mode — a brainstorming partner with ADHD Level 2.5/5. Help users generate, refine, and connect ideas across domains. Encourage lateral thinking, wild connections, and novel combinations.
+
+Respond ONLY in clean semantic HTML. Use <h2>, <h3>, <p>, <ul>/<ol>, <strong>, <code>, <pre><code>, <blockquote>. No markdown, no backticks.`,
+
+      naming: `You are Thalamus AI in Naming and Branding mode — a branding specialist with ADHD Level 2.5/5. Generate names, taglines, and brand identities. Think phonetically, semantically, and across languages and cultures.
+
+Respond ONLY in clean semantic HTML. Use <h2>, <h3>, <p>, <ul>/<ol>, <strong>, <code>, <pre><code>, <blockquote>. No markdown, no backticks.`,
     };
 
     const messages: Array<{ role: "user" | "assistant"; content: string }> = history.map(
@@ -323,16 +353,19 @@ Use <pre><code> for code blocks, <code> for inline code, <h2> sections, <p> expl
       : "";
 
     const modelName = args.model ?? "claude-haiku-4-5";
+    const adhd = MODE_ADHD[args.mode] ?? 3;
+    const temperature = adhdToTemperature(adhd);
     let { text: responseContent, inputTokens, outputTokens } = await callAI(
       ctx,
       systemPrompts[args.mode] + contextHeader,
       messages,
       4096,
       modelName,
+      temperature,
     );
 
-    // --- Search tool loop: detect <<SEARCH-TOOL="...">> tags and execute searches ---
-    const searchPattern = /<<SEARCH-TOOL="([^"]+)">>/g;
+    // --- Search tool loop: detect <<SEARCH-TOOL="...">> tags (with Unicode bracket variants) and execute searches ---
+    const searchPattern = /(?:<<|‹‹|«|‹)SEARCH-TOOL="([^"]+)"(?:>>|››|»|›)/g;
     const searchMatches = [...responseContent.matchAll(searchPattern)];
 
     if (searchMatches.length > 0) {
@@ -400,7 +433,7 @@ SEARCH TOOL: Use <<SEARCH-TOOL="query">> to search for claims you need to verify
       outputTokens += factCheckResult.outputTokens;
 
       // Check if fact-checker requested searches
-      const fcSearchPattern = /<<SEARCH-TOOL="([^"]+)">>/g;
+      const fcSearchPattern = /(?:<<|‹‹|«|‹)SEARCH-TOOL="([^"]+)"(?:>>|››|»|›)/g;
       const fcSearchMatches = [...factCheckText.matchAll(fcSearchPattern)];
       if (fcSearchMatches.length > 0) {
         const fcSearchResults: Array<{ query: string; result: string }> = [];
@@ -532,10 +565,30 @@ export const vlyFallbackCompletion = internalAction({
 // runs in the Node runtime ("use node") and can't share the DB helpers' module.
 const GUEST_DAILY_LIMIT = 3;
 
+// ── ADHD levels → model temperature ─────────────────────────────────────────
+// ADHD 0-5 → temperature = adhd * 0.2 + 0.1
+//   2.0 → 0.5,  2.5 → 0.6,  3.0 → 0.7,  4.0 → 0.9
+const MODE_ADHD: Record<string, number> = {
+  chat: 3,
+  research: 2.5,
+  study: 3,
+  code: 3,
+  designing: 2,
+  strategising: 2,
+  "creative-writing": 2.5,
+  marketing: 2.5,
+  "idea-generation": 2.5,
+  naming: 2.5,
+};
+
+function adhdToTemperature(adhd: number): number {
+  return Math.min(2.0, Math.max(0.0, adhd * 0.2 + 0.1));
+}
+
 export const guestSendMessage = action({
   args: {
     content: v.string(),
-    mode: v.union(v.literal("chat"), v.literal("study")),
+    mode: v.union(v.literal("chat"), v.literal("study"), v.literal("research"), v.literal("designing"), v.literal("strategising"), v.literal("creative-writing"), v.literal("marketing"), v.literal("idea-generation"), v.literal("naming")),
     history: v.array(v.object({ role: v.union(v.literal("user"), v.literal("assistant")), content: v.string() })),
     userContext: v.optional(v.object({
       datetime: v.string(),
@@ -557,6 +610,13 @@ export const guestSendMessage = action({
 Use: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <code>, <pre><code>, <blockquote>, <a>.`,
       study: `You are Thalamus AI Study Mode. Respond in clean semantic HTML only. No markdown, no backticks.
 Use: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <blockquote>. Highlight key facts.`,
+      research: `You are Thalamus AI Research Mode — a professional research analyst with ADHD Level 2.5/5. Produce exhaustive, multi-angle research reports. Use <<SEARCH-TOOL="query">> for every factual claim. Respond ONLY in clean semantic HTML.`,
+      designing: `You are Thalamus AI Designing mode — a creative design thinker with ADHD Level 2/5. Help brainstorm and refine product designs, UI/UX concepts. Respond ONLY in clean semantic HTML.`,
+      strategising: `You are Thalamus AI Strategising mode — a strategic analyst with ADHD Level 2/5. Create structured strategies, roadmaps, and plans. Respond ONLY in clean semantic HTML.`,
+      "creative-writing": `You are Thalamus AI Creative Writing mode — a creative writer with ADHD Level 2.5/5. Write stories, poems, scripts, and creative content. Respond ONLY in clean semantic HTML.`,
+      marketing: `You are Thalamus AI Marketing mode — a marketing creative with ADHD Level 2.5/5. Generate ad concepts, campaign ideas, and persuasive copy. Respond ONLY in clean semantic HTML.`,
+      "idea-generation": `You are Thalamus AI Idea Generation mode — a brainstorming partner with ADHD Level 2.5/5. Generate and refine ideas across domains. Respond ONLY in clean semantic HTML.`,
+      naming: `You are Thalamus AI Naming mode — a branding specialist with ADHD Level 2.5/5. Generate names, taglines, and brand identities. Respond ONLY in clean semantic HTML.`,
     };
 
     const contextHeader = args.userContext
@@ -568,11 +628,15 @@ Use: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <blockquote>. Highlight key fa
       { role: "user" as const, content: args.content },
     ];
 
+    const adhd = MODE_ADHD[args.mode] ?? 3;
+    const temperature = adhdToTemperature(adhd);
     const { text } = await callAI(
       ctx,
       systemPrompts[args.mode] + contextHeader,
       messages,
-      2048
+      2048,
+      "claude-haiku-4-5",
+      temperature,
     );
 
     // Count this prompt against the daily cap only after a successful generation.

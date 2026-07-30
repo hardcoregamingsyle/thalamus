@@ -95,7 +95,7 @@ const schema = defineSchema(
     conversations: defineTable({
       userId: v.id("users"),
       title: v.string(),
-      mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("study")),
+      mode: v.union(v.literal("chat"), v.literal("research"), v.literal("code"), v.literal("study"), v.literal("designing"), v.literal("strategising"), v.literal("creative-writing"), v.literal("marketing"), v.literal("idea-generation"), v.literal("naming")),
       lastMessageAt: v.optional(v.number()),
       customId: v.optional(v.string()),
     })

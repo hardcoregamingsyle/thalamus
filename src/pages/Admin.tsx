@@ -13,7 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "convex" | "study-materials" | "dau" | "providerD" | "providerE" | "providerA" | "providerB" | "providerC" | "gravity-ads" | "payments" | "vm-isos" | "corpus";
+type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "study-materials" | "dau" | "providerD" | "providerE" | "providerA" | "providerB" | "providerC" | "gravity-ads" | "payments" | "vm-isos" | "corpus";
 
 const ADMIN_SESSION_KEY = "thalamus_admin_v2";
 
@@ -217,7 +217,6 @@ export default function AdminPage() {
             { id: "promo-codes", label: "Promo Codes", icon: Tag },
             { id: "suggestion", label: "Suggestions", icon: Lightbulb },
             { id: "study-materials", label: "Study Materials", icon: BookOpen },
-            { id: "convex", label: "Convex", icon: Database },
             { id: "providerA", label: providerLabel("providerA"), icon: Zap },
             { id: "providerB", label: providerLabel("providerB"), icon: Cpu },
             { id: "providerC", label: providerLabel("providerC"), icon: Server },

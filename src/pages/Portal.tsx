@@ -20,12 +20,13 @@ import {
   Send, Loader2, Menu, X, Users, Zap, BookOpen,
   FileText, Globe, Image, Upload, Sparkles,
   Hash, Lightbulb, Lock, ArrowRight, Sun, Moon, GraduationCap,
+  Palette, LineChart, Feather, Megaphone, Tag,
 } from "lucide-react";
 import MobilePortal from "./MobilePortal";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTheme } from "@/hooks/use-theme";
 
-type Mode = "chat" | "research" | "code" | "study";
+type Mode = "chat" | "research" | "code" | "study" | "designing" | "strategising" | "creative-writing" | "marketing" | "idea-generation" | "naming";
 
 interface Conversation {
   _id: Id<"conversations">;
@@ -211,7 +212,7 @@ function GuestPortal() {
   const [sponsoredAd, setSponsoredAd] = useState<GravityAd | null>(null);
   const adRequestedRef = useRef(false);
 
-  const currentMode = MODES.find(m => m.id === activeMode)!;
+  const currentMode = [...MODES, ...MORE_MODES].find(m => m.id === activeMode)!;
   const isGuestMode = activeMode === "chat" || activeMode === "study";
 
   useEffect(() => {
@@ -272,7 +273,7 @@ function GuestPortal() {
       // counter) caps guests at 3 prompts/day, keyed by the persistent guestId.
       const response = await guestSendMessage({
         content: msg,
-        mode: activeMode as "chat" | "study",
+        mode: activeMode as "chat" | "study" | "designing" | "strategising" | "creative-writing" | "marketing" | "idea-generation" | "naming",
         history,
         userContext,
         guestId: getOrCreateGuestId(),
@@ -539,14 +540,23 @@ function GuestPortal() {
   );
 }
 
-const MODES: { id: Mode; label: string; icon: typeof MessageSquare; desc: string; color: string; accent: string }[] = [
-  { id: "chat", label: "CHAT", icon: MessageSquare, desc: "General", color: "text-primary", accent: "bg-primary/15 border-primary/30" },
-  { id: "research", label: "RESEARCH", icon: Search, desc: "Deep", color: "text-accent", accent: "bg-accent/15 border-accent/30" },
-  { id: "study", label: "STUDY", icon: BookOpen, desc: "Study", color: "text-indigo-400", accent: "bg-indigo-400/15 border-indigo-400/30" },
-  { id: "code", label: "CODE", icon: Users, desc: "Multi-agent", color: "text-violet-400", accent: "bg-violet-400/15 border-violet-400/30" },
+const MODES: { id: Mode; label: string; icon: typeof MessageSquare; desc: string; color: string; accent: string; adhd: number }[] = [
+  { id: "chat", label: "CHAT", icon: MessageSquare, desc: "General", color: "text-primary", accent: "bg-primary/15 border-primary/30", adhd: 3 },
+  { id: "research", label: "RESEARCH", icon: Search, desc: "Deep", color: "text-accent", accent: "bg-accent/15 border-accent/30", adhd: 2.5 },
+  { id: "study", label: "STUDY", icon: BookOpen, desc: "Study", color: "text-indigo-400", accent: "bg-indigo-400/15 border-indigo-400/30", adhd: 3 },
+  { id: "code", label: "CODE", icon: Users, desc: "Multi-agent", color: "text-violet-400", accent: "bg-violet-400/15 border-violet-400/30", adhd: 3 },
 ];
 
-const VALID_MODES: Mode[] = ["chat", "research", "study", "code"];
+const MORE_MODES: { id: Mode; label: string; icon: typeof MessageSquare; desc: string; color: string; accent: string; adhd: number }[] = [
+  { id: "designing", label: "DESIGNING", icon: Palette, desc: "Product Design", color: "text-pink-400", accent: "bg-pink-400/15 border-pink-400/30", adhd: 2 },
+  { id: "strategising", label: "STRATEGISING", icon: LineChart, desc: "Strategy", color: "text-cyan-400", accent: "bg-cyan-400/15 border-cyan-400/30", adhd: 2 },
+  { id: "creative-writing", label: "CREATIVE WRITING", icon: Feather, desc: "Writing", color: "text-rose-400", accent: "bg-rose-400/15 border-rose-400/30", adhd: 2.5 },
+  { id: "marketing", label: "MARKETING", icon: Megaphone, desc: "Ads & Ideas", color: "text-orange-400", accent: "bg-orange-400/15 border-orange-400/30", adhd: 2.5 },
+  { id: "idea-generation", label: "IDEA GENERATION", icon: Lightbulb, desc: "Brainstorm", color: "text-yellow-400", accent: "bg-yellow-400/15 border-yellow-400/30", adhd: 2.5 },
+  { id: "naming", label: "NAMING", icon: Tag, desc: "Branding", color: "text-teal-400", accent: "bg-teal-400/15 border-teal-400/30", adhd: 2.5 },
+];
+
+const VALID_MODES: Mode[] = ["chat", "research", "study", "code", "designing", "strategising", "creative-writing", "marketing", "idea-generation", "naming"];
 
 // ── Suggestions Panel ─────────────────────────────────────────────────────────
 const SUGGESTIONS_BY_MODE: Record<string, { icon: string; title: string; prompt: string }[]> = {
@@ -894,6 +904,7 @@ function PortalDesktop() {
   const [thinkingContent, setThinkingContent] = useState("");
   const [inFlightUserContent, setInFlightUserContent] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(typeof window !== "undefined" ? window.innerWidth >= 768 : true);
+  const [moreModesOpen, setMoreModesOpen] = useState(false);
   const [creditModalOpen, setCreditModalOpen] = useState(false);
   const [spinNotifOpen, setSpinNotifOpen] = useState(false);
   const [studyResourcesOpen, setStudyResourcesOpen] = useState(false);
@@ -1398,7 +1409,7 @@ function PortalDesktop() {
         if (activeMode === "study") {
           await sendStudyMessage({ conversationId: convId, content: msg, token, userContext, skipUserSave: userMessageSaved });
         } else {
-          await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code", token, userContext, skipUserSave: userMessageSaved });
+          await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code" | "designing" | "strategising" | "creative-writing" | "marketing" | "idea-generation" | "naming", token, userContext, skipUserSave: userMessageSaved });
         }
       } catch (err) {
         console.error("Fallback action also failed:", err);
@@ -1530,7 +1541,7 @@ function PortalDesktop() {
   const totalAB = dailyAB + purchasedAB;
 
   const filteredConvs = conversations?.filter((c: Conversation) => c.mode === activeMode) || [];
-  const currentMode = MODES.find(m => m.id === activeMode)!;
+  const currentMode = [...MODES, ...MORE_MODES].find(m => m.id === activeMode)!;
   const visibleMessages = (() => {
     const list = messages ?? [];
     if (!inFlightUserContent || (!isThinking && streamingContent === null)) return list;
@@ -1583,6 +1594,36 @@ function PortalDesktop() {
                   {mode.label}
                 </button>
               ))}
+              {/* More Modes dropdown */}
+              <div className="relative">
+                <button onClick={() => setMoreModesOpen(o => !o)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-bold transition-all ${MORE_MODES.some(m => m.id === activeMode) ? "border border-purple-400/30 bg-purple-400/15 text-purple-400" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
+                >
+                  <Zap className="h-3 w-3" />
+                  MORE MODES
+                </button>
+                {moreModesOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setMoreModesOpen(false)} />
+                    <div className="absolute left-0 top-full mt-1 z-50 w-[200px] bg-card border border-border rounded-lg shadow-xl overflow-hidden">
+                      {MORE_MODES.map(mode => {
+                        const isActive = activeMode === mode.id;
+                        return (
+                          <button key={mode.id} onClick={() => { setActiveMode(mode.id); setMoreModesOpen(false); }}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] font-bold transition-all text-left ${isActive ? `${mode.accent} border-l-2 ${mode.color}` : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
+                          >
+                            <mode.icon className={`h-3.5 w-3.5 shrink-0 ${isActive ? mode.color : ""}`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="truncate">{mode.label}</div>
+                              <div className="text-[9px] opacity-60 font-normal">{mode.desc} · ADHD {mode.adhd}/5</div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1658,6 +1699,19 @@ function PortalDesktop() {
                     <span className="text-[10px] opacity-60 ml-auto">{mode.desc}</span>
                   </button>
                 ))}
+                {/* Mobile More Modes */}
+                <div className="pt-1 mt-1 border-t border-border/50">
+                  <div className="text-[9px] text-muted-foreground/60 font-bold px-3 pb-1 uppercase tracking-wider">More Modes</div>
+                  {MORE_MODES.map(mode => (
+                    <button key={mode.id} onClick={() => { setActiveMode(mode.id); setSidebarOpen(typeof window !== "undefined" ? window.innerWidth >= 768 : true); }}
+                      className={`w-full flex items-center gap-2 px-3 py-2 rounded text-xs transition-all ${activeMode === mode.id ? `${mode.accent} border ${mode.color}` : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
+                    >
+                      <mode.icon className={`h-3.5 w-3.5 ${activeMode === mode.id ? mode.color : ""}`} />
+                      <span className="font-bold">{mode.label}</span>
+                      <span className="text-[10px] opacity-60 ml-auto">ADHD {mode.adhd}/5</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Sessions header */}
