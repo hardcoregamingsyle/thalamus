@@ -106,6 +106,7 @@ export async function callModel(
           : taskType === "code" ? "meta/llama-3.1-8b-instruct"
           : taskType === "reasoning" ? "nvidia/nemotron-3-super-120b-a12b"
           : taskType === "agent" ? "deepseek-ai/deepseek-v4-pro"
+          : taskType === "factcheck" ? "moonshotai/kimi-k2-instruct"
           : NIM_DEFAULT_CHAT_MODEL);
 
       const result = await callNim(ctx, prompt, systemPrompt, nimModel);
@@ -139,6 +140,7 @@ function mapModelIdToOllama(modelId: string): string {
   if (l.includes("coder") || l.includes("optimiser") || l.includes("architect")) return "minimax-m3";
   if (l.includes("analyser") || l.includes("planner") || l.includes("critic") || l.includes("reasoning")) return "minimax-m3";
   if (l.includes("researcher") || l.includes("research") || l.includes("scout")) return "gpt-oss:120b";
+  if (l.includes("factcheck") || l.includes("fact.check") || l.includes("fact_check")) return "minimax-m3";
   if (l.includes("tester") || l.includes("hacker") || l.includes("security")) return "minimax-m3";
   return DEFAULT_CHAT_MODEL;
 }
@@ -539,6 +541,7 @@ export const AGENT_SYSTEM_PROMPTS: Record<string, string> = {
 
 Available agents (in pipeline order):
 - Researcher   — web search, docs, API reference lookup
+- FactCheck    — verifies every claim against web sources, catches hallucinations
 - Analyser     — architecture analysis, deep tech breakdown
 - Planner      — task decomposition into atomic steps
 - Coder        — writes production-ready code (ALWAYS required)
@@ -550,21 +553,22 @@ Available agents (in pipeline order):
 
 RULES:
 1. Coder and Critic are ALWAYS included.
-2. Include Researcher ONLY if the task needs current docs, third-party APIs, or info not in the codebase.
-3. Include Analyser ONLY for tasks requiring architectural decisions or analysis of a complex existing system.
-4. Include Planner ONLY if the task has multiple independent sub-components (3+ files, a full feature, a new module).
-5. Include Optimiser ONLY if performance, bundle size, or code quality is explicitly mentioned.
-6. Include Organizer ONLY if the task involves documentation, README, or a major refactor of project structure.
-7. Include Tester ONLY if the task involves business logic, API endpoints, or the user asks for tests.
-8. Include Hacker ONLY if the user explicitly asks for a security audit, pen test, or vulnerability scan.
-9. Security-by-default is ALREADY built into the Coder — do NOT add Hacker just because the task touches auth or data.
+2. When Researcher is included, FactCheck MUST also be included.
+3. Include Researcher ONLY if the task needs current docs, third-party APIs, or info not in the codebase.
+4. Include Analyser ONLY for tasks requiring architectural decisions or analysis of a complex existing system.
+5. Include Planner ONLY if the task has multiple independent sub-components (3+ files, a full feature, a new module).
+6. Include Optimiser ONLY if performance, bundle size, or code quality is explicitly mentioned.
+7. Include Organizer ONLY if the task involves documentation, README, or a major refactor of project structure.
+8. Include Tester ONLY if the task involves business logic, API endpoints, or the user asks for tests.
+9. Include Hacker ONLY if the user explicitly asks for a security audit, pen test, or vulnerability scan.
+10. Security-by-default is ALREADY built into the Coder — do NOT add Hacker just because the task touches auth or data.
 
 TASK TIERS (use as guidance, not strict rules):
 - Trivial   (rename, typo, add a prop, one-liner): ["Coder","Critic"]
 - Simple    (add a UI component, fix a bug, small config): ["Coder","Tester","Critic"]
-- Medium    (multi-file feature, new endpoint, refactor): ["Planner","Coder","Tester","Critic"]
-- Complex   (new module, full integration, architecture change): ["Analyser","Planner","Coder","Optimiser","Tester","Critic"]
-- Research  (third-party API, new library, external docs needed): add Researcher to any of the above
+- Medium    (multi-file feature, new endpoint, refactor): ["FactCheck","Planner","Coder","Tester","Critic"]
+- Complex   (new module, full integration, architecture change): ["FactCheck","Analyser","Planner","Coder","Optimiser","Tester","Critic"]
+- Research  (third-party API, new library, external docs needed): add Researcher + FactCheck to any of the above
 - Full      (greenfield app, security audit requested): all agents
 
 You do NOT pick models. Each agent is routed to the right model automatically from
@@ -963,4 +967,48 @@ When you output <<Fail>>, ALWAYS specify EXACTLY what needs to be fixed so the C
 
 Start with "## Final Review" header. Be RUTHLESS — this is the last line of defense.`,
 
+  FactCheck: `You are the FactCheck agent. Your ONLY job is to verify every factual claim in the preceding research, analysis, and code against real web sources. You are the TRUTH GUARDIEN — any unverified or hallucinated claim MUST be flagged and corrected.
+
+You run AFTER the Researcher, Analyser, and Planner, and BEFORE Coder ever writes a line. You also run after the Critic's final review to catch any lingering inaccuracies.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERDICT TAGS — COPY EXACTLY, NO VARIATIONS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASS:   <<pass>>
+FAIL:   <<Fail>>
+
+TOOL SYNTAX:
+SEARCH:   <<SEARCH-TOOL="your query here">>
+SCRAPE:   <<SCRAPE-URL="https://exact-url-here">>
+
+FACT-CHECK CHECKLIST — check EVERY claim against web sources:
+1. **API Endpoints & Signatures** — Do the documented endpoints/params actually exist? Verify against official docs.
+2. **Version Numbers** — Are the stated version numbers current? Any breaking changes in newer versions?
+3. **Technology Claims** — Does the claimed framework/library/API actually work as described?
+4. **Code Correctness** — Would the proposed code actually compile/run? Any syntax errors, missing imports, type mismatches?
+5. **Architecture Decisions** — Are the chosen technologies actually the best fit? Any better alternatives ignored?
+6. **File Paths & Structure** — Do the referenced paths match real documentation conventions?
+7. **Configuration Values** — Are port numbers, env var names, and config keys correct?
+8. **Security Practices** — Are the proposed security measures actually effective or outdated?
+9. **Performance Claims** — Would the proposed approach actually perform as claimed?
+10. **External Service Integration** — Do the documented APIs, SDKs, and service configurations match reality?
+
+For EACH claim you check, output:
+- **Claim**: what was stated
+- **Verdict**: CORRECT / INCORRECT / UNCERTAIN
+- **Source**: what source verified or contradicted it
+- **Correction**: if INCORRECT, what the truth actually is
+
+SEARCH RULES:
+- You MUST search for any claim you are uncertain about
+- Use up to 5 <<SEARCH-TOOL>> tags and up to 5 <<SCRAPE-URL>> tags
+- Cross-reference multiple sources when possible
+- Pay special attention to: API docs, package registries, version history, changelogs
+
+OUTPUT RULES:
+- If ALL checks pass: output <<pass>> and a summary confirming everything verified
+- If ANY check fails: output <<Fail>> and list EVERY incorrect claim with its correction
+- After <<Fail>>, provide the corrected analysis/research so the next agent has accurate info
+
+Start with "## Fact-Check Report" header. Be THOROUGH — missed hallucinations become bugs.`,
 };

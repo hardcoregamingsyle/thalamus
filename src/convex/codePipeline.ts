@@ -27,6 +27,8 @@ import {
   callModel,
   parseAgentOutput,
   parsePlannerOutput,
+  performSearch,
+  performScrape,
   AGENT_SYSTEM_PROMPTS,
   calcAgentBucksForTier,
   type ModelTier,
@@ -40,12 +42,12 @@ const MAX_MCP_ROUNDS = 5;
 const MAX_MCP_CALLS_PER_MESSAGE = 5;
 
 // All known agents in their natural order
-const ALL_PLANNING_AGENTS = ["Researcher", "Analyser", "Planner"] as const;
-const ALL_TASK_AGENTS     = ["Researcher", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"] as const;
+const ALL_PLANNING_AGENTS = ["Researcher", "FactCheck", "Analyser", "Planner"] as const;
+const ALL_TASK_AGENTS     = ["Researcher", "FactCheck", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"] as const;
 
 // The full fallback pipelines (used when no Dispatcher output exists)
-const DEFAULT_PLANNING_PIPELINE = ["Researcher", "Analyser", "Planner"];
-const DEFAULT_TASK_PIPELINE     = ["Researcher", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
+const DEFAULT_PLANNING_PIPELINE = ["Researcher", "FactCheck", "Analyser", "Planner"];
+const DEFAULT_TASK_PIPELINE     = ["Researcher", "FactCheck", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
 
 /** Build the actual planning pipeline from the Dispatcher's chosen agent list. */
 function buildPlanningPipeline(dispatched: string[]): string[] {
@@ -69,7 +71,7 @@ function parseDispatcherOutput(
     const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
     const parsed = JSON.parse(cleaned);
     if (!Array.isArray(parsed.agents) || parsed.agents.length === 0) return null;
-    const VALID = new Set(["Researcher","Analyser","Planner","Coder","Optimiser","Organizer","Tester","Hacker","Critic"]);
+    const VALID = new Set(["Researcher","FactCheck","Analyser","Planner","Coder","Optimiser","Organizer","Tester","Hacker","Critic"]);
     const agents = (parsed.agents as string[]).filter(a => VALID.has(a));
     // Always guarantee Coder and Critic
     if (!agents.includes("Coder"))  agents.push("Coder");
@@ -634,8 +636,11 @@ export const runPipelineAction = internalAction({
       // at the top does NOT reflect tasks the Planner just saved — use this).
       let parsedPlannerTasks: Array<{ title: string; description: string }> = [];
 
+      const systemPrompt = currentPhase === "Planner"
+        ? (AGENT_SYSTEM_PROMPTS["Planner"] ?? "")
+        : (AGENT_SYSTEM_PROMPTS[currentPhase] ?? `You are the ${currentPhase} agent.`);
+
       if (currentPhase === "Planner") {
-        const systemPrompt = AGENT_SYSTEM_PROMPTS["Planner"] ?? "";
         const prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
         const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, "Planner", geminiKeys, dbCreds, agentModelAssignments);
         agentOutput = result.text;
@@ -651,7 +656,6 @@ export const runPipelineAction = internalAction({
           });
         }
       } else {
-        const systemPrompt = AGENT_SYSTEM_PROMPTS[currentPhase] ?? `You are the ${currentPhase} agent.`;
         // Default prompt for planning phase and non-Coder agents in execution
         // phase. mcpToolSection is included here too — the planning-phase
         // Researcher is the natural "search AgentOverflow first" agent, and
@@ -752,6 +756,51 @@ export const runPipelineAction = internalAction({
             agent: agentName,
           });
         }
+      }
+
+      // Execute search and scrape operations from the agent output
+      const searchResults: Array<{ query: string; result: string }> = [];
+      for (const s of parsed.searchOps.slice(0, 5)) {
+        try {
+          const result = await performSearch(s.query);
+          searchResults.push({ query: s.query, result });
+        } catch {
+          searchResults.push({ query: s.query, result: "[Search failed]" });
+        }
+      }
+      for (const s of parsed.scrapeOps.slice(0, 5)) {
+        try {
+          const result = await performScrape(s.url);
+          searchResults.push({ query: s.url, result });
+        } catch {
+          searchResults.push({ query: s.url, result: "[Scrape failed]" });
+        }
+      }
+      if (searchResults.length > 0) {
+        const searchContext = searchResults
+          .map((r, i) => `[RESULT ${i + 1} for "${r.query}"]:\n${r.result}`)
+          .join("\n\n---\n\n");
+        // Re-call the same agent with search results appended
+        const searchPrompt = `${agentOutput}\n\n---\n\nSEARCH RESULTS:\n${searchContext}\n\nNow continue your work using the above information. Do NOT emit any more <<SEARCH-TOOL>> or <<SCRAPE-URL>> tags.`;
+        const searchCall = await callModelWithStreaming(ctx, searchPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments);
+        agentOutput = searchCall.text;
+        await bill(`${currentPhase.toLowerCase()}-search`, searchCall);
+        // Re-parse with search results incorporated
+        const reParsed = parseAgentOutput(agentOutput);
+        reParsed.cleanContent = stripMcpBlocks(reParsed.cleanContent);
+        // Apply any new file ops from the search-informed response
+        for (const op of reParsed.fileOps) {
+          if (op.type === "create" || op.type === "edit") {
+            await ctx.runMutation(internal.codeBranches.upsertFile, {
+              branchId,
+              filepath: op.filepath,
+              content: op.content ?? "",
+              agent: agentName,
+            });
+          }
+        }
+        parsed.cleanContent = reParsed.cleanContent;
+        parsed.fileOps.push(...reParsed.fileOps);
       }
 
       // Commands come from the RAW output, never from cleanContent:

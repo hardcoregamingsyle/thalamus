@@ -398,8 +398,9 @@ export const NIM_REASONING_FALLBACK_CHAIN = [
 // "reasoning" needs deep thinking models.
 // "agent" needs tool-use-capable models.
 // "research" needs large context + agent capabilities.
+// "factcheck" needs broad knowledge + web-verification ability.
 
-export type TaskType = "dispatcher" | "chat" | "code" | "reasoning" | "agent" | "research";
+export type TaskType = "dispatcher" | "chat" | "code" | "reasoning" | "agent" | "research" | "factcheck";
 
 const TASK_MODEL_MAP: Record<TaskType, string[]> = {
   dispatcher: [
@@ -441,6 +442,13 @@ const TASK_MODEL_MAP: Record<TaskType, string[]> = {
     "openai/gpt-oss-120b",
     "meta/llama-3.3-70b-instruct",
   ],
+  factcheck: [
+    "moonshotai/kimi-k2-instruct",
+    "nvidia/nemotron-3-super-120b-a12b",
+    "google/gemma-4-31b-it",
+    "openai/gpt-oss-120b",
+    "meta/llama-3.3-70b-instruct",
+  ],
 };
 
 export function modelsForTask(task: TaskType): string[] {
@@ -455,6 +463,7 @@ export function agentToTaskType(agentName: string): TaskType {
   // Both spellings: the pipeline names the agent "Organizer" (z), this map was
   // written with "organiser" (s), so it silently missed every time.
   if (name.includes("dispatcher") || name.includes("organiser") || name.includes("organizer") || name.includes("summarizer")) return "dispatcher";
+  if (name.includes("factcheck") || name.includes("fact.check") || name.includes("fact_check") || name.includes("verifier")) return "factcheck";
   if (name.includes("coder") || name.includes("optimiser") || name.includes("architect")) return "code";
   if (name.includes("analyser") || name.includes("planner") || name.includes("critic")) return "reasoning";
   if (name.includes("researcher") || name.includes("research") || name.includes("scout")) return "research";

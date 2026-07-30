@@ -283,11 +283,28 @@ Use: <h2>, <h3> headings, <p> paragraphs, <ul>/<ol> lists, <strong> bold, <code>
 
 SEARCH TOOL: Include <<SEARCH-TOOL="query">> in your response when you need current data. System will search and ask you to give the final answer. Use up to 3 searches. Always search when uncertain about facts, events, or recent info.`,
 
-      research: `You are Thalamus AI Research Mode. Respond ONLY in clean semantic HTML. No markdown, no backticks.
+      research: `You are Thalamus AI Research Mode — a professional research analyst. Your job is to produce EXHAUSTIVE, MULTI-ANGLE, DEEPLY-SOURCED research reports. Every factual claim MUST be backed by a web search.
 
-Structure: <h1> title, <h2> sections, <h3> subsections, <p> analysis, <ul>/<ol> findings, <table> comparisons, <blockquote> insights, <pre><code> code examples.
+CRITICAL RULES:
+- You MUST search for EVERY factual claim. Never rely on training data alone.
+- Use MULTIPLE searches per subtopic — search different angles, phrasings, and sources.
+- Cross-reference: find contradictions between sources and synthesize the truth.
+- Cite specific sources for every data point, statistic, date, and specification.
+- If sources disagree, present both sides and explain which is likely correct and why.
+- Look for: official docs, news articles, academic papers, Stack Overflow, GitHub, forums, reviews.
+- Search for counterarguments and opposing views — balanced research requires this.
 
-SEARCH TOOL: Include <<SEARCH-TOOL="query">> in your response to search. Use up to 3 searches. Always search for factual data.`,
+OUTPUT MUST include for each major finding:
+1. The claim
+2. Source(s) backing it (with URLs or source descriptions)
+3. Confidence level (HIGH / MEDIUM / LOW — based on source quality and corroboration)
+4. Alternative views or contradictions found
+
+STRUCTURE: <h1> Executive Summary, <h2> sections per angle, <h3> subsections, <p> analysis, <ul>/<ol> findings with citations, <table> comparisons, <blockquote> key insights.
+
+SEARCH TOOL: Include <<SEARCH-TOOL="query">> for EACH search. Use up to 15 searches — research EVERY angle, EVERY technology, EVERY claim. The more searches, the better the report.
+
+FORMAT: Respond ONLY in clean semantic HTML. No markdown, no backticks.`,
 
       code: `You are Thalamus AI Code Mode — an expert software engineer. Respond ONLY in clean semantic HTML. No markdown, no backticks.
 
@@ -319,10 +336,10 @@ Use <pre><code> for code blocks, <code> for inline code, <h2> sections, <p> expl
     const searchMatches = [...responseContent.matchAll(searchPattern)];
 
     if (searchMatches.length > 0) {
-      // Execute searches (max 3)
+      // Execute searches (max 15)
       const geminiKeys = await getGeminiKeysFromDB(ctx);
       const searchResults: Array<{ query: string; result: string }> = [];
-      for (const match of searchMatches.slice(0, 3)) {
+      for (const match of searchMatches.slice(0, 15)) {
         const query = match[1];
         try {
           const result = await performSearch(query, geminiKeys.length > 0 ? geminiKeys : undefined);
@@ -356,6 +373,66 @@ Use <pre><code> for code blocks, <code> for inline code, <h2> sections, <p> expl
       outputTokens += followUp.outputTokens;
     }
     // --- End search tool loop ---
+
+    // --- FactCheck phase (research mode only): verify every claim against web sources ---
+    if (args.mode === "research") {
+      const factCheckSystemPrompt = `You are a Fact Checker. Your ONLY job is to rigorously verify every factual claim in the research report below against real web sources.
+
+RULES:
+- For EACH factual claim, determine: CORRECT / INCORRECT / UNCERTAIN
+- For INCORRECT claims: provide the corrected information with source
+- For UNCERTAIN claims: search to verify
+- Do NOT change the HTML formatting — keep the same structure
+- Output the CORRECTED report with any errors fixed
+- If everything is correct, output the original report unchanged
+
+SEARCH TOOL: Use <<SEARCH-TOOL="query">> to search for claims you need to verify. Use up to 5 searches.`;
+
+      let factCheckMessages: Array<{ role: "user" | "assistant"; content: string }> = [
+        ...messages,
+        { role: "assistant", content: responseContent },
+        { role: "user", content: "Fact-check the above research report. Verify EVERY factual claim against web sources. If you need to search, use <<SEARCH-TOOL>> tags. Then provide the corrected report in HTML." },
+      ];
+
+      let factCheckResult = await callAI(ctx, factCheckSystemPrompt, factCheckMessages, 4096, modelName);
+      let factCheckText = factCheckResult.text;
+      inputTokens += factCheckResult.inputTokens;
+      outputTokens += factCheckResult.outputTokens;
+
+      // Check if fact-checker requested searches
+      const fcSearchPattern = /<<SEARCH-TOOL="([^"]+)">>/g;
+      const fcSearchMatches = [...factCheckText.matchAll(fcSearchPattern)];
+      if (fcSearchMatches.length > 0) {
+        const fcSearchResults: Array<{ query: string; result: string }> = [];
+        for (const match of fcSearchMatches.slice(0, 5)) {
+          const query = match[1];
+          try {
+            const fcResult = await performSearch(query, undefined);
+            fcSearchResults.push({ query, result: fcResult.slice(0, 3000) });
+          } catch {
+            fcSearchResults.push({ query, result: "[Search failed]" });
+          }
+        }
+
+        const fcSearchContext = fcSearchResults
+          .map((r, i) => `[SEARCH RESULT ${i + 1} for "${r.query}"]:\n${r.result}`)
+          .join("\n\n---\n\n");
+
+        factCheckMessages = [
+          ...factCheckMessages,
+          { role: "assistant", content: factCheckText },
+          { role: "user", content: `Here are the search results you requested:\n\n${fcSearchContext}\n\nNow provide your FINAL verified report with ALL corrections applied. Output the complete corrected HTML report.` },
+        ];
+
+        const fcFinal = await callAI(ctx, factCheckSystemPrompt, factCheckMessages, 4096, modelName);
+        factCheckText = fcFinal.text;
+        inputTokens += fcFinal.inputTokens;
+        outputTokens += fcFinal.outputTokens;
+      }
+
+      responseContent = factCheckText;
+    }
+    // --- End FactCheck phase ---
 
     const tokensUsed = inputTokens + outputTokens;
     const inputCostCents = (inputTokens / 1_000_000) * 60;
