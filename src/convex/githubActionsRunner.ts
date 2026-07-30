@@ -315,6 +315,31 @@ export const executeBranchCommandsViaActions = internalAction({
   },
 });
 
+/** Ensure the sandbox workflow file exists, creating the branch if needed. */
+async function ensureSandboxWorkflowWithBranch(octokit: Octokit, cfg: GhConfig): Promise<void> {
+  const candidates = ["main", "master"];
+  for (const attempt of [1, 2]) {
+    try {
+      await ensureSandboxWorkflow(octokit, cfg);
+      return;
+    } catch (err) {
+      const httpErr = err as { status?: number } | undefined;
+      if (httpErr?.status !== 404 || attempt === 2) throw err;
+      // Branch doesn't exist — create it from the default branch.
+      let created = false;
+      for (const candidate of candidates) {
+        try {
+          const { data: defaultRef } = await octokit.git.getRef({ owner: cfg.owner, repo: cfg.repo, ref: `heads/${candidate}` });
+          await octokit.git.createRef({ owner: cfg.owner, repo: cfg.repo, ref: `refs/heads/${cfg.branch}`, sha: defaultRef.object.sha });
+          created = true;
+          break;
+        } catch { /* try next */ }
+      }
+      if (!created) throw new Error(`Cannot create branch ${cfg.branch}: no default branch found (tried ${candidates.join(", ")})`);
+    }
+  }
+}
+
 async function ensureSandboxWorkflow(octokit: Octokit, cfg: GhConfig): Promise<void> {
   let existingSha: string | undefined;
   try {
@@ -366,20 +391,19 @@ export const startSandbox = internalAction({
         commitMessage: "build: sync before sandbox",
       });
     } catch (pushErr) {
-      console.error("autoPushToGithub failed, attempting sandbox workflow anyway:", pushErr);
+      const msg = pushErr instanceof Error ? pushErr.message : String(pushErr);
+      // If the auto-push failed because the branch doesn't exist, we create it
+      // below in the workflow-fallback. If it was a rate-limit, the blob retry
+      // loop already waited — an error here means we're genuinely hosed.
+      if (msg.includes("secondary rate") || msg.includes("403")) {
+        throw new Error(
+          "GitHub is rate-limiting pushes. Wait a few minutes, then try again. "
+          + "The sandbox cannot start until the branch is synced."
+        );
+      }
+      console.error("autoPushToGithub failed, continuing:", pushErr);
     }
-    try {
-      await ensureSandboxWorkflow(octokit, cfg);
-    } catch (wfErr) {
-      // Branch may not exist yet — create it from the default branch.
-      const defaultBranch = cfg.branch.replace(/^dev\//, "").split("-")[0] || "main";
-      try {
-        const { data: defaultRef } = await octokit.git.getRef({ owner: cfg.owner, repo: cfg.repo, ref: `heads/${defaultBranch}` });
-        await octokit.git.createRef({ owner: cfg.owner, repo: cfg.repo, ref: `refs/heads/${cfg.branch}`, sha: defaultRef.object.sha });
-      } catch { /* branch may already exist now */ }
-      // Retry workflow file creation.
-      await ensureSandboxWorkflow(octokit, cfg);
-    }
+    await ensureSandboxWorkflowWithBranch(octokit, cfg);
 
     const callbackUrl = `${process.env.CONVEX_SITE_URL}/code/sandbox-callback?branchId=${encodeURIComponent(args.branchId)}`;
 

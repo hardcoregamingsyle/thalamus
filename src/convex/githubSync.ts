@@ -218,25 +218,37 @@ export const pushToGithub = action({
         commit_sha: latestCommitSha,
       });
 
-      const baseTreeSha = commitData.tree.sha;
+const baseTreeSha = commitData.tree.sha;
 
-      const tree = await Promise.all(
-        files.map(async (file) => {
-          const { data: blob } = await octokit.git.createBlob({
-            owner: config.owner,
-            repo: config.repo,
-            content: Buffer.from(file.content).toString("base64"),
-            encoding: "base64",
-          });
-
-          return {
-            path: file.filepath,
-            mode: "100644" as const,
-            type: "blob" as const,
-            sha: blob.sha,
-          };
-        })
-      );
+      // Sequential blob creation with spacing + retry on 403 rate limits.
+      const tree: Array<{ path: string; mode: "100644"; type: "blob"; sha: string }> = [];
+      for (const file of files) {
+        let lastErr: unknown;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const { data: blob } = await octokit.git.createBlob({
+              owner: config.owner,
+              repo: config.repo,
+              content: Buffer.from(file.content).toString("base64"),
+              encoding: "base64",
+            });
+            tree.push({ path: file.filepath, mode: "100644" as const, type: "blob" as const, sha: blob.sha });
+            lastErr = undefined;
+            break;
+          } catch (err: unknown) {
+            lastErr = err;
+            const resp = (err as Record<string, unknown>)?.response as Record<string, unknown> | undefined;
+            if (resp?.status === 403) {
+              const retryAfter = parseInt(String(resp?.headers?.["retry-after"] ?? "5"), 10);
+              await new Promise((r) => setTimeout(r, Math.min(retryAfter * 1000, 15000)));
+            } else {
+              break;
+            }
+          }
+        }
+        if (lastErr) throw lastErr;
+        await new Promise((r) => setTimeout(r, 200));
+      }
 
       const { data: newTree } = await octokit.git.createTree({
         owner: config.owner,
@@ -264,12 +276,6 @@ export const pushToGithub = action({
         projectId: args.projectId,
         branchId: args.branchId,
       });
-
-      return {
-        success: true,
-        commitSha: newCommit.sha,
-        filesUpdated: files.length,
-      };
     } catch (err) {
       console.error("Push error:", err);
       throw new Error(err instanceof Error ? err.message : "Failed to push to GitHub");
@@ -322,17 +328,42 @@ export const autoPushToGithub = internalAction({
 
       const baseTreeSha = commitData.tree.sha;
 
-      // Sequential blob creation with 50ms spacing to avoid GitHub secondary rate limits.
+      // Sequential blob creation with spacing to avoid GitHub secondary rate limits.
+      // Retries individual blobs on 403 with Retry-After backoff (up to 3 tries).
       const tree: Array<{ path: string; mode: "100644"; type: "blob"; sha: string }> = [];
       for (const file of files) {
-        const { data: blob } = await octokit.git.createBlob({
-          owner: config.owner,
-          repo: config.repo,
-          content: Buffer.from(file.content).toString("base64"),
-          encoding: "base64",
-        });
-        tree.push({ path: file.filepath, mode: "100644" as const, type: "blob" as const, sha: blob.sha });
-        await new Promise((r) => setTimeout(r, 50));
+        let lastErr: unknown;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const { data: blob } = await octokit.git.createBlob({
+              owner: config.owner,
+              repo: config.repo,
+              content: Buffer.from(file.content).toString("base64"),
+              encoding: "base64",
+            });
+            tree.push({ path: file.filepath, mode: "100644" as const, type: "blob" as const, sha: blob.sha });
+            lastErr = undefined;
+            break;
+          } catch (err: unknown) {
+            lastErr = err;
+            const resp = (err as Record<string, unknown>)?.response as Record<string, unknown> | undefined;
+            if (resp?.status === 403) {
+              const retryAfter = parseInt(String(resp?.headers?.["retry-after"] ?? "5"), 10);
+              const waitMs = Math.min((retryAfter || 5) * 1000, 15000);
+              console.error(`GitHub secondary rate limit on blob, waiting ${waitMs}ms (attempt ${attempt + 1}/3)`);
+              await new Promise((r) => setTimeout(r, waitMs));
+            } else {
+              // Non-rate-limit error — no point retrying.
+              break;
+            }
+          }
+        }
+        if (lastErr) {
+          console.error(`Failed to create blob for ${file.filepath} after retries:`, lastErr);
+          throw lastErr;
+        }
+        // 200ms gap between blobs keeps burst well under secondary rate limits.
+        await new Promise((r) => setTimeout(r, 200));
       }
 
       const { data: newTree } = await octokit.git.createTree({
