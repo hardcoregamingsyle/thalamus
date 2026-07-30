@@ -140,6 +140,13 @@ export const updateLastSync = internalMutation({
   },
 });
 
+export const listAllGithubConfigs = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("githubConfigs").collect();
+  },
+});
+
 // Find all configs for a specific GitHub repo and branch
 export const findConfigsByRepo = internalQuery({
   args: {

@@ -34,23 +34,32 @@ export const createObscureRepo = internalAction({
         name: repoName,
         description: "Thalamus Code Project",
         private: false,
-        auto_init: true,
+        auto_init: false,
         has_issues: false,
         has_projects: false,
         has_wiki: false,
       });
 
-      const { data: defaultRef } = await octokit.git.getRef({
+      // No auto_init means main is unborn — create an initial commit so the
+      // ref exists, then fork the feature branch from it.
+      const readmeContent = Buffer.from(
+        "# Thalamus Code Project\n\nAuto-generated repository. Edited by AI agents.\n"
+      ).toString("base64");
+
+      const { data: created } = await octokit.repos.createOrUpdateFileContents({
         owner: username,
         repo: repoName,
-        ref: "heads/main",
+        path: "README.md",
+        message: "Initialize project",
+        content: readmeContent,
+        branch: "main",
       });
 
       await octokit.git.createRef({
         owner: username,
         repo: repoName,
         ref: `refs/heads/${branchName}`,
-        sha: defaultRef.object.sha,
+        sha: created.commit.sha,
       });
 
       // Webhook so we can react to pushes from outside Thalamus
@@ -77,20 +86,6 @@ export const createObscureRepo = internalAction({
         branch: branchName,
         lastSync: Date.now(),
         githubToken: args.githubToken,
-      });
-
-      // Seed a README so the repo isn't empty
-      const readmeContent = Buffer.from(
-        "# Thalamus Code Project\n\nAuto-generated repository. Edited by AI agents.\n"
-      ).toString("base64");
-
-      await octokit.repos.createOrUpdateFileContents({
-        owner: username,
-        repo: repoName,
-        path: "README.md",
-        message: "Initialize project",
-        content: readmeContent,
-        branch: branchName,
       });
 
       return { success: true, owner: username, repoName, branchName, repoUrl: repo.html_url };
@@ -147,6 +142,54 @@ export const ensureRepoForBranch = internalAction({
 
 // Scheduled from createProject/createBranch — resolves the session, then hands
 // off to the idempotent ensure above.
+// Creates repos for every active branch that doesn't already have one.
+// Branches created before the repo-creation system was wired never got repos.
+// Idempotent — skips branches that already have a config (ensureRepoForBranch
+// checks this internally too).
+export const createReposForOrphanBranches = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ created: number; skipped: number; errors: string[] }> => {
+    const allBranches = await ctx.runQuery(internal.codeBranches.listAllBranchesInternal);
+    const errors: string[] = [];
+    let created = 0;
+    let skipped = 0;
+
+    for (const branch of allBranches) {
+      const existing = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+        projectId: branch.projectId,
+        branchId: branch.branchId,
+      });
+      if (existing?.owner && existing.repo) {
+        skipped++;
+        continue;
+      }
+
+      const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, {
+        projectId: branch.projectId,
+      });
+      if (!project) {
+        errors.push(`No project found for branch ${branch.branchId}`);
+        continue;
+      }
+
+      try {
+        const result = await ctx.runAction(internal.githubAutoCreate.ensureRepoForBranch, {
+          userId: project.userId,
+          projectId: branch.projectId,
+          branchId: branch.branchId,
+          projectName: project.name,
+        });
+        if (result) created++;
+        else errors.push(`Branch ${branch.branchId} (${branch.name}): no usable GitHub token`);
+      } catch (err) {
+        errors.push(`Branch ${branch.branchId} (${branch.name}): ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    return { created, skipped, errors };
+  },
+});
+
 export const autoCreateRepoForBranch = internalAction({
   args: {
     token: v.string(),

@@ -113,6 +113,14 @@ export const listBranches = query({
   },
 });
 
+// Internal: list all branches (no auth — migration/admin use only)
+export const listAllBranchesInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("codeBranches").collect();
+  },
+});
+
 // Internal: Get branch
 export const getBranchInternal = internalQuery({
   args: { branchId: v.string() },
