@@ -796,6 +796,11 @@ export const runPipelineAction = internalAction({
             content: op.content ?? "",
             agent: agentName,
           });
+        } else if (op.type === "delete") {
+          await ctx.runMutation(internal.codeBranches.deleteFileByPath, {
+            branchId,
+            filepath: op.filepath,
+          });
         }
       }
 
@@ -837,6 +842,11 @@ export const runPipelineAction = internalAction({
               filepath: op.filepath,
               content: op.content ?? "",
               agent: agentName,
+            });
+          } else if (op.type === "delete") {
+            await ctx.runMutation(internal.codeBranches.deleteFileByPath, {
+              branchId,
+              filepath: op.filepath,
             });
           }
         }

@@ -440,13 +440,24 @@ export const updatePlannerTasks = internalMutation({
   },
 });
 
-// Delete file (for cleanup)
+// Delete file by ID (for cleanup)
 export const deleteFile = internalMutation({
-  args: {
-    fileId: v.id("codeFiles"),
-  },
+  args: { fileId: v.id("codeFiles") },
   handler: async (ctx, args) => {
     await ctx.db.delete(args.fileId);
+  },
+});
+
+// Delete file by branch + path (agent-facing)
+export const deleteFileByPath = internalMutation({
+  args: { branchId: v.string(), filepath: v.string() },
+  handler: async (ctx, args) => {
+    const file = await ctx.db
+      .query("codeFiles")
+      .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
+      .filter((q) => q.eq(q.field("filepath"), args.filepath))
+      .first();
+    if (file) await ctx.db.delete(file._id);
   },
 });
 
