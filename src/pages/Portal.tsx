@@ -1708,7 +1708,7 @@ function PortalDesktop() {
                     >
                       <mode.icon className={`h-3.5 w-3.5 ${activeMode === mode.id ? mode.color : ""}`} />
                       <span className="font-bold">{mode.label}</span>
-                      <span className="text-[10px] opacity-60 ml-auto">ADHD {mode.adhd}/5</span>
+                      <span className="text-[10px] opacity-60 ml-auto">{mode.desc} · ADHD {mode.adhd}/5</span>
                     </button>
                   ))}
                 </div>

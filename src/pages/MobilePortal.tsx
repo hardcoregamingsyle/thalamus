@@ -16,9 +16,10 @@ import {
   MessageSquare, Search, BookOpen, Users, Plus, Send, Loader2,
   Trash2, Zap, LogOut, Cpu, ChevronRight,
   ArrowLeft, Paperclip, Settings, Moon, Sun, GraduationCap,
+  Palette, LineChart, Feather, Megaphone, Lightbulb, Tag,
 } from "lucide-react";
 
-type Mode = "chat" | "research" | "study" | "code";
+type Mode = "chat" | "research" | "study" | "code" | "designing" | "strategising" | "creative-writing" | "marketing" | "idea-generation" | "naming";
 
 interface Conversation {
   _id: Id<"conversations">;
@@ -41,9 +42,15 @@ const MODES: { id: Mode; label: string; icon: typeof MessageSquare; color: strin
   { id: "research", label: "Research", icon: Search, color: "text-amber-400", bg: "bg-amber-500/15", emoji: "🔬", desc: "Deep research with live web data", accentColor: "#fbbf24" },
   { id: "study", label: "Study", icon: BookOpen, color: "text-indigo-400", bg: "bg-indigo-500/15", emoji: "📚", desc: "Study with explanations and practice", accentColor: "#818cf8" },
   { id: "code", label: "Code", icon: Users, color: "text-violet-400", bg: "bg-violet-500/15", emoji: "⚡", desc: "9-agent software development", accentColor: "#a78bfa" },
+  { id: "designing", label: "Designing", icon: Palette, color: "text-pink-400", bg: "bg-pink-500/15", emoji: "🎨", desc: "Product design and UI/UX concepts", accentColor: "#f472b6" },
+  { id: "strategising", label: "Strategising", icon: LineChart, color: "text-cyan-400", bg: "bg-cyan-500/15", emoji: "📈", desc: "Structured strategies and roadmaps", accentColor: "#22d3ee" },
+  { id: "creative-writing", label: "Creative Writing", icon: Feather, color: "text-rose-400", bg: "bg-rose-500/15", emoji: "✍️", desc: "Stories, poems, scripts and prose", accentColor: "#fb7185" },
+  { id: "marketing", label: "Marketing", icon: Megaphone, color: "text-orange-400", bg: "bg-orange-500/15", emoji: "📣", desc: "Ad concepts and campaign ideas", accentColor: "#fb923c" },
+  { id: "idea-generation", label: "Idea Generation", icon: Lightbulb, color: "text-yellow-400", bg: "bg-yellow-500/15", emoji: "💡", desc: "Brainstorm and connect ideas", accentColor: "#facc15" },
+  { id: "naming", label: "Naming", icon: Tag, color: "text-teal-400", bg: "bg-teal-500/15", emoji: "🏷️", desc: "Names, taglines and brand identities", accentColor: "#2dd4bf" },
 ];
 
-const VALID_MODES: Mode[] = ["chat", "research", "study", "code"];
+const VALID_MODES: Mode[] = ["chat", "research", "study", "code", "designing", "strategising", "creative-writing", "marketing", "idea-generation", "naming"];
 
 // ── Streaming helper ──────────────────────────────────────────────────────────
 async function streamChat(
@@ -307,7 +314,7 @@ function MobileChatView({
         if (mode === "study") {
           await sendStudyMessage({ conversationId: convId, content: msg, token, userContext, skipUserSave: userMessageSaved });
         } else {
-          await sendMessage({ conversationId: convId, content: msg, mode: mode as "chat" | "research" | "code", token, userContext, skipUserSave: userMessageSaved });
+          await sendMessage({ conversationId: convId, content: msg, mode: mode as "chat" | "research" | "code" | "designing" | "strategising" | "creative-writing" | "marketing" | "idea-generation" | "naming", token, userContext, skipUserSave: userMessageSaved });
         }
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to send");

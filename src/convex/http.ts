@@ -3,7 +3,7 @@ import { httpAction } from "./_generated/server";
 import { internal, api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
-import { callModel, calcAgentBucksForTier, FREE_UNLIMITED } from "./agentCore";
+import { callModel, calcAgentBucksForTier, FREE_UNLIMITED, MODE_ADHD, adhdToTemperature, MODE_SYSTEM_PROMPTS } from "./agentCore";
 import { buildStudySystemPrompt } from "./studyPrompt";
 import {
   aoOptions,
@@ -156,6 +156,7 @@ async function streamClaudeWithCreds(
   systemPrompt: string,
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   onChunk: (text: string) => void,
+  temperature = 0.7,
 ): Promise<{ fullText: string; inputTokens: number; outputTokens: number }> {
   // Use the region stored with the credentials — IAM credentials are region-specific
   // and the SigV4 signature must match the region where Bedrock access is enabled.
@@ -176,7 +177,7 @@ async function streamClaudeWithCreds(
     system: systemPrompt.slice(0, 8000),
     messages: messages.map(m => ({ role: m.role, content: m.content.slice(0, 4000) })),
     max_tokens: 8192,
-    temperature: 0.7,
+    temperature,
   });
 
   const cleanSecret = creds.secretAccessKey.replace(/^["']|["']$/g, "");
@@ -299,11 +300,14 @@ http.route({
       return new Response("Service temporarily unavailable", { status: 503, headers: corsHeaders() });
     }
 
-    // Study mode: the SERVER builds the system prompt — grade/board/language
-    // from the user record plus RAG grounding from the student's own uploaded
-    // material. This upgrades every client at once (web, desktop, mobile) and
-    // stops the prompt depending on whatever the client happened to send.
-    let effectiveSystemPrompt = systemPrompt;
+    // The SERVER is authoritative for the system prompt on every recognized
+    // mode — study gets the grade/board/RAG-aware builder below, every other
+    // known mode gets its shared MODE_SYSTEM_PROMPTS entry (same table used by
+    // ai.ts's fallback actions, so persona stays identical across paths). This
+    // upgrades every client at once (web, desktop, mobile) instead of trusting
+    // whatever prompt the client happened to send; an unrecognized mode still
+    // falls back to the client-sent systemPrompt.
+    let effectiveSystemPrompt = MODE_SYSTEM_PROMPTS[mode] ?? systemPrompt;
     if (mode === "study") {
       try {
         const [userRecord, adminMaterials, resources] = await Promise.all([
@@ -344,6 +348,7 @@ http.route({
       ? `\n\nCurrent date/time: ${userContext.datetime} (${userContext.timezone})\n`
       : "";
     const fullSystem = effectiveSystemPrompt + contextHeader;
+    const temperature = adhdToTemperature(MODE_ADHD[mode] ?? MODE_ADHD.chat);
 
     const messages: Array<{ role: "user" | "assistant"; content: string }> = [
       ...history.map(m => ({ role: m.role, content: m.content.slice(0, 2000) })),
@@ -366,7 +371,7 @@ http.route({
     // Try Claude (non-streaming invoke first to get full text, then stream it).
     if (!streamSuccess && hasBedrock && bedrockCreds && preferHighTier !== false) {
       try {
-        const result = await streamClaudeWithCreds(bedrockCreds, fullSystem, messages, () => {});
+        const result = await streamClaudeWithCreds(bedrockCreds, fullSystem, messages, () => {}, temperature);
         fullText = result.fullText;
         usedClaude = true;
         streamSuccess = true;
@@ -385,7 +390,7 @@ http.route({
       geminiStreamBody = JSON.stringify({
         system_instruction: { parts: [{ text: fullSystem }] },
         contents: geminiContents,
-        generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
+        generationConfig: { maxOutputTokens: 4096, temperature },
       });
 
       const geminiKeys = await ctx.runQuery(internal.admin.getGeminiKeysInternal, {}) as string[];
