@@ -555,7 +555,41 @@ function parseSseResponse(raw: string, defaultModel: string): NimChatResult | nu
   return { text, inputTokens: promptTokens, outputTokens: completionTokens, model: modelName };
 }
 
+// Fire-and-forget: the admin panel's NIM tab reads this back so a fallback to
+// Ollama has a visible reason instead of only a console.warn nobody but the
+// platform can read. Never lets a logging failure affect the actual call.
+async function recordNimOutcome(
+  ctx: { runMutation?: ActionCtx["runMutation"] },
+  error: string | null,
+): Promise<void> {
+  try {
+    await ctx.runMutation?.(internal.admin.recordNimFallback, { error });
+  } catch { /* observability only — never let this affect the real call */ }
+}
+
+// Thin wrapper so every exit from the retry loop below — success or the keys
+// genuinely being exhausted — reports back to the admin panel exactly once,
+// without threading recordNimOutcome calls into each individual return/throw.
 export async function callNim(
+  ctx: { runQuery: ActionCtx["runQuery"]; runMutation?: ActionCtx["runMutation"] },
+  prompt: string,
+  systemPrompt: string,
+  model: string = NIM_DEFAULT_CHAT_MODEL,
+  maxTokens: number = 8192,
+  temperature: number = 0.7,
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
+): Promise<NimChatResult> {
+  try {
+    const result = await callNimAttempt(ctx, prompt, systemPrompt, model, maxTokens, temperature, history);
+    await recordNimOutcome(ctx, null);
+    return result;
+  } catch (err) {
+    await recordNimOutcome(ctx, err instanceof Error ? err.message : String(err));
+    throw err;
+  }
+}
+
+async function callNimAttempt(
   ctx: { runQuery: ActionCtx["runQuery"] },
   prompt: string,
   systemPrompt: string,

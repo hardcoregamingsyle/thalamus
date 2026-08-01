@@ -58,10 +58,16 @@ export const cloneRepository = action({
     if (!userId) throw new Error("Not authenticated");
 
     try {
-      const urlMatch = args.repoUrl.match(/github\.com\/([^/]+)\/([^/.]+)/);
+      // Repo segment must stop at the next "/" (or end of string), not the
+      // first ".": the old pattern truncated any repo name containing a dot
+      // (e.g. "my.project" → "my") and 404'd on the wrong name. A trailing
+      // ".git" is stripped separately since that's a real suffix, not part
+      // of the name.
+      const urlMatch = args.repoUrl.match(/github\.com\/([^/\s]+)\/([^/\s]+)/);
       if (!urlMatch) throw new Error("Invalid GitHub URL");
 
-      const [, owner, repo] = urlMatch;
+      const owner = urlMatch[1];
+      const repo = urlMatch[2].replace(/\.git$/, "");
 
       const octokit = new Octokit({
         auth: await resolveGithubToken(ctx, userId, args.githubToken),
@@ -152,12 +158,17 @@ export const cloneRepository = action({
 
       // Seed the platform repo with what we just imported, so source control
       // and the Actions runner start from the real code rather than an empty
-      // README. Non-fatal: the files are already in Convex either way.
+      // README. Non-fatal: the files are already in Convex either way, and
+      // pushWarning below is how the caller learns this step didn't land.
+      let pushWarning: string | null = null;
       if (platform) {
-        await ctx.runAction(internal.githubSync.autoPushToGithub, {
+        const pushResult = await ctx.runAction(internal.githubSync.autoPushToGithub, {
           branchId: args.branchId,
           commitMessage: `Import ${owner}/${repo}@${sourceBranch}`,
         });
+        if (!pushResult.success) {
+          pushWarning = pushResult.error ?? "Failed to push imported files to the platform repo";
+        }
       }
 
       return {
@@ -167,6 +178,7 @@ export const cloneRepository = action({
         sourceBranch,
         repo: platform ? `${platform.owner}/${platform.repo}` : null,
         branch: platform?.branch ?? null,
+        pushWarning,
       };
     } catch (err) {
       console.error("Clone error:", err);
@@ -276,6 +288,8 @@ const baseTreeSha = commitData.tree.sha;
         projectId: args.projectId,
         branchId: args.branchId,
       });
+
+      return { success: true, commitSha: newCommit.sha, filesUpdated: files.length };
     } catch (err) {
       console.error("Push error:", err);
       throw new Error(err instanceof Error ? err.message : "Failed to push to GitHub");
@@ -283,26 +297,34 @@ const baseTreeSha = commitData.tree.sha;
   },
 });
 
-// Auto-push to GitHub (internal, no auth check)
+// Auto-push to GitHub (internal, no auth check).
+//
+// Returns a result instead of throwing — this used to swallow every error
+// with just a console.error, which made it silently invisible to callers
+// that specifically need to know it failed (startSandbox's rate-limit
+// detection was written to catch a throw that could never happen, so that
+// whole code path was dead). Callers that genuinely don't care (the main
+// pipeline, which schedules this fire-and-forget) just ignore the return
+// value, same as they ignored the old void.
 export const autoPushToGithub = internalAction({
   args: {
     branchId: v.string(),
     commitMessage: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
     try {
       const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, {
         branchId: args.branchId,
       });
 
-      if (!branch) return;
+      if (!branch) return { success: false, error: "Branch not found" };
 
       const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: branch.projectId,
         branchId: args.branchId,
       });
 
-      if (!config) return; // No GitHub repo connected, skip push
+      if (!config) return { success: true }; // No GitHub repo connected yet — nothing to push, not an error
 
       const files = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
         branchId: args.branchId,
@@ -392,9 +414,12 @@ export const autoPushToGithub = internalAction({
         projectId: branch.projectId,
         branchId: args.branchId,
       });
+      return { success: true };
     } catch (err) {
       console.error("Auto-push error:", err);
-      // Silent fail - don't block pipeline
+      // Never throw — the pipeline schedules this fire-and-forget and must
+      // not block on a push failure. Callers that care check the return value.
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   },
 });

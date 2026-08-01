@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { useAction } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { GitBranch, Github, Download, Upload, Loader2, ExternalLink } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { GitBranch, Github, Download, Upload, Loader2, ExternalLink, CheckCircle2, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 interface GitSyncViewProps {
@@ -13,21 +15,43 @@ interface GitSyncViewProps {
   branchId: string;
 }
 
+// No PAT field here on purpose — cloneRepository/pushToGithub/pullFromGithub
+// all resolve a token server-side (the connected GitHub account, falling back
+// to the platform's own token), the same as everywhere else repo access
+// happens in this app. A manual token box on this one tab would be the exact
+// pattern removed from the New Project/Branch import dialog, just reintroduced
+// here — and it would also let this tab silently bypass whichever account
+// actually owns the branch's platform repo.
 export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
-  const token = localStorage.getItem("agentai_session_token") || "";
+  const { token } = useAuth();
+  const githubStatus = useQuery(api.githubHelpers.getGithubStatus, token ? { token } : "skip");
+  const getAuthorizationUrl = useAction(api.github.getAuthorizationUrl);
+
   const [repoUrl, setRepoUrl] = useState("");
-  const [githubToken, setGithubToken] = useState("");
   const [commitMessage, setCommitMessage] = useState("");
   const [isCloning, setIsCloning] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
   const [isPulling, setIsPulling] = useState(false);
+  const [connecting, setConnecting] = useState(false);
 
   const cloneRepo = useAction(api.githubSync.cloneRepository);
   const pushToGithub = useAction(api.githubSync.pushToGithub);
   const pullFromGithub = useAction(api.githubSync.pullFromGithub);
 
+  const handleConnectGithub = async () => {
+    if (!token) return;
+    setConnecting(true);
+    try {
+      const url = await getAuthorizationUrl({ token, returnPath: window.location.pathname });
+      window.location.href = url;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start GitHub connection");
+      setConnecting(false);
+    }
+  };
+
   const handleClone = async () => {
-    if (!repoUrl.trim()) {
+    if (!repoUrl.trim() || !token) {
       toast.error("Please enter a repository URL");
       return;
     }
@@ -39,11 +63,13 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
         projectId,
         branchId,
         repoUrl: repoUrl.trim(),
-        githubToken: githubToken.trim() || undefined,
       });
 
       if (result.success) {
-        toast.success(`Cloned ${result.filesCloned} files from ${result.repo}`);
+        toast.success(`Cloned ${result.filesCloned} files from ${result.source}`);
+        if (result.pushWarning) {
+          toast.error(`Imported, but couldn't push to the platform repo yet: ${result.pushWarning}`);
+        }
         setRepoUrl("");
       }
     } catch (err) {
@@ -54,7 +80,7 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
   };
 
   const handlePush = async () => {
-    if (!commitMessage.trim()) {
+    if (!commitMessage.trim() || !token) {
       toast.error("Please enter a commit message");
       return;
     }
@@ -66,7 +92,6 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
         projectId,
         branchId,
         commitMessage: commitMessage.trim(),
-        githubToken: githubToken.trim() || undefined,
       });
 
       if (result.success) {
@@ -81,13 +106,13 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
   };
 
   const handlePull = async () => {
+    if (!token) return;
     setIsPulling(true);
     try {
       const result = await pullFromGithub({
         token,
         projectId,
         branchId,
-        githubToken: githubToken.trim() || undefined,
       });
 
       if (result.success) {
@@ -101,8 +126,8 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
   };
 
   return (
-    <div className="h-full flex flex-col p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="h-full flex flex-col p-6 space-y-6 overflow-y-auto">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2">
             <Github className="h-6 w-6" />
@@ -112,44 +137,28 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
             Clone, push, and pull code from GitHub repositories
           </p>
         </div>
-        <a
-          href="https://github.com/settings/tokens/new?scopes=repo"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm text-primary hover:underline flex items-center gap-1"
-        >
-          <ExternalLink className="h-3 w-3" />
-          Get GitHub Token
-        </a>
+        {githubStatus?.connected ? (
+          <Badge variant="outline" className="gap-1.5 border-primary/40 text-primary shrink-0">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Connected as @{githubStatus.username}
+          </Badge>
+        ) : (
+          <Button size="sm" onClick={handleConnectGithub} disabled={connecting} className="gap-2 shrink-0">
+            {connecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogIn className="h-3.5 w-3.5" />}
+            Connect GitHub
+          </Button>
+        )}
       </div>
 
-      {/* GitHub Token (Optional) */}
-      <Card>
-        <CardHeader>
-          <CardTitle>GitHub Personal Access Token (Optional)</CardTitle>
-          <CardDescription>
-            Required for private repositories. Public repos don't need a token.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="github-token">Token (leave empty for public repos)</Label>
-            <Input
-              id="github-token"
-              type="password"
-              placeholder="ghp_xxxxxxxxxxxx"
-              value={githubToken}
-              onChange={(e) => setGithubToken(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Create a token with "repo" scope at{" "}
-              <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                github.com/settings/tokens
-              </a>
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      {!githubStatus?.connected && (
+        <Card className="border-blue-500/50 bg-blue-500/5">
+          <CardContent className="pt-6 text-sm text-muted-foreground">
+            Connecting isn't required — clone/push/pull for public repos already work off the platform's
+            own access. Connect your account when you want private repos, or pushes attributed to you
+            instead of the platform.
+          </CardContent>
+        </Card>
+      )}
 
       {/* Clone Repository */}
       <Card>
@@ -278,6 +287,17 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
           <p>2. <strong>Edit</strong>: AI agents modify and create files in this branch</p>
           <p>3. <strong>Push</strong>: Send all changes back to GitHub with a commit</p>
           <p>4. <strong>Pull</strong>: Get latest changes from GitHub into this branch</p>
+          <p className="pt-1">
+            <a
+              href="https://github.com/settings/tokens"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline inline-flex items-center gap-1"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Manage your GitHub account
+            </a>
+          </p>
         </CardContent>
       </Card>
     </div>

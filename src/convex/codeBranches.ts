@@ -526,6 +526,7 @@ export const setSandboxInfo = internalMutation({
     url: v.optional(v.union(v.string(), v.null())),
     status: v.optional(v.union(v.literal("idle"), v.literal("starting"), v.literal("running"), v.literal("stopped"))),
     runId: v.optional(v.union(v.number(), v.null())),
+    callbackNonce: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
     const branch = await ctx.db
@@ -537,7 +538,50 @@ export const setSandboxInfo = internalMutation({
     if (args.url !== undefined) patch.sandboxUrl = args.url ?? undefined;
     if (args.status !== undefined) patch.sandboxStatus = args.status;
     if (args.runId !== undefined) patch.sandboxRunId = args.runId ?? undefined;
+    if (args.callbackNonce !== undefined) patch.sandboxCallbackNonce = args.callbackNonce ?? undefined;
     await ctx.db.patch(branch._id, patch);
+  },
+});
+
+// Records why a branch has no platform repo yet — cleared as soon as one is
+// successfully created. Read by SandboxView so a token/permission failure
+// shows up as a message with a retry button instead of an endless spinner.
+export const setRepoSetupError = internalMutation({
+  args: { branchId: v.string(), error: v.union(v.string(), v.null()) },
+  handler: async (ctx, args) => {
+    const branch = await ctx.db
+      .query("codeBranches")
+      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (!branch) return;
+    await ctx.db.patch(branch._id, { repoSetupError: args.error ?? undefined });
+  },
+});
+
+// The GitHub Actions sandbox run POSTs here with no other credential to
+// prove it's genuine — the nonce (single-use, generated per dispatch,
+// cleared on spend) is the whole security story. Mirrors
+// codeCommands.completeFromRunner.
+export const completeSandboxCallback = internalMutation({
+  args: {
+    branchId: v.string(),
+    nonce: v.string(),
+    url: v.optional(v.union(v.string(), v.null())),
+    status: v.union(v.literal("running"), v.literal("stopped")),
+  },
+  handler: async (ctx, args): Promise<boolean> => {
+    const branch = await ctx.db
+      .query("codeBranches")
+      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (!branch || !branch.sandboxCallbackNonce || branch.sandboxCallbackNonce !== args.nonce) return false;
+
+    await ctx.db.patch(branch._id, {
+      sandboxUrl: args.url ?? undefined,
+      sandboxStatus: args.status,
+      sandboxCallbackNonce: undefined,
+    });
+    return true;
   },
 });
 

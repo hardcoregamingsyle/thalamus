@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Terminal, Send, Loader2, ExternalLink, Cpu, Laptop, Cloud,
-  CheckCircle2, XCircle, Clock, GitBranch, Globe, StopCircle, Play,
+  CheckCircle2, XCircle, Clock, GitBranch, Globe, StopCircle, Play, AlertTriangle, RotateCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -43,10 +43,25 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
 
   const startSandbox = useAction(api.codePipeline.startBranchSandbox);
   const stopSandbox = useAction(api.codePipeline.stopBranchSandbox);
+  const retryRepoSetup = useAction(api.githubAutoCreate.retryRepoSetup);
 
   const [command, setCommand] = useState("");
   const [sending, setSending] = useState(false);
   const [sandboxStarting, setSandboxStarting] = useState(false);
+  const [retryingRepo, setRetryingRepo] = useState(false);
+
+  const handleRetryRepoSetup = async () => {
+    if (!branch) return;
+    setRetryingRepo(true);
+    try {
+      await retryRepoSetup({ token, projectId, branchId, projectName: branch.name });
+      toast.success("Repository created");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Still couldn't set up the repository");
+    } finally {
+      setRetryingRepo(false);
+    }
+  };
 
   const isLocal = branch?.executor === "local";
   const runnerOs = (branch?.runnerOs ?? "ubuntu") as RunnerOs;
@@ -223,6 +238,23 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
                   </p>
                 )}
               </>
+            ) : branch?.repoSetupError ? (
+              <div className="space-y-2">
+                <div className="flex items-start gap-2 text-sm text-destructive">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span className="break-words">{branch.repoSetupError}</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={handleRetryRepoSetup}
+                  disabled={retryingRepo}
+                >
+                  {retryingRepo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
+                  Retry
+                </Button>
+              </div>
             ) : (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />

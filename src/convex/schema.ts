@@ -180,6 +180,16 @@ const schema = defineSchema(
       sandboxUrl: v.optional(v.string()),
       sandboxStatus: v.optional(v.union(v.literal("idle"), v.literal("starting"), v.literal("running"), v.literal("stopped"))),
       sandboxRunId: v.optional(v.number()), // GitHub Actions run ID, for cancellation
+      // One-time token proving a /code/sandbox-callback POST really came from
+      // the run we dispatched — that endpoint is unauthenticated by necessity
+      // (a public-repo Actions runner has no other credential to send).
+      // Single-use: cleared the moment it's spent, same pattern as
+      // codeCommands.callbackNonce.
+      sandboxCallbackNonce: v.optional(v.string()),
+      // Why the branch has no platform repo yet, surfaced in the UI instead of
+      // failing silently in a scheduled action nobody was watching. Cleared
+      // the moment a repo is successfully created.
+      repoSetupError: v.optional(v.string()),
     })
       .index("by_project", ["projectId"])
       .index("by_branch_id", ["branchId"])
@@ -502,6 +512,11 @@ const schema = defineSchema(
       keys: v.array(v.string()),
       updatedAt: v.number(),
       updatedBy: v.optional(v.string()),
+      // Last reason every key in the pool failed and the call fell through to
+      // Ollama — invisible otherwise, since callModel only console.warns it.
+      // Overwritten on each fallback; a successful NIM call clears it.
+      lastFallbackError: v.optional(v.string()),
+      lastFallbackAt: v.optional(v.number()),
     }),
 
     // Ollama Cloud API keys pool (admin-managed — backup AI provider).

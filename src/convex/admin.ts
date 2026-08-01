@@ -614,7 +614,24 @@ export const getProviderAKeys = query({
       count: record[0].keys.length,
       updatedAt: record[0].updatedAt,
       maskedKeys: record[0].keys.map(k => k.slice(0, 8) + "..." + k.slice(-4)),
+      lastFallbackError: record[0].lastFallbackError ?? null,
+      lastFallbackAt: record[0].lastFallbackAt ?? null,
     };
+  },
+});
+
+// Called by callNim (nimClient.ts) so a fallback to Ollama has a visible
+// reason instead of only a console.warn nobody but the platform can read.
+// Overwritten on every fallback; cleared on the next successful NIM call.
+export const recordNimFallback = internalMutation({
+  args: { error: v.union(v.string(), v.null()) },
+  handler: async (ctx, args) => {
+    const record = await ctx.db.query("nimKeys").take(1);
+    if (record.length === 0) return;
+    await ctx.db.patch(record[0]._id, {
+      lastFallbackError: args.error ?? undefined,
+      lastFallbackAt: args.error ? Date.now() : undefined,
+    });
   },
 });
 
