@@ -166,9 +166,9 @@ export function DeployView({ projectId, branchId }: DeployViewProps) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-mono">{deployedUrl}</span>
-              <Button size="sm" variant="outline" asChild>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-mono min-w-0 truncate">{deployedUrl}</span>
+              <Button size="sm" variant="outline" asChild className="shrink-0">
                 <a href={deployedUrl} target="_blank" rel="noopener noreferrer">
                   <ExternalLink className="h-3 w-3 mr-2" />
                   Visit

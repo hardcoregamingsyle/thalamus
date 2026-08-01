@@ -91,12 +91,12 @@ export function LogsView({ branchId }: LogsViewProps) {
                       </div>
                       {getStatusBadge(cmd.status)}
                     </div>
-                    <div className="bg-muted/50 rounded p-2 mb-2">
-                      <code className="text-sm font-mono">{cmd.command}</code>
+                    <div className="bg-muted/50 rounded p-2 mb-2 overflow-x-auto">
+                      <code className="text-sm font-mono whitespace-pre">{cmd.command}</code>
                     </div>
                     {cmd.output && (
-                      <div className="bg-background border rounded p-2 mb-2">
-                        <pre className="text-xs font-mono whitespace-pre-wrap">{cmd.output}</pre>
+                      <div className="bg-background border rounded p-2 mb-2 overflow-x-auto">
+                        <pre className="text-xs font-mono whitespace-pre-wrap break-all">{cmd.output}</pre>
                       </div>
                     )}
                     <div className="text-xs text-muted-foreground">

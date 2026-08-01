@@ -174,7 +174,7 @@ function AnalyserOutputCard({ data }: { data: AnalyserData }) {
               <ChevronRight className={cn("h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform duration-150", expandedIdx === i && "rotate-90")} />
             </button>
             {expandedIdx === i && section.content && (
-              <div className="px-3 pb-3 border-t border-border/20 pt-2 text-xs leading-relaxed [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono [&_pre]:bg-muted [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:overflow-x-auto [&_pre]:text-xs [&_pre]:font-mono [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:mb-1.5">
+              <div className="px-3 pb-3 border-t border-border/20 pt-2 text-xs leading-relaxed [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono [&_pre]:bg-muted [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:overflow-x-auto [&_pre]:text-xs [&_pre]:font-mono [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:mb-1.5 [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto">
                 <ReactMarkdown>{section.content}</ReactMarkdown>
               </div>
             )}
