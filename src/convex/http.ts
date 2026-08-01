@@ -4,7 +4,7 @@ import { internal, api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
 import { callModel, calcAgentBucksForTier, FREE_UNLIMITED } from "./agentCore";
-import { buildStudySystemPrompt, parseAskBlocks } from "./studyPrompt";
+import { buildStudySystemPrompt } from "./studyPrompt";
 import {
   aoOptions,
   aoSearch,
@@ -435,7 +435,7 @@ http.route({
       fullText = fullText.replace(/\{"op":"ask-mcq","question":"([^"]+)","options":(\[[^\]]+\]),"correct":(\d+)\}/g, (_, question, optionsJson, correctIdx) => {
         try {
           const options = JSON.parse(optionsJson) as string[];
-          return `<div class="thalamus-mcq" data-mcq='${JSON.stringify({type:"mcq",question,options,correct:parseInt(correctIdx,10)})}' style="border:1px solid #6366f1;border-radius:8px;padding:1em;margin:0.8em 0;background:rgba(99,102,241,0.08)"><p style="margin:0 0 0.5em;font-weight:bold;color:#e5e7eb">Multiple Choice:</p><p style="margin:0 0 0.8em;color:#d1d5db">${question}</p>${options.map((opt,i) => `<div style="padding:0.4em 0.6em;margin:0.2em 0;border:1px solid #4b5563;border-radius:6px;background:#1f2937;color:#d1d5db"><input type="radio" disabled /> ${opt}</div>`).join("")}<p style="margin:0.5em 0 0;font-size:0.8em;color:#9ca3af">Select an option and send - I'll tell you if you're right.</p></div>`;
+          return `<div class="thalamus-mcq" data-mcq='${JSON.stringify({type:"mcq",question,options,correct:parseInt(correctIdx,10)})}' style="border:1px solid #6366f1;border-radius:8px;padding:1em;margin:0.8em 0;background:rgba(99,102,241,0.08)"><p style="margin:0 0 0.5em;font-weight:bold;color:#e5e7eb">Multiple Choice:</p><p style="margin:0 0 0.8em;color:#d1d5db">${question}</p>${options.map((opt) => `<div style="padding:0.4em 0.6em;margin:0.2em 0;border:1px solid #4b5563;border-radius:6px;background:#1f2937;color:#d1d5db"><input type="radio" disabled /> ${opt}</div>`).join("")}<p style="margin:0.5em 0 0;font-size:0.8em;color:#9ca3af">Select an option and send - I'll tell you if you're right.</p></div>`;
         } catch { return `<p>[MCQ: ${question}]</p>`; }
       });
 
@@ -1026,7 +1026,10 @@ http.route({
 });
 
 // Callback from the sandbox GitHub Actions workflow — reports the tunnel URL
-// so Thalamus can display the preview link.
+// so Thalamus can display the preview link. Unauthenticated by necessity (a
+// public-repo Actions job has no other credential to send), so the nonce in
+// the query string — generated per dispatch, single-use — is what stops
+// anyone who can see a branchId in a URL from posting a fake tunnel.
 http.route({
   path: "/code/sandbox-callback",
   method: "POST",
@@ -1039,24 +1042,19 @@ http.route({
     }
     const url = new URL(request.url);
     const branchId = url.searchParams.get("branchId");
-    if (!branchId) return new Response("Missing branchId", { status: 400 });
-    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
-    if (!branch) return new Response("Branch not found", { status: 404 });
-    if (body.status === "running" && body.tunnelUrl) {
-      await ctx.runMutation(internal.codeBranches.setSandboxInfo, {
-        branchId,
-        url: body.tunnelUrl,
-        status: "running",
-        runId: null,
-      });
-    } else if (body.status === "failed") {
-      await ctx.runMutation(internal.codeBranches.setSandboxInfo, {
-        branchId, url: null, status: "stopped", runId: null,
-      });
-    }
-    return new Response(JSON.stringify({ ok: true }), {
-      status: 200, headers: { "Content-Type": "application/json" },
+    const nonce = url.searchParams.get("nonce");
+    if (!branchId || !nonce) return new Response("Missing branchId or nonce", { status: 400 });
+
+    const accepted = await ctx.runMutation(internal.codeBranches.completeSandboxCallback, {
+      branchId,
+      nonce,
+      url: body.status === "running" && body.tunnelUrl ? body.tunnelUrl : null,
+      status: body.status === "running" && body.tunnelUrl ? "running" : "stopped",
     });
+
+    return accepted
+      ? new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } })
+      : new Response("Not found", { status: 404 });
   }),
 });
 

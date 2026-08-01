@@ -344,23 +344,6 @@ export function findJsonOps(content: string): Array<Record<string, unknown>> {
   return results;
 }
 
-/** Replace a parsed JSON op with a visible placeholder string in the content. */
-function opPlaceholder(op: Record<string, unknown>): string {
-  switch (op.op) {
-    case "create-file": return `[FILE CREATED: ${op.path}]`;
-    case "edit-file":   return `[FILE EDITED: ${op.path}]`;
-    case "delete-file": return `[FILE DELETED: ${op.path}]`;
-    case "cmd":         return `[CMD: ${String(op.command ?? "").slice(0, 80)}]`;
-    case "search":      return `[SEARCHING: ${String(op.query ?? "").slice(0, 80)}]`;
-    case "scrape":      return `[SCRAPING: ${String(op.url ?? "").slice(0, 80)}]`;
-    case "test-success": return "[TEST: PASSED ✓]";
-    case "test-failed":  return `[TEST: FAILED - ${String(op.reason ?? "unknown")}]`;
-    case "security-pass": return "[SECURITY: PASSED ✓]";
-    case "security-fail": return "[SECURITY: FAILED]";
-    default: return `[OP: ${op.op}]`;
-  }
-}
-
 // Legacy tag parsers — keep for backwards compatibility with older conversations.
 // Match any bracket variant agents might output: <<, ‹‹, «
 const O = "(?:<<|‹‹|«|‹)";
@@ -504,7 +487,7 @@ export function parseAgentOutput(content: string): ParsedOutput {
   }
 
   // ── Fallback: legacy <<TAG>> markers for backward compat ──────────────────
-  const createRegex = new RegExp("(?:<<<<<|${O})CREATEFILE=\"([^\"]+)\"(?:>>>>>|${C})([\\s\\S]*?)(?:<<<<<|${O})END\\.CREATEFILE(?:>>>>>|${C})", "g");
+  const createRegex = new RegExp(`(?:<<<<<|${O})CREATEFILE="([^"]+)"(?:>>>>>|${C})([\\s\\S]*?)(?:<<<<<|${O})END\\.CREATEFILE(?:>>>>>|${C})`, "g");
   let match;
   while ((match = createRegex.exec(content)) !== null) {
     fileOps.push({ type: "create", filepath: match[1], content: match[2].trim() });
@@ -513,39 +496,39 @@ export function parseAgentOutput(content: string): ParsedOutput {
 
   // Intentional: EDITFILE blocks close with END.CREATEFILE — that is the tag
   // the agent prompts specify for both block types. Do not "fix" to END.EDITFILE.
-  const editRegex = new RegExp("(?:<<<<<|${O})EDITFILE=\"([^\"]+)\"(?:>>>>>|${C})([\\s\\S]*?)(?:<<<<<|${O})END\\.CREATEFILE(?:>>>>>|${C})", "g");
+  const editRegex = new RegExp(`(?:<<<<<|${O})EDITFILE="([^"]+)"(?:>>>>>|${C})([\\s\\S]*?)(?:<<<<<|${O})END\\.CREATEFILE(?:>>>>>|${C})`, "g");
   while ((match = editRegex.exec(content)) !== null) {
     fileOps.push({ type: "edit", filepath: match[1], content: match[2].trim() });
     cleanContent = cleanContent.replace(match[0], `[FILE EDITED: ${match[1]}]`);
   }
 
   // Legacy fallback — only applies if JSON ops didn't already consume the op.
-  const deleteRe = new RegExp("(?:<<<<<|${O})DELETE=\"([^\"]+)\"(?:>>>>>|${C})", "g");
+  const deleteRe = new RegExp(`(?:<<<<<|${O})DELETE="([^"]+)"(?:>>>>>|${C})`, "g");
   for (const m of content.matchAll(deleteRe)) {
     if (!processedPaths.has(`delete:${m[1]}`)) fileOps.push({ type: "delete", filepath: m[1] });
     cleanContent = cleanContent.replace(m[0], `[FILE DELETED: ${m[1]}]`);
   }
 
-  const searchRe = new RegExp("(?:<<<<<|${O})SEARCH-TOOL=\"((?:[^\"]|\"(?!>))*)\"(?:>>>>>|${C})", "g");
+  const searchRe = new RegExp(`(?:<<<<<|${O})SEARCH-TOOL="((?:[^"]|"(?!>))*)"(?:>>>>>|${C})`, "g");
   for (const m of content.matchAll(searchRe)) {
     if (!searchOps.some(s => s.query === m[1])) searchOps.push({ query: m[1] });
     cleanContent = cleanContent.replace(m[0], `[SEARCHING: ${m[1]}]`);
   }
 
-  const scrapeRe = new RegExp("(?:<<<<<|${O})SCRAPE-URL=\"((?:[^\"]|\"(?!>))*)\"(?:>>>>>|${C})", "g");
+  const scrapeRe = new RegExp(`(?:<<<<<|${O})SCRAPE-URL="((?:[^"]|"(?!>))*)"(?:>>>>>|${C})`, "g");
   for (const m of content.matchAll(scrapeRe)) {
     if (!scrapeOps.some(s => s.url === m[1])) scrapeOps.push({ url: m[1] });
     cleanContent = cleanContent.replace(m[0], `[SCRAPING: ${m[1]}]`);
   }
 
-  const cmdRe = new RegExp("(?:<<<<<|${O})RUN-CMD=\"((?:[^\"]|\"(?!>))*)\"(?:>>>>>|${C})", "g");
+  const cmdRe = new RegExp(`(?:<<<<<|${O})RUN-CMD="((?:[^"]|"(?!>))*)"(?:>>>>>|${C})`, "g");
   for (const m of content.matchAll(cmdRe)) {
     if (!cmdOps.some(c => c.command === m[1])) cmdOps.push({ command: m[1] });
     cleanContent = cleanContent.replace(m[0], `[CMD: ${m[1]}]`);
   }
 
   // Legacy TOOL block format (<<TOOL>> JSON <<END.TOOL>>)
-  const toolRe = new RegExp("${O}TOOL${C}\\s*([\\s\\S]*?)${O}END\\.TOOL${C}?", "g");
+  const toolRe = new RegExp(`${O}TOOL${C}\\s*([\\s\\S]*?)${O}END\\.TOOL${C}?`, "g");
   while ((match = toolRe.exec(content)) !== null) {
     try {
       const parsed = JSON.parse(match[1].trim());

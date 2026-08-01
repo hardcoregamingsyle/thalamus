@@ -43,8 +43,10 @@ export interface ParsedMcpCall {
 }
 
 function parseJsonBody(body: string): Record<string, unknown> {
-  try { return JSON.parse(body) as Record<string, unknown>; }
-  catch { return { _raw: body.slice(0, 2000) }; }
+  const trimmed = body.trim();
+  if (!trimmed) return {};
+  try { return JSON.parse(trimmed) as Record<string, unknown>; }
+  catch { return { _raw: trimmed.slice(0, 2000) }; }
 }
 
 export interface ParsedToolCall {

@@ -82,32 +82,32 @@ jobs:
           CMD="\${{ inputs.start_command }}"
 
           # Start cloudflared tunnel in background
-          /tmp/cloudflared tunnel --url "http://localhost:\$PORT" > /tmp/tunnel.log 2>&1 &
-          CLOUD_PID=\$!
+          /tmp/cloudflared tunnel --url "http://localhost:$PORT" > /tmp/tunnel.log 2>&1 &
+          CLOUD_PID=$!
 
           # Wait up to 60s for tunnel URL
           TUNNEL_URL=""
-          for i in \$(seq 1 30); do
-            TUNNEL_URL=\$(grep -oP 'https?://[a-zA-Z0-9.-]+\\.trycloudflare\\.com' /tmp/tunnel.log | head -1)
-            if [ -n "\$TUNNEL_URL" ]; then break; fi
+          for i in $(seq 1 30); do
+            TUNNEL_URL=$(grep -oP 'https?://[a-zA-Z0-9.-]+\\.trycloudflare\\.com' /tmp/tunnel.log | head -1)
+            if [ -n "$TUNNEL_URL" ]; then break; fi
             sleep 2
           done
 
           # Start dev server in background
-          echo "Starting: \$CMD --host 0.0.0.0 --port \$PORT"
-          if echo "\$CMD" | grep -q "vite\\|dev\\|next\\|start"; then
-            eval "\$CMD --host 0.0.0.0 --port \$PORT" > /tmp/devserver.log 2>&1 &
+          echo "Starting: $CMD --host 0.0.0.0 --port $PORT"
+          if echo "$CMD" | grep -q "vite\\|dev\\|next\\|start"; then
+            eval "$CMD --host 0.0.0.0 --port $PORT" > /tmp/devserver.log 2>&1 &
           else
-            eval "\$CMD" > /tmp/devserver.log 2>&1 &
+            eval "$CMD" > /tmp/devserver.log 2>&1 &
           fi
-          DEV_PID=\$!
+          DEV_PID=$!
 
           # Report tunnel URL back to Thalamus
-          if [ -n "\$TUNNEL_URL" ]; then
-            echo "Tunnel URL: \$TUNNEL_URL"
+          if [ -n "$TUNNEL_URL" ]; then
+            echo "Tunnel URL: $TUNNEL_URL"
             curl -sS -X POST "\${{ inputs.callback_url }}" \\
               -H 'Content-Type: application/json' \\
-              -d "\$(jq -n --arg url "\$TUNNEL_URL" --arg pid "\$DEV_PID" '{tunnelUrl: \$url, status: "running", devPid: \$pid}')"
+              -d "$(jq -n --arg url "$TUNNEL_URL" --arg pid "$DEV_PID" '{tunnelUrl: $url, status: "running", devPid: $pid}')"
           else
             echo "No tunnel URL found — sandbox has no public endpoint"
             curl -sS -X POST "\${{ inputs.callback_url }}" \\
@@ -116,7 +116,7 @@ jobs:
           fi
 
           # Keep alive — wait for dev server to exit (or Actions to cancel us)
-          wait \$DEV_PID 2>/dev/null || true
+          wait $DEV_PID 2>/dev/null || true
 `;
 
 // The command arrives through `env:`, never interpolated into the `run:` script.
@@ -383,15 +383,23 @@ export const startSandbox = internalAction({
     const token = cfg.githubToken || process.env.GITHUB_TOKEN;
     if (!token) throw new Error("No GitHub token available");
 
+    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
+    // A repeat click while one dispatch is already in flight would fire a
+    // second workflow_dispatch, and the two runs' callbacks race to overwrite
+    // sandboxUrl — the loser's tunnel is the one left dangling as "running".
+    const currentStatus = (branch as Record<string, unknown>)?.sandboxStatus;
+    if (currentStatus === "starting" || currentStatus === "running") {
+      throw new Error("A sandbox is already starting or running for this branch.");
+    }
+
     const octokit = new Octokit({ auth: token });
 
-    try {
-      await ctx.runAction(internal.githubSync.autoPushToGithub, {
-        branchId: args.branchId,
-        commitMessage: "build: sync before sandbox",
-      });
-    } catch (pushErr) {
-      const msg = pushErr instanceof Error ? pushErr.message : String(pushErr);
+    const pushResult = await ctx.runAction(internal.githubSync.autoPushToGithub, {
+      branchId: args.branchId,
+      commitMessage: "build: sync before sandbox",
+    });
+    if (!pushResult.success) {
+      const msg = pushResult.error ?? "unknown error";
       // If the auto-push failed because the branch doesn't exist, we create it
       // below in the workflow-fallback. If it was a rate-limit, the blob retry
       // loop already waited — an error here means we're genuinely hosed.
@@ -401,13 +409,18 @@ export const startSandbox = internalAction({
           + "The sandbox cannot start until the branch is synced."
         );
       }
-      console.error("autoPushToGithub failed, continuing:", pushErr);
+      console.error("autoPushToGithub failed, continuing:", msg);
     }
     await ensureSandboxWorkflowWithBranch(octokit, cfg);
 
-    const callbackUrl = `${process.env.CONVEX_SITE_URL}/code/sandbox-callback?branchId=${encodeURIComponent(args.branchId)}`;
+    // The nonce is the only thing standing between this endpoint and a forged
+    // callback — the run POSTs from a public-repo Actions job with no other
+    // credential to send. Stored now, spent (and cleared) by the one real
+    // callback the dispatch below produces.
+    const nonce = crypto.randomUUID();
+    const callbackUrl = `${process.env.CONVEX_SITE_URL}/code/sandbox-callback`
+      + `?branchId=${encodeURIComponent(args.branchId)}&nonce=${nonce}`;
 
-    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
     const runnerOs = (branch as Record<string,unknown>)?.runnerOs ?? "ubuntu";
 
     await octokit.actions.createWorkflowDispatch({
@@ -418,7 +431,12 @@ export const startSandbox = internalAction({
       inputs: {
         callback_url: callbackUrl,
         os: RUNNERS[runnerOs as string] ?? RUNNERS.ubuntu,
-        start_command: args.startCommand ?? "npm run dev",
+        // The trailing "--" is load-bearing: the workflow script runs
+        // `eval "$CMD --host 0.0.0.0 --port $PORT"`, and without a "--"
+        // separator npm swallows --host/--port as its OWN flags instead of
+        // forwarding them to the dev server, so it never binds 0.0.0.0 and
+        // the tunnel has nothing to reach.
+        start_command: args.startCommand ?? "npm run dev --",
         port: String(args.port ?? 3000),
       },
     });
@@ -440,7 +458,7 @@ export const startSandbox = internalAction({
     }
 
     await ctx.runMutation(internal.codeBranches.setSandboxInfo, {
-      branchId: args.branchId, url: null, status: "starting", runId,
+      branchId: args.branchId, url: null, status: "starting", runId, callbackNonce: nonce,
     });
   },
 });
@@ -483,7 +501,7 @@ export const stopSandbox = internalAction({
     }
 
     await ctx.runMutation(internal.codeBranches.setSandboxInfo, {
-      branchId: args.branchId, url: null, status: "stopped", runId: null,
+      branchId: args.branchId, url: null, status: "stopped", runId: null, callbackNonce: null,
     });
   },
 });

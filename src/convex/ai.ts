@@ -427,7 +427,7 @@ SEARCH TOOL: Use <<SEARCH-TOOL="query">> to search for claims you need to verify
         { role: "user", content: "Fact-check the above research report. Verify EVERY factual claim against web sources. If you need to search, use <<SEARCH-TOOL>> tags. Then provide the corrected report in HTML." },
       ];
 
-      let factCheckResult = await callAI(ctx, factCheckSystemPrompt, factCheckMessages, 4096, modelName);
+      const factCheckResult = await callAI(ctx, factCheckSystemPrompt, factCheckMessages, 4096, modelName);
       let factCheckText = factCheckResult.text;
       inputTokens += factCheckResult.inputTokens;
       outputTokens += factCheckResult.outputTokens;

@@ -25,7 +25,6 @@ import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import {
   callModel,
-  findJsonOps,
   parseAgentOutput,
   parsePlannerOutput,
   performSearch,
