@@ -12,6 +12,12 @@ const BASE_URL = "https://integrate.api.nvidia.com/v1";
 
 // Retry ceiling per call — see the comment at its use site in callNimAttempt.
 const MAX_KEY_ATTEMPTS = 3;
+// Per-attempt abort. Was 500s for slow-starting MoE models, but Convex kills
+// any action at 10 minutes with a "Transient error" no try/catch can see — a
+// single 500s attempt plus fallback providers blew straight past that, which
+// read as Code Mode going silent. A model that can't answer in 3 minutes is
+// better treated as down so the chain can fall through and fail loudly.
+const NIM_ATTEMPT_TIMEOUT_MS = 180_000;
 
 // ── Free-available models on NVIDIA NIM (no CC required on free tier) ────────
 // Many models are free to call on the NVIDIA API catalog at limited rate.
@@ -586,9 +592,10 @@ export async function callNim(
   maxTokens: number = 8192,
   temperature: number = 0.7,
   history?: Array<{ role: "user" | "assistant"; content: string }>,
+  deadlineMs?: number,
 ): Promise<NimChatResult> {
   try {
-    const result = await callNimAttempt(ctx, prompt, systemPrompt, model, maxTokens, temperature, history);
+    const result = await callNimAttempt(ctx, prompt, systemPrompt, model, maxTokens, temperature, history, deadlineMs);
     await recordNimOutcome(ctx, null);
     return result;
   } catch (err) {
@@ -605,6 +612,7 @@ async function callNimAttempt(
   maxTokens: number = 8192,
   temperature: number = 0.7,
   history?: Array<{ role: "user" | "assistant"; content: string }>,
+  deadlineMs?: number,
 ): Promise<NimChatResult> {
   const apiKeys = await resolveNimKeys(ctx);
   if (apiKeys.length === 0) {
@@ -642,8 +650,14 @@ async function callNimAttempt(
   for (let k = 0; k < attempts; k++) {
     const apiKey = apiKeys[k];
 
+    // Respect the caller's shared deadline (callModel hands one budget to the
+    // whole Modal → NIM → Ollama chain): skip attempts there's no time left
+    // for, and never let a single attempt run past the remaining budget.
+    const remaining = deadlineMs === undefined ? NIM_ATTEMPT_TIMEOUT_MS : deadlineMs - Date.now();
+    if (remaining <= 5_000) break;
+
     const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 500_000);
+    const timeout = setTimeout(() => ctrl.abort(), Math.min(NIM_ATTEMPT_TIMEOUT_MS, remaining));
     try {
       const res = await fetch(`${BASE_URL}/chat/completions`, {
         method: "POST",
@@ -681,7 +695,7 @@ async function callNimAttempt(
     } catch (err) {
       clearTimeout(timeout);
       if (err instanceof Error && err.name === "AbortError") {
-        lastError = new Error(`NIM request timed out after 500s (key ${k + 1})`);
+        lastError = new Error(`NIM request timed out (key ${k + 1})`);
         continue;
       }
       if (err !== lastError) lastError = err instanceof Error ? err : new Error(String(err));
@@ -689,7 +703,7 @@ async function callNimAttempt(
     }
   }
 
-  throw lastError ?? new Error("NIM request failed — all keys exhausted");
+  throw lastError ?? new Error("NIM request failed — keys exhausted or time budget spent");
 }
 
 /**

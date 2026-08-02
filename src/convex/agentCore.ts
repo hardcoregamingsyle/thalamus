@@ -86,13 +86,22 @@ export async function callModel(
 
   const taskType: TaskType = agentToTaskType(modelId);
 
+  // One shared wall-clock budget for the WHOLE provider chain. Convex kills
+  // any action at 10 minutes with a "Transient error" that no try/catch in
+  // our code can see — so if Modal + NIM + Ollama retries are ever allowed to
+  // stack past that, the pipeline dies without saving an error message and
+  // the user just sees nothing. 7 minutes here leaves the rest of the step
+  // (billing, file ops, streaming drip-feed) real room to finish and any
+  // failure surfaces as a normal thrown Error the caller can report.
+  const deadline = Date.now() + 420_000;
+
   if (ctx) {
     // Modal first when an admin has registered an endpoint. Which endpoint is
     // decided by data (the isPrimary row comes back first), not by this code —
     // so swapping the primary model is a click in /admin, not a deploy. Falls
     // through to NIM → Ollama when nothing is registered or every endpoint errors.
     try {
-      const result = await callModal(ctx, prompt, systemPrompt);
+      const result = await callModal(ctx, prompt, systemPrompt, 8192, 0.7, undefined, deadline);
       return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modal:${result.model}` };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -110,7 +119,7 @@ export async function callModel(
           : taskType === "factcheck" ? "moonshotai/kimi-k2-instruct"
           : NIM_DEFAULT_CHAT_MODEL);
 
-      const result = await callNim(ctx, prompt, systemPrompt, nimModel);
+      const result = await callNim(ctx, prompt, systemPrompt, nimModel, 8192, 0.7, undefined, deadline);
       return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `nim:${result.model}` };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -124,7 +133,7 @@ export async function callModel(
 
   const ollamaModel = mapModelIdToOllama(modelId);
   try {
-    const result = await callSiliconFlow(prompt, systemPrompt, ollamaModel, 16384, undefined, ctx?.runQuery);
+    const result = await callSiliconFlow(prompt, systemPrompt, ollamaModel, 16384, undefined, ctx?.runQuery, deadline);
     return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `ollama:${result.model}` };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

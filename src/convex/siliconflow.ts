@@ -11,6 +11,9 @@ const BASE_URL = "https://ollama.com";
 
 // Retry ceiling per call — see the comment at its use site in callSiliconFlow.
 const MAX_KEY_ATTEMPTS = 3;
+// Per-attempt abort — sized so the whole Modal → NIM → Ollama chain fits well
+// inside Convex's 10-minute action kill (see nimClient.ts for the full story).
+const OLLAMA_ATTEMPT_TIMEOUT_MS = 120_000;
 
 // Key resolution: DB table ollamaKeys first, then OLLAMA_API_KEY env fallback
 function stripQuotes(s: string): string {
@@ -225,6 +228,7 @@ export async function callSiliconFlow(
   maxTokens: number = 16384,
   history?: Array<{ role: "user" | "assistant"; content: string }>,
   runQuery?: ActionCtx["runQuery"],
+  deadlineMs?: number,
 ): Promise<ChatResult> {
   const apiKeys = await requireAllKeys(runQuery);
 
@@ -256,8 +260,13 @@ export async function callSiliconFlow(
   for (let k = 0; k < attempts; k++) {
     const apiKey = apiKeys[k];
 
+    // Respect the caller's shared chain deadline — skip attempts there's no
+    // time left for, never run one past the remaining budget.
+    const remaining = deadlineMs === undefined ? OLLAMA_ATTEMPT_TIMEOUT_MS : deadlineMs - Date.now();
+    if (remaining <= 5_000) break;
+
     const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 300_000);
+    const timeout = setTimeout(() => ctrl.abort(), Math.min(OLLAMA_ATTEMPT_TIMEOUT_MS, remaining));
     try {
       const res = await fetch(`${BASE_URL}/api/chat`, {
         method: "POST",
@@ -291,7 +300,7 @@ export async function callSiliconFlow(
     } catch (err) {
       clearTimeout(timeout);
       if (err instanceof Error && err.name === "AbortError") {
-        lastError = new Error(`Ollama Cloud request timed out after 300s (key ${k + 1}/${apiKeys.length})`);
+        lastError = new Error(`Ollama Cloud request timed out (key ${k + 1}/${attempts})`);
         continue; // timeout — try next key
       }
       if (err === lastError) { /* already captured the non-ok response error above */ }
@@ -300,8 +309,8 @@ export async function callSiliconFlow(
     }
   }
 
-  // All keys exhausted
-  throw lastError ?? new Error("Ollama Cloud request failed — no keys available");
+  // All keys exhausted (or the shared chain deadline left no time to try any)
+  throw lastError ?? new Error("Ollama Cloud request failed — keys exhausted or time budget spent");
 }
 
 /**

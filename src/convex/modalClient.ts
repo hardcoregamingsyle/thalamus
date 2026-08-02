@@ -14,6 +14,9 @@ import type { ActionCtx } from "./_generated/server";
 
 // Retry ceiling per call — see the comment at its use site in callModal.
 const MAX_ENDPOINT_ATTEMPTS = 3;
+// Per-attempt abort — sized so the whole Modal → NIM → Ollama chain fits well
+// inside Convex's 10-minute action kill (see nimClient.ts for the full story).
+const MODAL_ATTEMPT_TIMEOUT_MS = 120_000;
 
 export interface ModalEndpoint {
   name: string;
@@ -80,6 +83,7 @@ export async function callModal(
   maxTokens: number = 8192,
   temperature: number = 0.7,
   history?: Array<{ role: "user" | "assistant"; content: string }>,
+  deadlineMs?: number,
 ): Promise<ModalChatResult> {
   const endpoints = await resolveModalEndpoints(ctx);
   if (endpoints.length === 0) {
@@ -111,8 +115,13 @@ export async function callModal(
       stream: false,
     });
 
+    // Respect the caller's shared chain deadline — skip attempts there's no
+    // time left for, never run one past the remaining budget.
+    const remaining = deadlineMs === undefined ? MODAL_ATTEMPT_TIMEOUT_MS : deadlineMs - Date.now();
+    if (remaining <= 5_000) break;
+
     const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 300_000);
+    const timeout = setTimeout(() => ctrl.abort(), Math.min(MODAL_ATTEMPT_TIMEOUT_MS, remaining));
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       // Modal web endpoints are frequently keyless — only send auth if set.
@@ -149,7 +158,7 @@ export async function callModal(
     } catch (err) {
       clearTimeout(timeout);
       if (err instanceof Error && err.name === "AbortError") {
-        lastError = new Error(`Modal request timed out after 300s (${ep.name})`);
+        lastError = new Error(`Modal request timed out (${ep.name})`);
         continue;
       }
       if (err !== lastError) lastError = err instanceof Error ? err : new Error(String(err));
@@ -157,7 +166,7 @@ export async function callModal(
     }
   }
 
-  throw lastError ?? new Error("Modal request failed — all endpoints exhausted");
+  throw lastError ?? new Error("Modal request failed — endpoints exhausted or time budget spent");
 }
 
 /**
