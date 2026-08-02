@@ -41,6 +41,12 @@ import { parseMcpCalls, stripMcpBlocks, type ParsedMcpCall } from "./mcpParse";
 const MAX_MCP_ROUNDS = 5;
 const MAX_MCP_CALLS_PER_MESSAGE = 5;
 
+// A dispatched GitHub Actions run (or a desktop executor that went away) can
+// accept a queued command and then never call back — nothing else in the
+// codebase times that out, so without this a branch parks "paused" forever
+// with zero further messages the moment that happens.
+const STALE_COMMAND_MS = 15 * 60 * 1000;
+
 // All known agents in their natural order.
 // Researcher is a three-agent team: ResearchPlanner → Researcher (data gatherer) → ReportMaker.
 const ALL_PLANNING_AGENTS = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Planner"] as const;
@@ -272,250 +278,276 @@ export const runPipelineAction = internalAction({
   handler: async (ctx, args): Promise<void> => {
     const { branchId } = args;
 
-    // Load credentials
-    const geminiKeys = await ctx.runQuery(internal.admin.getGeminiKeysInternal, {}) as string[];
-    const dbCreds = await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {}) as { accessKeyId: string; secretAccessKey: string; region: string } | null;
-
-    // Check platform budget
-    const budgetExhausted = await ctx.runQuery(internal.admin.isPlatformBudgetExhausted, {}) as boolean;
-    if (budgetExhausted) {
-      await ctx.runMutation(internal.codeBranches.saveMessage, {
-        branchId,
-        agent: "System",
-        content: "⚠️ Platform budget exhausted. Please contact support.",
-      });
-      await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-        branchId,
-        status: "idle",
-      });
-      return;
-    }
-
-    // Load branch
-    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
-    if (!branch) return;
-
-    // User pressed Stop — halt this run WITHOUT rescheduling, and clear the flag
-    // so a later start isn't immediately cancelled. (The pipeline writes "idle"
-    // between every step, so status alone can't tell a Stop from normal state.)
-    if (branch.stopRequested) {
-      await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-        branchId, status: "idle", stopRequested: false, currentAgent: undefined,
-      });
-      return;
-    }
-
-    // Resolve the branch owner so every model call bills the right account.
-    const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: branch.projectId });
-    const ownerUserId = project?.userId ?? null;
-
-    // The owner's enabled MCP servers — agents may call their tools. Unified
-    // shape over user-connected servers (encrypted auth header in the DB) and
-    // the built-in AgentOverflow server (plaintext key from the deployment env).
-    interface PipelineMcpServer {
-      name: string;
-      url: string;
-      encryptedAuth?: string;
-      plainAuth?: string;
-      toolsJson?: string;
-    }
-    const userServers = ownerUserId
-      ? await ctx.runQuery(internal.mcpServers.getEnabledServersInternal, { userId: ownerUserId })
-      : [];
-    const mcpServers: PipelineMcpServer[] = userServers.map((s: Doc<"mcpServers">) => ({
-      name: s.name, url: s.url, encryptedAuth: s.authHeader, toolsJson: s.toolsJson,
-    }));
-
-    // Built-in: AgentOverflow rides this same deployment (/ao/mcp), so every
-    // pipeline gets its corpus tools out of the box — no config required. With
-    // AO_MCP_API_KEY set the run uses that key (unlimited/gold if it's an admin
-    // key); without one it connects keyless (anonymous tier: capped per IP,
-    // gold hidden). Either way the agents can search before burning tokens. A
-    // user-connected server named "agentoverflow" still wins.
-    if (!mcpServers.some((s) => s.name === "agentoverflow")) {
-      const aoKey = (process.env.AO_MCP_API_KEY ?? "").trim();
-      const aoUrl = (process.env.AO_MCP_URL ?? "").trim() ||
-        (process.env.CONVEX_SITE_URL ? `${process.env.CONVEX_SITE_URL}/ao/mcp` : "");
-      if (aoUrl) {
-        mcpServers.unshift({
-          name: "agentoverflow",
-          url: aoUrl,
-          ...(aoKey ? { plainAuth: `Authorization: Bearer ${aoKey}` } : {}),
-          toolsJson: JSON.stringify([
-            { name: "search", description: "Search AgentOverflow's corpus of agent-written solutions BEFORE burning tokens rediscovering a known fix. Args: {\"query\": \"...\", \"tags\": [\"...\"]?, \"top_k\": 5?}" },
-            { name: "answer", description: "Get a synthesized answer with sources from the corpus. Args: {\"query\": \"...\", \"tags\": [\"...\"]?}" },
-            { name: "submit_learning", description: "Write up a hard-won solution so other agents can find it later. Args: {\"title\": \"...\", \"problem\": \"...\", \"solution\": \"...\", \"tags\": [\"...\"]?}" },
-          ]),
-        });
-      }
-    }
-
-    // Built-in: Sketchfab 3D-model catalogue — attached to EVERY run alongside
-    // AgentOverflow. Both MCPs are always available; the agent decides when (if
-    // ever) to call them — nothing here gates or auto-fires them. Search + model
-    // lookups are public; downloads use the deployment's SKETCHFAB_API_TOKEN when
-    // set. A user server named "sketchfab" still wins.
-    if (!mcpServers.some((s) => s.name === "sketchfab")) {
-      const sfUrl = (process.env.SKETCHFAB_MCP_URL ?? "").trim() ||
-        (process.env.CONVEX_SITE_URL ? `${process.env.CONVEX_SITE_URL}/sketchfab/mcp` : "");
-      if (sfUrl) {
-        mcpServers.unshift({
-          name: "sketchfab",
-          url: sfUrl,
-          toolsJson: JSON.stringify([
-            { name: "search_models", description: "Find 3D models for a game/3D scene. Check the license (prefer CC0/CC-BY). Args: {\"query\": \"...\", \"downloadable\": true?, \"limit\": 8?, \"tags\": [\"...\"]?}" },
-            { name: "model_info", description: "Full details + license for one model. Args: {\"uid\": \"...\"}" },
-            { name: "download_model", description: "Temporary glTF/GLB/USDZ download URLs for a downloadable model. Args: {\"uid\": \"...\"}" },
-          ]),
-        });
-      }
-    }
-
-    // Compact tool inventory for the agent prompt (only when servers exist).
-    let mcpToolSection = "";
-    if (mcpServers.length > 0) {
-      const lines: string[] = [];
-      for (const s of mcpServers) {
-        let tools: Array<{ name: string; description?: string }> = [];
-        try {
-          const parsed = JSON.parse(s.toolsJson ?? "[]");
-          if (Array.isArray(parsed)) tools = parsed;
-        } catch { /* stale/error cache — list the server without tools */ }
-        // 160 chars keeps the inventory compact without truncating away the
-        // "Args: {...}" hints — an agent that has to guess arg names fails
-        // its first call and burns an MCP round learning nothing.
-        const toolList = tools.slice(0, 10)
-          .map(t => t.description ? `${t.name} (${t.description.slice(0, 160)})` : t.name)
-          .join(", ");
-        lines.push(`- server "${s.name}": ${toolList || "tools unknown — call at your own risk"}`);
-      }
-      // AgentOverflow is why MCP is wired in at all: agents should hit the
-      // corpus before rediscovering known fixes, and (keyed runs only — the
-      // server rejects keyless submissions) pay it back with learnings.
-      const aoServer = mcpServers.find((s) => s.name === "agentoverflow");
-      const aoKeyed = !!(aoServer && (aoServer.plainAuth || aoServer.encryptedAuth));
-      const aoGuidance = aoServer
-        ? [
-            `Before solving a hard problem, debugging a failing command, or researching a library quirk, call agentoverflow's "search" first — another agent has likely already hit it, and one search is cheaper than rediscovery.`,
-            ...(aoKeyed
-              ? [`When you crack a problem that took real effort (a failing command you fixed, a non-obvious bug, a gotcha that cost you a retry), call agentoverflow's "submit_learning" with a clear title/problem/solution so the next agent skips the pain.`]
-              : []),
-          ]
-        : [];
-      // When the 3D catalogue is attached (gamedev tasks), point agents at it for
-      // assets instead of stubbing placeholder geometry or asking the user.
-      const sketchfabGuidance = mcpServers.some((s) => s.name === "sketchfab")
-        ? [`Need a 3D asset (character, prop, environment)? Call sketchfab's "search_models" (downloadable:true), check the license, then "download_model" for a glTF/GLB URL — don't hand-roll placeholder meshes or block on the user for models.`]
-        : [];
-      mcpToolSection = [
-        `## MCP Tools`,
-        `You can call external tools on the user's connected MCP servers. Emit:`,
-        `<<MCP-CALL server="serverName" tool="toolName">>`,
-        `{"argName": "value"}`,
-        `<<END.MCP-CALL>>`,
-        `Results will be returned to you before you continue. Available servers:`,
-        ...lines,
-        ...aoGuidance,
-        ...sketchfabGuidance,
-      ].join("\n");
-    }
-
-    // Charge the owner's AgentBucks + record platform spend for one model call.
-    // Centralized so no call site runs for free — the old pipeline never billed
-    // at all (a full billing bypass and a blind spot for the budget guard).
-    const bill = async (label: string, r: { tier: ModelTier; inputTokens: number; outputTokens: number }) => {
-      if (ownerUserId) {
-        const ab = calcAgentBucksForTier(r.tier, r.inputTokens, r.outputTokens);
-        await ctx.runMutation(internal.credits.deductAgentBucks, { userId: ownerUserId, agentBucksToDeduct: ab });
-      }
-      await ctx.runMutation(internal.admin.deductPlatformCost, {
-        // The tier as returned, unprefixed — pricing looks this up, and
-        // `${label}-${tier}` could never match a key in the table.
-        modelName: r.tier, inputTokens: r.inputTokens, outputTokens: r.outputTokens,
-      });
-    };
-
-    // Check if paused for commands
-    // (These gates also make re-scheduling idempotent: a spurious extra
-    // invocation while the user hasn't answered simply re-parks the branch.)
-    const pendingCommands = await ctx.runQuery(internal.codeCommands.getPendingCommands, { branchId });
-    if (pendingCommands.length > 0) {
-      // Still waiting for commands to complete
-      await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-        branchId,
-        status: "paused",
-      });
-      return;
-    }
-
-    // Check if paused for API keys
-    const pendingKeyRequests = await ctx.runQuery(internal.codeApiKeys.getPendingRequests, { branchId });
-    if (pendingKeyRequests.length > 0) {
-      // Still waiting for API keys
-      await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-        branchId,
-        status: "paused",
-      });
-      return;
-    }
-
-    // Recover the original user request from the first User message in history
-    // so all agents always have the full goal even after many pipeline rounds.
-    const allMessages = await ctx.runQuery(internal.codeBranches.getMessagesInternal, { branchId }) as Doc<"codeMessages">[];
-    const firstUserMessage = allMessages.find((m) => m.agent === "User");
-    const task = args.userPrompt || firstUserMessage?.content || branch.description || "Continue working on the project";
-    const currentPhase = branch.phase ?? "Dispatcher";
-    let round = branch.round ?? 0;
-    let totalMessages = branch.totalMessages ?? 0;
-
-    // Hard stop for a runaway loop: a run this long isn't progressing (the
-    // failure that prompted this sat past 200, re-running the Coder forever).
-    // Better to end with a clear message than bill into the void.
-    if (totalMessages >= MAX_TOTAL_MESSAGES) {
-      totalMessages++;
-      await ctx.runMutation(internal.codeBranches.saveMessage, {
-        branchId,
-        agent: "System",
-        content: `Pipeline stopped: hit the ${MAX_TOTAL_MESSAGES}-step ceiling without finishing. A run this long is stuck rather than progressing — start a fresh run, or narrow the task into smaller pieces.`,
-        round,
-        messageIndex: totalMessages,
-      });
-      await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-        branchId, status: "completed", currentAgent: undefined, totalMessages,
-      });
-      return;
-    }
-
-    const executionPhase = branch.executionPhase ?? "dispatching";
-    const currentTaskIndex = branch.currentTaskIndex ?? 0;
-
-    // Parse the previously saved dispatched-agent list and model assignments
-    // (both set by the Dispatcher phase).
-    let dispatchedAgents: string[] = [];
-    const agentModelAssignments: Record<string, string> = {};
+    // Wrapped in the SAME try/catch as the rest of the step (extended to
+    // start here) — this setup zone used to run unguarded, so an exception
+    // anywhere in it (a bad credential read, a stale branch/project doc)
+    // killed the scheduled action with no saved message and no reschedule,
+    // leaving the branch silently stuck forever.
     try {
-      if (branch.dispatchedAgentsJson) {
-        dispatchedAgents = JSON.parse(branch.dispatchedAgentsJson);
+      // Load credentials
+      const geminiKeys = await ctx.runQuery(internal.admin.getGeminiKeysInternal, {}) as string[];
+      const dbCreds = await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {}) as { accessKeyId: string; secretAccessKey: string; region: string } | null;
+
+      // Check platform budget
+      const budgetExhausted = await ctx.runQuery(internal.admin.isPlatformBudgetExhausted, {}) as boolean;
+      if (budgetExhausted) {
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId,
+          agent: "System",
+          content: "⚠️ Platform budget exhausted. Please contact support.",
+        });
+        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+          branchId,
+          status: "idle",
+        });
+        return;
       }
-      if (branch.dispatchedModelsJson) {
-        const parsed = JSON.parse(branch.dispatchedModelsJson);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          Object.assign(agentModelAssignments, parsed);
+
+      // Load branch
+      const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
+      if (!branch) return;
+
+      // User pressed Stop — halt this run WITHOUT rescheduling, and clear the flag
+      // so a later start isn't immediately cancelled. (The pipeline writes "idle"
+      // between every step, so status alone can't tell a Stop from normal state.)
+      if (branch.stopRequested) {
+        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+          branchId, status: "idle", stopRequested: false, currentAgent: undefined,
+        });
+        return;
+      }
+
+      // Resolve the branch owner so every model call bills the right account.
+      const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: branch.projectId });
+      const ownerUserId = project?.userId ?? null;
+
+      // The owner's enabled MCP servers — agents may call their tools. Unified
+      // shape over user-connected servers (encrypted auth header in the DB) and
+      // the built-in AgentOverflow server (plaintext key from the deployment env).
+      interface PipelineMcpServer {
+        name: string;
+        url: string;
+        encryptedAuth?: string;
+        plainAuth?: string;
+        toolsJson?: string;
+      }
+      const userServers = ownerUserId
+        ? await ctx.runQuery(internal.mcpServers.getEnabledServersInternal, { userId: ownerUserId })
+        : [];
+      const mcpServers: PipelineMcpServer[] = userServers.map((s: Doc<"mcpServers">) => ({
+        name: s.name, url: s.url, encryptedAuth: s.authHeader, toolsJson: s.toolsJson,
+      }));
+
+      // Built-in: AgentOverflow rides this same deployment (/ao/mcp), so every
+      // pipeline gets its corpus tools out of the box — no config required. With
+      // AO_MCP_API_KEY set the run uses that key (unlimited/gold if it's an admin
+      // key); without one it connects keyless (anonymous tier: capped per IP,
+      // gold hidden). Either way the agents can search before burning tokens. A
+      // user-connected server named "agentoverflow" still wins.
+      if (!mcpServers.some((s) => s.name === "agentoverflow")) {
+        const aoKey = (process.env.AO_MCP_API_KEY ?? "").trim();
+        const aoUrl = (process.env.AO_MCP_URL ?? "").trim() ||
+          (process.env.CONVEX_SITE_URL ? `${process.env.CONVEX_SITE_URL}/ao/mcp` : "");
+        if (aoUrl) {
+          mcpServers.unshift({
+            name: "agentoverflow",
+            url: aoUrl,
+            ...(aoKey ? { plainAuth: `Authorization: Bearer ${aoKey}` } : {}),
+            toolsJson: JSON.stringify([
+              { name: "search", description: "Search AgentOverflow's corpus of agent-written solutions BEFORE burning tokens rediscovering a known fix. Args: {\"query\": \"...\", \"tags\": [\"...\"]?, \"top_k\": 5?}" },
+              { name: "answer", description: "Get a synthesized answer with sources from the corpus. Args: {\"query\": \"...\", \"tags\": [\"...\"]?}" },
+              { name: "submit_learning", description: "Write up a hard-won solution so other agents can find it later. Args: {\"title\": \"...\", \"problem\": \"...\", \"solution\": \"...\", \"tags\": [\"...\"]?}" },
+            ]),
+          });
         }
       }
-    } catch { /* ignored */ }
 
-    // Mark as running
-    await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-      branchId,
-      status: "running",
-      currentAgent: currentPhase,
-      phase: currentPhase,
-      round,
-      totalMessages,
-    });
+      // Built-in: Sketchfab 3D-model catalogue — attached to EVERY run alongside
+      // AgentOverflow. Both MCPs are always available; the agent decides when (if
+      // ever) to call them — nothing here gates or auto-fires them. Search + model
+      // lookups are public; downloads use the deployment's SKETCHFAB_API_TOKEN when
+      // set. A user server named "sketchfab" still wins.
+      if (!mcpServers.some((s) => s.name === "sketchfab")) {
+        const sfUrl = (process.env.SKETCHFAB_MCP_URL ?? "").trim() ||
+          (process.env.CONVEX_SITE_URL ? `${process.env.CONVEX_SITE_URL}/sketchfab/mcp` : "");
+        if (sfUrl) {
+          mcpServers.unshift({
+            name: "sketchfab",
+            url: sfUrl,
+            toolsJson: JSON.stringify([
+              { name: "search_models", description: "Find 3D models for a game/3D scene. Check the license (prefer CC0/CC-BY). Args: {\"query\": \"...\", \"downloadable\": true?, \"limit\": 8?, \"tags\": [\"...\"]?}" },
+              { name: "model_info", description: "Full details + license for one model. Args: {\"uid\": \"...\"}" },
+              { name: "download_model", description: "Temporary glTF/GLB/USDZ download URLs for a downloadable model. Args: {\"uid\": \"...\"}" },
+            ]),
+          });
+        }
+      }
 
-    try {
+      // Compact tool inventory for the agent prompt (only when servers exist).
+      let mcpToolSection = "";
+      if (mcpServers.length > 0) {
+        const lines: string[] = [];
+        for (const s of mcpServers) {
+          let tools: Array<{ name: string; description?: string }> = [];
+          try {
+            const parsed = JSON.parse(s.toolsJson ?? "[]");
+            if (Array.isArray(parsed)) tools = parsed;
+          } catch { /* stale/error cache — list the server without tools */ }
+          // 160 chars keeps the inventory compact without truncating away the
+          // "Args: {...}" hints — an agent that has to guess arg names fails
+          // its first call and burns an MCP round learning nothing.
+          const toolList = tools.slice(0, 10)
+            .map(t => t.description ? `${t.name} (${t.description.slice(0, 160)})` : t.name)
+            .join(", ");
+          lines.push(`- server "${s.name}": ${toolList || "tools unknown — call at your own risk"}`);
+        }
+        // AgentOverflow is why MCP is wired in at all: agents should hit the
+        // corpus before rediscovering known fixes, and (keyed runs only — the
+        // server rejects keyless submissions) pay it back with learnings.
+        const aoServer = mcpServers.find((s) => s.name === "agentoverflow");
+        const aoKeyed = !!(aoServer && (aoServer.plainAuth || aoServer.encryptedAuth));
+        const aoGuidance = aoServer
+          ? [
+              `Before solving a hard problem, debugging a failing command, or researching a library quirk, call agentoverflow's "search" first — another agent has likely already hit it, and one search is cheaper than rediscovery.`,
+              ...(aoKeyed
+                ? [`When you crack a problem that took real effort (a failing command you fixed, a non-obvious bug, a gotcha that cost you a retry), call agentoverflow's "submit_learning" with a clear title/problem/solution so the next agent skips the pain.`]
+                : []),
+            ]
+          : [];
+        // When the 3D catalogue is attached (gamedev tasks), point agents at it for
+        // assets instead of stubbing placeholder geometry or asking the user.
+        const sketchfabGuidance = mcpServers.some((s) => s.name === "sketchfab")
+          ? [`Need a 3D asset (character, prop, environment)? Call sketchfab's "search_models" (downloadable:true), check the license, then "download_model" for a glTF/GLB URL — don't hand-roll placeholder meshes or block on the user for models.`]
+          : [];
+        mcpToolSection = [
+          `## MCP Tools`,
+          `You can call external tools on the user's connected MCP servers. Emit:`,
+          `<<MCP-CALL server="serverName" tool="toolName">>`,
+          `{"argName": "value"}`,
+          `<<END.MCP-CALL>>`,
+          `Results will be returned to you before you continue. Available servers:`,
+          ...lines,
+          ...aoGuidance,
+          ...sketchfabGuidance,
+        ].join("\n");
+      }
+
+      // Charge the owner's AgentBucks + record platform spend for one model call.
+      // Centralized so no call site runs for free — the old pipeline never billed
+      // at all (a full billing bypass and a blind spot for the budget guard).
+      const bill = async (label: string, r: { tier: ModelTier; inputTokens: number; outputTokens: number }) => {
+        if (ownerUserId) {
+          const ab = calcAgentBucksForTier(r.tier, r.inputTokens, r.outputTokens);
+          await ctx.runMutation(internal.credits.deductAgentBucks, { userId: ownerUserId, agentBucksToDeduct: ab });
+        }
+        await ctx.runMutation(internal.admin.deductPlatformCost, {
+          // The tier as returned, unprefixed — pricing looks this up, and
+          // `${label}-${tier}` could never match a key in the table.
+          modelName: r.tier, inputTokens: r.inputTokens, outputTokens: r.outputTokens,
+        });
+      };
+
+      // Check if paused for commands
+      // (These gates also make re-scheduling idempotent: a spurious extra
+      // invocation while the user hasn't answered simply re-parks the branch.)
+      const pendingCommands = await ctx.runQuery(internal.codeCommands.getPendingCommands, { branchId }) as Doc<"codeCommands">[];
+      if (pendingCommands.length > 0) {
+        const now = Date.now();
+        const stale = pendingCommands.filter((c) => now - c.createdAt > STALE_COMMAND_MS);
+        if (stale.length > 0) {
+          for (const c of stale) {
+            await ctx.runMutation(internal.codeCommands.recordCommandResult, {
+              commandId: c._id,
+              status: "failed",
+              exitCode: 1,
+              output: "Command timed out waiting for a result — the runner may have failed to start or never called back.",
+            });
+          }
+          await ctx.runMutation(internal.codeBranches.saveMessage, {
+            branchId,
+            agent: "System",
+            content: `⚠️ ${stale.length} command${stale.length > 1 ? "s" : ""} timed out waiting for a result.`,
+          });
+        }
+        if (stale.length < pendingCommands.length) {
+          // At least one command is still within the timeout window — keep waiting.
+          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+            branchId,
+            status: "paused",
+          });
+          return;
+        }
+        // Every pending command was stale and just got failed above — fall
+        // through instead of re-parking, so the pipeline actually continues.
+      }
+
+      // Check if paused for API keys
+      const pendingKeyRequests = await ctx.runQuery(internal.codeApiKeys.getPendingRequests, { branchId });
+      if (pendingKeyRequests.length > 0) {
+        // Still waiting for API keys
+        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+          branchId,
+          status: "paused",
+        });
+        return;
+      }
+
+      // Recover the original user request from the first User message in history
+      // so all agents always have the full goal even after many pipeline rounds.
+      const allMessages = await ctx.runQuery(internal.codeBranches.getMessagesInternal, { branchId }) as Doc<"codeMessages">[];
+      const firstUserMessage = allMessages.find((m) => m.agent === "User");
+      const task = args.userPrompt || firstUserMessage?.content || branch.description || "Continue working on the project";
+      const currentPhase = branch.phase ?? "Dispatcher";
+      let round = branch.round ?? 0;
+      let totalMessages = branch.totalMessages ?? 0;
+
+      // Hard stop for a runaway loop: a run this long isn't progressing (the
+      // failure that prompted this sat past 200, re-running the Coder forever).
+      // Better to end with a clear message than bill into the void.
+      if (totalMessages >= MAX_TOTAL_MESSAGES) {
+        totalMessages++;
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId,
+          agent: "System",
+          content: `Pipeline stopped: hit the ${MAX_TOTAL_MESSAGES}-step ceiling without finishing. A run this long is stuck rather than progressing — start a fresh run, or narrow the task into smaller pieces.`,
+          round,
+          messageIndex: totalMessages,
+        });
+        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+          branchId, status: "completed", currentAgent: undefined, totalMessages,
+        });
+        return;
+      }
+
+      const executionPhase = branch.executionPhase ?? "dispatching";
+      const currentTaskIndex = branch.currentTaskIndex ?? 0;
+
+      // Parse the previously saved dispatched-agent list and model assignments
+      // (both set by the Dispatcher phase).
+      let dispatchedAgents: string[] = [];
+      const agentModelAssignments: Record<string, string> = {};
+      try {
+        if (branch.dispatchedAgentsJson) {
+          dispatchedAgents = JSON.parse(branch.dispatchedAgentsJson);
+        }
+        if (branch.dispatchedModelsJson) {
+          const parsed = JSON.parse(branch.dispatchedModelsJson);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            Object.assign(agentModelAssignments, parsed);
+          }
+        }
+      } catch { /* ignored */ }
+
+      // Mark as running
+      await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+        branchId,
+        status: "running",
+        currentAgent: currentPhase,
+        phase: currentPhase,
+        round,
+        totalMessages,
+      });
+
       // allMessages already loaded above for task recovery
       const messages = allMessages;
       const files = await ctx.runQuery(internal.codeBranches.getFilesInternal, { branchId }) as Doc<"codeFiles">[];
@@ -661,10 +693,19 @@ export const runPipelineAction = internalAction({
       // Phase not in the dispatched pipeline (e.g. Dispatcher dropped it, or a
       // stale phase from a previous run) — treat as done rather than erroring.
       if (phaseIndex === -1) {
+        totalMessages++;
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId,
+          agent: "System",
+          content: `Pipeline stopped: "${currentPhase}" is no longer part of the current plan (a stale phase, or the Dispatcher dropped it on re-evaluation). Send another message to continue.`,
+          round,
+          messageIndex: totalMessages,
+        });
         await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
           branchId,
           status: "completed",
           executionPhase: "completed",
+          totalMessages,
         });
         return;
       }
@@ -1214,7 +1255,13 @@ export const startPipeline = action({
       // after creation, so the first run to trip it bricked that branch for
       // good and every later run just re-printed the ceiling message.
       branchId: args.branchId, stopRequested: false, criticRetryCount: 0, mcpRoundCount: 0, totalMessages: 0,
-      ...(args.executor ? { executor: args.executor } : {}),
+      // Always set explicitly (defaulting to "cloud") rather than only when
+      // passed — otherwise a branch previously run once from the desktop app
+      // (executor: "local") stays stuck "local" forever, and every future
+      // command queued from a web-only session parks the branch "paused"
+      // with nothing able to ever run it (the desktop-only executor queue
+      // has no other reader).
+      executor: args.executor ?? "cloud",
     });
 
     // Save user message if provided

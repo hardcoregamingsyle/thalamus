@@ -12,6 +12,9 @@
 import { internal } from "./_generated/api";
 import type { ActionCtx } from "./_generated/server";
 
+// Retry ceiling per call — see the comment at its use site in callModal.
+const MAX_ENDPOINT_ATTEMPTS = 3;
+
 export interface ModalEndpoint {
   name: string;
   baseUrl: string;
@@ -95,7 +98,10 @@ export async function callModal(
 
   let lastError: Error | null = null;
 
-  for (let i = 0; i < endpoints.length; i++) {
+  // Cap how many endpoints one call retries — see the matching comment in
+  // nimClient.ts's callNimAttempt for why unbounded retry count is a risk.
+  const attempts = Math.min(endpoints.length, MAX_ENDPOINT_ATTEMPTS);
+  for (let i = 0; i < attempts; i++) {
     const ep = endpoints[i];
     const body = JSON.stringify({
       model: ep.modelId,
@@ -123,7 +129,7 @@ export async function callModal(
       if (!res.ok) {
         let errMsg = raw.slice(0, 500);
         try { const j = JSON.parse(raw) as ModalChatResponse; errMsg = j.error?.message ?? j.message ?? raw.slice(0, 300); } catch { /* raw */ }
-        const err = new Error(`Modal ${res.status} (${ep.name}, ${i + 1}/${endpoints.length}): ${errMsg}`);
+        const err = new Error(`Modal ${res.status} (${ep.name}, ${i + 1}/${attempts}): ${errMsg}`);
         lastError = err;
         clearTimeout(timeout);
         if (res.status === 429 || res.status >= 500) continue;

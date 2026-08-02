@@ -10,6 +10,9 @@ import type { ActionCtx } from "./_generated/server";
 // ── Base URL ───────────────────────────────────────────────────────────────────
 const BASE_URL = "https://integrate.api.nvidia.com/v1";
 
+// Retry ceiling per call — see the comment at its use site in callNimAttempt.
+const MAX_KEY_ATTEMPTS = 3;
+
 // ── Free-available models on NVIDIA NIM (no CC required on free tier) ────────
 // Many models are free to call on the NVIDIA API catalog at limited rate.
 // We include the best general-purpose + coding + reasoning models.
@@ -544,7 +547,12 @@ function parseSseResponse(raw: string, defaultModel: string): NimChatResult | nu
     try {
       const chunk = JSON.parse(payload);
       const delta = chunk.choices?.[0]?.delta;
+      // Reasoning-flagged models (nemotron-3-super, deepseek-v4-pro) can stream
+      // their real answer on the reasoning channel instead of content — read
+      // that too, or a model that only ever "thinks out loud" comes back as an
+      // empty, silently-successful response with nothing wrong to catch.
       if (delta?.content) text += delta.content;
+      else if (delta?.reasoning_content) text += delta.reasoning_content;
       if (chunk.model) modelName = chunk.model;
       if (chunk.usage) {
         promptTokens = chunk.usage.prompt_tokens ?? promptTokens;
@@ -624,7 +632,14 @@ async function callNimAttempt(
 
   let lastError: Error | null = null;
 
-  for (let k = 0; k < apiKeys.length; k++) {
+  // Cap how many keys one call retries — a slow/timing-out model (each key
+  // gets up to 500s) times unbounded key count into an unbounded worst case;
+  // a deployment with several keys configured could otherwise burn most of
+  // an hour retrying the same broken model before ever falling back to
+  // Ollama, risking the whole action getting killed by Convex's own runtime
+  // limit before this function ever gets to throw a catchable error.
+  const attempts = Math.min(apiKeys.length, MAX_KEY_ATTEMPTS);
+  for (let k = 0; k < attempts; k++) {
     const apiKey = apiKeys[k];
 
     const ctrl = new AbortController();
@@ -644,7 +659,7 @@ async function callNimAttempt(
       if (!res.ok) {
         let errMsg = raw.slice(0, 500);
         try { const j = JSON.parse(raw); errMsg = j.error?.message ?? j.message ?? raw.slice(0, 300); } catch { /* raw */ }
-        const err = new Error(`NVIDIA NIM ${res.status} (key ${k + 1}/${apiKeys.length}): ${errMsg}`);
+        const err = new Error(`NVIDIA NIM ${res.status} (key ${k + 1}/${attempts}): ${errMsg}`);
         lastError = err;
         clearTimeout(timeout);
         if (res.status === 401 || res.status === 403 || res.status === 429 || res.status >= 500) continue;
@@ -655,7 +670,8 @@ async function callNimAttempt(
       if (result) return result;
 
       const data: NimChatResponse = JSON.parse(raw);
-      const text = data.choices?.[0]?.message?.content ?? "";
+      const msg = data.choices?.[0]?.message;
+      const text = msg?.content || msg?.reasoning_content || "";
       return {
         text,
         inputTokens: data.usage?.prompt_tokens ?? 0,

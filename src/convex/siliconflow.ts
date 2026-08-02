@@ -9,6 +9,9 @@ import type { ActionCtx } from "./_generated/server";
 // ── Base URL & Auth ───────────────────────────────────────────────────────────
 const BASE_URL = "https://ollama.com";
 
+// Retry ceiling per call — see the comment at its use site in callSiliconFlow.
+const MAX_KEY_ATTEMPTS = 3;
+
 // Key resolution: DB table ollamaKeys first, then OLLAMA_API_KEY env fallback
 function stripQuotes(s: string): string {
   s = s.trim();
@@ -247,7 +250,10 @@ export async function callSiliconFlow(
 
   let lastError: Error | null = null;
 
-  for (let k = 0; k < apiKeys.length; k++) {
+  // Cap how many keys one call retries — see the matching comment in
+  // nimClient.ts's callNimAttempt for why unbounded retry count is a risk.
+  const attempts = Math.min(apiKeys.length, MAX_KEY_ATTEMPTS);
+  for (let k = 0; k < attempts; k++) {
     const apiKey = apiKeys[k];
 
     const ctrl = new AbortController();
@@ -266,7 +272,7 @@ export async function callSiliconFlow(
       const raw = await res.text();
       if (!res.ok) {
         const msg = JSON.parse(raw);
-        const err = new Error(`Ollama Cloud ${res.status} (key ${k + 1}/${apiKeys.length}): ${msg.error ?? raw.slice(0, 300)}`);
+        const err = new Error(`Ollama Cloud ${res.status} (key ${k + 1}/${attempts}): ${msg.error ?? raw.slice(0, 300)}`);
         lastError = err;
         clearTimeout(timeout);
         // Rate limited / quota exceeded — try next key
