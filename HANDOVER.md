@@ -120,7 +120,7 @@ CI (`.github/workflows/ci.yml`) runs all of these on every push to `main`, and c
 
 ## 6. Known debt (honest list)
 
-1. **Platform cost tracking is blind.** `admin.deductPlatformCost` prices against `PLATFORM_PRICING`, which only knows Claude and Gemini names, while every pipeline call now hands it something like `Coder-nim:qwen3-coder-480b`. It scores 0, logs a warning, and `platformBudget` never moves — so the "auto-disable under $5" guard can't trip on Thalamus usage. Harmless while everything is free; the first thing to fix if that ever changes.
+1. **Platform cost tracking is blind.** `admin.deductPlatformCost` prices against `PLATFORM_PRICING`, which only knows Claude and Gemini names, while every pipeline call now hands it something like `Coder-nim:deepseek-v4-flash`. It scores 0, logs a warning, and `platformBudget` never moves — so the "auto-disable under $5" guard can't trip on Thalamus usage. Harmless while everything is free; the first thing to fix if that ever changes.
 2. **Chat billing in `ai.ts`** is hardcoded to Gemini-ish rates no matter which model answered. Same category, same excuse.
 3. **`modelPricing` is an orphan table** — an admin can edit rows that nothing reads.
 5. **`src/lib/vly-integrations.ts` carries a hardcoded fallback API key** for the VLY completion provider. It shouldn't.

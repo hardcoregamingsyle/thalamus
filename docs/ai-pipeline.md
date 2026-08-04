@@ -136,12 +136,15 @@ There are no model tiers, no per-branch run mode, and no admin override grid. If
 
 | Task type | Matched on (case-insensitive substring) | NIM model |
 |-----------|------------------------------------------|-----------|
-| dispatcher | `dispatcher`, `organiser`, `summarizer` | `nvidia/nvidia-nemotron-nano-9b-v2` |
-| code | `coder`, `optimiser`, `architect` | `qwen/qwen3-coder-480b-a35b-instruct` |
-| reasoning | `analyser`, `planner`, `critic` | `nvidia/nemotron-3-super-120b-a12b` |
-| research | `researcher`, `research`, `scout` | (chat fallback chain) |
-| agent | `tester`, `hacker`, `auditor`, `security` | `deepseek-ai/deepseek-v4-pro` |
+| dispatcher | `dispatcher`, `organiser`, `summarizer` | `meta/llama-3.2-3b-instruct` |
+| code | `coder`, `optimiser`, `architect` | `deepseek-ai/deepseek-v4-flash` |
+| reasoning | `analyser`, `planner`, `critic` | `deepseek-ai/deepseek-v4-flash` |
+| agent | `tester`, `hacker`, `auditor`, `security` | `deepseek-ai/deepseek-v4-flash` |
+| factcheck | `factcheck`, `fact.check`, `verifier` | `deepseek-ai/deepseek-v4-flash` |
+| research | `researcher`, `research`, `scout` | `deepseek-ai/deepseek-v4-flash` |
 | chat | anything unmatched | `NIM_DEFAULT_CHAT_MODEL` |
+
+The slow seats from earlier builds are gone on purpose: reasoning no longer runs on `nemotron-3-super-120b` and agent tasks no longer run on `deepseek-v4-pro` (both known to hang/queue on the free tier) — everything except the Dispatcher routes to `deepseek-v4-flash`. The Dispatcher call is also handed a 60s fail-fast deadline (vs the chain-wide 7-minute budget) so a dead provider surfaces in about a minute instead of stalling the whole run.
 
 > Note: the `dispatcher` row matches `organiser` (s), while the pipeline agent is named `Organizer` (z). The Organizer therefore falls through to the `chat` task type.
 
