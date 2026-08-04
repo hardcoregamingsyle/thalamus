@@ -136,7 +136,7 @@ There are no model tiers, no per-branch run mode, and no admin override grid. If
 
 | Task type | Matched on (case-insensitive substring) | NIM model |
 |-----------|------------------------------------------|-----------|
-| dispatcher | `dispatcher`, `organiser`, `summarizer` | `nvidia/nemotron-mini-4b-instruct` |
+| dispatcher | `dispatcher`, `organiser`, `summarizer` | `meta/llama-3.1-8b-instruct` |
 | code | `coder`, `optimiser`, `architect` | `deepseek-ai/deepseek-v4-flash` |
 | reasoning | `analyser`, `planner`, `critic` | `deepseek-ai/deepseek-v4-flash` |
 | agent | `tester`, `hacker`, `auditor`, `security` | `deepseek-ai/deepseek-v4-flash` |
@@ -144,7 +144,7 @@ There are no model tiers, no per-branch run mode, and no admin override grid. If
 | research | `researcher`, `research`, `scout` | `deepseek-ai/deepseek-v4-flash` |
 | chat | anything unmatched | `NIM_DEFAULT_CHAT_MODEL` |
 
-The slow seats from earlier builds are gone on purpose: reasoning no longer runs on `nemotron-3-super-120b` and agent tasks no longer run on `deepseek-v4-pro` (both known to hang/queue on the free tier) — everything except the Dispatcher routes to `deepseek-v4-flash`. The Dispatcher itself runs on `nemotron-mini-4b-instruct` (the old `meta/llama-3.2-3b-instruct` seat started hanging hard on NVIDIA's side) with a 60s fail-fast deadline (vs the chain-wide 7-minute budget) so a dead provider surfaces in about a minute instead of stalling the whole run. NIM retries cycle up to 3 keys × 3 rounds to ride out NVIDIA's 529-overload bursts, bounded by the same deadline.
+The slow seats from earlier builds are gone on purpose: reasoning no longer runs on `nemotron-3-super-120b` and agent tasks no longer run on `deepseek-v4-pro` (both known to hang/queue on the free tier) — everything except the Dispatcher routes to `deepseek-v4-flash`. The Dispatcher itself runs on `meta/llama-3.1-8b-instruct` (verified live against NVIDIA at HTTP 200 ~0.5s; the old `meta/llama-3.2-3b-instruct` seat started hanging hard and `nemotron-mini-4b` is served with a 4096-token context cap that rejects the 8192 max_tokens request with a 400) with a 60s fail-fast deadline (vs the chain-wide 7-minute budget) so a dead provider surfaces in about a minute instead of stalling the whole run. NIM retries cycle up to 3 keys × 3 rounds to ride out NVIDIA's 529-overload bursts, bounded by the same deadline.
 
 > Note: the `dispatcher` row matches `organiser` (s), while the pipeline agent is named `Organizer` (z). The Organizer therefore falls through to the `chat` task type.
 

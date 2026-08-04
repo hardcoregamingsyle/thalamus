@@ -377,7 +377,7 @@ export function nimModelsByCapability(cap: ModelCapability): NimModelInfo[] {
 
 // ── Default Model Choices ─────────────────────────────────────────────────────
 
-export const NIM_DISPATCHER_MODEL = "nvidia/nemotron-mini-4b-instruct";
+export const NIM_DISPATCHER_MODEL = "meta/llama-3.1-8b-instruct";
 
 export const NIM_DEFAULT_CHAT_MODEL = "nvidia/nemotron-3-super-120b-a12b";
 
@@ -416,7 +416,6 @@ export type TaskType = "dispatcher" | "chat" | "code" | "reasoning" | "agent" | 
 
 const TASK_MODEL_MAP: Record<TaskType, string[]> = {
   dispatcher: [
-    "nvidia/nemotron-mini-4b-instruct",
     "meta/llama-3.1-8b-instruct",
   ],
   chat: [
