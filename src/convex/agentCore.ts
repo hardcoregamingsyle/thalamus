@@ -94,6 +94,9 @@ export async function callModel(
   // (billing, file ops, streaming drip-feed) real room to finish and any
   // failure surfaces as a normal thrown Error the caller can report.
   const deadline = Date.now() + 420_000;
+  // The last NIM failure, so the final "no provider" error can say WHY NIM
+  // fell through instead of leaving the user blind with keys they can see.
+  let nimFallbackReason: string | null = null;
 
   if (ctx) {
     // Modal first when an admin has registered an endpoint. Which endpoint is
@@ -113,16 +116,18 @@ export async function callModel(
     try {
       const nimModel = assignedModel
         ?? (taskType === "dispatcher" ? "meta/llama-3.2-3b-instruct"
-          : taskType === "code" ? "meta/llama-3.1-8b-instruct"
-          : taskType === "reasoning" ? "nvidia/nemotron-3-super-120b-a12b"
-          : taskType === "agent" ? "deepseek-ai/deepseek-v4-pro"
-          : taskType === "factcheck" ? "moonshotai/kimi-k2-instruct"
+          : taskType === "code" ? "deepseek-ai/deepseek-v4-flash"
+          : taskType === "reasoning" ? "deepseek-ai/deepseek-v4-flash"
+          : taskType === "agent" ? "deepseek-ai/deepseek-v4-flash"
+          : taskType === "factcheck" ? "deepseek-ai/deepseek-v4-flash"
+          : taskType === "research" ? "deepseek-ai/deepseek-v4-flash"
           : NIM_DEFAULT_CHAT_MODEL);
 
       const result = await callNim(ctx, prompt, systemPrompt, nimModel, 8192, 0.7, undefined, deadline);
       return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `nim:${result.model}` };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      nimFallbackReason = msg;
       if (msg.includes("NVIDIA_NIM_NOT_CONFIGURED")) {
         console.warn("NIM not configured — falling back to Ollama Cloud");
       } else {
@@ -138,7 +143,7 @@ export async function callModel(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("not configured")) {
-      throw new Error("No AI provider configured — add NIM keys via /admin (primary) or Ollama keys (backup)");
+      throw new Error(`No AI provider configured — add NIM keys via /admin (primary) or Ollama keys (backup). Last NIM error: ${nimFallbackReason ?? "NIM not configured"}`);
     }
     throw err;
   }
