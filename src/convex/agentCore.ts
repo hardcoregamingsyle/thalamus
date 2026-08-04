@@ -118,21 +118,42 @@ export async function callModel(
       }
     }
 
-    try {
-      const nimModel = assignedModel
-        ?? (taskType === "dispatcher" ? NIM_DISPATCHER_MODEL
-          : taskType === "code" ? "deepseek-ai/deepseek-v4-flash"
-          : taskType === "reasoning" ? "deepseek-ai/deepseek-v4-flash"
-          : taskType === "agent" ? "deepseek-ai/deepseek-v4-flash"
-          : taskType === "factcheck" ? "deepseek-ai/deepseek-v4-flash"
-          : taskType === "research" ? "deepseek-ai/deepseek-v4-flash"
-          : NIM_DEFAULT_CHAT_MODEL);
+    const nimModel = assignedModel
+      ?? (taskType === "dispatcher" ? NIM_DISPATCHER_MODEL
+        : taskType === "code" ? "deepseek-ai/deepseek-v4-flash"
+        : taskType === "reasoning" ? "deepseek-ai/deepseek-v4-flash"
+        : taskType === "agent" ? "deepseek-ai/deepseek-v4-flash"
+        : taskType === "factcheck" ? "deepseek-ai/deepseek-v4-flash"
+        : taskType === "research" ? "deepseek-ai/deepseek-v4-flash"
+        : NIM_DEFAULT_CHAT_MODEL);
 
+    try {
       const result = await callNim(ctx, prompt, systemPrompt, nimModel, 8192, 0.7, undefined, deadline);
       return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `nim:${result.model}` };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       nimFallbackReason = msg;
+
+      // On overload (529), try a different NIM model before falling all the way
+      // to Ollama. deepseek-v4-flash is frequently hammered on NVIDIA's free
+      // tier; the 8B llama is less capable but reliably responds and is still
+      // faster/better than Ollama Cloud. Keeps the pipeline moving instead of
+      // burning the whole budget on retries against a wall.
+      if (msg.includes("529") || msg.includes("overloaded")) {
+        const fallbackModel = taskType === "dispatcher"
+          ? NIM_DEFAULT_CHAT_MODEL
+          : "meta/llama-3.1-8b-instruct";
+        if (fallbackModel !== nimModel) {
+          try {
+            const fallback = await callNim(ctx, prompt, systemPrompt, fallbackModel, 8192, 0.7, undefined, deadline);
+            return { text: fallback.text, inputTokens: fallback.inputTokens, outputTokens: fallback.outputTokens, tier: `nim:${fallback.model}:fallback` };
+          } catch (fbErr) {
+            const fbMsg = fbErr instanceof Error ? fbErr.message : String(fbErr);
+            nimFallbackReason += ` | fallback ${fallbackModel}: ${fbMsg}`;
+          }
+        }
+      }
+
       if (msg.includes("NVIDIA_NIM_NOT_CONFIGURED")) {
         console.warn("NIM not configured — falling back to Ollama Cloud");
       } else {

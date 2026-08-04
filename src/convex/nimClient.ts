@@ -683,7 +683,18 @@ async function callNimAttempt(
         const err = new Error(`NVIDIA NIM ${res.status} (key ${(t % attempts) + 1}/${attempts}, try ${t + 1}/${maxTries}): ${errMsg}`);
         lastError = err;
         clearTimeout(timeout);
-        if (res.status === 401 || res.status === 403 || res.status === 429 || res.status >= 500) continue;
+        if (res.status === 401 || res.status === 403) continue;
+        if (res.status === 429 || res.status >= 500) {
+          // Backoff on transient overload to ride out bursts — hammering an
+          // already overloaded endpoint with rapid retries makes things worse
+          // and burns the deadline for nothing.
+          const backoffMs = Math.min(2000, 500 * (t + 1));
+          const remaining = deadlineMs === undefined ? NIM_ATTEMPT_TIMEOUT_MS : deadlineMs - Date.now();
+          if (remaining > backoffMs + 5_000) {
+            await new Promise(r => setTimeout(r, backoffMs));
+          }
+          continue;
+        }
         throw err;
       }
 
