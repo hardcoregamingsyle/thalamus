@@ -238,11 +238,17 @@ async function callModelWithStreaming(
   geminiKeys: string[],
   dbCreds: { accessKeyId: string; secretAccessKey: string; region: string } | null,
   agentModelAssignments?: Record<string, string>,
+  deadlineMs?: number,
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: ModelTier }> {
   // If the Dispatcher assigned a specific model for this agent, pass it as an
   // override so callModel uses it directly instead of the hardcoded task-type map.
-  const assignedModel = agentModelAssignments?.[agentName];
-  const modelArg = assignedModel ? { assignedModel } : undefined;
+  // deadlineMs overrides the chain-wide 7-minute budget — the Dispatcher uses
+  // this to fail fast: a 3B routing call that can't answer in a minute is a
+  // broken provider, not a slow model, and every extra minute is user waiting.
+  const overrides: Record<string, unknown> = {};
+  if (agentModelAssignments?.[agentName]) overrides.assignedModel = agentModelAssignments[agentName];
+  if (deadlineMs) overrides.deadlineMs = deadlineMs;
+  const modelArg = Object.keys(overrides).length > 0 ? overrides : undefined;
   const result = await callModel(prompt, systemPrompt, agentName, geminiKeys, dbCreds, ctx, modelArg);
 
   // Simulated streaming. A Convex action cannot stream tokens out to a client,
@@ -599,7 +605,7 @@ export const runPipelineAction = internalAction({
 \n## Previously dispatched agents\n${dispatchedAgents.length > 0 ? dispatchedAgents.join(", ") : "None yet (first dispatch)"}`;
         const dispatchResult = await callModelWithStreaming(
           ctx, dispatchPrompt, AGENT_SYSTEM_PROMPTS["Dispatcher"] ?? "",
-          branchId, "Dispatcher", geminiKeys, dbCreds,
+          branchId, "Dispatcher", geminiKeys, dbCreds, undefined, 60_000,
         );
         await bill("dispatcher", dispatchResult);
         await ctx.runMutation(internal.codeBranches.clearStreamingContent, { branchId });

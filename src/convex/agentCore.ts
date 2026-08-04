@@ -71,9 +71,10 @@ export async function callModel(
   modelId: string = "deepseek-ai/DeepSeek-V4-Flash",
   ..._extra: unknown[]
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: string }> {
-  // Extract ctx and optional assignedModel override from _extra
+  // Extract ctx and optional assignedModel/deadlineMs overrides from _extra
   let ctx: { runQuery: ActionCtx["runQuery"] } | undefined;
   let assignedModel: string | undefined;
+  let deadlineMs: number | undefined;
   for (const arg of _extra) {
     if (arg && typeof arg === "object" && "runQuery" in (arg as Record<string,unknown>)) {
       ctx = arg as { runQuery: ActionCtx["runQuery"] };
@@ -81,6 +82,10 @@ export async function callModel(
     if (arg && typeof arg === "object" && "assignedModel" in (arg as Record<string,unknown>)) {
       const maybe = (arg as Record<string,unknown>).assignedModel;
       if (typeof maybe === "string" && maybe) assignedModel = maybe;
+    }
+    if (arg && typeof arg === "object" && "deadlineMs" in (arg as Record<string,unknown>)) {
+      const maybe = (arg as Record<string,unknown>).deadlineMs;
+      if (typeof maybe === "number" && maybe > 0) deadlineMs = maybe;
     }
   }
 
@@ -93,7 +98,7 @@ export async function callModel(
   // the user just sees nothing. 7 minutes here leaves the rest of the step
   // (billing, file ops, streaming drip-feed) real room to finish and any
   // failure surfaces as a normal thrown Error the caller can report.
-  const deadline = Date.now() + 420_000;
+  const deadline = Date.now() + (deadlineMs ?? 420_000);
   // The last NIM failure, so the final "no provider" error can say WHY NIM
   // fell through instead of leaving the user blind with keys they can see.
   let nimFallbackReason: string | null = null;
