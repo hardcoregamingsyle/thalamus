@@ -36,6 +36,10 @@ export const TOOL_BLOCK_REGEX = new RegExp(O + "TOOL" + C + "\\s*([\\s\\S]*?)" +
 // Accepts Unicode brackets and optional missing close bracket on END tag.
 export const LEGACY_MCP_REGEX = new RegExp(O + "MCP-CALL\\s+server=\"([^\"]+)\"\\s+tool=\"([^\"]+)\"" + C + "\\s*([\\s\\S]*?)" + O + "END\\.MCP-CALL" + C + "?", "g");
 
+// Single-bracket variant: models sometimes output <MCP-CALL ...> JSON </MCP-CALL>
+// instead of the instructed <<MCP-CALL ...>> JSON <<END.MCP-CALL>>.
+export const SINGLE_BRACKET_MCP_REGEX = /<MCP-CALL\s+server="([^"]+)"\s+tool="([^"]+)">\s*([\s\S]*?)<\/MCP-CALL>/g;
+
 export interface ParsedMcpCall {
   server: string;
   tool: string;
@@ -69,6 +73,12 @@ export function parseMcpCalls(content: string): ParsedMcpCall[] {
     calls.push({ server: match[1], tool: match[2], args: parseJsonBody(match[3]) });
   }
 
+  // Parse single-bracket variant (<MCP-CALL ...> JSON </MCP-CALL>)
+  const single = new RegExp(SINGLE_BRACKET_MCP_REGEX.source, "g");
+  while ((match = single.exec(content)) !== null) {
+    calls.push({ server: match[1], tool: match[2], args: parseJsonBody(match[3]) });
+  }
+
   // Parse unified TOOL blocks with type=mcp
   const unified = new RegExp(TOOL_BLOCK_REGEX.source, "g");
   while ((match = unified.exec(content)) !== null) {
@@ -87,6 +97,7 @@ export function parseMcpCalls(content: string): ParsedMcpCall[] {
 
 export function stripMcpBlocks(content: string): string {
   const legacy = new RegExp(LEGACY_MCP_REGEX.source, "g");
+  const single = new RegExp(SINGLE_BRACKET_MCP_REGEX.source, "g");
   const unified = new RegExp(TOOL_BLOCK_REGEX.source, "g");
-  return content.replace(legacy, "").replace(unified, "").trim();
+  return content.replace(legacy, "").replace(single, "").replace(unified, "").trim();
 }
