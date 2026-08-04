@@ -50,7 +50,7 @@ import type { TaskType } from "./nimClient";
 export { callModal, calcModalAgentBucks } from "./modalClient";
 
 import { callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL, calcAgentBucksForModel } from "./siliconflow";
-import { callNim, agentToTaskType, NIM_DEFAULT_CHAT_MODEL, calcNimAgentBucks } from "./nimClient";
+import { callNim, agentToTaskType, NIM_DISPATCHER_MODEL, NIM_DEFAULT_CHAT_MODEL, calcNimAgentBucks } from "./nimClient";
 import { callModal, calcModalAgentBucks } from "./modalClient";
 
 // The only tier-ish type left: callModel returns a provider-tagged string
@@ -120,7 +120,7 @@ export async function callModel(
 
     try {
       const nimModel = assignedModel
-        ?? (taskType === "dispatcher" ? "meta/llama-3.2-3b-instruct"
+        ?? (taskType === "dispatcher" ? NIM_DISPATCHER_MODEL
           : taskType === "code" ? "deepseek-ai/deepseek-v4-flash"
           : taskType === "reasoning" ? "deepseek-ai/deepseek-v4-flash"
           : taskType === "agent" ? "deepseek-ai/deepseek-v4-flash"

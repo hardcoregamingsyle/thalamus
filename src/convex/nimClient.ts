@@ -12,6 +12,9 @@ const BASE_URL = "https://integrate.api.nvidia.com/v1";
 
 // Retry ceiling per call — see the comment at its use site in callNimAttempt.
 const MAX_KEY_ATTEMPTS = 3;
+// How many full passes over the keys one call may make — NVIDIA's free tier
+// 529s (overloaded) in bursts, so a single pass can miss every healthy window.
+const MAX_KEY_ROUNDS = 3;
 // Per-attempt abort. Was 500s for slow-starting MoE models, but Convex kills
 // any action at 10 minutes with a "Transient error" no try/catch can see — a
 // single 500s attempt plus fallback providers blew straight past that, which
@@ -374,7 +377,7 @@ export function nimModelsByCapability(cap: ModelCapability): NimModelInfo[] {
 
 // ── Default Model Choices ─────────────────────────────────────────────────────
 
-export const NIM_DISPATCHER_MODEL = "meta/llama-3.2-3b-instruct";
+export const NIM_DISPATCHER_MODEL = "nvidia/nemotron-mini-4b-instruct";
 
 export const NIM_DEFAULT_CHAT_MODEL = "nvidia/nemotron-3-super-120b-a12b";
 
@@ -413,9 +416,8 @@ export type TaskType = "dispatcher" | "chat" | "code" | "reasoning" | "agent" | 
 
 const TASK_MODEL_MAP: Record<TaskType, string[]> = {
   dispatcher: [
-    "meta/llama-3.2-3b-instruct",
-    "meta/llama-3.1-8b-instruct",
     "nvidia/nemotron-mini-4b-instruct",
+    "meta/llama-3.1-8b-instruct",
   ],
   chat: [
     "nvidia/nemotron-3-super-120b-a12b",
@@ -641,14 +643,20 @@ async function callNimAttempt(
   let lastError: Error | null = null;
 
   // Cap how many keys one call retries — a slow/timing-out model (each key
-  // gets up to 500s) times unbounded key count into an unbounded worst case;
+  // gets up to 180s) times unbounded key count into an unbounded worst case;
   // a deployment with several keys configured could otherwise burn most of
   // an hour retrying the same broken model before ever falling back to
   // Ollama, risking the whole action getting killed by Convex's own runtime
   // limit before this function ever gets to throw a catchable error.
   const attempts = Math.min(apiKeys.length, MAX_KEY_ATTEMPTS);
-  for (let k = 0; k < attempts; k++) {
-    const apiKey = apiKeys[k];
+  // Each key also gets MAX_KEY_ROUNDS chances: NVIDIA's free tier answers
+  // 529 (overloaded) in bursts, and a single pass over the keys can miss a
+  // healthy window entirely. Cycling keys across rounds rides the burst out.
+  // The deadline (callModel's chain budget, or the Dispatcher's 60s) still
+  // bounds the total, so a hard-down model can't stall the step forever.
+  const maxTries = attempts * MAX_KEY_ROUNDS;
+  for (let t = 0; t < maxTries; t++) {
+    const apiKey = apiKeys[t % attempts];
 
     // Respect the caller's shared deadline (callModel hands one budget to the
     // whole Modal → NIM → Ollama chain): skip attempts there's no time left
@@ -673,7 +681,7 @@ async function callNimAttempt(
       if (!res.ok) {
         let errMsg = raw.slice(0, 500);
         try { const j = JSON.parse(raw); errMsg = j.error?.message ?? j.message ?? raw.slice(0, 300); } catch { /* raw */ }
-        const err = new Error(`NVIDIA NIM ${res.status} (key ${k + 1}/${attempts}): ${errMsg}`);
+        const err = new Error(`NVIDIA NIM ${res.status} (key ${(t % attempts) + 1}/${attempts}, try ${t + 1}/${maxTries}): ${errMsg}`);
         lastError = err;
         clearTimeout(timeout);
         if (res.status === 401 || res.status === 403 || res.status === 429 || res.status >= 500) continue;
@@ -695,7 +703,7 @@ async function callNimAttempt(
     } catch (err) {
       clearTimeout(timeout);
       if (err instanceof Error && err.name === "AbortError") {
-        lastError = new Error(`NIM request timed out (key ${k + 1})`);
+        lastError = new Error(`NIM request timed out (key ${(t % attempts) + 1}, try ${t + 1}/${maxTries})`);
         continue;
       }
       if (err !== lastError) lastError = err instanceof Error ? err : new Error(String(err));
