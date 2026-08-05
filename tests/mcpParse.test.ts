@@ -23,6 +23,26 @@ describe("parseMcpCalls", () => {
     expect(out[1].server).toBe("github");
   });
 
+  it("parses the single-bracket variant models actually output", () => {
+    const out = parseMcpCalls(
+      `I'll search the corpus.\n<MCP-CALL server="agentoverflow" tool="search"> {"query": "vite react setup", "top_k": 5} </MCP-CALL>`,
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].server).toBe("agentoverflow");
+    expect(out[0].tool).toBe("search");
+    expect(out[0].args).toEqual({ query: "vite react setup", top_k: 5 });
+  });
+
+  it("only parses block formats — JSON ops are handled by parseAgentOutput.mcpOps", () => {
+    const out = parseMcpCalls(
+      `{"op":"mcp","server":"agentoverflow","tool":"answer","args":{"query":"convex"}}\nand legacy\n<<MCP-CALL server="ao" tool="balance">>\n<<END.MCP-CALL>>`,
+    );
+    // The JSON op above is NOT a block — only the legacy call is read here.
+    // codePipeline merges parsed.mcpOps (the JSON op) with these results.
+    expect(out).toHaveLength(1);
+    expect(out[0].server).toBe("ao");
+  });
+
   it("empty args body becomes {}", () => {
     const out = parseMcpCalls(`<<MCP-CALL server="ao" tool="balance">>\n<<END.MCP-CALL>>`);
     expect(out[0].args).toEqual({});

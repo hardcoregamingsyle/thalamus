@@ -1,4 +1,4 @@
-import { mutation, query, internalQuery, type MutationCtx } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 
@@ -177,27 +177,37 @@ export const deleteProject = mutation({
       .first();
     if (!proj || proj.userId !== session.userId) throw new Error("Project not found");
 
-    const branches = await ctx.db
-      .query("codeBranches")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
-      .collect();
+    // Teardown (GitHub repos, per-branch rows, api keys) runs in an action so
+    // a project with many/large branches can't fail atomically the way the old
+    // single-mutation delete did.
+    await ctx.scheduler.runAfter(0, internal.codeDeletion.deleteProjectDeep, {
+      projectId: args.projectId,
+      userId: session.userId,
+    });
+  },
+});
 
-    for (const br of branches) {
-      const [msgs, files, cmds] = await Promise.all([
-        ctx.db.query("codeMessages").withIndex("by_branch", (q) => q.eq("branchId", br.branchId)).collect(),
-        ctx.db.query("codeFiles").withIndex("by_branch", (q) => q.eq("branchId", br.branchId)).collect(),
-        ctx.db.query("codeCommands").withIndex("by_branch", (q) => q.eq("branchId", br.branchId)).collect(),
-      ]);
-      for (const row of [...msgs, ...files, ...cmds]) await ctx.db.delete(row._id);
-      await ctx.db.delete(br._id);
-    }
-
+// Used by codeDeletion.deleteProjectDeep to remove the project's API keys in
+// chunks.
+export const deleteApiKeysChunk = internalMutation({
+  args: { projectId: v.string() },
+  handler: async (ctx, args) => {
     const keys = await ctx.db
       .query("codeApiKeys")
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
-      .collect();
+      .take(20);
     for (const k of keys) await ctx.db.delete(k._id);
+    return keys.length;
+  },
+});
 
-    await ctx.db.delete(proj._id);
+export const deleteProjectRecord = internalMutation({
+  args: { projectId: v.string() },
+  handler: async (ctx, args) => {
+    const proj = await ctx.db
+      .query("codeProjects")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .first();
+    if (proj) await ctx.db.delete(proj._id);
   },
 });

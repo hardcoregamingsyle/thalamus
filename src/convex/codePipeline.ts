@@ -220,7 +220,29 @@ function hasUnclosedFileBlock(content: string): boolean {
     /(?:<<<<<|<<)(?:CREATEFILE|EDITFILE)="[^"]+"(?:>>>>>|>>)[\s\S]*?(?:<<<<<|<<)END\.CREATEFILE(?:>>>>>|>>)/g,
     "",
   );
-  return /(?:<<<<<|<<)(?:CREATEFILE|EDITFILE)="[^"]+"(?:>>>>>|>>)/.test(withoutComplete);
+  if (/(?:<<<<<|<<)(?:CREATEFILE|EDITFILE)="[^"]+"(?:>>>>>|>>)/.test(withoutComplete)) return true;
+  // JSON op variant: a create-file/edit-file op whose opening exists but whose
+  // braces never balance (content cut off mid-JSON). Walk braces from the last
+  // opener, skipping strings, so a complete op right before the cut doesn't
+  // false-positive.
+  const jsonOpen = /"op":"(?:create-file|edit-file)"/g;
+  let lastOpenEnd = -1;
+  let m: RegExpExecArray | null;
+  while ((m = jsonOpen.exec(withoutComplete)) !== null) lastOpenEnd = m.index + m[0].length;
+  if (lastOpenEnd === -1) return false;
+  let depth = 0;
+  let inStr = false;
+  let escaped = false;
+  for (let i = lastOpenEnd; i < withoutComplete.length; i++) {
+    const ch = withoutComplete[i];
+    if (escaped) { escaped = false; continue; }
+    if (ch === "\\" && inStr) { escaped = true; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") depth--;
+  }
+  return depth > 0;
 }
 
 // Streaming-aware model call — writes partial output to the branch's streamingContent
@@ -427,10 +449,8 @@ export const runPipelineAction = internalAction({
           : [];
         mcpToolSection = [
           `## MCP Tools`,
-          `You can call external tools on the user's connected MCP servers. Emit:`,
-          `<<MCP-CALL server="serverName" tool="toolName">>`,
-          `{"argName": "value"}`,
-          `<<END.MCP-CALL>>`,
+          `You can call external tools on the user's connected MCP servers. Emit a single-line JSON op:`,
+          `{"op":"mcp","server":"serverName","tool":"toolName","args":{"argName":"value"}}`,
           `Results will be returned to you before you continue. Available servers:`,
           ...lines,
           ...aoGuidance,
@@ -794,20 +814,21 @@ export const runPipelineAction = internalAction({
         await bill(currentPhase.toLowerCase(), result);
 
         // Stitch a file write that got cut off at the token limit: if a
-        // <<CREATEFILE/EDITFILE>> block is still open (no <<END.CREATEFILE>>),
-        // ask the model to continue from the tail until it closes. Bounded so a
-        // model that never closes can't loop. Without this a file bigger than one
-        // response is silently lost and the pipeline retries forever.
+        // create-file/edit-file JSON op is still open (unclosed string, no
+        // trailing }), ask the model to continue from the tail until it closes.
+        // Bounded so a model that never closes can't loop. Without this a file
+        // bigger than one response is silently lost and the pipeline retries
+        // forever.
         let contRounds = 0;
         while (hasUnclosedFileBlock(agentOutput) && contRounds < MAX_FILE_CONTINUATIONS) {
           contRounds++;
           const tail = agentOutput.slice(-6000);
           const contPrompt = [
-            `Your previous output was cut off at the token limit mid-file: a <<CREATEFILE="...">> or <<EDITFILE="...">> block is still open, with no closing <<END.CREATEFILE>> tag yet.`,
+            `Your previous output was cut off at the token limit mid-file: a {"op":"create-file",...} or {"op":"edit-file",...} JSON op is still open, with the content string and closing brace cut off.`,
             `## The tail of what you wrote (continue from the exact end of this)`,
             tail,
             `## Continue`,
-            `Emit ONLY the remaining content, picking up at the exact character where the tail stops — do NOT repeat anything above, do NOT re-open the <<CREATEFILE/EDITFILE tag. Finish the file and close it with <<END.CREATEFILE>>. If you still had more files or commands to emit after it, continue with those.`,
+            `Emit ONLY the remaining JSON op body, picking up at the exact character where the tail stops — do NOT repeat anything above, do NOT re-open the JSON op from the start. Finish the content string and close the JSON op with its closing brace. If you still had more files or commands to emit after it, continue with those.`,
           ].join("\n\n");
           const cont = await callModelWithStreaming(ctx, contPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments);
           if (!cont.text.trim()) break;
@@ -873,7 +894,7 @@ export const runPipelineAction = internalAction({
           .map((r, i) => `[RESULT ${i + 1} for "${r.query}"]:\n${r.result}`)
           .join("\n\n---\n\n");
         // Re-call the same agent with search results appended
-        const searchPrompt = `${agentOutput}\n\n---\n\nSEARCH RESULTS:\n${searchContext}\n\nNow continue your work using the above information. Do NOT emit any more <<TOOL>> blocks for search or scrape.`;
+        const searchPrompt = `${agentOutput}\n\n---\n\nSEARCH RESULTS:\n${searchContext}\n\nNow continue your work using the above information. Do NOT emit any more search or scrape ops.`;
         const searchCall = await callModelWithStreaming(ctx, searchPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments);
         agentOutput = searchCall.text;
         await bill(`${currentPhase.toLowerCase()}-search`, searchCall);
@@ -901,10 +922,14 @@ export const runPipelineAction = internalAction({
       }
 
       // Commands come from the RAW output, never from cleanContent:
-      // parseAgentOutput has already rewritten <<RUN-CMD=…>> into [CMD: …], so
-      // parsing the cleaned text would match nothing and this whole path would
-      // go silently dead.
-      const commands = parseCommands(agentOutput);
+      // parseAgentOutput has already rewritten tool calls into [CMD: …]
+      // placeholders, so parsing the cleaned text would match nothing and this
+      // whole path would go silently dead. Legacy <<RUN-CMD>>/<<TOOL>> tags are
+      // re-read from the raw text, and JSON ops arrive via parsed.cmdOps.
+      const commands = Array.from(new Set([
+        ...parseCommands(agentOutput),
+        ...parsed.cmdOps.map((op) => op.command),
+      ]));
       if (commands.length > 0) {
         // Queue commands
         for (const cmd of commands) {
@@ -957,8 +982,19 @@ export const runPipelineAction = internalAction({
         return;
       }
 
-      // Parse and handle API key requests
+      // Parse and handle API key requests — legacy <<REQUEST-API-KEY>> tags
+      // plus the JSON op ({"op":"request-api-key",...}) form.
       const apiKeyRequests = parseApiKeyRequests(agentOutput);
+      if (parsed.requestApiKey) {
+        const existing = apiKeyRequests.some((r) => r.variableName === parsed.requestApiKey?.name);
+        if (!existing) {
+          apiKeyRequests.push({
+            variableName: parsed.requestApiKey.name,
+            description: parsed.requestApiKey.description,
+            howToGet: parsed.requestApiKey.howToGet,
+          });
+        }
+      }
       if (apiKeyRequests.length > 0) {
         for (const req of apiKeyRequests) {
           await ctx.runMutation(internal.codeApiKeys.requestApiKey, {
@@ -996,13 +1032,22 @@ export const runPipelineAction = internalAction({
       // and re-run the SAME agent so it can use them. Bounded by
       // MAX_MCP_ROUNDS; past the cap the calls are stripped and the pipeline
       // advances normally (results from earlier rounds stay in context).
-      // Supports both legacy <<MCP-CALL>> / <<TOOL>> blocks and JSON ops format
-      // ({"op":"mcp","server":"...","tool":"...","args":{...}}).
+      // Both forms are supported — JSON ops ({"op":"mcp",...}) first, legacy
+      // <<MCP-CALL>> / <<TOOL>> blocks as fallback — merged and de-duplicated
+      // so a message can't double-fire the same call.
       const legacyMcpCalls = parseMcpCalls(agentOutput);
       const jsonMcpCalls = (parsed.mcpOps ?? [])
         .filter((op) => op.server && op.tool)
         .map((op) => ({ server: op.server, tool: op.tool, args: op.args ?? {} }));
-      const mcpCalls: ParsedMcpCall[] = legacyMcpCalls.length > 0 ? legacyMcpCalls : jsonMcpCalls;
+      const mcpCalls: ParsedMcpCall[] = [];
+      const seenMcp = new Set<string>();
+      for (const call of [...jsonMcpCalls, ...legacyMcpCalls]) {
+        const key = `${call.server}|${call.tool}|${JSON.stringify(call.args)}`;
+        if (!seenMcp.has(key)) {
+          seenMcp.add(key);
+          mcpCalls.push(call);
+        }
+      }
       if (mcpCalls.length > 0 && mcpServers.length > 0) {
         const mcpRound = branch.mcpRoundCount ?? 0;
         if (mcpRound < MAX_MCP_ROUNDS) {

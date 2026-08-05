@@ -555,6 +555,24 @@ export default function CodeWorkspace() {
     return <div className="p-8">Invalid project or branch ID</div>;
   }
 
+  if (branch === null) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <meta name="robots" content="noindex" />
+        <div className="text-center space-y-4">
+          <h1 className="text-2xl font-bold">Branch not found</h1>
+          <p className="text-muted-foreground max-w-md">
+            This branch has been deleted. Its data and GitHub repository were removed.
+          </p>
+          <Button onClick={() => navigate(`/portal/code/${projectId}`)}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Branches
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <meta name="robots" content="noindex" />

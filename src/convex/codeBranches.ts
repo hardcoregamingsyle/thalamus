@@ -266,7 +266,11 @@ export const updateBranch = mutation({
   },
 });
 
-// Delete branch
+// Delete branch — auth + ownership check here, the actual teardown (GitHub
+// repo, chunked row deletion) runs in codeDeletion.deleteBranchDeep. The old
+// version collected every child row into one mutation, which blew Convex's
+// ~1MB atomic mutation limit on any real branch and failed wholesale — delete
+// appeared to work in the UI and removed nothing.
 export const deleteBranch = mutation({
   args: { token: v.string(), branchId: v.string() },
   handler: async (ctx, args) => {
@@ -291,29 +295,54 @@ export const deleteBranch = mutation({
 
     if (!project || project.userId !== session.userId) throw new Error("Not authorized");
 
-    // Delete all branch data
-    const messages = await ctx.db
-      .query("codeMessages")
+    await ctx.scheduler.runAfter(0, internal.codeDeletion.deleteBranchDeep, {
+      branchId: args.branchId,
+      projectId: branch.projectId,
+      userId: session.userId,
+    });
+  },
+});
+
+// Used by codeDeletion.deleteBranchDeep to remove child rows in chunks so no
+// single mutation can exceed Convex's limits on a large branch.
+export const deleteBranchRowsChunk = internalMutation({
+  args: {
+    branchId: v.string(),
+    table: v.union(
+      v.literal("codeMessages"),
+      v.literal("codeFiles"),
+      v.literal("codeCommands"),
+      v.literal("codeApiKeyRequests"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query(args.table)
       .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
+      .take(20);
+    for (const row of rows) await ctx.db.delete(row._id);
+    return rows.length;
+  },
+});
+
+export const deleteBranchRecord = internalMutation({
+  args: { branchId: v.string() },
+  handler: async (ctx, args) => {
+    const branch = await ctx.db
+      .query("codeBranches")
+      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (branch) await ctx.db.delete(branch._id);
+  },
+});
+
+export const listBranchesInternal = internalQuery({
+  args: { projectId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("codeBranches")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .collect();
-    for (const msg of messages) await ctx.db.delete(msg._id);
-
-    const files = await ctx.db
-      .query("codeFiles")
-      .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
-      .collect();
-    for (const file of files) await ctx.db.delete(file._id);
-
-    const commands = await ctx.db
-      .query("codeCommands")
-      .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
-      .collect();
-    for (const cmd of commands) await ctx.db.delete(cmd._id);
-
-    // Deleting the branch would orphan its cloud sandbox (billing forever,
-    // findable only in the Daytona console) — tear it down first.
-
-    await ctx.db.delete(branch._id);
   },
 });
 

@@ -6,7 +6,7 @@ import { useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Plus, GitBranch, Clock, Play, Pause, CheckCircle2, Loader2, LayoutDashboard } from "lucide-react";
+import { ArrowLeft, Plus, GitBranch, Clock, Play, Pause, CheckCircle2, Loader2, LayoutDashboard, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { NewBranchDialog } from "@/components/code/NewBranchDialog";
@@ -20,6 +20,7 @@ export default function CodeBranches() {
   const branches = useQuery(api.codeBranches.listBranches, token && projectId ? { token, projectId } : "skip");
   const createBranch = useMutation(api.codeBranches.createBranch);
   const cloneRepository = useAction(api.githubSync.cloneRepository);
+  const deleteBranch = useMutation(api.codeBranches.deleteBranch);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
@@ -70,6 +71,19 @@ export default function CodeBranches() {
     if (imported > 0) {
       toast.success(`Imported ${imported} branch${imported === 1 ? "" : "es"} from ${repo}`);
       navigate(`/portal/code/${projectId}`);
+    }
+  };
+
+  const handleDeleteBranch = async (e: React.MouseEvent, branch: Doc<"codeBranches">) => {
+    e.stopPropagation();
+    if (!confirm(`Are you sure you want to delete "${branch.name}"? This deletes all branch data and its GitHub repo.`)) {
+      return;
+    }
+    try {
+      await deleteBranch({ token, branchId: branch.branchId });
+      toast.success("Branch deleted");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete branch");
     }
   };
 
@@ -207,6 +221,15 @@ export default function CodeBranches() {
                           {branch.description || "No description"}
                         </CardDescription>
                       </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 shrink-0"
+                        onClick={(e) => handleDeleteBranch(e, branch)}
+                        aria-label={`Delete ${branch.name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">

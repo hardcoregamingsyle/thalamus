@@ -310,9 +310,15 @@ export const sendMessage = action({
       temperature,
     );
 
-    // --- Search tool loop: detect <<SEARCH-TOOL="...">> tags (with Unicode bracket variants) and execute searches ---
+    // --- Search tool loop: detect {"op":"search","query":"..."} JSON ops (and
+    // legacy <<SEARCH-TOOL="...">> tags with Unicode bracket variants) and
+    // execute searches ---
     const searchPattern = /(?:<<|‹‹|«|‹)SEARCH-TOOL="([^"]+)"(?:>>|››|»|›)/g;
-    const searchMatches = [...responseContent.matchAll(searchPattern)];
+    const jsonSearchPattern = /"op":"search","query":"([^"]*(?:\\.[^"]*)*)"/g;
+    const searchMatches = [
+      ...responseContent.matchAll(searchPattern),
+      ...responseContent.matchAll(jsonSearchPattern),
+    ];
 
     if (searchMatches.length > 0) {
       // Execute searches (max 15)
@@ -336,7 +342,7 @@ export const sendMessage = action({
       const followUpMessages: Array<{ role: "user" | "assistant"; content: string }> = [
         ...messages,
         { role: "assistant", content: responseContent },
-        { role: "user", content: `Here are the search results you requested:\n\n${searchContext}\n\nNow provide your final, complete answer to the user using these search results. Respond in HTML only. Do NOT emit any more <<SEARCH-TOOL>> tags.` },
+        { role: "user", content: `Here are the search results you requested:\n\n${searchContext}\n\nNow provide your final, complete answer to the user using these search results. Respond in HTML only. Do NOT emit any more search ops.` },
       ];
 
       const followUp = await callAI(
@@ -366,12 +372,12 @@ RULES:
 - Output the CORRECTED report with any errors fixed
 - If everything is correct, output the original report unchanged
 
-SEARCH TOOL: Use <<SEARCH-TOOL="query">> to search for claims you need to verify. Use up to 5 searches.`;
+SEARCH TOOL: Use {"op":"search","query":"your query"} to search for claims you need to verify. Use up to 5 searches.`;
 
       let factCheckMessages: Array<{ role: "user" | "assistant"; content: string }> = [
         ...messages,
         { role: "assistant", content: responseContent },
-        { role: "user", content: "Fact-check the above research report. Verify EVERY factual claim against web sources. If you need to search, use <<SEARCH-TOOL>> tags. Then provide the corrected report in HTML." },
+        { role: "user", content: "Fact-check the above research report. Verify EVERY factual claim against web sources. If you need to search, use {\"op\":\"search\",\"query\":\"...\"} ops. Then provide the corrected report in HTML." },
       ];
 
       const factCheckResult = await callAI(ctx, factCheckSystemPrompt, factCheckMessages, 4096, modelName);
@@ -381,7 +387,11 @@ SEARCH TOOL: Use <<SEARCH-TOOL="query">> to search for claims you need to verify
 
       // Check if fact-checker requested searches
       const fcSearchPattern = /(?:<<|‹‹|«|‹)SEARCH-TOOL="([^"]+)"(?:>>|››|»|›)/g;
-      const fcSearchMatches = [...factCheckText.matchAll(fcSearchPattern)];
+      const fcJsonSearchPattern = /"op":"search","query":"([^"]*(?:\\.[^"]*)*)"/g;
+      const fcSearchMatches = [
+        ...factCheckText.matchAll(fcSearchPattern),
+        ...factCheckText.matchAll(fcJsonSearchPattern),
+      ];
       if (fcSearchMatches.length > 0) {
         const fcSearchResults: Array<{ query: string; result: string }> = [];
         for (const match of fcSearchMatches.slice(0, 5)) {

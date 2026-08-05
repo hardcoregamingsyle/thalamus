@@ -147,6 +147,19 @@ export const listAllGithubConfigs = internalQuery({
   },
 });
 
+// Used by codeDeletion.deleteBranchDeep — removes the config row after the
+// repo behind it has been deleted.
+export const deleteGithubConfigByBranch = internalMutation({
+  args: { branchId: v.string() },
+  handler: async (ctx, args) => {
+    const config = await ctx.db
+      .query("githubConfigs")
+      .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (config) await ctx.db.delete(config._id);
+  },
+});
+
 // Find all configs for a specific GitHub repo and branch
 export const findConfigsByRepo = internalQuery({
   args: {

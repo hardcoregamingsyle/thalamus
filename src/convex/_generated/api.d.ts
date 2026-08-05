@@ -23,6 +23,7 @@ import type * as codeApiKeys from "../codeApiKeys.js";
 import type * as codeAuth from "../codeAuth.js";
 import type * as codeBranches from "../codeBranches.js";
 import type * as codeCommands from "../codeCommands.js";
+import type * as codeDeletion from "../codeDeletion.js";
 import type * as codePipeline from "../codePipeline.js";
 import type * as codeProjects from "../codeProjects.js";
 import type * as conversations from "../conversations.js";
@@ -85,6 +86,7 @@ declare const fullApi: ApiFromModules<{
   codeAuth: typeof codeAuth;
   codeBranches: typeof codeBranches;
   codeCommands: typeof codeCommands;
+  codeDeletion: typeof codeDeletion;
   codePipeline: typeof codePipeline;
   codeProjects: typeof codeProjects;
   conversations: typeof conversations;
