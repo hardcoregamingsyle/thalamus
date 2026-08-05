@@ -15,12 +15,13 @@ const MAX_KEY_ATTEMPTS = 3;
 // How many full passes over the keys one call may make — NVIDIA's free tier
 // 529s (overloaded) in bursts, so a single pass can miss every healthy window.
 const MAX_KEY_ROUNDS = 3;
-// Per-attempt abort. Was 500s for slow-starting MoE models, but Convex kills
-// any action at 10 minutes with a "Transient error" no try/catch can see — a
-// single 500s attempt plus fallback providers blew straight past that, which
-// read as Code Mode going silent. A model that can't answer in 3 minutes is
-// better treated as down so the chain can fall through and fail loudly.
-const NIM_ATTEMPT_TIMEOUT_MS = 180_000;
+// Per-attempt abort. Was 500s for slow-starting MoE models, then 180s, but
+// Convex kills any action at 10 minutes with a "Transient error" no try/catch
+// can see — a slow primary model burning 3 minutes per key × 3 keys blows past
+// the 7-minute chain budget before the fallback model even starts. A model
+// that can't answer in 60s on a free tier is effectively down; fail fast so
+// the fallback (llama-3.1-8b) and Ollama get real time to respond.
+const NIM_ATTEMPT_TIMEOUT_MS = 60_000;
 
 // ── Free-available models on NVIDIA NIM (no CC required on free tier) ────────
 // Many models are free to call on the NVIDIA API catalog at limited rate.

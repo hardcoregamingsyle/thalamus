@@ -136,17 +136,22 @@ export async function callModel(
 
       // On overload (529) or timeout, try a different NIM model before falling
       // all the way to Ollama. deepseek-v4-flash is frequently hammered on
-      // NVIDIA's free tier and can hang for the full 180s timeout on every key;
-      // the 8B llama is less capable but reliably responds and is still
-      // faster/better than Ollama Cloud. Keeps the pipeline moving instead of
-      // burning the whole budget on retries against a wall.
+      // NVIDIA's free tier and can hang until the per-key timeout fires; the 8B
+      // llama is less capable but reliably responds and is still faster/better
+      // than Ollama Cloud. Keeps the pipeline moving instead of burning the
+      // whole budget on retries against a wall.
+      //
+      // The fallback gets its OWN 2-minute deadline — the primary model may
+      // have consumed most of the chain budget (7 min) on retries, leaving the
+      // fallback with no time and a misleading "keys exhausted" error.
       if (msg.includes("529") || msg.includes("overloaded") || msg.includes("timed out")) {
         const fallbackModel = taskType === "dispatcher"
           ? NIM_DEFAULT_CHAT_MODEL
           : "meta/llama-3.1-8b-instruct";
         if (fallbackModel !== nimModel) {
           try {
-            const fallback = await callNim(ctx, prompt, systemPrompt, fallbackModel, 8192, 0.7, undefined, deadline);
+            const fallbackDeadline = Date.now() + 120_000;
+            const fallback = await callNim(ctx, prompt, systemPrompt, fallbackModel, 8192, 0.7, undefined, fallbackDeadline);
             return { text: fallback.text, inputTokens: fallback.inputTokens, outputTokens: fallback.outputTokens, tier: `nim:${fallback.model}:fallback` };
           } catch (fbErr) {
             const fbMsg = fbErr instanceof Error ? fbErr.message : String(fbErr);
