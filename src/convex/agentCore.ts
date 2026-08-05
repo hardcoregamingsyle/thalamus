@@ -134,12 +134,13 @@ export async function callModel(
       const msg = err instanceof Error ? err.message : String(err);
       nimFallbackReason = msg;
 
-      // On overload (529), try a different NIM model before falling all the way
-      // to Ollama. deepseek-v4-flash is frequently hammered on NVIDIA's free
-      // tier; the 8B llama is less capable but reliably responds and is still
+      // On overload (529) or timeout, try a different NIM model before falling
+      // all the way to Ollama. deepseek-v4-flash is frequently hammered on
+      // NVIDIA's free tier and can hang for the full 180s timeout on every key;
+      // the 8B llama is less capable but reliably responds and is still
       // faster/better than Ollama Cloud. Keeps the pipeline moving instead of
       // burning the whole budget on retries against a wall.
-      if (msg.includes("529") || msg.includes("overloaded")) {
+      if (msg.includes("529") || msg.includes("overloaded") || msg.includes("timed out")) {
         const fallbackModel = taskType === "dispatcher"
           ? NIM_DEFAULT_CHAT_MODEL
           : "meta/llama-3.1-8b-instruct";
