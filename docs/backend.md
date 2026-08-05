@@ -111,7 +111,7 @@ There is one code-mode system. The tables `teamSessions`, `agentMessages`, `proj
 
 | File | Responsibility |
 |------|---------------|
-| `agentCore.ts` | `callModel` (Modal → NIM → Ollama), `FREE_UNLIMITED`, agent prompts, AgentBucks math, `performSearch`, `performScrape`, `<<TAG>>` output parsing |
+| `agentCore.ts` | `callModel` (Modal → NIM → Ollama), `FREE_UNLIMITED`, agent prompts, AgentBucks math, `performSearch`, `performScrape`, JSON-op output parsing (legacy `<<TAG>>` markers as fallback) |
 | `nimClient.ts` | NVIDIA NIM client, `agentToTaskType`, per-task model catalogs, NIM key resolution |
 | `siliconflow.ts` | Ollama Cloud client (the filename predates the provider switch) |
 | `modalClient.ts` | Modal endpoint client + endpoint resolution from `modalEndpoints` |
@@ -126,7 +126,7 @@ There is one code-mode system. The tables `teamSessions`, `agentMessages`, `proj
 | `rag.ts` | Vector similarity search over ragChunks (Gemini embeddings from env, not the DB table) |
 | `crons.ts` | Three scheduled jobs — see below |
 | `admin.ts` | Admin panel queries/mutations (provider keys, pricing, budgets, `deductPlatformCost`) |
-| `githubActionsRunner.ts` | Cloud `<<RUN-CMD>>` execution on GitHub Actions; the job reports back to `/code/command-result` |
+| `githubActionsRunner.ts` | Cloud `cmd` op execution on GitHub Actions; the job reports back to `/code/command-result` |
 | `agentoverflow*.ts` | The AgentOverflow backend — see [agentoverflow.md](./agentoverflow.md) |
 | `aiHelpers.ts` | Message save/load helpers, conversation management |
 | `customAuthHelpers.ts` | Token-based session management |

@@ -150,11 +150,11 @@ function MyComponent() {
 The pipeline agents are orchestrated in `src/convex/codePipeline.ts`. Each agent:
 1. Has a system prompt (`AGENT_SYSTEM_PROMPTS` in `agentCore.ts`)
 2. Receives context (files, plan, previous output)
-3. Produces output parsed for tool markers (`<<CREATEFILE>>`, `<<SEARCH-TOOL>>`, etc.)
+3. Produces output parsed for single-line JSON ops (`{"op":"search",…}`, `{"op":"create-file",…}`, `{"op":"cmd",…}`, etc.)
 4. Results stored in the branch document
 
-To add a new tool marker:
-1. Define the regex pattern (file/search/scrape/command markers live in `agentCore.ts`; `<<REQUEST-API-KEY>>` parsing lives in `codePipeline.ts`)
+To add a new op:
+1. Extend the op contract (parsing helpers live in `mcpParse.ts`/`agentCore.ts`; resolution lives in `codePipeline.ts`)
 2. Add extraction logic after the AI call
 3. Implement the handler (file write, API call, etc.)
 

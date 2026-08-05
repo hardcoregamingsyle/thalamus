@@ -190,12 +190,7 @@ Everyone starts at 10 credits a day, topped back up at midnight IST — but the 
 
 ## VM sandbox
 
-Two different things wear the word "sandbox". Pipeline `<<RUN-CMD>>` calls run on **GitHub Actions** from the web, or on **your own machine** from the desktop app — that's the one agents use. The Sandbox tab boots whole operating systems, and it has two backends:
-
-- **Browser VMs** — `v86` (x86 in WebAssembly), zero setup, everything streamed from the copy.sh CDN
-- **QEMU VMs** — real virtualization via the local bridge (`qemu-bridge/`, port 5900)
-
-The desktop app goes further: it launches QEMU directly and renders the VM display with a built-in RFB 3.8 VNC client. No external viewer.
+Two different things wear the word "sandbox". Pipeline `{"op":"cmd"}` calls run on **GitHub Actions** from the web, or on **your own machine** from the desktop app — that's the one agents use. The Sandbox tab is a view onto those two executors — linked repo, runner OS picker, one-off commands, live output — plus the **QEMU VM** on the desktop app, which launches QEMU directly and renders the VM display with a built-in RFB 3.8 VNC client. No external viewer. (The web browser-VM it used to host is gone; nothing v86-related ships.)
 
 And it keeps pace with the site everywhere else too: your AgentBucks balance lives in the sidebar, every chat/research/study thread syncs to the cloud with a RECENT list to jump back into any of them, and there's a proper light mode — runtime toggle, both palettes native XAML, no restart. Website feature, desktop feature. That's the rule.
 

@@ -28,7 +28,7 @@ What's left: `codeProjects`/`codeBranches`/`codeMessages`/`codeFiles`, driven by
 
 ### The sandbox has two executors
 
-`<<RUN-CMD>>` runs on GitHub Actions from the web (`githubActionsRunner.ts`) or on your own machine from the desktop app — and the Sandbox tab now shows exactly that: which runner the branch builds on, links into its repo and build history, a box for one-off commands, and the live output of everything that has run. It used to be a v86 screen asking you to start a bridge that had nothing to do with how commands actually execute; that's gone, along with every v86 asset. QEMU survives on the desktop, where `QemuBridgeManager` launches it directly.
+Pipeline `{"op":"cmd"}` calls run on GitHub Actions from the web (`githubActionsRunner.ts`) or on your own machine from the desktop app — and the Sandbox tab now shows exactly that: which runner the branch builds on, links into its repo and build history, a box for one-off commands, and the live output of everything that has run. It used to be a v86 screen asking you to start a bridge that had nothing to do with how commands actually execute; that's gone, along with every v86 asset. QEMU survives on the desktop, where `QemuBridgeManager` launches it directly.
 
 ### Everything is free, and that's five switches
 

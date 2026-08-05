@@ -82,47 +82,55 @@ If the Critic emits `<<Fail>>`:
 
 ## Agent Tools (Output Syntax)
 
-Agents communicate via structured text markers in their output:
+Agents signal tool calls as single-line JSON ops. Each op is one line; ids/paths are plain strings. Verdict agents emit JSON verdict ops. Interleaved plain text is preserved in the transcript with the op replaced by a short placeholder like `[CMD: …]`.
 
 ### File Operations
 ```
-<<CREATEFILE="src/components/Button.tsx">>
-import React from 'react';
-export const Button = () => <button>Click me</button>;
-<<END.CREATEFILE>>
-
-<<EDITFILE="src/App.tsx">>
-// full updated file content
-<<END.CREATEFILE>>
+{"op":"create-file","path":"src/components/Button.tsx","content":"import React from 'react';\nexport const Button = () => <button>Click me</button>;"}
+{"op":"edit-file","path":"src/App.tsx","content":"// full updated file content"}
+{"op":"delete-file","path":"src/old.ts"}
 ```
 
 ### Web Search
 ```
-<<SEARCH-TOOL="react useEffect cleanup pattern">>
+{"op":"search","query":"react useEffect cleanup pattern"}
 ```
 
 ### Web Scraping
 ```
-<<SCRAPE-URL="https://docs.example.com/api">>
+{"op":"scrape","url":"https://docs.example.com/api"}
 ```
 
 ### Shell Commands
 ```
-<<RUN-CMD="npm install axios">>
+{"op":"cmd","command":"npm install axios"}
 ```
 
 ### API Key Requests
 ```
-<<REQUEST-API-KEY name="STRIPE_SECRET" description="Stripe API key for payments" howToGet="Get from stripe.com/dashboard">>
+{"op":"request-api-key","name":"STRIPE_SECRET","description":"Stripe API key for payments","howToGet":"Get from stripe.com/dashboard"}
 ```
 
-Both markers **pause the pipeline**, but only one of them waits on a human.
+### MCP Tool Calls
+```
+{"op":"mcp","server":"agentoverflow","tool":"search","args":{"query":"convex schema migration"}}
+```
 
-- `<<RUN-CMD>>` queues rows into `codeCommands` and sets the branch to `paused`. Where it runs depends on `codeBranches.executor`:
+### Verdicts (Tester/Hacker/Critic/FactCheck)
+```
+{"op":"test-success"}  /  {"op":"test-failed","reason":"why"}
+{"op":"security-pass"} / {"op":"security-fail"}
+```
+
+Both `cmd` and `request-api-key` ops **pause the pipeline**, but only one of them waits on a human.
+
+- `cmd` queues rows into `codeCommands` and sets the branch to `paused`. Where it runs depends on `codeBranches.executor`:
   - `cloud` (default) schedules `githubActionsRunner.executeBranchCommandsViaActions`, which pushes the branch's files, ensures the runner workflow exists, and dispatches one workflow run per command. The job POSTs its result to `/code/command-result` with a single-use nonce; that resumes the pipeline. `runnerOs` selects ubuntu, windows or macos.
   - `local` schedules nothing. The desktop app polls `codeCommands:listPendingForBranch`, runs each command in a per-branch workspace on the user's machine, and calls `completeCommand`, which resumes the pipeline once nothing is outstanding.
   - Either way a failure to dispatch records a failed result and reschedules `runPipelineAction`, so a branch is never left paused with nobody coming for it.
-- `<<REQUEST-API-KEY>>` writes a `codeApiKeyRequests` row and genuinely blocks until the user submits the key; `codeApiKeys.fulfillApiKeyRequest` reschedules `runPipelineAction`.
+- `request-api-key` writes a `codeApiKeyRequests` row and genuinely blocks until the user submits the key; `codeApiKeys.fulfillApiKeyRequest` reschedules `runPipelineAction`.
+
+> Legacy `<<TAG>>` markers (`<<MCP-CALL>>`, `<<TOOL>>`, `<<CREATEFILE>>`, `<<RUN-CMD>>`, `<<pass>>`, …) are still parsed as a fallback so old stored messages keep working, but no prompt teaches them any more.
 
 If a branch looks stuck, check `codeCommands` and `codeApiKeyRequests` for rows still marked `pending`. User-supplied provider keys are encrypted at rest (AES-256-GCM, keyed by the `API_KEY_ENCRYPTION_SECRET` deployment secret — storage fails closed if it's missing).
 
