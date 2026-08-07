@@ -67,24 +67,6 @@ export const getRecentCommandResults = internalQuery({
   },
 });
 
-// Atomically claim pending commands (pending → running) so a duplicate
-// executor invocation can never run — and pay for — the same command twice.
-export const claimPendingCommands = internalMutation({
-  args: { branchId: v.string() },
-  handler: async (ctx, args) => {
-    const pending = await ctx.db
-      .query("codeCommands")
-      .withIndex("by_branch_and_status", (q) =>
-        q.eq("branchId", args.branchId).eq("status", "pending")
-      )
-      .collect();
-    for (const cmd of pending) {
-      await ctx.db.patch(cmd._id, { status: "running" });
-    }
-    return pending.map((c) => ({ _id: c._id, command: c.command }));
-  },
-});
-
 export const countCommands = internalQuery({
   args: { branchId: v.string() },
   handler: async (ctx, args) => {
@@ -121,6 +103,34 @@ export const setCallbackNonce = internalMutation({
   },
 });
 
+// Atomic claim for the VM worker: flips every pending command to "running",
+// stamps a fresh one-time nonce on each, and returns the {id, nonce, command}
+// bundle the poll endpoint hands straight to the Actions job. Single mutation
+// keeps the claim and the nonce issue from racing a straggler.
+export const claimPendingCommandsForVm = internalMutation({
+  args: { branchId: v.string() },
+  handler: async (ctx, args) => {
+    const pending = await ctx.db
+      .query("codeCommands")
+      .withIndex("by_branch_and_status", (q) =>
+        q.eq("branchId", args.branchId).eq("status", "pending")
+      )
+      .collect();
+    const claimed: Array<{ id: string; nonce: string; command: string }> = [];
+    for (const cmd of pending) {
+      // Web Crypto — the same pattern customAuthHelpers uses. crypto.randomUUID()
+      // from `node:crypto` is unavailable here: this file has no "use node"
+      // directive and runs in the JavaScript runtime.
+      const nonce = Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+      await ctx.db.patch(cmd._id, { status: "running", callbackNonce: nonce });
+      claimed.push({ id: cmd._id, nonce, command: cmd.command });
+    }
+    return claimed;
+  },
+});
+
 // The GitHub Actions callback lands here. The run is on a public repo and the
 // endpoint is unauthenticated by necessity, so the nonce is the whole security
 // story: it is single-use, generated per dispatch, and cleared on spend — a
@@ -143,6 +153,19 @@ export const completeFromRunner = internalMutation({
       completedAt: Date.now(),
       callbackNonce: undefined,
     });
+
+    // The VM worker's keepAlive clock runs off the branch's lastActivityAt.
+    // A command can take minutes, and the gap between this callback and the
+    // pipeline's next status bump is exactly when that clock would look stale
+    // and the worker would think it was idle — bump the clock here so a worker
+    // mid-run never shuts itself down waiting for the pipeline to resume.
+    const branch = await ctx.db
+      .query("codeBranches")
+      .withIndex("by_branch_id", (q) => q.eq("branchId", command.branchId))
+      .first();
+    if (branch) {
+      await ctx.db.patch(branch._id, { lastActivityAt: Date.now() });
+    }
 
     const stillPending = await ctx.db
       .query("codeCommands")

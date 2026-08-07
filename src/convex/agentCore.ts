@@ -524,7 +524,14 @@ export function findJsonOps(content: string): Array<Record<string, unknown>> {
       if (ch === '{') depth++;
       else if (ch === '}') { depth--; if (depth === 0) { end = j + 1; break; } }
     }
-    if (end === -1) break;
+    if (end === -1) {
+      // Unterminated op — the model's output got truncated mid-JSON (usually a
+      // create-file whose content hit the token ceiling). Breaking here would
+      // silently drop EVERY later op in the message (files AND commands). Skip
+      // just this opener and keep scanning so siblings still run.
+      i = start + startMarker.length;
+      continue;
+    }
 
     try {
       const parsed = JSON.parse(content.slice(start, end)) as Record<string, unknown>;

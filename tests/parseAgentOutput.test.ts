@@ -90,3 +90,25 @@ describe("parseAgentOutput — leftover sentinels never reach the transcript", (
     expect(parsed.cleanContent).not.toContain("<<");
   });
 });
+
+describe("parseAgentOutput — JSON ops", () => {
+  it("runs an op that follows an unterminated op (no bailout on truncation)", () => {
+    // The regression this guards: findJsonOps used to `break` out of the whole
+    // scan the first time it hit a JSON op with no closing brace (output cut off
+    // mid-create-file at the token limit). Every LATER op in the same message —
+    // most damagingly the `cmd` op that would have actually run — was silently
+    // dropped. The fix skips just the broken op and keeps scanning.
+    const out = `Some text. {"op":"create-file","path":"src/main.ts","content":"const x = 1;"\nthen it got cut off... {"op":"cmd","command":"npm install"}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toEqual([]);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["npm install"]);
+  });
+
+  it("keeps parsing ops between two unparseable blobs", () => {
+    const out = `{"op":"delete-file","path":"a.ts"} {"op":"edit-file","path":"b.ts","content":"{" {"op":"cmd","command":"npm test"}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toHaveLength(1);
+    expect(parsed.fileOps[0].type).toBe("delete");
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["npm test"]);
+  });
+});

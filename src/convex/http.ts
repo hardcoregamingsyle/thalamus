@@ -1030,6 +1030,69 @@ http.route({
   }),
 });
 
+// Poll endpoint for the persistent VM worker (thalamus-vm.yml). The job loops
+// every 10s: claims any queued commands (stamping a fresh one-time nonce on
+// each), heartbeats so the booter never stacks a second VM over a live one,
+// and asks whether to keep living. Same security model as /code/command-result
+// — the endpoint is unauthenticated by necessity (public-repo Actions runner),
+// so the worker's vmNonce is the whole story: a wrong or missing nonce is a
+// silent 404.
+//
+// keepAlive rules (the idle shutdown the user asked for):
+//   - work in flight (commands just claimed, or still pending/running) → alive
+//   - otherwise → alive only if the branch was active recently: 300s while the
+//     task is incomplete, 600s after it completed. "Active" = lastActivityAt,
+//     bumped on every status change / message, so a pipeline churning through
+//     steps keeps the VM warm and a pipeline parked on the user keeps it warm
+//     only until the deadline passes.
+http.route({
+  path: "/code/vm-poll",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    let body: { branchId?: string; vmNonce?: string };
+    try {
+      body = await request.json();
+    } catch {
+      return new Response("Bad request", { status: 400 });
+    }
+    if (!body.branchId || !body.vmNonce) {
+      return new Response("Bad request", { status: 400 });
+    }
+
+    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: body.branchId });
+    if (!branch || branch.vmNonce !== body.vmNonce) {
+      return new Response("Not found", { status: 404 });
+    }
+
+    const claimed = await ctx.runMutation(internal.codeCommands.claimPendingCommandsForVm, {
+      branchId: body.branchId,
+    });
+
+    // Heartbeat — proves this worker is alive so bootVmForBranch backs off.
+    await ctx.runMutation(internal.codeBranches.setVmInfo, {
+      branchId: body.branchId,
+      lastSeenAt: Date.now(),
+    });
+
+    const stillBusy = await ctx.runQuery(internal.codeCommands.getPendingCommands, {
+      branchId: body.branchId,
+    });
+
+    let keepAlive = claimed.length > 0 || (stillBusy?.length ?? 0) > 0;
+    if (!keepAlive) {
+      const lastActivity = branch.lastActivityAt ?? 0;
+      const idleMs = Date.now() - lastActivity;
+      const windowMs = branch.status === "completed" ? 600_000 : 300_000;
+      keepAlive = idleMs < windowMs;
+    }
+
+    return new Response(JSON.stringify({ keepAlive, commands: claimed }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }),
+});
+
 // Callback from the sandbox GitHub Actions workflow — reports the tunnel URL
 // so Thalamus can display the preview link. Unauthenticated by necessity (a
 // public-repo Actions job has no other credential to send), so the nonce in

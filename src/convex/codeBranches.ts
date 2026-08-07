@@ -572,6 +572,28 @@ export const setSandboxInfo = internalMutation({
   },
 });
 
+// VM worker heartbeat + credential. The poll endpoint refreshes vmLastSeenAt
+// on every request and the booter checks it before dispatching a second VM, so
+// two workflow runs can never be alive for the same branch.
+export const setVmInfo = internalMutation({
+  args: {
+    branchId: v.string(),
+    nonce: v.optional(v.union(v.string(), v.null())),
+    lastSeenAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const branch = await ctx.db
+      .query("codeBranches")
+      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (!branch) return;
+    const patch: Record<string, unknown> = {};
+    if (args.nonce !== undefined) patch.vmNonce = args.nonce ?? undefined;
+    if (args.lastSeenAt !== undefined) patch.vmLastSeenAt = args.lastSeenAt;
+    await ctx.db.patch(branch._id, patch);
+  },
+});
+
 // Records why a branch has no platform repo yet — cleared as soon as one is
 // successfully created. Read by SandboxView so a token/permission failure
 // shows up as a message with a retry button instead of an endless spinner.

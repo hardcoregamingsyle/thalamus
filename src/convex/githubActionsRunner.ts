@@ -25,11 +25,16 @@ import { v } from "convex/values";
 import { Octokit } from "@octokit/rest";
 import crypto from "crypto";
 
-const WORKFLOW_PATH = ".github/workflows/thalamus-run.yml";
-const WORKFLOW_FILE = "thalamus-run.yml";
+const VM_WORKFLOW_PATH = ".github/workflows/thalamus-vm.yml";
+const VM_WORKFLOW_FILE = "thalamus-vm.yml";
 
 const SANDBOX_WORKFLOW_PATH = ".github/workflows/thalamus-sandbox.yml";
 const SANDBOX_WORKFLOW_FILE = "thalamus-sandbox.yml";
+
+// How fresh vmLastSeenAt must be to consider the VM worker alive. The worker
+// polls every 10s, so anything within this window is definitively up — a boot
+// is only dispatched when the heartbeat is older than this (or absent).
+const VM_ALIVE_WINDOW_MS = 90_000;
 
 // Sandbox workflow — starts a dev server and exposes it via Cloudflare tunnel.
 // Stays alive for up to 360 minutes (6h max on public repos); cancel the run
@@ -119,69 +124,90 @@ jobs:
           wait $DEV_PID 2>/dev/null || true
 `;
 
-// The command arrives through `env:`, never interpolated into the `run:` script.
-// Substituting it directly would let a stray quote break the YAML and a
-// deliberate one run something other than the command we queued.
-const WORKFLOW_YAML = `# Managed by Thalamus. Runs one queued build command and reports the result back.
-name: Thalamus Command
+// One persistent VM worker per branch, dispatched once per prompt (not per
+// command). Loops every 10s: polls /code/vm-poll for queued commands, runs
+// each in bash, POSTs the result to /code/command-result, and keeps going
+// until the server says keepAlive=false (idle too long — 300s mid-task, 600s
+// after completion — see VM_IDLE_INCOMPLETE_MS/VM_IDLE_DONE_MS) or until the
+// run's timeout kills it. The branch ref is re-checked before every batch so
+// the working tree never goes stale relative to what the agent just pushed.
+const VM_WORKFLOW_YAML = `# Managed by Thalamus. Persistent VM worker — polls for queued commands.
+name: Thalamus VM
 
 on:
   workflow_dispatch:
     inputs:
-      command:
-        description: Command to run
+      branch_id:
+        description: Convex branch id
         required: true
-      command_id:
-        description: Convex id of the queued command
+      vm_nonce:
+        description: One-time token proving this worker is ours
         required: true
-      nonce:
-        description: One-time token proving this result came from our dispatch
-        required: true
-      callback_url:
-        description: Where to POST the result
+      callback_base:
+        description: Convex site base URL
         required: true
       os:
         description: Runner to execute on
         required: false
         default: ubuntu-latest
+      branch:
+        description: Git branch to track and re-sync against
+        required: true
 
 jobs:
-  run:
+  vm:
     runs-on: \${{ inputs.os || 'ubuntu-latest' }}
-    timeout-minutes: 15
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: \${{ inputs.branch }}
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      # bash on every runner, Windows included — the Windows images ship git-bash,
-      # so one script covers ubuntu, windows and macos instead of three.
-      - name: Run command
-        id: run
+
+      - name: Worker loop
         shell: bash
         env:
-          THALAMUS_CMD: \${{ inputs.command }}
+          BRANCH_ID: \${{ inputs.branch_id }}
+          VM_NONCE: \${{ inputs.vm_nonce }}
+          CALLBACK_BASE: \${{ inputs.callback_base }}
+          BRANCH_REF: \${{ inputs.branch }}
         run: |
           set +e
-          OUTPUT=$(bash -lc "$THALAMUS_CMD" 2>&1)
-          CODE=$?
-          echo "$OUTPUT"
-          printf '%s' "$OUTPUT" | head -c 20000 > "$RUNNER_TEMP/thalamus-output.txt"
-          echo "exit_code=$CODE" >> "$GITHUB_OUTPUT"
-      - name: Report result
-        if: always()
-        shell: bash
-        env:
-          CALLBACK: \${{ inputs.callback_url }}
-          COMMAND_ID: \${{ inputs.command_id }}
-          NONCE: \${{ inputs.nonce }}
-          EXIT_CODE: \${{ steps.run.outputs.exit_code }}
-        run: |
-          OUTPUT=$(cat "$RUNNER_TEMP/thalamus-output.txt" 2>/dev/null || echo "")
-          jq -n --arg id "$COMMAND_ID" --arg nonce "$NONCE" --arg out "$OUTPUT" \
-                --argjson code "\${EXIT_CODE:-1}" \
-                '{commandId:$id, nonce:$nonce, output:$out, exitCode:$code}' \
-            | curl -sS -X POST "$CALLBACK" -H 'Content-Type: application/json' --data @-
+          echo "[vm] worker started for branch $BRANCH_REF"
+          while true; do
+            RESP=$(curl -sS -X POST "$CALLBACK_BASE/code/vm-poll" \\
+              -H 'Content-Type: application/json' \\
+              -d "{\\"branchId\\":\\"$BRANCH_ID\\",\\"vmNonce\\":\\"$VM_NONCE\\"}")
+            ALIVE=$(echo "$RESP" | jq -r '.keepAlive // false')
+            if [ "$ALIVE" != "true" ]; then
+              echo "[vm] idle deadline reached — shutting down"
+              break
+            fi
+            N=$(echo "$RESP" | jq '.commands | length')
+            if [ "$N" -gt 0 ]; then
+              git fetch origin "+refs/heads/$BRANCH_REF:refs/remotes/origin/$BRANCH_REF" --quiet 2>/dev/null || git fetch origin --quiet 2>/dev/null
+              git checkout -B "$BRANCH_REF" "origin/$BRANCH_REF" --quiet 2>/dev/null || true
+              echo "$RESP" | jq -c '.commands[]' | while IFS= read -r C; do
+                ID=$(echo "$C" | jq -r '.id')
+                NONCE=$(echo "$C" | jq -r '.nonce')
+                CMD=$(echo "$C" | jq -r '.command')
+                echo "[vm] run: $CMD"
+                OUTPUT=$(bash -lc "$CMD" 2>&1)
+                CODE=$?
+                printf '%s' "$OUTPUT" | head -c 20000 > "$RUNNER_TEMP/vm-out.txt"
+                PAYLOAD=$(jq -n --arg id "$ID" --arg nonce "$NONCE" \\
+                  --arg out "$(cat "$RUNNER_TEMP/vm-out.txt")" \\
+                  --argjson code "$CODE" \\
+                  '{commandId:$id, nonce:$nonce, output:$out, exitCode:$code}')
+                curl -sS -X POST "$CALLBACK_BASE/code/command-result" \\
+                  -H 'Content-Type: application/json' -d "$PAYLOAD" > /dev/null
+              done
+            fi
+            sleep 10
+          done
+          echo "[vm] worker done"
 `;
 
 type GhConfig = { owner: string; repo: string; branch: string; githubToken?: string };
@@ -194,17 +220,17 @@ const RUNNERS: Record<string, string> = {
   macos: "macos-latest",
 };
 
-async function ensureWorkflow(octokit: Octokit, cfg: GhConfig): Promise<void> {
+async function ensureVmWorkflow(octokit: Octokit, cfg: GhConfig): Promise<void> {
   let existingSha: string | undefined;
   try {
     const { data } = await octokit.repos.getContent({
-      owner: cfg.owner, repo: cfg.repo, path: WORKFLOW_PATH, ref: cfg.branch,
+      owner: cfg.owner, repo: cfg.repo, path: VM_WORKFLOW_PATH, ref: cfg.branch,
     });
     if (!Array.isArray(data) && "sha" in data) {
-      // Already current — rewriting it would churn a commit on every command.
+      // Already current — rewriting it would churn a commit on every boot.
       if ("content" in data && typeof data.content === "string") {
         const current = Buffer.from(data.content, "base64").toString("utf8");
-        if (current === WORKFLOW_YAML) return;
+        if (current === VM_WORKFLOW_YAML) return;
       }
       existingSha = data.sha;
     }
@@ -213,107 +239,108 @@ async function ensureWorkflow(octokit: Octokit, cfg: GhConfig): Promise<void> {
   await octokit.repos.createOrUpdateFileContents({
     owner: cfg.owner,
     repo: cfg.repo,
-    path: WORKFLOW_PATH,
-    message: "ci: thalamus command runner",
-    content: Buffer.from(WORKFLOW_YAML, "utf8").toString("base64"),
+    path: VM_WORKFLOW_PATH,
+    message: "ci: thalamus vm worker",
+    content: Buffer.from(VM_WORKFLOW_YAML, "utf8").toString("base64"),
     branch: cfg.branch,
     ...(existingSha ? { sha: existingSha } : {}),
   });
 }
 
-export const executeBranchCommandsViaActions = internalAction({
+// Boots the branch's VM worker unless one is already alive. Idempotent: the
+// pipeline calls this on every prompt (startPipeline) and on every stop in the
+// paused path (executeBranchCommandsViaActions), so a busy worker is a no-op.
+// The worker heartbeats every 10s via /code/vm-poll; anything seen within
+// VM_ALIVE_WINDOW_MS is live, so the only way a second VM is ever booted is
+// if the first one genuinely died. Returns a status so callers that are parked
+// on queued commands can fail them fast when no VM can ever come.
+export const bootVmForBranch = internalAction({
   args: { branchId: v.string() },
-  handler: async (ctx, args): Promise<void> => {
-    // Resume in `finally` only on the paths that fail outright — a successful
-    // dispatch must NOT resume, because the callback does that when the run ends.
-    let dispatched = false;
-    let pending: Array<{ _id: string; command: string }> = [];
+  handler: async (ctx, args): Promise<"booted" | "alive" | "local" | "no-repo" | "no-token" | "dispatch-error"> => {
+    // Local (desktop) branches run commands on the user's own machine — never boot a VM.
+    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
+    if (!branch) return "local";
+    if (branch.executor === "local") return "local";
+
+    const aliveSince = (branch as Record<string, unknown> | null)?.vmLastSeenAt as number | undefined;
+    if (aliveSince !== undefined && Date.now() - aliveSince < VM_ALIVE_WINDOW_MS) return "alive";
+
+    const cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+      projectId: branch.projectId, branchId: args.branchId,
+    }) as GhConfig | null;
+    if (!cfg) return "no-repo"; // repo not set up yet — the pipeline must fail commands with the explainer
+
+    const token = cfg.githubToken || process.env.GITHUB_TOKEN;
+    if (!token) return "no-token";
 
     try {
-      pending = await ctx.runMutation(internal.codeCommands.claimPendingCommands, {
-        branchId: args.branchId,
-      }) as Array<{ _id: string; command: string }>;
-      if (!pending || pending.length === 0) return;
-
-      const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
-      if (!branch) return;
-
-      const cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
-        projectId: branch.projectId, branchId: args.branchId,
-      }) as GhConfig | null;
-
-      if (!cfg) {
-        for (const cmd of pending) {
-          await ctx.runMutation(internal.codeCommands.recordCommandResult, {
-            commandId: cmd._id, status: "failed", exitCode: 1,
-            output: "This branch has no GitHub repo, so there is nowhere to run commands. "
-              + "Connect GitHub on the project, or run the build from the desktop app, which uses your own machine.",
-          });
-        }
-        return;
-      }
-
-      const token = cfg.githubToken || process.env.GITHUB_TOKEN;
-      if (!token) {
-        for (const cmd of pending) {
-          await ctx.runMutation(internal.codeCommands.recordCommandResult, {
-            commandId: cmd._id, status: "failed", exitCode: 1,
-            output: "No GitHub token available to dispatch the command runner.",
-          });
-        }
-        return;
-      }
-
       const octokit = new Octokit({ auth: token });
+      await ensureVmWorkflow(octokit, cfg);
 
-      // Push first: the workflow checks the repo out, so whatever the agent just
-      // wrote has to be on the branch before the run starts.
-      await ctx.runAction(internal.githubSync.autoPushToGithub, {
-        branchId: args.branchId,
-        commitMessage: "build: sync before running commands",
+      // The nonce is the worker's only credential to the (unauthenticated) poll
+      // endpoint — a public-repo Actions job has nothing else to prove identity.
+      const nonce = crypto.randomUUID();
+      await ctx.runMutation(internal.codeBranches.setVmInfo, {
+        branchId: args.branchId, nonce, lastSeenAt: Date.now(),
       });
-      await ensureWorkflow(octokit, cfg);
 
-      const callbackUrl = `${process.env.CONVEX_SITE_URL}/code/command-result`;
-
-      for (const cmd of pending) {
-        const nonce = crypto.randomUUID();
-        await ctx.runMutation(internal.codeCommands.setCallbackNonce, {
-          commandId: cmd._id, nonce,
-        });
-        await octokit.actions.createWorkflowDispatch({
-          owner: cfg.owner,
-          repo: cfg.repo,
-          workflow_id: WORKFLOW_FILE,
-          ref: cfg.branch,
-          inputs: {
-            command: cmd.command,
-            command_id: cmd._id,
-            nonce,
-            callback_url: callbackUrl,
-            os: RUNNERS[branch.runnerOs ?? "ubuntu"] ?? RUNNERS.ubuntu,
-          },
-        });
-        dispatched = true;
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      for (const cmd of pending) {
-        await ctx.runMutation(internal.codeCommands.recordCommandResult, {
-          commandId: cmd._id, status: "failed", exitCode: 1,
-          output: `Could not dispatch the command runner: ${msg}`,
-        }).catch(() => {});
-      }
-    } finally {
-      // Anything that did not reach a dispatch left the branch paused with no
-      // one coming to wake it, so resume it here. A dispatched run resumes
-      // itself through the callback.
-      if (!dispatched) {
-        await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId: args.branchId });
-      }
+      await octokit.actions.createWorkflowDispatch({
+        owner: cfg.owner,
+        repo: cfg.repo,
+        workflow_id: VM_WORKFLOW_FILE,
+        ref: cfg.branch,
+        inputs: {
+          branch_id: args.branchId,
+          vm_nonce: nonce,
+          callback_base: `${process.env.CONVEX_SITE_URL}`,
+          os: RUNNERS[branch.runnerOs ?? "ubuntu"] ?? RUNNERS.ubuntu,
+          branch: cfg.branch,
+        },
+      });
+      return "booted";
+    } catch {
+      // A failed dispatch must not leave a stale "alive" heartbeat blocking
+      // retries — clear the last-seen so the next boot attempt (next prompt,
+      // next command) tries again immediately.
+      await ctx.runMutation(internal.codeBranches.setVmInfo, {
+        branchId: args.branchId, lastSeenAt: 0,
+      }).catch(() => {});
+      return "dispatch-error";
     }
   },
 });
+
+// Kept name — preserves every existing scheduler/UI caller. Used to dispatch
+// one workflow run per queued command; now it boots the persistent VM worker
+// (once) and lets it sweep the queue. If a VM can never come (no repo/token),
+// it fails the queued commands and resumes the pipeline, exactly like the old
+// dispatch-failure path did — so a branch can't park silently forever.
+export const executeBranchCommandsViaActions = internalAction({
+  args: { branchId: v.string() },
+  handler: async (ctx, args): Promise<void> => {
+    const backlog = await ctx.runQuery(internal.codeCommands.getPendingCommands, { branchId: args.branchId }) as Array<{ _id: string }>;
+    if (!backlog || backlog.length === 0) return;
+
+    const status = await ctx.runAction(internal.githubActionsRunner.bootVmForBranch, { branchId: args.branchId });
+
+    const dead = status === "no-repo" || status === "no-token" || status === "dispatch-error";
+    if (dead) {
+      for (const cmd of backlog) {
+        await ctx.runMutation(internal.codeCommands.recordCommandResult, {
+          commandId: cmd._id,
+          status: "failed",
+          exitCode: 1,
+          output: status === "no-repo"
+            ? "This branch has no GitHub repo, so there is nowhere to run commands. Connect GitHub on the project, or run the build from the desktop app, which uses your own machine."
+            : status === "no-token"
+              ? "No GitHub token available to dispatch the VM worker."
+              : "Could not start the VM worker for this branch — the flow recovered and you can try running the command again.",
+        });
+      }
+      await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId: args.branchId });
+    }
+  },
+});;
 
 /** Ensure the sandbox workflow file exists, creating the branch if needed. */
 async function ensureSandboxWorkflowWithBranch(octokit: Octokit, cfg: GhConfig): Promise<void> {

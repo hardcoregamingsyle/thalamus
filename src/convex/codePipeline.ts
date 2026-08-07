@@ -199,7 +199,11 @@ function parseApiKeyRequests(content: string): Array<{variableName: string; desc
 // build within sight of the old ceiling. Each step is its own action
 // invocation, so this costs wall-clock and provider quota and nothing
 // structural — no Convex per-invocation limit is anywhere near it.
-const MAX_TOTAL_MESSAGES = 2000;
+//
+// As of the VM rework this hard cap is REMOVED by request — a complex prompt
+// must never be killed at some arbitrary message count. A runaway loop is
+// still user-stoppable (stopPipeline) and every step costs real provider
+// quota, so the natural break is the user, not a ceiling.
 
 // How many times we'll ask the model to continue a file cut off at the token
 // limit before giving up. Kept at 2 (≤3 sequential model calls per step) so the
@@ -526,24 +530,6 @@ export const runPipelineAction = internalAction({
       const currentPhase = branch.phase ?? "Dispatcher";
       let round = branch.round ?? 0;
       let totalMessages = branch.totalMessages ?? 0;
-
-      // Hard stop for a runaway loop: a run this long isn't progressing (the
-      // failure that prompted this sat past 200, re-running the Coder forever).
-      // Better to end with a clear message than bill into the void.
-      if (totalMessages >= MAX_TOTAL_MESSAGES) {
-        totalMessages++;
-        await ctx.runMutation(internal.codeBranches.saveMessage, {
-          branchId,
-          agent: "System",
-          content: `Pipeline stopped: hit the ${MAX_TOTAL_MESSAGES}-step ceiling without finishing. A run this long is stuck rather than progressing — start a fresh run, or narrow the task into smaller pieces.`,
-          round,
-          messageIndex: totalMessages,
-        });
-        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-          branchId, status: "completed", currentAgent: undefined, totalMessages,
-        });
-        return;
-      }
 
       const executionPhase = branch.executionPhase ?? "dispatching";
       const currentTaskIndex = branch.currentTaskIndex ?? 0;
@@ -1330,6 +1316,16 @@ export const startPipeline = action({
       branchId: args.branchId,
       userPrompt: args.userPrompt,
     });
+
+    // Boot the VM the instant a message lands — the whole point of the worker
+    // model is that the runner is already warm by the time the first cmd op
+    // queues. Idempotent: bootVmForBranch skips if a worker is already alive,
+    // so repeat messages cost nothing.
+    if ((args.executor ?? "cloud") !== "local") {
+      await ctx.scheduler.runAfter(0, internal.githubActionsRunner.bootVmForBranch, {
+        branchId: args.branchId,
+      });
+    }
   },
 });
 

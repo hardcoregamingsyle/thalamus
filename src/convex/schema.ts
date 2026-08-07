@@ -190,6 +190,16 @@ const schema = defineSchema(
       // failing silently in a scheduled action nobody was watching. Cleared
       // the moment a repo is successfully created.
       repoSetupError: v.optional(v.string()),
+      // Long-lived VM worker (thalamus-vm.yml) — the "VM" the branch's cloud
+      // commands run on. Booting is not per-command: startPipeline boots it the
+      // instant a message is sent, and the job polls /code/vm-poll for queued
+      // commands until the server tells it to die (idle too long — 300s mid-
+      // task, 600s after completion). vmNonce is the poll's credential (same
+      // single-use pattern as sandboxCallbackNonce); vmLastSeenAt is the
+      // worker's heartbeat so the pipeline never boots a second VM over a live
+      // one.
+      vmNonce: v.optional(v.string()),
+      vmLastSeenAt: v.optional(v.number()),
     })
       .index("by_project", ["projectId"])
       .index("by_branch_id", ["branchId"])
