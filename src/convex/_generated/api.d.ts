@@ -52,6 +52,7 @@ import type * as mcpClient from "../mcpClient.js";
 import type * as mcpParse from "../mcpParse.js";
 import type * as mcpServers from "../mcpServers.js";
 import type * as modalClient from "../modalClient.js";
+import type * as modelscopeClient from "../modelscopeClient.js";
 import type * as nimClient from "../nimClient.js";
 import type * as obscureRepoGenerator from "../obscureRepoGenerator.js";
 import type * as ovhcloudClient from "../ovhcloudClient.js";
@@ -118,6 +119,7 @@ declare const fullApi: ApiFromModules<{
   mcpParse: typeof mcpParse;
   mcpServers: typeof mcpServers;
   modalClient: typeof modalClient;
+  modelscopeClient: typeof modelscopeClient;
   nimClient: typeof nimClient;
   obscureRepoGenerator: typeof obscureRepoGenerator;
   ovhcloudClient: typeof ovhcloudClient;

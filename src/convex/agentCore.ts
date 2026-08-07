@@ -44,12 +44,21 @@ export {
   mapTaskToOvhModel,
 } from "./ovhcloudClient";
 
+export {
+  callModelScope,
+  MODELSCOPE_DEFAULT_MODEL,
+  MODELSCOPE_DISPATCHER_MODEL,
+  MODELSCOPE_MODEL_CATALOG,
+  findModelScopeModel,
+} from "./modelscopeClient";
+
 import { callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL, calcAgentBucksForModel } from "./siliconflow";
 import { agentToTaskType, type TaskType } from "./nimClient";
 import { callModal, calcModalAgentBucks } from "./modalClient";
 import { callOvhcloud, mapTaskToOvhModel } from "./ovhcloudClient";
 import { callZen, findZenModel, ZEN_DISPATCHER_MODEL, ZEN_DEFAULT_MODEL } from "./zenClient";
 import { callDeadlySignals, findDeadlySignalsModel, DEADLYSIGNALS_DISPATCHER_MODEL, DEADLYSIGNALS_DEFAULT_MODEL } from "./deadlySignalsClient";
+import { callModelScope, findModelScopeModel, MODELSCOPE_DISPATCHER_MODEL, MODELSCOPE_DEFAULT_MODEL } from "./modelscopeClient";
 
 // The only tier-ish type left: callModel returns a provider-tagged string
 // ("zen:<model>", "ollama:<model>", "modal:<model>", "ovhcloud:<model>",
@@ -59,10 +68,10 @@ export type ModelTier = string;
 export type TaskDifficulty = "normal" | "hard" | "extreme";
 
 /**
- * Unified model caller — provider chain: Modal → Zen → DeadlySignal → OVHcloud → Ollama.
- * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/Deadly/OVHcloud/Ollama
- * (Zen and OVHcloud are anonymous; DeadlySignal is keyed). A Dispatcher-chosen
- * Zen or DeadlySignal model id is honored directly. Only the Dispatcher's model
+ * Unified model caller — provider chain: Modal → Zen → DeadlySignal → ModelScope → OVHcloud → Ollama.
+ * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/Deadly/ModelScope/OVHcloud/Ollama
+ * (Zen and OVHcloud are anonymous; DeadlySignal and ModelScope are keyed). A
+ * Dispatcher-chosen Zen, DeadlySignal or ModelScope model id is honored directly. Only the Dispatcher's model
  * is hardcoded (per provider); every other agent's model is decided by the
  * Dispatcher at runtime.
  */
@@ -94,8 +103,8 @@ export async function callModel(
 
   // One shared wall-clock budget for the WHOLE provider chain. Convex kills
   // any action at 10 minutes with a "Transient error" that no try/catch in
-  // our code can see — so if Modal + Zen + DeadlySignal + OVHcloud + Ollama
-  // retries are ever allowed to stack past that, the pipeline dies without
+  // our code can see — so if Modal + Zen + DeadlySignal + ModelScope + OVHcloud
+  // + Ollama retries are ever allowed to stack past that, the pipeline dies without
   // saving an error message and the user just sees nothing. 7 minutes here
   // leaves the rest of the step (billing, file ops, streaming drip-feed) room
   // to finish and any failure surfaces as a normal thrown Error the caller can
@@ -126,12 +135,23 @@ export async function callModel(
     }
   }
 
+  // Dispatcher-chosen ModelScope model: same as Zen — honor it directly.
+  if (assignedModel && findModelScopeModel(assignedModel)) {
+    try {
+      const result = await callModelScope(prompt, systemPrompt, assignedModel, 8192, undefined, deadline);
+      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modelscope:${result.model}` };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn("ModelScope call failed, falling back to the provider chain:", msg);
+    }
+  }
+
   if (ctx) {
     // Modal first when an admin has registered an endpoint. Which endpoint is
     // decided by data (the isPrimary row comes back first), not by this code —
     // so swapping the primary model is a click in /admin, not a deploy. Falls
-    // through to Zen → DeadlySignal → OVHcloud → Ollama when nothing is
-    // registered or every endpoint errors.
+    // through to Zen → DeadlySignal → ModelScope → OVHcloud → Ollama when
+    // nothing is registered or every endpoint errors.
     try {
       const result = await callModal(ctx, prompt, systemPrompt, 8192, 0.7, undefined, deadline);
       return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modal:${result.model}` };
@@ -167,7 +187,21 @@ export async function callModel(
     return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `deadlysignals:${result.model}` };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`DeadlySignal call failed, falling back to OVHcloud:`, msg);
+    console.warn(`DeadlySignal call failed, falling back to ModelScope:`, msg);
+  }
+
+  // ModelScope — Alibaba's official free API-Inference tier (MODELSCOPE_API_KEY
+  // env var, .ai host). Third fallback when Zen and Deadly are down: serves
+  // DeepSeek-V4-Pro — the frontier seat every other provider in the chain fails.
+  const scopeModel = assignedModel && findModelScopeModel(assignedModel)
+    ? assignedModel
+    : (taskType === "dispatcher" ? MODELSCOPE_DISPATCHER_MODEL : MODELSCOPE_DEFAULT_MODEL);
+  try {
+    const result = await callModelScope(prompt, systemPrompt, scopeModel, 8192, undefined, deadline);
+    return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modelscope:${result.model}` };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`ModelScope call failed, falling back to OVHcloud:`, msg);
   }
 
   // OVHcloud — free anonymous tier, no API key needed, 2 RPM.
@@ -188,7 +222,7 @@ export async function callModel(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("not configured")) {
-      throw new Error(`No AI provider configured — add Modal or Ollama keys via /admin, then a Zen/DeadlySignal/OVHcloud call can serve.`);
+      throw new Error(`No AI provider configured — add Modal or Ollama keys via /admin, then a Zen/DeadlySignal/ModelScope/OVHcloud call can serve.`);
     }
     throw err;
   }
@@ -224,6 +258,9 @@ export function calcAgentBucksForTier(
   }
   if (tier.startsWith("deadlysignals:")) {
     return 0; // DeadlySignal keyed gateway — community/free tier, no cost
+  }
+  if (tier.startsWith("modelscope:")) {
+    return 0; // ModelScope official free API-Inference tier — no cost
   }
   return calcAgentBucksForModel(tier.replace("ollama:", ""), inputTokens, outputTokens);
 }

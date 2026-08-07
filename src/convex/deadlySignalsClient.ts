@@ -18,8 +18,8 @@ import type { ActionCtx } from "./_generated/server";
 // ── Base URL ───────────────────────────────────────────────────────────────────
 const BASE_URL = "https://myapi.creitingameplays.com/v1";
 
-// Per-attempt abort — sized so the whole Modal → Zen → DeadlySignal → OVHcloud
-// → Ollama chain fits inside Convex's 10-minute action kill.
+// Per-attempt abort — sized so the whole Modal → Zen → DeadlySignal → ModelScope
+// → OVHcloud → Ollama chain fits inside Convex's 10-minute action kill.
 const DEADLYSIGNALS_ATTEMPT_TIMEOUT_MS = 60_000;
 
 // ── Model Catalog ─────────────────────────────────────────────────────────────
