@@ -1,5 +1,8 @@
-// OpenCode Zen client — free anonymous AI provider for Thalamus.
-// Runs at https://opencode.ai/zen/v1 (OpenAI-compatible), no API key, no signup.
+// OpenCode Zen client — free AI provider for Thalamus.
+// Runs at https://opencode.ai/zen/v1 (OpenAI-compatible). No API key needed on
+// the anonymous tier, but Convex's shared egress IPs get throttled there — set
+// ZEN_API_KEY and keyed calls ride a dedicated bucket instead (free models
+// still cost $0 with a key; only paid models need a funded $20 balance).
 // Free models verified live (all respond 200 without auth):
 //   deepseek-v4-flash-free, nemotron-3-ultra-free, north-mini-code-free,
 //   mimo-v2.5-free, laguna-s-2.1-free, longcat-2.0-free, big-pickle
@@ -139,11 +142,14 @@ export async function callZen(
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), Math.min(ZEN_ATTEMPT_TIMEOUT_MS, remaining));
 
+  const apiKey = (process.env.ZEN_API_KEY ?? "").trim();
+
   try {
     const res = await fetch(`${BASE_URL}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
       body,
       signal: ctrl.signal,
