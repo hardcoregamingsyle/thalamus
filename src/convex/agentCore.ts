@@ -8,7 +8,7 @@ import type { ActionCtx } from "./_generated/server";
 // a separate economy with their own switch.
 export const FREE_UNLIMITED = true;
 
-// ── Re-exports from SiliconFlow (backup) and NVIDIA NIM (primary) ────────────
+// ── Re-exports from SiliconFlow (Ollama Cloud backup) ─────────────────────────
 export {
   callSiliconFlow,
   callSiliconFlowStreaming,
@@ -26,44 +26,35 @@ export {
   calcAgentBucksForModel,
 } from "./siliconflow";
 
-// NIM exports (primary provider)
-export {
-  callNim,
-  callNimStreaming,
-  NIM_MODEL_CATALOG,
-  findNimModel,
-  nimModelsByCapability,
-  NIM_DISPATCHER_MODEL,
-  NIM_DEFAULT_CHAT_MODEL,
-  NIM_DEFAULT_CODE_MODEL,
-  NIM_CHAT_FALLBACK_CHAIN,
-  NIM_CODE_FALLBACK_CHAIN,
-  NIM_REASONING_FALLBACK_CHAIN,
-  modelsForTask,
-  agentToTaskType,
-  buildNimDispatchPrompt,
-  parseNimDispatchAssignments,
-  calcNimAgentBucks,
-} from "./nimClient";
-import type { TaskType } from "./nimClient";
-
 export { callModal, calcModalAgentBucks } from "./modalClient";
 
+export {
+  callOvhcloud,
+  OVHCLOUD_DEFAULT_MODEL,
+  OVHCLOUD_CODE_MODEL,
+  OVHCLOUD_MODEL_CATALOG,
+  mapTaskToOvhModel,
+} from "./ovhcloudClient";
+
 import { callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL, calcAgentBucksForModel } from "./siliconflow";
-import { callNim, agentToTaskType, NIM_DISPATCHER_MODEL, NIM_DEFAULT_CHAT_MODEL, calcNimAgentBucks } from "./nimClient";
+import { agentToTaskType, type TaskType } from "./nimClient";
 import { callModal, calcModalAgentBucks } from "./modalClient";
+import { callOvhcloud, mapTaskToOvhModel } from "./ovhcloudClient";
+import { callZen, findZenModel, ZEN_DISPATCHER_MODEL, ZEN_DEFAULT_MODEL } from "./zenClient";
 
 // The only tier-ish type left: callModel returns a provider-tagged string
-// ("nim:<model>", "ollama:<model>", "modal:<model>") that the billing helpers read.
+// ("zen:<model>", "ollama:<model>", "modal:<model>", "ovhcloud:<model>") that
+// the billing helpers read.
 export type ModelTier = string;
 // What parseDifficultyFromPlannerOutput returns.
 export type TaskDifficulty = "normal" | "hard" | "extreme";
 
 /**
- * Unified model caller — primary provider is NVIDIA NIM, Ollama Cloud is backup.
- * Pass ctx for NIM DB-key access; without ctx, falls back to Ollama directly.
- * Dynamic task-aware model selection: the modelId hints the task type; if
- * modelId is an agent name, we map it to the best NIM model for that agent.
+ * Unified model caller — provider chain: Modal → Zen → OVHcloud → Ollama.
+ * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/OVHcloud/Ollama
+ * (Zen and OVHcloud are anonymous, no keys). A Dispatcher-chosen Zen model id is
+ * honored directly. Only the Dispatcher's model is hardcoded (per provider);
+ * every other agent's model is decided by the Dispatcher at runtime.
  */
 export async function callModel(
   prompt: string,
@@ -93,79 +84,65 @@ export async function callModel(
 
   // One shared wall-clock budget for the WHOLE provider chain. Convex kills
   // any action at 10 minutes with a "Transient error" that no try/catch in
-  // our code can see — so if Modal + NIM + Ollama retries are ever allowed to
-  // stack past that, the pipeline dies without saving an error message and
-  // the user just sees nothing. 7 minutes here leaves the rest of the step
-  // (billing, file ops, streaming drip-feed) real room to finish and any
-  // failure surfaces as a normal thrown Error the caller can report.
+  // our code can see — so if Modal + Zen + OVHcloud + Ollama retries are ever
+  // allowed to stack past that, the pipeline dies without saving an error
+  // message and the user just sees nothing. 7 minutes here leaves the rest of
+  // the step (billing, file ops, streaming drip-feed) real room to finish and
+  // any failure surfaces as a normal thrown Error the caller can report.
   const deadline = Date.now() + (deadlineMs ?? 420_000);
-  // The last NIM failure, so the final "no provider" error can say WHY NIM
-  // fell through instead of leaving the user blind with keys they can see.
-  let nimFallbackReason: string | null = null;
+
+  // Dispatcher-chosen Zen model: honor it directly and skip Modal — a Zen
+  // catalog id only exists on OpenCode Zen, so Modal would just burn retries
+  // on a model name it does not serve.
+  if (assignedModel && findZenModel(assignedModel)) {
+    try {
+      const result = await callZen(prompt, systemPrompt, assignedModel, 8192, undefined, deadline);
+      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `zen:${result.model}` };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn("Zen call failed, falling back to the provider chain:", msg);
+    }
+  }
 
   if (ctx) {
     // Modal first when an admin has registered an endpoint. Which endpoint is
     // decided by data (the isPrimary row comes back first), not by this code —
     // so swapping the primary model is a click in /admin, not a deploy. Falls
-    // through to NIM → Ollama when nothing is registered or every endpoint errors.
+    // through to Zen → OVHcloud → Ollama when nothing is registered or every
+    // endpoint errors.
     try {
       const result = await callModal(ctx, prompt, systemPrompt, 8192, 0.7, undefined, deadline);
       return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modal:${result.model}` };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes("MODAL_NOT_CONFIGURED")) {
-        console.warn("Modal call failed, falling back to NIM:", msg);
+        console.warn("Modal call failed, falling back to Zen:", msg);
       }
     }
+  }
 
-    const nimModel = assignedModel
-      ?? (taskType === "dispatcher" ? NIM_DISPATCHER_MODEL
-        : taskType === "code" ? "deepseek-ai/deepseek-v4-flash"
-        : taskType === "reasoning" ? "deepseek-ai/deepseek-v4-flash"
-        : taskType === "agent" ? "deepseek-ai/deepseek-v4-flash"
-        : taskType === "factcheck" ? "deepseek-ai/deepseek-v4-flash"
-        : taskType === "research" ? "deepseek-ai/deepseek-v4-flash"
-        : NIM_DEFAULT_CHAT_MODEL);
+  // OpenCode Zen — free anonymous tier, no API key needed. Primary fallback
+  // after Modal: DeepSeek V4 Flash free is a frontier coding seat.
+  const zenModel = assignedModel && findZenModel(assignedModel)
+    ? assignedModel
+    : (taskType === "dispatcher" ? ZEN_DISPATCHER_MODEL : ZEN_DEFAULT_MODEL);
+  try {
+    const result = await callZen(prompt, systemPrompt, zenModel, 8192, undefined, deadline);
+    return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `zen:${result.model}` };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`Zen call failed, falling back to OVHcloud:`, msg);
+  }
 
-    try {
-      const result = await callNim(ctx, prompt, systemPrompt, nimModel, 8192, 0.7, undefined, deadline);
-      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `nim:${result.model}` };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      nimFallbackReason = msg;
-
-      // On overload (529) or timeout, try a different NIM model before falling
-      // all the way to Ollama. deepseek-v4-flash is frequently hammered on
-      // NVIDIA's free tier and can hang until the per-key timeout fires; the 8B
-      // llama is less capable but reliably responds and is still faster/better
-      // than Ollama Cloud. Keeps the pipeline moving instead of burning the
-      // whole budget on retries against a wall.
-      //
-      // The fallback gets its OWN 2-minute deadline — the primary model may
-      // have consumed most of the chain budget (7 min) on retries, leaving the
-      // fallback with no time and a misleading "keys exhausted" error.
-      if (msg.includes("529") || msg.includes("overloaded") || msg.includes("timed out")) {
-        const fallbackModel = taskType === "dispatcher"
-          ? NIM_DEFAULT_CHAT_MODEL
-          : "meta/llama-3.1-8b-instruct";
-        if (fallbackModel !== nimModel) {
-          try {
-            const fallbackDeadline = Date.now() + 120_000;
-            const fallback = await callNim(ctx, prompt, systemPrompt, fallbackModel, 8192, 0.7, undefined, fallbackDeadline);
-            return { text: fallback.text, inputTokens: fallback.inputTokens, outputTokens: fallback.outputTokens, tier: `nim:${fallback.model}:fallback` };
-          } catch (fbErr) {
-            const fbMsg = fbErr instanceof Error ? fbErr.message : String(fbErr);
-            nimFallbackReason += ` | fallback ${fallbackModel}: ${fbMsg}`;
-          }
-        }
-      }
-
-      if (msg.includes("NVIDIA_NIM_NOT_CONFIGURED")) {
-        console.warn("NIM not configured — falling back to Ollama Cloud");
-      } else {
-        console.warn(`NIM call failed, falling back to Ollama:`, msg);
-      }
-    }
+  // OVHcloud — free anonymous tier, no API key needed, 2 RPM.
+  // Catches requests when Zen is down before falling to Ollama.
+  const ovhModel = mapTaskToOvhModel(taskType);
+  try {
+    const result = await callOvhcloud(prompt, systemPrompt, ovhModel, 8192, ctx?.runQuery, deadline);
+    return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `ovhcloud:${result.model}` };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`OVHcloud call failed, falling back to Ollama:`, msg);
   }
 
   const ollamaModel = mapModelIdToOllama(modelId);
@@ -175,7 +152,7 @@ export async function callModel(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("not configured")) {
-      throw new Error(`No AI provider configured — add NIM keys via /admin (primary) or Ollama keys (backup). Last NIM error: ${nimFallbackReason ?? "NIM not configured"}`);
+      throw new Error(`No AI provider configured — add Modal or Ollama keys via /admin, then a Zen/OVHcloud call can serve.`);
     }
     throw err;
   }
@@ -193,7 +170,7 @@ function mapModelIdToOllama(modelId: string): string {
 }
 
 /**
- * Calculate AgentBucks — tries NIM pricing first, falls back to SiliconFlow.
+ * Calculate AgentBucks — branch on provider prefix, free tiers cost 0.
  */
 export function calcAgentBucksForTier(
   tier: string,
@@ -203,8 +180,11 @@ export function calcAgentBucksForTier(
   if (tier.startsWith("modal:")) {
     return calcModalAgentBucks(inputTokens, outputTokens);
   }
-  if (tier.startsWith("nim:")) {
-    return calcNimAgentBucks(tier.replace("nim:", ""), inputTokens, outputTokens);
+  if (tier.startsWith("ovhcloud:")) {
+    return 0; // OVHcloud free anonymous tier — no cost
+  }
+  if (tier.startsWith("zen:")) {
+    return 0; // OpenCode Zen free anonymous tier — no cost
   }
   return calcAgentBucksForModel(tier.replace("ollama:", ""), inputTokens, outputTokens);
 }
