@@ -29,6 +29,14 @@ export {
 export { callModal, calcModalAgentBucks } from "./modalClient";
 
 export {
+  callDeadlySignals,
+  DEADLYSIGNALS_DEFAULT_MODEL,
+  DEADLYSIGNALS_DISPATCHER_MODEL,
+  DEADLYSIGNALS_MODEL_CATALOG,
+  findDeadlySignalsModel,
+} from "./deadlySignalsClient";
+
+export {
   callOvhcloud,
   OVHCLOUD_DEFAULT_MODEL,
   OVHCLOUD_CODE_MODEL,
@@ -41,20 +49,22 @@ import { agentToTaskType, type TaskType } from "./nimClient";
 import { callModal, calcModalAgentBucks } from "./modalClient";
 import { callOvhcloud, mapTaskToOvhModel } from "./ovhcloudClient";
 import { callZen, findZenModel, ZEN_DISPATCHER_MODEL, ZEN_DEFAULT_MODEL } from "./zenClient";
+import { callDeadlySignals, findDeadlySignalsModel, DEADLYSIGNALS_DISPATCHER_MODEL, DEADLYSIGNALS_DEFAULT_MODEL } from "./deadlySignalsClient";
 
 // The only tier-ish type left: callModel returns a provider-tagged string
-// ("zen:<model>", "ollama:<model>", "modal:<model>", "ovhcloud:<model>") that
-// the billing helpers read.
+// ("zen:<model>", "ollama:<model>", "modal:<model>", "ovhcloud:<model>",
+// "deadlysignals:<model>") that the billing helpers read.
 export type ModelTier = string;
 // What parseDifficultyFromPlannerOutput returns.
 export type TaskDifficulty = "normal" | "hard" | "extreme";
 
 /**
- * Unified model caller — provider chain: Modal → Zen → OVHcloud → Ollama.
- * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/OVHcloud/Ollama
- * (Zen and OVHcloud are anonymous, no keys). A Dispatcher-chosen Zen model id is
- * honored directly. Only the Dispatcher's model is hardcoded (per provider);
- * every other agent's model is decided by the Dispatcher at runtime.
+ * Unified model caller — provider chain: Modal → Zen → DeadlySignal → OVHcloud → Ollama.
+ * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/Deadly/OVHcloud/Ollama
+ * (Zen and OVHcloud are anonymous; DeadlySignal is keyed). A Dispatcher-chosen
+ * Zen or DeadlySignal model id is honored directly. Only the Dispatcher's model
+ * is hardcoded (per provider); every other agent's model is decided by the
+ * Dispatcher at runtime.
  */
 export async function callModel(
   prompt: string,
@@ -84,11 +94,12 @@ export async function callModel(
 
   // One shared wall-clock budget for the WHOLE provider chain. Convex kills
   // any action at 10 minutes with a "Transient error" that no try/catch in
-  // our code can see — so if Modal + Zen + OVHcloud + Ollama retries are ever
-  // allowed to stack past that, the pipeline dies without saving an error
-  // message and the user just sees nothing. 7 minutes here leaves the rest of
-  // the step (billing, file ops, streaming drip-feed) real room to finish and
-  // any failure surfaces as a normal thrown Error the caller can report.
+  // our code can see — so if Modal + Zen + DeadlySignal + OVHcloud + Ollama
+  // retries are ever allowed to stack past that, the pipeline dies without
+  // saving an error message and the user just sees nothing. 7 minutes here
+  // leaves the rest of the step (billing, file ops, streaming drip-feed) room
+  // to finish and any failure surfaces as a normal thrown Error the caller can
+  // report.
   const deadline = Date.now() + (deadlineMs ?? 420_000);
 
   // Dispatcher-chosen Zen model: honor it directly and skip Modal — a Zen
@@ -104,12 +115,23 @@ export async function callModel(
     }
   }
 
+  // Dispatcher-chosen DeadlySignal model: same as Zen — honor it directly.
+  if (assignedModel && findDeadlySignalsModel(assignedModel)) {
+    try {
+      const result = await callDeadlySignals(prompt, systemPrompt, assignedModel, 8192, undefined, deadline);
+      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `deadlysignals:${result.model}` };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn("DeadlySignal call failed, falling back to the provider chain:", msg);
+    }
+  }
+
   if (ctx) {
     // Modal first when an admin has registered an endpoint. Which endpoint is
     // decided by data (the isPrimary row comes back first), not by this code —
     // so swapping the primary model is a click in /admin, not a deploy. Falls
-    // through to Zen → OVHcloud → Ollama when nothing is registered or every
-    // endpoint errors.
+    // through to Zen → DeadlySignal → OVHcloud → Ollama when nothing is
+    // registered or every endpoint errors.
     try {
       const result = await callModal(ctx, prompt, systemPrompt, 8192, 0.7, undefined, deadline);
       return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modal:${result.model}` };
@@ -131,7 +153,21 @@ export async function callModel(
     return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `zen:${result.model}` };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`Zen call failed, falling back to OVHcloud:`, msg);
+    console.warn(`Zen call failed, falling back to DeadlySignal:`, msg);
+  }
+
+  // DeadlySignal — keyed New API gateway (DEADLYSIGNALS_API_KEY env var).
+  // Second fallback after Zen: serves frontier models (kimi-k2.5, gpt-5.x,
+  // glm-5.2) when Zen is down or too slow.
+  const deadlyModel = assignedModel && findDeadlySignalsModel(assignedModel)
+    ? assignedModel
+    : (taskType === "dispatcher" ? DEADLYSIGNALS_DISPATCHER_MODEL : DEADLYSIGNALS_DEFAULT_MODEL);
+  try {
+    const result = await callDeadlySignals(prompt, systemPrompt, deadlyModel, 8192, undefined, deadline);
+    return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `deadlysignals:${result.model}` };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`DeadlySignal call failed, falling back to OVHcloud:`, msg);
   }
 
   // OVHcloud — free anonymous tier, no API key needed, 2 RPM.
@@ -152,7 +188,7 @@ export async function callModel(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("not configured")) {
-      throw new Error(`No AI provider configured — add Modal or Ollama keys via /admin, then a Zen/OVHcloud call can serve.`);
+      throw new Error(`No AI provider configured — add Modal or Ollama keys via /admin, then a Zen/DeadlySignal/OVHcloud call can serve.`);
     }
     throw err;
   }
@@ -185,6 +221,9 @@ export function calcAgentBucksForTier(
   }
   if (tier.startsWith("zen:")) {
     return 0; // OpenCode Zen free anonymous tier — no cost
+  }
+  if (tier.startsWith("deadlysignals:")) {
+    return 0; // DeadlySignal keyed gateway — community/free tier, no cost
   }
   return calcAgentBucksForModel(tier.replace("ollama:", ""), inputTokens, outputTokens);
 }

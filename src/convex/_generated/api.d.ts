@@ -32,6 +32,7 @@ import type * as crons from "../crons.js";
 import type * as customAuth from "../customAuth.js";
 import type * as customAuthHelpers from "../customAuthHelpers.js";
 import type * as dailyReset from "../dailyReset.js";
+import type * as deadlySignalsClient from "../deadlySignalsClient.js";
 import type * as deployments from "../deployments.js";
 import type * as desktopAuth from "../desktopAuth.js";
 import type * as desktopAuthActions from "../desktopAuthActions.js";
@@ -53,6 +54,7 @@ import type * as mcpServers from "../mcpServers.js";
 import type * as modalClient from "../modalClient.js";
 import type * as nimClient from "../nimClient.js";
 import type * as obscureRepoGenerator from "../obscureRepoGenerator.js";
+import type * as ovhcloudClient from "../ovhcloudClient.js";
 import type * as payments from "../payments.js";
 import type * as rag from "../rag.js";
 import type * as ragHelpers from "../ragHelpers.js";
@@ -63,6 +65,7 @@ import type * as studyHelpers from "../studyHelpers.js";
 import type * as studyPrompt from "../studyPrompt.js";
 import type * as userApiKeys from "../userApiKeys.js";
 import type * as users from "../users.js";
+import type * as zenClient from "../zenClient.js";
 
 import type {
   ApiFromModules,
@@ -95,6 +98,7 @@ declare const fullApi: ApiFromModules<{
   customAuth: typeof customAuth;
   customAuthHelpers: typeof customAuthHelpers;
   dailyReset: typeof dailyReset;
+  deadlySignalsClient: typeof deadlySignalsClient;
   deployments: typeof deployments;
   desktopAuth: typeof desktopAuth;
   desktopAuthActions: typeof desktopAuthActions;
@@ -116,6 +120,7 @@ declare const fullApi: ApiFromModules<{
   modalClient: typeof modalClient;
   nimClient: typeof nimClient;
   obscureRepoGenerator: typeof obscureRepoGenerator;
+  ovhcloudClient: typeof ovhcloudClient;
   payments: typeof payments;
   rag: typeof rag;
   ragHelpers: typeof ragHelpers;
@@ -126,6 +131,7 @@ declare const fullApi: ApiFromModules<{
   studyPrompt: typeof studyPrompt;
   userApiKeys: typeof userApiKeys;
   users: typeof users;
+  zenClient: typeof zenClient;
 }>;
 
 /**
