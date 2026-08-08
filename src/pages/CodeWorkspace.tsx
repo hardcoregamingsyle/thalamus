@@ -117,6 +117,110 @@ function PlannerOutputCard({ data, currentTaskIndex }: { data: PlannerData; curr
   );
 }
 
+// ── ResearchPlanner message rendering ──────────────────────────────────────────
+// The ResearchPlanner emits a JSON research plan ({topic, keywords[], scrapeTargets[]}).
+// Without this card the raw JSON printed as plain text in the chat.
+interface ResearchPlanKeyword {
+  query: string;
+  reason?: string;
+}
+
+interface ResearchPlanTarget {
+  url: string;
+  reason?: string;
+}
+
+interface ResearchPlanData {
+  topic: string;
+  keywords: ResearchPlanKeyword[];
+  scrapeTargets: ResearchPlanTarget[];
+}
+
+function parseResearchPlanContent(content: string): ResearchPlanData | null {
+  // Same progressive-parse strategy as parsePlannerContent: try a fenced json
+  // block first, then widen from the first "{" — models sometimes append prose
+  // after the JSON.
+  const tryShape = (raw: string): ResearchPlanData | null => {
+    try {
+      const data = JSON.parse(raw) as Partial<ResearchPlanData>;
+      if (!data || typeof data.topic !== "string" || !Array.isArray(data.keywords)) return null;
+      return {
+        topic: data.topic,
+        keywords: data.keywords.filter((k): k is ResearchPlanKeyword => !!k && typeof k.query === "string"),
+        scrapeTargets: (Array.isArray(data.scrapeTargets) ? data.scrapeTargets : [])
+          .filter((t): t is ResearchPlanTarget => !!t && typeof t.url === "string"),
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const jsonBlockMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
+  if (jsonBlockMatch) {
+    const parsed = tryShape(jsonBlockMatch[1]);
+    if (parsed) return parsed;
+  }
+  const jsonStart = content.indexOf("{");
+  if (jsonStart !== -1) {
+    for (let end = content.length; end > jsonStart; end = content.lastIndexOf("}", end - 1)) {
+      if (end === -1) break;
+      const parsed = tryShape(content.slice(jsonStart, end + 1));
+      if (parsed) return parsed;
+    }
+  }
+  return null;
+}
+
+function ResearchPlanCard({ data }: { data: ResearchPlanData }) {
+  return (
+    <div className="w-full space-y-3">
+      <div className="bg-cyan-400/10 border border-cyan-400/30 rounded-xl px-4 py-3">
+        <p className="text-[10px] font-bold text-cyan-400 mb-1 tracking-widest">RESEARCH PLAN</p>
+        <p className="text-xs text-foreground leading-relaxed">{data.topic}</p>
+      </div>
+      {data.keywords.length > 0 && (
+        <>
+          <p className="text-[10px] font-bold text-muted-foreground tracking-widest px-1">
+            {data.keywords.length} SEARCH {data.keywords.length === 1 ? "QUERY" : "QUERIES"}
+          </p>
+          <div className="space-y-2">
+            {data.keywords.map((kw, i) => (
+              <div key={i} className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-border/40 bg-card/50">
+                <div className="w-6 h-6 rounded-lg bg-cyan-400/20 text-cyan-400 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                  {i + 1}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-foreground">{kw.query}</p>
+                  {kw.reason && (
+                    <p className="text-[11px] text-muted-foreground leading-relaxed mt-0.5">{kw.reason}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {data.scrapeTargets.length > 0 && (
+        <>
+          <p className="text-[10px] font-bold text-muted-foreground tracking-widest px-1">
+            {data.scrapeTargets.length} {data.scrapeTargets.length === 1 ? "SOURCE" : "SOURCES"} TO READ
+          </p>
+          <div className="space-y-2">
+            {data.scrapeTargets.map((target, i) => (
+              <div key={i} className="px-3 py-2.5 rounded-xl border border-border/40 bg-card/50">
+                <p className="text-xs font-mono text-cyan-400 break-all">{target.url}</p>
+                {target.reason && (
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">{target.reason}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Analyser message rendering ─────────────────────────────────────────────────
 interface AnalyserSection {
   title: string;
@@ -198,6 +302,12 @@ function MessageContent({ msg, currentTaskIndex }: { msg: { agent: string; conte
     const analyserData = parseAnalyserContent(msg.content);
     if (analyserData && analyserData.sections.length > 0) {
       return <AnalyserOutputCard data={analyserData} />;
+    }
+  }
+  if (msg.agent === "ResearchPlanner") {
+    const planData = parseResearchPlanContent(msg.content);
+    if (planData) {
+      return <ResearchPlanCard data={planData} />;
     }
   }
   const cleaned = cleanLegacyContent(msg.content);
