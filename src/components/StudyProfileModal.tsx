@@ -1,3 +1,8 @@
+// StudyProfileModal — first-run collector for grade / board / language,
+// shown by the Study portal so its answers know which curriculum to target.
+// Purely presentational: the parent decides when it opens, and onSave /
+// onSkip do the actual customAuthHelpers persistence.
+
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { BookOpen, GraduationCap, Globe, X } from "lucide-react";
@@ -67,7 +72,7 @@ export default function StudyProfileModal({
               <p className="text-[11px] text-muted-foreground">Personalise your AI study companion</p>
             </div>
           </div>
-          <button onClick={onSkip} className="text-muted-foreground hover:text-foreground transition-colors p-1">
+          <button onClick={onSkip} aria-label="Skip study profile" className="text-muted-foreground hover:text-foreground transition-colors p-1">
             <X className="h-4 w-4" />
           </button>
         </div>

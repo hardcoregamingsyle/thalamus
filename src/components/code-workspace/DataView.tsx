@@ -1,3 +1,10 @@
+// DataView — the code workspace's read-only look at a branch's raw backend
+// state. Drives two live Convex queries — codeBranches.watchFiles and
+// codeBranches.watchMessages — and renders each row as-is (filepath, size,
+// author agent, timestamp; per-message agent, round, snippet). Purely
+// observational: nothing here writes to Convex, and it never gates on
+// pipeline lifecycle.
+
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";

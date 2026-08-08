@@ -1,3 +1,13 @@
+// CreditModal — the AgentBucks wallet: balance display, credit packs (Buy Me
+// a Coffee handoff), referral link, and promo-code entry
+// (customAuthHelpers.applyPromoCode). Purchases are gated on
+// payments.getPublicPaymentsConfig — and that query is currently forced to
+// `{isEnabled:false}` by the PAYMENTS_DISABLED switch in
+// convex/payments.ts, so the Buy sub-modal opens straight into a "Purchases
+// are temporarily unavailable" panel and the pack buttons never fire the
+// BMAC handoff. The wallet display, referral link, and promo-code entry
+// stay live regardless.
+
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Zap, Gift, Tag, ChevronRight } from "lucide-react";
@@ -5,6 +15,7 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { errMsg } from "@/lib/errorMessage";
 
 // Credit packs — price in ₹ ($1 = ₹100). Crediting is server-side and
 // amount-based (₹1 = 15,000 AB, see convex/payments.ts), so any amount paid
@@ -56,7 +67,7 @@ function BuyCreditsModal({ onClose, token }: { onClose: () => void; token?: stri
           <Zap className="h-4 w-4 text-amber-400" />
           <span className="text-sm font-bold text-foreground">Buy AgentBucks</span>
         </div>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted/50">
+        <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted/50">
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -169,7 +180,7 @@ export default function CreditModal({ open, onClose, totalAB, dailyAB, purchased
         toast.error(result.message);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to apply promo code");
+      toast.error(errMsg(err, "Failed to apply promo code"));
     } finally {
       setIsApplyingPromo(false);
     }
@@ -214,7 +225,7 @@ export default function CreditModal({ open, onClose, totalAB, dailyAB, purchased
                   <Zap className="h-4 w-4 text-amber-400" />
                   <span className="text-sm font-bold text-foreground">AgentBucks Wallet</span>
                 </div>
-                <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted/50">
+                <button onClick={onClose} aria-label="Close wallet" className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted/50">
                   <X className="h-4 w-4" />
                 </button>
               </div>

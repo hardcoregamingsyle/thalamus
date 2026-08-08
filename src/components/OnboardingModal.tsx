@@ -1,3 +1,9 @@
+// OnboardingModal — first-run five-step tour (welcome → modes → code pipeline
+// → AgentBucks → ready). Purely presentational: no Convex calls, no auth
+// reads; the parent decides when to show it and what onComplete does.
+// CODE_AGENTS below must stay in step with ALL_TASK_AGENTS in
+// convex/codePipeline.ts.
+
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import {
@@ -159,6 +165,7 @@ export default function OnboardingModal({ onComplete, userName }: OnboardingModa
             <span className="text-[10px] text-muted-foreground">{step + 1} / {STEPS.length}</span>
             <button
               onClick={onComplete}
+              aria-label="Skip onboarding"
               className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-lg hover:bg-muted/50"
             >
               <X className="h-4 w-4" />

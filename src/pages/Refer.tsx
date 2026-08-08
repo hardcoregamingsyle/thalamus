@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { errMsg } from "@/lib/errorMessage";
 
 // Spin wheel segments — all look equal, but actual probabilities are hidden
 const WHEEL_SEGMENTS = [
@@ -161,7 +162,7 @@ export default function ReferPage() {
       setRotation(prev => prev + targetAngle);
       setLastWon(result.won);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Spin failed");
+      toast.error(errMsg(err, "Spin failed"));
       setSpinning(false);
     }
   };
@@ -186,7 +187,7 @@ export default function ReferPage() {
 
       {/* Nav */}
       <nav className="relative z-10 border-b border-border px-6 h-14 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10">
+        <button onClick={() => navigate(-1)} aria-label="Back" className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10">
           <ArrowLeft className="h-4 w-4" />
         </button>
         <div className="flex items-center gap-2">
@@ -294,6 +295,7 @@ export default function ReferPage() {
                   </div>
                   <button
                     onClick={() => handleCopy(referCode)}
+                    aria-label="Copy referral code"
                     className="p-2.5 bg-amber-400/10 border border-amber-400/30 text-amber-400 rounded-xl hover:bg-amber-400/20 transition-all"
                   >
                     {copied ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
@@ -310,6 +312,7 @@ export default function ReferPage() {
                   </div>
                   <button
                     onClick={() => handleCopy(referLink)}
+                    aria-label="Copy referral link"
                     className="p-2 bg-primary/10 border border-primary/30 text-primary rounded-xl hover:bg-primary/20 transition-all"
                   >
                     {copied ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}

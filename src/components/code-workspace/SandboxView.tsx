@@ -1,4 +1,15 @@
-﻿import { useState } from "react";
+﻿// SandboxView — the user-facing window onto the two command executors that
+// back a branch: a GitHub Actions worker for cloud branches
+// (githubActionsRunner + sandbox), and the desktop app itself for local
+// branches (executor === "local", where the WPF app polls
+// codeCommands:listPendingForBranch). Surfaces the runner-OS picker
+// (updateBranch { runnerOs }), a one-off command box
+// (codeCommands.runManualCommand), and live output/status streamed from
+// codeCommands.watchCommands. Also drives the live dev-server preview via
+// codePipeline.{startBranchSandbox, stopBranchSandbox} and the repo-setup
+// retry via githubAutoCreate.retryRepoSetup.
+
+import { useState } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Doc } from "@/convex/_generated/dataModel";
@@ -15,6 +26,7 @@ import {
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { errMsg } from "@/lib/errorMessage";
 import { getSessionToken } from "@/lib/session";
 
 interface SandboxViewProps {
@@ -58,7 +70,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
       await retryRepoSetup({ token, projectId, branchId, projectName: branch.name });
       toast.success("Repository created");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Still couldn't set up the repository");
+      toast.error(errMsg(err, "Still couldn't set up the repository"));
     } finally {
       setRetryingRepo(false);
     }
@@ -73,9 +85,9 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
     setSandboxStarting(true);
     try {
       await startSandbox({ token, branchId });
-      toast.success("Sandbox preview starting â€” link will appear here when ready");
+      toast.success("Sandbox preview starting — link will appear here when ready");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not start sandbox");
+      toast.error(errMsg(err, "Could not start sandbox"));
     } finally {
       setSandboxStarting(false);
     }
@@ -86,7 +98,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
       await stopSandbox({ token, branchId });
       toast.success("Sandbox stopped");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not stop sandbox");
+      toast.error(errMsg(err, "Could not stop sandbox"));
     }
   };
 
@@ -95,7 +107,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
       await updateBranch({ token, branchId, runnerOs: value as RunnerOs });
       toast.success(`Builds will run on ${RUNNERS.find((r) => r.value === value)?.label}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not change the runner");
+      toast.error(errMsg(err, "Could not change the runner"));
     }
   };
 
@@ -108,7 +120,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
       setCommand("");
       toast.success(isLocal ? "Queued for your machine" : "Dispatched to the build runner");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not run the command");
+      toast.error(errMsg(err, "Could not run the command"));
     } finally {
       setSending(false);
     }
@@ -151,7 +163,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
           Build Runner
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Commands from the agents â€” and from you â€” run on a clean machine, then report back here.
+          Commands from the agents — and from you — run on a clean machine, then report back here.
         </p>
       </div>
 
@@ -206,7 +218,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
             <CardDescription>
               {config
                 ? "Every agent change is committed here before it runs."
-                : "Setting up â€” this appears once the branch's repository is ready."}
+                : "Setting up — this appears once the branch's repository is ready."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -274,7 +286,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
             Live preview
           </CardTitle>
           <CardDescription>
-            A running dev server, accessible from anywhere â€” the AI sees it too.
+            A running dev server, accessible from anywhere — the AI sees it too.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -300,7 +312,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
           ) : sandboxStatus === "starting" || sandboxStarting ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Starting sandbox â€” setting up dev server and tunnelâ€¦
+              Starting sandbox — setting up dev server and tunnel…
             </div>
           ) : (
             <div className="space-y-3">
@@ -324,7 +336,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
               </Button>
               {!config && (
                 <p className="text-xs text-muted-foreground">
-                  Waiting for the branch's GitHub repo to be readyâ€¦
+                  Waiting for the branch's GitHub repo to be ready…
                 </p>
               )}
             </div>
@@ -351,7 +363,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
                   void handleSend();
                 }
               }}
-              placeholder="npm test, cargo build, pytestâ€¦"
+              placeholder="npm test, cargo build, pytest…"
               className="font-mono text-sm"
               disabled={sending}
             />
@@ -362,7 +374,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
           </div>
           {!isLocal && (
             <p className="text-xs text-muted-foreground mt-2">
-              A fresh machine takes a moment to pick the job up â€” output lands below when it does.
+              A fresh machine takes a moment to pick the job up — output lands below when it does.
             </p>
           )}
         </CardContent>

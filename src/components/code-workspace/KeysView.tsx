@@ -1,4 +1,18 @@
-﻿import { useState } from "react";
+﻿// KeysView — project-scoped API keys and MCP servers for a branch.
+//
+// Reads codeApiKeys.listApiKeys (project-wide) and codeApiKeys
+// .watchApiKeyRequests (branch-scoped pending requests), plus mcpServers
+// .listServers. Mutations: mcpServers.{addServer, removeServer,
+// setServerEnabled, refreshServerTools} and codeApiKeys.fulfillApiKeyRequest.
+//
+// Pipeline coupling: pending API-key requests are the visible half of the
+// {"op":"request-api-key"} pause in codePipeline. When an agent emits that
+// op, the branch parks as `paused` and a codeApiKeyRequests row appears
+// here; codeApiKeys.fulfillApiKeyRequest writes the value and reschedules
+// runPipelineAction, resuming the pipeline. Nothing else here touches the
+// pipeline lifecycle.
+
+import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
@@ -12,6 +26,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Key, Plus, AlertCircle, Plug, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+import { errMsg } from "@/lib/errorMessage";
 import { getSessionToken } from "@/lib/session";
 
 interface KeysViewProps {
@@ -19,7 +34,7 @@ interface KeysViewProps {
   branchId: string;
 }
 
-// Parse a server's cached toolsJson â€” an array on success, {error} on failure.
+// Parse a server's cached toolsJson — an array on success, {error} on failure.
 function parseTools(toolsJson: string | undefined): { tools: Array<{ name: string }>; error: string | null } {
   if (!toolsJson) return { tools: [], error: null };
   try {
@@ -71,11 +86,11 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
         url: mcpUrl.trim(),
         authHeader: mcpAuth.trim() || undefined,
       });
-      toast.success(`MCP server "${mcpName.trim()}" connected â€” fetching toolsâ€¦`);
+      toast.success(`MCP server "${mcpName.trim()}" connected — fetching tools…`);
       setIsMcpAddOpen(false);
       setMcpName(""); setMcpUrl(""); setMcpAuth("");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to add server");
+      toast.error(errMsg(err, "Failed to add server"));
     } finally {
       setMcpAdding(false);
     }
@@ -89,7 +104,7 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
       await fulfillRequest({ token, requestId, value });
       toast.success(`${variableName} added!`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to fulfill request");
+      toast.error(errMsg(err, "Failed to fulfill request"));
     }
   };
 
@@ -214,7 +229,10 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
               </div>
             ) : (
               <div className="space-y-3">
-                {keys.map((key: Doc<"codeApiKeys">, idx: number) => (
+                {/* The query returns a projection (no `value` field — secrets
+                    stay server-side), so the element type is inferred rather
+                    than annotated as the full Doc. */}
+                {keys.map((key, idx) => (
                   <motion.div
                     key={key._id}
                     initial={{ opacity: 0, y: 10 }}
@@ -235,7 +253,7 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
                         </div>
                         <div className="font-mono text-sm bg-muted/50 rounded px-3 py-2">
                           <code className="flex-1 truncate">
-                            â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢
+                            ••••••••••••••••
                           </code>
                         </div>
                       </div>
@@ -258,7 +276,7 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
                 MCP Servers ({mcpServers?.length || 0})
               </CardTitle>
               <CardDescription>
-                Connect Model Context Protocol servers â€” pipeline agents can call their tools
+                Connect Model Context Protocol servers — pipeline agents can call their tools
               </CardDescription>
             </div>
             <Dialog open={isMcpAddOpen} onOpenChange={setIsMcpAddOpen}>
@@ -288,14 +306,14 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="mcpAuth">Auth header (optional)</Label>
-                    <Input id="mcpAuth" type="password" placeholder="Authorization: Bearer xyzâ€¦" value={mcpAuth}
+                    <Input id="mcpAuth" type="password" placeholder="Authorization: Bearer xyz…" value={mcpAuth}
                       onChange={(e) => setMcpAuth(e.target.value)} />
                   </div>
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setIsMcpAddOpen(false)}>Cancel</Button>
                   <Button onClick={handleAddMcpServer} disabled={mcpAdding}>
-                    {mcpAdding ? "Connectingâ€¦" : "Connect"}
+                    {mcpAdding ? "Connecting…" : "Connect"}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -304,7 +322,7 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
         </CardHeader>
         <CardContent>
           {mcpServers === undefined ? (
-            <div className="text-center text-muted-foreground py-6">Loadingâ€¦</div>
+            <div className="text-center text-muted-foreground py-6">Loading…</div>
           ) : mcpServers.length === 0 ? (
             <div className="text-center text-muted-foreground py-6">
               No MCP servers connected. Add one and agents gain its tools.
@@ -339,40 +357,40 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
                         ) : (
                           <div className="text-xs text-muted-foreground">
                             {tools.length > 0
-                              ? `${tools.length} tools: ${tools.slice(0, 6).map((t) => t.name).join(", ")}${tools.length > 6 ? "â€¦" : ""}`
+                              ? `${tools.length} tools: ${tools.slice(0, 6).map((t) => t.name).join(", ")}${tools.length > 6 ? "…" : ""}`
                               : "Tools not fetched yet"}
                           </div>
                         )}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        <Button size="sm" variant="ghost" title="Refresh tools"
+                        <Button size="sm" variant="ghost" title="Refresh tools" aria-label={`Refresh tools for ${server.name}`}
                           onClick={async () => {
                             try {
                               await refreshMcpTools({ token, serverId: server._id });
-                              toast.success("Refreshing toolsâ€¦");
+                              toast.success("Refreshing tools…");
                             } catch (err) {
-                              toast.error(err instanceof Error ? err.message : "Refresh failed");
+                              toast.error(errMsg(err, "Refresh failed"));
                             }
                           }}>
                           <RefreshCw className="h-4 w-4" />
                         </Button>
-                        <Button size="sm" variant="ghost" title={server.enabled ? "Disable" : "Enable"}
+                        <Button size="sm" variant="ghost" title={server.enabled ? "Disable" : "Enable"} aria-label={`${server.enabled ? "Disable" : "Enable"} ${server.name}`}
                           onClick={async () => {
                             try {
                               await setMcpEnabled({ token, serverId: server._id, enabled: !server.enabled });
                             } catch (err) {
-                              toast.error(err instanceof Error ? err.message : "Update failed");
+                              toast.error(errMsg(err, "Update failed"));
                             }
                           }}>
                           <Plug className={`h-4 w-4 ${server.enabled ? "" : "opacity-40"}`} />
                         </Button>
-                        <Button size="sm" variant="ghost" title="Remove"
+                        <Button size="sm" variant="ghost" title="Remove" aria-label={`Remove ${server.name}`}
                           onClick={async () => {
                             try {
                               await removeMcpServer({ token, serverId: server._id });
                               toast.success(`Removed "${server.name}"`);
                             } catch (err) {
-                              toast.error(err instanceof Error ? err.message : "Remove failed");
+                              toast.error(errMsg(err, "Remove failed"));
                             }
                           }}>
                           <Trash2 className="h-4 w-4 text-red-500" />

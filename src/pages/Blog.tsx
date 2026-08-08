@@ -1,10 +1,9 @@
 import { Link } from "react-router";
 import { BLOG_POSTS } from "@/content/blog";
 
-// The blog index. A real, indexable content hub for the marketing site —
-// static posts sourced from src/content/blog.ts, no backend call. Chrome mirrors
-// the Legal pages (same header/back-link, same footer nav) so content pages feel
-// like one family.
+// Blog index. Posts live statically in src/content/blog.ts — no backend
+// call. public/sitemap.xml is hand-maintained, so a new post requires
+// editing both files or search engines will not discover it.
 
 const SITE = "https://thalamus.aphantic.skinticals.com";
 

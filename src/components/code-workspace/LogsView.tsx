@@ -1,3 +1,10 @@
+// LogsView — command history and agent activity feed for a branch. Driven by
+// codeCommands.watchCommands (every {"op":"cmd"} the pipeline ever queued —
+// each row carries the executor's captured status, exitCode and output) and
+// by codeBranches.watchMessages (last-10 agent turns). Read-only: it never
+// writes to Convex, and the runner-side lifecycle is owned by codePipeline
+// and sandbox.executeBranchCommands.
+
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";

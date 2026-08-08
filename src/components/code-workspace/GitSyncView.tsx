@@ -1,3 +1,9 @@
+// GitSyncView — the manual clone/push/pull tab for a branch's GitHub repo.
+// Drives githubSync.cloneRepository / pushToGithub / pullFromGithub, and
+// consults githubHelpers.getGithubStatus so the "Connect GitHub" affordance
+// appears only when the account is not linked. Independent of the pipeline —
+// it acts directly on the branch's stored files, not on anything in flight.
+
 import { useState } from "react";
 import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -9,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { errMsg } from "@/lib/errorMessage";
 
 interface GitSyncViewProps {
   projectId: string;
@@ -45,7 +52,7 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
       const url = await getAuthorizationUrl({ token, returnPath: window.location.pathname });
       window.location.href = url;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to start GitHub connection");
+      toast.error(errMsg(err, "Failed to start GitHub connection"));
       setConnecting(false);
     }
   };
@@ -73,7 +80,7 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
         setRepoUrl("");
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to clone repository");
+      toast.error(errMsg(err, "Failed to clone repository"));
     } finally {
       setIsCloning(false);
     }
@@ -99,7 +106,7 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
         setCommitMessage("");
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to push to GitHub");
+      toast.error(errMsg(err, "Failed to push to GitHub"));
     } finally {
       setIsPushing(false);
     }
@@ -119,7 +126,7 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
         toast.success(`Pulled ${result.filesPulled} files from GitHub`);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to pull from GitHub");
+      toast.error(errMsg(err, "Failed to pull from GitHub"));
     } finally {
       setIsPulling(false);
     }

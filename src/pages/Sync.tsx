@@ -1,3 +1,17 @@
+// Sync — two-step "sync my project to GitHub" flow.
+//
+// Step 1: collect. fileSync.getProjectFilesBatch is paged through in
+// batches of 20 until `done`, then every file is dropped into a client-side
+// JSZip for download. Nothing is uploaded to GitHub in this step.
+//
+// Step 2: push. If the account is linked (githubHelpers.getGithubStatus),
+// the page verifies the OAuth token by listing repos, then guides the user
+// to run the generated push-to-github.sh script locally (which uses `gh`);
+// unlinked users are offered github.getAuthorizationUrl first. The two
+// options — download-ZIP + shell script, or OAuth-driven push — are equal
+// paths; the OAuth path still relies on the local `gh` CLI for the push
+// itself.
+
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Terminal, Github, Loader2, CheckCircle, XCircle, ChevronRight, FolderGit2, Download, ArrowRight, Package, Upload, LogIn, LogOut, User } from "lucide-react";
@@ -7,6 +21,7 @@ import { useNavigate } from "react-router";
 import { useAction, useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
+import { errMsg } from "@/lib/errorMessage";
 import JSZip from "jszip";
 
 type SyncStatus = "idle" | "loading" | "success" | "error";
@@ -59,7 +74,7 @@ export default function SyncPage() {
       const url = await getAuthorizationUrl({ token });
       window.location.href = url;
     } catch (err) {
-      addLog(`✗ ERROR: ${err instanceof Error ? err.message : "Failed to get auth URL"}`, "error");
+      addLog(`✗ ERROR: ${errMsg(err, "Failed to get auth URL")}`, "error");
     }
   };
 
@@ -68,7 +83,7 @@ export default function SyncPage() {
     try {
       await disconnectGithub({ token });
     } catch (err) {
-      addLog(`✗ ERROR: ${err instanceof Error ? err.message : "Failed to disconnect"}`, "error");
+      addLog(`✗ ERROR: ${errMsg(err, "Failed to disconnect")}`, "error");
     }
   };
 
@@ -119,7 +134,7 @@ export default function SyncPage() {
       setStatus("success");
       setStep(2);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
+      const msg = errMsg(err, "Unknown error");
       addLog(`✗ ERROR: ${msg}`, "error");
       setStatus("error");
     }
@@ -204,7 +219,7 @@ echo "✓ Done! Check: https://github.com/$(gh api user --jq .login)/$REPO_NAME"
       addLog(`  The script uses your connected GitHub account automatically.`, "info");
       setStatus("success");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
+      const msg = errMsg(err, "Unknown error");
       addLog(`✗ ERROR: ${msg}`, "error");
       setStatus("error");
     }

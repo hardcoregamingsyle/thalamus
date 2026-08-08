@@ -1,3 +1,10 @@
+// EditorView — file browser + textarea preview over codeBranches.watchFiles.
+// Read-only by design: the branch's files are owned by the pipeline agents,
+// and the Save button intentionally only surfaces a toast — direct edits from
+// this pane would race the running pipeline and are not written back to
+// Convex. Kept in the workspace to give the user a way to see what the agents
+// produced without leaving the tab.
+
 import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -116,7 +123,7 @@ export function EditorView({ branchId }: EditorViewProps) {
                     <Save className="h-4 w-4 mr-2" />
                     Save
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={handleClose}>
+                  <Button size="sm" variant="ghost" onClick={handleClose} aria-label="Close file">
                     <X className="h-4 w-4" />
                   </Button>
                 </div>

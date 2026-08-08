@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { convexSiteUrl } from "@/lib/convexUrls";
+import { errMsg } from "@/lib/errorMessage";
 
 export default function ApiPage() {
   const { user, token, isLoading } = useAuth();
@@ -79,7 +80,7 @@ export default function ApiPage() {
       setNewKeyName("");
       toast.success("API key created");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create key");
+      toast.error(errMsg(err, "Failed to create key"));
     } finally {
       setCreating(false);
     }
@@ -180,6 +181,7 @@ export default function ApiPage() {
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Base URL</span>
             <button
               onClick={() => copyToClipboard(apiBaseUrl, "base_url")}
+              aria-label="Copy base URL"
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               {copied === "base_url" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
@@ -214,13 +216,14 @@ export default function ApiPage() {
                     </code>
                     <button
                       onClick={() => copyToClipboard(createdKey, "new_key")}
+                      aria-label="Copy new API key"
                       className="shrink-0 p-2 rounded-lg bg-background/60 hover:bg-background transition-colors"
                     >
                       {copied === "new_key" ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
                     </button>
                   </div>
                 </div>
-                <button onClick={() => setCreatedKey(null)} className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
+                <button onClick={() => setCreatedKey(null)} aria-label="Dismiss key reveal" className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -267,6 +270,7 @@ export default function ApiPage() {
                   {key.isActive && (
                     <button
                       onClick={() => handleRevoke(key.keyId, key.name)}
+                      aria-label={`Revoke ${key.name}`}
                       className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
                     >
                       <Trash2 className="h-3.5 w-3.5" />

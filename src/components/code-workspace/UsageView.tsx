@@ -1,3 +1,10 @@
+// UsageView — resource summary for a branch: file / message / command counts
+// and the storage those rows occupy. Computes everything client-side from the
+// same three live queries the rest of the workspace uses
+// (codeBranches.watchFiles, codeBranches.watchMessages,
+// codeCommands.watchCommands); nothing is fetched separately and no Convex
+// mutation is issued. Independent of the pipeline lifecycle.
+
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";

@@ -11,6 +11,8 @@ import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { NewBranchDialog } from "@/components/code/NewBranchDialog";
 import { useAuth } from "@/hooks/use-auth";
+import { errMsg } from "@/lib/errorMessage";
+import { formatRelative } from "@/lib/dateFormat";
 
 export default function CodeBranches() {
   const navigate = useNavigate();
@@ -71,7 +73,7 @@ export default function CodeBranches() {
         });
         imported++;
       } catch (err) {
-        toast.error(`Failed to import ${branchName}: ${err instanceof Error ? err.message : "Unknown error"}`);
+        toast.error(`Failed to import ${branchName}: ${errMsg(err, "Unknown error")}`);
       }
     }
 
@@ -90,7 +92,7 @@ export default function CodeBranches() {
       await deleteBranch({ token, branchId: branch.branchId });
       toast.success("Branch deleted");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete branch");
+      toast.error(errMsg(err, "Failed to delete branch"));
     }
   };
 
@@ -107,19 +109,10 @@ export default function CodeBranches() {
     }
   };
 
-  // Captured once so render stays pure (react-hooks/purity)
+  // Captured once so render stays pure (react-hooks/purity) — passed to
+  // formatRelative so "Just now" doesn't flicker mid-render.
   const [now] = useState(() => Date.now());
-  const formatDate = (timestamp: number) => {
-    const date = new Date(timestamp);
-    const diff = now - timestamp;
-
-    if (diff < 60000) return "Just now";
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
-
-    return date.toLocaleDateString();
-  };
+  const formatDate = (timestamp: number) => formatRelative(timestamp, now);
 
   if (!projectId) {
     return <div className="p-8">Invalid project ID</div>;
@@ -132,7 +125,7 @@ export default function CodeBranches() {
       <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-6 py-6">
           <div className="flex items-center gap-4 mb-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/portal/code")}>
+            <Button variant="ghost" size="icon" onClick={() => navigate("/portal/code")} aria-label="Back to projects">
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div className="flex-1">

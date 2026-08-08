@@ -23,6 +23,7 @@ import { DeployView } from "@/components/code-workspace/DeployView";
 import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
 import { fetchSponsoredAd } from "@/lib/requestAd";
 import { useAuth } from "@/hooks/use-auth";
+import { errMsg } from "@/lib/errorMessage";
 
 // ── Planner message rendering ──────────────────────────────────────────────────
 interface PlannerTask {
@@ -321,7 +322,7 @@ export default function CodeWorkspace() {
       await startPipeline({ token, branchId, userPrompt });
       toast.success("Pipeline started!");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to start pipeline");
+      toast.error(errMsg(err, "Failed to start pipeline"));
       setInput(userPrompt);
     } finally {
       setIsSending(false);
@@ -335,7 +336,7 @@ export default function CodeWorkspace() {
       await stopPipeline({ token, branchId });
       toast.success("Pipeline stopped");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to stop pipeline");
+      toast.error(errMsg(err, "Failed to stop pipeline"));
     }
   };
 
@@ -530,6 +531,7 @@ export default function CodeWorkspace() {
                       onClick={handleStop}
                       variant="destructive"
                       className="px-8"
+                      aria-label="Stop pipeline"
                     >
                       <Pause className="h-5 w-5" />
                     </Button>
@@ -669,6 +671,7 @@ export default function CodeWorkspace() {
               size="icon"
               className="h-8 w-8 shrink-0"
               onClick={() => setSidebarOpen((o) => !o)}
+              aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
             >
               {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
             </Button>

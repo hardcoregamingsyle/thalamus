@@ -1,3 +1,8 @@
+// NewBranchDialog — sibling of NewProjectDialog, used by CodeBranches to
+// spawn a new branch under an existing project. Same two-step shape
+// (scratch → name/description; import → GitHubImportDialog). Presentational
+// only: onCreateScratch / onImportGitHub do the Convex work.
+
 import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -8,6 +13,7 @@ import { FileCode, Github, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { GitHubImportDialog } from "./GitHubImportDialog";
 import { motion } from "framer-motion";
+import { errMsg } from "@/lib/errorMessage";
 
 interface NewBranchDialogProps {
   open: boolean;
@@ -41,7 +47,7 @@ export function NewBranchDialog({
       onOpenChange(false);
       resetState();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create branch");
+      toast.error(errMsg(err, "Failed to create branch"));
     } finally {
       setLoading(false);
     }
@@ -55,7 +61,7 @@ export function NewBranchDialog({
       onOpenChange(false);
       resetState();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to import from GitHub");
+      toast.error(errMsg(err, "Failed to import from GitHub"));
       throw err;
     } finally {
       setLoading(false);

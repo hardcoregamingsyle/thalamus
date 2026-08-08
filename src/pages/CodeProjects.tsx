@@ -10,6 +10,8 @@ import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { NewProjectDialog } from "@/components/code/NewProjectDialog";
 import { useAuth } from "@/hooks/use-auth";
+import { errMsg } from "@/lib/errorMessage";
+import { formatRelative } from "@/lib/dateFormat";
 
 export default function CodeProjects() {
   const navigate = useNavigate();
@@ -77,7 +79,7 @@ export default function CodeProjects() {
         });
         imported++;
       } catch (err) {
-        toast.error(`Failed to import ${branchName}: ${err instanceof Error ? err.message : "Unknown error"}`);
+        toast.error(`Failed to import ${branchName}: ${errMsg(err, "Unknown error")}`);
       }
     }
 
@@ -94,23 +96,14 @@ export default function CodeProjects() {
       await deleteProject({ token, projectId });
       toast.success("Project deleted");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete project");
+      toast.error(errMsg(err, "Failed to delete project"));
     }
   };
 
-  // Captured once so render stays pure (react-hooks/purity)
+  // Captured once so render stays pure (react-hooks/purity) — passed to
+  // formatRelative so "Just now" doesn't flicker mid-render.
   const [now] = useState(() => Date.now());
-  const formatDate = (timestamp: number) => {
-    const date = new Date(timestamp);
-    const diff = now - timestamp;
-
-    if (diff < 60000) return "Just now";
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
-
-    return date.toLocaleDateString();
-  };
+  const formatDate = (timestamp: number) => formatRelative(timestamp, now);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">

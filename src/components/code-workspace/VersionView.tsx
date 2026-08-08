@@ -1,3 +1,10 @@
+// VersionView — a lightweight "snapshot" view over codeBranches.watchFiles.
+// The backend does not store real per-write history; this tab groups the
+// current file rows by their lastModifiedAt (within a one-minute window) so
+// the user gets a rough timeline of who touched what and when. Purely a
+// client-side rollup — nothing is queried or written beyond that one file
+// stream, and it is not tied to the pipeline lifecycle.
+
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";

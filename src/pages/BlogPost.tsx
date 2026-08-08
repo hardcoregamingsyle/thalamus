@@ -3,11 +3,12 @@ import { Link, useParams } from "react-router";
 import ReactMarkdown from "react-markdown";
 import { getPostBySlug } from "@/content/blog";
 
-// A single blog post. Reads :slug, finds the static post, and renders its
-// Markdown body with react-markdown (the same renderer the code workspace uses).
-// Head tags (title/description/canonical) and BlogPosting JSON-LD are rendered
-// inline in JSX — React 19 hoists title/meta/link, and Google reads JSON-LD from
-// anywhere in the DOM.
+// Single blog post. Reads :slug, finds the static post in
+// src/content/blog.ts, and renders its Markdown body with react-markdown
+// (same renderer the code workspace uses). Head tags and BlogPosting
+// JSON-LD are rendered inline in JSX — React 19 hoists title/meta/link,
+// and Google reads JSON-LD from anywhere in the DOM. Adding a post also
+// requires updating public/sitemap.xml (hand-maintained).
 
 const SITE = "https://thalamus.aphantic.skinticals.com";
 

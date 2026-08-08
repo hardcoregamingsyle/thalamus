@@ -1,4 +1,12 @@
-﻿import { useState } from "react";
+﻿// DeployView — one-shot deploy of the branch's current file set to Vercel,
+// Netlify, or Cloudflare Pages. Calls the deployments.deployTo* actions with
+// a user-supplied provider token (never stored client-side — the action holds
+// it only for the request), and the "Config" button asks
+// deployments.generateDeployConfig to seed vercel.json / netlify.toml /
+// wrangler config into the branch's files. Independent of the pipeline —
+// deploy anytime the branch has files.
+
+import { useState } from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Rocket, ExternalLink, Loader2, Check, FileCode } from "lucide-react";
@@ -8,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { errMsg } from "@/lib/errorMessage";
 import { getSessionToken } from "@/lib/session";
 
 interface DeployViewProps {
@@ -119,7 +128,7 @@ export function DeployView({ projectId, branchId }: DeployViewProps) {
         setAccountId("");
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Deployment failed");
+      toast.error(errMsg(err, "Deployment failed"));
     } finally {
       setIsDeploying(false);
     }

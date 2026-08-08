@@ -1,3 +1,11 @@
+// GitHubImportDialog — shared repo/branch picker for the new-project and
+// new-branch flows. Requires a linked GitHub account (githubHelpers
+// .getGithubStatus); otherwise it offers a Connect button that hands off to
+// github.getAuthorizationUrl. Once connected, github.listUserRepos populates
+// step one and github.listRepoBranches populates step two. The dialog itself
+// only reports the chosen repo + branches through onImport — the caller does
+// the actual cloneRepository work.
+
 import { useState, useEffect } from "react";
 import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -10,6 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Github, Loader2, GitBranch, Check } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
+import { errMsg } from "@/lib/errorMessage";
 
 interface GitHubRepo {
   name: string;
@@ -65,7 +74,7 @@ export function GitHubImportDialog({ open, onOpenChange, onImport, mode }: GitHu
       setRepos(data);
       setReposLoaded(true);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load repositories");
+      toast.error(errMsg(err, "Failed to load repositories"));
     } finally {
       setLoading(false);
     }
@@ -90,7 +99,7 @@ export function GitHubImportDialog({ open, onOpenChange, onImport, mode }: GitHu
       const url = await getAuthorizationUrl({ token, returnPath });
       window.location.href = url;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to start GitHub connection");
+      toast.error(errMsg(err, "Failed to start GitHub connection"));
       setConnecting(false);
     }
   };
@@ -105,7 +114,7 @@ export function GitHubImportDialog({ open, onOpenChange, onImport, mode }: GitHu
       setSelectedBranches(data.length === 1 ? new Set([data[0].name]) : new Set());
       setStep("branches");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load branches");
+      toast.error(errMsg(err, "Failed to load branches"));
     } finally {
       setLoading(false);
     }
@@ -141,7 +150,7 @@ export function GitHubImportDialog({ open, onOpenChange, onImport, mode }: GitHu
       onOpenChange(false);
       resetState();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Import failed");
+      toast.error(errMsg(err, "Import failed"));
     } finally {
       setLoading(false);
     }
@@ -167,7 +176,7 @@ export function GitHubImportDialog({ open, onOpenChange, onImport, mode }: GitHu
             <div className="flex items-center justify-center py-16">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
-          ) : !githubStatus.connected ? (
+          ) : !githubStatus?.connected ? (
             <div className="flex flex-col items-center gap-4 text-center py-12">
               <div className="rounded-full bg-primary/10 p-4">
                 <Github className="h-8 w-8 text-primary" />
@@ -196,7 +205,7 @@ export function GitHubImportDialog({ open, onOpenChange, onImport, mode }: GitHu
                 >
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
-                      Connected as <span className="font-medium text-foreground">@{githubStatus.username}</span>
+                      Connected as <span className="font-medium text-foreground">@{githubStatus?.username}</span>
                     </p>
                   </div>
 

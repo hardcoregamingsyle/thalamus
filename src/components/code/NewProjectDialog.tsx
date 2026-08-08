@@ -1,3 +1,9 @@
+// NewProjectDialog — two-step "create project" chooser used by CodeProjects.
+// Step one branches into "from scratch" (name + optional description, fires
+// onCreateScratch) or "import from GitHub" (delegates to GitHubImportDialog,
+// fires onImportGitHub). Purely presentational: the actual Convex writes are
+// owned by the parent's handlers.
+
 import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -8,6 +14,7 @@ import { FileCode, Github, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { GitHubImportDialog } from "./GitHubImportDialog";
 import { motion } from "framer-motion";
+import { errMsg } from "@/lib/errorMessage";
 
 interface NewProjectDialogProps {
   open: boolean;
@@ -40,7 +47,7 @@ export function NewProjectDialog({
       onOpenChange(false);
       resetState();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create project");
+      toast.error(errMsg(err, "Failed to create project"));
     } finally {
       setLoading(false);
     }
@@ -54,7 +61,7 @@ export function NewProjectDialog({
       onOpenChange(false);
       resetState();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to import from GitHub");
+      toast.error(errMsg(err, "Failed to import from GitHub"));
       throw err;
     } finally {
       setLoading(false);

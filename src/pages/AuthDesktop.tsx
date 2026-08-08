@@ -1,9 +1,28 @@
+// AuthDesktop — the web-side landing pad for the desktop-app pairing dance.
+//
+// The WPF app opens the user's browser at `/auth/desktop?code=XXXXXXXX`
+// (an 8-character one-time code minted by desktopAuthActions.createCode).
+// From there:
+//   1. The user signs in on this page. Either flow returns a
+//      custom-session token: OTP via customAuth.sendOtp +
+//      customAuth.verifyOtp, or Google/GitHub OAuth via the Convex HTTP
+//      router, which redirects back here as `?token=…&code=…`.
+//   2. With a token in hand, desktopAuth.authorizeCode binds the pending
+//      code to the signed-in session.
+//   3. Meanwhile the WPF app is polling desktopAuth:pollCode; the next poll
+//      after step 2 hands the desktop app the session token and completes
+//      pairing. The desktop side never sees the user's credentials.
+//
+// The `?code=` param is round-tripped through the OAuth redirect so a user
+// who signs in via Google/GitHub lands back on the same pending code.
+
 import { useState, useCallback, useEffect } from "react";
 import { useSearchParams } from "react-router";
 import { useAction, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, XCircle, Loader2, Monitor, Shield, Clock, Terminal, Mail, Key } from "lucide-react";
+import { errMsg } from "@/lib/errorMessage";
 
 type Step = "signin" | "otp" | "authorize" | "success" | "error";
 
@@ -61,7 +80,7 @@ export default function AuthDesktop() {
       await sendOtp({ email });
       setStep("otp");
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Failed to send code. Try again.");
+      setErrorMsg(errMsg(err, "Failed to send code. Try again."));
     } finally {
       setSendingOtp(false);
     }
@@ -80,7 +99,7 @@ export default function AuthDesktop() {
       setStep("authorize");
       setErrorMsg("");
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Invalid code. Try again.");
+      setErrorMsg(errMsg(err, "Invalid code. Try again."));
     }
   }, [email, otpCode, verifyOtp]);
 
@@ -96,7 +115,7 @@ export default function AuthDesktop() {
       await doAuthorize({ code: code.toUpperCase(), token: sessionToken || undefined });
       setStep("success");
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Authorization failed. Try again.");
+      setErrorMsg(errMsg(err, "Authorization failed. Try again."));
       setStep("error");
     } finally {
       setAuthorizing(false);
