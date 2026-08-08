@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Doc } from "@/convex/_generated/dataModel";
@@ -9,10 +9,17 @@ import { Plus, FolderGit2, Clock, Trash2, LayoutDashboard } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { NewProjectDialog } from "@/components/code/NewProjectDialog";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function CodeProjects() {
   const navigate = useNavigate();
-  const token = localStorage.getItem("agentai_session_token") || "";
+  // useAuth (not a raw localStorage read) so an expired or revoked session
+  // redirects to /auth instead of surfacing as a failed Convex query.
+  const { token: authToken, isLoading, isAuthenticated } = useAuth();
+  const token = authToken ?? "";
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) navigate("/auth", { replace: true });
+  }, [isLoading, isAuthenticated, navigate]);
   const projects = useQuery(api.codeProjects.listProjects, token ? { token } : "skip");
   const createProject = useMutation(api.codeProjects.createProject);
   const deleteProject = useMutation(api.codeProjects.deleteProject);

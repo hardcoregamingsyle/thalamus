@@ -19,7 +19,7 @@ interface LogLine {
 
 export default function SyncPage() {
   const navigate = useNavigate();
-  const { token } = useAuth();
+  const { token, isLoading, isAuthenticated } = useAuth();
   const [repoName, setRepoName] = useState("");
   const [status, setStatus] = useState<SyncStatus>("idle");
   const [logs, setLogs] = useState<LogLine[]>([]);
@@ -32,6 +32,12 @@ export default function SyncPage() {
   const listUserRepos = useAction(api.github.listUserRepos);
   const disconnectGithub = useMutation(api.githubHelpers.disconnectGithub);
   const githubStatus = useQuery(api.githubHelpers.getGithubStatus, token ? { token } : "skip");
+
+  // This page fires Convex actions with the session token — an unauthenticated
+  // visitor would hit validator errors on every button, so gate the route.
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) navigate("/auth", { replace: true });
+  }, [isLoading, isAuthenticated, navigate]);
 
   // Handle OAuth callback params
   useEffect(() => {
@@ -67,6 +73,7 @@ export default function SyncPage() {
   };
 
   const fetchAllFiles = async (): Promise<{ path: string; content: string }[]> => {
+    if (!token) throw new Error("Not signed in");
     const allFiles: { path: string; content: string }[] = [];
     const BATCH_SIZE = 20;
     let offset = 0;

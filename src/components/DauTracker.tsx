@@ -12,24 +12,28 @@ const CLIENT_DAU_COOLDOWN_MS = 120_000;
  * - Triggers on app load when user is authenticated
  * - Triggers on window focus (debounced on the client)
  * - Backend throttles writes (5 min between patches for same UTC day)
+ *
+ * Depends on `isAuthenticated` (a stable boolean), not the `user` object —
+ * Convex hands back a new object identity on every server-side patch to the
+ * user document, which used to reinstall the focus listener on each write.
  */
 export function DauTracker() {
-  const { user, token } = useAuth();
+  const { isAuthenticated, token } = useAuth();
   const trackDailyActivity = useMutation(api.admin.trackDailyActivity);
   const lastPingRef = useRef(0);
 
   const ping = useCallback(() => {
-    if (!user || !token || token.length < 32) return;
+    if (!isAuthenticated || !token || token.length < 32) return;
     const now = Date.now();
     if (now - lastPingRef.current < CLIENT_DAU_COOLDOWN_MS) return;
     lastPingRef.current = now;
     trackDailyActivity({ token }).catch(() => {
       // Silently fail - non-critical tracking
     });
-  }, [user, token, trackDailyActivity]);
+  }, [isAuthenticated, token, trackDailyActivity]);
 
   useEffect(() => {
-    if (!user || !token || token.length < 32) return;
+    if (!isAuthenticated || !token || token.length < 32) return;
 
     ping();
 
@@ -39,7 +43,7 @@ export function DauTracker() {
 
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
-  }, [user, token, ping]);
+  }, [isAuthenticated, token, ping]);
 
   return null; // This component doesn't render anything
 }

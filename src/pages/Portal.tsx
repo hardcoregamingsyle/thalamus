@@ -7,6 +7,8 @@ import StudentSuite from "@/components/StudentSuite";
 import MathRenderer from "@/components/MathRenderer";
 import { sanitizeAiHtml } from "@/lib/sanitizeHtml";
 import { fetchSponsoredAd } from "@/lib/requestAd";
+import { getSessionToken } from "@/lib/session";
+import { isProbablyTextFile, fileToBase64, MAX_UPLOAD_BYTES } from "@/lib/fileEncoding";
 import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
 import ThinkingPanel from "@/components/ThinkingPanel";
 import { useNavigate, useParams } from "react-router";
@@ -158,9 +160,7 @@ function SignUpPromptModal({
         <div className="w-14 h-14 rounded-2xl bg-primary/15 border border-primary/30 flex items-center justify-center mx-auto mb-4">
           {reason === "limit" ? <Sparkles className="h-7 w-7 text-primary" /> : <Lock className="h-7 w-7 text-primary" />}
         </div>
-        <h3 className="text-xl font-bold text-foreground mb-2">
-          {reason === "mode" ? "Sign in to continue" : "Sign in to continue"}
-        </h3>
+        <h3 className="text-xl font-bold text-foreground mb-2">Sign in to continue</h3>
         <p className="text-sm text-muted-foreground mb-1">
           {reason === "mode" ? "Code and Research modes require an account." : "You've used your free prompts. Sign up to keep going — it's free."}
         </p>
@@ -170,18 +170,14 @@ function SignUpPromptModal({
             <span className="text-foreground/60 font-bold">Your message: </span>{pendingMessage}
           </div>
         )}
+        {/* One CTA — /auth handles both sign-up and sign-in, so two buttons
+            wired to the same handler only made users pick a meaningless choice. */}
         <button
           onClick={onSignUp}
-          className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-bold text-sm hover:bg-primary/90 transition-all flex items-center justify-center gap-2 mb-2"
+          className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-bold text-sm hover:bg-primary/90 transition-all flex items-center justify-center gap-2 mb-3"
         >
           <Sparkles className="h-4 w-4" />
-          Sign Up Free — Takes 10 seconds
-        </button>
-        <button
-          onClick={onSignUp}
-          className="w-full py-2.5 bg-card border border-border text-foreground rounded-xl font-bold text-sm hover:bg-muted/50 transition-all flex items-center justify-center gap-2 mb-3"
-        >
-          Sign In
+          Sign up or sign in — it's free
         </button>
         <button onClick={onClose} className="w-full py-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
           Maybe later
@@ -899,6 +895,9 @@ function PortalDesktop() {
   const [thinkingContent, setThinkingContent] = useState("");
   const [inFlightUserContent, setInFlightUserContent] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(typeof window !== "undefined" ? window.innerWidth >= 768 : true);
+  // Tracks whether the user has explicitly toggled the sidebar; once they
+  // have, resizes stop overriding their choice.
+  const userToggledSidebarRef = useRef(false);
   const [moreModesOpen, setMoreModesOpen] = useState(false);
   const [creditModalOpen, setCreditModalOpen] = useState(false);
   const [spinNotifOpen, setSpinNotifOpen] = useState(false);
@@ -939,21 +938,34 @@ function PortalDesktop() {
     if (token && user !== undefined && user !== null && !hasInitializedRef.current) {
       hasInitializedRef.current = true;
       ensureDailyBalance({ token }).catch(() => {});
+      // One honest cast for the extra fields useAuth's user carries here —
+      // this used to be two shadowed `typedUser` declarations in nested scopes.
+      const typedUser = user as { referralSpins?: number; referredBy?: string; hasOnboarded?: boolean };
       const notifKey = `spin_notif_shown_${token.slice(0, 8)}`;
       if (!localStorage.getItem(notifKey)) {
-        const typedUser = user as { referralSpins?: number; referredBy?: string };
         if (typedUser.referralSpins && typedUser.referralSpins > 0 && typedUser.referredBy) {
           localStorage.setItem(notifKey, "1");
           setTimeout(() => setSpinNotifOpen(true), 1500);
         }
       }
       // Show onboarding if user hasn't completed it
-      const typedUser = user as { hasOnboarded?: boolean };
       if (!typedUser.hasOnboarded) {
         setTimeout(() => setShowOnboarding(true), 600);
       }
     }
   }, [token, user, ensureDailyBalance]);
+
+  // Keep the sidebar in step with viewport changes: it was pinned to the
+  // width measured at mount, so a window opened narrow (sidebar closed) and
+  // then maximised had no visible way to open it on desktop. An explicit
+  // user toggle wins over any later resize.
+  useEffect(() => {
+    const onResize = () => {
+      if (!userToggledSidebarRef.current) setSidebarOpen(window.innerWidth >= 768);
+    };
+    window.addEventListener("resize", onResize, { passive: true });
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // Track user activity for the ad-refresh cadence. Passive listeners, ref
   // writes only — zero re-renders.
@@ -969,8 +981,9 @@ function PortalDesktop() {
     // eCPM with them. The card under the reply is the placement Gravity's
     // whole product is about; the rail is a bonus, not a wall.
     //
-    // The threshold MUST stay at or above 1280 to match the rail's
-    // `hidden xl:flex`, or we request a slot Tailwind refuses to render.
+    // The threshold must stay at or above 1280 (the rail's `hidden xl:flex`
+    // visibility floor); 1536 is intentionally stricter so the rail only
+    // appears when there is comfortable horizontal room next to the chat.
     const calc = () => setRailCount(window.innerWidth >= 1536 ? 1 : 0);
     calc();
     window.addEventListener("resize", calc, { passive: true });
@@ -1047,31 +1060,43 @@ function PortalDesktop() {
   //   prompt running + passively watching   → every 180s
   //   idle + active input                   → every 90s
   //   idle + no input for 2+ minutes        → paused until next activity
+  //
+  // The interval body reads fast-changing state (streaming chunks arrive many
+  // times per second) through refs. With those values in the dependency array
+  // the 15s timer was torn down and restarted on every chunk, so it could go
+  // an entire long stream without ever firing.
+  const adTickRef = useRef({ hasAd: false, promptRunning: false, railCount: 0 });
+  useEffect(() => {
+    adTickRef.current = {
+      hasAd: !!sponsoredAd,
+      promptRunning: isThinking || streamingContent !== null,
+      railCount,
+    };
+  }, [sponsoredAd, isThinking, streamingContent, railCount]);
   useEffect(() => {
     const id = setInterval(() => {
-      if (!sponsoredAd || !adContextRef.current) return; // nothing to refresh yet
+      const tick = adTickRef.current;
+      if (!tick.hasAd || !adContextRef.current) return; // nothing to refresh yet
       if (document.visibilityState !== "visible") return;
       const idleMs = Date.now() - lastActivityRef.current;
-      const promptRunning = isThinking || streamingContent !== null;
       let interval: number | null;
-      if (promptRunning) interval = idleMs < 60_000 ? 60_000 : 180_000;
+      if (tick.promptRunning) interval = idleMs < 60_000 ? 60_000 : 180_000;
       else interval = idleMs < 120_000 ? 90_000 : null;
       if (interval === null) return;
       if (Date.now() - lastAdRefreshRef.current < interval) return;
       // Mark the attempt up front so a no-fill response doesn't cause hammering.
       lastAdRefreshRef.current = Date.now();
       fetchSponsoredAd({
-        token: localStorage.getItem("agentai_session_token") ?? undefined,
+        token: getSessionToken() ?? undefined,
         messages: adContextRef.current.messages,
         sessionId: adContextRef.current.sessionId,
-        count: 1 + railCount,
+        count: 1 + tick.railCount,
       })
         .then(ad => { if (ad) applyAds(ad); })
         .catch(() => {});
     }, 15_000);
     return () => clearInterval(id);
-
-  }, [sponsoredAd, isThinking, streamingContent, railCount]);
+  }, []);
   const addTextResource = useMutation(api.studyHelpers.addTextResource);
   const deleteResource = useMutation(api.studyHelpers.deleteResource);
   const searchAndAddResource = useAction(api.study.searchAndAddResource);
@@ -1087,9 +1112,19 @@ function PortalDesktop() {
   useEffect(() => {
     if (urlSessionId && conversations && activeMode !== "code") {
       const conv = conversations.find((c: Conversation) => c.customId === urlSessionId);
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs conversation selection from the URL param once data loads; safe refactor not obvious since activeConvId is also set by user actions
-      if (conv) setActiveConvId(conv._id);
+      if (conv && conv._id !== activeConvId) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs conversation selection from the URL param once data loads; safe refactor not obvious since activeConvId is also set by user actions
+        setActiveConvId(conv._id);
+        // A URL-driven switch (e.g. browser Back) must clear in-flight chat UI
+        // the same way handleSelectConversation does, or a ghost streaming
+        // bubble from the previous conversation lingers on the new one.
+        setStreamingContent(null);
+        setThinkingContent("");
+        setIsThinking(false);
+        setInFlightUserContent(null);
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- activeConvId intentionally omitted: it's the value being synced, adding it would re-run the reset on every selection
   }, [urlSessionId, conversations, activeMode]);
 
   useEffect(() => {
@@ -1427,7 +1462,7 @@ function PortalDesktop() {
     if (!adRequestedRef.current) {
       adRequestedRef.current = true;
       fetchSponsoredAd({
-        token: localStorage.getItem("agentai_session_token") ?? undefined,
+        token: getSessionToken() ?? undefined,
         messages: adMessages,
         sessionId: convId ?? undefined,
         count: 1 + railCount,
@@ -1463,9 +1498,15 @@ function PortalDesktop() {
 
     if (files.length > 0) {
       e.preventDefault();
-      // Process files and add to attachedFiles
+      // Only text files can ride along as inline attachments. `file.text()` on
+      // an image/PDF decodes binary as UTF-8 mojibake and used to be sent to
+      // the model as if it were readable content.
       const processedFiles: AttachedFile[] = [];
       for (const file of files) {
+        if (!isProbablyTextFile(file)) {
+          toast.error(`${file.name || "Pasted file"} isn't a text file — use Study mode's upload for PDFs and images.`);
+          continue;
+        }
         try {
           const text = await file.text();
           processedFiles.push({
@@ -1516,12 +1557,14 @@ function PortalDesktop() {
     if (isPdf) setUploadStatus("Reading your PDF — extracting text & images...");
     else if (isImage) setUploadStatus("Analyzing your image...");
     else setUploadStatus(`Processing ${file.name}...`);
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast.error(`${file.name} is too large — the limit is ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB.`);
+      setIsAddingResource(false); setUploadStatus(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      let binary = "";
-      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-      const base64 = btoa(binary);
+      const base64 = await fileToBase64(file);
       await processFileResource({ token, fileName: file.name, fileType: file.type, fileDataBase64: base64 });
       if (isPdf) toast.success(`PDF processed: ${file.name}`);
       else if (isImage) toast.success(`Image analyzed: ${file.name}`);
@@ -1569,7 +1612,11 @@ function PortalDesktop() {
         <div className="flex items-center justify-between px-3 h-11">
           <div className="flex items-center gap-2">
             {activeMode !== "code" && (
-              <button onClick={() => setSidebarOpen(o => !o)} className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10 md:hidden">
+              <button
+                aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+                onClick={() => { userToggledSidebarRef.current = true; setSidebarOpen(o => !o); }}
+                className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10 md:hidden"
+              >
                 {sidebarOpen ? <X className="h-3.5 w-3.5" /> : <Menu className="h-3.5 w-3.5" />}
               </button>
             )}
@@ -1739,7 +1786,11 @@ function PortalDesktop() {
                           <span className="text-[10px] block truncate">{conv.title}</span>
                           {conv.customId && <span className="text-[8px] text-muted-foreground/40 font-mono">{conv.customId}</span>}
                         </div>
-                        <button onClick={async (e) => { e.stopPropagation(); if (!token) return; try { await deleteConversation({ id: conv._id, token }); if (activeConvId === conv._id) { setActiveConvId(null); navigate(`/portal/${activeMode}`); } } catch { toast.error("Failed to delete"); } }}
+                        {/* Deletion is permanent and the trash icon sits on a clickable row —
+                            confirm so a mis-click can't destroy a conversation. */}
+                        <button
+                          aria-label={`Delete conversation ${conv.title}`}
+                          onClick={async (e) => { e.stopPropagation(); if (!token) return; if (!confirm(`Delete conversation "${conv.title}"? This can't be undone.`)) return; try { await deleteConversation({ id: conv._id, token }); if (activeConvId === conv._id) { setActiveConvId(null); navigate(`/portal/${activeMode}`); } } catch { toast.error("Failed to delete"); } }}
                           className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all shrink-0">
                           <Trash2 className="h-3 w-3" />
                         </button>
@@ -1892,10 +1943,15 @@ function PortalDesktop() {
                   <div ref={messagesEndRef} />
                 </div>
               </div>
-              {railAds.length > 0 && activeConvId && (
+              {/* railCount > 0 gate matters: between 1280px (xl, where the aside
+                  becomes visible) and 1536px (where railCount turns 1) the old
+                  condition rendered an empty bordered column with no cards.
+                  Index keys — ads at a rail position are interchangeable slots;
+                  keying by impUrl remounted every card on each ad refresh. */}
+              {railAds.length > 0 && railCount > 0 && activeConvId && (
                 <aside className="hidden xl:flex flex-col gap-3 w-64 shrink-0 p-4 overflow-auto border-l border-border/40">
                   {railAds.slice(0, railCount).map((ad, i) => (
-                    <SponsoredAdCard key={ad.impUrl ?? `rail-${i}`} ad={ad} rail />
+                    <SponsoredAdCard key={i} ad={ad} rail />
                   ))}
                 </aside>
               )}
@@ -2122,10 +2178,14 @@ export default function Portal() {
   const isMobile = useIsMobile();
   const { isLoading, isAuthenticated } = useAuth();
 
+  // Auth is checked BEFORE the mobile split: unauthenticated visitors get the
+  // guest experience on every device. The old order handed mobile visitors to
+  // MobilePortal first, which immediately redirected them to /auth — a sign-in
+  // wall for exactly the first-touch traffic guest mode exists to convert.
   return (
     <>
       <meta name="robots" content="noindex" />
-      {isMobile ? <MobilePortal /> : !isLoading && !isAuthenticated ? <GuestPortal /> : <PortalDesktop />}
+      {!isLoading && !isAuthenticated ? <GuestPortal /> : isMobile ? <MobilePortal /> : <PortalDesktop />}
     </>
   );
 }

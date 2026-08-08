@@ -128,6 +128,12 @@ export default function ReferPage() {
     }
   }, [token, referralInfo, ensureReferralCode]);
 
+  // Redirect from an effect, not during render — calling navigate() while
+  // rendering triggers React's setState-during-render warning and can loop.
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) navigate("/auth", { replace: true });
+  }, [isLoading, isAuthenticated, navigate]);
+
   const referCode = referralInfo?.referralCode ?? "......";
   const spinsAvailable = referralInfo?.referralSpins ?? 0;
   const referLink = `${window.location.origin}/auth?ref=${referCode}`;
@@ -167,8 +173,7 @@ export default function ReferPage() {
     }
   };
 
-  if (isLoading) return null;
-  if (!isAuthenticated) { navigate("/auth"); return null; }
+  if (isLoading || !isAuthenticated) return null;
 
   return (
     <div className="min-h-screen bg-background font-mono flex flex-col">

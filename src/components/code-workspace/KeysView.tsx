@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
@@ -12,13 +12,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Key, Plus, AlertCircle, Plug, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+import { getSessionToken } from "@/lib/session";
 
 interface KeysViewProps {
   projectId: string;
   branchId: string;
 }
 
-// Parse a server's cached toolsJson — an array on success, {error} on failure.
+// Parse a server's cached toolsJson â€” an array on success, {error} on failure.
 function parseTools(toolsJson: string | undefined): { tools: Array<{ name: string }>; error: string | null } {
   if (!toolsJson) return { tools: [], error: null };
   try {
@@ -31,7 +32,7 @@ function parseTools(toolsJson: string | undefined): { tools: Array<{ name: strin
 }
 
 export function KeysView({ projectId, branchId }: KeysViewProps) {
-  const token = localStorage.getItem("agentai_session_token") || "";
+  const token = getSessionToken() ?? ""; // parent route (CodeWorkspace) is auth-gated
   const keys = useQuery(api.codeApiKeys.listApiKeys, { token, projectId });
   const pendingRequests = useQuery(api.codeApiKeys.watchApiKeyRequests, { branchId });
   const fulfillRequest = useMutation(api.codeApiKeys.fulfillApiKeyRequest);
@@ -70,7 +71,7 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
         url: mcpUrl.trim(),
         authHeader: mcpAuth.trim() || undefined,
       });
-      toast.success(`MCP server "${mcpName.trim()}" connected — fetching tools…`);
+      toast.success(`MCP server "${mcpName.trim()}" connected â€” fetching toolsâ€¦`);
       setIsMcpAddOpen(false);
       setMcpName(""); setMcpUrl(""); setMcpAuth("");
     } catch (err) {
@@ -234,7 +235,7 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
                         </div>
                         <div className="font-mono text-sm bg-muted/50 rounded px-3 py-2">
                           <code className="flex-1 truncate">
-                            ••••••••••••••••
+                            â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢
                           </code>
                         </div>
                       </div>
@@ -257,7 +258,7 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
                 MCP Servers ({mcpServers?.length || 0})
               </CardTitle>
               <CardDescription>
-                Connect Model Context Protocol servers — pipeline agents can call their tools
+                Connect Model Context Protocol servers â€” pipeline agents can call their tools
               </CardDescription>
             </div>
             <Dialog open={isMcpAddOpen} onOpenChange={setIsMcpAddOpen}>
@@ -287,14 +288,14 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="mcpAuth">Auth header (optional)</Label>
-                    <Input id="mcpAuth" type="password" placeholder="Authorization: Bearer xyz…" value={mcpAuth}
+                    <Input id="mcpAuth" type="password" placeholder="Authorization: Bearer xyzâ€¦" value={mcpAuth}
                       onChange={(e) => setMcpAuth(e.target.value)} />
                   </div>
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setIsMcpAddOpen(false)}>Cancel</Button>
                   <Button onClick={handleAddMcpServer} disabled={mcpAdding}>
-                    {mcpAdding ? "Connecting…" : "Connect"}
+                    {mcpAdding ? "Connectingâ€¦" : "Connect"}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -303,7 +304,7 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
         </CardHeader>
         <CardContent>
           {mcpServers === undefined ? (
-            <div className="text-center text-muted-foreground py-6">Loading…</div>
+            <div className="text-center text-muted-foreground py-6">Loadingâ€¦</div>
           ) : mcpServers.length === 0 ? (
             <div className="text-center text-muted-foreground py-6">
               No MCP servers connected. Add one and agents gain its tools.
@@ -338,7 +339,7 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
                         ) : (
                           <div className="text-xs text-muted-foreground">
                             {tools.length > 0
-                              ? `${tools.length} tools: ${tools.slice(0, 6).map((t) => t.name).join(", ")}${tools.length > 6 ? "…" : ""}`
+                              ? `${tools.length} tools: ${tools.slice(0, 6).map((t) => t.name).join(", ")}${tools.length > 6 ? "â€¦" : ""}`
                               : "Tools not fetched yet"}
                           </div>
                         )}
@@ -348,7 +349,7 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
                           onClick={async () => {
                             try {
                               await refreshMcpTools({ token, serverId: server._id });
-                              toast.success("Refreshing tools…");
+                              toast.success("Refreshing toolsâ€¦");
                             } catch (err) {
                               toast.error(err instanceof Error ? err.message : "Refresh failed");
                             }

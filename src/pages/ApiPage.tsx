@@ -10,10 +10,16 @@ import {
   Loader2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { convexSiteUrl } from "@/lib/convexUrls";
 
 export default function ApiPage() {
   const { user, token, isLoading } = useAuth();
   const navigate = useNavigate();
+  // The OpenAI-compatible endpoint is served by Convex HTTP actions on the
+  // *.convex.site host — NOT this frontend's origin. Showing
+  // window.location.origin here handed developers a URL that 200s the SPA
+  // shell and fails in every API client.
+  const apiBaseUrl = convexSiteUrl("/api/v1");
 
   const keys = useQuery(api.userApiKeys.listApiKeys, token ? { token } : "skip");
   const revokeKey = useMutation(api.userApiKeys.revokeApiKey);
@@ -173,14 +179,17 @@ export default function ApiPage() {
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Base URL</span>
             <button
-              onClick={() => copyToClipboard(`${window.location.origin}/api/v1`, "base_url")}
+              onClick={() => copyToClipboard(apiBaseUrl, "base_url")}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               {copied === "base_url" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
               {copied === "base_url" ? "Copied" : "Copy"}
             </button>
           </div>
-          <code className="font-mono text-sm text-foreground">{window.location.origin}/api/v1</code>
+          <code className="font-mono text-sm text-foreground">{apiBaseUrl}</code>
+          <p className="text-[11px] text-muted-foreground mt-1.5">
+            The API is served from the backend host, not this site's domain — copy the URL exactly as shown.
+          </p>
         </div>
 
         {/* One-time key reveal */}
@@ -276,7 +285,7 @@ export default function ApiPage() {
             Quick start
           </h3>
           <pre className="text-xs text-muted-foreground bg-background/60 rounded-lg p-3 overflow-x-auto font-mono">
-{`curl ${window.location.origin}/api/v1/chat/completions \\
+{`curl ${apiBaseUrl}/chat/completions \\
   -H "Authorization: Bearer thal_your_key_here" \\
   -H "Content-Type: application/json" \\
   -d '{

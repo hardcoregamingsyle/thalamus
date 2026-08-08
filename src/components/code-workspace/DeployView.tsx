@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Rocket, ExternalLink, Loader2, Check, FileCode } from "lucide-react";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { getSessionToken } from "@/lib/session";
 
 interface DeployViewProps {
   projectId: string;
@@ -18,7 +19,7 @@ const deployPlatforms = [
   {
     id: "vercel" as const,
     name: "Vercel",
-    icon: "▲",
+    icon: "â–²",
     description: "Deploy with zero configuration",
     url: "https://vercel.com",
     tokenUrl: "https://vercel.com/account/tokens",
@@ -27,7 +28,7 @@ const deployPlatforms = [
   {
     id: "netlify" as const,
     name: "Netlify",
-    icon: "◆",
+    icon: "â—†",
     description: "Continuous deployment from Git",
     url: "https://netlify.com",
     tokenUrl: "https://app.netlify.com/user/applications#personal-access-tokens",
@@ -36,7 +37,7 @@ const deployPlatforms = [
   {
     id: "cloudflare" as const,
     name: "Cloudflare Pages",
-    icon: "☁",
+    icon: "â˜",
     description: "Fast, global deployment",
     url: "https://pages.cloudflare.com",
     tokenUrl: "https://dash.cloudflare.com/profile/api-tokens",
@@ -45,7 +46,7 @@ const deployPlatforms = [
 ];
 
 export function DeployView({ projectId, branchId }: DeployViewProps) {
-  const token = localStorage.getItem("agentai_session_token") || "";
+  const token = getSessionToken() ?? ""; // parent route (CodeWorkspace) is auth-gated
   const [selectedPlatform, setSelectedPlatform] = useState<typeof deployPlatforms[number] | null>(null);
   const [apiToken, setApiToken] = useState("");
   const [projectName, setProjectName] = useState("");

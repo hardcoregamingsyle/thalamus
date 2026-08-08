@@ -22,6 +22,7 @@ import { GitSyncView } from "@/components/code-workspace/GitSyncView";
 import { DeployView } from "@/components/code-workspace/DeployView";
 import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
 import { fetchSponsoredAd } from "@/lib/requestAd";
+import { useAuth } from "@/hooks/use-auth";
 
 // ── Planner message rendering ──────────────────────────────────────────────────
 interface PlannerTask {
@@ -262,7 +263,13 @@ const sidebarSections = [
 export default function CodeWorkspace() {
   const navigate = useNavigate();
   const { projectId, branchId, subpage } = useParams<{ projectId: string; branchId: string; subpage?: string }>();
-  const token = localStorage.getItem("agentai_session_token") || "";
+  // useAuth (not a raw localStorage read) so an expired or revoked session
+  // redirects to /auth instead of surfacing as a failed Convex query.
+  const { token: authToken, isLoading: authLoading, isAuthenticated } = useAuth();
+  const token = authToken ?? "";
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) navigate("/auth", { replace: true });
+  }, [authLoading, isAuthenticated, navigate]);
 
   const branch = useQuery(api.codeBranches.watchBranch, branchId ? { branchId } : "skip");
   const messages = useQuery(api.codeBranches.watchMessages, branchId ? { branchId } : "skip");
@@ -410,9 +417,9 @@ export default function CodeWorkspace() {
                   </p>
                 </div>
               ) : (
-                messages.map((msg: Doc<"codeMessages">, idx: number) => (
+                messages.map((msg: Doc<"codeMessages">) => (
                   <motion.div
-                    key={idx}
+                    key={msg._id}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     className={cn(

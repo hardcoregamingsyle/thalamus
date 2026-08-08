@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Doc } from "@/convex/_generated/dataModel";
@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { getSessionToken } from "@/lib/session";
 
 interface SandboxViewProps {
   projectId: string;
@@ -30,7 +31,7 @@ const RUNNERS: Array<{ value: RunnerOs; label: string; hint: string }> = [
 ];
 
 export function SandboxView({ projectId, branchId }: SandboxViewProps) {
-  const token = localStorage.getItem("agentai_session_token") || "";
+  const token = getSessionToken() ?? ""; // parent route (CodeWorkspace) is auth-gated
 
   const branch = useQuery(api.codeBranches.getBranch, token ? { token, branchId } : "skip");
   const config = useQuery(
@@ -72,7 +73,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
     setSandboxStarting(true);
     try {
       await startSandbox({ token, branchId });
-      toast.success("Sandbox preview starting — link will appear here when ready");
+      toast.success("Sandbox preview starting â€” link will appear here when ready");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not start sandbox");
     } finally {
@@ -150,7 +151,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
           Build Runner
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Commands from the agents — and from you — run on a clean machine, then report back here.
+          Commands from the agents â€” and from you â€” run on a clean machine, then report back here.
         </p>
       </div>
 
@@ -205,7 +206,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
             <CardDescription>
               {config
                 ? "Every agent change is committed here before it runs."
-                : "Setting up — this appears once the branch's repository is ready."}
+                : "Setting up â€” this appears once the branch's repository is ready."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -273,7 +274,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
             Live preview
           </CardTitle>
           <CardDescription>
-            A running dev server, accessible from anywhere — the AI sees it too.
+            A running dev server, accessible from anywhere â€” the AI sees it too.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -299,7 +300,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
           ) : sandboxStatus === "starting" || sandboxStarting ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Starting sandbox — setting up dev server and tunnel…
+              Starting sandbox â€” setting up dev server and tunnelâ€¦
             </div>
           ) : (
             <div className="space-y-3">
@@ -323,7 +324,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
               </Button>
               {!config && (
                 <p className="text-xs text-muted-foreground">
-                  Waiting for the branch's GitHub repo to be ready…
+                  Waiting for the branch's GitHub repo to be readyâ€¦
                 </p>
               )}
             </div>
@@ -350,7 +351,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
                   void handleSend();
                 }
               }}
-              placeholder="npm test, cargo build, pytest…"
+              placeholder="npm test, cargo build, pytestâ€¦"
               className="font-mono text-sm"
               disabled={sending}
             />
@@ -361,7 +362,7 @@ export function SandboxView({ projectId, branchId }: SandboxViewProps) {
           </div>
           {!isLocal && (
             <p className="text-xs text-muted-foreground mt-2">
-              A fresh machine takes a moment to pick the job up — output lands below when it does.
+              A fresh machine takes a moment to pick the job up â€” output lands below when it does.
             </p>
           )}
         </CardContent>

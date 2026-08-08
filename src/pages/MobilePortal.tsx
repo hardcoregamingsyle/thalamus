@@ -12,6 +12,7 @@ import CreditModal from "@/components/CreditModal";
 import ThinkingPanel from "@/components/ThinkingPanel";
 import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
 import { fetchSponsoredAd } from "@/lib/requestAd";
+import { fileToBase64, MAX_UPLOAD_BYTES } from "@/lib/fileEncoding";
 import {
   MessageSquare, Search, BookOpen, Users, Plus, Send, Loader2,
   Trash2, Zap, LogOut, Cpu, ChevronRight,
@@ -331,12 +332,14 @@ function MobileChatView({
     if (!token) return;
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast.error(`${file.name} is too large — the limit is ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB.`);
+      return;
+    }
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      let binary = "";
-      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-      const base64 = btoa(binary);
+      // FileReader converts in native code — the old per-byte string loop
+      // stalled low-end phones for seconds on a large PDF.
+      const base64 = await fileToBase64(file);
       await processFileResource({ token, fileName: file.name, fileType: file.type, fileDataBase64: base64 });
       toast.success(`Added: ${file.name}`);
     } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); }
@@ -586,7 +589,10 @@ function MobileChatView({
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] font-medium text-foreground truncate">{conv.title}</p>
                     </div>
-                    <button onClick={async (e) => { e.stopPropagation(); try { await deleteConversation({ id: conv._id, token }); if (activeConvId === conv._id) setActiveConvId(null); } catch { toast.error("Failed"); } }}
+                    {/* Deletion is permanent — confirm before firing. */}
+                    <button
+                      aria-label={`Delete conversation ${conv.title}`}
+                      onClick={async (e) => { e.stopPropagation(); if (!confirm(`Delete conversation "${conv.title}"? This can't be undone.`)) return; try { await deleteConversation({ id: conv._id, token }); if (activeConvId === conv._id) setActiveConvId(null); } catch { toast.error("Failed"); } }}
                       className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors shrink-0">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>

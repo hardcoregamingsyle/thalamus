@@ -6,6 +6,7 @@ import {
   InputOTPSlot,
 } from "@/components/ui/input-otp";
 import { useAuth } from "@/hooks/use-auth";
+import { setSessionToken } from "@/lib/session";
 import { ArrowRight, Loader2, Mail, Lock } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
@@ -40,7 +41,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   useEffect(() => {
     const oauthToken = searchParams.get("token");
     if (oauthToken && /^[0-9a-f]{64}$/.test(oauthToken)) {
-      localStorage.setItem("agentai_session_token", oauthToken);
+      setSessionToken(oauthToken);
       window.location.replace(redirectAfterAuth || "/portal");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount for URL params

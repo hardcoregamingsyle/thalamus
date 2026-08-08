@@ -1,16 +1,10 @@
 import { api } from "@/convex/_generated/api";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { useState, useEffect } from "react";
-
-const SESSION_KEY = "agentai_session_token";
+import { SESSION_KEY, getSessionToken, setSessionToken, clearSessionToken } from "@/lib/session";
 
 export function useAuth() {
-  const [token, setToken] = useState<string | null>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem(SESSION_KEY);
-    }
-    return null;
-  });
+  const [token, setToken] = useState<string | null>(getSessionToken);
 
   // A token too short to be a session (64 hex) is junk — a truncated paste, a
   // stale format. The query has to skip it, which means `user` stays undefined
@@ -41,7 +35,7 @@ export function useAuth() {
         // Step 2: Verify OTP — pass referralCode if present in formData
         const referralCode = formData.get("referralCode") as string | null;
         const result = await verifyOtpAction({ email, code, ...(referralCode ? { referralCode } : {}) });
-        localStorage.setItem(SESSION_KEY, result.token);
+        setSessionToken(result.token);
         setToken(result.token);
         return result;
       }
@@ -57,7 +51,7 @@ export function useAuth() {
         // ignore
       }
     }
-    localStorage.removeItem(SESSION_KEY);
+    clearSessionToken();
     setToken(null);
   };
 

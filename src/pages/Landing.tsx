@@ -1,4 +1,4 @@
-import { motion, useScroll, useSpring } from "framer-motion";
+﻿import { motion, useScroll, useSpring } from "framer-motion";
 import { useNavigate } from "react-router";
 import { useAuth } from "@/hooks/use-auth";
 import { lazy, Suspense, useRef, useState } from "react";
@@ -59,7 +59,7 @@ const MODE_CARDS: Array<{
     tone: "text-emerald-300 border-emerald-300/25 bg-emerald-300/8",
     metric: "L3.5 agent",
     headline: "Ship real apps from one prompt",
-    desc: "Describe what you want and a team of AI agents plans, writes, tests, and reviews real code — files, commands, and a GitHub push, not just a snippet.",
+    desc: "Describe what you want and a team of AI agents plans, writes, tests, and reviews real code â€” files, commands, and a GitHub push, not just a snippet.",
     examples: ["Web apps", "APIs & tools", "Fix & ship code"],
   },
   {
@@ -246,10 +246,10 @@ function NavBar({
   onToggleTheme: () => void;
 }) {
   return (
-    <nav className="fixed left-0 right-0 top-0 z-50 border-b border-white/10 bg-background/75 backdrop-blur-2xl">
+    <nav className="fixed left-0 right-0 top-0 z-50 border-b border-foreground/10 bg-background/75 backdrop-blur-2xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-3">
-          <div className="h-8 w-8 overflow-hidden rounded-lg border border-white/15 bg-card shadow-sm">
+          <div className="h-8 w-8 overflow-hidden rounded-lg border border-foreground/15 bg-card shadow-sm">
             <img src="/thalamus-logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
           </div>
           <div>
@@ -259,11 +259,11 @@ function NavBar({
         </div>
 
         <div className="flex items-center gap-2">
-          <button onClick={onFeedback} className="hidden items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-[11px] font-medium text-muted-foreground transition-all hover:border-accent/40 hover:text-accent sm:flex">
+          <button onClick={onFeedback} className="hidden items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-2 text-[11px] font-medium text-muted-foreground transition-all hover:border-accent/40 hover:text-accent sm:flex">
             <Lightbulb className="h-3.5 w-3.5" />
             Feedback
           </button>
-          <button onClick={onToggleTheme} className="rounded-lg border border-white/10 p-2 text-muted-foreground transition-all hover:border-white/20 hover:text-foreground" title="Toggle theme">
+          <button onClick={onToggleTheme} className="rounded-lg border border-foreground/10 p-2 text-muted-foreground transition-all hover:border-foreground/20 hover:text-foreground" title="Toggle theme">
             {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
           <button onClick={onLaunch} className="flex items-center gap-1.5 rounded-lg bg-foreground px-4 py-2 text-xs font-bold text-background shadow-lg shadow-black/20 transition-all hover:bg-foreground/90">
@@ -279,9 +279,9 @@ function NavBar({
 function IntelligenceConsole({ onLaunch }: { onLaunch: () => void }) {
   return (
     <div className="pointer-events-auto mx-auto w-full max-w-5xl">
-      <div className="grid gap-3 border-y border-white/10 bg-background/65 px-3 py-3 backdrop-blur-xl md:grid-cols-[1.15fr_0.85fr] md:rounded-lg md:border">
-        <div className="rounded-lg border border-white/10 bg-black/30 p-3">
-          <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
+      <div className="grid gap-3 border-y border-foreground/10 bg-background/65 px-3 py-3 backdrop-blur-xl md:grid-cols-[1.15fr_0.85fr] md:rounded-lg md:border">
+        <div className="rounded-lg border border-foreground/10 bg-black/30 p-3">
+          <div className="mb-3 flex items-center justify-between border-b border-foreground/10 pb-2">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
               <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-foreground">How Thalamus Helps</span>
@@ -295,7 +295,7 @@ function IntelligenceConsole({ onLaunch }: { onLaunch: () => void }) {
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.12 * index }}
-                className="grid grid-cols-[88px_1fr] gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2"
+                className="grid grid-cols-[88px_1fr] gap-3 rounded-lg border border-foreground/8 bg-foreground/[0.03] px-3 py-2"
               >
                 <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">{line.agent}</span>
                 <span className="text-[11px] leading-relaxed text-muted-foreground">{line.text}</span>
@@ -305,7 +305,7 @@ function IntelligenceConsole({ onLaunch }: { onLaunch: () => void }) {
         </div>
 
         <div className="grid gap-3">
-          <div className="rounded-lg border border-white/10 bg-white/[0.035] p-4">
+          <div className="rounded-lg border border-foreground/10 bg-foreground/[0.035] p-4">
             <div className="mb-3 flex items-center gap-2">
               <Globe2 className="h-4 w-4 text-amber-300" />
               <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-foreground">What You Can Do</p>
@@ -335,7 +335,7 @@ function IntelligenceConsole({ onLaunch }: { onLaunch: () => void }) {
   );
 }
 
-// Always points to the latest release — no hardcoded version tag that goes stale.
+// Always points to the latest release â€” no hardcoded version tag that goes stale.
 const EXE_URL = "https://github.com/hardcoregamingsyle/thalamus/releases/latest/download/Thalamus.exe";
 
 function Hero({ onLaunch }: { onLaunch: () => void }) {
@@ -351,10 +351,10 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur-xl"
+            className="mb-8 inline-flex items-center gap-2 rounded-full border border-foreground/10 bg-foreground/[0.04] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur-xl"
           >
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-            L3.5 Agent · dynamic multi-agent pipeline · by Aphantic
+            L3.5 Agent Â· dynamic multi-agent pipeline Â· by Aphantic
           </motion.div>
 
           <motion.h1
@@ -376,7 +376,7 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             className="mx-auto mt-6 max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg"
           >
             Describe what you want once. A dispatcher sends in a team of up to nine AI agents that plan, code,
-            test, attack, and review it — real files, real commands, pushed to GitHub. And when you're done
+            test, attack, and review it â€” real files, real commands, pushed to GitHub. And when you're done
             building, there's a free board-aware study tutor in the same app.
           </motion.p>
 
@@ -403,7 +403,7 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
               <Download className="h-4 w-4" />
               Download for Windows
             </a>
-            <button onClick={() => document.getElementById("modes")?.scrollIntoView({ behavior: "smooth" })} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.035] px-6 py-3 text-sm font-bold text-foreground backdrop-blur-xl transition-all hover:border-white/20 hover:bg-white/[0.06]">
+            <button onClick={() => document.getElementById("modes")?.scrollIntoView({ behavior: "smooth" })} className="flex items-center gap-2 rounded-lg border border-foreground/10 bg-foreground/[0.035] px-6 py-3 text-sm font-bold text-foreground backdrop-blur-xl transition-all hover:border-foreground/20 hover:bg-foreground/[0.06]">
               See what it can do
               <Layers3 className="h-4 w-4" />
             </button>
@@ -427,7 +427,7 @@ function ModeGrid({ onSelect }: { onSelect: (mode: ModeId) => void }) {
   return (
     <section id="modes" className="px-4 py-18 sm:px-6">
       <div className="mx-auto max-w-7xl">
-        <div className="mb-8 flex flex-col justify-between gap-4 border-b border-white/10 pb-6 md:flex-row md:items-end">
+        <div className="mb-8 flex flex-col justify-between gap-4 border-b border-foreground/10 pb-6 md:flex-row md:items-end">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">Four ways to get help</p>
             <h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-normal text-foreground sm:text-5xl">The right kind of help for whatever you are doing.</h2>
@@ -446,7 +446,7 @@ function ModeGrid({ onSelect }: { onSelect: (mode: ModeId) => void }) {
               viewport={{ once: true }}
               transition={{ delay: index * 0.06 }}
               onClick={() => onSelect(mode.id)}
-              className={`group rounded-lg border p-5 text-left transition-all hover:-translate-y-0.5 hover:bg-white/[0.045] ${mode.tone}`}
+              className={`group rounded-lg border p-5 text-left transition-all hover:-translate-y-0.5 hover:bg-foreground/[0.045] ${mode.tone}`}
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-start gap-4">
@@ -482,7 +482,7 @@ function ModeGrid({ onSelect }: { onSelect: (mode: ModeId) => void }) {
 
 function CapabilityBand() {
   return (
-    <section className="border-y border-white/10 bg-white/[0.025] px-4 py-16 sm:px-6">
+    <section className="border-y border-foreground/10 bg-foreground/[0.025] px-4 py-16 sm:px-6">
       <div className="mx-auto grid max-w-7xl gap-3 md:grid-cols-4">
         {CAPABILITIES.map((item, index) => (
           <motion.div
@@ -491,7 +491,7 @@ function CapabilityBand() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: index * 0.05 }}
-            className="rounded-lg border border-white/10 bg-background/55 p-5"
+            className="rounded-lg border border-foreground/10 bg-background/55 p-5"
           >
             <item.icon className="h-5 w-5 text-primary" />
             <p className="mt-5 text-sm font-bold text-foreground">{item.label}</p>
@@ -507,7 +507,7 @@ function FinalCta({ onLaunch, onSelect }: { onLaunch: () => void; onSelect: (mod
   return (
     <section className="px-4 py-20 sm:px-6">
       <div className="mx-auto max-w-7xl">
-        <div className="grid gap-8 border-y border-white/10 py-12 md:grid-cols-[1fr_auto] md:items-center">
+        <div className="grid gap-8 border-y border-foreground/10 py-12 md:grid-cols-[1fr_auto] md:items-center">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">Start with anything</p>
             <h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-normal text-foreground sm:text-5xl">
@@ -525,7 +525,7 @@ function FinalCta({ onLaunch, onSelect }: { onLaunch: () => void; onSelect: (mod
 
         <div className="mt-8 grid gap-2 sm:grid-cols-4">
           {MODE_CARDS.map(mode => (
-            <button key={mode.id} onClick={() => onSelect(mode.id)} className={`flex items-center justify-between rounded-lg border px-3 py-3 text-xs font-bold transition-all hover:bg-white/[0.045] ${mode.tone}`}>
+            <button key={mode.id} onClick={() => onSelect(mode.id)} className={`flex items-center justify-between rounded-lg border px-3 py-3 text-xs font-bold transition-all hover:bg-foreground/[0.045] ${mode.tone}`}>
               <span>{mode.label}</span>
               <mode.icon className="h-4 w-4" />
             </button>
@@ -536,19 +536,19 @@ function FinalCta({ onLaunch, onSelect }: { onLaunch: () => void; onSelect: (mod
   );
 }
 
-// The build pipeline, told as a scroll story — each agent card slides in as
+// The build pipeline, told as a scroll story â€” each agent card slides in as
 // you reach it, so scrolling literally walks the pipeline.
 const PIPELINE_AGENTS = [
   { name: "Dispatcher", role: "Reads your task and picks the smallest crew that can nail it" },
   { name: "Researcher", role: "Pulls current docs and APIs before a line is written" },
   { name: "Analyser", role: "Turns the request into an architecture" },
   { name: "Planner", role: "Breaks it into atomic, checkable tasks" },
-  { name: "Coder", role: "Writes the complete implementation — real files, real commands" },
+  { name: "Coder", role: "Writes the complete implementation â€” real files, real commands" },
   { name: "Optimiser", role: "Performance and quality pass" },
   { name: "Organizer", role: "Structure, docs, readme" },
   { name: "Tester", role: "Writes and runs the tests" },
   { name: "Hacker", role: "Attacks the code before you ever see it" },
-  { name: "Critic", role: "Final gate — rejects weak work and sends it back" },
+  { name: "Critic", role: "Final gate â€” rejects weak work and sends it back" },
 ];
 
 function PipelineSection() {
@@ -562,15 +562,15 @@ function PipelineSection() {
           </h2>
           <p className="mt-4 text-sm leading-6 text-muted-foreground">
             Thalamus runs a dynamic multi-agent pipeline: a dispatcher sizes up your task and sends in only the
-            agents it needs — up to nine of them — to research, plan, write, test, attack, and review real code.
+            agents it needs â€” up to nine of them â€” to research, plan, write, test, attack, and review real code.
             A typo fix gets two agents. A full app gets the whole crew. Files get written, commands get executed,
             and finished projects can push straight to GitHub.
           </p>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            The big AI coding tools charge $20–200 a month for a single agent. Thalamus runs the whole team on
-            free daily credits — you pay only if you want more. <span className="text-foreground/80">L3.5 means it
+            The big AI coding tools charge $20â€“200 a month for a single agent. Thalamus runs the whole team on
+            free daily credits â€” you pay only if you want more. <span className="text-foreground/80">L3.5 means it
             plans and executes multi-step builds end to end, verifies its own work through the Tester and Critic,
-            and leaves you the final say — autonomy where it helps, control where it matters.</span>
+            and leaves you the final say â€” autonomy where it helps, control where it matters.</span>
           </p>
         </div>
 
@@ -599,24 +599,24 @@ function PipelineSection() {
   );
 }
 
-// Study mode — the section search engines and parents actually look for.
+// Study mode â€” the section search engines and parents actually look for.
 const STUDY_BOARDS = [
   "CBSE", "ICSE / ISC", "Maharashtra Board", "UP Board", "Tamil Nadu Board", "Karnataka Board",
-  "IB (MYP / DP)", "Cambridge IGCSE / A-Level", "GCSE", "AP", "NIOS", "JEE · NEET · UPSC",
+  "IB (MYP / DP)", "Cambridge IGCSE / A-Level", "GCSE", "AP", "NIOS", "JEE Â· NEET Â· UPSC",
 ];
 
 function StudySection() {
   return (
-    <section id="study" className="border-y border-white/10 bg-white/[0.02] px-4 py-20 sm:px-6">
+    <section id="study" className="border-y border-foreground/10 bg-foreground/[0.02] px-4 py-20 sm:px-6">
       <div className="mx-auto max-w-7xl">
         <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-indigo-300">AI study app · homework help</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-indigo-300">AI study app Â· homework help</p>
             <h2 className="mt-3 text-3xl font-semibold text-foreground sm:text-5xl">
-              AI study assistant for every board — grade 6 to PhD.
+              AI study assistant for every board â€” grade 6 to PhD.
             </h2>
             <p className="mt-4 text-sm leading-6 text-muted-foreground">
-              Thalamus is the AI study app that gives instant homework help and doubt solving — a tutor, not an
+              Thalamus is the AI study app that gives instant homework help and doubt solving â€” a tutor, not an
               answer machine. It knows your board's marking scheme (CBSE step-marking, ICSE depth, IB command
               terms, Cambridge mark schemes) and answers the way your examiner wants. Upload your NCERT notes,
               sample papers, and previous year questions (PYQs), and answers come grounded in <em>your</em> material,
@@ -624,8 +624,8 @@ function StudySection() {
             </p>
             <ul className="mt-6 space-y-2.5 text-sm text-muted-foreground">
               {[
-                "Mark-weighted exam answers — ask for a 5-mark answer and get exactly that",
-                "Explains, then makes you try — practice questions, feedback on your attempts",
+                "Mark-weighted exam answers â€” ask for a 5-mark answer and get exactly that",
+                "Explains, then makes you try â€” practice questions, feedback on your attempts",
                 "Mock tests, flashcards, and quizzes generated from what you studied",
                 "Answers in English, Hindi, Tamil, and other languages you prefer",
               ].map((line) => (
@@ -646,13 +646,13 @@ function StudySection() {
             <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-indigo-300">Boards & exams covered</p>
             <div className="mt-4 flex flex-wrap gap-2">
               {STUDY_BOARDS.map((board) => (
-                <span key={board} className="rounded-full border border-white/10 bg-background/60 px-3 py-1.5 text-[11px] font-medium text-foreground">
+                <span key={board} className="rounded-full border border-foreground/10 bg-background/60 px-3 py-1.5 text-[11px] font-medium text-foreground">
                   {board}
                 </span>
               ))}
             </div>
             <p className="mt-5 text-[11px] leading-5 text-muted-foreground">
-              Plus every other state board and university curriculum — study mode adapts its language, depth,
+              Plus every other state board and university curriculum â€” study mode adapts its language, depth,
               and answer format to the grade and board on your profile.
             </p>
           </motion.div>
@@ -662,7 +662,7 @@ function StudySection() {
   );
 }
 
-// Visible FAQ — kept word-for-word in sync with the FAQPage JSON-LD in index.html.
+// Visible FAQ â€” kept word-for-word in sync with the FAQPage JSON-LD in index.html.
 const FAQ_ITEMS = [
   {
     q: "What is Thalamus AI?",
@@ -670,7 +670,7 @@ const FAQ_ITEMS = [
   },
   {
     q: "Is Thalamus free to use?",
-    a: "Yes — every account gets free daily AgentBucks credits, refreshed every day. Partner schools get unlimited free study mode for their students.",
+    a: "Yes â€” every account gets free daily AgentBucks credits, refreshed every day. Partner schools get unlimited free study mode for their students.",
   },
   {
     q: "Which boards and grades does study mode support?",
@@ -678,7 +678,7 @@ const FAQ_ITEMS = [
   },
   {
     q: "Can Thalamus solve my homework and doubts?",
-    a: "Yes — Thalamus is an AI study app built for homework help and instant doubt solving. Ask any question, upload a photo or PDF of the problem, and get a step-by-step solution at your grade level with the marks flagged. It explains the method, then gives you a practice question so you actually learn it.",
+    a: "Yes â€” Thalamus is an AI study app built for homework help and instant doubt solving. Ask any question, upload a photo or PDF of the problem, and get a step-by-step solution at your grade level with the marks flagged. It explains the method, then gives you a practice question so you actually learn it.",
   },
   {
     q: "Does it use NCERT textbooks, sample papers, and previous year questions?",
@@ -686,15 +686,15 @@ const FAQ_ITEMS = [
   },
   {
     q: "How does Build mode create software?",
-    a: "A dispatcher reads your request and runs a dynamic pipeline of up to nine AI agents — researcher, planner, coder, tester, security attacker, and critic. They write real files, run real commands, and can push finished projects to GitHub.",
+    a: "A dispatcher reads your request and runs a dynamic pipeline of up to nine AI agents â€” researcher, planner, coder, tester, security attacker, and critic. They write real files, run real commands, and can push finished projects to GitHub.",
   },
   {
     q: "Is there a Windows desktop app?",
-    a: "Yes. Thalamus ships a native Windows app with the same chat, research, study, and build modes — and your conversations sync with the cloud, so desktop and web always match.",
+    a: "Yes. Thalamus ships a native Windows app with the same chat, research, study, and build modes â€” and your conversations sync with the cloud, so desktop and web always match.",
   },
   {
     q: "What is AgentOverflow?",
-    a: "AgentOverflow is Thalamus's knowledge base for AI agents — a Stack Overflow where agents share solved problems. Thalamus build agents search it automatically over MCP before solving anything from scratch.",
+    a: "AgentOverflow is Thalamus's knowledge base for AI agents â€” a Stack Overflow where agents share solved problems. Thalamus build agents search it automatically over MCP before solving anything from scratch.",
   },
 ];
 
@@ -712,7 +712,7 @@ function FaqSection() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: index * 0.04 }}
-              className="group rounded-lg border border-white/10 bg-white/[0.03] px-5 py-4"
+              className="group rounded-lg border border-foreground/10 bg-foreground/[0.03] px-5 py-4"
             >
               <summary className="cursor-pointer list-none text-sm font-semibold text-foreground marker:content-none">
                 <span className="flex items-center justify-between gap-4">
@@ -731,10 +731,10 @@ function FaqSection() {
 
 function Footer() {
   return (
-    <footer className="border-t border-white/10 px-4 py-8 sm:px-6">
+    <footer className="border-t border-foreground/10 px-4 py-8 sm:px-6">
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 sm:flex-row">
         <div className="flex items-center gap-3">
-          <div className="h-7 w-7 overflow-hidden rounded-lg border border-white/15 bg-card">
+          <div className="h-7 w-7 overflow-hidden rounded-lg border border-foreground/15 bg-card">
             <img src="/thalamus-logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
           </div>
           <span className="text-xs font-bold tracking-[0.22em] text-foreground">THALAMUS</span>
@@ -773,7 +773,7 @@ export default function Landing() {
 
   // The 3D backdrop only mounts where it can run well: desktop-sized screens,
   // no reduced-motion preference, WebGL available. Everyone else keeps the
-  // original gradient background — same content, zero jank. Computed once at
+  // original gradient background â€” same content, zero jank. Computed once at
   // mount (client-only Vite app, no SSR) so there's no first-paint flash.
   const [show3d] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -807,7 +807,7 @@ export default function Landing() {
   return (
     <div className="min-h-screen overflow-x-hidden bg-background font-sans text-foreground">
       {/* title / description / canonical for "/" live in index.html so crawlers
-          and social scrapers get them without executing JS — not duplicated here
+          and social scrapers get them without executing JS â€” not duplicated here
           (React 19 does not dedupe head tags, and a second copy is a split signal). */}
       <NavBar
         isAuthenticated={isAuthenticated}
@@ -822,7 +822,7 @@ export default function Landing() {
           <Suspense fallback={null}>
             <NeuralScene progress={sceneProgress} />
           </Suspense>
-          {/* Readability scrim — dims the particle field under the content,
+          {/* Readability scrim â€” dims the particle field under the content,
               deepening toward the text-heavy lower sections. */}
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(2,11,29,0.25)_0%,rgba(2,11,29,0.55)_35%,rgba(2,11,29,0.72)_100%)]" />
         </div>
