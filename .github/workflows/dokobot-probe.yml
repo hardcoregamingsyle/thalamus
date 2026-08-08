@@ -5,7 +5,7 @@ name: dokobot-probe
 # fires on push/PR. Not wired to the pipeline; safe to leave in the repo.
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 jobs:
   probe:
@@ -18,7 +18,7 @@ jobs:
       UA: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
     steps:
-      - name: Runner IP + geo (context for Google's IP-based response)
+      - name: "Runner IP and geo (context for Google IP-based response)"
         run: |
           echo "== Runner egress IP =="
           curl -sS https://api.ipify.org || true
@@ -27,7 +27,7 @@ jobs:
           curl -sS "https://ipinfo.io/json" || true
           echo
 
-      - name: Environment inventory
+      - name: "Environment inventory"
         run: |
           set -x
           node --version
@@ -37,39 +37,39 @@ jobs:
           which chromedriver || true
           which xvfb-run || true
 
-      - name: Install @dokobot/cli globally
+      - name: "Install @dokobot/cli globally"
         run: |
           npm i -g @dokobot/cli
           which dokobot
           dokobot --version
 
-      - name: Top-level help
+      - name: "Top-level help"
         run: dokobot --help
 
-      - name: `search` subcommand help (does --local exist?)
+      - name: "search subcommand help (does --local exist?)"
         run: dokobot search --help
 
-      - name: `read` subcommand help (--local documented here)
+      - name: "read subcommand help (--local documented here)"
         run: dokobot read --help
 
-      - name: `install-bridge` help
+      - name: "install-bridge help"
         run: dokobot install-bridge --help
 
-      - name: Attempt `dokobot search` with no API key (expected: hard fail)
+      - name: "Attempt dokobot search with no API key (expected: hard fail)"
         continue-on-error: true
         run: |
           set +e
           dokobot search "godot flight simulator" 2>&1 | tee search-noflag.log
           echo "exit=$?"
 
-      - name: Attempt `dokobot search --local` (expected: unknown option)
+      - name: "Attempt dokobot search --local (expected: unknown option)"
         continue-on-error: true
         run: |
           set +e
           dokobot search --local "godot flight simulator" 2>&1 | tee search-local.log
           echo "exit=$?"
 
-      - name: Attempt `dokobot install-bridge --browser chrome` (needs extension pairing)
+      - name: "Attempt dokobot install-bridge --browser chrome (needs extension pairing)"
         continue-on-error: true
         timeout-minutes: 3
         run: |
@@ -80,14 +80,14 @@ jobs:
           dokobot install-bridge --browser chrome 2>&1 | tee install-bridge.log
           echo "exit=$?"
 
-      - name: List bridges after install attempt
+      - name: "List bridges after install attempt"
         continue-on-error: true
         run: |
           set +e
           dokobot doko list 2>&1 | tee doko-list.log
           echo "exit=$?"
 
-      - name: Attempt `dokobot read --local` on a Google search URL (expected: bridge/extension not connected)
+      - name: "Attempt dokobot read --local on a Google search URL (expected: bridge/extension not connected)"
         continue-on-error: true
         timeout-minutes: 3
         run: |
@@ -97,7 +97,7 @@ jobs:
 
       # ------------- CONTROLS: what does Google itself do from Actions IPs -------------
 
-      - name: Control — curl Google search (measure IP-based blocking)
+      - name: "Control - curl Google search (measure IP-based blocking)"
         continue-on-error: true
         run: |
           set +e
@@ -112,18 +112,16 @@ jobs:
           echo "-- classifiers --"
           grep -c -iE "captcha|unusual traffic|verify.*human|/sorry/|consent\.google\.com|Before you continue" google-body.html || true
           grep -c -iE "search|<title>" google-body.html || true
-          # Count organic result links (a rough signal)
           grep -c -oE "href=\"/url\\?q=" google-body.html || true
 
-      - name: Control — curl Google /sorry/ redirect check (bot-wall probe)
+      - name: "Control - curl Google /sorry/ redirect check (bot-wall probe)"
         continue-on-error: true
         run: |
           set +e
-          # A dedicated redirect trace shows if Google routes us to /sorry/ (captcha wall)
           curl -sS -o /dev/null -A "$UA" -w "final_url=%{url_effective}\nhttp_code=%{http_code}\nnum_redirects=%{num_redirects}\n" -L \
             "https://www.google.com/search?q=godot+flight+simulator&hl=en&gl=us" | tee google-redirect.log
 
-      - name: Control — curl DuckDuckGo html
+      - name: "Control - curl DuckDuckGo html"
         continue-on-error: true
         run: |
           set +e
@@ -136,7 +134,7 @@ jobs:
           grep -c -iE "captcha|anomaly|blocked" ddg-body.html || true
           grep -c -oE "class=\"result__a\"" ddg-body.html || true
 
-      - name: Upload probe artefacts
+      - name: "Upload probe artefacts"
         if: always()
         uses: actions/upload-artifact@v4
         with:
