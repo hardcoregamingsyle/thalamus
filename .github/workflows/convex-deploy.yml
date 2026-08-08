@@ -44,7 +44,23 @@ jobs:
             echo "::error::CONVEX_DEPLOY_KEY secret is not set — add it in Settings → Secrets and variables → Actions."
             exit 1
           fi
-          npx convex deploy --yes
+          # Retry on Convex-platform flakes. A deploy has failed here on a bare
+          # 502 from api.convex.dev/api/deployment/url_for_key — nothing to do
+          # with the pushed code, but it left main deployed-behind until someone
+          # re-ran the workflow by hand. Three attempts with backoff; a genuine
+          # push rejection (bad module, schema conflict) fails all three and
+          # still surfaces, just a minute later.
+          for attempt in 1 2 3; do
+            if npx convex deploy --yes; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::convex deploy attempt $attempt failed — retrying in $((attempt * 20))s"
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "::error::convex deploy failed after 3 attempts."
+          exit 1
       # A successful deploy only proves the push landed — this proves the
       # deployed backend actually answers. Calls the public guest action (no
       # secrets involved; the deployment URL already ships inside the desktop
