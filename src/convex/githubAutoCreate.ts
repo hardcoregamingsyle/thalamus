@@ -1,11 +1,27 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated api types are self-referential here and exceed TS instantiation depth (TS2589); checked builds require this suppression. */
-// @ts-nocheck
 "use node";
 import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Octokit } from "@octokit/rest";
+import type { Id } from "./_generated/dataModel";
 import { generateObscureRepoName, generateObscureBranchName } from "./lib/obscureRepoGenerator";
+
+// Shape of the value ensureRepoForBranch's caller (createObscureRepo) returns.
+// Duplicated locally so the self-referential internal.githubAutoCreate.*
+// chain doesn't blow past TS instantiation depth.
+type CreatedRepo = {
+  success: boolean;
+  owner: string;
+  repoName: string;
+  branchName: string;
+  repoUrl: string;
+};
+
+type GithubConfigRow = {
+  owner?: string;
+  repo?: string;
+  branch: string;
+} | null;
 
 // Creates a public repo with a cryptographically random 256-char name.
 // Public = free tier. The random name is functionally undiscoverable.
@@ -21,7 +37,7 @@ export const createObscureRepo = internalAction({
     projectName: v.string(),
     githubToken: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<CreatedRepo> => {
     try {
       const octokit = new Octokit({ auth: args.githubToken });
       const { data: ghUser } = await octokit.users.getAuthenticated();
@@ -55,11 +71,19 @@ export const createObscureRepo = internalAction({
         branch: "main",
       });
 
+      // Octokit types the initial commit's sha as optional even though it is
+      // always present on a successful createOrUpdateFileContents — assert
+      // rather than silently pass undefined as the ref target, which GitHub
+      // would 422 with a cryptic message.
+      const initialSha = created.commit.sha;
+      if (!initialSha) {
+        throw new Error("GitHub returned no SHA for the initial commit");
+      }
       await octokit.git.createRef({
         owner: username,
         repo: repoName,
         ref: `refs/heads/${branchName}`,
-        sha: created.commit.sha,
+        sha: initialSha,
       });
 
       // Webhook so we can react to pushes from outside Thalamus. Non-fatal:
@@ -124,7 +148,7 @@ export const ensureRepoForBranch = internalAction({
     projectName: v.string(),
   },
   handler: async (ctx, args): Promise<{ owner: string; repo: string; branch: string } | null> => {
-    const existing = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+    const existing: GithubConfigRow = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
       projectId: args.projectId,
       branchId: args.branchId,
     });
@@ -135,7 +159,7 @@ export const ensureRepoForBranch = internalAction({
     // No connected GitHub account? Fall back to the platform's own token so
     // the repo (and the GitHub Actions VM it doubles as) still gets created —
     // just owned by the platform account instead of the user's.
-    const githubAccount = await ctx.runQuery(internal.githubHelpers.getGithubToken, { userId: args.userId });
+    const githubAccount: { accessToken?: string } | null = await ctx.runQuery(internal.githubHelpers.getGithubToken, { userId: args.userId });
     const githubToken = githubAccount?.accessToken || process.env.GITHUB_TOKEN;
     if (!githubToken) {
       const msg = "No GitHub account connected, and no platform GITHUB_TOKEN configured — "
@@ -145,7 +169,7 @@ export const ensureRepoForBranch = internalAction({
     }
 
     try {
-      const created = await ctx.runAction(internal.githubAutoCreate.createObscureRepo, {
+      const created: CreatedRepo = await ctx.runAction(internal.githubAutoCreate.createObscureRepo, {
         projectId: args.projectId,
         branchId: args.branchId,
         projectName: args.projectName,
@@ -173,18 +197,18 @@ export const retryRepoSetup = action({
     projectName: v.string(),
   },
   handler: async (ctx, args): Promise<{ owner: string; repo: string; branch: string }> => {
-    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
+    const userId: Id<"users"> | null = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
     if (!userId) throw new Error("Not authenticated");
 
-    const result = await ctx.runAction(internal.githubAutoCreate.ensureRepoForBranch, {
+    const result: { owner: string; repo: string; branch: string } | null = await ctx.runAction(internal.githubAutoCreate.ensureRepoForBranch, {
       userId,
       projectId: args.projectId,
       branchId: args.branchId,
       projectName: args.projectName,
     });
     if (!result) {
-      const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
-      throw new Error((branch as { repoSetupError?: string } | null)?.repoSetupError ?? "Failed to set up the repository");
+      const branch: { repoSetupError?: string } | null = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
+      throw new Error(branch?.repoSetupError ?? "Failed to set up the repository");
     }
     return result;
   },
@@ -199,13 +223,13 @@ export const retryRepoSetup = action({
 export const createReposForOrphanBranches = internalAction({
   args: {},
   handler: async (ctx): Promise<{ created: number; skipped: number; errors: string[] }> => {
-    const allBranches = await ctx.runQuery(internal.codeBranches.listAllBranchesInternal);
+    const allBranches: Array<{ branchId: string; projectId: string; name: string }> = await ctx.runQuery(internal.codeBranches.listAllBranchesInternal);
     const errors: string[] = [];
     let created = 0;
     let skipped = 0;
 
     for (const branch of allBranches) {
-      const existing = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+      const existing: GithubConfigRow = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: branch.projectId,
         branchId: branch.branchId,
       });
@@ -214,7 +238,7 @@ export const createReposForOrphanBranches = internalAction({
         continue;
       }
 
-      const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, {
+      const project: { userId: Id<"users">; name: string } | null = await ctx.runQuery(internal.codeProjects.getProjectInternal, {
         projectId: branch.projectId,
       });
       if (!project) {
@@ -223,7 +247,7 @@ export const createReposForOrphanBranches = internalAction({
       }
 
       try {
-        const result = await ctx.runAction(internal.githubAutoCreate.ensureRepoForBranch, {
+        const result: { owner: string; repo: string; branch: string } | null = await ctx.runAction(internal.githubAutoCreate.ensureRepoForBranch, {
           userId: project.userId,
           projectId: branch.projectId,
           branchId: branch.branchId,
@@ -232,8 +256,8 @@ export const createReposForOrphanBranches = internalAction({
         if (result) {
           created++;
         } else {
-          const refreshed = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: branch.branchId });
-          errors.push(`Branch ${branch.branchId} (${branch.name}): ${(refreshed as { repoSetupError?: string } | null)?.repoSetupError ?? "unknown error"}`);
+          const refreshed: { repoSetupError?: string } | null = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: branch.branchId });
+          errors.push(`Branch ${branch.branchId} (${branch.name}): ${refreshed?.repoSetupError ?? "unknown error"}`);
         }
       } catch (err) {
         errors.push(`Branch ${branch.branchId} (${branch.name}): ${err instanceof Error ? err.message : String(err)}`);
@@ -266,7 +290,7 @@ export const autoCreateRepoForBranch = internalAction({
     projectName: v.string(),
   },
   handler: async (ctx, args): Promise<void> => {
-    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
+    const userId: Id<"users"> | null = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
     if (!userId) throw new Error("Not authenticated");
 
     await ctx.runAction(internal.githubAutoCreate.ensureRepoForBranch, {

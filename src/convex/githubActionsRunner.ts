@@ -24,6 +24,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { Octokit } from "@octokit/rest";
 import crypto from "crypto";
+import type { Id } from "./_generated/dataModel";
 
 const VM_WORKFLOW_PATH = ".github/workflows/thalamus-vm.yml";
 const VM_WORKFLOW_FILE = "thalamus-vm.yml";
@@ -318,7 +319,7 @@ export const bootVmForBranch = internalAction({
 export const executeBranchCommandsViaActions = internalAction({
   args: { branchId: v.string() },
   handler: async (ctx, args): Promise<void> => {
-    const backlog = await ctx.runQuery(internal.codeCommands.getPendingCommands, { branchId: args.branchId }) as Array<{ _id: string }>;
+    const backlog = await ctx.runQuery(internal.codeCommands.getPendingCommands, { branchId: args.branchId }) as Array<{ _id: Id<"codeCommands"> }>;
     if (!backlog || backlog.length === 0) return;
 
     const status = await ctx.runAction(internal.githubActionsRunner.bootVmForBranch, { branchId: args.branchId });

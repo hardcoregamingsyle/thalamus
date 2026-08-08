@@ -1,21 +1,25 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated api types are self-referential here and exceed TS instantiation depth (TS2589); checked builds require this suppression. */
-// @ts-nocheck
 "use node";
-import { action, internalAction } from "./_generated/server";
+import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { Id } from "./_generated/dataModel";
+import { Id, Doc } from "./_generated/dataModel";
 import { Octokit } from "@octokit/rest";
 import crypto from "crypto";
+
+// Row shape used by every internal.githubSyncHelpers.getGithubConfigInternal
+// call in this file — kept as a narrow local alias so the self-referential
+// api-object chain doesn't hit TS2589.
+type GithubConfig = Doc<"githubConfigs">;
+type CodeFile = { filepath: string; content: string };
 
 // The user's own OAuth-connected token beats an explicitly-passed one (there's
 // no PAT-entry UI left to pass one anyway) beats the platform's fallback token.
 async function resolveGithubToken(
-  ctx: { runQuery: (ref: unknown, args: unknown) => Promise<unknown> },
+  ctx: ActionCtx,
   userId: Id<"users">,
   explicit?: string,
 ): Promise<string | undefined> {
-  const account = await ctx.runQuery(internal.githubHelpers.getGithubToken, { userId }) as { accessToken: string } | null;
+  const account: { accessToken?: string } | null = await ctx.runQuery(internal.githubHelpers.getGithubToken, { userId });
   return account?.accessToken || explicit || process.env.GITHUB_TOKEN;
 }
 
@@ -53,8 +57,16 @@ export const cloneRepository = action({
     projectName: v.optional(v.string()),
     githubToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+  handler: async (ctx, args): Promise<{
+    success: boolean;
+    filesCloned: number;
+    source: string;
+    sourceBranch: string;
+    repo: string | null;
+    branch: string | null;
+    pushWarning: string | null;
+  }> => {
+    const userId: Id<"users"> | null = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
     if (!userId) throw new Error("Not authenticated");
 
     try {
@@ -85,7 +97,7 @@ export const cloneRepository = action({
 
       // Block imports from repos/codebases that already burned through free tier
       const githubRepoId: number = repoData.id;
-      const repoFp = await ctx.runQuery(internal.antiEvasionDb.getRepoFingerprint, { githubRepoId });
+      const repoFp: { freeTierExhausted?: boolean } | null = await ctx.runQuery(internal.antiEvasionDb.getRepoFingerprint, { githubRepoId });
       if (repoFp?.freeTierExhausted) {
         throw new Error("This repository's free-tier credits are exhausted. Upgrade to continue.");
       }
@@ -95,7 +107,7 @@ export const cloneRepository = action({
         .map((item) => item.path as string);
 
       const structureHash = computeStructureHash(allPaths);
-      const structFp = await ctx.runQuery(internal.antiEvasionDb.getStructureFingerprint, { structureHash });
+      const structFp: { freeTierExhausted?: boolean } | null = await ctx.runQuery(internal.antiEvasionDb.getStructureFingerprint, { structureHash });
       if (structFp?.freeTierExhausted) {
         throw new Error("This codebase's free-tier credits are exhausted. Upgrade to continue.");
       }
@@ -143,7 +155,7 @@ export const cloneRepository = action({
       // Give the branch its own platform repo (idempotent) and record where
       // the code came from. Only after this does the branch have somewhere to
       // push to and somewhere for Actions to run.
-      const platform = await ctx.runAction(internal.githubAutoCreate.ensureRepoForBranch, {
+      const platform: { owner: string; repo: string; branch: string } | null = await ctx.runAction(internal.githubAutoCreate.ensureRepoForBranch, {
         userId,
         projectId: args.projectId,
         branchId: args.branchId,
@@ -162,7 +174,7 @@ export const cloneRepository = action({
       // pushWarning below is how the caller learns this step didn't land.
       let pushWarning: string | null = null;
       if (platform) {
-        const pushResult = await ctx.runAction(internal.githubSync.autoPushToGithub, {
+        const pushResult: { success: boolean; error?: string } = await ctx.runAction(internal.githubSync.autoPushToGithub, {
           branchId: args.branchId,
           commitMessage: `Import ${owner}/${repo}@${sourceBranch}`,
         });
@@ -196,19 +208,19 @@ export const pushToGithub = action({
     commitMessage: v.string(),
     githubToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
+  handler: async (ctx, args): Promise<{ success: boolean; commitSha: string; filesUpdated: number }> => {
+    const userId: Id<"users"> | null = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
     if (!userId) throw new Error("Not authenticated");
 
     try {
-      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+      const config: GithubConfig | null = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: args.projectId,
         branchId: args.branchId,
       });
 
       if (!config) throw new Error("No GitHub repository connected");
 
-      const files = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
+      const files: CodeFile[] = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
         branchId: args.branchId,
       });
 
@@ -249,7 +261,7 @@ const baseTreeSha = commitData.tree.sha;
             break;
           } catch (err: unknown) {
             lastErr = err;
-            const resp = (err as Record<string, unknown>)?.response as Record<string, unknown> | undefined;
+            const resp = (err as { response?: { status?: number; headers?: Record<string, string> } })?.response;
             if (resp?.status === 403) {
               const retryAfter = parseInt(String(resp?.headers?.["retry-after"] ?? "5"), 10);
               await new Promise((r) => setTimeout(r, Math.min(retryAfter * 1000, 15000)));
@@ -313,20 +325,20 @@ export const autoPushToGithub = internalAction({
   },
   handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
     try {
-      const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, {
+      const branch: { projectId: string } | null = await ctx.runQuery(internal.codeBranches.getBranchInternal, {
         branchId: args.branchId,
       });
 
       if (!branch) return { success: false, error: "Branch not found" };
 
-      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+      const config: GithubConfig | null = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: branch.projectId,
         branchId: args.branchId,
       });
 
       if (!config) return { success: true }; // No GitHub repo connected yet — nothing to push, not an error
 
-      const files = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
+      const files: CodeFile[] = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
         branchId: args.branchId,
       });
 
@@ -368,7 +380,7 @@ export const autoPushToGithub = internalAction({
             break;
           } catch (err: unknown) {
             lastErr = err;
-            const resp = (err as Record<string, unknown>)?.response as Record<string, unknown> | undefined;
+            const resp = (err as { response?: { status?: number; headers?: Record<string, string> } })?.response;
             if (resp?.status === 403) {
               const retryAfter = parseInt(String(resp?.headers?.["retry-after"] ?? "5"), 10);
               const waitMs = Math.min((retryAfter || 5) * 1000, 15000);
@@ -432,12 +444,12 @@ export const pullFromGithub = action({
     branchId: v.string(),
     githubToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
+  handler: async (ctx, args): Promise<{ success: boolean; filesPulled: number }> => {
+    const userId: Id<"users"> | null = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
     if (!userId) throw new Error("Not authenticated");
 
     try {
-      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+      const config: GithubConfig | null = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: args.projectId,
         branchId: args.branchId,
       });

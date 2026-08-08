@@ -1,9 +1,13 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated api types are self-referential here and exceed TS instantiation depth (TS2589); checked builds require this suppression. */
-// @ts-nocheck
 "use node";
 import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+
+// Shape of a code file returned by internal.codeBranches.getFilesInternal.
+// Duplicated as a local interface to break the self-referential api-type
+// inference chain (TS2589) — the query lives in another module but the
+// generated api object still routes through this module's types.
+type CodeFile = { filepath: string; content: string };
 
 // Deploy to Vercel
 export const deployToVercel = action({
@@ -14,20 +18,20 @@ export const deployToVercel = action({
     vercelToken: v.string(),
     projectName: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
+  handler: async (ctx, args): Promise<{ success: boolean; url: string; deploymentId: string; platform: "vercel" }> => {
+    const userId: string | null = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
     if (!userId) throw new Error("Not authenticated");
 
     try {
       // Get all files
-      const files = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
+      const files: CodeFile[] = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
         branchId: args.branchId,
       });
 
       // Create Vercel deployment
       const deploymentData = {
         name: args.projectName || `thalamus-${args.branchId.toLowerCase()}`,
-        files: files.map(f => ({
+        files: files.map((f: CodeFile) => ({
           file: f.filepath,
           data: f.content,
         })),
@@ -48,16 +52,16 @@ export const deployToVercel = action({
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json() as { error?: { message?: string } };
         throw new Error(error.error?.message || "Vercel deployment failed");
       }
 
-      const result = await response.json();
+      const result = await response.json() as { url?: string; name?: string; id?: string };
 
       return {
         success: true,
         url: result.url || `https://${result.name}.vercel.app`,
-        deploymentId: result.id,
+        deploymentId: result.id ?? "",
         platform: "vercel",
       };
     } catch (err) {
@@ -76,12 +80,12 @@ export const deployToNetlify = action({
     netlifyToken: v.string(),
     siteName: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
+  handler: async (ctx, args): Promise<{ success: boolean; url: string; deploymentId: string; platform: "netlify" }> => {
+    const userId: string | null = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
     if (!userId) throw new Error("Not authenticated");
 
     try {
-      const files = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
+      const files: CodeFile[] = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
         branchId: args.branchId,
       });
 
@@ -103,7 +107,7 @@ export const deployToNetlify = action({
           throw new Error("Failed to create Netlify site");
         }
 
-        const site = await siteResponse.json();
+        const site = await siteResponse.json() as { id: string };
         siteId = site.id;
       } else {
         siteId = args.siteName;
@@ -111,7 +115,7 @@ export const deployToNetlify = action({
 
       // Prepare files for Netlify (create zip or direct upload)
       const filesMap: Record<string, string> = {};
-      files.forEach(f => {
+      files.forEach((f: CodeFile) => {
         filesMap[f.filepath] = f.content;
       });
 
@@ -128,16 +132,16 @@ export const deployToNetlify = action({
       });
 
       if (!deployResponse.ok) {
-        const error = await deployResponse.json();
+        const error = await deployResponse.json() as { message?: string };
         throw new Error(error.message || "Netlify deployment failed");
       }
 
-      const deployment = await deployResponse.json();
+      const deployment = await deployResponse.json() as { url?: string; ssl_url?: string; id?: string };
 
       return {
         success: true,
-        url: deployment.url || deployment.ssl_url,
-        deploymentId: deployment.id,
+        url: deployment.url || deployment.ssl_url || "",
+        deploymentId: deployment.id ?? "",
         platform: "netlify",
       };
     } catch (err) {
@@ -157,12 +161,12 @@ export const deployToCloudflare = action({
     accountId: v.string(),
     projectName: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
+  handler: async (ctx, args): Promise<{ success: boolean; url: string; deploymentId: string; platform: "cloudflare" }> => {
+    const userId: string | null = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
     if (!userId) throw new Error("Not authenticated");
 
     try {
-      const files = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
+      const files: CodeFile[] = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
         branchId: args.branchId,
       });
 
@@ -200,7 +204,7 @@ export const deployToCloudflare = action({
 
       // Create deployment
       const formData = new FormData();
-      files.forEach(f => {
+      files.forEach((f: CodeFile) => {
         formData.append(f.filepath, new Blob([f.content], { type: "text/plain" }));
       });
 
@@ -216,16 +220,16 @@ export const deployToCloudflare = action({
       );
 
       if (!deployResponse.ok) {
-        const error = await deployResponse.json();
+        const error = await deployResponse.json() as { errors?: Array<{ message?: string }> };
         throw new Error(error.errors?.[0]?.message || "Cloudflare deployment failed");
       }
 
-      const deployment = await deployResponse.json();
+      const deployment = await deployResponse.json() as { result?: { url?: string; id?: string } };
 
       return {
         success: true,
         url: deployment.result?.url || `https://${cfProjectName}.pages.dev`,
-        deploymentId: deployment.result?.id,
+        deploymentId: deployment.result?.id ?? "",
         platform: "cloudflare",
       };
     } catch (err) {
@@ -242,8 +246,8 @@ export const generateDeployConfig = action({
     branchId: v.string(),
     platform: v.union(v.literal("vercel"), v.literal("netlify"), v.literal("cloudflare")),
   },
-  handler: async (ctx, args) => {
-    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
+  handler: async (ctx, args): Promise<{ success: boolean; filesCreated: string[] }> => {
+    const userId: string | null = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
     if (!userId) throw new Error("Not authenticated");
 
     const configs: Record<string, string> = {};

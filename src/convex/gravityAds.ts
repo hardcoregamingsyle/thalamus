@@ -1,8 +1,7 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated api types are self-referential here and exceed TS instantiation depth (TS2589); checked builds require this suppression. */
-// @ts-nocheck
 import { action, mutation, query, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import type { Doc } from "./_generated/dataModel";
 
 // ── Admin mutations ───────────────────────────────────────────────────────────
 
@@ -177,11 +176,11 @@ export const requestAd = action({
       country: v.optional(v.string()),
     })),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<Record<string, unknown> | Record<string, unknown>[] | null> => {
     // Every miss returns null so chat is never blocked — but each one logs
     // first. Silent nulls made "ads are off" impossible to tell apart from
     // "no fill", which cost a full debugging session once already.
-    const config = await ctx.runQuery(internal.gravityAds.getGravityAdsConfigInternal, {});
+    const config: Doc<"gravityAdsConfig"> | null = await ctx.runQuery(internal.gravityAds.getGravityAdsConfigInternal, {});
     if (!config) { console.warn("[ads] no config row — save one in /admin"); return null; }
     if (!config.isEnabled) { console.warn("[ads] master switch is off"); return null; }
     // Test mode never calls Gravity, so it does not need a key.

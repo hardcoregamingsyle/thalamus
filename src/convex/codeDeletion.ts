@@ -1,10 +1,14 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated api types are self-referential here and exceed TS instantiation depth (TS2589); checked builds require this suppression. */
-// @ts-nocheck
 "use node";
-import { action, internalAction } from "./_generated/server";
+import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Octokit } from "@octokit/rest";
+import type { Id } from "./_generated/dataModel";
+
+// Tables deleteBranchChildRows sweeps. Kept narrowed to the exact literals
+// deleteBranchRowsChunk accepts so the loop can't drift out of sync with the
+// mutation's args validator.
+type ChildTable = "codeMessages" | "codeFiles" | "codeCommands" | "codeApiKeyRequests";
 
 // Deep deletion for branches and projects, in an action instead of the old
 // single-mutation approach. Two reasons:
@@ -26,18 +30,18 @@ const ROW_CHUNK = 20;
 // string when it couldn't (bad/missing token scope, repo gone already, ...) —
 // never throws, so DB cleanup always runs.
 async function deleteGithubRepo(
-  ctx: Parameters<Parameters<typeof internalAction>[0]["handler"]>[0],
+  ctx: ActionCtx,
   owner: string | undefined,
   repo: string | undefined,
   configToken: string | undefined,
-  userId: string | undefined,
+  userId: Id<"users"> | undefined,
 ): Promise<string | null> {
   if (!owner || !repo) return null;
 
   let token = configToken;
   if (!token && userId) {
     try {
-      const account = await ctx.runQuery(internal.githubHelpers.getGithubToken, { userId });
+      const account: { accessToken?: string } | null = await ctx.runQuery(internal.githubHelpers.getGithubToken, { userId });
       token = account?.accessToken;
     } catch { /* fall through to env fallback */ }
   }
@@ -53,8 +57,9 @@ async function deleteGithubRepo(
   }
 }
 
-async function deleteBranchChildRows(ctx, branchId: string) {
-  for (const table of ["codeMessages", "codeFiles", "codeCommands", "codeApiKeyRequests"]) {
+async function deleteBranchChildRows(ctx: ActionCtx, branchId: string): Promise<void> {
+  const tables: ChildTable[] = ["codeMessages", "codeFiles", "codeCommands", "codeApiKeyRequests"];
+  for (const table of tables) {
     let deleted = ROW_CHUNK;
     while (deleted === ROW_CHUNK) {
       deleted = await ctx.runMutation(internal.codeBranches.deleteBranchRowsChunk, { branchId, table });
@@ -68,15 +73,21 @@ export const deleteBranchDeep = internalAction({
     projectId: v.string(),
     userId: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<void> => {
     // 1. Tear down the GitHub repo + its config row (best-effort).
     try {
-      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+      const config: {
+        owner?: string;
+        repo?: string;
+        githubToken?: string | null;
+      } | null = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: args.projectId,
         branchId: args.branchId,
       });
       if (config) {
-        const warning = await deleteGithubRepo(ctx, config.owner, config.repo, config.githubToken ?? undefined, args.userId);
+        // args.userId is a v.string() at the mutation boundary but always a
+        // real user id when passed — cast rather than widen the arg validator.
+        const warning = await deleteGithubRepo(ctx, config.owner, config.repo, config.githubToken ?? undefined, args.userId as Id<"users"> | undefined);
         if (warning) console.error(`[deleteBranchDeep] branch ${args.branchId}: ${warning}`);
         await ctx.runMutation(internal.githubSyncHelpers.deleteGithubConfigByBranch, { branchId: args.branchId });
       }
@@ -95,8 +106,8 @@ export const deleteProjectDeep = internalAction({
     projectId: v.string(),
     userId: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const branches = await ctx.runQuery(internal.codeBranches.listBranchesInternal, { projectId: args.projectId });
+  handler: async (ctx, args): Promise<void> => {
+    const branches: Array<{ branchId: string }> = await ctx.runQuery(internal.codeBranches.listBranchesInternal, { projectId: args.projectId });
     for (const br of branches) {
       try {
         await ctx.runAction(internal.codeDeletion.deleteBranchDeep, {
@@ -132,10 +143,10 @@ export const sweepOrphanedRepos = internalAction({
     let deletedBranches = 0;
     let deletedConfigs = 0;
 
-    const allBranches = await ctx.runQuery(internal.codeBranches.listAllBranchesInternal) ?? [];
+    const allBranches: Array<{ branchId: string; projectId: string }> = await ctx.runQuery(internal.codeBranches.listAllBranchesInternal) ?? [];
     const liveBranchIds = new Set<string>();
     for (const branch of allBranches) {
-      const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: branch.projectId }).catch(() => null);
+      const project: unknown = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: branch.projectId }).catch(() => null);
       if (project) {
         liveBranchIds.add(branch.branchId);
         continue;
@@ -152,10 +163,16 @@ export const sweepOrphanedRepos = internalAction({
       }
     }
 
-    const allConfigs = await ctx.runQuery(internal.githubSyncHelpers.listAllGithubConfigs) ?? [];
+    const allConfigs: Array<{
+      branchId: string;
+      projectId: string;
+      owner?: string;
+      repo?: string;
+      githubToken?: string | null;
+    }> = await ctx.runQuery(internal.githubSyncHelpers.listAllGithubConfigs) ?? [];
     for (const cfg of allConfigs) {
       const stillLive = liveBranchIds.has(cfg.branchId);
-      const projectStillThere = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: cfg.projectId }).catch(() => null);
+      const projectStillThere: unknown = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: cfg.projectId }).catch(() => null);
       if (stillLive && projectStillThere) continue;
 
       // The branch is gone (or its project is) but a config row lingers.

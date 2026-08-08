@@ -1,8 +1,18 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated api types are self-referential here and exceed TS instantiation depth (TS2589); checked builds require this suppression. */
-// @ts-nocheck
 import { httpAction, internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import type { Doc } from "./_generated/dataModel";
+
+type GithubConfig = Doc<"githubConfigs">;
+
+// Minimal shape of the GitHub push-webhook payload we actually read. Kept
+// local rather than pulled from @octokit/webhooks-types to avoid dragging a
+// large type surface into a file that only touches four fields.
+type PushWebhookPayload = {
+  repository?: { full_name?: string };
+  ref?: string;
+  commits?: unknown[];
+};
 
 // Webhook endpoint for GitHub push events
 export const handlePushWebhook = httpAction(async (ctx, request) => {
@@ -16,7 +26,7 @@ export const handlePushWebhook = httpAction(async (ctx, request) => {
       });
     }
 
-    const payload = await request.json();
+    const payload = await request.json() as PushWebhookPayload;
     const repoFullName = payload.repository?.full_name;
     const branch = payload.ref?.replace("refs/heads/", "");
 
@@ -28,7 +38,7 @@ export const handlePushWebhook = httpAction(async (ctx, request) => {
     }
 
     // Find all branches connected to this repo
-    const configs = await ctx.runQuery(internal.githubSyncHelpers.findConfigsByRepo, {
+    const configs: GithubConfig[] = await ctx.runQuery(internal.githubSyncHelpers.findConfigsByRepo, {
       repoFullName,
       branch,
     });
@@ -65,10 +75,10 @@ export const processPushInternal = internalAction({
     branchId: v.string(),
     commits: v.array(v.any()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<void> => {
     try {
       // Pull latest changes from GitHub
-      const config = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+      const config: GithubConfig | null = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: args.projectId,
         branchId: args.branchId,
       });

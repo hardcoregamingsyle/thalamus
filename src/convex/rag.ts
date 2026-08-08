@@ -1,10 +1,8 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated api types are self-referential here and exceed TS instantiation depth (TS2589); checked builds require this suppression. */
-// @ts-nocheck
 "use node";
 import { internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { Id } from "./_generated/dataModel";
+import { Id, Doc } from "./_generated/dataModel";
 
 // Embedding generation using Gemini text-embedding-004 (keys from env)
 let embKeyIdx = 0;
@@ -157,8 +155,8 @@ export const vectorizeResourceInternal = internalAction({
     resourceId: v.id("studyResources"),
   },
   handler: async (ctx, args): Promise<void> => {
-    const resources = await ctx.runQuery(internal.studyHelpers.getResourcesForUser, { userId: args.userId });
-    const resource = resources.find((r: { _id: Id<"studyResources">; title: string; content: string }) => r._id === args.resourceId);
+    const resources: Doc<"studyResources">[] = await ctx.runQuery(internal.studyHelpers.getResourcesForUser, { userId: args.userId });
+    const resource = resources.find((r: Doc<"studyResources">) => r._id === args.resourceId);
     if (!resource) return;
 
     await ctx.runMutation(internal.ragHelpers.deleteChunksForResource, { resourceId: args.resourceId });
@@ -184,7 +182,7 @@ export const vectorizeResourceInternal = internalAction({
     for (const node of nodes) {
       try {
         const embedding = await generateEmbedding(`${node.label}: ${node.description}`);
-        const nodeId = await ctx.runMutation(internal.ragHelpers.insertGraphNode, {
+        const nodeId: Id<"graphNodes"> = await ctx.runMutation(internal.ragHelpers.insertGraphNode, {
           userId: args.userId,
           resourceId: args.resourceId,
           label: node.label,
@@ -192,7 +190,7 @@ export const vectorizeResourceInternal = internalAction({
           description: node.description,
           embedding,
         });
-        nodeIdMap.set(node.label.toLowerCase(), nodeId as Id<"graphNodes">);
+        nodeIdMap.set(node.label.toLowerCase(), nodeId);
       } catch { /* skip */ }
     }
 
@@ -233,7 +231,7 @@ async function buildChunkRagContext(
 
   const convexTexts: string[] = [];
   for (const r of chunkResults) {
-    const chunk = await ctx.runQuery(internal.ragHelpers.getChunkById, { chunkId: r._id as Id<"ragChunks"> });
+    const chunk: Doc<"ragChunks"> | null = await ctx.runQuery(internal.ragHelpers.getChunkById, { chunkId: r._id as Id<"ragChunks"> });
     if (chunk?.text) convexTexts.push(chunk.text);
   }
 
@@ -264,16 +262,16 @@ async function buildGraphRagContextSection(
 
   const graphParts: string[] = [];
   for (const r of nodeResults) {
-    const node = await ctx.runQuery(internal.ragHelpers.getNodeById, { nodeId: r._id as Id<"graphNodes"> });
+    const node: Doc<"graphNodes"> | null = await ctx.runQuery(internal.ragHelpers.getNodeById, { nodeId: r._id as Id<"graphNodes"> });
     if (!node) continue;
-    const { outgoing, incoming } = await ctx.runQuery(internal.ragHelpers.getEdgesForNode, { nodeId: r._id as Id<"graphNodes"> });
+    const { outgoing, incoming }: { outgoing: Doc<"graphEdges">[]; incoming: Doc<"graphEdges">[] } = await ctx.runQuery(internal.ragHelpers.getEdgesForNode, { nodeId: r._id as Id<"graphNodes"> });
     const connections: string[] = [];
     for (const edge of outgoing.slice(0, 3)) {
-      const target = await ctx.runQuery(internal.ragHelpers.getNodeById, { nodeId: edge.targetNodeId });
+      const target: Doc<"graphNodes"> | null = await ctx.runQuery(internal.ragHelpers.getNodeById, { nodeId: edge.targetNodeId });
       if (target) connections.push(`→ ${target.label} (${edge.relation})`);
     }
     for (const edge of incoming.slice(0, 3)) {
-      const source = await ctx.runQuery(internal.ragHelpers.getNodeById, { nodeId: edge.sourceNodeId });
+      const source: Doc<"graphNodes"> | null = await ctx.runQuery(internal.ragHelpers.getNodeById, { nodeId: edge.sourceNodeId });
       if (source) connections.push(`← ${source.label} (${edge.relation})`);
     }
     graphParts.push(
