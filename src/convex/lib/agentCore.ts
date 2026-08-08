@@ -107,85 +107,105 @@ export async function callModel(
     }
   }
 
-  if (ctx) {
-    // Modal first when an admin has registered an endpoint. Which endpoint is
-    // decided by data (the isPrimary row comes back first), not by this code —
-    // so swapping the primary model is a click in /admin, not a deploy. Falls
-    // through to Zen → DeadlySignal → ModelScope → OVHcloud → Ollama when
-    // nothing is registered or every endpoint errors.
-    try {
-      const result = await callModal(ctx, prompt, systemPrompt, 8192, 0.7, undefined, deadline);
-      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modal:${result.model}` };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes("MODAL_NOT_CONFIGURED")) {
-        console.warn("Modal call failed, falling back to Zen:", msg);
+  // One full pass over every seat. Returns a result, or throws the LAST
+  // seat's error after logging each miss.
+  const runProviderChain = async (): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: string }> => {
+    if (ctx) {
+      // Modal first when an admin has registered an endpoint. Which endpoint is
+      // decided by data (the isPrimary row comes back first), not by this code —
+      // so swapping the primary model is a click in /admin, not a deploy. Falls
+      // through to Zen → DeadlySignal → ModelScope → OVHcloud → Ollama when
+      // nothing is registered or every endpoint errors.
+      try {
+        const result = await callModal(ctx, prompt, systemPrompt, 8192, 0.7, undefined, deadline);
+        return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modal:${result.model}` };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes("MODAL_NOT_CONFIGURED")) {
+          console.warn("Modal call failed, falling back to Zen:", msg);
+        }
       }
     }
-  }
 
-  // OpenCode Zen — free anonymous tier, no API key needed. Primary fallback
-  // after Modal: DeepSeek V4 Flash free is a frontier coding seat.
-  const zenModel = assignedModel && findZenModel(assignedModel)
-    ? assignedModel
-    : (taskType === "dispatcher" ? ZEN_DISPATCHER_MODEL : ZEN_DEFAULT_MODEL);
-  try {
-    const result = await callZen(prompt, systemPrompt, zenModel, 8192, undefined, deadline);
-    return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `zen:${result.model}` };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`Zen call failed, falling back to DeadlySignal:`, msg);
-  }
+    // OpenCode Zen — free anonymous tier, no API key needed. Primary fallback
+    // after Modal: DeepSeek V4 Flash free is a frontier coding seat.
+    const zenModel = assignedModel && findZenModel(assignedModel)
+      ? assignedModel
+      : (taskType === "dispatcher" ? ZEN_DISPATCHER_MODEL : ZEN_DEFAULT_MODEL);
+    try {
+      const result = await callZen(prompt, systemPrompt, zenModel, 8192, undefined, deadline);
+      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `zen:${result.model}` };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`Zen call failed, falling back to DeadlySignal:`, msg);
+    }
 
-  // DeadlySignal — keyed New API gateway (DEADLYSIGNALS_API_KEY env var).
-  // Second fallback after Zen: serves frontier models (kimi-k2.5, gpt-5.x,
-  // glm-5.2) when Zen is down or too slow.
-  const deadlyModel = assignedModel && findDeadlySignalsModel(assignedModel)
-    ? assignedModel
-    : (taskType === "dispatcher" ? DEADLYSIGNALS_DISPATCHER_MODEL : DEADLYSIGNALS_DEFAULT_MODEL);
-  try {
-    const result = await callDeadlySignals(prompt, systemPrompt, deadlyModel, 8192, undefined, deadline);
-    return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `deadlysignals:${result.model}` };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`DeadlySignal call failed, falling back to ModelScope:`, msg);
-  }
+    // DeadlySignal — keyed New API gateway (DEADLYSIGNALS_API_KEY env var).
+    // Second fallback after Zen: serves frontier models (kimi-k2.5, gpt-5.x,
+    // glm-5.2) when Zen is down or too slow.
+    const deadlyModel = assignedModel && findDeadlySignalsModel(assignedModel)
+      ? assignedModel
+      : (taskType === "dispatcher" ? DEADLYSIGNALS_DISPATCHER_MODEL : DEADLYSIGNALS_DEFAULT_MODEL);
+    try {
+      const result = await callDeadlySignals(prompt, systemPrompt, deadlyModel, 8192, undefined, deadline);
+      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `deadlysignals:${result.model}` };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`DeadlySignal call failed, falling back to ModelScope:`, msg);
+    }
 
-  // ModelScope — Alibaba's official free API-Inference tier (MODELSCOPE_API_KEY
-  // env var, .ai host). Third fallback when Zen and Deadly are down: serves
-  // DeepSeek-V4-Pro — the frontier seat every other provider in the chain fails.
-  const scopeModel = assignedModel && findModelScopeModel(assignedModel)
-    ? assignedModel
-    : (taskType === "dispatcher" ? MODELSCOPE_DISPATCHER_MODEL : MODELSCOPE_DEFAULT_MODEL);
-  try {
-    const result = await callModelScope(prompt, systemPrompt, scopeModel, 8192, undefined, deadline);
-    return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modelscope:${result.model}` };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`ModelScope call failed, falling back to OVHcloud:`, msg);
-  }
+    // ModelScope — Alibaba's official free API-Inference tier (MODELSCOPE_API_KEY
+    // env var, .ai host). Third fallback when Zen and Deadly are down: serves
+    // DeepSeek-V4-Pro — the frontier seat every other provider in the chain fails.
+    const scopeModel = assignedModel && findModelScopeModel(assignedModel)
+      ? assignedModel
+      : (taskType === "dispatcher" ? MODELSCOPE_DISPATCHER_MODEL : MODELSCOPE_DEFAULT_MODEL);
+    try {
+      const result = await callModelScope(prompt, systemPrompt, scopeModel, 8192, undefined, deadline);
+      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modelscope:${result.model}` };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`ModelScope call failed, falling back to OVHcloud:`, msg);
+    }
 
-  // OVHcloud — free anonymous tier, no API key needed, 2 RPM.
-  // Catches requests when Zen is down before falling to Ollama.
-  const ovhModel = mapTaskToOvhModel(taskType);
-  try {
-    const result = await callOvhcloud(prompt, systemPrompt, ovhModel, 8192, ctx?.runQuery, deadline);
-    return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `ovhcloud:${result.model}` };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`OVHcloud call failed, falling back to Ollama:`, msg);
-  }
+    // OVHcloud — free anonymous tier, no API key needed, 2 RPM.
+    // Catches requests when Zen is down before falling to Ollama.
+    const ovhModel = mapTaskToOvhModel(taskType);
+    try {
+      const result = await callOvhcloud(prompt, systemPrompt, ovhModel, 8192, ctx?.runQuery, deadline);
+      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `ovhcloud:${result.model}` };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`OVHcloud call failed, falling back to Ollama:`, msg);
+    }
 
-  const ollamaModel = mapModelIdToOllama(modelId);
-  try {
+    const ollamaModel = mapModelIdToOllama(modelId);
     const result = await callSiliconFlow(prompt, systemPrompt, ollamaModel, 16384, undefined, ctx?.runQuery, deadline);
     return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `ollama:${result.model}` };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+  };
+
+  // The free seats rate-limit TOGETHER under burst traffic (Zen 429s on shared
+  // egress, ModelScope daily/per-model quotas, OVHcloud's 2 RPM) — which used
+  // to surface as "no provider configured" after a few quick messages even
+  // though every provider was fine a minute earlier. One backoff'd second pass
+  // rides out the burst when the chain budget allows it.
+  const CHAIN_RETRY_DELAY_MS = 25_000;
+  try {
+    return await runProviderChain();
+  } catch (firstErr) {
+    const budgetLeft = deadline - Date.now();
+    if (budgetLeft > CHAIN_RETRY_DELAY_MS + 60_000) {
+      console.warn(`Every provider seat missed; retrying the chain once in ${CHAIN_RETRY_DELAY_MS / 1000}s`);
+      await new Promise((r) => setTimeout(r, CHAIN_RETRY_DELAY_MS));
+      try {
+        return await runProviderChain();
+      } catch { /* fall through to the error below with the ORIGINAL failure */ }
+    }
+    const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
     if (msg.includes("not configured")) {
       throw new Error(`No AI provider configured — add Modal or Ollama keys via /admin, then a Zen/DeadlySignal/ModelScope/OVHcloud call can serve.`);
     }
-    throw err;
+    throw new Error(`All AI provider seats failed (likely rate-limited under burst — retried once). Last error: ${msg.slice(0, 300)}`);
   }
 }
 
