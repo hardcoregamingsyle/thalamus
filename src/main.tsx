@@ -1,9 +1,10 @@
 import { Toaster } from "@/components/ui/sonner";
 import { InstrumentationProvider } from "@/instrumentation.tsx";
+import { ThemeProvider } from "@/hooks/use-theme";
 import { ConvexProvider, ConvexReactClient } from "convex/react";
-import { StrictMode, Component, useEffect, lazy, Suspense, type ReactNode } from "react";
+import { StrictMode, Component, lazy, Suspense, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router";
+import { BrowserRouter, Route, Routes } from "react-router";
 import { DauTracker } from "@/components/DauTracker";
 import { GravityPixel } from "@/components/GravityPixel";
 import "./index.css";
@@ -91,30 +92,6 @@ function ConfigError() {
   );
 }
 
-// eslint-disable-next-line react-refresh/only-export-components -- app entry point; HMR component boundaries don't apply here
-function RouteSyncer() {
-  const location = useLocation();
-  useEffect(() => {
-    window.parent.postMessage(
-      { type: "iframe-route-change", path: location.pathname },
-      "*",
-    );
-  }, [location.pathname]);
-
-  useEffect(() => {
-    function handleMessage(event: MessageEvent) {
-      if (event.data?.type === "navigate") {
-        if (event.data.direction === "back") window.history.back();
-        if (event.data.direction === "forward") window.history.forward();
-      }
-    }
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, []);
-
-  return null;
-}
-
 createRoot(document.getElementById("root")!).render(
   !convex ? <ConfigError /> :
   <StrictMode>
@@ -125,8 +102,9 @@ createRoot(document.getElementById("root")!).render(
           with it and every page threw "Could not find Convex client". It is
           explicit now, and no longer depends on an auth system we do not use. */}
       <ConvexProvider client={convex}>
+        {/* Single source of truth for light/dark — see hooks/use-theme.tsx. */}
+        <ThemeProvider>
         <BrowserRouter>
-          <RouteSyncer />
           <DauTracker />
           {/* Gravity measurement pixel — loads only when an admin sets a Pixel ID */}
           <GravityPixel />
@@ -164,6 +142,7 @@ createRoot(document.getElementById("root")!).render(
           </RouteErrorBoundary>
         </BrowserRouter>
         <Toaster />
+        </ThemeProvider>
       </ConvexProvider>
     </InstrumentationProvider>
   </StrictMode>,

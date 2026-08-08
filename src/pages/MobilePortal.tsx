@@ -392,10 +392,8 @@ function MobileChatView({
         {(thinkingContent || isThinking) && (
           <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-sm rounded-xl">
             <ThinkingPanel
-              title={`${modeInfo.label} thinking`}
               content={thinkingContent}
               active={isThinking && streamingContent === null}
-              accentClassName={`${modeInfo.bg} ${modeInfo.color} border-border`}
             />
           </div>
         )}

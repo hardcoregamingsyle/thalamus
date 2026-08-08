@@ -92,8 +92,6 @@
   --sidebar-accent-foreground: oklch(0.82 0 0);
   --sidebar-border: oklch(0.22 0 0);
   --sidebar-ring: oklch(0.62 0.20 250);
-
-  --scanline-opacity: 0;
 }
 
 /* ── LIGHT THEME ──────────────────────────────────────────────────────────── */
@@ -131,8 +129,6 @@
   --sidebar-accent-foreground: oklch(0.25 0.015 240);
   --sidebar-border: oklch(0.88 0.008 240);
   --sidebar-ring: oklch(0.52 0.22 250);
-
-  --scanline-opacity: 0;
 }
 
 @layer base {
@@ -165,76 +161,9 @@
   }
 }
 
-/* No scanline overlay */
-body::after {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 0, 0, var(--scanline-opacity)) 2px,
-    rgba(0, 0, 0, var(--scanline-opacity)) 4px
-  );
-  pointer-events: none;
-  z-index: 9999;
-}
-
-/* Terminal cursor blink */
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-.terminal-cursor::after {
-  content: '█';
-  animation: blink 1s step-end infinite;
-  color: var(--color-primary);
-}
-
-.amd-glow { text-shadow: 0 0 20px oklch(0.62 0.20 250 / 0.5); }
-.amd-glow-orange { text-shadow: 0 0 12px oklch(0.72 0.16 65 / 0.5); }
+/* Subtle glow used by the terminal-styled header on /sync. */
 .terminal-glow { text-shadow: 0 0 12px oklch(0.62 0.20 250 / 0.4); }
 .light .terminal-glow { text-shadow: 0 0 10px oklch(0.52 0.22 250 / 0.3); }
-.terminal-glow-amber { text-shadow: 0 0 8px oklch(0.72 0.16 65 / 0.5); }
-
-@keyframes neon-pulse {
-  0%, 100% { box-shadow: 0 0 5px oklch(0.62 0.20 250 / 0.2), 0 0 10px oklch(0.62 0.20 250 / 0.08); }
-  50% { box-shadow: 0 0 12px oklch(0.62 0.20 250 / 0.5), 0 0 24px oklch(0.62 0.20 250 / 0.2), 0 0 48px oklch(0.62 0.20 250 / 0.08); }
-}
-.neon-pulse { animation: neon-pulse 2.5s ease-in-out infinite; }
-
-@keyframes glitch {
-  0%, 100% { transform: translate(0); }
-  20% { transform: translate(-2px, 1px); }
-  40% { transform: translate(2px, -1px); }
-  60% { transform: translate(-1px, 2px); }
-  80% { transform: translate(1px, -2px); }
-}
-.glitch:hover { animation: glitch 0.3s ease-in-out; }
-
-@keyframes shimmer {
-  0% { background-position: -200% center; }
-  100% { background-position: 200% center; }
-}
-.shimmer {
-  background: linear-gradient(90deg, transparent 0%, oklch(0.62 0.20 250 / 0.08) 50%, transparent 100%);
-  background-size: 200% auto;
-  animation: shimmer 3s linear infinite;
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-4px); }
-}
-.float { animation: float 3s ease-in-out infinite; }
-
-.agent-active { animation: neon-pulse 1.5s ease-in-out infinite; }
-.amd-border { border-image: linear-gradient(135deg, oklch(0.62 0.20 250), oklch(0.72 0.16 65)) 1; }
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -288,16 +217,6 @@ body::after {
 .prose-html audio { width: 100%; margin: 0.5em 0; border-radius: 8px; accent-color: oklch(0.62 0.20 250); }
 .prose-html video { width: 100%; max-width: 100%; border-radius: 8px; margin: 0.5em 0; background: #000; }
 .prose-html img { max-width: 100%; border-radius: 8px; margin: 0.5em 0; display: block; }
-.prose-html .file-download {
-  display: flex; align-items: center; gap: 0.5em;
-  padding: 0.6em 1em;
-  background: oklch(0.14 0.010 240);
-  border: 1px solid oklch(0.22 0.012 240);
-  border-radius: 8px; margin: 0.5em 0;
-  color: oklch(0.65 0.18 250);
-  text-decoration: none; font-size: 0.85em; cursor: pointer; transition: background 0.2s;
-}
-.prose-html .file-download:hover { background: oklch(0.18 0.012 240); }
 
 /* Math / equation rendering */
 .math-frac {

@@ -375,12 +375,7 @@ function GuestPortal() {
       <div className="flex-1 overflow-auto min-h-0 px-4 py-4 max-w-4xl mx-auto w-full">
         {(thinkingContent || isThinking) && (
           <div className="mb-3 sticky top-0 z-10 bg-background/90 backdrop-blur-sm rounded-xl">
-            <ThinkingPanel
-              title={`${currentMode.label} thinking`}
-              content={thinkingContent}
-              active={isThinking}
-              accentClassName={`${currentMode.accent} ${currentMode.color}`}
-            />
+            <ThinkingPanel content={thinkingContent} active={isThinking} />
           </div>
         )}
         {session.messages.length === 0 ? (
@@ -1800,10 +1795,8 @@ function PortalDesktop() {
                   {(thinkingContent || isThinking) && (
                     <div className="sticky top-2 z-10">
                       <ThinkingPanel
-                        title={`${currentMode.label} thinking`}
                         content={thinkingContent}
                         active={isThinking && streamingContent === null}
-                        accentClassName={`${currentMode.accent} ${currentMode.color}`}
                       />
                     </div>
                   )}

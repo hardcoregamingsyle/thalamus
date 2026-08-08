@@ -154,7 +154,6 @@ export default function CreditModal({ open, onClose, totalAB, dailyAB, purchased
   const navigate = useNavigate();
   const [promoCode, setPromoCode] = useState("");
   const [showBuyModal, setShowBuyModal] = useState(false);
-  const [, setSelectedPack] = useState<typeof CREDIT_PACKS[0] | null>(null);
   const [isApplyingPromo, setIsApplyingPromo] = useState(false);
   const applyPromoMutation = useMutation(api.customAuthHelpers.applyPromoCode);
 
@@ -247,7 +246,7 @@ export default function CreditModal({ open, onClose, totalAB, dailyAB, purchased
                     {CREDIT_PACKS.map(pack => (
                       <button
                         key={pack.name}
-                        onClick={() => { setSelectedPack(pack); setShowBuyModal(true); }}
+                        onClick={() => setShowBuyModal(true)}
                         className={`relative text-left p-3 rounded-xl border transition-all hover:border-primary/50 hover:bg-primary/5 ${
                           pack.popular ? "border-primary/40 bg-primary/5" : "border-border bg-card"
                         }`}

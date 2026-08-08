@@ -3,10 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, Sparkles } from "lucide-react";
 
 interface ThinkingPanelProps {
-  title?: string;
   content: string;
   active?: boolean;
-  accentClassName?: string;
 }
 
 export default function ThinkingPanel({
