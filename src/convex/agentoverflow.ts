@@ -185,30 +185,51 @@ export function normalizeTags(tags: string[]): string[] {
 // Fetch against the VM corpus API. Throws ERR_UNCONFIGURED until the operator
 // sets AO_VM_URL + AO_INTERNAL_SECRET in the Convex dashboard.
 //
-// Hard 15s timeout: a slow or hung VM (normal during bulk loads) must fail
-// fast into the caller's refund path instead of pinning the action open —
-// callers charge before this fetch, so "hangs forever" means "charged and
-// nothing came back".
+// Hard 15s timeout per attempt: a slow or hung VM (normal during bulk loads)
+// must fail fast into the caller's refund path instead of pinning the action
+// open — callers charge before this fetch, so "hangs forever" means "charged
+// and nothing came back".
+//
+// One retry on NETWORK failure (timeout/connection reset) only — the corpus
+// VM is a spot instance, and a single blip used to surface as
+// backend_unavailable to the calling agent mid-pipeline. An HTTP response of
+// any status is returned as-is: 4xx/5xx are the caller's business, and a
+// second identical request won't change them.
 const VM_FETCH_TIMEOUT_MS = 15_000;
+const VM_FETCH_RETRY_DELAY_MS = 2_000;
 
 export async function vmFetch(path: string, body?: unknown, method = "POST"): Promise<Response> {
   const base = process.env.AO_VM_URL;
   const secret = process.env.AO_INTERNAL_SECRET;
   if (!base || !secret) throw new Error(ERR_UNCONFIGURED);
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), VM_FETCH_TIMEOUT_MS);
+
+  const attempt = async (): Promise<Response> => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), VM_FETCH_TIMEOUT_MS);
+    try {
+      return await fetch(`${base.replace(/\/$/, "")}${path}`, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          "X-AO-Internal-Secret": secret,
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
   try {
-    return await fetch(`${base.replace(/\/$/, "")}${path}`, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        "X-AO-Internal-Secret": secret,
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: ctrl.signal,
-    });
-  } finally {
-    clearTimeout(timer);
+    return await attempt();
+  } catch (first) {
+    await new Promise((r) => setTimeout(r, VM_FETCH_RETRY_DELAY_MS));
+    try {
+      return await attempt();
+    } catch {
+      throw first; // report the original failure, not the retry's
+    }
   }
 }
 

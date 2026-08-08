@@ -237,13 +237,19 @@ const DEEP_PAGE_CHAR_BUDGET = 2500;
 
 interface SearchProviderResult {
   items: DokobotSearchItem[];
-  provider: "dokobot" | "google" | "none";
+  provider: "dokobot" | "google" | "ddg" | "none";
 }
 
 /**
- * Provider layer for the raw SERP call. Dokobot first when a key is present,
- * Google Custom Search second (`GOOGLE_API_KEY` + `GOOGLE_CX`). Returns an
- * empty item list rather than throwing when nothing is configured.
+ * Provider layer for the raw SERP call, in fallback order:
+ *   1. Dokobot (when `DOKOBOT_API_KEY` is set) — best quality, deep-read capable.
+ *   2. Google Custom Search (`GOOGLE_API_KEY` + `GOOGLE_CX`) — keyed, reliable.
+ *   3. DuckDuckGo HTML — keyless last resort so a deployment with NO search
+ *      keys still researches with real results instead of a dead research team
+ *      (which is exactly how a pipeline run failed on 2026-08-08). Rate limits
+ *      and markup drift make it best-effort only; the keyed seats above should
+ *      be configured for production quality.
+ * Returns an empty item list rather than throwing when everything misses.
  */
 async function fetchSearchProviderResults(query: string, num: number): Promise<SearchProviderResult> {
   if (hasDokobotKey()) {
@@ -274,7 +280,67 @@ async function fetchSearchProviderResults(query: string, num: number): Promise<S
     } catch { /* fall through */ }
   }
 
+  try {
+    const ddgItems = await duckduckgoSearch(query, num);
+    if (ddgItems.length > 0) return { items: ddgItems, provider: "ddg" };
+  } catch { /* fall through */ }
+
   return { items: [], provider: "none" };
+}
+
+// Minimal entity decode for DDG's HTML — only what shows up in titles/snippets.
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#x27;/g, "'")
+    .replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ");
+}
+
+/**
+ * Keyless SERP via DuckDuckGo's HTML endpoint. Parses the `result__a` /
+ * `result__snippet` markup; result hrefs are DDG redirect links carrying the
+ * real URL in the `uddg` param. Parser failures return [] (never throw) so the
+ * provider chain treats markup drift like any other miss.
+ */
+async function duckduckgoSearch(query: string, num: number): Promise<DokobotSearchItem[]> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10_000);
+  try {
+    const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+      headers: {
+        // DDG serves a bot-block page to empty/obviously-programmatic agents.
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+        "Accept": "text/html",
+      },
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return [];
+    const html = await res.text();
+
+    const items: DokobotSearchItem[] = [];
+    const linkRe = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+    const snippetRe = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+    const snippets: string[] = [];
+    for (let m = snippetRe.exec(html); m; m = snippetRe.exec(html)) {
+      snippets.push(decodeHtmlEntities(m[1].replace(/<[^>]+>/g, "").trim()));
+    }
+    let i = 0;
+    for (let m = linkRe.exec(html); m && items.length < num; m = linkRe.exec(html), i++) {
+      let link = m[1];
+      // "//duckduckgo.com/l/?uddg=<encoded>&rut=..." → the real destination.
+      const uddg = /[?&]uddg=([^&]+)/.exec(link);
+      if (uddg) {
+        try { link = decodeURIComponent(uddg[1]); } catch { /* keep redirect URL */ }
+      } else if (link.startsWith("//")) {
+        link = `https:${link}`;
+      }
+      const title = decodeHtmlEntities(m[2].replace(/<[^>]+>/g, "").trim());
+      if (!title || !link.startsWith("http")) continue;
+      items.push({ title, link, snippet: snippets[i] ?? "" });
+    }
+    return items;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
