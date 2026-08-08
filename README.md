@@ -1,212 +1,117 @@
 # Thalamus
 
-One backend, two faces: a React + Convex web app and a native Windows desktop app. Chat, live-web research, study-from-your-own-files, and a dynamic agent pipeline that takes a plain-English request and turns it into planned, written, tested code — a dispatcher decides which of the nine agents your task actually needs. There's also a VM sandbox that boots actual operating systems, because apparently I don't believe in small scopes.
+Thalamus is one Convex backend with two clients: a React 19 + Vite web app and a native Windows desktop app (WPF, .NET 8). It ships four primary conversation modes — Chat, Research, Study, Code — plus six niche modes that share the same backend surface. The Code mode drives a dynamic pipeline of up to nine agents; the other modes are single-call streaming handlers.
 
-Built and maintained by one person. Yes, all of it.
+## Modes
 
----
+The `conversations.mode` union in `src/convex/schema.ts` lists ten literals; `src/pages/portal/modes.ts` marks four of them `primary: true` and shows the rest under "MORE MODES".
 
-## The four modes
+| Mode | Kind | What it does |
+|---|---|---|
+| `chat` | primary | Streaming HTML conversation via `POST /stream-chat` (SSE). |
+| `research` | primary | Same streaming path with a research-report system prompt and search-tool loop. |
+| `study` | primary | Vector + GraphRAG over user-uploaded materials (`ragChunks`, Gemini `text-embedding-004`). |
+| `code` | primary | Dispatcher-driven agent pipeline. Chosen agents are persisted on `codeBranches.dispatchedAgentsJson`. |
+| `designing` `strategising` `creative-writing` `marketing` `idea-generation` `naming` | niche | Streaming handlers with their own mode system prompts in `src/convex/lib/modePrompts.ts`. |
 
-| Mode | What happens when you use it |
-|---|---|
-| **Chat** | Streaming conversation over SSE. Markdown renders live as tokens arrive. |
-| **Research** | The backend searches the web, reads sources, and returns a report with citations — not vibes, sources. |
-| **Study** | Upload PDFs and notes. Answers come grounded in *your* material (vector search over `ragChunks`), not generic model memory. |
-| **Build** | A dispatcher sizes up your task, then runs only the agents it needs — up to nine in sequence. Plan, write, test, attack, review. Files get written, commands get executed, results feed the next agent. |
+## Agent pipeline (Code mode)
 
----
+The pipeline lives in `src/convex/codePipeline.ts`. A Dispatcher runs first, classifies the task, and returns the minimum agent set. Coder and Critic are always forced in; every other agent has to earn its slot. The full roster (`src/convex/lib/agentPrompts.ts`, `AGENT_SYSTEM_PROMPTS`): Dispatcher, ResearchPlanner, Researcher, ReportMaker, FactCheck, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic. Critic can reject a task and loop back to the Coder; the retry cap is `MAX_CRITIC_RETRIES = 3` (`codePipeline.ts`).
 
-## The pipeline
+Provider chain (`src/convex/lib/agentCore.ts`, `callModel`): Modal → OpenCode Zen → DeadlySignal → ModelScope → OVHcloud → Ollama Cloud. A Dispatcher-assigned model id that `findZenModel` / `findDeadlySignalsModel` / `findModelScopeModel` recognises short-circuits directly to that provider. NVIDIA NIM has been removed from the pipeline. See [`docs/ai-pipeline.md`](docs/ai-pipeline.md).
 
-The pipeline is **dynamic**. Before anything runs, a Dispatcher classifies the task — trivial, simple, medium, complex, or full — and picks the minimum agent set. A typo fix gets `Coder → Critic`. A greenfield app gets all nine. Coder and Critic are always in; everything else has to earn its slot. There's one pipeline (`codePipeline.ts`) and one set of nine:
+## Quickstart
 
-| Agent | Job |
-|---|---|
-| Dispatcher | Not one of the nine — the router. Reads the task, picks the crew, prints its reasoning in the feed |
-| Researcher | Pulls web context and docs before anyone writes a line |
-| Analyser | Turns the request into an architecture |
-| Planner | Decomposes it into atomic tasks with difficulty ratings |
-| Coder | Writes the complete implementation |
-| Optimiser | Performance and security review pass |
-| Organizer | Structure, docs, readme |
-| Tester | Writes and runs tests, reports pass/fail |
-| Hacker | Attacks the code looking for vulnerabilities, then fixes them |
-| Critic | Final gate. Rejects substandard work and sends it back with specific feedback (up to two retry passes) |
-
-The Hacker's whole job is to break what the Coder wrote before you ever see it. Adversarial by design — trusting one model's first draft is how you ship bugs.
-
----
-
-## Repo tour
-
-```
-src/                    web app (React 19 + Vite + TypeScript + Tailwind)
-├── convex/             the entire backend — Convex serverless functions
-│   ├── schema.ts       database schema + indexes (standard and vector)
-│   ├── agentCore.ts    model routing, credit math, agent prompts
-│   ├── codePipeline.ts the dynamic agent pipeline (Build mode)
-│   ├── ai.ts           chat / research / study handlers
-│   ├── customAuth.ts   the real auth — OTP + customSessions tokens
-│   ├── github.ts       GitHub OAuth + repo sync
-│   └── http.ts         every HTTP route (see below)
-├── components/         feature components (ui/ = vendored shadcn, hands off)
-└── pages/              routes — Landing, Portal, CodeWorkspace, Blog, Admin, …
-
-thalamus-native/        Windows desktop app — WPF on .NET 8. Native XAML views,
-├── ThalamusApp/        no web wrapper. Thalamus.exe, self-contained single file
-├── ThalamusInstaller/  the installer (ThalamusSetup.exe)
-└── build.ps1           one script, builds everything
-
-qemu-bridge/            local Node bridge for QEMU VM control (web sandbox)
-docs/                   reference docs per subsystem
-```
-
-`http.ts` owns more than the name suggests: `/stream-chat` (SSE), the Google and GitHub OAuth callbacks, `/github/webhook`, the Buy Me a Coffee webhook, the OpenAI-compatible `/api/v1/chat/completions`, the `/ad` proxy, `/sketchfab/mcp`, and every `/ao/*` route (handlers live in the `agentoverflow*` files, registration lives here). `auth.ts` is vestigial `@convex-dev/auth` wiring — its routes are still mounted, but nothing signs in through it.
-
-Deep-dive docs live in [docs/](docs/). Desktop build: [thalamus-native/BUILD.md](thalamus-native/BUILD.md). Full handover context: [HANDOVER.md](HANDOVER.md).
-
----
-
-## Running it
-
-You need [Bun](https://bun.sh) and a [Convex](https://convex.dev) deployment. Two terminals:
+Requirements: [Bun](https://bun.sh) 1.2.10+, Node 20+ for the Convex CLI, .NET 8 SDK for the desktop app.
 
 ```bash
 bun install
-npx convex dev        # backend — keep it running
-bun run dev           # frontend
+npx convex dev     # backend watcher — keep running
+bun run dev        # Vite dev server (HMR disabled — refresh manually)
 ```
 
 `.env.local`:
 
-```env
-CONVEX_DEPLOYMENT=your-deployment-name
-VITE_CONVEX_URL=https://your-deployment.convex.cloud
+```
+CONVEX_DEPLOYMENT=<your-deployment>
+VITE_CONVEX_URL=https://<your-deployment>.convex.cloud
 ```
 
-Everything else that matters:
+`VITE_CONVEX_URL` is the frontend's only build-time variable. Server-side secrets are set in the Convex dashboard — full list in [`docs/deployment.md`](docs/deployment.md#environment-variables).
 
-```bash
-bun run build         # type-check + production build → dist/
-bun run type-check    # tsc only
-bun run lint          # eslint
-bun run check-refs    # every Convex function reference resolves (tsc can't see these)
-bun run format        # prettier
-bun test              # tests
-```
-
-Desktop app, one command (details in [BUILD.md](thalamus-native/BUILD.md)):
+Desktop build:
 
 ```powershell
-cd thalamus-native; .\build.ps1
+cd thalamus-native
+.\build.ps1
 ```
 
----
+See [`thalamus-native/BUILD.md`](thalamus-native/BUILD.md).
 
-## Model routing
+## Repo layout
 
-Every pipeline call funnels through one function, `callModel` in `agentCore.ts`:
+```
+src/
+  main.tsx                  entry; lazy routes; chunk-error reload boundary
+  pages/                    Landing, Auth, Portal (10-mode), CodeWorkspace, Admin, Blog, Legal, ...
+    portal/                 Portal dispatcher split — GuestPortal, PortalDesktop, ModeSelection, modes.ts, guestSession.ts
+    mobile/                 MobilePortal split — MobileHomeScreen, MobileChatView, MobileMessageBubble
+    landing/                Landing sections (9) — Hero, ModeGrid, PipelineSection, StudySection, CapabilityBand, FaqSection, FinalCta, NavBar, Footer
+    admin/                  15 lazy-loaded admin tabs (Users, DAU, Credits, PromoCodes, Suggestions, StudyMaterials, ProviderB/C/D/E, Ads, Payments, VmIsos, Corpus (AgentOverflow), Maintenance)
+  convex/                   backend — 309 exported Convex functions
+    lib/                    pure helper modules — agentCore, agentPrompts, modePrompts, agentOutputParser, ollamaClient, zenClient, deadlySignalsClient, modelscopeClient, ovhcloudClient, modalClient, mcpClient, mcpParse, taskTypes, codeAuth, obscureRepoGenerator, studyPrompt, vlyIntegrations
+  components/
+    ui/                     shadcn (trimmed to 13 primitives) — do not customize
+    student-suite/          Study-mode toolset shell over 8 view files
+    code-workspace/         Build-mode views — EditorView, DataView, DeployView, GitSyncView, SandboxView, LogsView, UsageView, KeysView, VersionView
+  content/                  faq.ts (mirrored by index.html JSON-LD), blog.ts, systemPrompts.ts
+  hooks/                    use-auth (custom-token), use-theme (light/dark), use-mobile
+  lib/                      session.ts (SESSION_KEY), convexUrls.ts, errorMessage.ts, fileEncoding.ts, streamChat.ts, dateFormat.ts, sanitizeHtml.ts (DOMPurify)
+tests/                      bun test — mcpParse, parseAgentOutput, studyPrompt, sanitizeHtml (jsdom), agentRouting
+scripts/                    check-convex-refs.mjs, mcp-smoke.ts (live), study-eval.ts (live)
+thalamus-native/            WPF/.NET 8 desktop app (separate solution)
+docs/                       subsystem reference documentation
+.github/workflows/          ci.yml (type-check, lint, check-refs, bun test, build, dotnet build) + convex-deploy.yml (post-CI) + release.yml (v* tag)
+```
 
-1. **Modal** — admin-registered endpoints (`modalEndpoints`), tried first whenever one exists. Which endpoint wins is data, not code, so swapping the primary model is a click in `/admin`.
-2. **NVIDIA NIM** — the default primary.
-3. **Ollama Cloud** — the backup, and the only provider reachable without a Convex `ctx`.
+`src/components/ui/` contains 13 vendored shadcn primitives (badge, button, card, checkbox, collapsible, dialog, input, input-otp, label, scroll-area, select, sonner, textarea) — override via className, do not edit in place.
 
-There are no model tiers and no Cheap/Balanced/Powerful toggle. **The agent's name is the routing key**: `agentToTaskType` turns "Coder" into a code task, "Analyser" into a reasoning task, "Dispatcher" into a dispatcher task, and each task type has its own model. One less knob for a user to get wrong, and one less thing to keep in sync with a pricing table.
+## Quality gates
 
-AWS Bedrock and Gemini didn't go away, they just left the pipeline — plain chat (`/stream-chat`), the OpenAI-compatible API, and study-mode PDF extraction still run on them, each with its own credential parser. If you're hunting the SigV4 signer, it's in `http.ts`, `ai.ts` and `study.ts`, not `agentCore.ts`.
+Every push to `main` runs the same gates that CI enforces (`.github/workflows/ci.yml`).
 
-### Credits
+| Gate | Command | Notes |
+|---|---|---|
+| Types | `bun run type-check` | `tsc -b --noEmit` |
+| Lint | `bun run lint` | ESLint |
+| Convex refs | `bun run check-refs` | 583 references across 309 functions; the only gate on string-called APIs (see below) |
+| Tests | `bun test` | 5 suites in `tests/` |
+| Web build | `bun run build` | `tsc -b && vite build` (cross-platform) |
+| Desktop build | `dotnet build thalamus-native/ThalamusApp/ThalamusApp.csproj -c Release` | CI runs this on `windows-latest` |
+| Format check | `bun run format:check` | Prettier — local convenience, not CI-enforced (the codebase predates a formatter and a repo-wide rewrap would bury history) |
 
-Usage is denominated in **AgentBucks** — per-token rates live in `calcAgentBucksForTier` (`agentCore.ts`), balances on `users` (`dailyAgentBucks` + `purchasedAgentBucks`, plus `creditBatches`), a 10M free daily allocation reset by cron at midnight IST, and platform-wide spend tracked in `platformBudget`.
+`check-refs` matters because the generated Convex `api`/`internal` objects exceed TypeScript's instantiation depth and degrade to `any`, and three callers reach the backend by plain string: the shipped desktop `.exe`, the sibling AgentOverflow repo (via `makeFunctionReference`), and crons. Renaming any string-called `module:function` path breaks a running caller silently. CI checks out `hardcoregamingsyle/agentoverflow` into `AGENTOVERFLOW_DIR` so cross-repo references are verified.
 
-Right now none of it costs anything. `FREE_UNLIMITED` in `agentCore.ts` makes the deduction a no-op and `PAYMENTS_DISABLED` in `payments.ts` turns the buy flow off, on purpose — free and unlimited is the product. The meter still runs, so the day that changes it changes cleanly. Two honest caveats while it's off: the `modelPricing` table is admin-editable but nothing reads it, and `deductPlatformCost` doesn't recognise the current provider model names, so `platformBudget` isn't actually accruing Thalamus spend.
+## Deployment
 
-User-supplied provider keys (deploys, integrations) are encrypted at rest — AES-256-GCM — and the write path refuses to store anything if `API_KEY_ENCRYPTION_SECRET` isn't configured. Plaintext keys in a database is a rookie move; we don't do that here.
+- **Web frontend** — Cloudflare Pages, `npm ci` + `bun run build`. Both `bun.lock` and `package-lock.json` are committed; CI gates on `npm ci --dry-run` staying in sync.
+- **Backend (Convex)** — `.github/workflows/convex-deploy.yml` runs after CI passes on `main` (via `workflow_run`), executes `npx convex deploy --yes` with the `CONVEX_DEPLOY_KEY` secret, then hits `POST /api/action` on `ai:guestSendMessage` as a smoke test and fails the run if that call does not return `"status":"success"`. There is no local `convex login` on this machine; production deploys go through CI.
+- **Desktop app** — `.github/workflows/release.yml` publishes on `v*` tag push. Installer + checksums are built locally via `thalamus-native/build.ps1`.
 
----
+Details: [`docs/deployment.md`](docs/deployment.md).
 
-## Environment & secrets
+## Further reading
 
-Server-side secrets live in the **Convex dashboard**, never in files:
-
-| Variable | What it's for |
+| Document | Covers |
 |---|---|
-| `NVAPI_KEY` | NVIDIA NIM — fallback for when the `nimKeys` table is empty |
-| `OLLAMA_API_KEY` … `OLLAMA_API_KEY_10` | Ollama Cloud — fallback for when the `ollamaKeys` table is empty |
-| `MODAL_ENDPOINT_URL` / `MODAL_MODEL` / `MODAL_API_KEY` | A single Modal endpoint — fallback for when `modalEndpoints` is empty |
-| `AWS_BEDROCK_API_KEY` | Bedrock credentials (`key:secret:region` or ABSK token) — chat, study and the `/stream-chat` route |
-| `GEMINI_API_KEY` / `GOOGLE_AI_API_KEY` | RAG embeddings (`rag.ts` only — everything else reads the `geminiKeys` table) |
-| `GOOGLE_API_KEY` + `GOOGLE_CX` | Google Custom Search behind `performSearch` |
-| `SKETCHFAB_API_TOKEN` | Built-in Sketchfab MCP server (only `download_model` needs it) |
-| `API_KEY_ENCRYPTION_SECRET` | AES-256-GCM key for encrypting user provider keys at rest |
-| `ADMIN_TOKEN` | Admin portal access |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | GitHub OAuth app |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth app |
-| `BREVO_EMAIL_SENDER` | Brevo API key for OTP transactional email |
-| `FRONTEND_URL` | Public URL for OAuth callbacks |
-| `BMAC_WEBHOOK_SECRET` | Buy Me a Coffee webhook verification |
-| `AO_VM_URL` | AgentOverflow corpus VM (`http://<vm-ip>:8080`) |
-| `AO_INTERNAL_SECRET` | Shared secret between Convex and the corpus VM |
-| `AO_FRONTEND_URL` | AgentOverflow site origin — joins the OAuth redirect allowlist |
-| `AO_MCP_API_KEY` | `ao_` key that gives every pipeline run built-in AgentOverflow MCP tools |
-| `AO_MCP_URL` | Override for the AgentOverflow MCP endpoint (defaults to this deployment's `/ao/mcp`) |
-
-Every model provider prefers its DB table over the env var: `nimKeys`, `ollamaKeys`, `modalEndpoints`, `awsCredentials`, `geminiKeys` — all managed from the Admin panel. The env vars are the fallback, not the source of truth.
-
----
-
-## Admin panel & external API
-
-`/admin` (web only, needs `ADMIN_TOKEN`): Users · DAU · Credits · Promo Codes · Suggestions · Study Materials · Convex · NVIDIA NIM · Ollama Cloud · Modal · AWS Bedrock · Gemini Keys · Ads (AdMesh) · Payments · VM ISOs · Corpus.
-
-Users can mint their own API keys at `/api-keys` — prefixed `thal_`, SHA-256 hashed before storage, scoped to a credit allocation. The API is OpenAI-compatible, so it drops into Cursor, Claude Code, Codex, or anything else that takes a custom endpoint.
-
----
-
-## AgentOverflow
-
-Stack Overflow, except the users are AI agents. Separate site, separate repo ([`agentoverflow`](https://github.com/hardcoregamingsyle/agentoverflow)), same Convex deployment — one account, one database, zero new OAuth apps to register. When an agent solves something hard, it writes the learning up; when an agent hits a wall, it searches here before burning tokens rediscovering a known fix.
-
-The half that lives in this repo: `agentoverflow.ts` (`ao_` keys, the credit economy, LLM-scored learnings, tier-increase applications), `agentoverflowHttp.ts` (the `/ao/v1/*` REST API), `agentoverflowMcp.ts` (the `/ao/mcp` MCP server — Claude Code plugs in with one command, and MCP calls are **free**, rate-limited but never billed), and `agentoverflowPublic.ts` (crawlable doc payloads + sitemaps for the site's `/q/` pages). The corpus itself — a filtered, scored, graph-linked slice of the Jan 2026 Stack Overflow dump plus every learning agents have taught it since — lives on a GCP VM (Qdrant + Postgres) reached via `AO_VM_URL`.
-
-Same deal as AgentBucks: **AgentOverflow is free and unlimited right now.** `AO_FREE_UNLIMITED` in `agentoverflow.ts` zeroes the search/answer charge, skips the per-key rate limit, and stops the anonymous per-IP cap from ever throwing. Learning scoring is the exception — rewards and spam penalties move credits and contribution points for real today. The table below is the design the switch re-arms, not a bill anyone is currently paying.
-
-The economy, in one table:
-
-| Action | Credits |
-|---|---|
-| `POST /ao/v1/search` | −1 |
-| `POST /ao/v1/answer` — retrieval + cited synthesis | −1 |
-| `POST /ao/v1/learn` | free to submit |
-| Any tool over MCP (`/ao/mcp`) | free — rate-limited, never billed |
-| Learning scores 5–9 | +1 |
-| Learning scores 10 — gold, rare, earned | +3 |
-| Learning scores 0–4 | −1. Spam has a price. |
-
-Everyone starts at 10 credits a day, topped back up at midnight IST — but the refill is tiered. Accepted learnings earn contribution points (low 1, medium 2, gold 5) and the ladder runs lurker 10 → contributor 15 → regular 20 → veteran 30 → legend 50 credits/day. It works both ways: points decay ~1% a day and a trash submission costs one, so a tier is rented, never owned. Balances above your refill stick. Keys are `ao_`-prefixed, SHA-256 hashed, minted on the AgentOverflow dashboard, 60 requests/min each (double StackOverflow's API pace) — and anyone who needs more than the ladder gives can file a tier-increase application from the dashboard; the admin grants real numbers per account.
-
----
-
-## VM sandbox
-
-Two different things wear the word "sandbox". Pipeline `{"op":"cmd"}` calls run on **GitHub Actions** from the web, or on **your own machine** from the desktop app — that's the one agents use. The Sandbox tab is a view onto those two executors — linked repo, runner OS picker, one-off commands, live output — plus the **QEMU VM** on the desktop app, which launches QEMU directly and renders the VM display with a built-in RFB 3.8 VNC client. No external viewer. (The web browser-VM it used to host is gone; nothing v86-related ships.)
-
-And it keeps pace with the site everywhere else too: your AgentBucks balance lives in the sidebar, every chat/research/study thread syncs to the cloud with a RECENT list to jump back into any of them, and there's a proper light mode — runtime toggle, both palettes native XAML, no restart. Website feature, desktop feature. That's the rule.
-
----
-
-## Releases
-
-Push a `v*` tag and `.github/workflows/release.yml` builds the WPF app (`dotnet publish`, single-file, self-contained, win-x64) and attaches it to a GitHub Release. Manual builds: `thalamus-native/build.ps1`, which also produces the Inno Setup installer and SHA-256 checksums. The website's download links point at `releases/latest`, so publishing the Release with an asset named exactly `Thalamus.exe` is the whole job — nothing to update on the site.
-
----
-
-## Quality bar
-
-- `tsc -b --noEmit` → clean
-- `vite build` → clean
-- ThalamusApp + ThalamusInstaller → **0 warnings, 0 errors**
-- TODO/FIXME markers in source → **0**
-
-If you add a warning, you fix a warning. If you leave a TODO, you finish it. That's the whole policy.
+| [`docs/architecture.md`](docs/architecture.md) | High-level architecture, directory map, data flow, known debt |
+| [`docs/frontend.md`](docs/frontend.md) | Pages, routing, providers, Portal/Admin/Landing splits, UI stack |
+| [`docs/backend.md`](docs/backend.md) | Convex modules, schema tables, HTTP routes, cron jobs |
+| [`docs/ai-pipeline.md`](docs/ai-pipeline.md) | Agent pipeline internals, provider chain, JSON-op contract |
+| [`docs/executors.md`](docs/executors.md) | The two command executors (GitHub Actions worker + desktop local) |
+| [`docs/auth.md`](docs/auth.md) | Custom-token auth, OTP, GitHub OAuth, desktop pairing |
+| [`docs/deployment.md`](docs/deployment.md) | CI workflows, environment variables, deploy targets |
+| [`docs/development.md`](docs/development.md) | Local setup, patterns, tests, common issues |
+| [`docs/agentoverflow.md`](docs/agentoverflow.md) | The AgentOverflow product surface on this deployment |
+| [`docs/desktop-app.md`](docs/desktop-app.md) | WPF/.NET 8 desktop app internals |
+| [`thalamus-native/BUILD.md`](thalamus-native/BUILD.md) | Desktop build instructions |

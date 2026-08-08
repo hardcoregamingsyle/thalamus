@@ -95,7 +95,7 @@ Navigation (`Nav_Click`) toggles visibility of the five mode panels. Sign In / S
 Each mode is a UserControl loaded into the content area:
 
 - **ChatView** — Text input + message list. Uses `StreamingClient` for SSE token streaming; replies arrive as HTML and are rendered by `Controls/HtmlToWpf`.
-- **CodeView** — Task input + agent progress display. Shows which agents have run, streaming output, generated files. Drives the backend via `codeProjects:createProject` → `codePipeline:startPipeline`, polls `codeBranches:getBranch`/`watchMessages`/`watchFiles`, and halts with `codePipeline:stopPipeline` (which sets a flag the pipeline checks between steps, so a stop is not instant).
+- **CodeView** — Task input + agent progress display. Shows which agents have run, streaming output, generated files. Drives the backend via `codeProjects:createProject` → `codePipeline:startPipeline`, polls `codeBranches:getBranch`/`watchMessages`/`watchFiles`, and halts with `codePipeline:stopPipeline` (which sets a flag the pipeline checks between steps, so a stop is not instant). CodeView also passes `executor: "local"` to `startPipeline` and polls `codeCommands:listPendingForBranch` / calls `codeCommands:completeCommand` for on-machine command execution (see [`executors.md`](./executors.md)). **These function paths are called by string; the shipped `.exe` cannot be recompiled by end-users. Renaming any of them breaks every live desktop installation — `bun run check-refs` is the only build-time gate.**
 - **ResearchView** — Topic input + structured report output with section headers.
 - **StudyView** — Q&A interface with RAG-enhanced responses. There is no document upload control in the desktop build; materials are added on the web.
 

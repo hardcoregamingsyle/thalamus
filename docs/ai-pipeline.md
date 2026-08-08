@@ -1,202 +1,201 @@
-# AI Pipeline — The 9-Agent System
+# AI Pipeline
 
-## Overview
+The dynamic multi-agent pipeline that drives Code mode. Implementation: `src/convex/codePipeline.ts`. Agent prompts: `src/convex/lib/agentPrompts.ts`. Provider chain: `src/convex/lib/agentCore.ts`.
 
-Thalamus uses a sequential multi-agent pipeline to build software. Each agent has a specific role, is routed to a model by its own name, and passes its output to the next agent in the chain. The implementation is `src/convex/codePipeline.ts`.
+## Dispatcher
 
-## The Dispatcher (Gate Agent)
+Before the pipeline runs, a Dispatcher agent classifies the task and returns the minimum agent set. Its system prompt lists the available roster and the tier heuristics:
 
-Before the pipeline runs, a **Dispatcher** agent classifies the task:
+- **Model**: whatever the Dispatcher provider chain returns for the `dispatcher` task type.
+- **Output**: JSON `{ tier: "trivial" | "simple" | "medium" | "complex" | "full", reasoning: "...", agents: [...] }`
+- **Rules** (enforced after parsing so a forgetful model cannot omit them):
+  - Coder and Critic are always included.
+  - Hacker is only included if the user explicitly asks for a security audit / pen test / vuln scan.
+  - If no planning agents are selected (trivial/simple), planning is skipped entirely and a synthetic single-task plan is created so the Coder gets a well-defined prompt.
 
-- **Model**: whatever `agentToTaskType("Dispatcher")` resolves to — the `dispatcher` task type (see Model Configuration below)
-- **Input**: User's task description + file inventory
-- **Output**: JSON `{ tier: "trivial"|"simple"|"medium"|"complex"|"full", reasoning: "...", agents: [...] }`
-- **Rules**:
-  - Coder and Critic are ALWAYS included (enforced again after parsing, in case the model forgets)
-  - Hacker is ONLY included if user explicitly asks for a security audit / pen test / vuln scan
-  - If no planning agents are selected (trivial/simple), planning is skipped entirely and a synthetic single-task plan is created so the Coder still gets a well-defined prompt
+The picked agent set is persisted on `codeBranches.dispatchedAgentsJson`; the pipeline filters each phase's list against it.
 
-### Complexity Tiers & Agent Selection
+### Complexity tiers (guidance from the Dispatcher prompt)
 
-From the Dispatcher system prompt (guidance, not strict rules):
-
-| Tier | Typical Task | Agents Selected |
-|------|-------------|-----------------|
-| trivial | Fix a typo, rename variable | Coder, Critic |
+| Tier | Typical task | Agents selected |
+|---|---|---|
+| trivial | Rename, typo, one-liner | Coder, Critic |
 | simple | Add a UI component, fix a bug | Coder, Tester, Critic |
-| medium | Multi-file feature, new endpoint, refactor | Planner, Coder, Tester, Critic |
-| complex | New module, full integration, architecture change | Analyser, Planner, Coder, Optimiser, Tester, Critic |
-| full | Greenfield app, security audit requested | All 9 agents |
+| medium | Multi-file feature, new endpoint, refactor | FactCheck, Planner, Coder, Tester, Critic |
+| complex | New module, full integration, architecture change | FactCheck, Analyser, Planner, Coder, Optimiser, Tester, Critic |
+| full | Greenfield app or security audit requested | All 13 agents |
 
-Researcher isn't a tier of its own — it gets added to any tier when the task needs third-party APIs, new libraries, or external docs.
+Research is not a tier — it is a team (ResearchPlanner + Researcher + ReportMaker + FactCheck) added to any tier when the task needs current docs, third-party APIs, or external context.
 
-## Pipeline Phases
+## Agent roster
 
-### Phase 1: Planning (if selected)
+Order of appearance in the pipeline. Task type is what `agentToTaskType()` in `src/convex/lib/taskTypes.ts` returns for the agent's name (matched by lowercase substring, so decorated names like "Researcher (deep)" still route correctly).
 
-The "task type" column is what `agentToTaskType()` returns for that agent name; it is the only thing that selects a model (see Model Configuration below).
+| Agent | Task type | Role |
+|---|---|---|
+| Dispatcher | `dispatcher` | Classifies the task; picks the crew. |
+| ResearchPlanner | `research` | Breaks the research topic into search keywords and scrape targets. |
+| Researcher | `research` | Executes the plan; collects raw data as JSON. |
+| ReportMaker | `research` | Synthesises the raw JSON into a structured report. |
+| FactCheck | `factcheck` | Verifies every claim against web sources. |
+| Analyser | `reasoning` | Architectural analysis and dependency mapping. |
+| Planner | `reasoning` | Decomposes the task into atomic tasks with difficulty ratings. |
+| Coder (always) | `code` | Writes the implementation. |
+| Optimiser | `code` | Performance and code-quality pass. |
+| Organizer | `dispatcher` | Structure, docs, README. Both spellings (`organiser`, `organizer`) match `dispatcher`. |
+| Tester | `agent` | Writes and runs tests. |
+| Hacker | `agent` | Adversarial security pass (only if requested). |
+| Critic (always) | `reasoning` | Final gate. Rejects substandard work with `{"op":"critic-fail"}` and specific feedback. |
 
-| Agent | Role | Task type |
-|-------|------|-----------|
-| Researcher | Gathers context, reads docs, searches web | research |
-| Analyser | Understands the codebase, identifies dependencies | reasoning |
-| Planner | Creates a structured task list as JSON | reasoning |
+### Critic retry loop
 
-The Planner outputs:
-```json
-{
-  "summary": "Brief plan description",
-  "tasks": [
-    {
-      "id": 1,
-      "title": "Create auth middleware",
-      "description": "Implement JWT validation...",
-      "difficulty": "normal",
-      "dependencies": []
-    }
-  ]
-}
+`MAX_CRITIC_RETRIES = 3` (`src/convex/codePipeline.ts:1107`). On a Critic fail:
+
+1. The pipeline loops back to Coder with the Critic's feedback appended.
+2. `criticRetryCount` is persisted on the branch so the cap survives the separate `runPipelineAction` invocations each retry spans.
+3. After exhausting retries, the pipeline emits a warning and advances to the next task.
+
+## Provider chain
+
+Single entry point: `callModel(prompt, systemPrompt, agentName, …extra)` in `src/convex/lib/agentCore.ts`. `extra` may carry a `ctx`, an `assignedModel` string (Dispatcher-chosen), and a `deadlineMs` override. The whole chain runs inside a shared 7-minute wall-clock budget (Convex kills actions at 10 minutes); the Dispatcher call carries an extra 60-second fail-fast deadline so a dead provider surfaces in about a minute.
+
+### Order
+
+1. **Dispatcher short-circuit** — if `assignedModel` matches `findZenModel()`, `findDeadlySignalsModel()`, or `findModelScopeModel()`, that provider is tried first with that exact model id. Modal is skipped for that call because it does not know the free-tier providers' catalog ids.
+2. **Modal** — admin-registered `modalEndpoints` (primary row first). Only tried when a `ctx` is passed. Falls through if `MODAL_NOT_CONFIGURED` or on error.
+3. **OpenCode Zen** — anonymous free tier, `ZEN_API_KEY` optional. `ZEN_DISPATCHER_MODEL` / `ZEN_DEFAULT_MODEL` for the two seats (`src/convex/lib/zenClient.ts`).
+4. **DeadlySignal** — keyed New API gateway (`DEADLYSIGNALS_API_KEY`, `myapi.creitingameplays.com/v1`). `DEADLYSIGNALS_DISPATCHER_MODEL` / `DEADLYSIGNALS_DEFAULT_MODEL`.
+5. **ModelScope** — Alibaba's official free API-Inference tier (`MODELSCOPE_API_KEY`, `api-inference.modelscope.ai/v1` — the `.cn` host rejects `ms-…` tokens). `MODELSCOPE_DISPATCHER_MODEL` / `MODELSCOPE_DEFAULT_MODEL`.
+6. **OVHcloud** — anonymous free tier at `oai.endpoints.kepler.ai.cloud.ovh.net/v1`, 2 RPM. Task-type mapped by `mapTaskToOvhModel()`.
+7. **Ollama Cloud** — keyed pool (`OLLAMA_API_KEY`, `OLLAMA_API_KEY_2` … `_10`; the module builds the pool dynamically so a literal grep misses those). Task-type mapped by `mapModelIdToOllama()` in `agentCore.ts`.
+
+Without a `ctx`, Modal is skipped and the chain runs from Zen onward. Every leg wraps its call in try/catch and logs the failure before falling through.
+
+**NVIDIA NIM is not called anywhere in the chain.** `callNim`, `NVAPI_KEY`, and the `nimKeys` table's use in the pipeline were all deleted. The only surviving export from the old `nimClient.ts` is `agentToTaskType`, now in `lib/taskTypes.ts`.
+
+### Task-type map
+
+`agentToTaskType()` is a simple lowercase substring match:
+
+| Task type | Matched on (case-insensitive substring) |
+|---|---|
+| `dispatcher` | `dispatcher`, `organiser`, `organizer`, `summarizer` |
+| `code` | `coder`, `optimiser`, `architect` |
+| `reasoning` | `analyser`, `planner`, `critic` |
+| `research` | `researcher`, `research`, `reportmaker`, `scout` |
+| `agent` | `tester`, `hacker`, `auditor`, `security` |
+| `factcheck` | `factcheck`, `fact.check`, `fact_check`, `verifier` |
+| `chat` | anything unmatched (default fall-through) |
+
+Both `organizer` and `organiser` match — the Organizer routes to the dispatcher task type.
+
+### Tier-string return value
+
+`callModel` returns `{ text, inputTokens, outputTokens, tier }` where `tier` is one of:
+
+- `modal:<model>`
+- `zen:<model>`
+- `deadlysignals:<model>`
+- `modelscope:<model>`
+- `ovhcloud:<model>`
+- `ollama:<model>`
+
+`calcAgentBucksForTier()` branches on this prefix. Modal delegates to `calcModalAgentBucks`; Ollama delegates to `calcAgentBucksForModel`; every keyless / free-tier prefix contributes 0 (`ovhcloud:`, `zen:`, `deadlysignals:`, `modelscope:`). Billing keys off the exact tier string; renaming a prefix here means updating `admin.calcPlatformCost` in the same commit.
+
+### Per-provider default constants
+
+| Provider | Dispatcher model | Default model |
+|---|---|---|
+| Zen | `ZEN_DISPATCHER_MODEL` in `lib/zenClient.ts` | `ZEN_DEFAULT_MODEL` |
+| DeadlySignal | `DEADLYSIGNALS_DISPATCHER_MODEL` in `lib/deadlySignalsClient.ts` | `DEADLYSIGNALS_DEFAULT_MODEL` |
+| ModelScope | `MODELSCOPE_DISPATCHER_MODEL` in `lib/modelscopeClient.ts` | `MODELSCOPE_DEFAULT_MODEL` |
+| OVHcloud | n/a — `mapTaskToOvhModel(taskType)` returns `OVHCLOUD_CODE_MODEL` for `code`, `OVHCLOUD_DEFAULT_MODEL` otherwise | same |
+| Ollama | `DISPATCHER_MODEL` in `lib/ollamaClient.ts` | `DEFAULT_CHAT_MODEL`; `mapModelIdToOllama` in `agentCore.ts` picks by agent-name substring |
+
+Constants are cited so drift is grep-able rather than copy-pasted. There is no separate model tiers table, no run-mode control, no `AGENT_MODEL_MAP`.
+
+## JSON-op contract
+
+Agents signal tool calls as single-line JSON ops. Ids and paths are plain strings. Interleaved plain text is preserved in the transcript with the op replaced by a short placeholder (e.g. `[CMD: …]`).
+
+### File operations
+
 ```
-
-### Phase 2: Execution (per task)
-
-For each task in the plan, the selected execution agents run in order:
-
-| Agent | Role | Task type |
-|-------|------|-----------|
-| Researcher | Looks up relevant docs/APIs for this specific task | research |
-| Analyser | Analyzes which files need changing | reasoning |
-| **Coder** | Writes the actual code (creates/edits files) | **code** |
-| Optimiser | Improves performance, removes redundancy | code |
-| Organizer | Ensures file structure is clean | dispatcher |
-| Tester | Writes and validates tests | agent |
-| Hacker | Security audit (only if explicitly requested) | agent |
-| **Critic** | Validates everything, passes or fails | reasoning |
-
-### Critic Retry Loop
-
-If the Critic emits `<<Fail>>`:
-1. Pipeline loops back to Coder with Critic's feedback
-2. Coder gets max 2 retry attempts
-3. After exhausting retries, advances to next task with a warning
-
-## Agent Tools (Output Syntax)
-
-Agents signal tool calls as single-line JSON ops. Each op is one line; ids/paths are plain strings. Verdict agents emit JSON verdict ops. Interleaved plain text is preserved in the transcript with the op replaced by a short placeholder like `[CMD: …]`.
-
-### File Operations
-```
-{"op":"create-file","path":"src/components/Button.tsx","content":"import React from 'react';\nexport const Button = () => <button>Click me</button>;"}
-{"op":"edit-file","path":"src/App.tsx","content":"// full updated file content"}
+{"op":"create-file","path":"src/components/Button.tsx","content":"…full file content…"}
+{"op":"edit-file","path":"src/App.tsx","content":"…full updated file content…"}
 {"op":"delete-file","path":"src/old.ts"}
 ```
 
-### Web Search
+### Web
+
 ```
 {"op":"search","query":"react useEffect cleanup pattern"}
-```
-
-### Web Scraping
-```
 {"op":"scrape","url":"https://docs.example.com/api"}
 ```
 
-### Shell Commands
+### Shell commands
+
 ```
 {"op":"cmd","command":"npm install axios"}
 ```
 
-### API Key Requests
-```
-{"op":"request-api-key","name":"STRIPE_SECRET","description":"Stripe API key for payments","howToGet":"Get from stripe.com/dashboard"}
-```
+Queues into `codeCommands`; parks the branch as `paused`; executes on GitHub Actions (cloud) or the desktop app (local). See [`executors.md`](./executors.md). The branch self-resumes when the last pending command completes.
 
-### MCP Tool Calls
+### API key requests
+
 ```
-{"op":"mcp","server":"agentoverflow","tool":"search","args":{"query":"convex schema migration"}}
+{"op":"request-api-key","name":"STRIPE_SECRET","description":"…","howToGet":"…"}
 ```
 
-### Verdicts (Tester/Hacker/Critic/FactCheck)
+Writes a `codeApiKeyRequests` row and genuinely blocks until the user submits the key. `codeApiKeys.fulfillApiKeyRequest` reschedules `runPipelineAction`. User-supplied keys are stored AES-256-GCM-encrypted with `API_KEY_ENCRYPTION_SECRET` (write path fails closed if the secret is missing).
+
+### MCP tool calls
+
 ```
-{"op":"test-success"}  /  {"op":"test-failed","reason":"why"}
-{"op":"security-pass"} / {"op":"security-fail"}
+{"op":"mcp","server":"agentoverflow","tool":"search","args":{"query":"…"}}
 ```
 
-Both `cmd` and `request-api-key` ops **pause the pipeline**, but only one of them waits on a human.
+Every pipeline run has the built-in AgentOverflow (`AO_MCP_URL` or `${CONVEX_SITE_URL}/ao/mcp`) and Sketchfab (`SKETCHFAB_MCP_URL` or `${CONVEX_SITE_URL}/sketchfab/mcp`) servers attached, plus any user-connected servers from `mcpServers`. Rounds are bounded.
 
-- `cmd` queues rows into `codeCommands` and sets the branch to `paused`. Where it runs depends on `codeBranches.executor`:
-  - `cloud` (default) schedules `githubActionsRunner.executeBranchCommandsViaActions`, which pushes the branch's files, ensures the runner workflow exists, and dispatches one workflow run per command. The job POSTs its result to `/code/command-result` with a single-use nonce; that resumes the pipeline. `runnerOs` selects ubuntu, windows or macos.
-  - `local` schedules nothing. The desktop app polls `codeCommands:listPendingForBranch`, runs each command in a per-branch workspace on the user's machine, and calls `completeCommand`, which resumes the pipeline once nothing is outstanding.
-  - Either way a failure to dispatch records a failed result and reschedules `runPipelineAction`, so a branch is never left paused with nobody coming for it.
-- `request-api-key` writes a `codeApiKeyRequests` row and genuinely blocks until the user submits the key; `codeApiKeys.fulfillApiKeyRequest` reschedules `runPipelineAction`.
+### Verdicts
 
-> Legacy `<<TAG>>` markers (`<<MCP-CALL>>`, `<<TOOL>>`, `<<CREATEFILE>>`, `<<RUN-CMD>>`, `<<pass>>`, …) are still parsed as a fallback so old stored messages keep working, but no prompt teaches them any more.
+```
+{"op":"test-success"}   {"op":"test-failed","reason":"…"}
+{"op":"security-pass"}  {"op":"security-fail"}
+{"op":"critic-pass"}    {"op":"critic-fail","reason":"…"}
+```
 
-If a branch looks stuck, check `codeCommands` and `codeApiKeyRequests` for rows still marked `pending`. User-supplied provider keys are encrypted at rest (AES-256-GCM, keyed by the `API_KEY_ENCRYPTION_SECRET` deployment secret — storage fails closed if it's missing).
+Legacy `<<TAG>>` markers (`<<CREATEFILE>>`, `<<RUN-CMD>>`, `<<pass>>`, …) are still parsed as a fallback so old stored messages keep working, but no current prompt teaches them.
 
-## Model Configuration
-
-There are no model tiers, no per-branch run mode, and no admin override grid. If you find `MODE_MATRIX`, `AGENT_MODEL_MAP`, `getAgentTier`, `DIFFICULTY_CODER_MODEL`, `codeBranches.runMode`, an `agentModelConfig` table or an `/admin` Model Config tab referenced anywhere, none of them exist in the code.
-
-### Routing by agent name
-
-`codePipeline.ts` passes the **agent name** into `callModel()` as the third argument. `agentToTaskType()` (`nimClient.ts`) turns that name into a task type by substring match, and the task type picks the model:
-
-| Task type | Matched on (case-insensitive substring) | NIM model |
-|-----------|------------------------------------------|-----------|
-| dispatcher | `dispatcher`, `organiser`, `summarizer` | `meta/llama-3.1-8b-instruct` |
-| code | `coder`, `optimiser`, `architect` | `deepseek-ai/deepseek-v4-flash` |
-| reasoning | `analyser`, `planner`, `critic` | `deepseek-ai/deepseek-v4-flash` |
-| agent | `tester`, `hacker`, `auditor`, `security` | `deepseek-ai/deepseek-v4-flash` |
-| factcheck | `factcheck`, `fact.check`, `verifier` | `deepseek-ai/deepseek-v4-flash` |
-| research | `researcher`, `research`, `scout` | `deepseek-ai/deepseek-v4-flash` |
-| chat | anything unmatched | `NIM_DEFAULT_CHAT_MODEL` |
-
-The slow seats from earlier builds are gone on purpose: reasoning no longer runs on `nemotron-3-super-120b` and agent tasks no longer run on `deepseek-v4-pro` (both known to hang/queue on the free tier) — everything except the Dispatcher routes to `deepseek-v4-flash`. The Dispatcher itself runs on `meta/llama-3.1-8b-instruct` (verified live against NVIDIA at HTTP 200 ~0.5s; the old `meta/llama-3.2-3b-instruct` seat started hanging hard and `nemotron-mini-4b` is served with a 4096-token context cap that rejects the 8192 max_tokens request with a 400) with a 60s fail-fast deadline (vs the chain-wide 7-minute budget) so a dead provider surfaces in about a minute instead of stalling the whole run. NIM retries cycle up to 3 keys × 3 rounds to ride out NVIDIA's 529-overload bursts, bounded by the same deadline.
-
-> Note: the `dispatcher` row matches `organiser` (s), while the pipeline agent is named `Organizer` (z). The Organizer therefore falls through to the `chat` task type.
-
-The Ollama leg uses `mapModelIdToOllama()` in `agentCore.ts` over the same agent names: `gemma4:31b` for dispatcher-ish names, `minimax-m3` for coder/optimiser/analyser/planner/critic/tester/hacker, `gpt-oss:120b` for researcher, `DEFAULT_CHAT_MODEL` otherwise.
-
-### Provider order
-
-`callModel()` tries, in order: Modal (any row in `modalEndpoints`, primary first) → NVIDIA NIM → Ollama Cloud. Modal and NIM both require a Convex `ctx`; a ctx-less caller goes straight to Ollama. The return value carries a provider-tagged tier string — `modal:<model>`, `nim:<model>`, `ollama:<model>` — which is what the billing helpers read.
-
-Keys resolve DB-first in every case: `modalEndpoints` > `MODAL_ENDPOINT_URL`, `nimKeys` > `NVAPI_KEY`, `ollamaKeys` > `OLLAMA_API_KEY`/`OLLAMA_API_KEY_2..10`. All three tables are managed from `/admin`.
-
-### Pricing
-
-AgentBucks per call are computed by `calcAgentBucksForTier()` in `agentCore.ts`, which dispatches on the tier prefix to `calcModalAgentBucks` / `calcNimAgentBucks` / `calcAgentBucksForModel`. The `modelPricing` table is admin-editable but is not read by any billing path.
-
-Deduction is currently a no-op: `FREE_UNLIMITED` in `agentCore.ts` is `true`. `admin.deductPlatformCost` is still called on every model call but its `PLATFORM_PRICING` map contains only Claude and Gemini names, so current provider names price at 0.
-
-### Bedrock (not used by this pipeline)
-
-The pipeline contains no Bedrock code. Bedrock remains on the plain-chat, study and `/stream-chat` paths only; see [architecture.md](./architecture.md#legacy-provider-paths-not-the-pipeline) for those chains and their separate model-ID maps.
-
-## Chat & Research Mode Search (ai.ts)
-
-Chat and Research mode are single-call handlers, not pipelines. Both use the same search-tool loop:
-1. System prompt tells the model it can search using `<<SEARCH-TOOL="query">>`
-2. After it responds, if search tags are found:
-   - Execute up to 3 searches via `performSearch()` (Google Custom Search when `GOOGLE_API_KEY` + `GOOGLE_CX` are set, otherwise a model-knowledge answer)
-   - Inject results back as a follow-up user message
-   - Re-call the model for a final answer incorporating search results
-
-Research mode differs from chat only in its system prompt (report structure, always search for factual data).
-
-## Pipeline State Machine
+## Pipeline state machine
 
 ```
 Dispatching → Planning → Executing → Completed
-                                  ↘ Paused (waiting for user input)
-                                  ↘ Idle (stopped / error surfaced to user)
+                                  ↘ Paused (waiting on user input or command results)
+                                  ↘ Idle (stopped or error surfaced to user)
 ```
 
-Branch status fields (see `codeBranches` in `schema.ts`):
-- `phase`: Current agent name (e.g., "Coder", "Tester")
-- `executionPhase`: "dispatching" | "planning" | "executing" | "completed"
-- `status`: "running" | "paused" | "completed" | "idle"
-- `currentTaskIndex`: Which task in the plan is currently running
-- `dispatchedAgentsJson`: JSON array of agent names the Dispatcher selected
-- `streamingContent` / `streamingAgent` / `streamingAt`: Live agent output (updated in chunks for UI)
+Branch status fields (`codeBranches` in `schema.ts`):
+
+- `phase`: current agent name (e.g. "Coder", "Tester").
+- `executionPhase`: `dispatching` | `planning` | `executing` | `completed`.
+- `status`: `running` | `paused` | `completed` | `idle`.
+- `currentTaskIndex`: which task in the plan is currently running.
+- `dispatchedAgentsJson`: JSON array of agent names the Dispatcher selected.
+- `criticRetryCount`: persisted retry counter for the current task.
+- `streamingContent` / `streamingAgent` / `streamingAt`: live agent output (drip-fed in ~300-char chunks — real token streaming was abandoned as unreliable in Convex actions).
+- `executor`: `cloud` | `local` — chosen at `startPipeline` and never changed after; a local branch is never scheduled server-side, a cloud branch is never polled by the desktop app.
+
+`stopPipeline` sets `stopRequested`; the runner halts without rescheduling and clears the flag.
+
+## Chat / Research / Study — outside the pipeline
+
+Chat and Research are single-call handlers in `ai.ts` (no agents). Both use the same search-tool loop:
+
+1. System prompt tells the model it can search using `<<SEARCH-TOOL="query">>`.
+2. If the reply contains search tags, `performSearch()` executes up to 3 searches (Google Custom Search when `GOOGLE_API_KEY` + `GOOGLE_CX` are set, otherwise a model-knowledge answer).
+3. Results are injected as a follow-up user message and the model is re-called for a final answer.
+
+Study mode uses `rag.ts` (Gemini `text-embedding-004`, 1536-d) to retrieve relevant chunks from `ragChunks`, then follows the same call pattern.
+
+The legacy chat/study/`/stream-chat` chain is AWS Bedrock → Gemini → VLY. These providers are not called from the pipeline. Each keeps its own credential parser and model-ID map — see the file you are touching.
