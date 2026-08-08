@@ -820,6 +820,19 @@ export const runPipelineAction = internalAction({
               .map((t, i) => `✓ Task ${i + 1}: ${t.title}`)
               .join("\n");
 
+            // Executor gating: when the cloud executor is definitively
+            // blocked (e.g. GitHub token missing the `workflow` scope), agents
+            // must NOT be told they can emit {"op":"cmd"} — every command they
+            // queue will fail on dispatch, they wait forever for output, and
+            // burn rounds hallucinating file state. Replace the cmd op section
+            // with an explicit unavailability notice and keep the other ops
+            // (generate-image, request-api-key) intact so productive work
+            // against the file store can still happen.
+            const blockedReason = branch.executorBlockedReason;
+            const toolUsageBlock = blockedReason
+              ? `## Command Execution UNAVAILABLE\n${blockedReason}\nDo NOT emit {"op":"cmd"} ops — they cannot run. Work from the file contents shown above; write files with create-file/edit-file ops only. The user must reconnect GitHub from /sync to enable commands.\n\n## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}`
+              : `## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">> (legacy format, no longer supported)`;
+
             prompt = [
               `## Overall Project Goal\n${task}`,
               completedTasks ? `## Completed Tasks\n${completedTasks}` : "",
@@ -829,7 +842,7 @@ export const runPipelineAction = internalAction({
               recentFeedback ? `## Previous Feedback (from Tester/Critic/Hacker)\n${recentFeedback}` : "",
               commandContext,
               `## Pipeline Context\n${context}`,
-              `## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">> (legacy format, no longer supported)`,
+              toolUsageBlock,
               mcpToolSection,
             ].filter(Boolean).join("\n\n");
           }
@@ -1304,48 +1317,78 @@ export const runPipelineAction = internalAction({
       console.error("Pipeline error:", err);
       const message = err instanceof Error ? err.message : String(err);
 
-      // Provider exhaustion is TRANSIENT — every free seat rate-limits at once
-      // under burst, and the window is short. This used to terminate the run:
-      // a build that had already completed a dozen agent rounds was thrown away
-      // because the chain happened to be saturated for a minute. The pipeline is
-      // resumable (all state lives on the branch doc), so the correct response
-      // is to wait and pick up exactly where it stopped.
-      const isProviderExhausted =
+      // These failures are TRANSIENT and the run must survive them:
+      //  - provider exhaustion: every free seat rate-limits at once under
+      //    burst, and the window is short;
+      //  - Convex's own infrastructure blips: "Transient network error running
+      //    query (UND_ERR_SOCKET, 5 attempts)" killed a run AFTER it had
+      //    already ridden out three provider backoffs — Convex literally labels
+      //    the error transient, and terminating on it discards resumable work.
+      // The pipeline is resumable (all state lives on the branch doc), so the
+      // correct response to any of these is to wait and pick up exactly where
+      // it stopped, not to throw the run away.
+      const isTransientFailure =
         message.includes("All AI provider seats failed") ||
         message.includes("No AI provider configured") ||
         message.includes("rate limit") ||
-        message.includes("429");
+        message.includes("429") ||
+        message.includes("Transient network error") ||
+        message.includes("UND_ERR_SOCKET") ||
+        message.includes("ECONNRESET") ||
+        message.includes("fetch failed") ||
+        message.includes("socket hang up");
 
-      if (isProviderExhausted) {
-        const branchNow = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
-        const attempt = (branchNow?.providerBackoffCount ?? 0) + 1;
-        const MAX_PROVIDER_BACKOFFS = 5;
-        if (attempt <= MAX_PROVIDER_BACKOFFS) {
-          // 1, 2, 4, 8, 16 minutes — long enough to outlast a per-minute or
-          // per-hour-bucket limit without abandoning the user's work.
-          const delayMs = 60_000 * Math.pow(2, attempt - 1);
+      if (isTransientFailure) {
+        // Name the failure class honestly — "providers are rate-limited" was
+        // wrong (and confusing) when the actual cause was a Convex network blip.
+        const isInfraBlip =
+          message.includes("Transient network error") ||
+          message.includes("UND_ERR_SOCKET") ||
+          message.includes("ECONNRESET") ||
+          message.includes("fetch failed") ||
+          message.includes("socket hang up");
+        const causeLabel = isInfraBlip
+          ? "A transient network error interrupted this step"
+          : "Every model provider is rate-limited right now";
+
+        try {
+          const branchNow = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
+          const attempt = (branchNow?.providerBackoffCount ?? 0) + 1;
+          const MAX_PROVIDER_BACKOFFS = 5;
+          if (attempt <= MAX_PROVIDER_BACKOFFS) {
+            // 1, 2, 4, 8, 16 minutes — long enough to outlast a per-minute or
+            // per-hour-bucket limit without abandoning the user's work.
+            const delayMs = 60_000 * Math.pow(2, attempt - 1);
+            await ctx.runMutation(internal.codeBranches.saveMessage, {
+              branchId,
+              agent: "System",
+              content: `⏳ ${causeLabel}. Holding this run and resuming automatically in ${Math.round(delayMs / 60_000)} min (attempt ${attempt}/${MAX_PROVIDER_BACKOFFS}). Nothing has been lost — the pipeline continues from where it stopped.`,
+            });
+            await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+              branchId,
+              status: "running",
+              providerBackoffCount: attempt,
+            });
+            await ctx.scheduler.runAfter(delayMs, internal.codePipeline.runPipelineAction, { branchId });
+            return;
+          }
+          // Out of patience — fall through and report honestly.
           await ctx.runMutation(internal.codeBranches.saveMessage, {
             branchId,
             agent: "System",
-            content: `⏳ Every model provider is rate-limited right now. Holding this run and resuming automatically in ${Math.round(delayMs / 60_000)} min (attempt ${attempt}/${MAX_PROVIDER_BACKOFFS}). Nothing has been lost — the pipeline continues from where it stopped.`,
+            content: `⚠️ ${isInfraBlip ? "Transient errors persisted" : "Model providers stayed unavailable"} across ${MAX_PROVIDER_BACKOFFS} retries spanning ~30 minutes. Stopping so the run doesn't spin. Press send again to resume from here${isInfraBlip ? "" : ", or add a Modal/Ollama key in /admin for a seat that isn't shared"}.`,
           });
           await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-            branchId,
-            status: "running",
-            providerBackoffCount: attempt,
+            branchId, status: "idle", providerBackoffCount: 0,
           });
-          await ctx.scheduler.runAfter(delayMs, internal.codePipeline.runPipelineAction, { branchId });
-          return;
+        } catch {
+          // The recovery bookkeeping ITSELF hit the same blip (its runQuery /
+          // runMutation calls go over the wire too). Don't let the run die on
+          // the recovery path: schedule a bare resume and let the next
+          // invocation do the accounting. Worst case the watchdog cron picks
+          // the branch up in 12 minutes.
+          await ctx.scheduler.runAfter(60_000, internal.codePipeline.runPipelineAction, { branchId });
         }
-        // Out of patience — fall through and report honestly.
-        await ctx.runMutation(internal.codeBranches.saveMessage, {
-          branchId,
-          agent: "System",
-          content: `⚠️ Model providers stayed unavailable across ${MAX_PROVIDER_BACKOFFS} retries spanning ~30 minutes. Stopping so the run doesn't spin. Press send again to resume from here, or add a Modal/Ollama key in /admin for a seat that isn't shared.`,
-        });
-        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-          branchId, status: "idle", providerBackoffCount: 0,
-        });
         return;
       }
 
@@ -1408,6 +1451,37 @@ export const startPipeline = action({
         round: 0,
         messageIndex: 0,
       });
+    }
+
+    // If a previous run recorded that the cloud executor is blocked (missing
+    // `workflow` scope on the connected GitHub token being the common case),
+    // tell the user up front on THIS prompt so they know why commands will not
+    // run and what to do about it — the agent prompt will also strip the cmd
+    // op advertisement so no rounds are burned on impossible executions.
+    // Guarded to once per user prompt (startPipeline runs once per prompt) and
+    // deduped against an identical trailing System warning so a Stop/Restart
+    // does not spam the transcript.
+    if (branch.executorBlockedReason && (args.executor ?? "cloud") !== "local") {
+      const recent = await ctx.runQuery(internal.codeBranches.getMessagesInternal, {
+        branchId: args.branchId,
+      }) as Array<{ agent: string; content: string }>;
+      const last = recent.length > 0 ? recent[recent.length - 1] : null;
+      const warning =
+        `⚠️ Cloud command execution is disabled on this branch: ${branch.executorBlockedReason}\n\n`
+        + `Agents will keep working on files, but any command they would have run will not execute. `
+        + `Reconnect GitHub from /sync (with the `
+        + "`workflow`"
+        + ` scope) to re-enable commands.`;
+      const alreadyWarned =
+        last?.agent === "System" &&
+        last.content.startsWith("⚠️ Cloud command execution is disabled");
+      if (!alreadyWarned) {
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId: args.branchId,
+          agent: "System",
+          content: warning,
+        });
+      }
     }
 
     await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, {

@@ -604,6 +604,28 @@ export const setVmInfo = internalMutation({
   },
 });
 
+// Records that the cloud executor cannot run commands on this branch at all
+// (e.g. connected GitHub token missing the `workflow` scope, no repo, no
+// token). Written by githubActionsRunner from the natural failure and success
+// points — the pipeline reads it to strip the {"op":"cmd"} advertisement from
+// the agent prompt so agents don't waste rounds emitting commands that can
+// never run. Pass null (or empty string) to clear.
+export const setExecutorBlocked = internalMutation({
+  args: { branchId: v.string(), reason: v.union(v.string(), v.null()) },
+  handler: async (ctx, args) => {
+    const branch = await ctx.db
+      .query("codeBranches")
+      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (!branch) return;
+    const next = args.reason && args.reason.length > 0 ? args.reason : undefined;
+    // Avoid a needless patch (and Convex write) when nothing actually changes —
+    // this is called on every successful VM boot heartbeat's neighbourhood.
+    if (branch.executorBlockedReason === next) return;
+    await ctx.db.patch(branch._id, { executorBlockedReason: next });
+  },
+});
+
 // Records why a branch has no platform repo yet — cleared as soon as one is
 // successfully created. Read by SandboxView so a token/permission failure
 // shows up as a message with a retry button instead of an endless spinner.

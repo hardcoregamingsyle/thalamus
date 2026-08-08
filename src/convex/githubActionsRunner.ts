@@ -289,15 +289,41 @@ export const bootVmForBranch = internalAction({
     if (branch.executor === "local") return "local";
 
     const aliveSince = (branch as Record<string, unknown> | null)?.vmLastSeenAt as number | undefined;
-    if (aliveSince !== undefined && Date.now() - aliveSince < VM_ALIVE_WINDOW_MS) return "alive";
+    if (aliveSince !== undefined && Date.now() - aliveSince < VM_ALIVE_WINDOW_MS) {
+      // A live worker means the executor is definitively working — a stale
+      // blocked-reason from an earlier failure would only confuse agents into
+      // silence. Clear it (the mutation no-ops when already undefined).
+      await ctx.runMutation(internal.codeBranches.setExecutorBlocked, {
+        branchId: args.branchId, reason: null,
+      }).catch(() => {});
+      return "alive";
+    }
 
     const cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
       projectId: branch.projectId, branchId: args.branchId,
     }) as GhConfig | null;
-    if (!cfg) return "no-repo"; // repo not set up yet — the pipeline must fail commands with the explainer
+    if (!cfg) {
+      // No repo yet is a "commands can't run" state as far as the pipeline
+      // prompt is concerned — flag it so the agent stops emitting cmd ops.
+      await ctx.runMutation(internal.codeBranches.setExecutorBlocked, {
+        branchId: args.branchId,
+        reason:
+          "This branch has no GitHub repo yet, so cloud commands have nowhere to run. "
+          + "Connect GitHub on the project (or use the desktop app to run on your own machine).",
+      });
+      return "no-repo"; // repo not set up yet — the pipeline must fail commands with the explainer
+    }
 
     const token = cfg.githubToken || process.env.GITHUB_TOKEN;
-    if (!token) return "no-token";
+    if (!token) {
+      await ctx.runMutation(internal.codeBranches.setExecutorBlocked, {
+        branchId: args.branchId,
+        reason:
+          "No GitHub token is available for this branch — cloud commands cannot be dispatched. "
+          + "Reconnect GitHub from the /sync page.",
+      });
+      return "no-token";
+    }
 
     try {
       const octokit = new Octokit({ auth: token });
@@ -323,6 +349,12 @@ export const bootVmForBranch = internalAction({
           branch: cfg.branch,
         },
       });
+      // The workflow is written and a run was dispatched — commands can flow
+      // again. Clear any prior blocked-reason so the agent prompt re-enables
+      // the cmd op advertisement on the next runPipelineAction step.
+      await ctx.runMutation(internal.codeBranches.setExecutorBlocked, {
+        branchId: args.branchId, reason: null,
+      });
       return "booted";
     } catch (err) {
       // A failed dispatch must not leave a stale "alive" heartbeat blocking
@@ -334,7 +366,14 @@ export const bootVmForBranch = internalAction({
       // Distinguish the "OAuth token lacks the `workflow` scope" case so the
       // command-result surface can tell the user to reconnect GitHub instead
       // of showing a generic "could not start" message that hides the fix.
-      if (err instanceof WorkflowScopeMissingError) return "workflow-scope-missing";
+      if (err instanceof WorkflowScopeMissingError) {
+        await ctx.runMutation(internal.codeBranches.setExecutorBlocked, {
+          branchId: args.branchId, reason: WORKFLOW_SCOPE_MSG,
+        }).catch(() => {});
+        return "workflow-scope-missing";
+      }
+      // Transient dispatch failures (network flake, GitHub 5xx) — do NOT set
+      // executorBlockedReason: those are retryable and clear on their own.
       return "dispatch-error";
     }
   },

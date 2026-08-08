@@ -219,6 +219,13 @@ const schema = defineSchema(
       // discarded. Cleared when a step actually produces a message. See the
       // transient-error branch in codePipeline.runPipelineAction.
       providerBackoffCount: v.optional(v.number()),
+      // Short human-readable reason the cloud executor cannot run commands at
+      // all on this branch (e.g. connected GitHub token missing the `workflow`
+      // scope, no token, no repo). Set from githubActionsRunner when a VM boot
+      // definitively fails for a reason no retry will fix; cleared on a
+      // successful VM workflow install. Read by the pipeline's prompt builder
+      // so agents stop emitting {"op":"cmd"} ops that can never execute.
+      executorBlockedReason: v.optional(v.string()),
     })
       .index("by_project", ["projectId"])
       .index("by_branch_id", ["branchId"])

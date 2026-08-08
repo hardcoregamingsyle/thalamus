@@ -159,6 +159,40 @@ describe("parseAgentOutput — LLM special-token wrappers", () => {
     expect(parsed.cleanContent).toContain(`<div class="ok">|pipe|</div>`);
     expect(parsed.cleanContent).toContain(`<https://example.com>`);
   });
+
+  it("strips fullwidth-pipe wrappers that carry attributes", () => {
+    // Production round 20 emitted `<｜｜DSML｜｜invoke name="cmd">` — spaces
+    // and attributes inside the tag, which the original no-whitespace bound
+    // missed. Fullwidth pipe after `<` never occurs in real markup, so the
+    // relaxed bound is safe for this branch only.
+    const out = `<｜｜DSML｜｜invoke name="cmd">hello</｜｜DSML｜｜invoke>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cleanContent).not.toContain("DSML");
+    expect(parsed.cleanContent).not.toContain("invoke");
+    expect(parsed.cleanContent.trim()).toBe("hello");
+  });
+
+  it("recovers a command from leaked DSML tool-call markup", () => {
+    // Exact production shape: the model emitted its native function-call
+    // syntax instead of a JSON op. The command must EXECUTE (become a cmdOp),
+    // not just be cleaned away.
+    const out = `<｜｜DSML｜｜invoke name="cmd"> <｜｜DSML｜｜parameter name="command" string="true">ls -la && find . -maxdepth 4 -type f | sort | head -100`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual([
+      "ls -la && find . -maxdepth 4 -type f | sort | head -100",
+    ]);
+    expect(parsed.cleanContent).toContain("[CMD: ls -la && find . -maxdepth 4 -type f | sort | head -100]");
+    expect(parsed.cleanContent).not.toContain("DSML");
+  });
+
+  it("recovered DSML command with a closing tag keeps content bounded", () => {
+    const out = `<｜｜DSML｜｜invoke name="cmd"><｜｜DSML｜｜parameter name="command" string="true">pwd && echo OK</｜｜DSML｜｜invoke> trailing prose`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["pwd && echo OK"]);
+    expect(parsed.cleanContent).toContain("[CMD: pwd && echo OK]");
+    expect(parsed.cleanContent).toContain("trailing prose");
+    expect(parsed.cleanContent).not.toContain("DSML");
+  });
 });
 
 describe("parseAgentOutput — malformed JSON ops are surfaced, not dropped", () => {

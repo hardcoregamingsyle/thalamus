@@ -189,17 +189,46 @@ export function findJsonOps(content: string): Array<Record<string, unknown>> {
  *  inside them from being found. OpenAI-family control tokens show up the same
  *  way from other models — `<|im_start|>`, `<|eot_id|>`, `<|channel|>`.
  *
- *  The regex is intentionally conservative to avoid eating real code:
- *   - Must open with `<` or `</` IMMEDIATELY followed by a pipe (fullwidth
- *     U+FF5C or ASCII `|`). Real code — `x < y`, `a || b`, `<div>`,
- *     `<https://…>`, `if (a < b || c > d)` — never puts a pipe right after `<`.
- *   - Body is 1–80 chars, no whitespace and no `<`/`>` — so it cannot span a
- *     line, or eat a code block, or swallow prose.
- *   - Closes with a plain `>`. Some models emit `<｜｜X｜｜op>` where the
- *     character just before `>` is not a pipe (see the DSML example); the
- *     no-whitespace/no-angle-bracket body bound keeps this shape safe. */
+ *  Two deliberately different bounds:
+ *   - FULLWIDTH pipe (U+FF5C): attributes allowed (`<｜｜DSML｜｜invoke
+ *     name="cmd">` appeared in production). Safe because `<｜` never opens
+ *     legitimate markup or code — the fullwidth pipe is exclusively a model
+ *     special-token character.
+ *   - ASCII pipe: body stays whitespace-free and 1–80 chars, because `<|` with
+ *     spaces could in principle collide with real text; the known control
+ *     tokens (`<|im_start|>` etc.) never contain spaces.
+ *  Real code — `x < y`, `a || b`, `<div>`, `<https://…>` — never puts a pipe
+ *  right after `<`, so neither branch can eat it. */
 function stripSpecialTokenWrappers(content: string): string {
-  return content.replace(/<\/?[｜|][^\s<>]{1,80}>/g, "");
+  return content
+    .replace(/<\/?｜[^<>]{1,160}>/g, "")
+    .replace(/<\/?\|[^\s<>]{1,80}>/g, "");
+}
+
+/** Recover commands from DeepSeek's leaked tool-call syntax. Production runs
+ *  showed the model sometimes emits its NATIVE function-call markup instead of
+ *  a JSON op:
+ *      <｜｜DSML｜｜invoke name="cmd"> <｜｜DSML｜｜parameter name="command"
+ *      string="true">ls -la && find . -type f | sort
+ *  Before this, the command was silently lost (the wrapper was stripped and no
+ *  op parsed) and the agent looped re-asking for output that never came. The
+ *  command text is extracted and queued as a real cmd op; the markup is
+ *  replaced with the same visible `[CMD: …]` marker JSON ops get. Content runs
+ *  until the next fullwidth-pipe tag or end of message, so commands containing
+ *  `<` (heredocs, redirections) survive intact. */
+function recoverDsmlCommands(
+  content: string,
+  cmdOps: CmdOp[],
+): string {
+  const paramCmdRe = /<｜[^<>]*parameter[^<>]*name="command"[^<>]*>([\s\S]*?)(?=<\/?｜|$)/g;
+  return content.replace(paramCmdRe, (_whole, body: string) => {
+    const command = body.trim();
+    if (!command) return "";
+    if (!cmdOps.some((c) => c.command === command)) {
+      cmdOps.push({ command });
+    }
+    return `[CMD: ${command}]`;
+  });
 }
 
 // Legacy tag parsers — keep for backwards compatibility with older conversations.
@@ -208,18 +237,21 @@ const O = "(?:<<|‹‹|«|‹)";
 const C = "(?:>>|››|»|›)";
 
 export function parseAgentOutput(content: string): ParsedOutput {
-  // Strip LLM special-token wrappers BEFORE any op extraction so (a) an op
-  // wrapped in `<｜…｜>` still finds its JSON opener and (b) the wrapper
-  // characters never survive into cleanContent to be shown to the user.
-  // Legacy `<<TAG>>` markers use double angle brackets, so they are unaffected.
-  const stripped = stripSpecialTokenWrappers(content);
-
   const fileOps: FileOp[] = [];
   const searchOps: SearchOp[] = [];
   const scrapeOps: ScrapeOp[] = [];
   const cmdOps: CmdOp[] = [];
   const mcpOps: McpOp[] = [];
   const malformedOps: string[] = [];
+
+  // Recover commands from leaked DSML tool-call markup FIRST (it needs the
+  // wrapper tags intact to find the parameter boundaries), THEN strip the
+  // remaining special-token wrappers so (a) a JSON op wrapped in `<｜…｜>`
+  // still finds its opener and (b) no wrapper characters survive into
+  // cleanContent. Legacy `<<TAG>>` markers use double angle brackets, so they
+  // are unaffected by either pass.
+  const recovered = recoverDsmlCommands(content, cmdOps);
+  const stripped = stripSpecialTokenWrappers(recovered);
   let cleanContent = stripped;
 
   // ── Primary: JSON ops format ──────────────────────────────────────────────
