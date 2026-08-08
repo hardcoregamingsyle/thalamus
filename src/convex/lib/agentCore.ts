@@ -18,6 +18,7 @@ import { callOvhcloud, mapTaskToOvhModel } from "./ovhcloudClient";
 import { callZen, findZenModel, ZEN_DISPATCHER_MODEL, ZEN_DEFAULT_MODEL } from "./zenClient";
 import { callDeadlySignals, findDeadlySignalsModel, DEADLYSIGNALS_DISPATCHER_MODEL, DEADLYSIGNALS_DEFAULT_MODEL } from "./deadlySignalsClient";
 import { callModelScope, findModelScopeModel, MODELSCOPE_DISPATCHER_MODEL, MODELSCOPE_DEFAULT_MODEL } from "./modelscopeClient";
+import { dokobotSearch, dokobotRead, hasDokobotKey, type DokobotSearchItem } from "./dokobotClient";
 
 // The only tier-ish type left: callModel returns a provider-tagged string
 // ("zen:<model>", "ollama:<model>", "modal:<model>", "ovhcloud:<model>",
@@ -226,24 +227,133 @@ export function calcAgentBucksForTier(
 }
 
 
-export async function performSearch(query: string, _keys?: string[]): Promise<string> {
-  // Use SiliconFlow model knowledge as fallback
+// How many top results to deep-read for the default `performSearch` path, and
+// how much page text to keep per result. Deep-read means the agent sees the
+// actual page prose, not just a SERP snippet — the whole point of the Dokobot
+// integration. Bounds chosen so a single search block stays under ~10 KB even
+// when all three pages fetch cleanly.
+const DEFAULT_DEEP_TOP_N = 3;
+const DEEP_PAGE_CHAR_BUDGET = 2500;
+
+interface SearchProviderResult {
+  items: DokobotSearchItem[];
+  provider: "dokobot" | "google" | "none";
+}
+
+/**
+ * Provider layer for the raw SERP call. Dokobot first when a key is present,
+ * Google Custom Search second (`GOOGLE_API_KEY` + `GOOGLE_CX`). Returns an
+ * empty item list rather than throwing when nothing is configured.
+ */
+async function fetchSearchProviderResults(query: string, num: number): Promise<SearchProviderResult> {
+  if (hasDokobotKey()) {
+    try {
+      const res = await dokobotSearch(query, num);
+      if (res.items.length > 0) return { items: res.items, provider: "dokobot" };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn("Dokobot search failed, falling back to Google CSE:", msg);
+    }
+  }
+
   const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY ?? "";
   const GOOGLE_CX = process.env.GOOGLE_CX ?? "";
-  
   if (GOOGLE_API_KEY && GOOGLE_CX) {
     try {
-      const url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(GOOGLE_API_KEY)}&cx=${encodeURIComponent(GOOGLE_CX)}&q=${encodeURIComponent(query)}&num=5`;
+      const url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(GOOGLE_API_KEY)}&cx=${encodeURIComponent(GOOGLE_CX)}&q=${encodeURIComponent(query)}&num=${num}`;
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json() as { items?: Array<{ title: string; snippet: string; link: string }> };
         if (data.items && data.items.length > 0) {
-          return data.items.map((r, i) => `[${i + 1}] ${r.title}\n${r.snippet}\n${r.link}`).join("\n\n");
+          return {
+            items: data.items.map(it => ({ title: it.title, link: it.link, snippet: it.snippet })),
+            provider: "google",
+          };
         }
       }
     } catch { /* fall through */ }
   }
-  
+
+  return { items: [], provider: "none" };
+}
+
+/**
+ * Deep-read `topN` result URLs. Tries Dokobot's remote-browser read first when a
+ * key is set (it renders JS-heavy SPAs); silently falls through to the plain
+ * HTML `performScrape` when Dokobot can't help (no extension connected, timeout,
+ * encrypted payload). Results run in parallel so latency = slowest page, not sum.
+ */
+async function deepReadResults(items: DokobotSearchItem[], topN: number): Promise<string[]> {
+  const targets = items.slice(0, topN);
+  const canUseDokobotRead = hasDokobotKey();
+  const readPromises = targets.map(async (item) => {
+    if (canUseDokobotRead) {
+      try {
+        const r = await dokobotRead(item.link, 30);
+        return distillPageText(r.text);
+      } catch { /* fall through to plain scrape */ }
+    }
+    try {
+      const text = await performScrape(item.link);
+      return distillPageText(text);
+    } catch {
+      return "";
+    }
+  });
+  return Promise.all(readPromises);
+}
+
+function distillPageText(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= DEEP_PAGE_CHAR_BUDGET) return trimmed;
+  return trimmed.slice(0, DEEP_PAGE_CHAR_BUDGET) + "\n...[truncated]";
+}
+
+function formatSearchBlock(items: DokobotSearchItem[], pages: string[]): string {
+  return items.map((r, i) => {
+    const header = `[${i + 1}] ${r.title}\n${r.snippet ?? ""}\n${r.link}`.trim();
+    const page = pages[i];
+    if (!page) return header;
+    return `${header}\n\n--- Page content ---\n${page}`;
+  }).join("\n\n");
+}
+
+/**
+ * Web search for agent prompts. Returns a numbered, readable block that agents
+ * paste into their reasoning. Behavior:
+ *   • With `DOKOBOT_API_KEY` set: Dokobot search → top-N page reads → distilled
+ *     content appended under each result. This is the DEEP path — agents see
+ *     the actual page prose, not just SERP snippets.
+ *   • Without a Dokobot key: Google Custom Search (surface snippets only, no
+ *     page reads — CSE cannot fetch page content and blind scraping every SERP
+ *     result was not the previous behavior).
+ *   • With neither configured: falls through to the dispatcher's model
+ *     knowledge, and finally to a "[Search not available]" marker.
+ *
+ * The return format is preserved for backward-compat: `[N] title\nsnippet\nlink`
+ * blocks separated by blank lines. When deep-read text is available, it is
+ * appended under each block with a `--- Page content ---` divider — additive,
+ * so downstream regex/prompts that only care about the header still work.
+ *
+ * The optional second arg (previously `_keys`) is unused and left for signature
+ * stability. Pass `{ deep: false }` as the third arg to skip page reads (e.g.
+ * from a fact-checker that only wants to sanity-check URLs).
+ */
+export async function performSearch(
+  query: string,
+  _keys?: string[],
+  opts?: { deep?: boolean; topN?: number; num?: number },
+): Promise<string> {
+  const num = opts?.num ?? 5;
+  const deep = opts?.deep !== false;
+  const topN = Math.min(Math.max(opts?.topN ?? DEFAULT_DEEP_TOP_N, 0), num);
+
+  const providerResult = await fetchSearchProviderResults(query, num);
+  if (providerResult.items.length > 0) {
+    const pages = deep && topN > 0 ? await deepReadResults(providerResult.items, topN) : [];
+    return formatSearchBlock(providerResult.items, pages);
+  }
+
   try {
     const { text } = await callSiliconFlow(
       `Search: "${query}"\n\nProvide a concise factual answer with key details.`,
@@ -253,8 +363,18 @@ export async function performSearch(query: string, _keys?: string[]): Promise<st
     );
     if (text.trim().length > 20) return text;
   } catch { /* ignore */ }
-  
+
   return `[Search not available — no search API configured.]`;
+}
+
+/**
+ * Explicit deep-search entry point. Equivalent to `performSearch(query, undefined, {deep: true, topN})`
+ * but named for callers that want to make the intent obvious. The default
+ * `performSearch` is already deep, so use this only when you want a different
+ * `topN` than the default (3) or the readability of the explicit name.
+ */
+export async function performDeepSearch(query: string, topN: number = DEFAULT_DEEP_TOP_N): Promise<string> {
+  return performSearch(query, undefined, { deep: true, topN });
 }
 
 export async function performScrape(url: string): Promise<string> {
