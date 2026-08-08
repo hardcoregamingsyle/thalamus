@@ -13,7 +13,7 @@
 // per-model access application on ModelScope. DeepSeek-V4-Pro is the frontier
 // target that every other seat in the chain fails on — it works here.
 
-import type { ActionCtx } from "./_generated/server";
+import type { ActionCtx } from "../_generated/server";
 
 // ── Base URL ───────────────────────────────────────────────────────────────────
 const BASE_URL = "https://api-inference.modelscope.ai/v1";

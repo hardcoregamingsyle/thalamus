@@ -32,9 +32,9 @@ import {
   AGENT_SYSTEM_PROMPTS,
   calcAgentBucksForTier,
   type ModelTier,
-} from "./agentCore";
-import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./mcpClient";
-import { parseMcpCalls, stripMcpBlocks, type ParsedMcpCall } from "./mcpParse";
+} from "./lib/agentCore";
+import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./lib/mcpClient";
+import { parseMcpCalls, stripMcpBlocks, type ParsedMcpCall } from "./lib/mcpParse";
 
 // MCP loop guard: how many times one agent may be re-run with tool results
 // before the pipeline advances anyway (prevents infinite call loops).

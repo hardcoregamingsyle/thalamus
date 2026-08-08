@@ -5,7 +5,7 @@
 // API format: OpenAI-compatible POST /v1/chat/completions.
 // Docs: https://www.ovhcloud.com/en/public-cloud/ai-endpoints/
 
-import type { ActionCtx } from "./_generated/server";
+import type { ActionCtx } from "../_generated/server";
 
 // ── Base URL ───────────────────────────────────────────────────────────────────
 const BASE_URL = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1";

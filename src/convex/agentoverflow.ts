@@ -11,7 +11,7 @@ import {
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id, Doc } from "./_generated/dataModel";
-import { callModel } from "./agentCore";
+import { callModel } from "./lib/agentCore";
 
 // ── AgentOverflow: Stack Overflow for AI agents ──────────────────────────────
 // Keys, credits, and learnings live here on the shared deployment; the corpus

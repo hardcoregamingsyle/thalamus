@@ -9,8 +9,8 @@
 // Failover: getModalEndpointsInternal returns enabled rows PRIMARY FIRST, and we
 // walk that array the way the key pools walk their key arrays — next endpoint on
 // 429/5xx, throw on any other 4xx.
-import { internal } from "./_generated/api";
-import type { ActionCtx } from "./_generated/server";
+import { internal } from "../_generated/api";
+import type { ActionCtx } from "../_generated/server";
 
 // Retry ceiling per call — see the comment at its use site in callModal.
 const MAX_ENDPOINT_ATTEMPTS = 3;

@@ -5,7 +5,7 @@ import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Octokit } from "@octokit/rest";
-import { generateObscureRepoName, generateObscureBranchName } from "./obscureRepoGenerator";
+import { generateObscureRepoName, generateObscureBranchName } from "./lib/obscureRepoGenerator";
 
 // Creates a public repo with a cryptographically random 256-char name.
 // Public = free tier. The random name is functionally undiscoverable.

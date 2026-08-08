@@ -3,8 +3,8 @@ import { httpAction } from "./_generated/server";
 import { internal, api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
-import { callModel, calcAgentBucksForTier, FREE_UNLIMITED, MODE_ADHD, adhdToTemperature, MODE_SYSTEM_PROMPTS } from "./agentCore";
-import { buildStudySystemPrompt } from "./studyPrompt";
+import { callModel, calcAgentBucksForTier, FREE_UNLIMITED, MODE_ADHD, adhdToTemperature, MODE_SYSTEM_PROMPTS } from "./lib/agentCore";
+import { buildStudySystemPrompt } from "./lib/studyPrompt";
 import {
   aoOptions,
   aoSearch,

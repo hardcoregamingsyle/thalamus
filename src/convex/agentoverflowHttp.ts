@@ -1,7 +1,7 @@
 import { httpAction, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { callModel } from "./agentCore";
+import { callModel } from "./lib/agentCore";
 import {
   AO_FREE_UNLIMITED,
   contribTierFor,

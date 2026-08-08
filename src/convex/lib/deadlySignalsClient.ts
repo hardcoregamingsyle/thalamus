@@ -13,7 +13,7 @@
 // tokens; keep it that way — the Dispatcher picks from it, so a dead model
 // here means routing the whole run to a 500.
 
-import type { ActionCtx } from "./_generated/server";
+import type { ActionCtx } from "../_generated/server";
 
 // ── Base URL ───────────────────────────────────────────────────────────────────
 const BASE_URL = "https://myapi.creitingameplays.com/v1";

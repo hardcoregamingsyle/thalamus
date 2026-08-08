@@ -1,6 +1,6 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
-import { FREE_UNLIMITED } from "./agentCore";
+import { FREE_UNLIMITED } from "./lib/agentCore";
 
 // Guest free-prompt daily cap (unauthenticated users). Mirrors GUEST_LIMIT in
 // the frontend (src/pages/Portal.tsx) — the server side is authoritative.

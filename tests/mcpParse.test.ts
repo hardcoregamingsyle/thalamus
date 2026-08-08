@@ -2,7 +2,7 @@
 // are instructed to emit. If these pass, whatever the model writes in this
 // shape becomes a real tool call.
 import { describe, it, expect } from "bun:test";
-import { parseMcpCalls, stripMcpBlocks } from "../src/convex/mcpParse";
+import { parseMcpCalls, stripMcpBlocks } from "../src/convex/lib/mcpParse";
 
 describe("parseMcpCalls", () => {
   it("parses a single call with JSON args", () => {

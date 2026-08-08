@@ -3,8 +3,8 @@ import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { performSearch, FREE_UNLIMITED, MODE_ADHD, adhdToTemperature, MODE_SYSTEM_PROMPTS } from "./agentCore";
-import { buildStudySystemPrompt } from "./studyPrompt";
+import { performSearch, FREE_UNLIMITED, MODE_ADHD, adhdToTemperature, MODE_SYSTEM_PROMPTS } from "./lib/agentCore";
+import { buildStudySystemPrompt } from "./lib/studyPrompt";
 
 // Gemini keys are loaded from the DB (admin-managed via Admin UI)
 async function getGeminiKeysFromDB(ctx: { runQuery: ActionCtx["runQuery"] }): Promise<string[]> {
@@ -501,7 +501,7 @@ export const vlyFallbackCompletion = internalAction({
     messages: v.array(v.object({ role: v.union(v.literal("user"), v.literal("assistant")), content: v.string() })),
   },
   handler: async (_ctx, args) => {
-    const { vly } = await import("../lib/vly-integrations");
+    const { vly } = await import("./lib/vlyIntegrations");
     const result = await vly.ai.completion({
       model: "gpt-4o-mini",
       messages: [

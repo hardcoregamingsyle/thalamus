@@ -1,7 +1,7 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
-import { requireSession, assertProjectOwner } from "./codeAuth";
+import { requireSession, assertProjectOwner } from "./lib/codeAuth";
 
 // Third-party provider keys are encrypted at rest with AES-256-GCM. The key is
 // derived from the API_KEY_ENCRYPTION_SECRET deployment secret, so raw keys never

@@ -3,8 +3,8 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { callSiliconFlow } from "./agentCore";
-import { buildStudySystemPrompt } from "./studyPrompt";
+import { callSiliconFlow } from "./lib/agentCore";
+import { buildStudySystemPrompt } from "./lib/studyPrompt";
 
 
 // Gemini with Google Search Grounding
@@ -222,7 +222,7 @@ export const processFileResource = action({
         if (!summary || summary.length < 50) throw new Error("Empty extraction");
       } catch {
         try {
-          const { vly } = await import("../lib/vly-integrations");
+          const { vly } = await import("./lib/vlyIntegrations");
           const result = await vly.ai.completion({
             model: "gpt-4o",
             messages: [{ role: "user", content: `Extract ALL text content from this PDF document "${args.fileName}".\n\nPDF base64 (first 100k chars): ${args.fileDataBase64.slice(0, 100000)}` }],
@@ -239,7 +239,7 @@ export const processFileResource = action({
         if (!summary || summary.length < 20) throw new Error("Empty image analysis");
       } catch {
         try {
-          const { vly } = await import("../lib/vly-integrations");
+          const { vly } = await import("./lib/vlyIntegrations");
           const result = await vly.ai.completion({
             model: "gpt-4o-mini",
             messages: [{ role: "user", content: `Analyze this image and provide a comprehensive summary.\n\nImage data (base64, ${args.fileType}): ${args.fileDataBase64.slice(0, 80000)}` }],
@@ -447,7 +447,7 @@ export const sendStudyMessage = action({
           inputTokens = result.inputTokens;
           outputTokens = result.outputTokens;
         } catch {
-          const { vly } = await import("../lib/vly-integrations");
+          const { vly } = await import("./lib/vlyIntegrations");
           const result = await vly.ai.completion({
             model: "claude-haiku-4-5",
             messages: [{ role: "user", content: systemPrompt + "\n\n" + fullPrompt }],
@@ -463,7 +463,7 @@ export const sendStudyMessage = action({
         inputTokens = result.inputTokens;
         outputTokens = result.outputTokens;
       } catch {
-        const { vly } = await import("../lib/vly-integrations");
+        const { vly } = await import("./lib/vlyIntegrations");
         const result = await vly.ai.completion({
           model: "claude-haiku-4-5",
           messages: [{ role: "user", content: systemPrompt + "\n\n" + fullPrompt }],
@@ -565,7 +565,7 @@ export const generateMockTest = action({
       const result = await callSiliconFlow(historyText, systemPrompt);
       responseContent = result.text;
     } catch {
-      const { vly } = await import("../lib/vly-integrations");
+      const { vly } = await import("./lib/vlyIntegrations");
       const result = await vly.ai.completion({
         model: "gpt-4o-mini",
         messages: [{ role: "user", content: systemPrompt + "\n\n" + historyText }],
@@ -630,7 +630,7 @@ Output ONLY valid JSON:
       const result = await callSiliconFlow(qaText, systemPrompt);
       responseContent = result.text;
     } catch {
-      const { vly } = await import("../lib/vly-integrations");
+      const { vly } = await import("./lib/vlyIntegrations");
       const result = await vly.ai.completion({
         model: "gpt-4o-mini",
         messages: [{ role: "user", content: systemPrompt + "\n\n" + qaText }],
@@ -687,7 +687,7 @@ Output ONLY valid JSON array:
       const result = await callSiliconFlow(historyText, systemPrompt);
       responseContent = result.text;
     } catch {
-      const { vly } = await import("../lib/vly-integrations");
+      const { vly } = await import("./lib/vlyIntegrations");
       const result = await vly.ai.completion({
         model: "gpt-4o-mini",
         messages: [{ role: "user", content: systemPrompt + "\n\n" + historyText }],
@@ -731,7 +731,7 @@ Output ONLY a valid JSON array:
       const result = await callSiliconFlow(historyText, systemPrompt);
       responseContent = result.text;
     } catch {
-      const { vly } = await import("../lib/vly-integrations");
+      const { vly } = await import("./lib/vlyIntegrations");
       const result = await vly.ai.completion({
         model: "gpt-4o-mini",
         messages: [{ role: "user", content: systemPrompt + "\n\n" + historyText }],

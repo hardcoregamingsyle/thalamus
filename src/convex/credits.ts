@@ -6,7 +6,7 @@ import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 // Free+unlimited switch lives in agentCore (the one pure module every runtime
 // can import). While true, this is a no-op.
-import { FREE_UNLIMITED } from "./agentCore";
+import { FREE_UNLIMITED } from "./lib/agentCore";
 
 export const deductAgentBucks = internalMutation({
   args: {

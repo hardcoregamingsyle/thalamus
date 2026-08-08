@@ -4,7 +4,7 @@
 // quotes getting silently dropped, and a file block that got cut off at the
 // token limit (no closing tag) needing to be detectable so it isn't lost.
 import { describe, it, expect } from "bun:test";
-import { parseAgentOutput } from "../src/convex/agentCore";
+import { parseAgentOutput } from "../src/convex/lib/agentCore";
 
 describe("parseAgentOutput — commands", () => {
   it("parses a RUN-CMD that contains double quotes", () => {

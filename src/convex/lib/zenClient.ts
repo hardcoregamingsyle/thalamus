@@ -9,7 +9,7 @@
 // (ling-3.0-flash-free is listed but returns HTTP 400 — excluded.)
 // Docs: https://opencode.ai/zen
 
-import type { ActionCtx } from "./_generated/server";
+import type { ActionCtx } from "../_generated/server";
 
 // ── Base URL ───────────────────────────────────────────────────────────────────
 const BASE_URL = "https://opencode.ai/zen/v1";

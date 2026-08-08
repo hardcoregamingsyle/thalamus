@@ -1,7 +1,7 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
-import { requireSession } from "./codeAuth";
+import { requireSession } from "./lib/codeAuth";
 import type { Doc, Id } from "./_generated/dataModel";
 
 // Referenced by name instead of through `internal` — the typed circular api

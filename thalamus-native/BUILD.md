@@ -1,6 +1,6 @@
 # Building the Thalamus desktop app
 
-This is the **native Windows app**. It is WPF on **.NET 8** — real C#, no Electron, no WebView2, no Qt. If you read an older doc talking about Qt 6, CMake, or WiX, it was describing a version that no longer exists. Ignore it. This is the truth.
+This is the **native Windows app**: WPF on **.NET 8** — C#, no Electron, no WebView2, no Qt. (Older docs mentioning Qt 6, CMake, or WiX described a previous iteration that no longer exists.)
 
 Two projects live here:
 
@@ -15,15 +15,15 @@ Both target `net8.0-windows` and publish as **self-contained, single-file, win-x
 
 ## What you need
 
-- **.NET 8 SDK** — the one non-negotiable. Grab it: https://dotnet.microsoft.com/download/dotnet/8
-- **Inno Setup 6** — optional. Only needed if you want the polished `Thalamus-Setup-*.exe` wrapper. Without it the build still spits out working `.exe`s, it just skips the pretty installer. https://jrsoftware.org/isdl.php
-- **QEMU** — runtime-only, and not your problem at build time. The installer pulls it down (or the app downloads it on first VM boot) for the VM Sandbox.
+- **.NET 8 SDK** — required. https://dotnet.microsoft.com/download/dotnet/8
+- **Inno Setup 6** — optional. Only needed for the wrapped `Thalamus-Setup-*.exe` installer; without it the build still produces working `.exe`s. https://jrsoftware.org/isdl.php
+- **QEMU** — runtime-only, not needed at build time. The installer downloads it (or the app fetches it on first VM boot) for the VM Sandbox.
 
-That's the whole list. If `dotnet --list-sdks` shows an 8.x (or newer), you're good.
+If `dotnet --list-sdks` shows an 8.x (or newer), the build will work.
 
 ---
 
-## The one command
+## Build with the script
 
 ```powershell
 cd thalamus-native
@@ -49,9 +49,7 @@ dist\checksums.txt
 
 ---
 
-## Doing it by hand
-
-Don't want the script? Fine.
+## Building by hand
 
 ```powershell
 # The app
@@ -69,9 +67,9 @@ For a quick dev loop, skip publishing and just build:
 dotnet build ThalamusApp\ThalamusApp.csproj -c Debug
 ```
 
-A clean build is **0 warnings, 0 errors**. Keep it that way — if you add a warning, you fix a warning.
+A clean build is **0 warnings, 0 errors** — treat any new warning as a defect to fix before committing.
 
-> Heads-up on the installer project: WPF's single-file publish spins up a temp `*_wpftmp` project and sometimes trips over a stale `obj\`/`bin\`. `build.ps1` already nukes those before publishing. If you're building by hand and it gets weird, `Remove-Item ThalamusInstaller\bin,ThalamusInstaller\obj -Recurse -Force` and try again.
+> Note on the installer project: WPF's single-file publish spins up a temp `*_wpftmp` project and sometimes trips over a stale `obj\`/`bin\`. `build.ps1` deletes those before publishing. If a by-hand publish fails this way, remove `ThalamusInstaller\bin` and `ThalamusInstaller\obj` and try again.
 
 ---
 

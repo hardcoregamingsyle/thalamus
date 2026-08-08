@@ -1,5 +1,5 @@
-import { type QueryCtx } from "./_generated/server";
-import { type Id } from "./_generated/dataModel";
+import { type QueryCtx } from "../_generated/server";
+import { type Id } from "../_generated/dataModel";
 
 // Shared authorization for the code-mode (codeProjects/codeBranches) system.
 // Every write path that acts on a branch MUST go through one of these so a

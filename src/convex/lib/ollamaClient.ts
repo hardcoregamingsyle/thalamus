@@ -1,10 +1,14 @@
-// Ollama Cloud API client — backup AI provider for Thalamus.
-// NVIDIA NIM is primary; Ollama Cloud is the fallback when NIM is down/exhausted.
+// Ollama Cloud API client — the tail-end fallback in the pipeline provider chain.
 // Auth: Bearer token via ollamaKeys DB table or OLLAMA_API_KEY env var.
 // Docs: https://docs.ollama.com/api/chat
+//
+// The exported names (callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL,
+// calcAgentBucksForModel) intentionally keep their historical "SiliconFlow"
+// spelling from an earlier provider iteration; renaming them would ripple
+// through every caller. The file itself is called what it does — Ollama.
 
-import { internal } from "./_generated/api";
-import type { ActionCtx } from "./_generated/server";
+import { internal } from "../_generated/api";
+import type { ActionCtx } from "../_generated/server";
 
 // ── Base URL & Auth ───────────────────────────────────────────────────────────
 const BASE_URL = "https://ollama.com";

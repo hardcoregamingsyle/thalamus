@@ -1,11 +1,9 @@
-// Agent-name → task-type routing.
+// Agent-name → task-type routing. The provider router (agentCore.ts) reads
+// TaskType and agentToTaskType() to pick a model class per pipeline agent.
 //
-// This file used to be the full NVIDIA NIM API client (catalog, key rotation,
-// retry/fallback chains, streaming, dispatch-prompt builders). NIM was removed
-// from the pipeline provider chain entirely, and every NIM-specific export was
-// dead code — the only things any live caller ever imported were the TaskType
-// union and agentToTaskType(), which the provider router (agentCore.ts) uses to
-// pick a model class per pipeline agent. Those two survive here.
+// (Historical note: this file used to be the NVIDIA NIM client — NIM was
+// pulled from the pipeline and every NIM-specific export was dead code. Only
+// the routing helpers survived; the file is named after what it does now.)
 
 /**
  * The task classes the model router understands. Each provider client maps a

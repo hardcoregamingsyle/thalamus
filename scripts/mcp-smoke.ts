@@ -1,5 +1,5 @@
 // Live smoke test for an MCP server — speaks the exact same Streamable HTTP
-// JSON-RPC sequence the pipeline's client (src/convex/mcpClient.ts) uses:
+// JSON-RPC sequence the pipeline's client (src/convex/lib/mcpClient.ts) uses:
 // initialize → notifications/initialized → tools/list → tools/call. Then runs
 // the full agent loop: takes a simulated agent message containing an
 // <<MCP-CALL>> block, parses it with the real pipeline parser, executes the
@@ -9,7 +9,7 @@
 //   bun scripts/mcp-smoke.ts --url https://<deployment>.convex.site/ao/mcp --key ao_...
 //
 // No secrets are stored in this file — pass the key on the command line.
-import { parseMcpCalls } from "../src/convex/mcpParse";
+import { parseMcpCalls } from "../src/convex/lib/mcpParse";
 
 const MCP_PROTOCOL_VERSION = "2025-06-18";
 

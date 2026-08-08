@@ -3,7 +3,7 @@
 // on the mapping tested here — if these are green, the right instructions
 // reach the model for every profile the UI can produce (and plenty it can't).
 import { describe, it, expect } from "bun:test";
-import { gradeBand, boardProfile, buildStudySystemPrompt } from "../src/convex/studyPrompt";
+import { gradeBand, boardProfile, buildStudySystemPrompt } from "../src/convex/lib/studyPrompt";
 
 describe("gradeBand", () => {
   const cases: Array<[string, string]> = [
