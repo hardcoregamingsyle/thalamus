@@ -21,7 +21,7 @@ export type Role = Infer<typeof roleValidator>;
 // - NEW code system: codeProjects/codeBranches/codeMessages/codeFiles/
 //   codeCommands/codeApiKeys/codeApiKeyRequests (+githubConfigs) — driven by
 //   codePipeline.ts, served at /portal/code
-// - Platform economy & admin: creditBatches, promoCodes, modelPricing,
+// - Platform economy & admin: creditBatches, promoCodes,
 //   platformBudget, awsCredentials, geminiKeys, userApiKeys
 // - Study mode / RAG: studyResources, adminStudyMaterials, ragChunks,
 //   graphNodes, graphEdges, graphHealthChecks
@@ -357,17 +357,6 @@ const schema = defineSchema(
       createdAt: v.number(),
     }).index("by_user", ["userId"]),
 
-    modelPricing: defineTable({
-      modelId: v.string(),
-      displayName: v.string(),
-      inputCentsPerMillion: v.number(),
-      outputCentsPerMillion: v.number(),
-      abMultiplier: v.number(),
-      isActive: v.boolean(),
-      updatedAt: v.number(),
-      updatedBy: v.optional(v.string()),
-    }).index("by_model", ["modelId"]),
-
     platformBudget: defineTable({
       totalDollars: v.number(),
       spentDollars: v.number(),
@@ -462,13 +451,6 @@ const schema = defineSchema(
       recommendations: v.array(v.string()),
     }).index("by_user", ["userId"]),
 
-    // Temporary store for GitHub OAuth state tokens
-    githubOAuthStates: defineTable({
-      state: v.string(),
-      userId: v.id("users"),
-      expiresAt: v.number(),
-    }).index("by_state", ["state"]),
-
     // Desktop auth codes: code-based auth flow for the native desktop app
     desktopAuthCodes: defineTable({
       code: v.string(),          // 8-char alphanumeric (no I,O,0,1)
@@ -517,19 +499,7 @@ const schema = defineSchema(
       updatedBy: v.optional(v.string()),
     }),
 
-    // NVIDIA NIM API keys pool (admin-managed — primary AI provider).
-    nimKeys: defineTable({
-      keys: v.array(v.string()),
-      updatedAt: v.number(),
-      updatedBy: v.optional(v.string()),
-      // Last reason every key in the pool failed and the call fell through to
-      // Ollama — invisible otherwise, since callModel only console.warns it.
-      // Overwritten on each fallback; a successful NIM call clears it.
-      lastFallbackError: v.optional(v.string()),
-      lastFallbackAt: v.optional(v.number()),
-    }),
-
-    // Ollama Cloud API keys pool (admin-managed — backup AI provider).
+    // Ollama Cloud API keys pool (admin-managed — last seat in the pipeline chain).
     ollamaKeys: defineTable({
       keys: v.array(v.string()),
       updatedAt: v.number(),
@@ -744,7 +714,8 @@ const schema = defineSchema(
       createdAt: v.number(),
     }).index("by_user", ["userId"]),
 
-    // Per-request usage rows; also drives the 30 req/min rate limit.
+    // Per-request usage rows; also drives the per-key rate limit
+    // (RATE_LIMIT_PER_MIN in agentoverflow.ts, default 60/min).
     aoUsage: defineTable({
       keyId: v.id("aoApiKeys"),
       userId: v.id("users"),

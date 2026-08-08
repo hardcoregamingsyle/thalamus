@@ -40,9 +40,3 @@ export async function assertBranchOwner(ctx: QueryCtx, userId: Id<"users">, bran
   return { branch, project };
 }
 
-/** Convenience: authenticate the token AND assert it owns the branch. */
-export async function requireBranchOwner(ctx: QueryCtx, token: string, branchId: string) {
-  const session = await requireSession(ctx, token);
-  const { branch, project } = await assertBranchOwner(ctx, session.userId, branchId);
-  return { session, branch, project };
-}

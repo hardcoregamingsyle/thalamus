@@ -8,49 +8,8 @@ import type { ActionCtx } from "./_generated/server";
 // a separate economy with their own switch.
 export const FREE_UNLIMITED = true;
 
-// ── Re-exports from SiliconFlow (Ollama Cloud backup) ─────────────────────────
-export {
-  callSiliconFlow,
-  callSiliconFlowStreaming,
-  generateImage,
-  generateImageHtml,
-  generateVideo,
-  MODEL_CATALOG,
-  findModel,
-  modelsByCapability,
-  DISPATCHER_MODEL,
-  DEFAULT_CHAT_MODEL,
-  DEFAULT_CODE_MODEL,
-  buildDispatchPrompt,
-  parseDispatchAssignments,
-  calcAgentBucksForModel,
-} from "./siliconflow";
-
-export { callModal, calcModalAgentBucks } from "./modalClient";
-
-export {
-  callDeadlySignals,
-  DEADLYSIGNALS_DEFAULT_MODEL,
-  DEADLYSIGNALS_DISPATCHER_MODEL,
-  DEADLYSIGNALS_MODEL_CATALOG,
-  findDeadlySignalsModel,
-} from "./deadlySignalsClient";
-
-export {
-  callOvhcloud,
-  OVHCLOUD_DEFAULT_MODEL,
-  OVHCLOUD_CODE_MODEL,
-  OVHCLOUD_MODEL_CATALOG,
-  mapTaskToOvhModel,
-} from "./ovhcloudClient";
-
-export {
-  callModelScope,
-  MODELSCOPE_DEFAULT_MODEL,
-  MODELSCOPE_DISPATCHER_MODEL,
-  MODELSCOPE_MODEL_CATALOG,
-  findModelScopeModel,
-} from "./modelscopeClient";
+// Re-exported so study.ts can keep calling it directly from agentCore.
+export { callSiliconFlow } from "./siliconflow";
 
 import { callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL, calcAgentBucksForModel } from "./siliconflow";
 import { agentToTaskType, type TaskType } from "./nimClient";

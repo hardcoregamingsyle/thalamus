@@ -602,38 +602,9 @@ export const getGeminiKeysInternal = internalQuery({
   },
 });
 
-// —— NVIDIA NIM API Keys ——
-
-export const getProviderAKeys = query({
-  args: { adminToken: v.string() },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx, args.adminToken);
-    const record = await ctx.db.query("nimKeys").take(1);
-    if (record.length === 0) return null;
-    return {
-      count: record[0].keys.length,
-      updatedAt: record[0].updatedAt,
-      maskedKeys: record[0].keys.map(k => k.slice(0, 8) + "..." + k.slice(-4)),
-      lastFallbackError: record[0].lastFallbackError ?? null,
-      lastFallbackAt: record[0].lastFallbackAt ?? null,
-    };
-  },
-});
-
-// Called by callNim (nimClient.ts) so a fallback to Ollama has a visible
-// reason instead of only a console.warn nobody but the platform can read.
-// Overwritten on every fallback; cleared on the next successful NIM call.
-export const recordNimFallback = internalMutation({
-  args: { error: v.union(v.string(), v.null()) },
-  handler: async (ctx, args) => {
-    const record = await ctx.db.query("nimKeys").take(1);
-    if (record.length === 0) return;
-    await ctx.db.patch(record[0]._id, {
-      lastFallbackError: args.error ?? undefined,
-      lastFallbackAt: args.error ? Date.now() : undefined,
-    });
-  },
-});
+// The NVIDIA NIM key surface (getProviderAKeys / saveProviderAKeys /
+// recordNimFallback / getNimKeysInternal and the nimKeys table) was removed
+// along with NIM itself — the pipeline no longer calls NIM at all.
 
 function stripQuotes(s: string): string {
   s = s.trim();
@@ -642,47 +613,6 @@ function stripQuotes(s: string): string {
   }
   return s;
 }
-
-export const saveProviderAKeys = mutation({
-  args: {
-    adminToken: v.string(),
-    keys: v.array(v.string()),
-    append: v.optional(v.boolean()),
-  },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx, args.adminToken);
-    const cleaned = args.keys.map(stripQuotes).filter(Boolean);
-    const existing = await ctx.db.query("nimKeys").take(1);
-    let finalKeys = cleaned;
-    if (args.append && existing.length > 0) {
-      const existingSet = new Set(existing[0].keys);
-      for (const k of cleaned) existingSet.add(k);
-      finalKeys = Array.from(existingSet);
-    }
-    if (existing.length > 0) {
-      await ctx.db.patch(existing[0]._id, {
-        keys: finalKeys,
-        updatedAt: Date.now(),
-        updatedBy: "admin",
-      });
-    } else {
-      await ctx.db.insert("nimKeys", {
-        keys: finalKeys,
-        updatedAt: Date.now(),
-        updatedBy: "admin",
-      });
-    }
-  },
-});
-
-export const getNimKeysInternal = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const record = await ctx.db.query("nimKeys").take(1);
-    if (record.length === 0) return [];
-    return record[0].keys;
-  },
-});
 
 // —— Ollama Cloud API Keys ——
 

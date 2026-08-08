@@ -23,27 +23,15 @@ export const getAdminUiMeta = query({
 
     return {
       providers: {
-        providerA: {
-          tabLabel: "NVIDIA NIM",
-          title: "NVIDIA NIM API Keys",
-          subtitle: "Primary provider — free models via build.nvidia.com. Keys stored in DB.",
-          emptyWarning: "No keys — NIM unavailable, Ollama takes over",
-          readyLabel: "keys — NIM primary active",
-          help: [
-            "Get free keys at build.nvidia.com → API Keys",
-            "25+ free models: Nemotron, Llama, DeepSeek, Qwen, Kimi, Mistral, Phi-4",
-            "NIM is PRIMARY — every request tries NIM first, only falls back to Ollama if NIM fails",
-          ],
-        },
         providerB: {
           tabLabel: "Ollama Cloud",
           title: "Ollama Cloud API Keys",
-          subtitle: "Fallback provider. Keys stored in DB.",
-          emptyWarning: "No keys — no fallback if the primary fails",
-          readyLabel: "keys — Ollama backup ready",
+          subtitle: "Last provider in the pipeline chain. Keys stored in DB.",
+          emptyWarning: "No keys — the final fallback seat is empty",
+          readyLabel: "keys — Ollama fallback ready",
           help: [
             "Get keys at ollama.com → Account → API Keys",
-            "Ollama is the backup — only called when NIM fails or is unconfigured",
+            "Chain order: Modal → Zen → DeadlySignal → ModelScope → OVHcloud → Ollama",
           ],
         },
         providerC: {
@@ -52,7 +40,7 @@ export const getAdminUiMeta = query({
           subtitle: "OpenAI-compatible endpoints served from Modal. The starred one is tried first; the rest act as backups in order. Register a self-hosted serverless model here and it goes live without a deploy.",
           namePlaceholder: "vLLM Qwen A100",
           modelPlaceholder: "Qwen/Qwen3-Coder-30B",
-          emptyHint: "No endpoints yet. Requests fall through to NVIDIA NIM, then Ollama Cloud.",
+          emptyHint: "No endpoints yet. Requests fall through to the free-tier seats (Zen, DeadlySignal, ModelScope, OVHcloud), then Ollama Cloud.",
           help: [],
         },
         providerD: {

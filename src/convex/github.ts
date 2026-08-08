@@ -10,14 +10,6 @@ function toHex(s: string): string {
     .join("");
 }
 
-function fromHex(hex: string): string {
-  const bytes = [];
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes.push(parseInt(hex.slice(i, i + 2), 16));
-  }
-  return new TextDecoder().decode(new Uint8Array(bytes));
-}
-
 // Simple XOR-based encoding that works without Buffer in HTTP actions
 // State format: hex(userId) + "." + randomHex + "." + hex(returnPath)
 function encodeState(userId: string, returnPath?: string): string {
@@ -25,16 +17,6 @@ function encodeState(userId: string, returnPath?: string): string {
     .map(b => b.toString(16).padStart(2, "0"))
     .join("");
   return `${toHex(userId)}.${randomHex}.${returnPath ? toHex(returnPath) : ""}`;
-}
-
-export function decodeState(state: string): { userId: string; returnPath: string | null } | null {
-  try {
-    const [userIdHex, , pathHex] = state.split(".");
-    if (!userIdHex) return null;
-    return { userId: fromHex(userIdHex), returnPath: pathHex ? fromHex(pathHex) : null };
-  } catch {
-    return null;
-  }
 }
 
 // GitHub OAuth

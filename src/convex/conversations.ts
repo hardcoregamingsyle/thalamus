@@ -39,27 +39,6 @@ export const list = query({
   },
 });
 
-export const getByCustomId = query({
-  args: { customId: v.string(), token: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    if (!args.token) return null;
-    const sessions = await ctx.db
-      .query("customSessions")
-      .withIndex("by_token", (q) => q.eq("token", args.token!))
-      .take(1);
-    const session = sessions[0];
-    if (!session || session.expiresAt < Date.now()) return null;
-
-    const convs = await ctx.db
-      .query("conversations")
-      .withIndex("by_custom_id", (q) => q.eq("customId", args.customId))
-      .take(1);
-    const conv = convs[0];
-    if (!conv || conv.userId !== session.userId) return null;
-    return conv;
-  },
-});
-
 export const create = mutation({
   args: {
     title: v.string(),

@@ -132,35 +132,6 @@ export const getProject = query({
   },
 });
 
-export const updateProject = mutation({
-  args: {
-    token: v.string(),
-    projectId: v.string(),
-    name: v.optional(v.string()),
-    description: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const sessions = await ctx.db
-      .query("customSessions")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
-      .take(1);
-    const session = sessions[0];
-    if (!session || session.expiresAt < Date.now()) throw new Error("Not authenticated");
-
-    const proj = await ctx.db
-      .query("codeProjects")
-      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
-      .first();
-    if (!proj || proj.userId !== session.userId) throw new Error("Project not found");
-
-    const updates: Record<string, unknown> = { lastActivityAt: Date.now() };
-    if (args.name !== undefined) updates.name = args.name;
-    if (args.description !== undefined) updates.description = args.description;
-
-    await ctx.db.patch(proj._id, updates);
-  },
-});
-
 export const deleteProject = mutation({
   args: { token: v.string(), projectId: v.string() },
   handler: async (ctx, args) => {

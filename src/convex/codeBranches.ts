@@ -469,14 +469,6 @@ export const updatePlannerTasks = internalMutation({
   },
 });
 
-// Delete file by ID (for cleanup)
-export const deleteFile = internalMutation({
-  args: { fileId: v.id("codeFiles") },
-  handler: async (ctx, args) => {
-    await ctx.db.delete(args.fileId);
-  },
-});
-
 // Delete file by branch + path (agent-facing)
 export const deleteFileByPath = internalMutation({
   args: { branchId: v.string(), filepath: v.string() },

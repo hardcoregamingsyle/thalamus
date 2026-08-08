@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment -- Convex generated data-model types exceed TS instantiation depth (TS2589) in this module; checked builds require this suppression. */
 // @ts-nocheck
-import { internalMutation, internalQuery, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
 // Internal: Insert RAG chunk
@@ -170,36 +170,6 @@ export const saveHealthCheck = internalMutation({
       issues: args.issues,
       recommendations: args.recommendations,
     });
-  },
-});
-
-// Public: Get latest health check
-export const getLatestHealthCheck = query({
-  args: { token: v.string() },
-  handler: async (ctx, args) => {
-    if (!args.token || args.token.length < 32) return null;
-    const session = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).unique();
-    if (!session || session.expiresAt < Date.now()) return null;
-    const checks = await ctx.db.query("graphHealthChecks").withIndex("by_user", q => q.eq("userId", session.userId)).order("desc").take(1);
-    return checks[0] ?? null;
-  },
-});
-
-// Public: Get graph stats
-export const getGraphStats = query({
-  args: { token: v.string() },
-  handler: async (ctx, args) => {
-    if (!args.token || args.token.length < 32) return null;
-    const session = await ctx.db.query("customSessions").withIndex("by_token", q => q.eq("token", args.token)).unique();
-    if (!session || session.expiresAt < Date.now()) return null;
-    const nodes = await ctx.db.query("graphNodes").withIndex("by_user", q => q.eq("userId", session.userId)).take(500);
-    const edges = await ctx.db.query("graphEdges").withIndex("by_user", q => q.eq("userId", session.userId)).take(1000);
-    const chunks = await ctx.db.query("ragChunks").withIndex("by_user", q => q.eq("userId", session.userId)).take(1000);
-    return {
-      nodeCount: nodes.length,
-      edgeCount: edges.length,
-      chunkCount: chunks.length,
-    };
   },
 });
 

@@ -180,31 +180,3 @@ export const listApiKeys = query({
   },
 });
 
-// Delete API key
-export const deleteApiKey = mutation({
-  args: {
-    token: v.string(),
-    keyId: v.id("codeApiKeys"),
-  },
-  handler: async (ctx, args) => {
-    const sessions = await ctx.db
-      .query("customSessions")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
-      .take(1);
-    const session = sessions[0];
-    if (!session || session.expiresAt < Date.now()) throw new Error("Not authenticated");
-
-    const key = await ctx.db.get(args.keyId);
-    if (!key) throw new Error("Key not found");
-
-    // Verify ownership
-    const project = await ctx.db
-      .query("codeProjects")
-      .withIndex("by_project_id", (q) => q.eq("projectId", key.projectId))
-      .first();
-
-    if (!project || project.userId !== session.userId) throw new Error("Not authorized");
-
-    await ctx.db.delete(args.keyId);
-  },
-});

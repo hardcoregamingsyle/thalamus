@@ -67,17 +67,6 @@ export const getRecentCommandResults = internalQuery({
   },
 });
 
-export const countCommands = internalQuery({
-  args: { branchId: v.string() },
-  handler: async (ctx, args) => {
-    const rows = await ctx.db
-      .query("codeCommands")
-      .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
-      .collect();
-    return rows.length;
-  },
-});
-
 // Record a command's result without the client token — the executor is trusted.
 export const recordCommandResult = internalMutation({
   args: {
@@ -93,13 +82,6 @@ export const recordCommandResult = internalMutation({
       exitCode: args.exitCode,
       completedAt: Date.now(),
     });
-  },
-});
-
-export const setCallbackNonce = internalMutation({
-  args: { commandId: v.id("codeCommands"), nonce: v.string() },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.commandId, { callbackNonce: args.nonce });
   },
 });
 
