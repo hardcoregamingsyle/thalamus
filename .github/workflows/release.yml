@@ -7,9 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag (e.g. v2.0.0)'
+        description: 'Version tag (e.g. v2.4.0) — required, no default so a stale version can never ship by accident'
         required: true
-        default: 'v2.0.0'
 
 permissions:
   contents: write
@@ -38,14 +37,17 @@ jobs:
           if ($tag -notmatch '^v\d') {
             $tag = "${{ github.event.inputs.version }}"
           }
+          # Fail instead of falling back: a hardcoded default here once meant a
+          # manual run could publish (and clobber) a stale v2.0.0 release.
           if (-not $tag -or $tag -notmatch '^v\d') {
-            $tag = "v2.0.0"
+            Write-Error "No usable version tag — run from a v* tag or supply the version input."
+            exit 1
           }
           $ver = $tag.TrimStart('v')
-          # Ensure the version is a valid AssemblyVersion (must be numeric, e.g. 2.0.0)
+          # The version must be a valid AssemblyVersion (numeric, e.g. 2.4.0)
           if ($ver -notmatch '^\d+(\.\d+)*$') {
-            $ver = "2.0.0"
-            $tag = "v2.0.0"
+            Write-Error "Version '$ver' is not a valid numeric AssemblyVersion."
+            exit 1
           }
           echo "tag=$tag" >> $env:GITHUB_OUTPUT
           echo "ver=$ver" >> $env:GITHUB_OUTPUT

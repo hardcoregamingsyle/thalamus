@@ -1,11 +1,17 @@
 name: Convex Deploy
 
-# Pushes the Convex backend (src/convex/*) to production. Runs after CI goes
-# green on main, so nothing reaches prod that failed type-check/lint/tests/
+# Deploys the Convex backend (src/convex/*) to production. Runs after CI goes
+# green on main, so nothing reaches prod that failed type-check / lint / tests /
 # build — plus workflow_dispatch for a manual trigger. The frontend deploys
 # separately via Cloudflare Pages' own git integration; this only covers the
-# backend, which otherwise only ever shipped by someone running
-# `npx convex deploy` by hand.
+# backend.
+#
+# This is the ONLY Convex deploy workflow. A second one (deploy-convex.yml)
+# used to deploy on raw push with no CI gate; it was removed — the smoke test
+# it carried lives here now.
+#
+# Requires one repo secret: CONVEX_DEPLOY_KEY (a prod deploy key from the
+# Convex dashboard). The key lives only in Actions secrets, never in the repo.
 on:
   workflow_run:
     workflows: ["CI"]
@@ -31,6 +37,24 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - name: Deploy to Convex
-        run: npx convex deploy
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          if [ -z "$CONVEX_DEPLOY_KEY" ]; then
+            echo "::error::CONVEX_DEPLOY_KEY secret is not set — add it in Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          npx convex deploy --yes
+      # A successful deploy only proves the push landed — this proves the
+      # deployed backend actually answers. Calls the public guest action (no
+      # secrets involved; the deployment URL already ships inside the desktop
+      # exe) and fails the run if the backend errors.
+      - name: Smoke test — deployed backend answers
+        run: |
+          RESP=$(curl -s -X POST https://befitting-wildebeest-866.convex.cloud/api/action \
+            -H "Content-Type: application/json" \
+            --max-time 180 \
+            -d '{"path": "ai:guestSendMessage", "args": {"content": "Reply with the single word OK", "mode": "chat", "history": []}, "format": "json"}')
+          echo "$RESP" | head -c 400
+          echo
+          echo "$RESP" | grep -q '"status":"success"' || { echo "::error::Backend smoke test failed"; exit 1; }

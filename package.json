@@ -6,15 +6,16 @@
   "packageManager": "bun@1.2.10",
   "scripts": {
     "dev": "vite",
-    "build": "bun install && ./node_modules/.bin/tsc -b && vite build",
+    "build": "tsc -b && vite build",
     "type-check": "tsc -b --noEmit",
     "check-refs": "node scripts/check-convex-refs.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "preview": "vite preview",
     "test": "bun test",
     "test:watch": "bun test --watch",
-    "clean": "rm -rf dist node_modules/.cache"
+    "clean": "node -e \"const fs=require('fs');for(const p of['dist','node_modules/.cache'])fs.rmSync(p,{recursive:true,force:true})\""
   },
   "dependencies": {
     "@convex-dev/auth": "^0.0.90",

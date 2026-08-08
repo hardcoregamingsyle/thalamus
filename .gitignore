@@ -37,7 +37,13 @@ dist-ssr
 deploy-convex.sh
 *.deploy.sh
 convex-prod.ps1
-public/downloads/
+
+# scripts/study-eval.ts output — transcripts can embed session tokens
+eval-results/
+
+# Claude Code local state — only the shared settings file is tracked
+.claude/*
+!.claude/settings.json
 
 # Env files. *.local already covers .env.local, but the sync scripts run
 # `git add -A`, so spell out the rest before a stray .env gets pushed public.

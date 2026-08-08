@@ -5,5 +5,6 @@ Disallow: /admin
 Disallow: /portal
 Disallow: /sync
 Disallow: /auth
+Disallow: /api-keys
 
 Sitemap: https://thalamus.aphantic.skinticals.com/sitemap.xml

@@ -7,10 +7,10 @@
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://thalamus.aphantic.skinticals.com/api-keys</loc>
-    <lastmod>2026-07-18</lastmod>
+    <loc>https://thalamus.aphantic.skinticals.com/refer</loc>
+    <lastmod>2026-08-08</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
+    <priority>0.5</priority>
   </url>
   <url>
     <loc>https://thalamus.aphantic.skinticals.com/blog</loc>

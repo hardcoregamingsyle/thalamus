@@ -1,7 +1,17 @@
-# Ignore artifacts:
-build
+# Build output & deps
+dist
+dist-ssr
+node_modules
 coverage
 
+# Generated code — committed, but owned by Convex codegen
+src/convex/_generated
 
+# Lockfiles
 bun.lock
 bun.lockb
+package-lock.json
+
+# Not JS/TS tooling territory
+thalamus-native
+.claude
