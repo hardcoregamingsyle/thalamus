@@ -89,14 +89,14 @@ Full table in [`docs/deployment.md`](docs/deployment.md#environment-variables). 
 | `MODELSCOPE_API_KEY` | ModelScope free tier (`lib/modelscopeClient.ts`) |
 | `OLLAMA_API_KEY`, `OLLAMA_API_KEY_2` … `_10` | Ollama Cloud pool (`lib/ollamaClient.ts` — built dynamically, a literal grep misses it) |
 | `MODAL_ENDPOINT_URL` / `MODAL_MODEL` / `MODAL_API_KEY` | Single Modal endpoint fallback when `modalEndpoints` table is empty |
-| `VLY_INTEGRATION_KEY` | VLY completion provider (`lib/vlyIntegrations.ts`) — module throws at import if unset |
+| `VLY_INTEGRATION_KEY` | VLY completion provider (`lib/vlyIntegrations.ts`) — checked lazily at call time, never at import (a module-scope throw fails the whole Convex deploy) |
 | `AWS_BEDROCK_API_KEY` | Legacy chat/study path (`ai.ts`, `study.ts`, `/stream-chat`) |
 | `GEMINI_API_KEY` / `GOOGLE_AI_API_KEY` | `rag.ts` embeddings only — everything else reads Gemini keys from the `geminiKeys` table |
 | `GOOGLE_API_KEY` + `GOOGLE_CX` | Google Custom Search behind `performSearch` |
 | `SKETCHFAB_API_TOKEN` / `SKETCHFAB_MCP_URL` | Built-in Sketchfab MCP server |
 | `ADMIN_TOKEN` | Admin panel gate |
 | `BREVO_EMAIL_SENDER` | Brevo API key for OTP email (misleading name) |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` / `GITHUB_TOKEN` | GitHub OAuth app + repo-sync fallback |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` / `GITHUB_TOKEN` | GitHub OAuth app + repo-sync fallback. `GITHUB_TOKEN` must include the `workflow` scope so the per-branch VM/sandbox workflows under `.github/workflows/` can be written; without it, GitHub rejects the write with a bare 404 and cloud commands never run. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth app |
 | `FRONTEND_URL` | OAuth callback base |
 | `BMAC_WEBHOOK_SECRET` | Buy Me a Coffee webhook |
@@ -141,7 +141,7 @@ One Convex backend, two frontends (web + native Windows), two products (Thalamus
   - `codeAuth.ts` — helpers for Code-mode auth checks.
   - `obscureRepoGenerator.ts` — generates the obscure per-branch repo name.
   - `studyPrompt.ts` — study-mode prompt assembly.
-  - `vlyIntegrations.ts` (formerly `src/lib/vly-integrations.ts`) — throws at import if `VLY_INTEGRATION_KEY` is unset. No hardcoded fallback key.
+  - `vlyIntegrations.ts` (formerly `src/lib/vly-integrations.ts`) — no hardcoded fallback key; `VLY_INTEGRATION_KEY` is read lazily inside `getVly()`. The check must never move to module scope: Convex's push-time analysis loads every module without env vars, so a top-level throw fails the entire production deploy.
 - Top-level modules: `codePipeline.ts` (the pipeline runner), `codeBranches.ts`, `codeCommands.ts`, `codeApiKeys.ts`, `codeProjects.ts`, `codeDeletion.ts`, `ai.ts`/`aiHelpers.ts` (plain chat/research/study handlers), `rag.ts` (Gemini embeddings, 1536-d), `customAuth.ts`/`customAuthHelpers.ts`, `desktopAuth.ts`/`desktopAuthActions.ts`, `http.ts`, `crons.ts`, `admin.ts`, `adminMeta.ts`, `payments.ts`, `credits.ts`, `dailyReset.ts`, `github*.ts`, `deployments.ts` (user-invoked Vercel/Cloudflare/Netlify deploy actions), `agentoverflow.ts` + friends, `sketchfabMcp.ts`, `userApiKeys.ts`, `study.ts`/`studyHelpers.ts`.
 
 ### Model routing (source of truth: `src/convex/lib/agentCore.ts`)

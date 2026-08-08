@@ -644,3 +644,142 @@ export const clearStreamingContent = internalMutation({
     });
   },
 });
+
+// ── Watchdog: recover branches whose pipeline was hard-killed mid-step ───────
+//
+// Convex hard-kills an internalAction at its 600s maximum duration. The kill
+// throws inside the action process itself and no try/catch in runPipelineAction
+// can observe it — so a branch mid-agent, mid-tool-call or mid-model-call is
+// left at status "running" (currentAgent still set) with no scheduled
+// continuation. The UI shows an eternal "thinking" spinner and nothing is
+// actually running. This cron sweeps for those and reschedules the pipeline.
+//
+// STALE_MS derivation: Convex's action limit is 600s (10 min). Add slack for
+// scheduling latency and the shared 7-minute model-call deadline used inside
+// callModel, plus a little for two-provider fallbacks, and we land at 12 min —
+// comfortably past any healthy long step, early enough that a user isn't
+// staring at a dead spinner for an hour.
+const STALE_MS = 12 * 60 * 1000;
+
+// Two automatic restarts without progress means restarting isn't helping —
+// most likely a deterministic crash on the same step. Stop looping (and stop
+// burning provider quota) and put the branch back to idle so the user can
+// try a different approach.
+const MAX_REVIVES = 2;
+
+export const sweepStalledBranches = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    // No status/activity index exists on codeBranches; this cron runs at
+    // 5-minute maintenance frequency and only "running" branches matter,
+    // so a full scan with an in-memory filter is acceptable at the current
+    // table size. If codeBranches grows enough that this hurts, add a
+    // compound index on (status, lastActivityAt).
+    const all = await ctx.db.query("codeBranches").collect();
+    const stale = all.filter(
+      (b) => b.status === "running" && now - b.lastActivityAt > STALE_MS,
+    );
+
+    let revived = 0;
+    let terminated = 0;
+    let skipped = 0;
+
+    for (const branch of stale) {
+      // Legitimately parked? A queued or in-flight command means the VM
+      // executor (or the desktop app) is still working — completeFromRunner
+      // / completeCommand reschedule the pipeline once nothing is
+      // outstanding. An open API-key request means the pipeline is waiting
+      // on the user, and fulfillApiKeyRequest reschedules when the key
+      // arrives. In either case DO NOT touch the branch — the existing
+      // resume paths handle it correctly.
+      const pendingCommand = await ctx.db
+        .query("codeCommands")
+        .withIndex("by_branch_and_status", (q) =>
+          q.eq("branchId", branch.branchId).eq("status", "pending"),
+        )
+        .first();
+      const runningCommand = await ctx.db
+        .query("codeCommands")
+        .withIndex("by_branch_and_status", (q) =>
+          q.eq("branchId", branch.branchId).eq("status", "running"),
+        )
+        .first();
+      const openKeyRequest = await ctx.db
+        .query("codeApiKeyRequests")
+        .withIndex("by_branch_and_status", (q) =>
+          q.eq("branchId", branch.branchId).eq("status", "pending"),
+        )
+        .first();
+      if (pendingCommand || runningCommand || openKeyRequest) {
+        skipped++;
+        continue;
+      }
+
+      // Progress signal: totalMessages only advances when a full agent
+      // step lands and is persisted via updateBranchStatus. If it has
+      // moved past the baseline captured on the previous revive, the
+      // previous revive actually did work — treat this as a fresh
+      // incident and reset the counter. Otherwise the revive changed
+      // nothing and it counts against the cap.
+      const currentMessages = branch.totalMessages ?? 0;
+      const baseline = branch.reviveBaselineMessages;
+      const effectiveRevives =
+        baseline !== undefined && currentMessages > baseline
+          ? 0
+          : branch.reviveCount ?? 0;
+
+      if (effectiveRevives >= MAX_REVIVES) {
+        // Cap hit. The status union is running | completed | idle |
+        // paused — no "failed" literal — so we settle on "idle": the
+        // pipeline is not doing anything, the UI already handles that
+        // state, and the user can restart with a new message. Reset
+        // the watchdog fields so the next attempt gets a fresh budget.
+        await ctx.db.insert("codeMessages", {
+          branchId: branch.branchId,
+          agent: "System",
+          content:
+            `⚠️ Pipeline was restarted ${MAX_REVIVES} times after Convex's 600s action limit killed each run, but the branch made no progress between restarts. Giving up automatic recovery — send another message to try again, and consider a smaller change or a different model if this keeps happening.`,
+          createdAt: now,
+        });
+        await ctx.db.patch(branch._id, {
+          status: "idle",
+          currentAgent: undefined,
+          streamingContent: undefined,
+          streamingAgent: undefined,
+          streamingAt: undefined,
+          lastActivityAt: now,
+          reviveCount: 0,
+          reviveBaselineMessages: undefined,
+        });
+        terminated++;
+        continue;
+      }
+
+      // Revive: transcript entry so the user can see what happened,
+      // bump lastActivityAt (otherwise the next sweep tick could re-
+      // fire before runPipelineAction has bumped it itself), record
+      // the new revive count and progress baseline, then reschedule
+      // the pipeline. runPipelineAction resumes from persisted branch
+      // state (round / phase / currentTaskIndex / executionPhase).
+      await ctx.db.insert("codeMessages", {
+        branchId: branch.branchId,
+        agent: "System",
+        content:
+          "⚠️ Pipeline stopped unexpectedly (likely Convex's 600s action limit). Resuming from the last saved step.",
+        createdAt: now,
+      });
+      await ctx.db.patch(branch._id, {
+        lastActivityAt: now,
+        reviveCount: effectiveRevives + 1,
+        reviveBaselineMessages: currentMessages,
+      });
+      await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, {
+        branchId: branch.branchId,
+      });
+      revived++;
+    }
+
+    return { revived, terminated, skipped, scanned: stale.length };
+  },
+});

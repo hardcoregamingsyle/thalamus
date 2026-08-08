@@ -200,6 +200,19 @@ const schema = defineSchema(
       // one.
       vmNonce: v.optional(v.string()),
       vmLastSeenAt: v.optional(v.number()),
+      // Stalled-pipeline watchdog bookkeeping — see
+      // codeBranches.sweepStalledBranches. Convex hard-kills an action at
+      // its 600s limit with an error no in-code try/catch can observe, so
+      // a mid-step branch is left forever at status "running" with no
+      // scheduled continuation. The cron reschedules runPipelineAction and
+      // uses these two fields to bound the "revive → stall → revive" loop:
+      // reviveCount is bumped on every automatic restart; on the next
+      // sweep, if totalMessages has advanced past reviveBaselineMessages
+      // the previous revive worked and the counter resets, otherwise it
+      // counts against MAX_REVIVES and the branch is put back to idle
+      // with a transcript entry once the cap is hit.
+      reviveCount: v.optional(v.number()),
+      reviveBaselineMessages: v.optional(v.number()),
     })
       .index("by_project", ["projectId"])
       .index("by_branch_id", ["branchId"])

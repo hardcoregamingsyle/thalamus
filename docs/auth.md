@@ -55,7 +55,7 @@ GitHub OAuth is used only for connecting user repositories to code projects. It 
 1. User clicks "Connect GitHub" in project settings.
 2. Frontend calls `github.getAuthorizationUrl`.
 3. Server generates state parameter (`hex(userId).randomHex`) — encodes the user identity so no server-side state table is needed.
-4. User is redirected to `https://github.com/login/oauth/authorize?scope=repo+user&state=…`.
+4. User is redirected to `https://github.com/login/oauth/authorize?scope=repo+workflow+user&state=…`. The `workflow` scope is required: without it GitHub rejects writes to `.github/workflows/` in the branch's auto-created repo with a bare 404, so cloud commands never run. Tokens issued before this scope was added keep working for everything else and need a reconnect from `/sync`.
 5. GitHub redirects back to the callback route (registered in `http.ts`).
 6. Server decodes state to recover the `userId`.
 7. Exchanges code for an access token.

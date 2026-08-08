@@ -89,7 +89,7 @@ Managed in the Convex dashboard, not in `.env` files. This table is the single s
 | `MODELSCOPE_API_KEY` | Required for the ModelScope leg (`lib/modelscopeClient.ts`). Token format `ms-…` from modelscope.ai/my/myaccesstoken — the `.cn` host rejects them; the client hits the `.ai` host. |
 | `OLLAMA_API_KEY`, `OLLAMA_API_KEY_2` … `_10` | Ollama Cloud pool. Read dynamically by `lib/ollamaClient.ts`, so a literal grep for `OLLAMA_API_KEY_5` misses. |
 | `MODAL_ENDPOINT_URL` / `MODAL_MODEL` / `MODAL_API_KEY` | Single Modal endpoint fallback when the `modalEndpoints` table is empty (`lib/modalClient.ts`). |
-| `VLY_INTEGRATION_KEY` | VLY completion provider (`lib/vlyIntegrations.ts`). Last-resort leg for `/stream-chat` and several `study.ts` paths. The module throws at import if this is unset. |
+| `VLY_INTEGRATION_KEY` | VLY completion provider (`lib/vlyIntegrations.ts`). Last-resort leg for `/stream-chat` and several `study.ts` paths. Checked lazily at call time — a module-scope check would fail the whole Convex deploy, since push-time analysis loads every module without env vars. |
 
 OVHcloud is anonymous — no API key needed. NVIDIA NIM is not called from the pipeline; there is no `NVAPI_KEY` reader anywhere. `HF_RAG_SPACE_URL` and `HF_RAG_BASE_URL` do not exist in this codebase.
 
@@ -118,7 +118,7 @@ OVHcloud is anonymous — no API key needed. NVIDIA NIM is not called from the p
 | `BREVO_EMAIL_SENDER` | Brevo API key for OTP transactional email (misleading name). |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | GitHub OAuth app. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth app. |
-| `GITHUB_TOKEN` | Repo-sync fallback token. |
+| `GITHUB_TOKEN` | Repo-sync fallback token. Must include the `workflow` scope so the per-branch VM/sandbox workflows under `.github/workflows/` can be written; without it, GitHub rejects the write with a bare 404 and cloud commands never run. |
 | `FRONTEND_URL` | Public URL for OAuth callbacks. |
 | `BMAC_WEBHOOK_SECRET` | Buy Me a Coffee webhook verification (`paymentsConfig.webhookSecret` beats it). |
 | `API_KEY_ENCRYPTION_SECRET` | AES-256-GCM key for encrypting `codeApiKeys` at rest. `fulfillApiKeyRequest` fails closed without it. |

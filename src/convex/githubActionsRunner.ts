@@ -221,6 +221,23 @@ const RUNNERS: Record<string, string> = {
   macos: "macos-latest",
 };
 
+// Distinct error class so callers can recognize the "OAuth token lacks the
+// `workflow` scope" case and surface the reconnect instruction — GitHub
+// returns a bare 404 (not a helpful 403) when a token without `workflow`
+// tries to write under .github/workflows/, so we can't rely on the status
+// text alone to explain it to the user.
+class WorkflowScopeMissingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkflowScopeMissingError";
+  }
+}
+
+const WORKFLOW_SCOPE_MSG =
+  "GitHub refused to write the VM worker workflow under .github/workflows/ — "
+  + "this happens when the connected GitHub token was issued without the `workflow` scope. "
+  + "Reconnect GitHub from the /sync page to re-authorize with the updated scopes, then retry.";
+
 async function ensureVmWorkflow(octokit: Octokit, cfg: GhConfig): Promise<void> {
   let existingSha: string | undefined;
   try {
@@ -237,15 +254,23 @@ async function ensureVmWorkflow(octokit: Octokit, cfg: GhConfig): Promise<void> 
     }
   } catch { /* not there yet */ }
 
-  await octokit.repos.createOrUpdateFileContents({
-    owner: cfg.owner,
-    repo: cfg.repo,
-    path: VM_WORKFLOW_PATH,
-    message: "ci: thalamus vm worker",
-    content: Buffer.from(VM_WORKFLOW_YAML, "utf8").toString("base64"),
-    branch: cfg.branch,
-    ...(existingSha ? { sha: existingSha } : {}),
-  });
+  try {
+    await octokit.repos.createOrUpdateFileContents({
+      owner: cfg.owner,
+      repo: cfg.repo,
+      path: VM_WORKFLOW_PATH,
+      message: "ci: thalamus vm worker",
+      content: Buffer.from(VM_WORKFLOW_YAML, "utf8").toString("base64"),
+      branch: cfg.branch,
+      ...(existingSha ? { sha: existingSha } : {}),
+    });
+  } catch (err) {
+    const status = (err as { status?: number } | undefined)?.status;
+    if (status === 403 || status === 404) {
+      throw new WorkflowScopeMissingError(WORKFLOW_SCOPE_MSG);
+    }
+    throw err;
+  }
 }
 
 // Boots the branch's VM worker unless one is already alive. Idempotent: the
@@ -257,7 +282,7 @@ async function ensureVmWorkflow(octokit: Octokit, cfg: GhConfig): Promise<void> 
 // on queued commands can fail them fast when no VM can ever come.
 export const bootVmForBranch = internalAction({
   args: { branchId: v.string() },
-  handler: async (ctx, args): Promise<"booted" | "alive" | "local" | "no-repo" | "no-token" | "dispatch-error"> => {
+  handler: async (ctx, args): Promise<"booted" | "alive" | "local" | "no-repo" | "no-token" | "dispatch-error" | "workflow-scope-missing"> => {
     // Local (desktop) branches run commands on the user's own machine — never boot a VM.
     const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
     if (!branch) return "local";
@@ -299,13 +324,17 @@ export const bootVmForBranch = internalAction({
         },
       });
       return "booted";
-    } catch {
+    } catch (err) {
       // A failed dispatch must not leave a stale "alive" heartbeat blocking
       // retries — clear the last-seen so the next boot attempt (next prompt,
       // next command) tries again immediately.
       await ctx.runMutation(internal.codeBranches.setVmInfo, {
         branchId: args.branchId, lastSeenAt: 0,
       }).catch(() => {});
+      // Distinguish the "OAuth token lacks the `workflow` scope" case so the
+      // command-result surface can tell the user to reconnect GitHub instead
+      // of showing a generic "could not start" message that hides the fix.
+      if (err instanceof WorkflowScopeMissingError) return "workflow-scope-missing";
       return "dispatch-error";
     }
   },
@@ -324,7 +353,7 @@ export const executeBranchCommandsViaActions = internalAction({
 
     const status = await ctx.runAction(internal.githubActionsRunner.bootVmForBranch, { branchId: args.branchId });
 
-    const dead = status === "no-repo" || status === "no-token" || status === "dispatch-error";
+    const dead = status === "no-repo" || status === "no-token" || status === "dispatch-error" || status === "workflow-scope-missing";
     if (dead) {
       for (const cmd of backlog) {
         await ctx.runMutation(internal.codeCommands.recordCommandResult, {
@@ -335,7 +364,9 @@ export const executeBranchCommandsViaActions = internalAction({
             ? "This branch has no GitHub repo, so there is nowhere to run commands. Connect GitHub on the project, or run the build from the desktop app, which uses your own machine."
             : status === "no-token"
               ? "No GitHub token available to dispatch the VM worker."
-              : "Could not start the VM worker for this branch — the flow recovered and you can try running the command again.",
+              : status === "workflow-scope-missing"
+                ? WORKFLOW_SCOPE_MSG
+                : "Could not start the VM worker for this branch — the flow recovered and you can try running the command again.",
         });
       }
       await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId: args.branchId });
@@ -383,15 +414,28 @@ async function ensureSandboxWorkflow(octokit: Octokit, cfg: GhConfig): Promise<v
     }
   } catch { /* not there yet */ }
 
-  await octokit.repos.createOrUpdateFileContents({
-    owner: cfg.owner,
-    repo: cfg.repo,
-    path: SANDBOX_WORKFLOW_PATH,
-    message: "ci: thalamus sandbox preview",
-    content: Buffer.from(SANDBOX_WORKFLOW_YAML, "utf8").toString("base64"),
-    branch: cfg.branch,
-    ...(existingSha ? { sha: existingSha } : {}),
-  });
+  try {
+    await octokit.repos.createOrUpdateFileContents({
+      owner: cfg.owner,
+      repo: cfg.repo,
+      path: SANDBOX_WORKFLOW_PATH,
+      message: "ci: thalamus sandbox preview",
+      content: Buffer.from(SANDBOX_WORKFLOW_YAML, "utf8").toString("base64"),
+      branch: cfg.branch,
+      ...(existingSha ? { sha: existingSha } : {}),
+    });
+  } catch (err) {
+    // ensureSandboxWorkflowWithBranch above treats a 404 as "branch missing"
+    // and re-invokes us after creating it. That fallback stays useful, so we
+    // only re-tag the second-attempt 404 (existingSha would be set on rewrite,
+    // and the branch definitely exists) or an outright 403 — both point to
+    // the OAuth token lacking the `workflow` scope.
+    const status = (err as { status?: number } | undefined)?.status;
+    if (status === 403 || (status === 404 && existingSha !== undefined)) {
+      throw new WorkflowScopeMissingError(WORKFLOW_SCOPE_MSG);
+    }
+    throw err;
+  }
 }
 
 export const startSandbox = internalAction({

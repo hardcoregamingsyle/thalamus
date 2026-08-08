@@ -764,9 +764,12 @@ http.route({
     // login_ state prefix — see the sign-in branch in that handler. Scope
     // includes `repo` so signing in with GitHub also connects repo access —
     // no separate "connect GitHub" step and no PAT needed to import a repo.
+    // `workflow` scope is required to create/update .github/workflows/thalamus-vm.yml
+    // in the branch's auto-created repo, which is how cloud commands execute;
+    // without it GitHub rejects the write with a bare 404 (not a clear 403).
     const params = new URLSearchParams({
       client_id: clientId,
-      scope: "user:email repo",
+      scope: "user:email repo workflow",
       state: `login_${state}`,
     });
     return new Response(null, {

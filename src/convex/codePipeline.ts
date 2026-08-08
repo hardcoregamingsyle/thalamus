@@ -311,6 +311,34 @@ export const runPipelineAction = internalAction({
   handler: async (ctx, args): Promise<void> => {
     const { branchId } = args;
 
+    // ── Action wall-clock budget ──────────────────────────────────────────────
+    // Convex hard-kills an action at 600s with an error NO try/catch here can
+    // observe: no message is saved, nothing reschedules, and the branch is left
+    // reading "running / <agent> is thinking" forever.
+    //
+    // One invocation can make several model calls (the agent turn, a file
+    // continuation, a search follow-up, the Planner). Each used to receive its
+    // OWN 7-minute chain budget, so two slow calls alone could exceed 600s —
+    // which is exactly how a stalled provider burst produced the kill. These
+    // helpers make the budget a property of the INVOCATION: every model call
+    // gets what is actually left, and a call that cannot fit is not started at
+    // all — the step reschedules instead, which the pipeline already supports
+    // everywhere (state lives on the branch doc, so resuming is free).
+    const ACTION_DEADLINE = Date.now() + 450_000; // 7.5 min of the 10-min ceiling
+    const RESCHEDULE_FLOOR_MS = 90_000;  // don't start a model call under this
+    const PER_CALL_CAP_MS = 240_000;     // no single call may eat the whole budget
+    const CALL_TAIL_MS = 30_000;         // reserve for billing/streaming/file ops
+    const budgetLeft = () => ACTION_DEADLINE - Date.now();
+    const callBudget = () => Math.min(PER_CALL_CAP_MS, Math.max(0, budgetLeft() - CALL_TAIL_MS));
+    /** True when the remaining budget is too small to start another model call. */
+    const outOfBudget = () => budgetLeft() < RESCHEDULE_FLOOR_MS;
+    /** Park the step and let a fresh action pick up from the persisted state. */
+    const rescheduleForBudget = async (where: string): Promise<void> => {
+      console.warn(`[pipeline] action budget exhausted at ${where}; rescheduling branch ${branchId}`);
+      await ctx.runMutation(internal.codeBranches.updateBranchStatus, { branchId, status: "running" });
+      await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+    };
+
     // Wrapped in the SAME try/catch as the rest of the step (extended to
     // start here) — this setup zone used to run unguarded, so an exception
     // anywhere in it (a bad credential read, a stale branch/project doc)
@@ -745,8 +773,9 @@ export const runPipelineAction = internalAction({
         : (AGENT_SYSTEM_PROMPTS[currentPhase] ?? `You are the ${currentPhase} agent.`);
 
       if (currentPhase === "Planner") {
+        if (outOfBudget()) { await rescheduleForBudget("Planner"); return; }
         const prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
-        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, "Planner", geminiKeys, dbCreds, agentModelAssignments);
+        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, "Planner", geminiKeys, dbCreds, agentModelAssignments, callBudget());
         agentOutput = result.text;
         await bill("planner", result);
         await ctx.runMutation(internal.codeBranches.clearStreamingContent, { branchId });
@@ -806,7 +835,8 @@ export const runPipelineAction = internalAction({
           }
         }
 
-        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments);
+        if (outOfBudget()) { await rescheduleForBudget(currentPhase); return; }
+        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments, callBudget());
         agentOutput = result.text;
         await bill(currentPhase.toLowerCase(), result);
 
@@ -817,7 +847,11 @@ export const runPipelineAction = internalAction({
         // bigger than one response is silently lost and the pipeline retries
         // forever.
         let contRounds = 0;
-        while (hasUnclosedFileBlock(agentOutput) && contRounds < MAX_FILE_CONTINUATIONS) {
+        // Budget guard as well as a round cap: a continuation that cannot fit in
+        // what's left of the action must not be started. Stopping the loop early
+        // leaves the (still unclosed) output to the normal downstream handling
+        // rather than risking the 600s kill mid-write.
+        while (hasUnclosedFileBlock(agentOutput) && contRounds < MAX_FILE_CONTINUATIONS && !outOfBudget()) {
           contRounds++;
           const tail = agentOutput.slice(-6000);
           const contPrompt = [
@@ -827,7 +861,7 @@ export const runPipelineAction = internalAction({
             `## Continue`,
             `Emit ONLY the remaining JSON op body, picking up at the exact character where the tail stops — do NOT repeat anything above, do NOT re-open the JSON op from the start. Finish the content string and close the JSON op with its closing brace. If you still had more files or commands to emit after it, continue with those.`,
           ].join("\n\n");
-          const cont = await callModelWithStreaming(ctx, contPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments);
+          const cont = await callModelWithStreaming(ctx, contPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments, callBudget());
           if (!cont.text.trim()) break;
           agentOutput += cont.text;
           await bill(`${currentPhase.toLowerCase()}-cont`, cont);
@@ -868,9 +902,14 @@ export const runPipelineAction = internalAction({
         }
       }
 
-      // Execute search and scrape operations from the agent output
+      // Execute search and scrape operations from the agent output.
+      // Each search is a SERP call plus up to three full page reads, so a
+      // batch of five is minutes of wall clock — the budget check stops the
+      // loop rather than letting web I/O run the action into the 600s kill.
+      // Whatever was collected before the cutoff still feeds the follow-up.
       const searchResults: Array<{ query: string; result: string }> = [];
       for (const s of parsed.searchOps.slice(0, 5)) {
+        if (outOfBudget()) break;
         try {
           const result = await performSearch(s.query);
           searchResults.push({ query: s.query, result });
@@ -879,6 +918,7 @@ export const runPipelineAction = internalAction({
         }
       }
       for (const s of parsed.scrapeOps.slice(0, 5)) {
+        if (outOfBudget()) break;
         try {
           const result = await performScrape(s.url);
           searchResults.push({ query: s.url, result });
@@ -886,13 +926,13 @@ export const runPipelineAction = internalAction({
           searchResults.push({ query: s.url, result: "[Scrape failed]" });
         }
       }
-      if (searchResults.length > 0) {
+      if (searchResults.length > 0 && !outOfBudget()) {
         const searchContext = searchResults
           .map((r, i) => `[RESULT ${i + 1} for "${r.query}"]:\n${r.result}`)
           .join("\n\n---\n\n");
         // Re-call the same agent with search results appended
         const searchPrompt = `${agentOutput}\n\n---\n\nSEARCH RESULTS:\n${searchContext}\n\nNow continue your work using the above information. Do NOT emit any more search or scrape ops.`;
-        const searchCall = await callModelWithStreaming(ctx, searchPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments);
+        const searchCall = await callModelWithStreaming(ctx, searchPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments, callBudget());
         agentOutput = searchCall.text;
         await bill(`${currentPhase.toLowerCase()}-search`, searchCall);
         // Re-parse with search results incorporated

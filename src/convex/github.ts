@@ -44,7 +44,11 @@ export const getAuthorizationUrl = action({
     // frontend's own origin. Passing a frontend URL here (as this used to)
     // fails GitHub's redirect_uri check every time. Omitting it makes GitHub
     // fall back to the app's one registered callback URL, which is correct.
-    const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo+user&state=${state}`;
+    //
+    // `workflow` scope is required to create/update .github/workflows/thalamus-vm.yml
+    // in the branch's auto-created repo, which is how cloud commands execute;
+    // without it GitHub rejects the write with a bare 404 (not a clear 403).
+    const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo+workflow+user&state=${state}`;
     return url;
   },
 });

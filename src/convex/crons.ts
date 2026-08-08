@@ -28,4 +28,19 @@ crons.interval(
   internal.agentoverflow.syncKeysToVm,
 );
 
+// Watchdog for stalled Code-mode pipelines. Convex hard-kills a
+// runPipelineAction at its 600s action limit with an error no in-code
+// try/catch can observe, which leaves the branch stuck at status "running"
+// with nothing scheduled to resume it — the UI shows "thinking" forever
+// with no work happening. This sweep reschedules the pipeline for any
+// branch that has been running longer than the stale threshold without
+// being legitimately parked on a command or an API-key request. See
+// codeBranches.sweepStalledBranches for STALE_MS, MAX_REVIVES and the
+// terminal-give-up rule.
+crons.interval(
+  "sweep stalled code branches",
+  { minutes: 5 },
+  internal.codeBranches.sweepStalledBranches,
+);
+
 export default crons;
