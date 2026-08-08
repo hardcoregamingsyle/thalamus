@@ -57,6 +57,14 @@ export interface ParsedOutput {
   cmdOps: CmdOp[];
   mcpOps: McpOp[];
   cleanContent: string;
+  // Additive: raw excerpts (truncated to 200 chars) of lines that clearly
+  // intended to be JSON ops (`{"op":…` / `{ "op":…`) but failed to parse — most
+  // commonly a create-file whose content string has unescaped double quotes.
+  // Previously these were silently dropped, so the agent got no feedback and
+  // repeated the mistake. Callers can surface these back to the agent as
+  // "here is what you tried to send; it did not parse; fix it and retry".
+  // Purely additive so every existing caller keeps working unchanged.
+  malformedOps: string[];
   testerResult?: "pass" | "fail";
   testerFailReason?: string;
   hackerResult?: "pass" | "fail";
@@ -91,10 +99,18 @@ export interface ParsedOutput {
 // Legacy <<TAG>> markers (<<RUN-CMD="...">>, <<CREATEFILE="...">>, etc.) are
 // still parsed as fallback for older conversations.
 
-/** Scan content for balanced JSON objects starting with {"op":" and parse them. */
-export function findJsonOps(content: string): Array<Record<string, unknown>> {
-  const results: Array<Record<string, unknown>> = [];
+/** Internal scanner: returns both successfully parsed ops and raw excerpts of
+ *  ops that clearly INTENDED to be JSON (opener matched the `{"op":` shape) but
+ *  failed to parse. Kept private; the exported `findJsonOps` preserves its old
+ *  signature so existing callers remain unaffected. */
+function findJsonOpsInternal(content: string): {
+  ops: Array<Record<string, unknown>>;
+  malformed: string[];
+} {
+  const ops: Array<Record<string, unknown>> = [];
+  const malformed: string[] = [];
   const startMarker = '{"op":"';
+  const MALFORMED_EXCERPT_MAX = 200;
   let i = 0;
   while (i < content.length) {
     const start = content.indexOf(startMarker, i);
@@ -115,22 +131,75 @@ export function findJsonOps(content: string): Array<Record<string, unknown>> {
       else if (ch === '}') { depth--; if (depth === 0) { end = j + 1; break; } }
     }
     if (end === -1) {
-      // Unterminated op — the model's output got truncated mid-JSON (usually a
-      // create-file whose content hit the token ceiling). Breaking here would
-      // silently drop EVERY later op in the message (files AND commands). Skip
-      // just this opener and keep scanning so siblings still run.
+      // Unterminated op — either the model's output got truncated mid-JSON, OR
+      // the "content" string field is malformed (unescaped quotes) so the
+      // brace/string tracker never returns to depth 0. Both cases used to be
+      // silently dropped which starved the agent of feedback and let it repeat
+      // the same broken emission forever. Capture a bounded excerpt so the
+      // caller can surface it back to the agent as "you tried this, it did not
+      // parse". Bound the excerpt at the earliest of: end-of-line, the NEXT
+      // op's opener (so a following well-formed op is not swallowed into this
+      // one's excerpt), or a hard 200-char cap.
+      const eol = content.indexOf("\n", start);
+      const nextOp = content.indexOf(startMarker, start + startMarker.length);
+      let stop = Math.min(start + MALFORMED_EXCERPT_MAX, content.length);
+      if (eol !== -1 && eol < stop) stop = eol;
+      if (nextOp !== -1 && nextOp < stop) stop = nextOp;
+      malformed.push(content.slice(start, stop).trimEnd());
+      // Advance past the opener only — the sibling ops after us must still run.
       i = start + startMarker.length;
       continue;
     }
 
+    const raw = content.slice(start, end);
     try {
-      const parsed = JSON.parse(content.slice(start, end)) as Record<string, unknown>;
-      if (typeof parsed.op === "string") results.push(parsed);
-    } catch { /* skip invalid JSON */ }
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (typeof parsed.op === "string") {
+        ops.push(parsed);
+      } else {
+        // Parsed as valid JSON but no string `op` field — treat as malformed so
+        // the agent is told rather than silently ignored.
+        malformed.push(raw.slice(0, MALFORMED_EXCERPT_MAX));
+      }
+    } catch {
+      // Brace scan superficially balanced but not valid JSON — almost always
+      // an unescaped `"` inside a `"content"` string. Deliberately do NOT try
+      // to auto-repair: guessing where a content string ends is exactly how a
+      // corrupted file gets silently written to disk. Report the failure and
+      // let the agent fix its own emission on the next round.
+      malformed.push(raw.slice(0, MALFORMED_EXCERPT_MAX));
+    }
 
     i = end;
   }
-  return results;
+  return { ops, malformed };
+}
+
+/** Scan content for balanced JSON objects starting with {"op":" and parse them.
+ *  Kept for backward compatibility with existing external callers; new code in
+ *  this module uses findJsonOpsInternal to also learn about malformed ops. */
+export function findJsonOps(content: string): Array<Record<string, unknown>> {
+  return findJsonOpsInternal(content).ops;
+}
+
+/** Strip LLM special-token wrappers that leak into raw output. Real production
+ *  runs saw DeepSeek-family markers like `<｜｜DSML｜｜op>…</｜｜DSML｜｜op>`
+ *  (fullwidth pipe U+FF5C) wrapping real ops. Left in place they (a) leak
+ *  straight into the visible message and (b) sometimes prevent the JSON op
+ *  inside them from being found. OpenAI-family control tokens show up the same
+ *  way from other models — `<|im_start|>`, `<|eot_id|>`, `<|channel|>`.
+ *
+ *  The regex is intentionally conservative to avoid eating real code:
+ *   - Must open with `<` or `</` IMMEDIATELY followed by a pipe (fullwidth
+ *     U+FF5C or ASCII `|`). Real code — `x < y`, `a || b`, `<div>`,
+ *     `<https://…>`, `if (a < b || c > d)` — never puts a pipe right after `<`.
+ *   - Body is 1–80 chars, no whitespace and no `<`/`>` — so it cannot span a
+ *     line, or eat a code block, or swallow prose.
+ *   - Closes with a plain `>`. Some models emit `<｜｜X｜｜op>` where the
+ *     character just before `>` is not a pipe (see the DSML example); the
+ *     no-whitespace/no-angle-bracket body bound keeps this shape safe. */
+function stripSpecialTokenWrappers(content: string): string {
+  return content.replace(/<\/?[｜|][^\s<>]{1,80}>/g, "");
 }
 
 // Legacy tag parsers — keep for backwards compatibility with older conversations.
@@ -139,12 +208,19 @@ const O = "(?:<<|‹‹|«|‹)";
 const C = "(?:>>|››|»|›)";
 
 export function parseAgentOutput(content: string): ParsedOutput {
+  // Strip LLM special-token wrappers BEFORE any op extraction so (a) an op
+  // wrapped in `<｜…｜>` still finds its JSON opener and (b) the wrapper
+  // characters never survive into cleanContent to be shown to the user.
+  // Legacy `<<TAG>>` markers use double angle brackets, so they are unaffected.
+  const stripped = stripSpecialTokenWrappers(content);
+
   const fileOps: FileOp[] = [];
   const searchOps: SearchOp[] = [];
   const scrapeOps: ScrapeOp[] = [];
   const cmdOps: CmdOp[] = [];
   const mcpOps: McpOp[] = [];
-  let cleanContent = content;
+  const malformedOps: string[] = [];
+  let cleanContent = stripped;
 
   // ── Primary: JSON ops format ──────────────────────────────────────────────
   // Agents now emit single-line {"op":"..."} JSON objects. Legacy <<TAG>> markers
@@ -164,7 +240,20 @@ export function parseAgentOutput(content: string): ParsedOutput {
   let requestApiKey: { name: string; description: string; howToGet: string } | undefined;
   const processedPaths = new Set<string>();
 
-  const jsonOps = findJsonOps(content);
+  // Scan the wrapper-stripped text so ops previously trapped inside special
+  // tokens are now visible, and so malformed excerpts we surface to the user
+  // do not still carry the wrapper characters.
+  const { ops: jsonOps, malformed: malformedRaws } = findJsonOpsInternal(stripped);
+  // Substitute malformed op excerpts BEFORE the successful-op loop rewrites
+  // adjacent text — the excerpt is a literal slice of the current cleanContent,
+  // so replace() finds it now; once other ops rewrite chunks around it the
+  // literal may no longer be present. Marker is deliberately visible in-line
+  // so both the agent and the user can see that something was rejected.
+  const MALFORMED_MARKER = "[MALFORMED OP — not executed]";
+  for (const excerpt of malformedRaws) {
+    malformedOps.push(excerpt);
+    cleanContent = cleanContent.replace(excerpt, MALFORMED_MARKER);
+  }
   for (const op of jsonOps) {
     const raw = JSON.stringify(op);
     switch (op.op) {
@@ -382,7 +471,7 @@ export function parseAgentOutput(content: string): ParsedOutput {
   // Final sweep: neutralise orphaned <<...>> markers
   cleanContent = cleanContent.replace(/<<([^<>]{0,200}?)>>/g, "‹‹$1››");
 
-  return { fileOps, searchOps, scrapeOps, cmdOps, mcpOps, cleanContent, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode, requestApiKey };
+  return { fileOps, searchOps, scrapeOps, cmdOps, mcpOps, cleanContent, malformedOps, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode, requestApiKey };
 }
 
 export interface PlannerTask {

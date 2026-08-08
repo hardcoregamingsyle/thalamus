@@ -364,6 +364,10 @@ export const updateBranchStatus = internalMutation({
     mcpRoundCount: v.optional(v.number()),
     stopRequested: v.optional(v.boolean()),
     executor: v.optional(v.union(v.literal("cloud"), v.literal("local"))),
+    // How many times this run has been parked waiting for model capacity.
+    // Set by runPipelineAction's transient-error path; reset to 0 whenever a
+    // step completes, so the allowance is per-stall, not per-run.
+    providerBackoffCount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const branch = await ctx.db
@@ -388,6 +392,20 @@ export const updateBranchStatus = internalMutation({
     if (args.mcpRoundCount !== undefined) updates.mcpRoundCount = args.mcpRoundCount;
     if (args.stopRequested !== undefined) updates.stopRequested = args.stopRequested;
     if (args.executor !== undefined) updates.executor = args.executor;
+    if (args.providerBackoffCount !== undefined) {
+      updates.providerBackoffCount = args.providerBackoffCount;
+    } else if (
+      branch.providerBackoffCount &&
+      args.totalMessages !== undefined &&
+      args.totalMessages > (branch.totalMessages ?? 0)
+    ) {
+      // Clear the stall counter only on REAL progress — a new message landed,
+      // so a model call succeeded. Resetting on any status write would be wrong:
+      // the pipeline writes status at the start of a step, before the model call
+      // that may stall again, which would pin the backoff at attempt 1 forever
+      // and turn the bounded retry into an endless loop.
+      updates.providerBackoffCount = 0;
+    }
 
     // A finished branch must not keep a cloud sandbox running (~$54/month
     // each). Tear it down and clear the reference — a later re-run simply

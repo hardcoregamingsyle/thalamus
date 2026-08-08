@@ -1302,10 +1302,57 @@ export const runPipelineAction = internalAction({
       }
     } catch (err) {
       console.error("Pipeline error:", err);
+      const message = err instanceof Error ? err.message : String(err);
+
+      // Provider exhaustion is TRANSIENT — every free seat rate-limits at once
+      // under burst, and the window is short. This used to terminate the run:
+      // a build that had already completed a dozen agent rounds was thrown away
+      // because the chain happened to be saturated for a minute. The pipeline is
+      // resumable (all state lives on the branch doc), so the correct response
+      // is to wait and pick up exactly where it stopped.
+      const isProviderExhausted =
+        message.includes("All AI provider seats failed") ||
+        message.includes("No AI provider configured") ||
+        message.includes("rate limit") ||
+        message.includes("429");
+
+      if (isProviderExhausted) {
+        const branchNow = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
+        const attempt = (branchNow?.providerBackoffCount ?? 0) + 1;
+        const MAX_PROVIDER_BACKOFFS = 5;
+        if (attempt <= MAX_PROVIDER_BACKOFFS) {
+          // 1, 2, 4, 8, 16 minutes — long enough to outlast a per-minute or
+          // per-hour-bucket limit without abandoning the user's work.
+          const delayMs = 60_000 * Math.pow(2, attempt - 1);
+          await ctx.runMutation(internal.codeBranches.saveMessage, {
+            branchId,
+            agent: "System",
+            content: `⏳ Every model provider is rate-limited right now. Holding this run and resuming automatically in ${Math.round(delayMs / 60_000)} min (attempt ${attempt}/${MAX_PROVIDER_BACKOFFS}). Nothing has been lost — the pipeline continues from where it stopped.`,
+          });
+          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+            branchId,
+            status: "running",
+            providerBackoffCount: attempt,
+          });
+          await ctx.scheduler.runAfter(delayMs, internal.codePipeline.runPipelineAction, { branchId });
+          return;
+        }
+        // Out of patience — fall through and report honestly.
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId,
+          agent: "System",
+          content: `⚠️ Model providers stayed unavailable across ${MAX_PROVIDER_BACKOFFS} retries spanning ~30 minutes. Stopping so the run doesn't spin. Press send again to resume from here, or add a Modal/Ollama key in /admin for a seat that isn't shared.`,
+        });
+        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+          branchId, status: "idle", providerBackoffCount: 0,
+        });
+        return;
+      }
+
       await ctx.runMutation(internal.codeBranches.saveMessage, {
         branchId,
         agent: "System",
-        content: `⚠️ Error: ${err instanceof Error ? err.message : String(err)}`,
+        content: `⚠️ Error: ${message}`,
       });
       await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
         branchId,

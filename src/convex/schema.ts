@@ -213,6 +213,12 @@ const schema = defineSchema(
       // with a transcript entry once the cap is hit.
       reviveCount: v.optional(v.number()),
       reviveBaselineMessages: v.optional(v.number()),
+      // How many times this run has been parked waiting for model capacity.
+      // Every free provider seat rate-limits at once under burst, which is
+      // transient — the run is rescheduled with escalating backoff rather than
+      // discarded. Cleared when a step actually produces a message. See the
+      // transient-error branch in codePipeline.runPipelineAction.
+      providerBackoffCount: v.optional(v.number()),
     })
       .index("by_project", ["projectId"])
       .index("by_branch_id", ["branchId"])
