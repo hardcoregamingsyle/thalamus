@@ -1,0 +1,43 @@
+name: Convex Env
+
+# Copies a GitHub Actions secret into the production Convex deployment's
+# environment. This machine setup has no local `convex login`, so dashboard
+# env vars would otherwise require clicking through the Convex UI — this
+# gives a repeatable path: `gh secret set NAME --body "..."` then
+# `gh workflow run convex-env.yml -f name=NAME`.
+#
+# The value never appears in logs (it rides through the secrets context),
+# and only someone who can already write repo secrets can use this.
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: 'Env var name — an Actions secret with the SAME name must exist; its value is what gets set'
+        required: true
+
+jobs:
+  set:
+    name: Set Convex env var
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Set env var on the prod deployment
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          VAR_NAME: ${{ inputs.name }}
+          VAR_VALUE: ${{ secrets[inputs.name] }}
+        run: |
+          if [ -z "$CONVEX_DEPLOY_KEY" ]; then
+            echo "::error::CONVEX_DEPLOY_KEY secret is not set."
+            exit 1
+          fi
+          if [ -z "$VAR_VALUE" ]; then
+            echo "::error::No Actions secret named '$VAR_NAME' — create it first: gh secret set $VAR_NAME"
+            exit 1
+          fi
+          npx convex env set "$VAR_NAME" "$VAR_VALUE"
+          echo "Set $VAR_NAME on the deployment."

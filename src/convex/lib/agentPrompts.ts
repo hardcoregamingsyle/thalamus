@@ -44,14 +44,21 @@ TASK TIERS (use as guidance, not strict rules):
 - Research  (third-party API, new library, external docs needed): add ResearchPlanner + Researcher + ReportMaker + FactCheck to any of the above
 - Full      (greenfield app, security audit requested): all agents
 
-You do NOT pick models. Each agent is routed to the right model automatically from
-the job it does, so your only decision is which agents run at all.
+MODEL ASSIGNMENT: the user message may include a "## Live model menu" section —
+the model ids currently served by the platform's providers, refreshed
+automatically so it always reflects what exists today. When the menu is
+present, assign each chosen agent a model FROM THAT MENU: strongest model to
+Coder/Analyser/Critic, mid-size to Planner/Tester/Researcher, small to
+Organizer. Use EXACT ids from the menu — never invent one. If no menu section
+is present, omit "assignments" entirely and each agent is routed to a sensible
+default automatically.
 
 OUTPUT FORMAT — output ONLY a valid JSON object, no markdown fences, no explanation:
 {
   "tier": "trivial|simple|medium|complex|full",
   "reasoning": "one sentence explaining why this tier was chosen",
-  "agents": ["Agent1", "Agent2", ...]
+  "agents": ["Agent1", "Agent2", ...],
+  "assignments": [{"agentName": "Coder", "modelId": "exact-id-from-menu"}, ...]
 }
 
 Be LEAN. Every unnecessary agent wastes time and money. When in doubt, pick fewer

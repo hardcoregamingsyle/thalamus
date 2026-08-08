@@ -102,7 +102,71 @@ export const MODELSCOPE_MODEL_CATALOG: ModelScopeModelInfo[] = [
 ];
 
 export function findModelScopeModel(id: string): ModelScopeModelInfo | undefined {
-  return MODELSCOPE_MODEL_CATALOG.find(m => m.id === id);
+  const fromCatalog = MODELSCOPE_MODEL_CATALOG.find(m => m.id === id);
+  if (fromCatalog) return fromCatalog;
+  // Also honor any id the live /v1/models listing reported (see
+  // fetchModelScopeModelIds) — this is what lets the Dispatcher assign a model
+  // that appeared on ModelScope after this file was last edited. Synthesized
+  // info: the OpenAI-compatible listing carries no metadata beyond the id.
+  if (liveModelIdsCache?.ids.has(id)) {
+    return { id, name: id, provider: "ModelScope", contextWindow: 8192, parameterCount: "—", isReasoning: false };
+  }
+  return undefined;
+}
+
+// ── Live model listing ─────────────────────────────────────────────────────────
+// ModelScope's OpenAI-compatible GET /v1/models needs no auth (verified live on
+// both hosts). The two hosts report DIFFERENT sets — .cn lists the newest
+// DeepSeek V4 models while .ai (the host that actually serves this key's calls)
+// returns an incomplete older list even though V4-Pro verifiably works there —
+// so the menu is the UNION of both. An id that turns out not to serve on .ai
+// simply errors at call time and the provider chain falls through as usual.
+//
+// Cached in module scope with a TTL: the dispatch step awaits the fetch, every
+// later findModelScopeModel() in the same isolate reads the warm cache. A cold
+// isolate without the fetch just means an unknown-but-live id skips the
+// ModelScope short-circuit — degradation, not breakage.
+
+const LIVE_MODELS_TTL_MS = 10 * 60 * 1000;
+const LIVE_MODELS_FETCH_TIMEOUT_MS = 8_000;
+const LIVE_MODEL_HOSTS = [
+  "https://api-inference.modelscope.ai/v1/models",
+  "https://api-inference.modelscope.cn/v1/models",
+];
+
+let liveModelIdsCache: { ids: Set<string>; fetchedAt: number } | null = null;
+
+/**
+ * Fetch the live ModelScope model ids (union of both hosts), with caching.
+ * Never throws: any failure falls back to the static catalog's ids, so the
+ * Dispatcher always gets a usable menu.
+ */
+export async function fetchModelScopeModelIds(): Promise<string[]> {
+  if (liveModelIdsCache && Date.now() - liveModelIdsCache.fetchedAt < LIVE_MODELS_TTL_MS) {
+    return [...liveModelIdsCache.ids];
+  }
+  const ids = new Set<string>();
+  await Promise.all(LIVE_MODEL_HOSTS.map(async (url) => {
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), LIVE_MODELS_FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { signal: ctrl.signal });
+      if (!res.ok) return;
+      const data = await res.json() as { data?: Array<{ id?: string }> };
+      for (const m of data.data ?? []) {
+        if (typeof m.id === "string" && m.id) ids.add(m.id);
+      }
+    } catch {
+      // One host down is fine; both down falls through to the catalog below.
+    } finally {
+      clearTimeout(timeout);
+    }
+  }));
+  if (ids.size === 0) {
+    return MODELSCOPE_MODEL_CATALOG.map(m => m.id);
+  }
+  liveModelIdsCache = { ids, fetchedAt: Date.now() };
+  return [...ids];
 }
 
 // ── Default Model Choices ──────────────────────────────────────────────────────

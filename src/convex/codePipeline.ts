@@ -34,6 +34,7 @@ import {
   type ModelTier,
 } from "./lib/agentCore";
 import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./lib/mcpClient";
+import { fetchModelScopeModelIds } from "./lib/modelscopeClient";
 import { parseMcpCalls, stripMcpBlocks, type ParsedMcpCall } from "./lib/mcpParse";
 
 // MCP loop guard: how many times one agent may be re-run with tool results
@@ -607,8 +608,18 @@ export const runPipelineAction = internalAction({
           subtaskContext = `\n## Overall Plan (${plannerTasks.length} tasks)\n${plannerTasks.map((t, i) => `${i < currentTaskIndex ? "✓" : (i === currentTaskIndex ? "→" : "○")} Task ${i + 1}: ${t.title}`).join("\n")}\n\n## Current Task (${currentTaskIndex + 1}/${plannerTasks.length}): ${ct.title}\n${ct.description}\n\n### Already completed (${completed.length} done)\n${completed.map((t, i) => `${i + 1}. ${t.title}`).join("\n")}`;
         }
 
+        // Live model menu for the Dispatcher's per-agent assignments. Fetched
+        // from ModelScope's /v1/models at dispatch time (union of both hosts,
+        // cached 10 min, catalog fallback on failure) so the assignable set
+        // auto-adds and auto-drops models as ModelScope's offering changes —
+        // no code edit when a new model ships. See modelscopeClient.ts.
+        const liveModelIds = await fetchModelScopeModelIds();
+        const modelMenu = liveModelIds.length > 0
+          ? `\n\n## Live model menu (assign from these exact ids)\n${liveModelIds.map(id => `- ${id}`).join("\n")}`
+          : "";
+
         const dispatchPrompt = `## Project Goal\n${task}${subtaskContext}\n\n## Existing project files\n${files.length > 0 ? files.map(f => `- ${f.filepath}`).join("\n") : "None (greenfield project)"}
-\n## Previously dispatched agents\n${dispatchedAgents.length > 0 ? dispatchedAgents.join(", ") : "None yet (first dispatch)"}`;
+\n## Previously dispatched agents\n${dispatchedAgents.length > 0 ? dispatchedAgents.join(", ") : "None yet (first dispatch)"}${modelMenu}`;
         const dispatchResult = await callModelWithStreaming(
           ctx, dispatchPrompt, AGENT_SYSTEM_PROMPTS["Dispatcher"] ?? "",
           branchId, "Dispatcher", geminiKeys, dbCreds, undefined, 60_000,
