@@ -31,14 +31,17 @@ const TOOLS = [
     name: "search_models",
     title: "Search 3D models",
     description:
-      "Search Sketchfab's 3D-model library. Returns ranked models with uid, name, author, license, face count, downloadable flag, viewer URL and thumbnail. Prefer downloadable:true so the results can actually be pulled, and read the license before using a model in a shipped game.",
+      "Search Sketchfab's 3D-model library. Returns ranked models with uid, name, author, license, face count, downloadable flag, viewer URL and thumbnail. " +
+      "IMPORTANT — the `query` must be SHORT and noun-focused (2-4 words): the subject and, if useful, one distinguishing modifier. Good: \"cessna 172\", \"apache helicopter\", \"medieval sword\", \"sci-fi crate\". " +
+      "Sketchfab ANDs every keyword against titles/descriptions, so extra descriptive words (\"low poly game ready\", \"free cc0 gltf\", \"downloadable 3d model\") are how you get zero results — do NOT add them. Downloadability and licence are constrained by the separate `downloadable` filter and by reading `license` on each result, never through the query text. " +
+      "Prefer downloadable:true (the default) so the results can actually be pulled, and read the license before using a model in a shipped game. If a search still returns very little, the server will already have trimmed trailing filler for you and reports the query it actually used in `query_used`.",
     inputSchema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "What you need, e.g. \"low poly medieval sword\" or \"sci-fi crate\"." },
-        downloadable: { type: "boolean", description: "Only models you can download (default true)." },
+        query: { type: "string", description: "Short noun phrase, 2-4 words. E.g. \"cessna 172\", \"medieval sword\", \"sci-fi crate\". Do not add \"low poly\", \"game ready\", \"free\", \"cc0\" etc. — Sketchfab ANDs them and you get 0 results." },
+        downloadable: { type: "boolean", description: "Only return models the account can download (default true). This is the real downloadability filter; do NOT put words like \"downloadable\" in the query." },
         limit: { type: "integer", minimum: 1, maximum: 24, description: "How many results (default 8)." },
-        tags: { type: "array", items: { type: "string" }, description: "Optional Sketchfab tags to narrow the search." },
+        tags: { type: "array", items: { type: "string" }, description: "Optional Sketchfab tags to narrow the search (e.g. [\"airplane\"], [\"vehicle\"]). Applied as an AND filter alongside the query, so keep the tag list short and specific." },
       },
       required: ["query"],
     },
@@ -159,21 +162,136 @@ function compact(m: SketchfabModel) {
   };
 }
 
-async function searchModels(args: Record<string, unknown>): Promise<unknown> {
-  const query = String(args.query ?? "").trim();
-  if (query.length < 2) throw new Error('"query" must be at least 2 characters.');
-  const downloadable = args.downloadable === undefined ? true : Boolean(args.downloadable);
-  const limit = Math.min(24, Math.max(1, Number(args.limit) || 8));
+// Words and phrases that agents habitually pad queries with. Sketchfab ANDs
+// every keyword against titles/descriptions, so a phrase like "low poly game
+// ready" matches almost no titles and zeroes out an otherwise fine search.
+// Downloadability/licence are handled by dedicated filters, so these tokens
+// only ever hurt the text match.
+const FILLER_TERMS = [
+  "low poly",
+  "low-poly",
+  "lowpoly",
+  "high poly",
+  "high-poly",
+  "highpoly",
+  "game ready",
+  "game-ready",
+  "gameready",
+  "royalty free",
+  "royalty-free",
+  "free",
+  "paid",
+  "cc0",
+  "cc-0",
+  "cc by",
+  "cc-by",
+  "cc by-sa",
+  "creative commons",
+  "gltf",
+  "glb",
+  "fbx",
+  "obj",
+  "usdz",
+  "stl",
+  "download",
+  "downloadable",
+  "3d model",
+  "3d models",
+  "3d asset",
+  "3d assets",
+  "pbr",
+  "textured",
+  "rigged",
+  "animated",
+];
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Remove filler terms as whole tokens (bounded by whitespace or hyphens, or the
+// string edges). Longer phrases are tried first so "low poly" strips before "low"
+// would ever match. Case-insensitive; the caller keeps the original casing of
+// what remains.
+function stripFillerTerms(query: string): string {
+  let out = " " + query + " ";
+  const sorted = [...FILLER_TERMS].sort((a, b) => b.length - a.length);
+  for (const term of sorted) {
+    const re = new RegExp("(^|[\\s\\-])" + escapeRegex(term) + "(?=$|[\\s\\-])", "gi");
+    out = out.replace(re, " ");
+  }
+  return out.replace(/\s+/g, " ").trim();
+}
+
+// Runs one Sketchfab search with the given query text and shared filters.
+// Returns the compact result list plus the raw count so the caller can decide
+// whether to fall back.
+async function runSketchfabSearch(
+  query: string,
+  limit: number,
+  downloadable: boolean,
+  tags: string[],
+): Promise<{ results: ReturnType<typeof compact>[]; ok: boolean; status: number }> {
   const params = new URLSearchParams({ type: "models", q: query, count: String(limit) });
   if (downloadable) params.set("downloadable", "true");
-  const tags = Array.isArray(args.tags) ? (args.tags as unknown[]) : [];
-  for (const t of tags) if (typeof t === "string" && t.trim()) params.append("tags", t.trim());
-
+  for (const t of tags) params.append("tags", t);
   const res = await sketchfab(`/search?${params.toString()}`);
-  if (!res.ok) throw new Error(`Sketchfab search failed (${res.status}).`);
+  if (!res.ok) return { results: [], ok: false, status: res.status };
   const data = (await res.json()) as { results?: SketchfabModel[] };
-  const results = (data.results ?? []).map(compact);
-  return { count: results.length, results };
+  return { results: (data.results ?? []).map(compact), ok: true, status: res.status };
+}
+
+async function searchModels(args: Record<string, unknown>): Promise<unknown> {
+  const originalQuery = String(args.query ?? "").trim();
+  if (originalQuery.length < 2) throw new Error('"query" must be at least 2 characters.');
+  const downloadable = args.downloadable === undefined ? true : Boolean(args.downloadable);
+  const limit = Math.min(24, Math.max(1, Number(args.limit) || 8));
+  const tagsRaw = Array.isArray(args.tags) ? (args.tags as unknown[]) : [];
+  const tags: string[] = [];
+  for (const t of tagsRaw) if (typeof t === "string" && t.trim()) tags.push(t.trim());
+
+  // Step 1: strip well-known filler ("low poly", "cc0", "gltf", ...). Only fall
+  // back to the original query if stripping ate the whole thing.
+  const stripped = stripFillerTerms(originalQuery);
+  const firstQuery = stripped.length >= 2 ? stripped : originalQuery;
+
+  const attempts: Array<{ query: string; count: number }> = [];
+  const first = await runSketchfabSearch(firstQuery, limit, downloadable, tags);
+  if (!first.ok) throw new Error(`Sketchfab search failed (${first.status}).`);
+  attempts.push({ query: firstQuery, count: first.results.length });
+  let winningQuery = firstQuery;
+  let winningResults = first.results;
+
+  // Step 2: if zero results and there is still room to trim, drop trailing
+  // words one at a time — that is where agents park their descriptive filler.
+  // Bounded to a couple of extra HTTP hits and a floor of 2 words so this
+  // stays a single tool call, not a search loop.
+  const MAX_EXTRA_ATTEMPTS = 3;
+  const MIN_WORDS = 2;
+  let words = firstQuery.split(/\s+/).filter(Boolean);
+  for (let extra = 0; extra < MAX_EXTRA_ATTEMPTS && winningResults.length === 0 && words.length > MIN_WORDS; extra++) {
+    words = words.slice(0, -1);
+    const trimmed = words.join(" ");
+    const next = await runSketchfabSearch(trimmed, limit, downloadable, tags);
+    if (!next.ok) throw new Error(`Sketchfab search failed (${next.status}).`);
+    attempts.push({ query: trimmed, count: next.results.length });
+    if (next.results.length > 0) {
+      winningQuery = trimmed;
+      winningResults = next.results;
+    }
+  }
+
+  // Response shape is a superset of the original: `count` and `results` are
+  // unchanged for callers that only read those. `query_used`, `original_query`
+  // and `attempts` let the calling agent notice that its verbose query was
+  // trimmed and pick a shorter phrasing next time.
+  return {
+    count: winningResults.length,
+    results: winningResults,
+    query_used: winningQuery,
+    original_query: originalQuery,
+    attempts,
+  };
 }
 
 async function modelInfo(args: Record<string, unknown>): Promise<unknown> {

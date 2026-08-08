@@ -185,27 +185,39 @@ export function normalizeTags(tags: string[]): string[] {
 // Fetch against the VM corpus API. Throws ERR_UNCONFIGURED until the operator
 // sets AO_VM_URL + AO_INTERNAL_SECRET in the Convex dashboard.
 //
-// Hard 15s timeout per attempt: a slow or hung VM (normal during bulk loads)
-// must fail fast into the caller's refund path instead of pinning the action
-// open — callers charge before this fetch, so "hangs forever" means "charged
-// and nothing came back".
+// Per-attempt timeout: a hung VM must fail into the caller's refund path
+// rather than pinning the action open — callers charge before this fetch, so
+// "hangs forever" means "charged and nothing came back".
 //
-// One retry on NETWORK failure (timeout/connection reset) only — the corpus
-// VM is a spot instance, and a single blip used to surface as
-// backend_unavailable to the calling agent mid-pipeline. An HTTP response of
-// any status is returned as-is: 4xx/5xx are the caller's business, and a
-// second identical request won't change them.
+// 15s turned out to be too tight for the search path. The corpus is ~2M
+// vectors on a spot instance, and a cold HNSW segment (right after preemption
+// or a bulk load) routinely takes longer than that, which surfaced to agents
+// mid-pipeline as `backend_unavailable` even though the VM was healthy — it
+// was answering /v1/health in milliseconds the whole time. Reads get a longer
+// budget and three attempts with backoff; the cheap endpoints keep the short
+// one so a genuinely dead VM still fails fast.
 const VM_FETCH_TIMEOUT_MS = 15_000;
-const VM_FETCH_RETRY_DELAY_MS = 2_000;
+const VM_FETCH_SLOW_PATH_TIMEOUT_MS = 40_000;
+const VM_FETCH_RETRY_DELAYS_MS = [1_500, 4_000];
+
+// The cold-start-sensitive calls: vector search (every search/answer request
+// goes through /internal/search) and ingest, which embeds the document before
+// it can reply. /internal/sync-keys and the health probes stay on the short
+// timeout — they are cheap, and a dead VM should surface fast there.
+const SLOW_PATHS = ["/internal/search", "/internal/ingest"];
 
 export async function vmFetch(path: string, body?: unknown, method = "POST"): Promise<Response> {
   const base = process.env.AO_VM_URL;
   const secret = process.env.AO_INTERNAL_SECRET;
   if (!base || !secret) throw new Error(ERR_UNCONFIGURED);
 
+  const timeoutMs = SLOW_PATHS.some((p) => path.startsWith(p))
+    ? VM_FETCH_SLOW_PATH_TIMEOUT_MS
+    : VM_FETCH_TIMEOUT_MS;
+
   const attempt = async (): Promise<Response> => {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), VM_FETCH_TIMEOUT_MS);
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
       return await fetch(`${base.replace(/\/$/, "")}${path}`, {
         method,
@@ -221,16 +233,21 @@ export async function vmFetch(path: string, body?: unknown, method = "POST"): Pr
     }
   };
 
-  try {
-    return await attempt();
-  } catch (first) {
-    await new Promise((r) => setTimeout(r, VM_FETCH_RETRY_DELAY_MS));
+  // Retries cover NETWORK failures only (timeout / connection reset). An HTTP
+  // response of any status is returned as-is: 4xx/5xx are the caller's
+  // business and a second identical request will not change them.
+  let firstError: unknown;
+  for (let i = 0; i <= VM_FETCH_RETRY_DELAYS_MS.length; i++) {
     try {
       return await attempt();
-    } catch {
-      throw first; // report the original failure, not the retry's
+    } catch (err) {
+      if (firstError === undefined) firstError = err;
+      const delay = VM_FETCH_RETRY_DELAYS_MS[i];
+      if (delay === undefined) break;
+      await new Promise((r) => setTimeout(r, delay));
     }
   }
+  throw firstError; // report the original failure, not the last retry's
 }
 
 // One aoDailyActiveUsers row per user per UTC day; writes throttled to one

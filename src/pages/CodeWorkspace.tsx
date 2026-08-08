@@ -535,7 +535,12 @@ export default function CodeWorkspace() {
                     animate={{ opacity: 1, y: 0 }}
                     className={cn(
                       "flex gap-3 p-4 rounded-lg",
-                      msg.agent === "User" ? "bg-primary/5 ml-12" : "bg-muted/50"
+                      msg.agent === "User" ? "bg-primary/5 ml-12"
+                        // Command output is machine output, not agent prose —
+                        // a distinct treatment keeps a long build log from
+                        // reading like something an agent said.
+                        : msg.agent === "Terminal" ? "bg-background border border-border/60"
+                        : "bg-muted/50"
                     )}
                   >
                     <div className="flex-shrink-0">
@@ -544,6 +549,8 @@ export default function CodeWorkspace() {
                           "w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold",
                           msg.agent === "User"
                             ? "bg-primary text-primary-foreground"
+                            : msg.agent === "Terminal"
+                            ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                             : "bg-muted-foreground text-background"
                         )}
                       >

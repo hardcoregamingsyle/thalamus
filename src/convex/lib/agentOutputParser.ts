@@ -281,7 +281,11 @@ export function parseAgentOutput(content: string): ParsedOutput {
       case "cmd":
         if (typeof op.command === "string") {
           cmdOps.push({ command: op.command });
-          cleanContent = cleanContent.replace(raw, `[CMD: ${op.command.slice(0, 80)}]`);
+          // Show the whole command. It used to be cut at 80 chars, which sliced
+          // pipelines mid-word ("… | he") and left the reader unable to tell
+          // what actually ran — the opposite of what a transcript is for. Long
+          // commands are rare and a wrapped line beats a lie.
+          cleanContent = cleanContent.replace(raw, `[CMD: ${op.command}]`);
         }
         break;
       case "search":
