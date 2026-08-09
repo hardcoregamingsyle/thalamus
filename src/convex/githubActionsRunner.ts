@@ -301,30 +301,31 @@ async function classifyWorkflowWriteError(octokit: Octokit, err: unknown): Promi
   return err instanceof Error ? err : new Error(String(err));
 }
 
-async function ensureVmWorkflow(octokit: Octokit, cfg: GhConfig): Promise<void> {
+/** Idempotently write `content` to `path` on `branch` in `owner/repo`, skipping
+ *  the write when the content already matches (avoids commit churn on every
+ *  boot). A write failure is put through classifyWorkflowWriteError so a
+ *  genuine missing-`workflow`-scope case stays distinguishable from anything
+ *  else — most commonly, from `branch` not existing yet. */
+async function ensureFileOnBranch(
+  octokit: Octokit, owner: string, repo: string, path: string, branch: string,
+  content: string, message: string,
+): Promise<void> {
   let existingSha: string | undefined;
   try {
-    const { data } = await octokit.repos.getContent({
-      owner: cfg.owner, repo: cfg.repo, path: VM_WORKFLOW_PATH, ref: cfg.branch,
-    });
+    const { data } = await octokit.repos.getContent({ owner, repo, path, ref: branch });
     if (!Array.isArray(data) && "sha" in data) {
-      // Already current — rewriting it would churn a commit on every boot.
       if ("content" in data && typeof data.content === "string") {
-        const current = Buffer.from(data.content, "base64").toString("utf8");
-        if (current === VM_WORKFLOW_YAML) return;
+        if (Buffer.from(data.content, "base64").toString("utf8") === content) return;
       }
       existingSha = data.sha;
     }
-  } catch { /* not there yet */ }
+  } catch { /* not there yet, or `branch` doesn't exist — the write below surfaces which */ }
 
   try {
     await octokit.repos.createOrUpdateFileContents({
-      owner: cfg.owner,
-      repo: cfg.repo,
-      path: VM_WORKFLOW_PATH,
-      message: "ci: thalamus vm worker",
-      content: Buffer.from(VM_WORKFLOW_YAML, "utf8").toString("base64"),
-      branch: cfg.branch,
+      owner, repo, path, message,
+      content: Buffer.from(content, "utf8").toString("base64"),
+      branch,
       ...(existingSha ? { sha: existingSha } : {}),
     });
   } catch (err) {
@@ -332,31 +333,58 @@ async function ensureVmWorkflow(octokit: Octokit, cfg: GhConfig): Promise<void> 
   }
 }
 
-// The VM workflow write 404s when the branch ref doesn't exist yet — a fresh
-// branch whose first push hasn't landed. The sandbox writer has always created
-// the ref and retried; the VM writer used to call that same 404 a missing
-// `workflow` scope and park the branch on a reconnect message that could never
-// fix it. Same fallback, same shape.
-async function ensureVmWorkflowWithBranch(octokit: Octokit, cfg: GhConfig): Promise<void> {
+// GitHub only enables workflow_dispatch — the API call the whole VM/sandbox
+// mechanism runs on — for a workflow whose `on: workflow_dispatch` trigger it
+// can resolve via the repo's DEFAULT branch. A copy that exists ONLY on the
+// per-branch working repo's own branch (which githubAutoCreate.ts always makes
+// a freshly generated name, never the default branch) makes
+// createWorkflowDispatch 404 unconditionally, forever, no matter how many
+// times the run is retried.
+//
+// Confirmed live against this repo, not from memory of GitHub's docs:
+// dispatching a workflow present only on a feature branch 404s every single
+// time; the identical dispatch call succeeds within seconds of an identical
+// copy landing on the default branch too, and the run it produces still uses
+// the FEATURE branch's copy (the run's head_branch was the feature branch, not
+// main) — so the default-branch copy exists purely to register the trigger,
+// it never executes. Both copies are required. This was true from the day this
+// mechanism shipped; every "workflow-scope-missing" classification anyone saw
+// on a fresh branch was this, not the token.
+async function ensureWorkflowOnRepo(
+  octokit: Octokit, cfg: GhConfig, path: string, yaml: string, label: string,
+): Promise<void> {
+  const { data: repo } = await octokit.repos.get({ owner: cfg.owner, repo: cfg.repo });
+  const defaultBranch = repo.default_branch;
+
+  await ensureFileOnBranch(
+    octokit, cfg.owner, cfg.repo, path, defaultBranch, yaml,
+    `ci: ${label} (register workflow_dispatch)`,
+  );
+  if (cfg.branch === defaultBranch) return; // one copy already covers both roles
+
   for (const attempt of [1, 2]) {
     try {
-      await ensureVmWorkflow(octokit, cfg);
+      await ensureFileOnBranch(octokit, cfg.owner, cfg.repo, path, cfg.branch, yaml, `ci: ${label}`);
       return;
     } catch (err) {
+      if (err instanceof WorkflowScopeMissingError) throw err;
       const status = (err as { status?: number } | undefined)?.status;
-      if (err instanceof WorkflowScopeMissingError || status !== 404 || attempt === 2) throw err;
-      let created = false;
-      for (const candidate of ["main", "master"]) {
-        try {
-          const { data: defaultRef } = await octokit.git.getRef({ owner: cfg.owner, repo: cfg.repo, ref: `heads/${candidate}` });
-          await octokit.git.createRef({ owner: cfg.owner, repo: cfg.repo, ref: `refs/heads/${cfg.branch}`, sha: defaultRef.object.sha });
-          created = true;
-          break;
-        } catch { /* try next */ }
+      if (status !== 404 || attempt === 2) throw err;
+      // The working branch's ref doesn't exist yet — a fresh branch whose
+      // first push hasn't landed. Fork it from the (now known, not guessed)
+      // default branch and retry once.
+      try {
+        const { data: defaultRef } = await octokit.git.getRef({ owner: cfg.owner, repo: cfg.repo, ref: `heads/${defaultBranch}` });
+        await octokit.git.createRef({ owner: cfg.owner, repo: cfg.repo, ref: `refs/heads/${cfg.branch}`, sha: defaultRef.object.sha });
+      } catch {
+        throw err; // couldn't create the ref either — surface the original 404
       }
-      if (!created) throw err;
     }
   }
+}
+
+async function ensureVmWorkflowWithBranch(octokit: Octokit, cfg: GhConfig): Promise<void> {
+  await ensureWorkflowOnRepo(octokit, cfg, VM_WORKFLOW_PATH, VM_WORKFLOW_YAML, "thalamus vm worker");
 }
 
 // Boots the branch's VM worker unless one is already alive. Idempotent: the
@@ -502,66 +530,12 @@ export const executeBranchCommandsViaActions = internalAction({
   },
 });;
 
-/** Ensure the sandbox workflow file exists, creating the branch if needed. */
+/** Ensure the sandbox workflow file is registered (default branch) and present
+ *  on the working branch, creating the working branch's ref if needed. Same
+ *  two-copy requirement as ensureVmWorkflowWithBranch — see
+ *  ensureWorkflowOnRepo for why. */
 async function ensureSandboxWorkflowWithBranch(octokit: Octokit, cfg: GhConfig): Promise<void> {
-  const candidates = ["main", "master"];
-  for (const attempt of [1, 2]) {
-    try {
-      await ensureSandboxWorkflow(octokit, cfg);
-      return;
-    } catch (err) {
-      const httpErr = err as { status?: number } | undefined;
-      if (httpErr?.status !== 404 || attempt === 2) throw err;
-      // Branch doesn't exist — create it from the default branch.
-      let created = false;
-      for (const candidate of candidates) {
-        try {
-          const { data: defaultRef } = await octokit.git.getRef({ owner: cfg.owner, repo: cfg.repo, ref: `heads/${candidate}` });
-          await octokit.git.createRef({ owner: cfg.owner, repo: cfg.repo, ref: `refs/heads/${cfg.branch}`, sha: defaultRef.object.sha });
-          created = true;
-          break;
-        } catch { /* try next */ }
-      }
-      if (!created) throw new Error(`Cannot create branch ${cfg.branch}: no default branch found (tried ${candidates.join(", ")})`);
-    }
-  }
-}
-
-async function ensureSandboxWorkflow(octokit: Octokit, cfg: GhConfig): Promise<void> {
-  let existingSha: string | undefined;
-  try {
-    const { data } = await octokit.repos.getContent({
-      owner: cfg.owner, repo: cfg.repo, path: SANDBOX_WORKFLOW_PATH, ref: cfg.branch,
-    });
-    if (!Array.isArray(data) && "sha" in data) {
-      if ("content" in data && typeof data.content === "string") {
-        const current = Buffer.from(data.content, "base64").toString("utf8");
-        if (current === SANDBOX_WORKFLOW_YAML) return;
-      }
-      existingSha = data.sha;
-    }
-  } catch { /* not there yet */ }
-
-  try {
-    await octokit.repos.createOrUpdateFileContents({
-      owner: cfg.owner,
-      repo: cfg.repo,
-      path: SANDBOX_WORKFLOW_PATH,
-      message: "ci: thalamus sandbox preview",
-      content: Buffer.from(SANDBOX_WORKFLOW_YAML, "utf8").toString("base64"),
-      branch: cfg.branch,
-      ...(existingSha ? { sha: existingSha } : {}),
-    });
-  } catch (err) {
-    // ensureSandboxWorkflowWithBranch above treats a 404 as "branch missing"
-    // and re-invokes us after creating it, so a first-attempt 404 with no
-    // existingSha stays a plain 404 and keeps that fallback working. Every
-    // other 403/404 is put to GitHub itself via the x-oauth-scopes header
-    // rather than guessed at.
-    const status = (err as { status?: number } | undefined)?.status;
-    if (status === 404 && existingSha === undefined) throw err;
-    throw await classifyWorkflowWriteError(octokit, err);
-  }
+  await ensureWorkflowOnRepo(octokit, cfg, SANDBOX_WORKFLOW_PATH, SANDBOX_WORKFLOW_YAML, "thalamus sandbox preview");
 }
 
 export const startSandbox = internalAction({

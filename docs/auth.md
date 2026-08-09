@@ -70,6 +70,8 @@ Scopes:
 
 Requesting a scope is not the same as being granted it — an organisation policy can withhold `workflow` — so what GitHub *reports* is recorded rather than assumed. `githubHelpers.getGithubStatus` returns `scopes` and `hasWorkflowScope` (`true` / `false` / `null` for "unknown", which covers tokens saved before scopes were recorded and token types that send no header). The Git Sync tab shows a warning only on a definite `false`. `githubActionsRunner` performs the same check server-side before it will attribute a 403/404 to a missing scope.
 
+**A missing `workflow` scope is not the common failure mode.** The far more common cause of a stuck VM/sandbox boot was that `workflow_dispatch` only resolves via the repo's *default* branch — writing the workflow file solely to the per-branch working repo's own branch made every dispatch 404 forever, regardless of token scope. `githubActionsRunner.ensureWorkflowOnRepo` now writes the file to both the default branch (registers the trigger) and the working branch (what actually runs). See `CLAUDE.md` §4.
+
 The connected token is read live from `users.githubAccessToken` on every runner dispatch. `githubConfigs.githubToken` is a snapshot taken at repo-creation time and is only a fallback — reading it as the source of truth is what made reconnecting unable to fix a stuck branch.
 
 ## Desktop app auth
