@@ -58,7 +58,7 @@ src/
     mobile/                 MobilePortal split — MobileHomeScreen, MobileChatView, MobileMessageBubble
     landing/                Landing sections (9) — Hero, ModeGrid, PipelineSection, StudySection, CapabilityBand, FaqSection, FinalCta, NavBar, Footer
     admin/                  15 lazy-loaded admin tabs (Users, DAU, Credits, PromoCodes, Suggestions, StudyMaterials, ProviderB/C/D/E, Ads, Payments, VmIsos, Corpus (AgentOverflow), Maintenance)
-  convex/                   backend — 311 exported Convex functions
+  convex/                   backend — 312 exported Convex functions
     lib/                    pure helper modules — agentCore, agentPrompts, modePrompts, agentOutputParser, ollamaClient, zenClient, deadlySignalsClient, modelscopeClient, ovhcloudClient, modalClient, mcpClient, mcpParse, taskTypes, codeAuth, obscureRepoGenerator, studyPrompt, vlyIntegrations
   components/
     ui/                     shadcn (trimmed to 13 primitives) — do not customize
@@ -84,7 +84,7 @@ Every push to `main` runs the same gates that CI enforces (`.github/workflows/ci
 |---|---|---|
 | Types | `bun run type-check` | `tsc -b --noEmit` |
 | Lint | `bun run lint` | ESLint |
-| Convex refs | `bun run check-refs` | 602 references across 311 functions; the only gate on string-called APIs (see below) |
+| Convex refs | `bun run check-refs` | 605 references across 312 functions; the only gate on string-called APIs (see below) |
 | Tests | `bun test` | 5 suites in `tests/` |
 | Web build | `bun run build` | `tsc -b && vite build` (cross-platform) |
 | Desktop build | `dotnet build thalamus-native/ThalamusApp/ThalamusApp.csproj -c Release` | CI runs this on `windows-latest` |

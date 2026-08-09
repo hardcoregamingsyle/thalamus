@@ -10,7 +10,7 @@ Convex is a serverless backend platform: real-time database, serverless function
 - **Internal function** — only callable from other backend functions.
 - **Scheduled function** — background job kicked off via `ctx.scheduler`.
 
-Current size: 311 exported functions across ~50 modules plus the `src/convex/lib/` helpers. `bun run check-refs` validates 602 references (27 of them from the sibling AgentOverflow repo).
+Current size: 312 exported functions across ~50 modules plus the `src/convex/lib/` helpers. `bun run check-refs` validates 605 references (27 of them from the sibling AgentOverflow repo).
 
 ## Database schema (`src/convex/schema.ts`)
 
@@ -122,7 +122,7 @@ Grouped by concern. Pure helper modules live under [`src/convex/lib/`](./archite
 | `customAuth.ts` / `customAuthHelpers.ts` | Live auth: `sendOtp`, `verifyOtp`, `customSessions` 64-hex tokens (30-day expiry), OAuth state, referral wheel, domain auto-ban. |
 | `desktopAuth.ts` / `desktopAuthActions.ts` | Device-code pairing for the WPF app: `createCode`, `authorizeCode`, `pollCode`. |
 | `http.ts` | Every HTTP route (see table below). |
-| `crons.ts` | Three scheduled jobs (see below). |
+| `crons.ts` | Five scheduled jobs (see below). |
 | `admin.ts` | `/admin` backend. `adminLogin` (password + 3 security questions → returns `ADMIN_TOKEN`), `deductPlatformCost` with `PLATFORM_PRICING` (Gemini + Claude only). `BUDGET_THRESHOLD = 5.0`. |
 | `adminMeta.ts` | Neutral-slug label lookup so a leaked admin chunk does not publish the provider stack. |
 | `payments.ts` / `credits.ts` / `dailyReset.ts` | AgentBucks accounting. `PAYMENTS_DISABLED` forces `getPublicPaymentsConfig` to `{isEnabled:false}`. |
@@ -172,6 +172,8 @@ The streaming endpoint (`/stream-chat`) implements full SigV4 signing for AWS Be
 | reset daily agent bucks | `30 18 * * *` (18:30 UTC = 00:00 IST) | `internal.dailyReset.resetDailyAgentBucks` — resets every user's `dailyAgentBucks` to 10,000,000 |
 | refill agentoverflow credits | `30 18 * * *` | `internal.agentoverflow.dailyRefillAoCredits` — decays contribution points ~1%/day, then tops balances up to the tier refill |
 | sync agentoverflow keys to vm | every 2 minutes | `internal.agentoverflow.syncKeysToVm` — pushes the key-hash snapshot so the corpus VM can authorize search without calling Convex |
+| sweep stalled code branches | every 5 minutes | `internal.codeBranches.sweepStalledBranches` — revives a branch Convex's 600s action limit killed mid-step (status `"running"`, nothing scheduled to resume it). Skips branches legitimately parked on a pending command or API-key request. `MAX_REVIVES = 2` before giving up and setting the branch `"idle"`. |
+| sweep paused code branches | every 5 minutes | `internal.codeBranches.sweepPausedBranches` — a different stall class: re-invokes `runPipelineAction` for every `"paused"` branch so its own 15-minute (`STALE_COMMAND_MS`) pending-command staleness check actually gets a chance to run. Without this, a branch parked on a command that will never get a result (dead VM worker, crashed runner) only re-checks staleness when a user happens to send a new message *after* the 15-minute mark — every retry before that is silent, because `runPipelineAction`'s own gate just re-parks quietly. Safe on every legitimate "paused" case too (a live in-flight command, an open key request) — those just re-park again, harmlessly. |
 
 ## Credit system (AgentBucks)
 

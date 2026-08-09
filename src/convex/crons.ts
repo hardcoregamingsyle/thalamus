@@ -43,4 +43,15 @@ crons.interval(
   internal.codeBranches.sweepStalledBranches,
 );
 
+// Different stall class than the sweep above: a branch correctly "paused" on
+// a command whose result never arrives (dead VM worker, crashed runner). See
+// codeBranches.sweepPausedBranches for why this can't just be folded into the
+// "running" sweep above and why a fresh user retry alone doesn't reliably
+// unstick it.
+crons.interval(
+  "sweep paused code branches",
+  { minutes: 5 },
+  internal.codeBranches.sweepPausedBranches,
+);
+
 export default crons;

@@ -823,3 +823,41 @@ export const sweepStalledBranches = internalMutation({
     return { revived, terminated, skipped, scanned: stale.length };
   },
 });
+
+// ── Watchdog: recover branches parked "paused" on a command that will never
+// answer ──────────────────────────────────────────────────────────────────
+//
+// A different stall class than the sweep above. "paused" is the pipeline's
+// correct, deliberate state while a queued command's result is genuinely in
+// flight — runPipelineAction already knows how to notice when that wait has
+// gone stale (STALE_COMMAND_MS, 15 min: the VM worker never booted, the
+// runner crashed, GitHub silently dropped the dispatched run) and self-heal
+// by failing the command and continuing. The problem is WHEN that check runs:
+// only when something re-invokes runPipelineAction, and for a "paused" branch
+// nothing does except a fresh user message or the command's own callback —
+// which, in the stuck case, never arrives. A user retrying before the
+// 15-minute mark got pure silence on every attempt, because
+// runPipelineAction's own gate just re-parks quietly and returns.
+//
+// The fix is not to duplicate the staleness math here — it's to make sure
+// runPipelineAction gets invoked periodically for every paused branch so ITS
+// existing check actually runs. Re-invoking is safe for every legitimate
+// "paused" case too: a live in-flight command, or an open API-key request
+// both just cause a harmless re-park (the pipeline already relies on this —
+// see the "spurious extra invocation" comment above the pending-commands
+// check in runPipelineAction).
+export const sweepPausedBranches = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    // No status index on codeBranches (same tradeoff as sweepStalledBranches
+    // above); acceptable at this table size for a 5-minute maintenance sweep.
+    const all = await ctx.db.query("codeBranches").collect();
+    const paused = all.filter((b) => b.status === "paused");
+    for (const branch of paused) {
+      await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, {
+        branchId: branch.branchId,
+      });
+    }
+    return { checked: paused.length };
+  },
+});

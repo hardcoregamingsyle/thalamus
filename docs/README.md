@@ -60,7 +60,7 @@ Desktop build instructions: [`thalamus-native/BUILD.md`](../thalamus-native/BUIL
 | Layer | Technology |
 |---|---|
 | Frontend | React 19, Vite 7, TailwindCSS 4, shadcn (trimmed to 13 primitives), Framer Motion, React Router 7 |
-| Backend | Convex — 311 exported functions across ~50 modules + `src/convex/lib/` |
+| Backend | Convex — 312 exported functions across ~50 modules + `src/convex/lib/` |
 | Pipeline models | Modal (admin-registered), OpenCode Zen, DeadlySignal, ModelScope, OVHcloud, Ollama Cloud |
 | Legacy chat/study models | AWS Bedrock (Claude Haiku default), Google Gemini Flash Lite, VLY (last resort) |
 | Desktop | WPF, .NET 8, self-contained single-file `Thalamus.exe`, zero NuGet dependencies in the shipping project |

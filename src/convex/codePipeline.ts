@@ -1577,6 +1577,26 @@ export const startPipeline = action({
       });
     }
 
+    // Give any ALREADY-QUEUED commands a fresh dispatch attempt too, not just
+    // pre-warm the worker for a future one. A command queued while the
+    // executor was broken (a dead registration, any transient dispatch
+    // failure) is left "pending" with nothing ever watching it again except a
+    // 15-minute staleness check inside runPipelineAction — and that check only
+    // runs when something re-invokes the pipeline, which nothing does for a
+    // "paused" branch besides a fresh user message or the very callback that
+    // will never come. Without this, the user explicitly saying "retry" did
+    // nothing until that 15-minute window had already elapsed on its own —
+    // unexplained silence on every attempt before it. executeBranchCommands-
+    // ViaActions early-returns when there's no backlog, so this costs nothing
+    // on the common case of a fresh or already-healthy branch, and it never
+    // double-dispatches a command a worker is genuinely still running (its own
+    // bootVmForBranch call sees the live heartbeat and does nothing further).
+    if (isCloud) {
+      await ctx.scheduler.runAfter(0, internal.githubActionsRunner.executeBranchCommandsViaActions, {
+        branchId: args.branchId,
+      });
+    }
+
     // If the executor is genuinely blocked (a connected GitHub token that GitHub
     // itself reports has no `workflow` scope being the common case), tell the
     // user up front on THIS prompt so they know why commands will not run and

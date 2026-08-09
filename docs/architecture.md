@@ -54,7 +54,7 @@ thalamus/
 │   │                               errorMessage.ts, fileEncoding.ts, streamChat.ts,
 │   │                               dateFormat.ts, sanitizeHtml.ts (DOMPurify),
 │   │                               requestAd.ts, utils.ts
-│   └── convex/                     ALL backend logic — 311 exported functions
+│   └── convex/                     ALL backend logic — 312 exported functions
 │       ├── schema.ts               tables + indexes (10-literal conversations.mode
 │       │                           union; schemaValidation: false)
 │       ├── codePipeline.ts         dispatcher-driven agent pipeline runner
@@ -68,7 +68,7 @@ thalamus/
 │       ├── customAuth.ts / customAuthHelpers.ts   live auth (OTP + sessions)
 │       ├── desktopAuth.ts / desktopAuthActions.ts   desktop device-code pairing
 │       ├── http.ts                 every HTTP route (37 registrations)
-│       ├── crons.ts                three scheduled jobs
+│       ├── crons.ts                five scheduled jobs
 │       ├── admin.ts / adminMeta.ts   /admin backend + neutral-slug label lookup
 │       ├── payments.ts / credits.ts / dailyReset.ts
 │       ├── github*.ts              OAuth, repo sync, auto-create, webhooks,
