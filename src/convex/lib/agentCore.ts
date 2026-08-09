@@ -381,12 +381,24 @@ async function deepReadResults(items: DokobotSearchItem[], topN: number): Promis
     }
     try {
       const text = await performScrape(item.link);
+      // performScrape RETURNS its failures as strings ("[SCRAPE ERROR: HTTP 403
+      // …]") rather than throwing, so this catch never fired for them and the
+      // error text was rendered under a "--- Page content ---" heading as if it
+      // were the page. Agents read that as content and reasoned from it. Treat a
+      // failed read as no read: the header and snippet still stand on their own.
+      if (isScrapeFailure(text)) return "";
       return distillPageText(text);
     } catch {
       return "";
     }
   });
   return Promise.all(readPromises);
+}
+
+/** performScrape signals failure in-band, by return value rather than by throw. */
+function isScrapeFailure(text: string): boolean {
+  const t = text.trimStart();
+  return t.startsWith("[SCRAPE ERROR:") || t.startsWith("[SCRAPE EXCEPTION:");
 }
 
 function distillPageText(text: string): string {
@@ -440,17 +452,32 @@ export async function performSearch(
     return formatSearchBlock(providerResult.items, pages);
   }
 
+  // Last resort when Dokobot, Google CSE and DDG all came back empty: ask a
+  // model what it remembers. This is NOT retrieval and must never be presented
+  // as if it were. It used to return the model's prose bare, which the caller
+  // then pasted under a "SEARCH RESULTS:" heading — so a model asked to act
+  // like a search engine produced numbered results with invented URLs, and
+  // every downstream agent treated them as sources it had actually fetched.
+  // For a research pipeline that is a fabrication generator, so the output is
+  // fenced and labelled unmistakably, and the model is told to answer in prose
+  // and cite nothing rather than imitate a SERP.
   try {
     const { text } = await callSiliconFlow(
-      `Search: "${query}"\n\nProvide a concise factual answer with key details.`,
-      "You are a search assistant.",
+      `Question: "${query}"\n\nAnswer from your own knowledge, in plain prose. `
+      + `Do NOT invent URLs, citations, page titles or search-result listings — `
+      + `you have not retrieved anything. Say plainly what you are unsure of.`,
+      "You answer from memory. You are not a search engine and you have no browsing access.",
       DISPATCHER_MODEL,
       2048,
     );
-    if (text.trim().length > 20) return text;
+    if (text.trim().length > 20) {
+      return `[NO SEARCH RESULTS — the text below is UNVERIFIED MODEL RECALL, not retrieved from the web. `
+        + `It has no sources behind it. Do not cite it, and do not treat any claim in it as verified.]\n\n`
+        + `${text.trim()}\n\n[END UNVERIFIED MODEL RECALL]`;
+    }
   } catch { /* ignore */ }
 
-  return `[Search not available — no search API configured.]`;
+  return `[Search not available — no search provider configured or reachable. No results were retrieved.]`;
 }
 
 /**

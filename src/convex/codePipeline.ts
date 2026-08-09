@@ -964,8 +964,16 @@ export const runPipelineAction = internalAction({
       // loop rather than letting web I/O run the action into the 600s kill.
       // Whatever was collected before the cutoff still feeds the follow-up.
       const searchResults: Array<{ query: string; result: string }> = [];
+      // Requests that never ran because the budget was already gone. They used
+      // to vanish without a trace: the loop broke, searchResults stayed empty,
+      // the re-call never happened, and the agent was handed nothing and told
+      // nothing. A FactCheck agent on the receiving end of that concluded "the
+      // search functionality is not available", refused to verify anything and
+      // failed the build — a correct read of the evidence it was given, and
+      // entirely wrong about the system. Same silent-drop class as the MCP path.
+      const skippedSearchOps: string[] = [];
       for (const s of parsed.searchOps.slice(0, 5)) {
-        if (outOfBudget()) break;
+        if (outOfBudget()) { skippedSearchOps.push(s.query); continue; }
         try {
           const result = await performSearch(s.query);
           searchResults.push({ query: s.query, result });
@@ -974,7 +982,7 @@ export const runPipelineAction = internalAction({
         }
       }
       for (const s of parsed.scrapeOps.slice(0, 5)) {
-        if (outOfBudget()) break;
+        if (outOfBudget()) { skippedSearchOps.push(s.url); continue; }
         try {
           const result = await performScrape(s.url);
           searchResults.push({ query: s.url, result });
@@ -982,12 +990,24 @@ export const runPipelineAction = internalAction({
           searchResults.push({ query: s.url, result: "[Scrape failed]" });
         }
       }
+      // Tell the agent what did not run, even when NOTHING ran — an agent that
+      // asked for research and got silence cannot tell "the tool is broken"
+      // from "nothing was found", and both readings are wrong. It advances
+      // without the re-call, but it advances knowing why.
+      if (skippedSearchOps.length > 0) {
+        parsed.cleanContent = `${parsed.cleanContent}\n\n[RESEARCH SKIPPED: ${skippedSearchOps.length} request(s) (${skippedSearchOps.slice(0, 3).map((q) => `"${q.slice(0, 60)}"`).join(", ")}${skippedSearchOps.length > 3 ? ", …" : ""}) did not run — this step ran out of its time budget, not because search is unavailable. Work with what you have; the next step can research again.]`;
+      }
       if (searchResults.length > 0 && !outOfBudget()) {
         const searchContext = searchResults
           .map((r, i) => `[RESULT ${i + 1} for "${r.query}"]:\n${r.result}`)
           .join("\n\n---\n\n");
-        // Re-call the same agent with search results appended
-        const searchPrompt = `${agentOutput}\n\n---\n\nSEARCH RESULTS:\n${searchContext}\n\nNow continue your work using the above information. Do NOT emit any more search or scrape ops.`;
+        // Re-call the same agent with search results appended. The instruction
+        // to quote rather than restate is load-bearing: a production run had an
+        // agent "continue" by reproducing the whole result block from memory,
+        // corrupting URLs as it went (one source came back with a typo'd path
+        // that the pipeline could not have produced), and every agent after it
+        // treated those mangled links as real citations.
+        const searchPrompt = `${agentOutput}\n\n---\n\nSEARCH RESULTS:\n${searchContext}\n\nNow continue your work using the above information. Do NOT emit any more search or scrape ops. Do NOT reproduce this result block in your reply — quote only the specific lines you rely on, copying any URL character-for-character, and never write a URL that does not appear above.`;
         const searchCall = await callModelWithStreaming(ctx, searchPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments, callBudget());
         agentOutput = searchCall.text;
         await bill(`${currentPhase.toLowerCase()}-search`, searchCall);
