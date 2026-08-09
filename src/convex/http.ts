@@ -571,11 +571,13 @@ http.route({
         // The `repo` scope requested above rides along on this same token, so
         // signing in with GitHub connects repo access in the same step — save
         // it onto the user record instead of discarding it after login.
+        const signInScopes = userRes.headers.get("x-oauth-scopes") ?? undefined;
         const session = await ctx.runMutation(internal.customAuthHelpers.createOAuthSession, {
           email: primary.email,
           name: ghUser.name || ghUser.login,
           githubAccessToken: data.access_token,
           githubUsername: ghUser.login,
+          ...(signInScopes === undefined ? {} : { githubScopes: signInScopes }),
         });
         const sep = st.redirect.includes("?") ? "&" : "?";
         return new Response(null, {
@@ -609,11 +611,17 @@ http.route({
         headers: { "Authorization": `Bearer ${data.access_token}`, "Accept": "application/vnd.github.v3+json" },
       });
       const ghUser = await userRes.json() as { login: string };
+      // GitHub reports what it ACTUALLY granted on every authenticated response.
+      // Asking for `workflow` in the authorize URL does not guarantee getting it
+      // — record the truth so the Git Sync tab can say "reconnecting won't help,
+      // your org denies this scope" instead of looping the user through OAuth.
+      const grantedScopes = userRes.headers.get("x-oauth-scopes") ?? undefined;
 
       await ctx.runMutation(internal.githubHelpers.saveGithubToken, {
         userId: userId as Id<"users">,
         accessToken: data.access_token,
         username: ghUser.login,
+        ...(grantedScopes === undefined ? {} : { scopes: grantedScopes }),
       });
 
       const sep = returnPath.includes("?") ? "&" : "?";

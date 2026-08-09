@@ -51,6 +51,13 @@ const schema = defineSchema(
       githubAccessToken: v.optional(v.string()),
       githubUsername: v.optional(v.string()),
       githubConnectedAt: v.optional(v.number()),
+      // Comma-separated scopes GitHub actually granted this token, read off the
+      // x-oauth-scopes response header at connect time. Requesting `workflow` in
+      // the authorize URL is not the same as being granted it (an org can deny
+      // it, and a token minted before the scope was added never had it) — the
+      // Git Sync tab reads this to say so instead of letting the user reconnect
+      // in a loop that cannot fix anything.
+      githubScopes: v.optional(v.string()),
       // Onboarding
       hasOnboarded: v.optional(v.boolean()),
       // Study profile

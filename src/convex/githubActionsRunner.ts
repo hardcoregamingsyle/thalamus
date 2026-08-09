@@ -19,7 +19,7 @@
 // the OS it actually ships to rather than on whatever the container happened
 // to be. That is not something a single Linux sandbox can do at any price.
 
-import { internalAction } from "./_generated/server";
+import { internalAction, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { Octokit } from "@octokit/rest";
@@ -234,9 +234,62 @@ class WorkflowScopeMissingError extends Error {
 }
 
 const WORKFLOW_SCOPE_MSG =
-  "GitHub refused to write the VM worker workflow under .github/workflows/ — "
-  + "this happens when the connected GitHub token was issued without the `workflow` scope. "
-  + "Reconnect GitHub from the /sync page to re-authorize with the updated scopes, then retry.";
+  "GitHub refused to write the VM worker workflow under .github/workflows/, and the connected "
+  + "token reports no `workflow` scope. Open the branch's Git Sync tab and press Reconnect — "
+  + "that re-runs the authorization with the workflow scope and this branch picks the new token "
+  + "up on the next prompt.";
+
+// Everything a caller needs to resolve a repo AND the token that may act on it.
+// `githubConfigs.githubToken` is a SNAPSHOT taken when the branch's repo was
+// created, so it is not the source of truth: a user who reconnects GitHub gets
+// a fresh token on their user record while every existing branch keeps pointing
+// at the old one. That is exactly how a branch ends up permanently stuck on
+// "reconnect GitHub" no matter how many times the user reconnects. Resolve live
+// from the owner first, fall back to the snapshot, then the platform token.
+async function resolveTokenForBranch(
+  ctx: ActionCtx,
+  projectId: string,
+  cfg: GhConfig,
+): Promise<string | undefined> {
+  try {
+    const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId }) as { userId?: Id<"users"> } | null;
+    if (project?.userId) {
+      const account = await ctx.runQuery(internal.githubHelpers.getGithubToken, { userId: project.userId }) as { accessToken?: string } | null;
+      if (account?.accessToken) return account.accessToken;
+    }
+  } catch { /* fall through to the snapshot */ }
+  return cfg.githubToken || process.env.GITHUB_TOKEN;
+}
+
+// GitHub reports an OAuth token's granted scopes on EVERY authenticated REST
+// response, in `x-oauth-scopes`. That header is the only reliable way to tell
+// "your token lacks `workflow`" apart from "that branch ref doesn't exist yet"
+// or "this repo isn't yours" — all three come back as a bare 404 on a write
+// under .github/workflows/. Returns null when the header is absent (fine-grained
+// PATs and GitHub App tokens don't send it), which callers must NOT read as
+// "scope missing".
+async function tokenGrantsWorkflowScope(octokit: Octokit): Promise<boolean | null> {
+  try {
+    const res = await octokit.request("GET /user");
+    const raw = res.headers["x-oauth-scopes"];
+    if (typeof raw !== "string") return null;
+    return raw.split(",").map((s) => s.trim()).includes("workflow");
+  } catch {
+    return null;
+  }
+}
+
+// Shared by the VM and sandbox workflow writers: decide what a 403/404 on a
+// write under .github/workflows/ actually means, and only blame the scope when
+// GitHub itself says the scope is absent.
+async function classifyWorkflowWriteError(octokit: Octokit, err: unknown): Promise<Error> {
+  const status = (err as { status?: number } | undefined)?.status;
+  if (status === 403 || status === 404) {
+    const granted = await tokenGrantsWorkflowScope(octokit);
+    if (granted === false) return new WorkflowScopeMissingError(WORKFLOW_SCOPE_MSG);
+  }
+  return err instanceof Error ? err : new Error(String(err));
+}
 
 async function ensureVmWorkflow(octokit: Octokit, cfg: GhConfig): Promise<void> {
   let existingSha: string | undefined;
@@ -265,11 +318,34 @@ async function ensureVmWorkflow(octokit: Octokit, cfg: GhConfig): Promise<void> 
       ...(existingSha ? { sha: existingSha } : {}),
     });
   } catch (err) {
-    const status = (err as { status?: number } | undefined)?.status;
-    if (status === 403 || status === 404) {
-      throw new WorkflowScopeMissingError(WORKFLOW_SCOPE_MSG);
+    throw await classifyWorkflowWriteError(octokit, err);
+  }
+}
+
+// The VM workflow write 404s when the branch ref doesn't exist yet — a fresh
+// branch whose first push hasn't landed. The sandbox writer has always created
+// the ref and retried; the VM writer used to call that same 404 a missing
+// `workflow` scope and park the branch on a reconnect message that could never
+// fix it. Same fallback, same shape.
+async function ensureVmWorkflowWithBranch(octokit: Octokit, cfg: GhConfig): Promise<void> {
+  for (const attempt of [1, 2]) {
+    try {
+      await ensureVmWorkflow(octokit, cfg);
+      return;
+    } catch (err) {
+      const status = (err as { status?: number } | undefined)?.status;
+      if (err instanceof WorkflowScopeMissingError || status !== 404 || attempt === 2) throw err;
+      let created = false;
+      for (const candidate of ["main", "master"]) {
+        try {
+          const { data: defaultRef } = await octokit.git.getRef({ owner: cfg.owner, repo: cfg.repo, ref: `heads/${candidate}` });
+          await octokit.git.createRef({ owner: cfg.owner, repo: cfg.repo, ref: `refs/heads/${cfg.branch}`, sha: defaultRef.object.sha });
+          created = true;
+          break;
+        } catch { /* try next */ }
+      }
+      if (!created) throw err;
     }
-    throw err;
   }
 }
 
@@ -314,20 +390,20 @@ export const bootVmForBranch = internalAction({
       return "no-repo"; // repo not set up yet — the pipeline must fail commands with the explainer
     }
 
-    const token = cfg.githubToken || process.env.GITHUB_TOKEN;
+    const token = await resolveTokenForBranch(ctx, branch.projectId, cfg);
     if (!token) {
       await ctx.runMutation(internal.codeBranches.setExecutorBlocked, {
         branchId: args.branchId,
         reason:
           "No GitHub token is available for this branch — cloud commands cannot be dispatched. "
-          + "Reconnect GitHub from the /sync page.",
+          + "Connect GitHub from this branch's Git Sync tab.",
       });
       return "no-token";
     }
 
     try {
       const octokit = new Octokit({ auth: token });
-      await ensureVmWorkflow(octokit, cfg);
+      await ensureVmWorkflowWithBranch(octokit, cfg);
 
       // The nonce is the worker's only credential to the (unauthenticated) poll
       // endpoint — a public-repo Actions job has nothing else to prove identity.
@@ -372,8 +448,11 @@ export const bootVmForBranch = internalAction({
         }).catch(() => {});
         return "workflow-scope-missing";
       }
-      // Transient dispatch failures (network flake, GitHub 5xx) — do NOT set
-      // executorBlockedReason: those are retryable and clear on their own.
+      // Everything else — network flake, GitHub 5xx, repo genuinely gone — is
+      // treated as retryable and must NOT set executorBlockedReason: a sticky
+      // block that only a reconnect can clear is exactly the trap this path used
+      // to fall into. Log the real error; the status alone hides it completely.
+      console.error("bootVmForBranch dispatch failed:", err);
       return "dispatch-error";
     }
   },
@@ -465,15 +544,13 @@ async function ensureSandboxWorkflow(octokit: Octokit, cfg: GhConfig): Promise<v
     });
   } catch (err) {
     // ensureSandboxWorkflowWithBranch above treats a 404 as "branch missing"
-    // and re-invokes us after creating it. That fallback stays useful, so we
-    // only re-tag the second-attempt 404 (existingSha would be set on rewrite,
-    // and the branch definitely exists) or an outright 403 — both point to
-    // the OAuth token lacking the `workflow` scope.
+    // and re-invokes us after creating it, so a first-attempt 404 with no
+    // existingSha stays a plain 404 and keeps that fallback working. Every
+    // other 403/404 is put to GitHub itself via the x-oauth-scopes header
+    // rather than guessed at.
     const status = (err as { status?: number } | undefined)?.status;
-    if (status === 403 || (status === 404 && existingSha !== undefined)) {
-      throw new WorkflowScopeMissingError(WORKFLOW_SCOPE_MSG);
-    }
-    throw err;
+    if (status === 404 && existingSha === undefined) throw err;
+    throw await classifyWorkflowWriteError(octokit, err);
   }
 }
 
@@ -491,7 +568,7 @@ export const startSandbox = internalAction({
     if (!cfg) {
       throw new Error("No GitHub repo configured for this branch — cannot start sandbox");
     }
-    const token = cfg.githubToken || process.env.GITHUB_TOKEN;
+    const token = await resolveTokenForBranch(ctx, args.projectId, cfg);
     if (!token) throw new Error("No GitHub token available");
 
     const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
@@ -588,7 +665,7 @@ export const stopSandbox = internalAction({
     }) as GhConfig | null;
 
     if (cfg) {
-      const token = cfg.githubToken || process.env.GITHUB_TOKEN;
+      const token = await resolveTokenForBranch(ctx, args.projectId, cfg);
       if (token) {
         const octokit = new Octokit({ auth: token });
         // If we don't have a stored run ID, try to find the active run.

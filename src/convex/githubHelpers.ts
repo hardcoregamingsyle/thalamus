@@ -7,12 +7,16 @@ export const saveGithubToken = internalMutation({
     userId: v.id("users"),
     accessToken: v.string(),
     username: v.string(),
+    // Whatever GitHub reported in x-oauth-scopes for this token. Optional so
+    // the sign-in path (which does not read the header) still compiles.
+    scopes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.userId, {
       githubAccessToken: args.accessToken,
       githubUsername: args.username,
       githubConnectedAt: Date.now(),
+      ...(args.scopes === undefined ? {} : { githubScopes: args.scopes }),
     });
   },
 });
@@ -37,6 +41,7 @@ export const disconnectGithub = mutation({
       githubAccessToken: undefined,
       githubUsername: undefined,
       githubConnectedAt: undefined,
+      githubScopes: undefined,
     });
   },
 });
@@ -52,10 +57,20 @@ export const getGithubStatus = query({
     if (!session || session.expiresAt < Date.now()) return null;
     const user = await ctx.db.get(session.userId);
     if (!user) return null;
+    const scopes = user.githubScopes
+      ? user.githubScopes.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
     return {
       connected: !!user.githubAccessToken,
       username: user.githubUsername ?? null,
       connectedAt: user.githubConnectedAt ?? null,
+      scopes,
+      // null means "unknown" — tokens saved before scopes were recorded, and
+      // token types that don't send x-oauth-scopes at all. Only `false` is a
+      // definite "cloud commands cannot work on this token".
+      hasWorkflowScope: user.githubAccessToken
+        ? (user.githubScopes ? scopes.includes("workflow") : null)
+        : null,
     };
   },
 });

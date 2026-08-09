@@ -46,26 +46,31 @@ Logout → delete customSessions row + clearSessionToken()
 
 `src/hooks/use-auth.ts` reads and writes the token via `SESSION_KEY` helpers in `src/lib/session.ts`. It listens for `StorageEvent` on `SESSION_KEY` to sync auth state across tabs — logging out in one tab redirects all other tabs. Every render, a reactive `getUserByToken` query revalidates the token, so an admin-revoked or expired session takes effect immediately.
 
-Routes gated via `useAuth`: `/portal/code*`, `/sync`, `/refer`. `Portal.tsx` checks auth **before** the mobile/desktop split, so guest mode (`GuestPortal`) works on mobile — the old order used to redirect unauthenticated mobile visitors straight to `/auth`.
+Routes gated via `useAuth`: `/portal/code*`, `/refer`. `Portal.tsx` checks auth **before** the mobile/desktop split, so guest mode (`GuestPortal`) works on mobile — the old order used to redirect unauthenticated mobile visitors straight to `/auth`.
 
 ## GitHub OAuth (repo access)
 
 GitHub OAuth is used only for connecting user repositories to code projects. It is not used for login.
 
-1. User clicks "Connect GitHub" in project settings.
-2. Frontend calls `github.getAuthorizationUrl`.
+1. User clicks "Connect GitHub" on a branch's **Git Sync** tab, which also carries Reconnect and Disconnect. There is no separate `/sync` page.
+2. Frontend calls `github.getAuthorizationUrl` with the current branch path as `returnPath`, so the user lands back where they started.
 3. Server generates state parameter (`hex(userId).randomHex`) — encodes the user identity so no server-side state table is needed.
-4. User is redirected to `https://github.com/login/oauth/authorize?scope=repo+workflow+user&state=…`. The `workflow` scope is required: without it GitHub rejects writes to `.github/workflows/` in the branch's auto-created repo with a bare 404, so cloud commands never run. Tokens issued before this scope was added keep working for everything else and need a reconnect from `/sync`.
+4. User is redirected to `https://github.com/login/oauth/authorize?scope=repo+workflow+user&state=…`. The `workflow` scope is required: without it GitHub rejects writes to `.github/workflows/` in the branch's auto-created repo with a bare 404, so cloud commands never run. Tokens issued before this scope was added keep working for everything else and need a reconnect.
 5. GitHub redirects back to the callback route (registered in `http.ts`).
 6. Server decodes state to recover the `userId`.
 7. Exchanges code for an access token.
-8. Token stored on `users.githubAccessToken`.
+8. Token stored on `users.githubAccessToken`; the `x-oauth-scopes` header from the `GET /user` call is stored alongside it on `users.githubScopes`.
 9. `listUserRepos` uses the token to fetch repos from the GitHub API.
 
 Scopes:
 
 - `repo` — full access to private/public repos (needed for push).
+- `workflow` — write `.github/workflows/` in the branch's repo (needed for cloud command execution).
 - `user` — read user profile info.
+
+Requesting a scope is not the same as being granted it — an organisation policy can withhold `workflow` — so what GitHub *reports* is recorded rather than assumed. `githubHelpers.getGithubStatus` returns `scopes` and `hasWorkflowScope` (`true` / `false` / `null` for "unknown", which covers tokens saved before scopes were recorded and token types that send no header). The Git Sync tab shows a warning only on a definite `false`. `githubActionsRunner` performs the same check server-side before it will attribute a 403/404 to a missing scope.
+
+The connected token is read live from `users.githubAccessToken` on every runner dispatch. `githubConfigs.githubToken` is a snapshot taken at repo-creation time and is only a fallback — reading it as the source of truth is what made reconnecting unable to fix a stuck branch.
 
 ## Desktop app auth
 

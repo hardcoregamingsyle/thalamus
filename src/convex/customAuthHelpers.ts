@@ -193,6 +193,7 @@ export const createOAuthSession = internalMutation({
     name: v.optional(v.string()),
     githubAccessToken: v.optional(v.string()),
     githubUsername: v.optional(v.string()),
+    githubScopes: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ token: string; isNewUser: boolean }> => {
     const email = args.email.toLowerCase().trim();
@@ -243,6 +244,7 @@ export const createOAuthSession = internalMutation({
         githubAccessToken: args.githubAccessToken,
         githubUsername: args.githubUsername,
         githubConnectedAt: Date.now(),
+        ...(args.githubScopes === undefined ? {} : { githubScopes: args.githubScopes }),
       });
     }
 
