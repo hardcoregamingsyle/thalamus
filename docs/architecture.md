@@ -33,7 +33,7 @@ thalamus/
 │   │   │                           VmIsoCatalogTab, AgentOverflowTab, MaintenanceTab,
 │   │   │                           shared.ts
 │   │   ├── CodeProjects / CodeBranches / CodeWorkspace / ApiPage / Auth /
-│   │   │   AuthDesktop / Sync / Refer / Legal / Blog / BlogPost / NotFound
+│   │   │   AuthDesktop / Refer / Legal / Blog / BlogPost / NotFound
 │   ├── components/
 │   │   ├── ui/                     13 vendored shadcn primitives — do not edit
 │   │   ├── student-suite/          Study-mode toolset (9 view files) driven by
@@ -54,7 +54,7 @@ thalamus/
 │   │                               errorMessage.ts, fileEncoding.ts, streamChat.ts,
 │   │                               dateFormat.ts, sanitizeHtml.ts (DOMPurify),
 │   │                               requestAd.ts, utils.ts
-│   └── convex/                     ALL backend logic — 309 exported functions
+│   └── convex/                     ALL backend logic — 311 exported functions
 │       ├── schema.ts               tables + indexes (10-literal conversations.mode
 │       │                           union; schemaValidation: false)
 │       ├── codePipeline.ts         dispatcher-driven agent pipeline runner
@@ -80,7 +80,7 @@ thalamus/
 │       │   agentoverflowPublic.ts / agentoverflowAdmin.ts    AO backend
 │       ├── desktopIsoCatalog.ts    admin-managed ISO catalog for the desktop VM tab
 │       ├── antiEvasionDb.ts        signup abuse controls
-│       ├── gravityAds.ts / fileSync.ts
+│       ├── gravityAds.ts
 │       └── lib/                    pure helper modules — see below
 ├── tests/                          bun test — 5 suites
 ├── scripts/                        check-convex-refs.mjs (build gate);
@@ -147,7 +147,7 @@ User types a task in CodeWorkspace
         request-api-key                        → codeApiKeyRequests (blocks on user)
         mcp                                    → mcpClient roundtrip
         test/security/critic verdicts          → status transitions
-    → Critic fail → loop back to Coder (max MAX_CRITIC_RETRIES = 3)
+    → Critic fail → loop back to Coder (no cap — the Critic decides when to pass)
   → status "completed" → files pushed to GitHub if configured
 ```
 

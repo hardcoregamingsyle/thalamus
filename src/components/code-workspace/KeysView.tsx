@@ -13,7 +13,7 @@
 // pipeline lifecycle.
 
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useAction, useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Key, Plus, AlertCircle, Plug, RefreshCw, Trash2 } from "lucide-react";
+import { Key, Plus, AlertCircle, Plug, RefreshCw, Trash2, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { errMsg } from "@/lib/errorMessage";
@@ -56,6 +56,27 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
   const removeMcpServer = useMutation(api.mcpServers.removeServer);
   const setMcpEnabled = useMutation(api.mcpServers.setServerEnabled);
   const refreshMcpTools = useMutation(api.mcpServers.refreshServerTools);
+  const checkBuiltInMcp = useAction(api.codePipeline.checkBuiltInMcpServers);
+
+  // Built-in servers (AgentOverflow, Sketchfab) live in the deployment env, not
+  // in the user's table, so they can't be a reactive query — this is an on-
+  // demand live handshake. Left un-run on mount: it costs two network
+  // round-trips and only matters when someone is asking "is MCP actually on?".
+  const [builtIn, setBuiltIn] = useState<Array<{
+    name: string; url: string | null; keyed: boolean; ok: boolean; detail: string; tools: string[];
+  }> | null>(null);
+  const [checkingBuiltIn, setCheckingBuiltIn] = useState(false);
+
+  const handleCheckBuiltIn = async () => {
+    setCheckingBuiltIn(true);
+    try {
+      setBuiltIn(await checkBuiltInMcp({ token }));
+    } catch (err) {
+      toast.error(errMsg(err, "Built-in MCP check failed"));
+    } finally {
+      setCheckingBuiltIn(false);
+    }
+  };
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
@@ -273,10 +294,11 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Plug className="h-5 w-5" />
-                MCP Servers ({mcpServers?.length || 0})
+                MCP Servers ({(mcpServers?.length || 0) + 2})
               </CardTitle>
               <CardDescription>
-                Connect Model Context Protocol servers — pipeline agents can call their tools
+                AgentOverflow and Sketchfab are built in and attached to every run. Connect your own
+                Model Context Protocol servers below and agents can call their tools too.
               </CardDescription>
             </div>
             <Dialog open={isMcpAddOpen} onOpenChange={setIsMcpAddOpen}>
@@ -320,12 +342,54 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
             </Dialog>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {/* Built-in servers. These used to be invisible here, so a run with
+              two working MCP servers attached displayed "MCP Servers (0)" — and
+              when a call did fail there was no way to tell a bad env var apart
+              from a dead upstream without reading Convex logs. */}
+          <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="font-semibold text-sm">Built in — always attached</div>
+                <div className="text-xs text-muted-foreground">
+                  agentoverflow (corpus search + learnings) · sketchfab (3D model catalogue)
+                </div>
+              </div>
+              <Button size="sm" variant="outline" className="gap-2" onClick={handleCheckBuiltIn} disabled={checkingBuiltIn}>
+                {checkingBuiltIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {checkingBuiltIn ? "Checking…" : "Check now"}
+              </Button>
+            </div>
+            {builtIn === null ? (
+              <div className="text-xs text-muted-foreground">
+                Press <strong>Check now</strong> to handshake both servers and list their live tools.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {builtIn.map((s) => (
+                  <div key={s.name} className="text-xs">
+                    <div className="flex items-center gap-2">
+                      {s.ok
+                        ? <CheckCircle2 className="h-3.5 w-3.5 text-primary shrink-0" />
+                        : <XCircle className="h-3.5 w-3.5 text-destructive shrink-0" />}
+                      <span className="font-semibold">{s.name}</span>
+                      {s.keyed && <Badge variant="outline" className="text-[10px]">keyed</Badge>}
+                    </div>
+                    <div className={`ml-5 ${s.ok ? "text-muted-foreground" : "text-destructive"}`}>{s.detail}</div>
+                    {s.tools.length > 0 && (
+                      <div className="ml-5 text-muted-foreground/70">tools: {s.tools.join(", ")}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {mcpServers === undefined ? (
             <div className="text-center text-muted-foreground py-6">Loading…</div>
           ) : mcpServers.length === 0 ? (
             <div className="text-center text-muted-foreground py-6">
-              No MCP servers connected. Add one and agents gain its tools.
+              No servers of your own connected. Add one and agents gain its tools alongside the built-ins.
             </div>
           ) : (
             <div className="space-y-3">

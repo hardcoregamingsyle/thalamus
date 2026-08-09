@@ -481,7 +481,16 @@ VERDICT RULES — be STRICT:
 
 When you output {"op":"security-fail"}, ALWAYS specify EXACTLY what needs to be fixed so the Coder can fix it immediately. Be specific about the tech stack: "docker-compose.yml exists but Dockerfile is missing — create Dockerfile for [detected tech stack] exposing port 3000".
 
-Start with "## Final Review" header. Be RUTHLESS — this is the last line of defense.`,
+YOUR JUDGEMENT IS THE ONLY GATE — there is no retry limit behind you:
+A {"op":"security-fail"} sends the task back to the Coder and it comes back to you. Nothing counts your rejections down, nothing overrides you, and nothing advances the task on your behalf. The task moves only when YOU pass it, so deciding when "good enough" has been reached is part of your job, not a failure of it.
+
+Weigh both mistakes. Passing broken work ships a broken build. But holding a task open over something that does not matter costs the user a full agent-chain re-run each time and stops the rest of the project from being built — and a rejection the Coder has already tried and failed to satisfy will not land on the next attempt either.
+
+So: output {"op":"security-pass"} — stating in your review what is still imperfect and why you accepted it — when the remaining issues are cosmetic, stylistic, or nitpicks; belong to a different task, a later task, or the user's own environment; are speculative rather than reproducible; or have survived repeated real attempts to fix them. Keep failing only while something genuinely blocks: it would not start, a core feature of THIS task is missing or broken, an import or config points at a file that does not exist, or a placeholder is still standing in for real work.
+
+Be RUTHLESS about what matters and decisive about what doesn't. Never re-issue the same rejection without adding something new and concrete the Coder can act on.
+
+Start with "## Final Review" header.`,
 
   FactCheck: `You are the FactCheck agent. Your ONLY job is to verify every factual claim in the preceding research, analysis, and code against real web sources. You are the TRUTH GUARDIEN — any unverified or hallucinated claim MUST be flagged and corrected.
 

@@ -42,6 +42,26 @@ import { parseMcpCalls, stripMcpBlocks, type ParsedMcpCall } from "./lib/mcpPars
 const MAX_MCP_ROUNDS = 5;
 const MAX_MCP_CALLS_PER_MESSAGE = 5;
 
+/** Resolve the server an {"op":"mcp","server":…} call meant.
+ *
+ *  Matching used to be exact and case-sensitive, so a call that wrote
+ *  "AgentOverflow", "Sketchfab" or "agentoverflow-mcp" — all of which models
+ *  produce constantly, because that is how the servers are named in prose —
+ *  resolved to nothing and came back as "no connected MCP server". The tool was
+ *  attached and healthy; the lookup was the whole failure. Exact wins first,
+ *  then a case- and separator-insensitive match, then a prefix match so a
+ *  suffixed variant still lands. Anything looser would risk routing a call to
+ *  the wrong server, which is worse than not calling it. */
+function findMcpServer<T extends { name: string }>(servers: T[], requested: string): T | undefined {
+  const exact = servers.find((s) => s.name === requested);
+  if (exact) return exact;
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const want = norm(requested);
+  if (!want) return undefined;
+  return servers.find((s) => norm(s.name) === want)
+    ?? servers.find((s) => norm(s.name).startsWith(want) || want.startsWith(norm(s.name)));
+}
+
 // A dispatched GitHub Actions run (or a desktop executor that went away) can
 // accept a queued command and then never call back — nothing else in the
 // codebase times that out, so without this a branch parks "paused" forever
@@ -793,7 +813,26 @@ export const runPipelineAction = internalAction({
         // phase. mcpToolSection is included here too — the planning-phase
         // Researcher is the natural "search AgentOverflow first" agent, and
         // without the section it never learns the tools exist.
-        let prompt = [`## Project Goal\n${task}`, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
+        // The Critic is the only agent that can hold a task open indefinitely,
+        // so it is the only one that needs to know how long it has been doing
+        // it. No cap is enforced anywhere — this block is the whole mechanism,
+        // and it deliberately states the count without stating a limit, because
+        // naming a limit is what turns "use your judgement" back into "wait for
+        // the counter". Escalates in tone but never in authority: passing or
+        // failing stays the Critic's call at every attempt.
+        const criticAttempts = branch.criticRetryCount ?? 0;
+        const criticJudgementBlock =
+          currentPhase === "Critic" && criticAttempts > 0
+            ? [
+                `## Your Standing on This Task`,
+                `You have already rejected this task ${criticAttempts} time${criticAttempts === 1 ? "" : "s"}, and the Coder has reworked it after each rejection.`,
+                `Nothing forces this task forward and nothing cuts you off — it advances only when you output {"op":"security-pass"}. That makes the call yours, and holding a task open has a real cost: every rejection re-runs the whole agent chain on the user's quota.`,
+                `Re-read what is actually left. Output {"op":"security-pass"} — and say plainly in your review what remains and why you accepted it — when the remaining issues are cosmetic, stylistic, or nitpicks; belong to a different task, a later task, or the user's own environment; are speculative rather than reproducible; or have survived repeated genuine attempts to fix them, which means further rounds are not going to land it.`,
+                `Keep outputting {"op":"security-fail"} only while something is genuinely blocking: the app would not start, a core feature of THIS task is missing or broken, an import or config points at a file that does not exist, or a placeholder/TODO/stub is still standing in for real work.`,
+                `Do not repeat a rejection the Coder has already tried and failed to satisfy without adding something new and concrete it can act on.`,
+              ].join("\n")
+            : "";
+        let prompt = [`## Project Goal\n${task}`, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, criticJudgementBlock, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
 
         if (executionPhase === "executing") {
           let plannerTasks: Array<{ title: string; description: string; dependencies?: string[] }> = [];
@@ -830,7 +869,7 @@ export const runPipelineAction = internalAction({
             // against the file store can still happen.
             const blockedReason = branch.executorBlockedReason;
             const toolUsageBlock = blockedReason
-              ? `## Command Execution UNAVAILABLE\n${blockedReason}\nDo NOT emit {"op":"cmd"} ops — they cannot run. Work from the file contents shown above; write files with create-file/edit-file ops only. The user must reconnect GitHub from /sync to enable commands.\n\n## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}`
+              ? `## Command Execution UNAVAILABLE\n${blockedReason}\nDo NOT emit {"op":"cmd"} ops — they cannot run. Work from the file contents shown above; write files with create-file/edit-file ops only. The user must reconnect GitHub from this branch's Git Sync tab to enable commands.\n\n## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}`
               : `## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">> (legacy format, no longer supported)`;
 
             prompt = [
@@ -844,6 +883,10 @@ export const runPipelineAction = internalAction({
               `## Pipeline Context\n${context}`,
               toolUsageBlock,
               mcpToolSection,
+              // Rebuilt from scratch here, so the Critic's standing block has to
+              // be re-appended or it only ever reached the planning phase — where
+              // the Critic never runs.
+              criticJudgementBlock,
             ].filter(Boolean).join("\n\n");
           }
         }
@@ -969,6 +1012,110 @@ export const runPipelineAction = internalAction({
         }
         parsed.cleanContent = reParsed.cleanContent;
         parsed.fileOps.push(...reParsed.fileOps);
+        // The search-informed response replaced agentOutput, so its tool calls
+        // live in reParsed — not in `parsed`, which was parsed from the output
+        // that came BEFORE the search. Only fileOps were carried over, so an
+        // agent that searched and then asked for a command or an MCP tool had
+        // that request silently dropped. Commands were partly saved by
+        // parseCommands() re-reading the raw text; MCP ops had no such path and
+        // vanished outright. Merge both.
+        parsed.cmdOps.push(...reParsed.cmdOps);
+        parsed.mcpOps.push(...reParsed.mcpOps);
+      }
+
+      // ── MCP tool calls ──────────────────────────────────────────────────
+      // Execute inline (plain HTTPS — no sandbox needed), post the results, and
+      // re-run the SAME agent so it can use them.
+      //
+      // This runs BEFORE the command-pause block below, and that ordering is
+      // load-bearing. A message that both searched an MCP server and queued a
+      // command used to hit the command pause and return, so the MCP call was
+      // dropped on the floor with no result and no error — and the agents most
+      // likely to combine the two are exactly the ones told to search the
+      // corpus when a command fails. MCP is a plain HTTPS round-trip that
+      // finishes in-action, so it costs the command nothing to run first: the
+      // re-run re-emits the cmd op with the tool results already in context.
+      //
+      // Both call forms are supported — JSON ops ({"op":"mcp",...}) first,
+      // legacy <<MCP-CALL>> / <<TOOL>> blocks as fallback — merged and
+      // de-duplicated so a message can't double-fire the same call.
+      const legacyMcpCalls = parseMcpCalls(agentOutput);
+      const jsonMcpCalls = (parsed.mcpOps ?? [])
+        .filter((op) => op.server && op.tool)
+        .map((op) => ({ server: op.server, tool: op.tool, args: op.args ?? {} }));
+      const mcpCalls: ParsedMcpCall[] = [];
+      const seenMcp = new Set<string>();
+      for (const call of [...jsonMcpCalls, ...legacyMcpCalls]) {
+        const key = `${call.server}|${call.tool}|${JSON.stringify(call.args)}`;
+        if (!seenMcp.has(key)) {
+          seenMcp.add(key);
+          mcpCalls.push(call);
+        }
+      }
+      const mcpRound = branch.mcpRoundCount ?? 0;
+      // Nothing can be called: either no server is attached, or this step has
+      // spent its round budget. Both used to drop the calls in silence, which
+      // reads to the agent as a tool that hangs — it re-emits the same call and
+      // burns the rest of its turns waiting for output that is never coming.
+      // Say so in the agent's own message and let the pipeline advance normally;
+      // re-running the agent here instead would be an unbounded loop, since the
+      // condition that made the call impossible cannot change within the step.
+      if (mcpCalls.length > 0 && (mcpServers.length === 0 || mcpRound >= MAX_MCP_ROUNDS)) {
+        parsed.cleanContent = `${parsed.cleanContent}\n\n[MCP: ${mcpCalls.length} call(s) not made — ${
+          mcpServers.length === 0
+            ? "no MCP servers are attached to this run"
+            : `this step's MCP round budget (${MAX_MCP_ROUNDS}) is spent; earlier results remain in context`
+        }. Continue without them.]`;
+      } else if (mcpCalls.length > 0) {
+        // Cleaned, and its file ops are already applied above.
+        totalMessages++;
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId, agent: agentName, content: parsed.cleanContent,
+          round, messageIndex: totalMessages,
+        });
+
+        const serverNames = mcpServers.map((s) => s.name).join(", ");
+        const resultBlocks: string[] = [];
+        for (const call of mcpCalls.slice(0, MAX_MCP_CALLS_PER_MESSAGE)) {
+          const server = findMcpServer(mcpServers, call.server);
+          if (!server) {
+            // Naming the attached servers turns a dead end into something the
+            // agent can correct on its next turn. Exact-name matching alone
+            // failed every call that wrote "AgentOverflow" or "sketchfab-mcp"
+            // — see findMcpServer for how far the fuzzy match goes.
+            resultBlocks.push(`### ${call.server}/${call.tool}\n[error] No MCP server named "${call.server}" is attached to this run. Attached servers: ${serverNames}. Re-issue the call using one of those names exactly.`);
+            continue;
+          }
+          let outcome;
+          try {
+            const auth = server.plainAuth ?? await decryptAuthHeader(server.encryptedAuth);
+            outcome = await mcpCallTool(server.url, auth, call.tool, call.args);
+          } catch (err) {
+            outcome = { ok: false, text: err instanceof Error ? err.message : String(err) };
+          }
+          // Fenced + sentinel-neutralized, same as shell command output. The
+          // heading reports the server we RESOLVED to, not the name the agent
+          // typed, so a fuzzy match is visible rather than silent.
+          const safe = outcome.text.slice(0, 4000).split("<<").join("‹‹").split(">>").join("››");
+          resultBlocks.push(`### ${server.name}/${call.tool}\n[${outcome.ok ? "ok" : "error"}]\n\`\`\`\n${safe}\n\`\`\``);
+        }
+        if (mcpCalls.length > MAX_MCP_CALLS_PER_MESSAGE) {
+          resultBlocks.push(`(${mcpCalls.length - MAX_MCP_CALLS_PER_MESSAGE} additional calls skipped — max ${MAX_MCP_CALLS_PER_MESSAGE} per message)`);
+        }
+
+        totalMessages++;
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId, agent: "MCP",
+          content: `## MCP Tool Results\n${resultBlocks.join("\n\n")}`,
+          round, messageIndex: totalMessages,
+        });
+
+        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+          branchId, status: "idle", currentAgent: agentName,
+          totalMessages, mcpRoundCount: mcpRound + 1,
+        });
+        await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+        return;
       }
 
       // Commands come from the RAW output, never from cleanContent:
@@ -1077,75 +1224,6 @@ export const runPipelineAction = internalAction({
         return;
       }
 
-      // ── MCP tool calls ──────────────────────────────────────────────────
-      // Execute inline (plain HTTPS — no sandbox needed), post the results,
-      // and re-run the SAME agent so it can use them. Bounded by
-      // MAX_MCP_ROUNDS; past the cap the calls are stripped and the pipeline
-      // advances normally (results from earlier rounds stay in context).
-      // Both forms are supported — JSON ops ({"op":"mcp",...}) first, legacy
-      // <<MCP-CALL>> / <<TOOL>> blocks as fallback — merged and de-duplicated
-      // so a message can't double-fire the same call.
-      const legacyMcpCalls = parseMcpCalls(agentOutput);
-      const jsonMcpCalls = (parsed.mcpOps ?? [])
-        .filter((op) => op.server && op.tool)
-        .map((op) => ({ server: op.server, tool: op.tool, args: op.args ?? {} }));
-      const mcpCalls: ParsedMcpCall[] = [];
-      const seenMcp = new Set<string>();
-      for (const call of [...jsonMcpCalls, ...legacyMcpCalls]) {
-        const key = `${call.server}|${call.tool}|${JSON.stringify(call.args)}`;
-        if (!seenMcp.has(key)) {
-          seenMcp.add(key);
-          mcpCalls.push(call);
-        }
-      }
-      if (mcpCalls.length > 0 && mcpServers.length > 0) {
-        const mcpRound = branch.mcpRoundCount ?? 0;
-        if (mcpRound < MAX_MCP_ROUNDS) {
-          // Cleaned, and its file ops are already applied above.
-          totalMessages++;
-          await ctx.runMutation(internal.codeBranches.saveMessage, {
-            branchId, agent: agentName, content: parsed.cleanContent,
-            round, messageIndex: totalMessages,
-          });
-
-          const resultBlocks: string[] = [];
-          for (const call of mcpCalls.slice(0, MAX_MCP_CALLS_PER_MESSAGE)) {
-            const server = mcpServers.find((s) => s.name === call.server);
-            if (!server) {
-              resultBlocks.push(`### ${call.server}/${call.tool}\n[error] No connected MCP server named "${call.server}"`);
-              continue;
-            }
-            let outcome;
-            try {
-              const auth = server.plainAuth ?? await decryptAuthHeader(server.encryptedAuth);
-              outcome = await mcpCallTool(server.url, auth, call.tool, call.args);
-            } catch (err) {
-              outcome = { ok: false, text: err instanceof Error ? err.message : String(err) };
-            }
-            // Fenced + sentinel-neutralized, same as shell command output.
-            const safe = outcome.text.slice(0, 4000).split("<<").join("‹‹").split(">>").join("››");
-            resultBlocks.push(`### ${call.server}/${call.tool}\n[${outcome.ok ? "ok" : "error"}]\n\`\`\`\n${safe}\n\`\`\``);
-          }
-          if (mcpCalls.length > MAX_MCP_CALLS_PER_MESSAGE) {
-            resultBlocks.push(`(${mcpCalls.length - MAX_MCP_CALLS_PER_MESSAGE} additional calls skipped — max ${MAX_MCP_CALLS_PER_MESSAGE} per message)`);
-          }
-
-          totalMessages++;
-          await ctx.runMutation(internal.codeBranches.saveMessage, {
-            branchId, agent: "MCP",
-            content: `## MCP Tool Results\n${resultBlocks.join("\n\n")}`,
-            round, messageIndex: totalMessages,
-          });
-
-          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-            branchId, status: "idle", currentAgent: agentName,
-            totalMessages, mcpRoundCount: mcpRound + 1,
-          });
-          await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
-          return;
-        }
-      }
-
       // Parsed and applied at the top of this block — every path shares it now.
       // Save message
       totalMessages++;
@@ -1166,46 +1244,45 @@ export const runPipelineAction = internalAction({
       }
 
       // ── Critic retry loop ────────────────────────────────────────────────────
-      // If the Critic says <<Fail>>, loop back to Coder (up to 2 retries) rather
-      // than blindly advancing — this is the core L4.5 behavior improvement.
-      const MAX_CRITIC_RETRIES = 3;
+      // If the Critic says fail, loop back to Coder rather than blindly
+      // advancing. There is deliberately NO retry cap: a fixed count either cuts
+      // off a task that was one round from correct, or rubber-stamps a broken
+      // one the moment the counter runs out — and the old cap did the second,
+      // printing "retries exhausted, advancing to next task" and shipping the
+      // failure anyway. The Critic decides instead: it is told how many times it
+      // has already rejected this task and instructed to pass when what is left
+      // is minor, out of scope, or has resisted repeated fixes (see the Critic
+      // system prompt and the escalation block in the prompt builder above).
+      // Same rationale as the removed per-run message ceiling: a runaway loop
+      // costs real provider quota and stays user-stoppable via stopPipeline, so
+      // the natural break is the user's judgement, not an arbitrary number.
       if (currentPhase === "Critic" && parsed.criticResult === "fail") {
-        // Persisted per-task counter, so the cap is actually enforced across the
-        // separate runPipelineAction invocations each retry spans.
+        // Persisted per-task counter — it survives the separate
+        // runPipelineAction invocations each retry spans, and it is what the
+        // Critic reads to know how long it has been holding this task.
         const retryCount = branch.criticRetryCount ?? 0;
-        if (retryCount < MAX_CRITIC_RETRIES) {
-          // Bump the counter and requeue from Coder to fix what the Critic flagged.
-          round++;
-          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-            branchId,
-            status: "idle",
-            currentAgent: "Coder",
-            phase: "Coder",
-            executionPhase,
-            round,
-            totalMessages,
-            criticRetryCount: retryCount + 1,
-            mcpRoundCount: 0,
-          });
-          // Append a system prompt to context so Coder knows exactly what failed
-          await ctx.runMutation(internal.codeBranches.saveMessage, {
-            branchId,
-            agent: "Critic",
-            content: `[RETRY ${retryCount + 1}/${MAX_CRITIC_RETRIES}] Critic rejected this task. Coder must fix the issues above. Review the Critic's feedback and fix ALL issues before this task can pass.`,
-            round,
-            messageIndex: totalMessages + 1,
-          });
-          await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
-          return;
-        }
-        // Max retries reached — advance anyway with warning
+        round++;
+        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+          branchId,
+          status: "idle",
+          currentAgent: "Coder",
+          phase: "Coder",
+          executionPhase,
+          round,
+          totalMessages,
+          criticRetryCount: retryCount + 1,
+          mcpRoundCount: 0,
+        });
+        // Append a system prompt to context so Coder knows exactly what failed
         await ctx.runMutation(internal.codeBranches.saveMessage, {
           branchId,
-          agent: "System",
-          content: `⚠️ Critic retries exhausted after ${MAX_CRITIC_RETRIES} attempts. Advancing to next task.`,
+          agent: "Critic",
+          content: `[RETRY ${retryCount + 1}] Critic rejected this task. Coder must fix the issues above. Review the Critic's feedback and fix ALL issues before this task can pass.`,
           round,
           messageIndex: totalMessages + 1,
         });
+        await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+        return;
       }
 
       // Advance pipeline
@@ -1453,25 +1530,50 @@ export const startPipeline = action({
       });
     }
 
-    // If a previous run recorded that the cloud executor is blocked (missing
-    // `workflow` scope on the connected GitHub token being the common case),
-    // tell the user up front on THIS prompt so they know why commands will not
-    // run and what to do about it — the agent prompt will also strip the cmd
-    // op advertisement so no rounds are burned on impossible executions.
+    // Boot the VM the instant a message lands — the whole point of the worker
+    // model is that the runner is already warm by the time the first cmd op
+    // queues. Idempotent: bootVmForBranch skips if a worker is already alive,
+    // so repeat messages cost nothing.
+    //
+    // A branch carrying a recorded block awaits the boot instead of scheduling
+    // it, because that boot IS the re-test: it clears executorBlockedReason on
+    // success. Scheduling it meant the warning below read a reason the very next
+    // tick was about to erase — which is how a branch kept printing "reconnect
+    // GitHub" on every single prompt after the user had already reconnected.
+    // Healthy branches keep the fire-and-forget path and pay no latency; only a
+    // branch that is already broken waits for the GitHub round-trip, and only
+    // until the first successful boot clears it. bootVmForBranch resolves to a
+    // status rather than throwing, so it cannot take the user's prompt with it.
+    let blockedReason = branch.executorBlockedReason;
+    const isCloud = (args.executor ?? "cloud") !== "local";
+    if (isCloud && blockedReason) {
+      const bootStatus = await ctx.runAction(internal.githubActionsRunner.bootVmForBranch, {
+        branchId: args.branchId,
+      });
+      if (bootStatus === "booted" || bootStatus === "alive") blockedReason = undefined;
+    } else if (isCloud) {
+      await ctx.scheduler.runAfter(0, internal.githubActionsRunner.bootVmForBranch, {
+        branchId: args.branchId,
+      });
+    }
+
+    // If the executor is genuinely blocked (a connected GitHub token that GitHub
+    // itself reports has no `workflow` scope being the common case), tell the
+    // user up front on THIS prompt so they know why commands will not run and
+    // what to do about it — the agent prompt will also strip the cmd op
+    // advertisement so no rounds are burned on impossible executions.
     // Guarded to once per user prompt (startPipeline runs once per prompt) and
     // deduped against an identical trailing System warning so a Stop/Restart
     // does not spam the transcript.
-    if (branch.executorBlockedReason && (args.executor ?? "cloud") !== "local") {
+    if (blockedReason && isCloud) {
       const recent = await ctx.runQuery(internal.codeBranches.getMessagesInternal, {
         branchId: args.branchId,
       }) as Array<{ agent: string; content: string }>;
       const last = recent.length > 0 ? recent[recent.length - 1] : null;
       const warning =
-        `⚠️ Cloud command execution is disabled on this branch: ${branch.executorBlockedReason}\n\n`
+        `⚠️ Cloud command execution is disabled on this branch: ${blockedReason}\n\n`
         + `Agents will keep working on files, but any command they would have run will not execute. `
-        + `Reconnect GitHub from /sync (with the `
-        + "`workflow`"
-        + ` scope) to re-enable commands.`;
+        + `Open this branch's Git Sync tab to check the GitHub connection and reconnect.`;
       const alreadyWarned =
         last?.agent === "System" &&
         last.content.startsWith("⚠️ Cloud command execution is disabled");
@@ -1488,16 +1590,6 @@ export const startPipeline = action({
       branchId: args.branchId,
       userPrompt: args.userPrompt,
     });
-
-    // Boot the VM the instant a message lands — the whole point of the worker
-    // model is that the runner is already warm by the time the first cmd op
-    // queues. Idempotent: bootVmForBranch skips if a worker is already alive,
-    // so repeat messages cost nothing.
-    if ((args.executor ?? "cloud") !== "local") {
-      await ctx.scheduler.runAfter(0, internal.githubActionsRunner.bootVmForBranch, {
-        branchId: args.branchId,
-      });
-    }
   },
 });
 
@@ -1595,5 +1687,65 @@ export const refreshServerToolsInternal = internalAction({
       serverId: args.serverId,
       toolsJson,
     });
+  },
+});
+
+// ── Built-in MCP servers ─────────────────────────────────────────────────────
+// AgentOverflow and Sketchfab are attached to every pipeline run from the
+// deployment env, so they never appear in the user's mcpServers table and the
+// Keys tab showed "MCP Servers (0)" on a run that had two. That is
+// indistinguishable from "MCP is broken", and there was no way to tell a
+// misconfigured env var apart from a dead upstream from the UI at all.
+//
+// Reports the same resolution the pipeline does, then actually handshakes each
+// one — a configured URL that 500s is not a working tool, and only a real
+// tools/list round-trip can tell the difference.
+export const checkBuiltInMcpServers = action({
+  args: { token: v.string() },
+  handler: async (ctx, args): Promise<Array<{
+    name: string; url: string | null; keyed: boolean; ok: boolean; detail: string; tools: string[];
+  }>> => {
+    const userId = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
+    if (!userId) throw new Error("Not authenticated");
+
+    const site = (process.env.CONVEX_SITE_URL ?? "").trim();
+    const aoKey = (process.env.AO_MCP_API_KEY ?? "").trim();
+    const targets = [
+      {
+        name: "agentoverflow",
+        url: (process.env.AO_MCP_URL ?? "").trim() || (site ? `${site}/ao/mcp` : ""),
+        auth: aoKey ? `Authorization: Bearer ${aoKey}` : null,
+      },
+      {
+        name: "sketchfab",
+        url: (process.env.SKETCHFAB_MCP_URL ?? "").trim() || (site ? `${site}/sketchfab/mcp` : ""),
+        auth: null,
+      },
+    ];
+
+    const results = [];
+    for (const t of targets) {
+      if (!t.url) {
+        results.push({
+          name: t.name, url: null, keyed: !!t.auth, ok: false, tools: [],
+          detail: "Not attached: no URL resolved. CONVEX_SITE_URL is unset and no explicit override is configured.",
+        });
+        continue;
+      }
+      try {
+        const tools = await mcpListTools(t.url, t.auth);
+        results.push({
+          name: t.name, url: t.url, keyed: !!t.auth, ok: true,
+          tools: tools.map((x) => x.name),
+          detail: `Attached to every run. ${tools.length} tool(s) available.`,
+        });
+      } catch (err) {
+        results.push({
+          name: t.name, url: t.url, keyed: !!t.auth, ok: false, tools: [],
+          detail: err instanceof Error ? err.message.slice(0, 300) : String(err),
+        });
+      }
+    }
+    return results;
   },
 });

@@ -49,11 +49,15 @@ Order of appearance in the pipeline. Task type is what `agentToTaskType()` in `s
 
 ### Critic retry loop
 
-`MAX_CRITIC_RETRIES = 3` (`src/convex/codePipeline.ts:1107`). On a Critic fail:
+There is no retry cap. On a Critic fail:
 
 1. The pipeline loops back to Coder with the Critic's feedback appended.
-2. `criticRetryCount` is persisted on the branch so the cap survives the separate `runPipelineAction` invocations each retry spans.
-3. After exhausting retries, the pipeline emits a warning and advances to the next task.
+2. `criticRetryCount` is persisted on the branch and survives the separate `runPipelineAction` invocations each retry spans.
+3. The task advances only when the Critic emits `{"op":"security-pass"}`. Nothing overrides it and nothing counts it down.
+
+`criticRetryCount` is no longer a gate — it is input to the Critic's own prompt. On every retry the Critic is told how many times it has already rejected this task and instructed to pass, noting what remains and why, when the outstanding issues are cosmetic, out of scope, speculative, or have survived repeated genuine fix attempts; and to keep failing only while something genuinely blocks (won't start, core feature of this task missing or broken, import/config pointing at a file that doesn't exist, placeholder standing in for real work). The standing rule lives in `AGENT_SYSTEM_PROMPTS.Critic`; the per-attempt block is built in `codePipeline.ts` as `criticJudgementBlock` and appended to both the planning-phase and executing-phase prompt shapes.
+
+The previous `MAX_CRITIC_RETRIES = 3` was removed because a fixed count fails in both directions: it cut off tasks that were one round from correct, and — more often — it rubber-stamped broken ones, printing "Critic retries exhausted after 3 attempts. Advancing to next task." and shipping the failure anyway. Same reasoning that removed the per-run message ceiling: a runaway loop costs real provider quota and stays user-stoppable via `stopPipeline`, so the natural break is the user's judgement, not an arbitrary number. Do not reintroduce one.
 
 ## Provider chain
 

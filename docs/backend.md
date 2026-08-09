@@ -10,7 +10,7 @@ Convex is a serverless backend platform: real-time database, serverless function
 - **Internal function** — only callable from other backend functions.
 - **Scheduled function** — background job kicked off via `ctx.scheduler`.
 
-Current size: 309 exported functions across ~50 modules plus the `src/convex/lib/` helpers. `bun run check-refs` validates 583 references (27 of them from the sibling AgentOverflow repo).
+Current size: 311 exported functions across ~50 modules plus the `src/convex/lib/` helpers. `bun run check-refs` validates 602 references (27 of them from the sibling AgentOverflow repo).
 
 ## Database schema (`src/convex/schema.ts`)
 
@@ -111,7 +111,7 @@ Grouped by concern. Pure helper modules live under [`src/convex/lib/`](./archite
 
 | File | Responsibility |
 |---|---|
-| `codePipeline.ts` | The dispatcher-driven agent pipeline. One agent step per invocation of `runPipelineAction`, self-reschedules via `ctx.scheduler.runAfter(0, …)`. Streaming, JSON-op parsing, MCP rounds, Critic retry loop (`MAX_CRITIC_RETRIES = 3`), `stopPipeline`, boot of the cloud VM worker. |
+| `codePipeline.ts` | The dispatcher-driven agent pipeline. One agent step per invocation of `runPipelineAction`, self-reschedules via `ctx.scheduler.runAfter(0, …)`. Streaming, JSON-op parsing, MCP rounds (resolved before the command pause), uncapped Critic retry loop, `stopPipeline`, boot of the cloud VM worker, `checkBuiltInMcpServers`. |
 | `codeBranches.ts` | Branch CRUD, file upsert, `setDispatchedAgents`, state transitions, `getBranchInternal`, `setVmInfo`, `completeSandboxCallback`. |
 | `codeCommands.ts` | Command queue. Endpoints: `queueCommand`, `getPendingCommands`, `getRecentCommandResults`, `claimPendingCommandsForVm` (GH Actions worker), `completeFromRunner` (cloud callback), `completeCommand` (desktop local), `listPendingForBranch` (desktop poll). |
 | `codeApiKeys.ts` | Encrypted storage of user-supplied provider keys; resumes the pipeline when all requested keys arrive. |
@@ -136,7 +136,6 @@ Grouped by concern. Pure helper modules live under [`src/convex/lib/`](./archite
 | `desktopIsoCatalog.ts` | Admin-managed VM ISO catalog for the desktop VM tab. |
 | `antiEvasionDb.ts` | Signup abuse controls. |
 | `gravityAds.ts` | Sponsored-ad configuration + `/ad` handler. |
-| `fileSync.ts` | File-sync helper endpoints. |
 
 There is no `auth.ts` and no `nimClient.ts`. The routing helper that used to live in `nimClient.ts` moved to `lib/taskTypes.ts` and now only exports `agentToTaskType` and `TaskType`.
 
