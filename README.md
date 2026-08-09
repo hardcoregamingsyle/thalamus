@@ -16,7 +16,7 @@ The `conversations.mode` union in `src/convex/schema.ts` lists ten literals; `sr
 
 ## Agent pipeline (Code mode)
 
-The pipeline lives in `src/convex/codePipeline.ts`. A Dispatcher runs first, classifies the task, and returns the minimum agent set. Coder and Critic are always forced in; every other agent has to earn its slot. The full roster (`src/convex/lib/agentPrompts.ts`, `AGENT_SYSTEM_PROMPTS`): Dispatcher, ResearchPlanner, Researcher, ReportMaker, FactCheck, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic. Critic can reject a task and loop back to the Coder; the retry cap is `MAX_CRITIC_RETRIES = 3` (`codePipeline.ts`).
+The pipeline lives in `src/convex/codePipeline.ts`. A Dispatcher runs first, classifies the task, and returns the minimum agent set. Coder and Critic are always forced in; every other agent has to earn its slot. The full roster (`src/convex/lib/agentPrompts.ts`, `AGENT_SYSTEM_PROMPTS`): Dispatcher, ResearchPlanner, Researcher, ReportMaker, FactCheck, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic. Critic can reject a task and loop back to the Coder as many times as it judges necessary — there is no retry cap. The task advances only when the Critic passes it, and the Critic is told on each attempt how long it has been holding the task so it can weigh shipping something imperfect against blocking the rest of the build.
 
 Provider chain (`src/convex/lib/agentCore.ts`, `callModel`): Modal → OpenCode Zen → DeadlySignal → ModelScope → OVHcloud → Ollama Cloud. A Dispatcher-assigned model id that `findZenModel` / `findDeadlySignalsModel` / `findModelScopeModel` recognises short-circuits directly to that provider. NVIDIA NIM has been removed from the pipeline. See [`docs/ai-pipeline.md`](docs/ai-pipeline.md).
 
@@ -58,7 +58,7 @@ src/
     mobile/                 MobilePortal split — MobileHomeScreen, MobileChatView, MobileMessageBubble
     landing/                Landing sections (9) — Hero, ModeGrid, PipelineSection, StudySection, CapabilityBand, FaqSection, FinalCta, NavBar, Footer
     admin/                  15 lazy-loaded admin tabs (Users, DAU, Credits, PromoCodes, Suggestions, StudyMaterials, ProviderB/C/D/E, Ads, Payments, VmIsos, Corpus (AgentOverflow), Maintenance)
-  convex/                   backend — 309 exported Convex functions
+  convex/                   backend — 311 exported Convex functions
     lib/                    pure helper modules — agentCore, agentPrompts, modePrompts, agentOutputParser, ollamaClient, zenClient, deadlySignalsClient, modelscopeClient, ovhcloudClient, modalClient, mcpClient, mcpParse, taskTypes, codeAuth, obscureRepoGenerator, studyPrompt, vlyIntegrations
   components/
     ui/                     shadcn (trimmed to 13 primitives) — do not customize
@@ -84,7 +84,7 @@ Every push to `main` runs the same gates that CI enforces (`.github/workflows/ci
 |---|---|---|
 | Types | `bun run type-check` | `tsc -b --noEmit` |
 | Lint | `bun run lint` | ESLint |
-| Convex refs | `bun run check-refs` | 583 references across 309 functions; the only gate on string-called APIs (see below) |
+| Convex refs | `bun run check-refs` | 602 references across 311 functions; the only gate on string-called APIs (see below) |
 | Tests | `bun test` | 5 suites in `tests/` |
 | Web build | `bun run build` | `tsc -b && vite build` (cross-platform) |
 | Desktop build | `dotnet build thalamus-native/ThalamusApp/ThalamusApp.csproj -c Release` | CI runs this on `windows-latest` |

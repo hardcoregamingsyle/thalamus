@@ -67,7 +67,7 @@ Notes:
 - **No hot reload.** `vite.config.ts` sets `server.hmr: false`.
 - **Dual lockfiles.** Both `bun.lock` and `package-lock.json` are committed. Cloudflare Pages deploys the frontend with `npm ci`; CI verifies `npm ci --dry-run` stays in sync.
 - **`src/convex/_generated/` is committed.** A fresh clone type-checks without running Convex; `npx convex dev` regenerates these files.
-- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 583 references against 309 exported functions (27 of them from the sibling repo).
+- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 602 references against 311 exported functions (27 of them from the sibling repo).
 - **Production deploys go through CI.** `.github/workflows/convex-deploy.yml` runs after CI passes on `main` and executes `npx convex deploy --yes` using the `CONVEX_DEPLOY_KEY` repo secret, then hits `POST /api/action` on `ai:guestSendMessage` as a smoke test. There is no local `convex login` on this machine.
 - **Desktop release CI** (`.github/workflows/release.yml`): a `v*` tag builds and attaches the bare `Thalamus.exe`. The installer (`ThalamusSetup.exe` / Inno-wrapped `Thalamus-Setup-*.exe`) is built locally via `thalamus-native/build.ps1` and uploaded by hand.
 
@@ -96,7 +96,7 @@ Full table in [`docs/deployment.md`](docs/deployment.md#environment-variables). 
 | `SKETCHFAB_API_TOKEN` / `SKETCHFAB_MCP_URL` | Built-in Sketchfab MCP server |
 | `ADMIN_TOKEN` | Admin panel gate |
 | `BREVO_EMAIL_SENDER` | Brevo API key for OTP email (misleading name) |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` / `GITHUB_TOKEN` | GitHub OAuth app + repo-sync fallback. `GITHUB_TOKEN` must include the `workflow` scope so the per-branch VM/sandbox workflows under `.github/workflows/` can be written; without it, GitHub rejects the write with a bare 404 and cloud commands never run. |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` / `GITHUB_TOKEN` | GitHub OAuth app + repo-sync fallback. `GITHUB_TOKEN` must include the `workflow` scope so the per-branch VM/sandbox workflows under `.github/workflows/` can be written; without it, GitHub rejects the write with a bare 404 and cloud commands never run. The runner no longer *guesses* that from a 404 — it reads `x-oauth-scopes` off a `GET /user` before blaming the scope (see §4). |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth app |
 | `FRONTEND_URL` | OAuth callback base |
 | `BMAC_WEBHOOK_SECRET` | Buy Me a Coffee webhook |
@@ -127,12 +127,12 @@ One Convex backend, two frontends (web + native Windows), two products (Thalamus
 - Shared client libs: `src/lib/session.ts` (`SESSION_KEY` + helpers), `convexUrls.ts` (`convexSiteUrl`), `errorMessage.ts` (`errMsg`), `fileEncoding.ts`, `streamChat.ts`, `dateFormat.ts`, `sanitizeHtml.ts` (DOMPurify — mandatory before any `dangerouslySetInnerHTML`; session/admin/GitHub tokens live in localStorage).
 - Client-side system prompts for `/stream-chat` live in `src/content/systemPrompts.ts`.
 - Guest mode is nominally 3 prompts/day (`GUEST_LIMIT` in `pages/portal/guestSession.ts`, `GUEST_DAILY_LIMIT` in `ai.ts`/`aiHelpers.ts`), currently uncapped — see the free/unlimited switches below.
-- Auth is custom, not `@convex-dev/auth`. The live flow is `src/hooks/use-auth.ts` → `api.customAuth.sendOtp/verifyOtp` + Google/GitHub OAuth via the Convex HTTP router. The session token sits in localStorage under `agentai_session_token` and is passed as an explicit `{token}` argument to nearly every Convex call. `/portal/code*`, `/sync`, `/refer` are auth-gated via `useAuth`.
+- Auth is custom, not `@convex-dev/auth`. The live flow is `src/hooks/use-auth.ts` → `api.customAuth.sendOtp/verifyOtp` + Google/GitHub OAuth via the Convex HTTP router. The session token sits in localStorage under `agentai_session_token` and is passed as an explicit `{token}` argument to nearly every Convex call. `/portal/code*` and `/refer` are auth-gated via `useAuth`. There is no `/sync` route: connecting and disconnecting GitHub lives on a branch's Git Sync tab (`components/code-workspace/GitSyncView.tsx`), because that is the only place the connection has a concrete meaning.
 - Theme is a single `ThemeProvider` context (`src/hooks/use-theme.tsx`); no more instrumentation error-modal, no `RouteSyncer`, no vly telemetry — just a plain React error boundary in `main.tsx`.
 
 ### Backend (Convex — `src/convex/`)
 
-- 309 exported functions across ~50 modules plus `lib/`. `schema.ts` defines the tables (10-literal `conversations.mode` union among them); `schemaValidation: false` so legacy rows do not block deploys.
+- 311 exported functions across ~50 modules plus `lib/`. `schema.ts` defines the tables (10-literal `conversations.mode` union among them); `schemaValidation: false` so legacy rows do not block deploys.
 - **`src/convex/lib/`** holds pure helper modules (no Convex framework imports):
   - `agentCore.ts` — `FREE_UNLIMITED`, `callModel` (the router), `mapModelIdToOllama`, `calcAgentBucksForTier`, `performSearch`, `performScrape`. Re-exports `agentPrompts` (per-agent system prompts), `modePrompts` (`MODE_ADHD`, `MODE_SYSTEM_PROMPTS`, `adhdToTemperature`), `agentOutputParser` (JSON-op parser, legacy `<<TAG>>` fallback).
   - Provider clients: `ollamaClient.ts` (formerly `siliconflow.ts` — export names unchanged), `zenClient.ts`, `deadlySignalsClient.ts`, `modelscopeClient.ts`, `ovhcloudClient.ts`, `modalClient.ts`.
@@ -174,16 +174,18 @@ Before flipping any of them, fix the two things that make metering meaningless a
 `codeProjects` → `codeBranches` → `codeMessages` / `codeFiles` / `codeCommands` / `codeApiKeys*` / `mcpServers`. Driven by `src/convex/codePipeline.ts` at `/portal/code/*` in `CodeProjects` → `CodeBranches` → `CodeWorkspace`. A Dispatcher runs first and persists the picked agents on `codeBranches.dispatchedAgentsJson`.
 
 Behaviours to know:
-- MCP tool calls: user-connected servers + built-in AgentOverflow + Sketchfab, bounded rounds.
+- MCP tool calls: user-connected servers + built-in AgentOverflow + Sketchfab, bounded rounds. Handled **before** the command pause, so a message that both calls a tool and queues a command keeps both. Server names resolve fuzzily (`findMcpServer` — case/separator-insensitive, then prefix) because models write "AgentOverflow" and "sketchfab-mcp" constantly. When a call cannot be made (no server attached, round budget spent) the agent is told so in its own message instead of the call vanishing. The Keys tab lists the two built-ins and can live-handshake them (`codePipeline.checkBuiltInMcpServers`).
 - `{"op":"cmd"}` execution: two executors (see `docs/executors.md`).
 - `{"op":"request-api-key"}`: pauses the branch until the user submits the key (`codeApiKeys.fulfillApiKeyRequest` resumes it).
-- Critic retry loop: `MAX_CRITIC_RETRIES = 3` (`codePipeline.ts:1107`).
+- Critic retry loop: **no cap**. A Critic fail always loops back to Coder; the task advances only when the Critic passes it. `branch.criticRetryCount` is still persisted, but purely as input to the Critic's own prompt — it is told how many times it has rejected the task and instructed to pass when what remains is minor, out of scope, or has resisted repeated fixes. Same reasoning as the removed per-run message ceiling: the natural break is the user (`stopPipeline`), not a number. Do not reintroduce a numeric limit.
 - Simulated streaming: the batch response is drip-fed to `streamingContent` in 300-char chunks — real token streaming was abandoned as unreliable in Convex actions.
 - `cmd` op queues into `codeCommands`, parks the branch as `paused`, self-resumes when nothing is outstanding. `request-api-key` is the only op that genuinely blocks on the user.
 
 ### VM & sandbox executors
 
 - **GitHub Actions cloud runner** — `githubActionsRunner.ts` + `.github/workflows/thalamus-vm.yml` (in the per-branch repo). `startPipeline` boots the worker via `bootVmForBranch` (idempotent — heartbeat prevents doubles). The worker polls `/code/vm-poll` every ~10s, atomically claims pending commands via `claimPendingCommandsForVm`, and posts each result to `/code/command-result` with a single-use nonce. `keepAlive` policy: work in flight or `lastActivityAt` within 300s of `now` while incomplete / 600s once completed. `runnerOs` on the branch picks ubuntu / windows / macos.
+- **Token resolution is live, not snapshotted.** `githubConfigs.githubToken` is written once when a branch's repo is created. Reading it directly meant a user who reconnected GitHub kept dispatching with the *old* token forever, so a branch could sit permanently on "reconnect GitHub from /sync" that reconnecting could never clear. Every runner path goes through `resolveTokenForBranch` (branch owner's current `users.githubAccessToken` → stored snapshot → `GITHUB_TOKEN`).
+- **`executorBlockedReason` is only set on a *proven* block.** A 403/404 writing under `.github/workflows/` is put to GitHub via `x-oauth-scopes` before it is called a scope problem; a missing branch ref is created and retried (`ensureVmWorkflowWithBranch`); anything else stays retryable and sets nothing. `startPipeline` awaits `bootVmForBranch` so the warning it prints reflects this prompt, not a stale one.
 - **Desktop local executor** — desktop app sets `executor: "local"` on `startPipeline`, polls `codeCommands:listPendingForBranch`, runs each command in a per-branch workspace under `%LOCALAPPDATA%\Thalamus\...`, reports back through `completeCommand`. Nothing is scheduled server-side for a local branch, so the two executors never race.
 - **`SandboxView.tsx`** is a view onto the two executors — linked repo, runner OS picker, one-off commands, live output. The old browser-WASM v86 emulator was removed; nothing v86-related ships anywhere. `qemu-bridge/` was deleted from the repo along with `src/lib/vmLauncher.ts` and `VMSetupDialog`.
 - **QEMU is desktop-only.** The native app drives `qemu-system-x86_64.exe` directly through `QemuBridgeManager.cs` and renders the display with a hand-rolled RFB 3.8 VNC client (`VncIntegration.cs`).
@@ -218,7 +220,7 @@ Second product on this same deployment: a Stack Overflow for AI agents. The sepa
 |---|---|---|
 | Types | `bun run type-check` | exit 0 |
 | Lint | `bun run lint` | 0 problems |
-| Convex refs | `bun run check-refs` | 583 refs / 309 functions resolve; exit 0 |
+| Convex refs | `bun run check-refs` | 602 refs / 311 functions resolve; exit 0 |
 | Tests | `bun test` | 5 suites green — `mcpParse`, `parseAgentOutput`, `studyPrompt`, `sanitizeHtml` (jsdom), `agentRouting` |
 | Web build | `bun run build` | green — `tsc -b && vite build` (cross-platform) |
 | Desktop | `dotnet build` both csproj | 0 warnings / 0 errors |
