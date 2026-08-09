@@ -16,7 +16,6 @@ const AuthPage = lazy(() => import("./pages/Auth"));
 const AuthDesktopPage = lazy(() => import("./pages/AuthDesktop"));
 const Portal = lazy(() => import("./pages/Portal"));
 const NotFound = lazy(() => import("./pages/NotFound"));
-const SyncPage = lazy(() => import("./pages/Sync"));
 const ReferPage = lazy(() => import("./pages/Refer"));
 const AdminPage = lazy(() => import("./pages/Admin"));
 const CodeProjects = lazy(() => import("./pages/CodeProjects"));
@@ -123,7 +122,6 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="/portal" element={<Portal />} />
                 <Route path="/portal/:mode" element={<Portal />} />
                 <Route path="/portal/:mode/:sessionId" element={<Portal />} />
-                <Route path="/sync" element={<SyncPage />} />
                 <Route path="/refer" element={<ReferPage />} />
                 <Route path="/api-keys" element={<ApiPage />} />
                 {/* Blog — indexable marketing content */}

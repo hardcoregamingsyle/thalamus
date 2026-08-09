@@ -1,14 +1,23 @@
-// GitSyncView — the manual clone/push/pull tab for a branch's GitHub repo.
-// Drives githubSync.cloneRepository / pushToGithub / pullFromGithub, and
-// consults githubHelpers.getGithubStatus so the "Connect GitHub" affordance
-// appears only when the account is not linked. Independent of the pipeline —
-// it acts directly on the branch's stored files, not on anything in flight.
+// GitSyncView — the branch's GitHub surface: the account connection itself plus
+// the manual clone/push/pull controls for its repo.
+//
+// This tab owns connecting and disconnecting GitHub. There is no separate /sync
+// page any more: connecting is only ever meaningful in the context of a branch
+// (it is that branch's repo, that branch's cloud commands), and a standalone
+// page meant the error messages pointing at it sent people somewhere with no
+// idea which branch was broken.
+//
+// Drives githubSync.cloneRepository / pushToGithub / pullFromGithub, plus
+// github.getAuthorizationUrl and githubHelpers.disconnectGithub, and reads
+// githubHelpers.getGithubStatus for the connection state AND the scopes GitHub
+// actually granted — a token without `workflow` cannot run cloud commands, and
+// saying so here is the only way the user finds out before a build stalls.
 
 import { useState } from "react";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
-import { GitBranch, Github, Download, Upload, Loader2, ExternalLink, CheckCircle2, LogIn } from "lucide-react";
+import { GitBranch, Github, Download, Upload, Loader2, ExternalLink, CheckCircle2, LogIn, LogOut, RefreshCw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -33,6 +42,7 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
   const { token } = useAuth();
   const githubStatus = useQuery(api.githubHelpers.getGithubStatus, token ? { token } : "skip");
   const getAuthorizationUrl = useAction(api.github.getAuthorizationUrl);
+  const disconnectGithub = useMutation(api.githubHelpers.disconnectGithub);
 
   const [repoUrl, setRepoUrl] = useState("");
   const [commitMessage, setCommitMessage] = useState("");
@@ -40,20 +50,41 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
   const [isPushing, setIsPushing] = useState(false);
   const [isPulling, setIsPulling] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   const cloneRepo = useAction(api.githubSync.cloneRepository);
   const pushToGithub = useAction(api.githubSync.pushToGithub);
   const pullFromGithub = useAction(api.githubSync.pullFromGithub);
 
+  // Explicitly false, not falsy: null means "we don't know" (a token saved
+  // before scopes were recorded, or a token type GitHub doesn't report scopes
+  // for) and must not be shown as a problem.
+  const workflowScopeMissing = githubStatus?.hasWorkflowScope === false;
+
   const handleConnectGithub = async () => {
     if (!token) return;
     setConnecting(true);
     try {
+      // Comes back to this exact branch tab, so the user lands where they
+      // started rather than on some generic page.
       const url = await getAuthorizationUrl({ token, returnPath: window.location.pathname });
       window.location.href = url;
     } catch (err) {
       toast.error(errMsg(err, "Failed to start GitHub connection"));
       setConnecting(false);
+    }
+  };
+
+  const handleDisconnectGithub = async () => {
+    if (!token) return;
+    setDisconnecting(true);
+    try {
+      await disconnectGithub({ token });
+      toast.success("GitHub disconnected. Public clone/push/pull still work off the platform's own access.");
+    } catch (err) {
+      toast.error(errMsg(err, "Failed to disconnect GitHub"));
+    } finally {
+      setDisconnecting(false);
     }
   };
 
@@ -145,10 +176,20 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
           </p>
         </div>
         {githubStatus?.connected ? (
-          <Badge variant="outline" className="gap-1.5 border-primary/40 text-primary shrink-0">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            Connected as @{githubStatus.username}
-          </Badge>
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <Badge variant="outline" className="gap-1.5 border-primary/40 text-primary">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Connected as @{githubStatus.username}
+            </Badge>
+            <Button size="sm" variant="outline" onClick={handleConnectGithub} disabled={connecting} className="gap-2">
+              {connecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Reconnect
+            </Button>
+            <Button size="sm" variant="outline" onClick={handleDisconnectGithub} disabled={disconnecting} className="gap-2">
+              {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
+              Disconnect
+            </Button>
+          </div>
         ) : (
           <Button size="sm" onClick={handleConnectGithub} disabled={connecting} className="gap-2 shrink-0">
             {connecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogIn className="h-3.5 w-3.5" />}
@@ -157,12 +198,40 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
         )}
       </div>
 
+      {/* The scope that decides whether cloud commands can run at all. GitHub
+          reports what it granted; requesting `workflow` is not the same as
+          getting it, and an org policy can refuse it outright — in which case
+          reconnecting forever accomplishes nothing and the user needs to hear
+          that rather than keep pressing the button. */}
+      {workflowScopeMissing && (
+        <Card className="border-amber-500/50 bg-amber-500/5">
+          <CardContent className="pt-6 space-y-3 text-sm">
+            <p className="flex items-center gap-2 font-medium text-amber-500">
+              <AlertTriangle className="h-4 w-4" />
+              This GitHub token has no <code className="text-xs">workflow</code> scope
+            </p>
+            <p className="text-muted-foreground">
+              Files still sync, but agents cannot run commands in the cloud: writing the runner
+              workflow into the branch repo needs that scope. Press <strong>Reconnect</strong> above
+              and approve the request — it now asks for <code className="text-xs">workflow</code>. If
+              GitHub keeps withholding it, an organisation policy on the repo owner is refusing it;
+              build from the desktop app instead, which runs commands on your own machine.
+            </p>
+            {githubStatus?.scopes && githubStatus.scopes.length > 0 && (
+              <p className="text-xs text-muted-foreground/70">
+                Granted: {githubStatus.scopes.join(", ")}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {!githubStatus?.connected && (
         <Card className="border-blue-500/50 bg-blue-500/5">
           <CardContent className="pt-6 text-sm text-muted-foreground">
             Connecting isn't required — clone/push/pull for public repos already work off the platform's
-            own access. Connect your account when you want private repos, or pushes attributed to you
-            instead of the platform.
+            own access. Connect your account when you want private repos, pushes attributed to you
+            instead of the platform, or cloud command execution on this branch.
           </CardContent>
         </Card>
       )}
@@ -295,14 +364,17 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
           <p>3. <strong>Push</strong>: Send all changes back to GitHub with a commit</p>
           <p>4. <strong>Pull</strong>: Get latest changes from GitHub into this branch</p>
           <p className="pt-1">
+            {/* Authorized OAuth Apps, not personal access tokens — this app has
+                never used a PAT, and sending people to /settings/tokens sent
+                them somewhere that could not explain or revoke this grant. */}
             <a
-              href="https://github.com/settings/tokens"
+              href="https://github.com/settings/applications"
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary hover:underline inline-flex items-center gap-1"
             >
               <ExternalLink className="h-3 w-3" />
-              Manage your GitHub account
+              Review this authorization on GitHub
             </a>
           </p>
         </CardContent>

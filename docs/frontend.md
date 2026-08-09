@@ -45,7 +45,6 @@ All route components are lazy-loaded via `React.lazy()`.
 | `/privacy`, `/terms`, `/refund`, `/contact` | `Legal` | One component, four routes, selected by a `doc` prop |
 | `/admin` | `Admin` | Provider keys, credits, budgets, ads, ISOs (admin only, hidden in desktop builds) |
 | `/api-keys` | `ApiPage` | `thal_` API key management |
-| `/sync` | `Sync` | GitHub sync status (auth-gated via `useAuth`) |
 | `/refer` | `Refer` | Referral program (auth-gated) |
 | `*` | `NotFound` | Catch-all |
 
