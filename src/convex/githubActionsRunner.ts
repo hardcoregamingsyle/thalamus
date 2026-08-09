@@ -21,7 +21,7 @@
 
 import { internalAction, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { Octokit } from "@octokit/rest";
 import crypto from "crypto";
 import type { Id } from "./_generated/dataModel";
@@ -239,13 +239,21 @@ const WORKFLOW_SCOPE_MSG =
   + "that re-runs the authorization with the workflow scope and this branch picks the new token "
   + "up on the next prompt.";
 
-// Everything a caller needs to resolve a repo AND the token that may act on it.
+// Resolve the token that may act on a branch's repo.
+//
 // `githubConfigs.githubToken` is a SNAPSHOT taken when the branch's repo was
 // created, so it is not the source of truth: a user who reconnects GitHub gets
 // a fresh token on their user record while every existing branch keeps pointing
 // at the old one. That is exactly how a branch ends up permanently stuck on
-// "reconnect GitHub" no matter how many times the user reconnects. Resolve live
-// from the owner first, fall back to the snapshot, then the platform token.
+// "reconnect GitHub" no matter how many times the user reconnects.
+//
+// But the live user token is only an upgrade when the repo is THEIRS.
+// `ensureRepoForBranch` falls back to the platform's GITHUB_TOKEN when no
+// account is connected, and the repo is then owned by the platform account —
+// the user's own token has no access to it at all. Preferring the user token
+// unconditionally 404s every push and dispatch on those branches. So: use the
+// connected account's live token only when it owns `cfg.owner`; otherwise keep
+// the snapshot, which is the identity that created the repo in the first place.
 async function resolveTokenForBranch(
   ctx: ActionCtx,
   projectId: string,
@@ -254,8 +262,10 @@ async function resolveTokenForBranch(
   try {
     const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId }) as { userId?: Id<"users"> } | null;
     if (project?.userId) {
-      const account = await ctx.runQuery(internal.githubHelpers.getGithubToken, { userId: project.userId }) as { accessToken?: string } | null;
-      if (account?.accessToken) return account.accessToken;
+      const account = await ctx.runQuery(internal.githubHelpers.getGithubToken, { userId: project.userId }) as { accessToken?: string; username?: string } | null;
+      const ownsRepo = !!account?.username
+        && account.username.toLowerCase() === cfg.owner.toLowerCase();
+      if (account?.accessToken && ownsRepo) return account.accessToken;
     }
   } catch { /* fall through to the snapshot */ }
   return cfg.githubToken || process.env.GITHUB_TOKEN;
@@ -565,11 +575,24 @@ export const startSandbox = internalAction({
     const cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
       projectId: args.projectId, branchId: args.branchId,
     }) as GhConfig | null;
+    // ConvexError, not Error, for every throw on this path: production redacts a
+    // plain Error to a bare "Server Error: Called by client", so the user (and
+    // anyone debugging from a bug report) got nothing at all — not "no repo yet",
+    // not "already running", not "rate-limited". Same reasoning as admin.ts.
     if (!cfg) {
-      throw new Error("No GitHub repo configured for this branch — cannot start sandbox");
+      throw new ConvexError(
+        "This branch has no GitHub repo yet, so there is nothing to run a sandbox on. "
+        + "If the branch is still being prepared, wait for it to finish; otherwise connect "
+        + "GitHub from the Git Sync tab and retry.",
+      );
     }
     const token = await resolveTokenForBranch(ctx, args.projectId, cfg);
-    if (!token) throw new Error("No GitHub token available");
+    if (!token) {
+      throw new ConvexError(
+        `No GitHub token can act on ${cfg.owner}/${cfg.repo}. Connect GitHub from this `
+        + "branch's Git Sync tab, or ask an admin to set GITHUB_TOKEN.",
+      );
+    }
 
     const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
     // A repeat click while one dispatch is already in flight would fire a
@@ -577,7 +600,7 @@ export const startSandbox = internalAction({
     // sandboxUrl — the loser's tunnel is the one left dangling as "running".
     const currentStatus = (branch as Record<string, unknown>)?.sandboxStatus;
     if (currentStatus === "starting" || currentStatus === "running") {
-      throw new Error("A sandbox is already starting or running for this branch.");
+      throw new ConvexError("A sandbox is already starting or running for this branch. Stop it before starting another.");
     }
 
     const octokit = new Octokit({ auth: token });
@@ -592,7 +615,7 @@ export const startSandbox = internalAction({
       // below in the workflow-fallback. If it was a rate-limit, the blob retry
       // loop already waited — an error here means we're genuinely hosed.
       if (msg.includes("secondary rate") || msg.includes("403")) {
-        throw new Error(
+        throw new ConvexError(
           "GitHub is rate-limiting pushes. Wait a few minutes, then try again. "
           + "The sandbox cannot start until the branch is synced."
         );
