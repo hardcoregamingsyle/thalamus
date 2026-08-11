@@ -6,7 +6,7 @@ import { useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Send, Loader2, CheckCircle2, Pause, Play, FileCode, Database, Activity, Code2, Monitor, Key, BarChart3, GitBranch, Rocket, ChevronRight, Menu, X, LayoutDashboard } from "lucide-react";
+import { ArrowLeft, Send, Loader2, CheckCircle2, Pause, Play, FileCode, Database, Activity, Code2, Monitor, Key, BarChart3, GitBranch, Rocket, ChevronRight, Menu, X, LayoutDashboard, TerminalSquare } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -385,6 +385,7 @@ export default function CodeWorkspace() {
   const branch = useQuery(api.codeBranches.watchBranch, branchId ? { branchId } : "skip");
   const messages = useQuery(api.codeBranches.watchMessages, branchId ? { branchId } : "skip");
   const files = useQuery(api.codeBranches.watchFiles, branchId ? { branchId } : "skip");
+  const commands = useQuery(api.codeCommands.watchCommands, branchId ? { branchId } : "skip");
   const startPipeline = useAction(api.codePipeline.startPipeline);
   const stopPipeline = useAction(api.codePipeline.stopPipeline);
 
@@ -402,6 +403,15 @@ export default function CodeWorkspace() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Newest first so a stalled branch surfaces its most recent command; the
+  // pipeline parks the branch "paused" while a command is in flight, so the
+  // status alone reads as "nothing happening" without this.
+  const activeCommand =
+    commands &&
+    [...commands]
+      .reverse()
+      .find((c) => c.status === "pending" || c.status === "running");
 
   useEffect(() => {
     if (adRequestedRef.current || !messages || messages.length === 0) return;
@@ -595,6 +605,36 @@ export default function CodeWorkspace() {
                     <div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap font-mono max-h-64 overflow-auto">
                       {branch.streamingContent}
                       <span className="inline-block w-0.5 h-3 bg-primary ml-0.5 animate-pulse" />
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+              {/* Terminal indicator — a command is queued or running on the
+                  executor. The branch parks "paused" for the whole window, so
+                  without this the transcript sits motionless while `npm
+                  install` grinds */}
+              {activeCommand && (
+                <motion.div
+                  key={`term-${activeCommand._id}`}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex gap-3 p-4 rounded-lg bg-amber-500/5 border border-amber-500/30"
+                >
+                  <div className="flex-shrink-0">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center bg-amber-500/15 text-amber-600">
+                      <TerminalSquare className="h-4 w-4 animate-pulse" />
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="flex items-center gap-1.5 text-sm font-semibold text-amber-600">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Terminal is running…
+                      </span>
+                      <span className="text-xs text-muted-foreground">{activeCommand.agent}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap font-mono break-all">
+                      {activeCommand.command}
                     </div>
                   </div>
                 </motion.div>

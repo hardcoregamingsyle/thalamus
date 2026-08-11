@@ -226,11 +226,10 @@ function parseApiKeyRequests(content: string): Array<{variableName: string; desc
 // still user-stoppable (stopPipeline) and every step costs real provider
 // quota, so the natural break is the user, not a ceiling.
 
-// How many times we'll ask the model to continue a file cut off at the token
+// How many times we'll ask the model to continue an op cut off at the token
 // limit before giving up. Kept at 2 (≤3 sequential model calls per step) so the
-// loop can't blow the action's time budget — with the 16k cap above, most files
-// need zero continuations anyway.
-const MAX_FILE_CONTINUATIONS = 2;
+// loop can't blow the action's time budget.
+const MAX_OP_CONTINUATIONS = 2;
 
 // True when a <<CREATEFILE/EDITFILE>> block was opened but never closed — the
 // signature of output truncated mid-file. We strip every COMPLETE block first
@@ -260,6 +259,33 @@ function hasUnclosedFileBlock(content: string): boolean {
   let escaped = false;
   for (let i = lastOpenEnd; i < withoutComplete.length; i++) {
     const ch = withoutComplete[i];
+    if (escaped) { escaped = false; continue; }
+    if (ch === "\\" && inStr) { escaped = true; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") depth--;
+  }
+  return depth > 0;
+}
+
+// True when ANY JSON op (cmd included) is still open at the end of the output.
+// A model that runs out of tokens mid-op must be continued, not pruned: a
+// dropped trailing {"op":"cmd"...} never gets a result, so the agent re-emits
+// the same command next turn — the repeat-forever loop seen on real branches.
+// The file-block check above keeps legacy <<CREATEFILE>> truncation covered.
+function hasUnclosedJsonOp(content: string): boolean {
+  if (hasUnclosedFileBlock(content)) return true;
+  const jsonOpen = /"op":"[a-z-]+"/g;
+  let lastOpenEnd = -1;
+  let m: RegExpExecArray | null;
+  while ((m = jsonOpen.exec(content)) !== null) lastOpenEnd = m.index + m[0].length;
+  if (lastOpenEnd === -1) return false;
+  let depth = 0;
+  let inStr = false;
+  let escaped = false;
+  for (let i = lastOpenEnd; i < content.length; i++) {
+    const ch = content[i];
     if (escaped) { escaped = false; continue; }
     if (ch === "\\" && inStr) { escaped = true; continue; }
     if (ch === '"') { inStr = !inStr; continue; }
@@ -625,7 +651,7 @@ export const runPipelineAction = internalAction({
         ? "## Recent Command Results\n" + commandResults
             // Fenced + sentinel-neutralized: raw output must read as data, not
             // as pipeline markup the model might mistake for instructions.
-            .map((c) => `$ ${c.command}\n[${c.status}, exit ${c.exitCode}]\n\`\`\`\n${c.output.slice(0, 1500).split("<<").join("‹‹").split(">>").join("››")}\n\`\`\``)
+            .map((c) => `$ ${c.command}\n[${c.status}, exit ${c.exitCode}]\n\`\`\`\n${c.output.slice(0, 3000).split("<<").join("‹‹").split(">>").join("››")}\n\`\`\``)
             .join("\n\n")
         : "";
 
@@ -930,22 +956,21 @@ export const runPipelineAction = internalAction({
         agentOutput = result.text;
         await bill(currentPhase.toLowerCase(), result);
 
-        // Stitch a file write that got cut off at the token limit: if a
-        // create-file/edit-file JSON op is still open (unclosed string, no
-        // trailing }), ask the model to continue from the tail until it closes.
-        // Bounded so a model that never closes can't loop. Without this a file
-        // bigger than one response is silently lost and the pipeline retries
-        // forever.
+        // Stitch a write that got cut off at the token limit: if a JSON op is
+        // still open (unclosed string, no trailing }), ask the model to continue
+        // from the tail until it closes. Bounded so a model that never closes
+        // can't loop. Without this a file bigger than one response — or a final
+        // command op — is silently lost and the pipeline retries forever.
         let contRounds = 0;
         // Budget guard as well as a round cap: a continuation that cannot fit in
         // what's left of the action must not be started. Stopping the loop early
         // leaves the (still unclosed) output to the normal downstream handling
         // rather than risking the 600s kill mid-write.
-        while (hasUnclosedFileBlock(agentOutput) && contRounds < MAX_FILE_CONTINUATIONS && !outOfBudget()) {
+        while (hasUnclosedJsonOp(agentOutput) && contRounds < MAX_OP_CONTINUATIONS && !outOfBudget()) {
           contRounds++;
           const tail = agentOutput.slice(-6000);
           const contPrompt = [
-            `Your previous output was cut off at the token limit mid-file: a {"op":"create-file",...} or {"op":"edit-file",...} JSON op is still open, with the content string and closing brace cut off.`,
+            `Your previous output was cut off at the token limit mid-op: an {"op":"..."} JSON op (or <<CREATEFILE>> block) is still open, with its content string and closing brace cut off.`,
             `## The tail of what you wrote (continue from the exact end of this)`,
             tail,
             `## Continue`,
