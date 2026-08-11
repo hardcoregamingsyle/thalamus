@@ -42,6 +42,13 @@ export async function callModel(
   modelId: string = "deepseek-ai/DeepSeek-V4-Flash",
   ..._extra: unknown[]
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: string }> {
+  // A 200 with empty/whitespace-only content is NOT a successful seat — the
+  // free routers (notably OpenCode Zen) answer these agent prompts with a
+  // hollow 200 under load. Accepting it produced blank agent bubbles and a
+  // pipeline that advanced rounds while doing nothing. A blank seat counts as
+  // a miss and the chain moves on; a fully-blank chain throws so the caller
+  // surfaces a real message instead of silence.
+  const isBlank = (s: string): boolean => !s.trim();
   // Extract ctx and optional assignedModel/deadlineMs overrides from _extra
   let ctx: { runQuery: ActionCtx["runQuery"] } | undefined;
   let assignedModel: string | undefined;
@@ -78,7 +85,10 @@ export async function callModel(
   if (assignedModel && findZenModel(assignedModel)) {
     try {
       const result = await callZen(prompt, systemPrompt, assignedModel, 8192, undefined, deadline);
-      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `zen:${result.model}` };
+      if (!isBlank(result.text)) {
+        return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `zen:${result.model}` };
+      }
+      console.warn("Zen returned empty output for an assigned model, falling back to the provider chain:", assignedModel);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn("Zen call failed, falling back to the provider chain:", msg);
@@ -89,7 +99,10 @@ export async function callModel(
   if (assignedModel && findDeadlySignalsModel(assignedModel)) {
     try {
       const result = await callDeadlySignals(prompt, systemPrompt, assignedModel, 8192, undefined, deadline);
-      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `deadlysignals:${result.model}` };
+      if (!isBlank(result.text)) {
+        return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `deadlysignals:${result.model}` };
+      }
+      console.warn("DeadlySignal returned empty output for an assigned model, falling back to the provider chain:", assignedModel);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn("DeadlySignal call failed, falling back to the provider chain:", msg);
@@ -100,7 +113,10 @@ export async function callModel(
   if (assignedModel && findModelScopeModel(assignedModel)) {
     try {
       const result = await callModelScope(prompt, systemPrompt, assignedModel, 8192, undefined, deadline);
-      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modelscope:${result.model}` };
+      if (!isBlank(result.text)) {
+        return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modelscope:${result.model}` };
+      }
+      console.warn("ModelScope returned empty output for an assigned model, falling back to the provider chain:", assignedModel);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn("ModelScope call failed, falling back to the provider chain:", msg);
@@ -118,7 +134,10 @@ export async function callModel(
       // nothing is registered or every endpoint errors.
       try {
         const result = await callModal(ctx, prompt, systemPrompt, 8192, 0.7, undefined, deadline);
-        return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modal:${result.model}` };
+        if (!isBlank(result.text)) {
+          return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modal:${result.model}` };
+        }
+        console.warn("Modal returned empty output, falling back to Zen:", result.model);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (!msg.includes("MODAL_NOT_CONFIGURED")) {
@@ -134,7 +153,10 @@ export async function callModel(
       : (taskType === "dispatcher" ? ZEN_DISPATCHER_MODEL : ZEN_DEFAULT_MODEL);
     try {
       const result = await callZen(prompt, systemPrompt, zenModel, 8192, undefined, deadline);
-      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `zen:${result.model}` };
+      if (!isBlank(result.text)) {
+        return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `zen:${result.model}` };
+      }
+      console.warn("Zen returned empty output, falling back to DeadlySignal:", zenModel);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`Zen call failed, falling back to DeadlySignal:`, msg);
@@ -148,7 +170,10 @@ export async function callModel(
       : (taskType === "dispatcher" ? DEADLYSIGNALS_DISPATCHER_MODEL : DEADLYSIGNALS_DEFAULT_MODEL);
     try {
       const result = await callDeadlySignals(prompt, systemPrompt, deadlyModel, 8192, undefined, deadline);
-      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `deadlysignals:${result.model}` };
+      if (!isBlank(result.text)) {
+        return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `deadlysignals:${result.model}` };
+      }
+      console.warn("DeadlySignal returned empty output, falling back to ModelScope:", deadlyModel);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`DeadlySignal call failed, falling back to ModelScope:`, msg);
@@ -162,7 +187,10 @@ export async function callModel(
       : (taskType === "dispatcher" ? MODELSCOPE_DISPATCHER_MODEL : MODELSCOPE_DEFAULT_MODEL);
     try {
       const result = await callModelScope(prompt, systemPrompt, scopeModel, 8192, undefined, deadline);
-      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modelscope:${result.model}` };
+      if (!isBlank(result.text)) {
+        return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modelscope:${result.model}` };
+      }
+      console.warn("ModelScope returned empty output, falling back to OVHcloud:", scopeModel);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`ModelScope call failed, falling back to OVHcloud:`, msg);
@@ -173,7 +201,10 @@ export async function callModel(
     const ovhModel = mapTaskToOvhModel(taskType);
     try {
       const result = await callOvhcloud(prompt, systemPrompt, ovhModel, 8192, ctx?.runQuery, deadline);
-      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `ovhcloud:${result.model}` };
+      if (!isBlank(result.text)) {
+        return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `ovhcloud:${result.model}` };
+      }
+      console.warn("OVHcloud returned empty output, falling back to Ollama:", ovhModel);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`OVHcloud call failed, falling back to Ollama:`, msg);
@@ -181,7 +212,13 @@ export async function callModel(
 
     const ollamaModel = mapModelIdToOllama(modelId);
     const result = await callSiliconFlow(prompt, systemPrompt, ollamaModel, 16384, undefined, ctx?.runQuery, deadline);
-    return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `ollama:${result.model}` };
+    if (!isBlank(result.text)) {
+      return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `ollama:${result.model}` };
+    }
+    // Last seat — nothing left to fall back to. The sentinel phrase routes
+    // through the pipeline's transient-error handling (visible backoff message
+    // and an automatic retry) instead of an invisible blank agent turn.
+    throw new Error(`Every AI provider seat returned empty output — the router answered but produced no text.`);
   };
 
   // The free seats rate-limit TOGETHER under burst traffic (Zen 429s on shared

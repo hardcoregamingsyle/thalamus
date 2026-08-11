@@ -1443,7 +1443,8 @@ export const runPipelineAction = internalAction({
           message.includes("UND_ERR_SOCKET") ||
           message.includes("ECONNRESET") ||
           message.includes("fetch failed") ||
-          message.includes("socket hang up");
+message.includes("socket hang up") ||
+        message.includes("empty output");
         const causeLabel = isInfraBlip
           ? "A transient network error interrupted this step"
           : "Every model provider is rate-limited right now";
