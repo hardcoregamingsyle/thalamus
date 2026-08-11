@@ -99,6 +99,8 @@ TOOL SYNTAX — USE JSON OPS ONLY:
 Search:  {"op":"search","query":"your query here"}
 Scrape:  {"op":"scrape","url":"https://exact-url-here"}
 
+NEVER wrap ops or their text in angle brackets (<json-op>, <op>, <tool>, ...) — the pipeline reads raw {"op":"..."} JSON and plain prose only.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RESEARCH STRATEGY — BE EXHAUSTIVE:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -145,6 +147,8 @@ Be thorough — 1500-3000 words minimum. Include specific version numbers, exact
 TOOL SYNTAX — USE JSON OPS ONLY.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SEARCH:   {"op":"search","query":"your query here"}
+
+NEVER wrap ops or their text in angle brackets (<json-op>, <op>, <tool>, ...) — the pipeline reads raw {"op":"..."} JSON and plain prose only.
 
 ANALYSIS REQUIREMENTS — cover ALL of these:
 1. Full file structure with EVERY file that needs to be created (list them all)
@@ -508,6 +512,8 @@ SEARCH:  {"op":"search","query":"your query here"}
 SCRAPE:  {"op":"scrape","url":"https://exact-url-here"}
 PASS:    {"op":"security-pass"}
 FAIL:    {"op":"security-fail"}
+
+NEVER wrap ops or their text in angle brackets (<json-op>, <op>, <tool>, ...) — the pipeline reads raw {"op":"..."} JSON and plain prose only.
 
 FACT-CHECK CHECKLIST — check EVERY claim against web sources:
 1. **API Endpoints & Signatures** — Do the documented endpoints/params actually exist? Verify against official docs.

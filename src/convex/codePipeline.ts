@@ -927,7 +927,7 @@ export const runPipelineAction = internalAction({
             const blockedReason = branch.executorBlockedReason;
             const toolUsageBlock = blockedReason
               ? `## Command Execution UNAVAILABLE\n${blockedReason}\nDo NOT emit {"op":"cmd"} ops — they cannot run. Work from the file contents shown above; write files with create-file/edit-file ops only. The user must reconnect GitHub from this branch's Git Sync tab to enable commands.\n\n## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}`
-              : `## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">> (legacy format, no longer supported)`;
+              : `## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">> (legacy format, no longer supported)\nWrong: wrapping ops or their text in angle brackets (<json-op>, <op>, <tool>, ...) — the pipeline reads raw {"op":"..."} JSON and plain prose only`;
 
             prompt = [
               `## Overall Project Goal\n${task}`,
@@ -1443,12 +1443,38 @@ export const runPipelineAction = internalAction({
             });
           }
         } else {
+          // Planning phase finished WITHOUT a Planner agent in the dispatched
+          // set — e.g. a simple task dispatched ResearchPlanner → Researcher →
+          // ReportMaker → FactCheck → Coder → Critic. The handoff above only
+          // fires when currentPhase === "Planner", so previously this branch
+          // marked the branch "completed" and the task agents (Coder, Critic)
+          // NEVER ran: the run ended silently right after the research team,
+          // with no error and no explanation. Hand off to the task phase the
+          // same way the Planner path does — seed a synthetic single task when
+          // the plan is empty, then start the task pipeline.
+          let plannerTasks: Array<{ title: string; description: string }> = [];
+          try { plannerTasks = JSON.parse(branch.plannerTasksJson || "[]"); } catch { /* ignore */ }
+          if (plannerTasks.length === 0) {
+            const syntheticTask = JSON.stringify([{ title: task.slice(0, 120), description: task }]);
+            await ctx.runMutation(internal.codeBranches.updatePlannerTasks, {
+              branchId,
+              plannerTasksJson: syntheticTask,
+            });
+          }
+          const taskPipeline = buildTaskPipeline(dispatchedAgents);
+          const firstTaskAgent = taskPipeline[0] ?? "Coder";
+          round++;
           await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
             branchId,
-            status: "completed",
-            executionPhase: "completed",
+            status: "idle",
+            currentAgent: firstTaskAgent,
+            phase: firstTaskAgent,
+            executionPhase: "executing",
+            round,
             totalMessages,
+            mcpRoundCount: 0,
           });
+          await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
         }
       } else {
         // Next agent in pipeline

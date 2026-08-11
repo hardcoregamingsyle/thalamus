@@ -202,7 +202,15 @@ export function findJsonOps(content: string): Array<Record<string, unknown>> {
 function stripSpecialTokenWrappers(content: string): string {
   return content
     .replace(/<\/?｜[^<>]{1,160}>/g, "")
-    .replace(/<\/?\|[^\s<>]{1,80}>/g, "");
+    .replace(/<\/?\|[^\s<>]{1,80}>/g, "")
+    // Models invent their own wrapper tags — production runs showed
+    // `<json-op> [SEARCHING: …] </json-op>` around marker text (and sometimes
+    // around real ops). The protocol is raw {"op":"..."} JSON and plain prose;
+    // these tags are never instructions to the parser, they just leak into the
+    // transcript looking like HTML. Stripping the tags (not their contents)
+    // keeps the inner marker text visible and, if the model ever wraps a real
+    // JSON op, lets findJsonOps still see it.
+    .replace(/<\/?json-op>/gi, "");
 }
 
 /** Recover commands from DeepSeek's leaked tool-call syntax. Production runs

@@ -160,6 +160,25 @@ describe("parseAgentOutput — LLM special-token wrappers", () => {
     expect(parsed.cleanContent).toContain(`<https://example.com>`);
   });
 
+  it("strips invented <json-op> wrapper tags from cleanContent", () => {
+    // Production runs showed the model writing literal `<json-op> [SEARCHING:
+    // …] </json-op>` around marker text — it reads like HTML in the transcript.
+    // The tags are stripped; the marker text inside stays visible.
+    const out = `<json-op> [SEARCHING: Technoblade potato war] </json-op>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cleanContent).not.toContain("<json-op>");
+    expect(parsed.cleanContent).not.toContain("</json-op>");
+    expect(parsed.cleanContent).toContain("[SEARCHING: Technoblade potato war]");
+  });
+
+  it("parses a real JSON op wrapped inside <json-op> tags", () => {
+    const out = `<json-op>{"op":"cmd","command":"npm install 2>&1"}</json-op>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["npm install 2>&1"]);
+    expect(parsed.cleanContent).not.toContain("json-op");
+    expect(parsed.cleanContent).toContain("[CMD: npm install 2>&1]");
+  });
+
   it("strips fullwidth-pipe wrappers that carry attributes", () => {
     // Production round 20 emitted `<｜｜DSML｜｜invoke name="cmd">` — spaces
     // and attributes inside the tag, which the original no-whitespace bound
