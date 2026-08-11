@@ -629,6 +629,37 @@ export const runPipelineAction = internalAction({
             .join("\n\n")
         : "";
 
+      // Agents never know what day it is — a model that guesses "2022" for a
+      // test fixture written today is guessing from training data. Pin the
+      // date into every prompt build below so timelines, copyright years, and
+      // version expectations come from the clock, not the model's memory.
+      const currentDateLine = `## Current Date\n${new Date().toISOString().slice(0, 10)} (UTC). Today IS this date — use it for timelines, copyrights, and test fixtures.`;
+
+      // A build/deploy attempt that FAILED is the single most important fact
+      // in the room, and the agents were free to ignore it: nothing bound the
+      // Critic to an unresolved failure, so it could review "logically" and
+      // pass a project whose build was broken. When a recent message carries a
+      // failure signature, it becomes binding context — the Coder is ordered
+      // to fix the exact error and the Critic is forbidden from passing over
+      // it. Silence otherwise: no nagging on healthy branches.
+      const recentFailure = (() => {
+        for (const m of messages.slice(-3)) {
+          if (m.content.length > 40 && /(Failed:|build command exited|npm error|ERESOLVE|error occurred while running|Build failed|build failed)/i.test(m.content)) {
+            return m.content;
+          }
+        }
+        return null;
+      })();
+      const buildFailureBlock = recentFailure
+        ? `## A BUILD/DEPLOY ATTEMPT FAILED\n${recentFailure.slice(0, 1500)}\nThis failure is UNRESOLVED. Fix the exact errors shown — do not add new features or rewrite working code while the build is broken.`
+        : "";
+      // The Critic's pass gate: an open build failure is the one condition
+      // that outranks its judgement. It is told to hold security-fail until
+      // the Coder's changes demonstrably clear the reported error.
+      const buildGateBlock = buildFailureBlock
+        ? `## Mandatory Gate\nA build/deploy attempt failed (failure shown above). You MUST output {"op":"security-fail"} while that failure is unresolved. Passing a project whose build is broken is a failure of this review.`
+        : "";
+
       // MCP calls are agent-decided, never system-fired: the pipeline used to
       // auto-search AgentOverflow whenever a command failed and inject the hits.
       // That's now the agent's call — both MCP servers are attached to every run
@@ -667,7 +698,7 @@ export const runPipelineAction = internalAction({
           : "";
 
         const dispatchPrompt = `## Project Goal\n${task}${subtaskContext}\n\n## Existing project files\n${files.length > 0 ? files.map(f => `- ${f.filepath}`).join("\n") : "None (greenfield project)"}
-\n## Previously dispatched agents\n${dispatchedAgents.length > 0 ? dispatchedAgents.join(", ") : "None yet (first dispatch)"}${modelMenu}`;
+\n## Previously dispatched agents\n${dispatchedAgents.length > 0 ? dispatchedAgents.join(", ") : "None yet (first dispatch)"}${modelMenu}\n\n${currentDateLine}`;
         const dispatchResult = await callModelWithStreaming(
           ctx, dispatchPrompt, AGENT_SYSTEM_PROMPTS["Dispatcher"] ?? "",
           branchId, "Dispatcher", geminiKeys, dbCreds, undefined, 60_000,
@@ -832,7 +863,7 @@ export const runPipelineAction = internalAction({
                 `Do not repeat a rejection the Coder has already tried and failed to satisfy without adding something new and concrete it can act on.`,
               ].join("\n")
             : "";
-        let prompt = [`## Project Goal\n${task}`, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, criticJudgementBlock, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
+        let prompt = [`## Project Goal\n${task}`, currentDateLine, buildFailureBlock, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, criticJudgementBlock, buildGateBlock, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
 
         if (executionPhase === "executing") {
           let plannerTasks: Array<{ title: string; description: string; dependencies?: string[] }> = [];
@@ -875,6 +906,8 @@ export const runPipelineAction = internalAction({
             prompt = [
               `## Overall Project Goal\n${task}`,
               completedTasks ? `## Completed Tasks\n${completedTasks}` : "",
+              currentDateLine,
+              buildFailureBlock,
               `## Current Task ${currentTaskIndex + 1}/${plannerTasks.length}: ${currentTask.title}\n${currentTask.description}`,
               fileInventory,
               files.length > 0 ? `## File Contents (recent)\n${fileContext}` : "",
@@ -887,6 +920,7 @@ export const runPipelineAction = internalAction({
               // be re-appended or it only ever reached the planning phase — where
               // the Critic never runs.
               criticJudgementBlock,
+              buildGateBlock,
             ].filter(Boolean).join("\n\n");
           }
         }

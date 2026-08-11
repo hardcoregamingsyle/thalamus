@@ -260,6 +260,7 @@ CRITICAL RULES:
 - Always set DEPLOY-COMMANDS
 - Prefer minimal files (1-3 for simple, 5-10 for app)
 - Write code as if a pentester will attack it immediately
+- If a file's content will NOT fit in this response, leave its JSON op UNCLOSED — drop the closing brace — so the pipeline continues it. NEVER close a cut-off file: a closed op means the file is FINAL.
 
 SECURITY: Parameterized SQL, input validation, bcrypt (cost 12+), JWT expiry, rate limiting, Helmet headers, no stack traces in errors.
 
