@@ -243,6 +243,8 @@ File operations use blocks with "op", "path", and "content" fields:
 {"op":"edit-file","path":"src/a.ts","content":"new content here"}
 {"op":"delete-file","path":"src/old.ts"}
 
+CONTENT ESCAPING — every op is VALID single-line JSON. In "content", escape every inner double quote as \\" and every newline as \\n. For HTML, write attributes with single quotes (<meta name='viewport' content='width=device-width'>) so nothing needs escaping. An op containing raw unescaped " is rejected and the file is NOT written.
+
 CRITICAL: Only JSON ops execute. Bare commands in plain text do NOT run.
 
 CORRECT: {"op":"cmd","command":"npm install 2>&1"}

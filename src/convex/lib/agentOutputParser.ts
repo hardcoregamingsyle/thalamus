@@ -93,28 +93,51 @@ export interface ParsedOutput {
 //   {"op":"security-fail"}
 //   {"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}
 //
-// The parser finds these by scanning for `{"op":"` and reading the balanced {}.
-// Multi-line content (file bodies) uses \n escapes inside the JSON string.
+// The parser finds these by scanning for `{"op":"` (whitespace around `:` and
+// inside the braces tolerated — models add spaces freely) and reading the
+// balanced {}. Multi-line content (file bodies) uses \n escapes inside the JSON
+// string.
 //
 // Legacy <<TAG>> markers (<<RUN-CMD="...">>, <<CREATEFILE="...">>, etc.) are
 // still parsed as fallback for older conversations.
 
+/** One op that clearly INTENDED to be JSON (opener matched the `{"op":` shape)
+ *  but failed to parse. `unterminated` true = the brace/string walk ran off the
+ *  end of the content (output genuinely cut off — a continuation can still
+ *  stitch it); false = the walk found a balanced close but JSON.parse rejected
+ *  it (almost always an unescaped `"` inside "content" — continuing can never
+ *  fix that, the agent must re-emit). The pipeline keys its continuation
+ *  decision off this flag. */
+export interface MalformedOpExcerpt {
+  raw: string;
+  unterminated: boolean;
+}
+
+/** Opener shape tolerated: `{"op":"`, `{"op": "`, `{ "op" : "`. Production
+ *  output shows models inserting spaces (`{"op": "search"...}`); the old exact
+ *  `{"op":"` scan silently ignored every spaced variant. */
+const JSON_OP_OPEN_RE = /\{\s*"op"\s*:\s*"/g;
+
 /** Internal scanner: returns both successfully parsed ops and raw excerpts of
- *  ops that clearly INTENDED to be JSON (opener matched the `{"op":` shape) but
- *  failed to parse. Kept private; the exported `findJsonOps` preserves its old
- *  signature so existing callers remain unaffected. */
-function findJsonOpsInternal(content: string): {
+ *  ops that clearly INTENDED to be JSON (opener matched the {"op": shape) but
+ *  failed to parse. Kept exported for the pipeline's continuation decision (a
+ *  truncated op can be stitched, a corrupted one cannot) and the unit tests;
+ *  the exported `findJsonOps` preserves its old signature so existing callers
+ *  remain unaffected. */
+export function findJsonOpsInternal(content: string): {
   ops: Array<Record<string, unknown>>;
-  malformed: string[];
+  malformed: MalformedOpExcerpt[];
 } {
   const ops: Array<Record<string, unknown>> = [];
-  const malformed: string[] = [];
-  const startMarker = '{"op":"';
+  const malformed: MalformedOpExcerpt[] = [];
   const MALFORMED_EXCERPT_MAX = 200;
   let i = 0;
-  while (i < content.length) {
-    const start = content.indexOf(startMarker, i);
-    if (start === -1) break;
+  while (true) {
+    JSON_OP_OPEN_RE.lastIndex = i;
+    const open = JSON_OP_OPEN_RE.exec(content);
+    if (!open) break;
+    const start = open.index;
+    const afterOpener = JSON_OP_OPEN_RE.lastIndex;
 
     // Scan for the matching closing } tracking brace depth and string state
     let depth = 0;
@@ -141,13 +164,15 @@ function findJsonOpsInternal(content: string): {
       // op's opener (so a following well-formed op is not swallowed into this
       // one's excerpt), or a hard 200-char cap.
       const eol = content.indexOf("\n", start);
-      const nextOp = content.indexOf(startMarker, start + startMarker.length);
+      JSON_OP_OPEN_RE.lastIndex = afterOpener;
+      const nextOpen = JSON_OP_OPEN_RE.exec(content);
+      const nextOp = nextOpen ? nextOpen.index : -1;
       let stop = Math.min(start + MALFORMED_EXCERPT_MAX, content.length);
       if (eol !== -1 && eol < stop) stop = eol;
       if (nextOp !== -1 && nextOp < stop) stop = nextOp;
-      malformed.push(content.slice(start, stop).trimEnd());
+      malformed.push({ raw: content.slice(start, stop).trimEnd(), unterminated: true });
       // Advance past the opener only — the sibling ops after us must still run.
-      i = start + startMarker.length;
+      i = afterOpener;
       continue;
     }
 
@@ -159,7 +184,7 @@ function findJsonOpsInternal(content: string): {
       } else {
         // Parsed as valid JSON but no string `op` field — treat as malformed so
         // the agent is told rather than silently ignored.
-        malformed.push(raw.slice(0, MALFORMED_EXCERPT_MAX));
+        malformed.push({ raw: raw.slice(0, MALFORMED_EXCERPT_MAX), unterminated: false });
       }
     } catch {
       // Brace scan superficially balanced but not valid JSON — almost always
@@ -167,7 +192,7 @@ function findJsonOpsInternal(content: string): {
       // to auto-repair: guessing where a content string ends is exactly how a
       // corrupted file gets silently written to disk. Report the failure and
       // let the agent fix its own emission on the next round.
-      malformed.push(raw.slice(0, MALFORMED_EXCERPT_MAX));
+      malformed.push({ raw: raw.slice(0, MALFORMED_EXCERPT_MAX), unterminated: false });
     }
 
     i = end;
@@ -175,7 +200,7 @@ function findJsonOpsInternal(content: string): {
   return { ops, malformed };
 }
 
-/** Scan content for balanced JSON objects starting with {"op":" and parse them.
+/** Scan content for balanced JSON objects starting with {"op": and parse them.
  *  Kept for backward compatibility with existing external callers; new code in
  *  this module uses findJsonOpsInternal to also learn about malformed ops. */
 export function findJsonOps(content: string): Array<Record<string, unknown>> {
@@ -291,8 +316,8 @@ export function parseAgentOutput(content: string): ParsedOutput {
   // so both the agent and the user can see that something was rejected.
   const MALFORMED_MARKER = "[MALFORMED OP — not executed]";
   for (const excerpt of malformedRaws) {
-    malformedOps.push(excerpt);
-    cleanContent = cleanContent.replace(excerpt, MALFORMED_MARKER);
+    malformedOps.push(excerpt.raw);
+    cleanContent = cleanContent.replace(excerpt.raw, MALFORMED_MARKER);
   }
   for (const op of jsonOps) {
     const raw = JSON.stringify(op);

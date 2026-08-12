@@ -29,6 +29,7 @@ import {
   parsePlannerOutput,
   performSearch,
   performScrape,
+  findJsonOpsInternal,
   AGENT_SYSTEM_PROMPTS,
   calcAgentBucksForTier,
   type ModelTier,
@@ -249,7 +250,7 @@ function hasUnclosedFileBlock(content: string): boolean {
   // braces never balance (content cut off mid-JSON). Walk braces from the last
   // opener, skipping strings, so a complete op right before the cut doesn't
   // false-positive.
-  const jsonOpen = /"op":"(?:create-file|edit-file)"/g;
+  const jsonOpen = /"op"\s*:\s*"(?:create-file|edit-file)"/g;
   let lastOpenEnd = -1;
   let m: RegExpExecArray | null;
   while ((m = jsonOpen.exec(withoutComplete)) !== null) lastOpenEnd = m.index + m[0].length;
@@ -276,7 +277,7 @@ function hasUnclosedFileBlock(content: string): boolean {
 // The file-block check above keeps legacy <<CREATEFILE>> truncation covered.
 function hasUnclosedJsonOp(content: string): boolean {
   if (hasUnclosedFileBlock(content)) return true;
-  const jsonOpen = /"op":"[a-z-]+"/g;
+  const jsonOpen = /"op"\s*:\s*"[a-z-]+"/g;
   let lastOpenEnd = -1;
   let m: RegExpExecArray | null;
   while ((m = jsonOpen.exec(content)) !== null) lastOpenEnd = m.index + m[0].length;
@@ -926,8 +927,8 @@ export const runPipelineAction = internalAction({
             // against the file store can still happen.
             const blockedReason = branch.executorBlockedReason;
             const toolUsageBlock = blockedReason
-              ? `## Command Execution UNAVAILABLE\n${blockedReason}\nDo NOT emit {"op":"cmd"} ops — they cannot run. Work from the file contents shown above; write files with create-file/edit-file ops only. The user must reconnect GitHub from this branch's Git Sync tab to enable commands.\n\n## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}`
-              : `## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">> (legacy format, no longer supported)\nWrong: wrapping ops or their text in angle brackets (<json-op>, <op>, <tool>, ...) — the pipeline reads raw {"op":"..."} JSON and plain prose only`;
+              ? `## Command Execution UNAVAILABLE\n${blockedReason}\nDo NOT emit {"op":"cmd"} ops — they cannot run. Work from the file contents shown above; write files with create-file/edit-file ops only. The user must reconnect GitHub from this branch's Git Sync tab to enable commands.\n\n## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes are single-line JSON too: in "content", escape inner double quotes as \\" and newlines as \\n — or use single quotes in HTML attributes (<meta name='viewport'>) so nothing needs escaping. An op with raw unescaped quotes is rejected and the file is NOT written.`
+              : `## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes are single-line JSON too: in "content", escape inner double quotes as \\" and newlines as \\n — or use single quotes in HTML attributes (<meta name='viewport'>) so nothing needs escaping. An op with raw unescaped quotes is rejected and the file is NOT written.\n\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">> (legacy format, no longer supported)\nWrong: wrapping ops or their text in angle brackets (<json-op>, <op>, <tool>, ...) — the pipeline reads raw {"op":"..."} JSON and plain prose only`;
 
             prompt = [
               `## Overall Project Goal\n${task}`,
@@ -966,7 +967,24 @@ export const runPipelineAction = internalAction({
         // what's left of the action must not be started. Stopping the loop early
         // leaves the (still unclosed) output to the normal downstream handling
         // rather than risking the 600s kill mid-write.
-        while (hasUnclosedJsonOp(agentOutput) && contRounds < MAX_OP_CONTINUATIONS && !outOfBudget()) {
+        //
+        // Corruption guard: an op whose "content" carries raw unescaped quotes
+        // reads to the brace walker exactly like a cut-off op, but continuing it
+        // is guaranteed waste — the appended text still never parses, the
+        // transcript grows a second copy of the file, and the failure repeats.
+        // Signal for that case: the output's LAST line ends with a closing
+        // brace, i.e. the model BELIEVES it closed the op while the parse
+        // disagrees. A genuinely truncated op ends mid-content, never on a `}`.
+        // Legacy <<...>> blocks are untouched by this — they are not JSON ops,
+        // so with no JSON op in the output the brace-end test is not consulted.
+        while (
+          hasUnclosedJsonOp(agentOutput) &&
+          (findJsonOpsInternal(agentOutput).ops.length > 0 ||
+            findJsonOpsInternal(agentOutput).malformed.length > 0) &&
+          !/\}\s*$/.test(agentOutput.trimEnd()) &&
+          contRounds < MAX_OP_CONTINUATIONS &&
+          !outOfBudget()
+        ) {
           contRounds++;
           const tail = agentOutput.slice(-6000);
           const contPrompt = [
@@ -1001,6 +1019,17 @@ export const runPipelineAction = internalAction({
       // MCP blocks aren't known to parseAgentOutput — strip them ourselves so
       // ignored/over-cap calls don't litter the saved message.
       parsed.cleanContent = stripMcpBlocks(parsed.cleanContent);
+      // Rejected-op feedback: the in-place [MALFORMED OP] marker tells the
+      // agent (and the user) that something failed, but a live run showed the
+      // Coder re-emitting the same broken create-file round after round — the
+      // marker alone never corrected an op whose "content" carried raw
+      // unescaped quotes. Say plainly what to do instead, inside the very
+      // message the next agents read from history. The single-quote suggestion
+      // is the whole point: HTML attributes fit single quotes, so the JSON
+      // content string needs no escaping at all.
+      if (parsed.malformedOps.length > 0) {
+        parsed.cleanContent = `${parsed.cleanContent}\n\n[REJECTED OPS: ${parsed.malformedOps.length} JSON op(s) did not parse and executed nothing. Re-emit each one as VALID single-line JSON. In "content", escape every inner double quote as \\" and every newline as \\n — for HTML, use single quotes in attributes (<meta name='viewport' content='width=device-width'>) so nothing needs escaping. A closed op means the file is final.]`;
+      }
       for (const op of parsed.fileOps) {
         if (op.type === "create" || op.type === "edit") {
           await ctx.runMutation(internal.codeBranches.upsertFile, {

@@ -4,7 +4,7 @@
 // quotes getting silently dropped, and a file block that got cut off at the
 // token limit (no closing tag) needing to be detectable so it isn't lost.
 import { describe, it, expect } from "bun:test";
-import { parseAgentOutput } from "../src/convex/lib/agentCore";
+import { parseAgentOutput, findJsonOpsInternal } from "../src/convex/lib/agentCore";
 
 describe("parseAgentOutput — commands", () => {
   it("parses a RUN-CMD that contains double quotes", () => {
@@ -248,5 +248,63 @@ describe("parseAgentOutput — malformed JSON ops are surfaced, not dropped", ()
     expect(parsed.cmdOps.map((c) => c.command)).toEqual(["ls"]);
     expect(parsed.fileOps).toEqual([{ type: "delete", filepath: "a.ts" }]);
     expect(parsed.cleanContent).not.toContain("[MALFORMED");
+  });
+});
+
+describe("parseAgentOutput — whitespace-tolerant JSON op openers", () => {
+  // Production runs showed the model inserting spaces — `{"op": "search"...}`
+  // and `{ "op" : "cmd" , ... }` — which the old exact `{"op":"` scanner never
+  // matched: the op silently never ran. Whitespace around the brace, the "op"
+  // key, and the colon is now tolerated.
+  it("parses a search op with a space after the colon", () => {
+    const out = `{"op": "search", "query": "Technoblade potato war"}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.searchOps.map((s) => s.query)).toEqual(["Technoblade potato war"]);
+  });
+
+  it("parses an op with spaces around the brace and colon", () => {
+    const out = `{ "op" : "cmd" , "command" : "ls -la" }`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["ls -la"]);
+  });
+
+  it("still runs the op that follows a spaced malformed opener", () => {
+    // End-of-line bound for the malformed excerpt must be found via the same
+    // tolerant opener, not a literal `{"op":"` search.
+    const out = `{"op": "create-file", "path": "a.html", "content": "<img src=x cannot parse this\n{"op":"cmd","command":"echo ok"}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toEqual([]);
+    expect(parsed.malformedOps.length).toBeGreaterThanOrEqual(1);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["echo ok"]);
+  });
+});
+
+describe("findJsonOpsInternal — truncation vs corruption discriminator", () => {
+  // The pipeline's continuation stitch is only safe for a GENUINELY truncated
+  // op (brace walk ran off the end of the output). An op rejected by
+  // JSON.parse despite a balanced close — the unescaped-quote failure from
+  // production — must not be "continued"; appending to it can never parse.
+  it("tags a genuinely truncated op as unterminated (continuable)", () => {
+    const { malformed } = findJsonOpsInternal(`{"op":"create-file","path":"src/big.ts","content":"export const partial = `);
+    expect(malformed).toHaveLength(1);
+    expect(malformed[0].unterminated).toBe(true);
+  });
+
+  it("tags an unescaped-quotes op as corrupted (NOT continuable)", () => {
+    // Three raw quotes make the walker land out-of-string at the closing }:
+    // the scan finds a balanced close and JSON.parse (not the walker) rejects
+    // the op.
+    const { malformed } = findJsonOpsInternal(`{"op":"create-file","path":"index.html","content":"<a href="#x">y</a>"}`);
+    expect(malformed).toHaveLength(1);
+    expect(malformed[0].unterminated).toBe(false);
+  });
+
+  it("keeps the well-formed ops alive between two broken ones", () => {
+    const { ops, malformed } = findJsonOpsInternal(
+      `{"op":"create-file","path":"a.html","content":"<a href="#x">"}{"op":"cmd","command":"npm test"}{"op":"create-file","path":"b.html","content":"<b title="hi">"}{"op":"delete-file","path":"b.ts"}`,
+    );
+    expect(ops.map((o) => o.op)).toEqual(["cmd", "delete-file"]);
+    expect(malformed).toHaveLength(2);
+    expect(malformed.every((m) => !m.unterminated)).toBe(true);
   });
 });
