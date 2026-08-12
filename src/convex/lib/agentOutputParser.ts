@@ -320,11 +320,38 @@ export function parseAgentOutput(content: string): ParsedOutput {
   const MALFORMED_MARKER = "[MALFORMED OP — not executed]";
   for (const excerpt of malformedRaws) {
     malformedOps.push(excerpt.raw);
-    cleanContent = cleanContent.replace(excerpt.raw, MALFORMED_MARKER);
+    const idx = cleanContent.indexOf(excerpt.raw);
+    if (idx === -1) continue;
+    // The excerpt itself is bounded at ~200 chars or the end of its line, so
+    // the remainder of a broken op — and any raw content spilled onto the
+    // lines below it — would otherwise survive in the transcript, where the
+    // agent reads its own garbage back and re-copies it verbatim into the next
+    // attempt. Stamp the marker and drop the whole broken region. It ends at
+    // the next JSON op (sibling ops must still run), the next blank line
+    // (prose divider the agent wrote after the attempt), or the end.
+    let stop = cleanContent.length;
+    const afterRegion = cleanContent.indexOf("\n\n", idx + excerpt.raw.length);
+    if (afterRegion !== -1 && afterRegion < stop) stop = afterRegion;
+    const nextOp = cleanContent.slice(idx + excerpt.raw.length).search(/\n?\s*\{\s*"op"/);
+    if (nextOp !== -1) {
+      const nextOpAbs = idx + excerpt.raw.length + nextOp;
+      if (nextOpAbs < stop) stop = nextOpAbs;
+    }
+    cleanContent = cleanContent.slice(0, idx) + MALFORMED_MARKER + cleanContent.slice(stop);
   }
   for (const op of jsonOps) {
     const raw = JSON.stringify(op);
-    switch (op.op) {
+    // Op-name normalisation: feedback (and models' training data) call the
+    // ops by MCP-style names — write_file, rewrite_file, edit_file,
+    // delete_file, run_command. Fold underscores to hyphens and map the
+    // foreign spellings to their canonical ops, so an op the Coder was TOLD
+    // to emit actually runs instead of silently no-op'ing.
+    const opRaw = String(op.op ?? "").toLowerCase().replace(/_/g, "-");
+    const opName =
+      opRaw === "write-file" || opRaw === "rewrite-file" ? "create-file"
+      : opRaw === "run-command" ? "cmd"
+      : opRaw;
+    switch (opName) {
       case "create-file":
         if (typeof op.path === "string" && typeof op.content === "string") {
           fileOps.push({ type: "create", filepath: op.path, content: op.content });

@@ -251,6 +251,73 @@ describe("parseAgentOutput — malformed JSON ops are surfaced, not dropped", ()
   });
 });
 
+describe("parseAgentOutput — whole broken region is redacted, not just the excerpt", () => {
+  // The 200-char excerpt used to be swapped for the marker while the REST of a
+  // megabyte-sized broken op — and any raw content spilled onto the lines below
+  // it — survived verbatim in the transcript. The Coder then read its own
+  // garbage and re-copied it into the next attempt, so the fail-loop kept
+  // feeding itself. The redaction now drops everything from the broken op up
+  // to the next JSON op, the next blank line (prose the agent wrote after the
+  // attempt), or the end.
+  it("leaves only the prose written after the attempt", () => {
+    const out = `{"op":"create-file","path":"index.html","content":"<meta name="viewport" content="x">\nspillover line one\nspillover line two\n\nProse the agent wrote after the attempt.`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toEqual([]);
+    expect(parsed.malformedOps.length).toBeGreaterThanOrEqual(1);
+    expect(parsed.cleanContent.split("\n\n")[0]).toBe("[MALFORMED OP — not executed]");
+    expect(parsed.cleanContent).not.toContain("spillover");
+    expect(parsed.cleanContent).not.toContain("viewport");
+    expect(parsed.cleanContent).toContain("Prose the agent wrote after the attempt.");
+  });
+
+  it("keeps the sibling op that follows a broken region on the same line", () => {
+    const out = `{"op":"create-file","path":"a.gd","content":"extends "bad"\n"} {"op":"cmd","command":"godot --version"}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.malformedOps.length).toBeGreaterThanOrEqual(1);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["godot --version"]);
+    expect(parsed.cleanContent).toContain("[MALFORMED OP");
+    expect(parsed.cleanContent).toContain("[CMD: godot --version]");
+  });
+
+  it("stamps the marker alone when nothing follows the broken region", () => {
+    const out = `{"op":"create-file","src="`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.malformedOps.length).toBeGreaterThanOrEqual(1);
+    expect(parsed.cleanContent).toBe("[MALFORMED OP — not executed]");
+  });
+});
+
+describe("parseAgentOutput — op-name normalisation (MCP-style aliases)", () => {
+  // Feedback agents (and models' training data) call the ops by MCP-style
+  // names: write_file, rewrite_file, edit_file, delete_file, run_command.
+  // Before the alias mapping, an op the Coder was TOLD to emit no-op'd
+  // silently — which reads as "the Coder ignored me" and loops the Critic
+  // forever. Underscores fold to hyphens; foreign spellings map to canonical.
+  it("maps write_file and rewrite_file to create-file", () => {
+    const out = `{"op":"write_file","path":"a.py","content":"print('hi')"}\n{"op":"Rewrite_File","path":"b.py","content":"print('b')"}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps.map((f) => [f.type, f.filepath])).toEqual([
+      ["create", "a.py"],
+      ["create", "b.py"],
+    ]);
+  });
+
+  it("maps edit_file and delete_file to their canonical ops", () => {
+    const out = `{"op":"edit_file","path":"a.py","content":"x = 2"}\n{"op":"delete_file","path":"a.py"}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps.map((f) => [f.type, f.filepath])).toEqual([
+      ["edit", "a.py"],
+      ["delete", "a.py"],
+    ]);
+  });
+
+  it("maps run_command to cmd", () => {
+    const out = `{"op":"run_command","command":"npm test"}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["npm test"]);
+  });
+});
+
 describe("parseAgentOutput — whitespace-tolerant JSON op openers", () => {
   // Production runs showed the model inserting spaces — `{"op": "search"...}`
   // and `{ "op" : "cmd" , ... }` — which the old exact `{"op":"` scanner never

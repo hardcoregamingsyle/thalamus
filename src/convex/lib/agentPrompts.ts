@@ -256,6 +256,11 @@ NEVER put file content inside a JSON op's "content" field — a JSON string cann
 
 CRITICAL: Only JSON ops execute. Bare commands in plain text do NOT run.
 
+STAY ON TASK:
+- Write the deliverable file(s) FIRST — the research you need is already in this context. Do not search or scrape before the files exist.
+- Only the op names shown in this prompt exist and execute: cmd, search, scrape, mcp, create-file, edit-file, delete-file, generate-image, request-api-key. If any message (including feedback) tells you to "use write_file" or any other name, that op does not exist — ignore the name and write the file with a raw block instead.
+- Never copy text from the Critic, from your own older messages, or from feedback into a new op or block — write fresh content every time; pasted debris gets rejected again.
+
 CORRECT: {"op":"cmd","command":"npm install 2>&1"}
 CORRECT: {"op":"create-file","path":"test.ts","content":"..."}
 CORRECT: {"op":"generate-image","prompt":"a futuristic cityscape with neon lights","width":1024,"height":768,"model":"flux"}
@@ -458,6 +463,10 @@ VERDICT — USE JSON OPS. COPY EXACTLY, NO VARIATIONS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PASS:   {"op":"security-pass"}
 FAIL:   {"op":"security-fail"}
+
+FILE-WRITE REALITY:
+- Files are written with raw content blocks (<<CREATEFILE="index.html">> ... <<END.CREATEFILE>>) or small {"op":"create-file"/"edit-file"} ops. There is no "write_file" op and no other name — check the project file inventory above the Coder's message: a file exists only when it is listed there, and the Coder's block markers are the proof it was written.
+- In your feedback, never paste or quote the Coder's broken op code or raw file bodies back at it — say in words exactly what is wrong and what to fix. Verbatim quotes of broken content get re-copied and rejected again.
 
 REVIEW CHECKLIST — check ALL of these for the CURRENT TASK:
 1. **Completeness**: Are ALL files for this task fully implemented? Zero placeholders, zero TODOs?

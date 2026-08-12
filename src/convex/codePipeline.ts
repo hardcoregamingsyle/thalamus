@@ -904,11 +904,22 @@ export const runPipelineAction = internalAction({
               ? `## Existing Files (${files.length} total)\n${files.map(f => `- ${f.filepath}`).join("\n")}`
               : "## Existing Files\nNone yet.";
 
-            // Pull recent Critic/Tester feedback from context so Coder knows what to fix
+            // Pull recent Critic/Tester feedback from context so Coder knows what to fix.
+            // The raw messages are scrubbed: a rejection message that pastes the Coder's
+            // own broken op back at it (the [MALFORMED OP]/[REJECTED OPS] marker plus any
+            // raw HTML that followed it) is copy-paste fuel — the Coder's next emission
+            // ended up containing that same invalid JSON/HTML. Collapse the quoted debris
+            // to its marker so the feedback the Coder can act on is words, not garbage.
             const recentFeedback = messages
               .filter((m) => ["Critic", "Tester", "Hacker"].includes(m.agent))
               .slice(-3)
-              .map((m) => `[${m.agent}]: ${m.content.slice(0, 500)}`)
+              .map((m) => {
+                const content = m.content.replace(
+                  /\[(?:REJECTED OPS[^\]]*|MALFORMED OP[^\]]*)\][\s\S]*?(\n\n|$)/g,
+                  "[MALFORMED OP — not executed]",
+                );
+                return `[${m.agent}]: ${content.slice(0, 500)}`;
+              })
               .join("\n\n");
 
             // Completed tasks context
@@ -927,8 +938,8 @@ export const runPipelineAction = internalAction({
             // against the file store can still happen.
             const blockedReason = branch.executorBlockedReason;
             const toolUsageBlock = blockedReason
-              ? `## Command Execution UNAVAILABLE\n${blockedReason}\nDo NOT emit {"op":"cmd"} ops — they cannot run. Work from the file contents shown above; write files with raw content blocks instead. The user must reconnect GitHub from this branch's Git Sync tab to enable commands.\n\n## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes — RAW CONTENT BLOCKS, no JSON, no escaping (a JSON "content" field is rejected whenever the file contains quotes):\n<<CREATEFILE="index.html">>\n<!DOCTYPE html>\n...paste the ENTIRE file verbatim between the markers...\n</html>\n<<END.CREATEFILE>>`
-              : `## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes — RAW CONTENT BLOCKS, no JSON, no escaping (a JSON "content" field is rejected whenever the file contains quotes):\n<<CREATEFILE="index.html">>\n<!DOCTYPE html>\n...paste the ENTIRE file verbatim between the markers...\n</html>\n<<END.CREATEFILE>>\n\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">> (legacy format, no longer supported)\nWrong: wrapping ops or their text in angle brackets (<json-op>, <op>, <tool>, ...) — the pipeline reads raw {"op":"..."} JSON and plain prose only`;
+              ? `## Command Execution UNAVAILABLE\n${blockedReason}\nDo NOT emit {"op":"cmd"} ops — they cannot run. Work from the file contents shown above; write files with raw content blocks instead. The user must reconnect GitHub from this branch's Git Sync tab to enable commands.\n\n## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes — RAW CONTENT BLOCKS, no JSON, no escaping (a JSON "content" field is rejected whenever the file contains quotes):\n<<CREATEFILE="index.html">>\n<!DOCTYPE html>\n...paste the ENTIRE file verbatim between the markers...\n</html>\n<<END.CREATEFILE>>\n\nThere is no "write_file" op — file writes and edits are the raw blocks above.`
+              : `## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes — RAW CONTENT BLOCKS, no JSON, no escaping (a JSON "content" field is rejected whenever the file contains quotes):\n<<CREATEFILE="index.html">>\n<!DOCTYPE html>\n...paste the ENTIRE file verbatim between the markers...\n</html>\n<<END.CREATEFILE>>\n\nWrong: {"op":"write_file",...} — there is no such op; write the file with the raw block above\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">> (legacy format, no longer supported)\nWrong: wrapping ops or their text in angle brackets (<json-op>, <op>, <tool>, ...) — the pipeline reads raw {"op":"..."} JSON and plain prose only`;
 
             prompt = [
               `## Overall Project Goal\n${task}`,
