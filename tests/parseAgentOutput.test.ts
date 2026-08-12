@@ -279,6 +279,59 @@ describe("parseAgentOutput — whitespace-tolerant JSON op openers", () => {
   });
 });
 
+describe("parseAgentOutput — raw content blocks (file writes)", () => {
+  // A live run's Coder could never write a large HTML file through a JSON
+  // "content" field — raw quotes broke the JSON string and the op was
+  // rejected every round. The raw-content block (the pre-JSON format) is the
+  // reliable path: content is pasted verbatim between markers, so quotes and
+  // newlines cannot break it. These tests guard the block formats, including
+  // the hybrid the model keeps producing: a JSON op line that names the path
+  // plus a bare block that carries the content.
+  it("parses a standalone =path block (the primary format)", () => {
+    const out = `<<CREATEFILE="index.html">>\n<!DOCTYPE html>\n<html lang="en">\n<img alt="Technoblade" src="x.png">\n</html>\n<<END.CREATEFILE>>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toEqual([{
+      type: "create",
+      filepath: "index.html",
+      content: `<!DOCTYPE html>\n<html lang="en">\n<img alt="Technoblade" src="x.png">\n</html>`,
+    }]);
+    expect(parsed.cleanContent).toContain("[FILE CREATED: index.html]");
+    expect(parsed.cleanContent).not.toContain("CREATEFILE");
+  });
+
+  it("pairs a bare CREATEFILE block with the preceding JSON op's path", () => {
+    const out = `Here is the page.\n{"op":"create-file","path":"index.html"}\n<<CREATEFILE>>\n<!DOCTYPE html>\n<html lang="en">\n<img alt="Technoblade" src="x.png">\n</html>\n<<END.CREATEFILE>>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toEqual([{
+      type: "create",
+      filepath: "index.html",
+      content: `<!DOCTYPE html>\n<html lang="en">\n<img alt="Technoblade" src="x.png">\n</html>`,
+    }]);
+    expect(parsed.cleanContent).toContain("[FILE CREATED: index.html]");
+  });
+
+  it("pairs a bare EDITFILE block with the preceding JSON op's path", () => {
+    const out = `{"op":"edit-file","path":"src/a.ts"}\n<<EDITFILE>>\nconst y = 2;\n<<END.CREATEFILE>>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toEqual([{ type: "edit", filepath: "src/a.ts", content: "const y = 2;" }]);
+  });
+
+  it("ignores a bare block that has no preceding JSON op to name it", () => {
+    const out = `<<CREATEFILE>>\nsome content\n<<END.CREATEFILE>>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toEqual([]);
+  });
+
+  it("does not double-write a file named by both a JSON content op and a bare block", () => {
+    // The JSON op carries the content; the bare block after it names the same
+    // path — the JSON op wins, the block is not applied again.
+    const out = `{"op":"create-file","path":"a.ts","content":"const a = 1;"} <<CREATEFILE>>\nconst a = 1;\n<<END.CREATEFILE>>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toHaveLength(1);
+    expect(parsed.fileOps[0]).toEqual({ type: "create", filepath: "a.ts", content: "const a = 1;" });
+  });
+});
+
 describe("findJsonOpsInternal — truncation vs corruption discriminator", () => {
   // The pipeline's continuation stitch is only safe for a GENUINELY truncated
   // op (brace walk ran off the end of the output). An op rejected by

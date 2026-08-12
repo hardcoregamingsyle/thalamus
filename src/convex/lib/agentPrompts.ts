@@ -237,13 +237,22 @@ Use JSON ops to call tools. Each is a single-line JSON object:
 {"op":"search","query":"your search query"}
 {"op":"scrape","url":"https://..."}
 
-File operations use blocks with "op", "path", and "content" fields:
+File operations — RAW CONTENT BLOCKS. No JSON, no escaping — paste the whole file verbatim between the markers:
 
-{"op":"create-file","path":"src/a.ts","content":"export const x = 1;"}
-{"op":"edit-file","path":"src/a.ts","content":"new content here"}
-{"op":"delete-file","path":"src/old.ts"}
+<<CREATEFILE="index.html">
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Technoblade</title></head>
+<body>
+<!-- the complete file, any quotes, any newlines, exactly as it should be written -->
+</body>
+</html>
+<<END.CREATEFILE>>
 
-CONTENT ESCAPING — every op is VALID single-line JSON. In "content", escape every inner double quote as \\" and every newline as \\n. For HTML, write attributes with single quotes (<meta name='viewport' content='width=device-width'>) so nothing needs escaping. An op containing raw unescaped " is rejected and the file is NOT written.
+Edit a file the same way: <<EDITFILE="src/a.ts">>...complete new content...<<END.CREATEFILE>>
+Delete a file: {"op":"delete-file","path":"src/old.ts"}
+
+NEVER put file content inside a JSON op's "content" field — a JSON string cannot hold a real file body, and such ops are rejected. Raw blocks are the only reliable way to write files.
 
 CRITICAL: Only JSON ops execute. Bare commands in plain text do NOT run.
 
@@ -253,7 +262,7 @@ CORRECT: {"op":"generate-image","prompt":"a futuristic cityscape with neon light
 WRONG: run 'npm install'
 WRONG: cat package.json
 WRONG: backtick-code-block
-WRONG: <<TOOL>> or <<CREATEFILE>> (legacy format)
+WRONG: {"op":"create-file","path":"x.html","content":"<p>raw html</p>"} — file content belongs in a <<CREATEFILE="...">> raw block, never in a JSON string
 
 CRITICAL RULES:
 - Every file must be 100% complete — no TODOs, no placeholders, no stubs

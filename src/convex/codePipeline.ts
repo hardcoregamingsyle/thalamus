@@ -242,10 +242,10 @@ const MAX_OP_CONTINUATIONS = 2;
 // legacy <<<<<...>>>>> delimiters count.
 function hasUnclosedFileBlock(content: string): boolean {
   const withoutComplete = content.replace(
-    /(?:<<<<<|<<)(?:CREATEFILE|EDITFILE)="[^"]+"(?:>>>>>|>>)[\s\S]*?(?:<<<<<|<<)END\.CREATEFILE(?:>>>>>|>>)/g,
+    /(?:<<<<<|<<)(?:CREATEFILE|EDITFILE)(?:="[^"]+")?(?:>>>>>|>>)[\s\S]*?(?:<<<<<|<<)END\.CREATEFILE(?:>>>>>|>>)/g,
     "",
   );
-  if (/(?:<<<<<|<<)(?:CREATEFILE|EDITFILE)="[^"]+"(?:>>>>>|>>)/.test(withoutComplete)) return true;
+  if (/(?:<<<<<|<<)(?:CREATEFILE|EDITFILE)(?:="[^"]+")?(?:>>>>>|>>)/.test(withoutComplete)) return true;
   // JSON op variant: a create-file/edit-file op whose opening exists but whose
   // braces never balance (content cut off mid-JSON). Walk braces from the last
   // opener, skipping strings, so a complete op right before the cut doesn't
@@ -927,8 +927,8 @@ export const runPipelineAction = internalAction({
             // against the file store can still happen.
             const blockedReason = branch.executorBlockedReason;
             const toolUsageBlock = blockedReason
-              ? `## Command Execution UNAVAILABLE\n${blockedReason}\nDo NOT emit {"op":"cmd"} ops — they cannot run. Work from the file contents shown above; write files with create-file/edit-file ops only. The user must reconnect GitHub from this branch's Git Sync tab to enable commands.\n\n## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes are single-line JSON too: in "content", escape inner double quotes as \\" and newlines as \\n — or use single quotes in HTML attributes (<meta name='viewport'>) so nothing needs escaping. An op with raw unescaped quotes is rejected and the file is NOT written.`
-              : `## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes are single-line JSON too: in "content", escape inner double quotes as \\" and newlines as \\n — or use single quotes in HTML attributes (<meta name='viewport'>) so nothing needs escaping. An op with raw unescaped quotes is rejected and the file is NOT written.\n\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">> (legacy format, no longer supported)\nWrong: wrapping ops or their text in angle brackets (<json-op>, <op>, <tool>, ...) — the pipeline reads raw {"op":"..."} JSON and plain prose only`;
+              ? `## Command Execution UNAVAILABLE\n${blockedReason}\nDo NOT emit {"op":"cmd"} ops — they cannot run. Work from the file contents shown above; write files with raw content blocks instead. The user must reconnect GitHub from this branch's Git Sync tab to enable commands.\n\n## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes — RAW CONTENT BLOCKS, no JSON, no escaping (a JSON "content" field is rejected whenever the file contains quotes):\n<<CREATEFILE="index.html">>\n<!DOCTYPE html>\n...paste the ENTIRE file verbatim between the markers...\n</html>\n<<END.CREATEFILE>>`
+              : `## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes — RAW CONTENT BLOCKS, no JSON, no escaping (a JSON "content" field is rejected whenever the file contains quotes):\n<<CREATEFILE="index.html">>\n<!DOCTYPE html>\n...paste the ENTIRE file verbatim between the markers...\n</html>\n<<END.CREATEFILE>>\n\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">> (legacy format, no longer supported)\nWrong: wrapping ops or their text in angle brackets (<json-op>, <op>, <tool>, ...) — the pipeline reads raw {"op":"..."} JSON and plain prose only`;
 
             prompt = [
               `## Overall Project Goal\n${task}`,
@@ -988,11 +988,11 @@ export const runPipelineAction = internalAction({
           contRounds++;
           const tail = agentOutput.slice(-6000);
           const contPrompt = [
-            `Your previous output was cut off at the token limit mid-op: an {"op":"..."} JSON op (or <<CREATEFILE>> block) is still open, with its content string and closing brace cut off.`,
+            `Your previous output was cut off at the token limit mid-op: an {"op":"..."} JSON op is still open, OR a <<CREATEFILE="...">> raw content block is still open (no <<END.CREATEFILE>> yet).`,
             `## The tail of what you wrote (continue from the exact end of this)`,
             tail,
             `## Continue`,
-            `Emit ONLY the remaining JSON op body, picking up at the exact character where the tail stops — do NOT repeat anything above, do NOT re-open the JSON op from the start. Finish the content string and close the JSON op with its closing brace. If you still had more files or commands to emit after it, continue with those.`,
+            `Emit ONLY the remaining body, picking up at the exact character where the tail stops — do NOT repeat anything above, do NOT re-open the op or the block from the start. For a JSON op: finish the content string and close it with its closing brace. For a raw content block: continue the file content verbatim and close with <<END.CREATEFILE>>. If you still had more files or commands to emit after it, continue with those.`,
           ].join("\n\n");
           const cont = await callModelWithStreaming(ctx, contPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments, callBudget());
           if (!cont.text.trim()) break;
@@ -1024,11 +1024,11 @@ export const runPipelineAction = internalAction({
       // Coder re-emitting the same broken create-file round after round — the
       // marker alone never corrected an op whose "content" carried raw
       // unescaped quotes. Say plainly what to do instead, inside the very
-      // message the next agents read from history. The single-quote suggestion
-      // is the whole point: HTML attributes fit single quotes, so the JSON
-      // content string needs no escaping at all.
+      // message the next agents read from history. The raw-content block is
+      // the whole point: file bodies are written verbatim between markers, so
+      // quotes and newlines can never break them again.
       if (parsed.malformedOps.length > 0) {
-        parsed.cleanContent = `${parsed.cleanContent}\n\n[REJECTED OPS: ${parsed.malformedOps.length} JSON op(s) did not parse and executed nothing. Re-emit each one as VALID single-line JSON. In "content", escape every inner double quote as \\" and every newline as \\n — for HTML, use single quotes in attributes (<meta name='viewport' content='width=device-width'>) so nothing needs escaping. A closed op means the file is final.]`;
+        parsed.cleanContent = `${parsed.cleanContent}\n\n[REJECTED OPS: ${parsed.malformedOps.length} JSON op(s) did not parse and executed nothing. For FILE content, stop using JSON entirely — write a RAW CONTENT BLOCK instead, which needs NO escaping:\n<<CREATEFILE="index.html">>\n<entire file, verbatim — any quotes, any newlines>\n<<END.CREATEFILE>>\nUse {"op":"..."} JSON only for commands, searches, scrapes, MCP calls and image generation.]`;
       }
       for (const op of parsed.fileOps) {
         if (op.type === "create" || op.type === "edit") {

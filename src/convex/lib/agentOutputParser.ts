@@ -99,7 +99,10 @@ export interface ParsedOutput {
 // string.
 //
 // Legacy <<TAG>> markers (<<RUN-CMD="...">>, <<CREATEFILE="...">>, etc.) are
-// still parsed as fallback for older conversations.
+// still parsed — and the <<CREATEFILE="path">>…<<END.CREATEFILE>> raw-content
+// block is now the RECOMMENDED file-write path: a JSON "content" field gets
+// rejected whenever the file body contains double quotes, which large HTML
+// documents always do.
 
 /** One op that clearly INTENDED to be JSON (opener matched the `{"op":` shape)
  *  but failed to parse. `unterminated` true = the brace/string walk ran off the
@@ -447,6 +450,29 @@ export function parseAgentOutput(content: string): ParsedOutput {
   while ((match = editRegex.exec(content)) !== null) {
     fileOps.push({ type: "edit", filepath: match[1], content: match[2].trim() });
     cleanContent = cleanContent.replace(match[0], `[FILE EDITED: ${match[1]}]`);
+  }
+
+  // Bare-block pairing — the model often writes the path into a JSON op and
+  // the content into a block WITHOUT the =path attribute, e.g.
+  //   {"op":"create-file","path":"index.html"}
+  //   <<CREATEFILE>> ...raw content... <<END.CREATEFILE>>
+  // The JSON op alone is inert (it carries no "content"), so pair the block
+  // with the nearest preceding JSON create/edit op and write the file. Guards
+  // the exact shape a live run kept producing while its JSON-escaped
+  // create-file attempts were being rejected.
+  const bareBlockRe = new RegExp(`${O}(?:CREATEFILE|EDITFILE)${C}([\\s\\S]*?)${O}END\\.CREATEFILE${C}`, "g");
+  while ((match = bareBlockRe.exec(content)) !== null) {
+    const opTypeRe = /\{"op"\s*:\s*"(create-file|edit-file)","path"\s*:\s*"([^"]+)"/g;
+    let last: RegExpExecArray | null = null;
+    let m2: RegExpExecArray | null;
+    while ((m2 = opTypeRe.exec(content.slice(0, match.index))) !== null) last = m2;
+    if (!last) continue;
+    const path = last[2];
+    const key = `${last[1] === "edit-file" ? "edit" : "create"}:${path}`;
+    if (processedPaths.has(key)) continue;
+    processedPaths.add(key);
+    fileOps.push({ type: last[1] === "edit-file" ? "edit" : "create", filepath: path, content: match[1].trim() });
+    cleanContent = cleanContent.replace(match[0], `[FILE ${last[1] === "edit-file" ? "EDITED" : "CREATED"}: ${path}]`);
   }
 
   // Legacy fallback — only applies if JSON ops didn't already consume the op.
