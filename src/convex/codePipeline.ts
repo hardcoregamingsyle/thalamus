@@ -1340,6 +1340,31 @@ export const runPipelineAction = internalAction({
         ...parsed.cmdOps.map((op) => op.command),
       ]));
       if (commands.length > 0) {
+        // Files the agent wrote in THIS round must reach the GitHub branch
+        // before the VM worker runs any command. The worker re-syncs its
+        // working tree from origin/$BRANCH_REF before every batch
+        // (githubActionsRunner.ts), so files that exist only in the Convex
+        // file store are invisible to every command. This path used to return
+        // without ever scheduling the auto-push (that happened only on the
+        // no-command path below), so a round that wrote files AND queued a
+        // command ran its commands against an empty clone — every `npm
+        // install` failed with ENOENT, the agent answered by re-creating
+        // identical files, and the loop repeated forever. Pushing BEFORE
+        // queueing also closes the race where an already-alive worker claims
+        // the batch on its next 10s poll before the push lands.
+        let pushFailure: string | undefined;
+        if (parsed.fileOps.length > 0 && branch.executor !== "local") {
+          if (outOfBudget()) {
+            pushFailure = "skipped — this pipeline step ran out of its time budget before the files could be pushed";
+          } else {
+            const pushResult = await ctx.runAction(internal.githubSync.autoPushToGithub, {
+              branchId,
+              commitMessage: `${agentName}: ${parsed.cleanContent.slice(0, 100)}...`,
+            });
+            if (!pushResult.success) pushFailure = pushResult.error ?? "unknown error";
+          }
+        }
+
         // Queue commands
         for (const cmd of commands) {
           await ctx.runMutation(internal.codeCommands.queueCommand, {
@@ -1380,13 +1405,32 @@ export const runPipelineAction = internalAction({
         // on resume — with the command results now in its context. Its file
         // ops have already been applied above, so the resumed run sees them in
         // its inventory instead of an empty workspace.
-        // Cloud branches hand the queue to Daytona. Local ones do not schedule
-        // anything: the desktop app is polling for pending commands, runs them
-        // on the user's machine, and resumes this pipeline itself through
-        // codeCommands.completeCommand. Scheduling Daytona here as well would
-        // race it and run every command twice.
+        // Cloud branches hand the queue to the Actions worker. Local ones do
+        // not schedule anything: the desktop app is polling for pending
+        // commands, runs them on the user's machine, and resumes this pipeline
+        // itself through codeCommands.completeCommand. Scheduling the worker
+        // here as well would race it and run every command twice.
         if (branch.executor !== "local") {
-          await ctx.scheduler.runAfter(0, internal.githubActionsRunner.executeBranchCommandsViaActions, { branchId });
+          if (pushFailure) {
+            // A command that cannot see the files it depends on would produce
+            // a baffling "No such file" that the agent "fixes" by re-creating
+            // the same files round after round. Fail the batch fast, in the
+            // same channel command results arrive in, and let the agent read
+            // the real reason (token, rate limit, sync connection) instead.
+            const backlog = await ctx.runQuery(internal.codeCommands.getPendingCommands, { branchId });
+            const explainer = `[FILES NOT PUSHED — commands were failed instead of running against an empty clone]\n${pushFailure}\n\nThe server-side file store HAS the files above — they were applied as usual. Commands run on a fresh clone of the branch inside GitHub Actions, so they cannot see them until a push to the branch succeeds. Do NOT re-create the files. Check this branch's Git Sync tab (token, rate limits) and re-run the commands.`;
+            for (const queuedCmd of backlog) {
+              await ctx.runMutation(internal.codeCommands.recordCommandResult, {
+                commandId: queuedCmd._id,
+                status: "failed",
+                exitCode: 1,
+                output: explainer,
+              });
+            }
+            await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+          } else {
+            await ctx.scheduler.runAfter(0, internal.githubActionsRunner.executeBranchCommandsViaActions, { branchId });
+          }
         }
         return;
       }

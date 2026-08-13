@@ -29,6 +29,8 @@ The branch "parks as paused, self-resumes" behaviour is symmetric across the two
 
 Source: `src/convex/githubActionsRunner.ts`. Each branch already has its own public repo from `githubAutoCreate.ts` (public repos get unlimited Actions minutes on standard runners, so the repo is also the VM). A persistent worker workflow (`.github/workflows/thalamus-vm.yml`, provisioned by `ensureVmWorkflow`) polls Convex every ~10s.
 
+The worker is stateless across polls: before every batch it re-syncs its working tree from the branch ref it tracks (`git fetch origin` + `git checkout -B $BRANCH_REF origin/$BRANCH_REF`), so a command only ever sees what has actually been pushed to GitHub. The pipeline must therefore push files to the branch before their commands run. `codePipeline` does this synchronously on every round that both writes files and queues commands — the push is awaited before the queue is dispatched, and if it fails the batch is failed fast with the reason (a command that cannot see the files it depends on would otherwise produce a baffling "No such file" that agents answer by re-creating identical content forever). The push and the boot resolve the same live token, so a reconnected account cannot leave pushes behind the worker.
+
 ### Boot
 
 - `codePipeline.startPipeline` calls `internal.githubActionsRunner.bootVmForBranch` the moment a message lands.

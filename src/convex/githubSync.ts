@@ -6,6 +6,8 @@ import { Id, Doc } from "./_generated/dataModel";
 import { Octokit } from "@octokit/rest";
 import crypto from "crypto";
 
+import { resolveTokenForBranch } from "./githubActionsRunner";
+
 // Row shape used by every internal.githubSyncHelpers.getGithubConfigInternal
 // call in this file — kept as a narrow local alias so the self-referential
 // api-object chain doesn't hit TS2589.
@@ -363,8 +365,18 @@ export const autoPushToGithub = internalAction({
         branchId: args.branchId,
       });
 
+      // Same identity the VM worker uses: the connected account's live token
+      // when it owns the repo, else the snapshot, else the platform fallback.
+      // A push written with the snapshotted token while command execution
+      // resolves live leaves a branch that was reconnected pushing with a
+      // dead token — files silently never reach the clone commands run on.
       const octokit = new Octokit({
-        auth: config.githubToken || process.env.GITHUB_TOKEN,
+        auth: await resolveTokenForBranch(ctx, branch.projectId, {
+          owner: config.owner,
+          repo: config.repo,
+          branch: config.branch,
+          githubToken: config.githubToken ?? undefined,
+        }),
       });
 
       const defaultBranch = await resolveDefaultBranch(octokit, config.owner, config.repo, config.branch);

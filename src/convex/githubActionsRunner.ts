@@ -254,7 +254,7 @@ const WORKFLOW_SCOPE_MSG =
 // unconditionally 404s every push and dispatch on those branches. So: use the
 // connected account's live token only when it owns `cfg.owner`; otherwise keep
 // the snapshot, which is the identity that created the repo in the first place.
-async function resolveTokenForBranch(
+export async function resolveTokenForBranch(
   ctx: ActionCtx,
   projectId: string,
   cfg: GhConfig,
@@ -288,6 +288,10 @@ async function tokenGrantsWorkflowScope(octokit: Octokit): Promise<boolean | nul
     return null;
   }
 }
+
+// Exported for githubSync.ts, which runs the push side of the same commands:
+// a push written with the snapshotted token while the worker boots with the
+// live token leaves a reconnected branch pushing with a dead token forever.
 
 // Shared by the VM and sandbox workflow writers: decide what a 403/404 on a
 // write under .github/workflows/ actually means, and only blame the scope when
