@@ -116,6 +116,16 @@ export function generateObscureRepoName(): string {
   return `${adj}-${noun}-${num}`;
 }
 
+// Readable, human-recognisable repo name: three random English words then six
+// random digits, e.g. "ancient-autumn-azure-482913". Used for repos created on
+// the user's own GitHub account, where the name is what the user sees on their
+// profile.
+export function generateReadableRepoName(): string {
+  const words = [pick(ADJECTIVES), pick(ADJECTIVES), pick(ADJECTIVES)];
+  const num = randomDigits(6);
+  return `${words.join("-")}-${num}`;
+}
+
 export function generateObscureBranchName(): string {
   const adj = pick(ADJECTIVES);
   const noun = pick(NOUNS);

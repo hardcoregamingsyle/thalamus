@@ -102,10 +102,12 @@ function buildTaskPipeline(dispatched: string[]): string[] {
   return ALL_TASK_AGENTS.filter(a => expandResearchTeam(dispatched).includes(a));
 }
 
-/** Parse and validate the Dispatcher's JSON output. Returns null on failure. */
+/** Parse and validate the Dispatcher's JSON output. Returns null on failure.
+ *  startFrom: null (or absent) = fresh pipeline; a 1-based task number = start
+ *  execution at that task; an agent name = start the run at that agent. */
 function parseDispatcherOutput(
   text: string,
-): { tier: string; agents: string[]; models?: Record<string, string> } | null {
+): { tier: string; agents: string[]; models?: Record<string, string>; startFrom?: number | string } | null {
   try {
     // Strip markdown fences if the model wrapped them anyway
     const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
@@ -129,7 +131,11 @@ function parseDispatcherOutput(
       if (Object.keys(models).length === 0) models = undefined;
     }
 
-    return { tier: parsed.tier ?? "medium", agents, models };
+    let startFrom: number | string | undefined;
+    if (typeof parsed.startFrom === "number") startFrom = parsed.startFrom;
+    else if (typeof parsed.startFrom === "string" && VALID.has(parsed.startFrom)) startFrom = parsed.startFrom;
+
+    return { tier: parsed.tier ?? "medium", agents, models, startFrom };
   } catch {
     return null;
   }
@@ -725,7 +731,7 @@ export const runPipelineAction = internalAction({
           : "";
 
         const dispatchPrompt = `## Project Goal\n${task}${subtaskContext}\n\n## Existing project files\n${files.length > 0 ? files.map(f => `- ${f.filepath}`).join("\n") : "None (greenfield project)"}
-\n## Previously dispatched agents\n${dispatchedAgents.length > 0 ? dispatchedAgents.join(", ") : "None yet (first dispatch)"}${modelMenu}\n\n${currentDateLine}`;
+\n## Previously dispatched agents\n${dispatchedAgents.length > 0 ? dispatchedAgents.join(", ") : "None yet (first dispatch)"}\n\n## Dispatch trigger\nThis run was triggered by a new user message (or the previous task completing). Decide "startFrom" per your instructions: fresh pipeline, resume at a task number, or resume at an agent.${modelMenu}\n\n${currentDateLine}`;
         const dispatchResult = await callModelWithStreaming(
           ctx, dispatchPrompt, AGENT_SYSTEM_PROMPTS["Dispatcher"] ?? "",
           branchId, "Dispatcher", geminiKeys, dbCreds, undefined, 60_000,
@@ -737,6 +743,7 @@ export const runPipelineAction = internalAction({
         const agents = dispatched?.agents ?? ["Analyser", "Planner", "Coder", "Tester", "Critic"];
         const tier = dispatched?.tier ?? "medium";
         const modelAssignments = dispatched?.models;
+        const startFrom = dispatched?.startFrom;
 
         // Persist so every subsequent pipeline invocation can read the agent list
         // and per-agent model assignments.
@@ -768,8 +775,60 @@ export const runPipelineAction = internalAction({
           messageIndex: totalMessages,
         });
 
-        // Decide where to go next
+        // Decide where to go next. "startFrom" chosen by the Dispatcher may
+        // override the default fresh-pipeline routing: jump to a specific task
+        // in execution, or resume at a specific agent.
         const planningAgents = buildPlanningPipeline(agents);
+        const taskAgents = buildTaskPipeline(agents);
+        if (startFrom !== undefined && typeof startFrom === "number") {
+          // Skip planning entirely — resume EXECUTION at the requested task.
+          let plannerTasks: Array<{ title: string; description: string }> = [];
+          try { plannerTasks = JSON.parse(branch.plannerTasksJson || "[]"); } catch { /* ignore */ }
+          const targetIndex = Math.max(0, Math.min(Math.floor(startFrom) - 1, Math.max(0, plannerTasks.length - 1)));
+          if (plannerTasks.length === 0) {
+            const syntheticTask = JSON.stringify([{ title: task.slice(0, 120), description: task }]);
+            await ctx.runMutation(internal.codeBranches.updatePlannerTasks, {
+              branchId,
+              plannerTasksJson: syntheticTask,
+            });
+          }
+          const firstTaskAgent = taskAgents[0] ?? "Coder";
+          round++;
+          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+            branchId,
+            status: "idle",
+            currentAgent: firstTaskAgent,
+            phase: firstTaskAgent,
+            executionPhase: "executing",
+            round,
+            totalMessages,
+            currentTaskIndex: targetIndex,
+            criticRetryCount: 0,
+            mcpRoundCount: 0,
+          });
+          await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+          return;
+        }
+        if (startFrom !== undefined && typeof startFrom === "string") {
+          // Resume at a specific agent — planning or execution, whichever
+          // pipeline the named agent belongs to.
+          const resumeAgent = startFrom;
+          const executionPhase = planningAgents.includes(resumeAgent) ? "planning" : "executing";
+          round++;
+          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+            branchId,
+            status: "idle",
+            currentAgent: resumeAgent,
+            phase: resumeAgent,
+            executionPhase,
+            round,
+            totalMessages,
+            criticRetryCount: 0,
+            mcpRoundCount: 0,
+          });
+          await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+          return;
+        }
         if (planningAgents.length > 0) {
           // At least one planning agent was selected — run the planning phase
           const firstPlanningAgent = planningAgents[0];
@@ -938,8 +997,8 @@ export const runPipelineAction = internalAction({
             // against the file store can still happen.
             const blockedReason = branch.executorBlockedReason;
             const toolUsageBlock = blockedReason
-              ? `## Command Execution UNAVAILABLE\n${blockedReason}\nDo NOT emit {"op":"cmd"} ops — they cannot run. Work from the file contents shown above; write files with raw content blocks instead. The user must reconnect GitHub from this branch's Git Sync tab to enable commands.\n\n## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes — RAW CONTENT BLOCKS, no JSON, no escaping (a JSON "content" field is rejected whenever the file contains quotes):\n<<CREATEFILE="index.html">>\n<!DOCTYPE html>\n...paste the ENTIRE file verbatim between the markers...\n</html>\n<<END.CREATEFILE>>\n\nThere is no "write_file" op — file writes and edits are the raw blocks above.`
-              : `## Tool Usage\nEmit a single-line JSON object to run a tool:\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes — RAW CONTENT BLOCKS, no JSON, no escaping (a JSON "content" field is rejected whenever the file contains quotes):\n<<CREATEFILE="index.html">>\n<!DOCTYPE html>\n...paste the ENTIRE file verbatim between the markers...\n</html>\n<<END.CREATEFILE>>\n\nWrong: {"op":"write_file",...} — there is no such op; write the file with the raw block above\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">> (legacy format, no longer supported)\nWrong: wrapping ops or their text in angle brackets (<json-op>, <op>, <tool>, ...) — the pipeline reads raw {"op":"..."} JSON and plain prose only`;
+              ? `## Command Execution UNAVAILABLE\n${blockedReason}\nDo NOT emit {"op":"cmd"} ops — they cannot run. Work from the file contents shown above; write files with JSON ops instead. The user must reconnect GitHub from this branch's Git Sync tab to enable commands.\n\n## Tool Usage\nEvery tool call belongs INSIDE your message's JSON document (see Output Format):\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}`
+              : `## Tool Usage\nEvery tool call belongs INSIDE your message's JSON document (see Output Format):\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n{"op":"research","query":"React 19 concurrent rendering pitfalls","detail":"focus on server components"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes are JSON ops inside your document — escape every " as \\" and every \\ as \\\\ inside "content":\n{"op":"create-file","path":"src/index.html","content":"<!DOCTYPE html>\\n<html>\\n...entire file verbatim...\\n</html>"}\n{"op":"edit-file","path":"src/index.ts","oldText":"the exact old text","newText":"the exact new text"}\n\nWrong: {"op":"write_file",...} — there is no such op\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">>, <<CREATEFILE="...">> or any angle-bracket tags — the pipeline reads pure JSON documents only`;
 
             prompt = [
               `## Overall Project Goal\n${task}`,
@@ -999,11 +1058,11 @@ export const runPipelineAction = internalAction({
           contRounds++;
           const tail = agentOutput.slice(-6000);
           const contPrompt = [
-            `Your previous output was cut off at the token limit mid-op: an {"op":"..."} JSON op is still open, OR a <<CREATEFILE="...">> raw content block is still open (no <<END.CREATEFILE>> yet).`,
+            `Your previous output was cut off at the token limit mid-document: your JSON document is still open (unclosed string, no trailing "]" and "}").`,
             `## The tail of what you wrote (continue from the exact end of this)`,
             tail,
             `## Continue`,
-            `Emit ONLY the remaining body, picking up at the exact character where the tail stops — do NOT repeat anything above, do NOT re-open the op or the block from the start. For a JSON op: finish the content string and close it with its closing brace. For a raw content block: continue the file content verbatim and close with <<END.CREATEFILE>>. If you still had more files or commands to emit after it, continue with those.`,
+            `Emit ONLY the remaining body, picking up at the exact character where the tail stops — do NOT repeat anything above, do NOT re-open the document from the start. Finish the open content string, then close the op with its brace, close the "ops" array with "] " and close the document with "}". If you still had more ops after it, continue with them inside the same array.`,
           ].join("\n\n");
           const cont = await callModelWithStreaming(ctx, contPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments, callBudget());
           if (!cont.text.trim()) break;
@@ -1035,11 +1094,9 @@ export const runPipelineAction = internalAction({
       // Coder re-emitting the same broken create-file round after round — the
       // marker alone never corrected an op whose "content" carried raw
       // unescaped quotes. Say plainly what to do instead, inside the very
-      // message the next agents read from history. The raw-content block is
-      // the whole point: file bodies are written verbatim between markers, so
-      // quotes and newlines can never break them again.
+      // message the next agents read from history.
       if (parsed.malformedOps.length > 0) {
-        parsed.cleanContent = `${parsed.cleanContent}\n\n[REJECTED OPS: ${parsed.malformedOps.length} JSON op(s) did not parse and executed nothing. For FILE content, stop using JSON entirely — write a RAW CONTENT BLOCK instead, which needs NO escaping:\n<<CREATEFILE="index.html">>\n<entire file, verbatim — any quotes, any newlines>\n<<END.CREATEFILE>>\nUse {"op":"..."} JSON only for commands, searches, scrapes, MCP calls and image generation.]`;
+        parsed.cleanContent = `${parsed.cleanContent}\n\n[REJECTED OPS: ${parsed.malformedOps.length} JSON op(s) did not parse and executed nothing. Escape file content strictly: every " as \\", every \\ as \\\\, every real newline as \\n — ONE unescaped quote breaks the whole document. Prefer small edit-file ops over huge create-file content. Use {"op":"..."} JSON inside a single {"message":"...","ops":[...]} document.]`;
       }
       for (const op of parsed.fileOps) {
         if (op.type === "create" || op.type === "edit") {
@@ -1089,6 +1146,41 @@ export const runPipelineAction = internalAction({
           searchResults.push({ query: s.url, result: "[Scrape failed]" });
         }
       }
+
+      // Research ops — the Coder can trigger the research team from its own
+      // turn: {"op":"research","query":"...","detail":"..."} runs the Researcher
+      // (raw gathering) then the ReportMaker (synthesis), and the report lands
+      // in the agent's follow-up re-call below. Bounded: max 2 per message,
+      // each pair must fit the remaining budget.
+      const researchReports: Array<{ query: string; report: string }> = [];
+      for (const r of parsed.researchOps.slice(0, 2)) {
+        if (outOfBudget()) { skippedSearchOps.push(r.query); continue; }
+        try {
+          const query = `${r.query}${r.detail ? `\nFocus: ${r.detail}` : ""}`;
+          const dataPrompt = `## Research query\n${query}\n\nGather RAW data on this — every search variation that could help, every page that could answer it. Do not synthesise or summarise.`;
+          const dataResult = await callModelWithStreaming(
+            ctx, dataPrompt, AGENT_SYSTEM_PROMPTS["Researcher"] ?? "", branchId, "Researcher",
+            geminiKeys, dbCreds, undefined, callBudget(),
+          );
+          await bill("researcher", dataResult);
+          if (outOfBudget()) {
+            researchReports.push({ query: r.query, report: dataResult.text.slice(0, 6000) });
+            continue;
+          }
+          const reportPrompt = `## Research query\n${query}\n\n## Raw research data\n${dataResult.text.slice(0, 6000)}\n\nSynthesise a concise, sourced report the Coder can code from.`;
+          const reportResult = await callModelWithStreaming(
+            ctx, reportPrompt, AGENT_SYSTEM_PROMPTS["ReportMaker"] ?? "", branchId, "ReportMaker",
+            geminiKeys, dbCreds, undefined, callBudget(),
+          );
+          await bill("reportmaker", reportResult);
+          researchReports.push({ query: r.query, report: reportResult.text.slice(0, 6000) });
+        } catch (err) {
+          researchReports.push({
+            query: r.query,
+            report: `[Research failed: ${err instanceof Error ? err.message.slice(0, 200) : "unknown error"}]`,
+          });
+        }
+      }
       // Tell the agent what did not run, even when NOTHING ran — an agent that
       // asked for research and got silence cannot tell "the tool is broken"
       // from "nothing was found", and both readings are wrong. It advances
@@ -1096,17 +1188,18 @@ export const runPipelineAction = internalAction({
       if (skippedSearchOps.length > 0) {
         parsed.cleanContent = `${parsed.cleanContent}\n\n[RESEARCH SKIPPED: ${skippedSearchOps.length} request(s) (${skippedSearchOps.slice(0, 3).map((q) => `"${q.slice(0, 60)}"`).join(", ")}${skippedSearchOps.length > 3 ? ", …" : ""}) did not run — this step ran out of its time budget, not because search is unavailable. Work with what you have; the next step can research again.]`;
       }
-      if (searchResults.length > 0 && !outOfBudget()) {
-        const searchContext = searchResults
-          .map((r, i) => `[RESULT ${i + 1} for "${r.query}"]:\n${r.result}`)
-          .join("\n\n---\n\n");
+      if ((searchResults.length > 0 || researchReports.length > 0) && !outOfBudget()) {
+        const searchContext = [
+          ...searchResults.map((r, i) => `[RESULT ${i + 1} for "${r.query}"]:\n${r.result}`),
+          ...researchReports.map((r, i) => `[RESEARCH REPORT ${i + 1} for "${r.query}"]:\n${r.report}`),
+        ].join("\n\n---\n\n");
         // Re-call the same agent with search results appended. The instruction
         // to quote rather than restate is load-bearing: a production run had an
         // agent "continue" by reproducing the whole result block from memory,
         // corrupting URLs as it went (one source came back with a typo'd path
         // that the pipeline could not have produced), and every agent after it
         // treated those mangled links as real citations.
-        const searchPrompt = `${agentOutput}\n\n---\n\nSEARCH RESULTS:\n${searchContext}\n\nNow continue your work using the above information. Do NOT emit any more search or scrape ops. Do NOT reproduce this result block in your reply — quote only the specific lines you rely on, copying any URL character-for-character, and never write a URL that does not appear above.`;
+        const searchPrompt = `${agentOutput}\n\n---\n\nSEARCH RESULTS:\n${searchContext}\n\nNow continue your work using the above information. Do NOT emit any more search, scrape or research ops. Do NOT reproduce this result block in your reply — quote only the specific lines you rely on, copying any URL character-for-character, and never write a URL that does not appear above.`;
         const searchCall = await callModelWithStreaming(ctx, searchPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments, callBudget());
         agentOutput = searchCall.text;
         await bill(`${currentPhase.toLowerCase()}-search`, searchCall);
@@ -1663,6 +1756,12 @@ export const startPipeline = action({
       // with nothing able to ever run it (the desktop-only executor queue
       // has no other reader).
       executor: args.executor ?? "cloud",
+      // Every new prompt re-enters through the Dispatcher — it decides the
+      // pipeline and where the run starts (startFrom), instead of resuming
+      // blindly at whatever agent finished last.
+      phase: "Dispatcher",
+      currentAgent: "Dispatcher",
+      executionPhase: "dispatching",
     });
 
     // Save user message if provided
@@ -1674,6 +1773,30 @@ export const startPipeline = action({
         round: 0,
         messageIndex: 0,
       });
+    }
+
+    // Sync the linked repo's DEFAULT branch into the file store before the
+    // pipeline reads it, so the prompt reacts to the latest external state
+    // (a repo cloned/edited outside Thalamus). Failure is non-blocking: a
+    // repo that isn't connected yet (creation still in flight) is expected,
+    // and a real failure is surfaced as a System note rather than dropping
+    // the user's prompt.
+    if (args.userPrompt) {
+      try {
+        await ctx.runAction(internal.githubSync.pullForPipeline, {
+          branchId: args.branchId,
+          projectId: branch.projectId,
+        });
+      } catch (syncErr) {
+        const syncMsg = syncErr instanceof Error ? syncErr.message : String(syncErr);
+        if (!syncMsg.includes("No GitHub repository connected")) {
+          await ctx.runMutation(internal.codeBranches.saveMessage, {
+            branchId: args.branchId,
+            agent: "System",
+            content: `⚠️ Pre-run GitHub sync failed: ${syncMsg.slice(0, 300)}`,
+          });
+        }
+      }
     }
 
     // Boot the VM the instant a message lands — the whole point of the worker

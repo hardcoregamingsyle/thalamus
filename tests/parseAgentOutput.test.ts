@@ -428,3 +428,76 @@ describe("findJsonOpsInternal — truncation vs corruption discriminator", () =>
     expect(malformed.every((m) => !m.unterminated)).toBe(true);
   });
 });
+
+describe("parseAgentOutput — pure JSON document mode", () => {
+  it("parses a one-document reply into message + ops", () => {
+    const out = `{"message":"Creating the app now","ops":[{"op":"create-file","path":"src/index.ts","content":"export const x = 1;"},{"op":"cmd","command":"npm install"}]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toEqual([{ type: "create", filepath: "src/index.ts", content: "export const x = 1;" }]);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["npm install"]);
+    expect(parsed.malformedOps).toEqual([]);
+    expect(parsed.cleanContent).toContain("Creating the app now");
+    expect(parsed.cleanContent).toContain("[FILE CREATED: src/index.ts]");
+    expect(parsed.cleanContent).toContain("[CMD: npm install]");
+  });
+
+  it("uses the review field for Critic-style documents", () => {
+    const out = `{"review":"Looks good after the fix","ops":[{"op":"security-pass"}]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.criticResult).toBe("pass");
+    expect(parsed.cleanContent).toContain("Looks good after the fix");
+  });
+
+  it("parses a research op out of the document ops array", () => {
+    const out = `{"message":"Checking the docs","ops":[{"op":"research","query":"React 19 concurrent rendering","detail":"focus on server components"}]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.researchOps).toEqual([
+      { query: "React 19 concurrent rendering", detail: "focus on server components" },
+    ]);
+    expect(parsed.cleanContent).toContain("[RESEARCHING: React 19 concurrent rendering]");
+  });
+
+  it("keeps document contents escaped correctly (quotes and newlines round-trip)", () => {
+    const out = `{"message":"write it","ops":[{"op":"create-file","path":"a.html","content":"<a href=\\"https://x\\">hi</a>\\nline2"}]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps[0].content).toBe("<a href=\"https://x\">hi</a>\nline2");
+  });
+
+  it("treats an ops-less document as not-a-document (no bogus markers)", () => {
+    const out = `{"message":"just talking"}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toEqual([]);
+    expect(parsed.cmdOps).toEqual([]);
+    expect(parsed.malformedOps).toEqual([]);
+  });
+
+  it("surfaces a broken document via malformed ops instead of silently dropping it", () => {
+    const out = `{"message":"writing","ops":[{"op":"create-file","path":"x.html","content":"<img src="x" alt="y">"}]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.malformedOps.length).toBeGreaterThan(0);
+    expect(parsed.fileOps).toEqual([]);
+    expect(parsed.cleanContent).toContain("MALFORMED OP");
+  });
+
+  it("strips code fences around a document", () => {
+    const out = "```json\n{\"message\":\"fenced\",\"ops\":[{\"op\":\"search\",\"query\":\"q\"}]}\n```";
+    const parsed = parseAgentOutput(out);
+    expect(parsed.searchOps.map((s) => s.query)).toEqual(["q"]);
+    expect(parsed.cleanContent).toContain("fenced");
+  });
+});
+
+describe("parseAgentOutput — inline research ops (fallback format)", () => {
+  it("parses a standalone research op", () => {
+    const out = `Let me check that. {"op":"research","query":"best practices for zod"} then write.`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.researchOps.map((r) => r.query)).toEqual(["best practices for zod"]);
+    expect(parsed.cleanContent).toContain("[RESEARCHING: best practices for zod]");
+  });
+
+  it("parses research with an optional detail field", () => {
+    const out = `{"op":"research","query":"vite config","detail":"production build tweaks"}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.researchOps).toEqual([{ query: "vite config", detail: "production build tweaks" }]);
+  });
+});

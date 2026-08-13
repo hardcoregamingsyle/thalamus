@@ -17,6 +17,7 @@ export interface FileOp {
 export interface SearchOp { query: string; }
 export interface ScrapeOp { url: string; }
 export interface CmdOp { command: string; }
+export interface ResearchOp { query: string; detail?: string; }
 export interface McpOp { server: string; tool: string; args?: Record<string, unknown>; }
 
 export interface InfoField {
@@ -65,6 +66,10 @@ export interface ParsedOutput {
   // "here is what you tried to send; it did not parse; fix it and retry".
   // Purely additive so every existing caller keeps working unchanged.
   malformedOps: string[];
+  // The Coder-invoked research team: {"op":"research","query":"...","detail":"..."}
+  // asks the Researcher→ReportMaker pair to gather and synthesize, and the
+  // report comes back into the agent's next turn (see the pipeline).
+  researchOps: ResearchOp[];
   testerResult?: "pass" | "fail";
   testerFailReason?: string;
   hackerResult?: "pass" | "fail";
@@ -98,11 +103,17 @@ export interface ParsedOutput {
 // balanced {}. Multi-line content (file bodies) uses \n escapes inside the JSON
 // string.
 //
+// PREFERRED FORMAT — one pure JSON DOCUMENT per message, no HTML-style tags:
+//   {"message":"visible prose","ops":[{"op":"create-file","path":"x","content":"<p>hi</p>"}]}
+// Every agent reply is a single JSON object with an optional "message" (or
+// "review") field and an "ops" array. The document path is tried first; the
+// inline-op scanner below remains the fallback for models that ignore the
+// format, and for output truncated at the token limit.
+//
 // Legacy <<TAG>> markers (<<RUN-CMD="...">>, <<CREATEFILE="...">>, etc.) are
-// still parsed — and the <<CREATEFILE="path">>…<<END.CREATEFILE>> raw-content
-// block is now the RECOMMENDED file-write path: a JSON "content" field gets
-// rejected whenever the file body contains double quotes, which large HTML
-// documents always do.
+// still parsed as a silent backward-compatibility fallback ONLY — agents are
+// no longer taught them, and file bodies now live in JSON string "content"
+// fields.
 
 /** One op that clearly INTENDED to be JSON (opener matched the `{"op":` shape)
  *  but failed to parse. `unterminated` true = the brace/string walk ran off the
@@ -272,12 +283,43 @@ function recoverDsmlCommands(
 const O = "(?:<<|‹‹|«|‹)";
 const C = "(?:>>|››|»|›)";
 
+/** True when the stripped text is one pure-JSON agent document of the shape
+ *  {"message"|"review": string, "ops": [op, ...]}. Document mode is the
+ *  canonical output format — every agent reply is a single JSON object, so
+ *  nothing HTML-tag-like ever appears in the transcript. Returns the parsed
+ *  doc fields when it matches, null otherwise (the inline-op scanner takes
+ *  over as the fallback). */
+export function tryParseAgentDoc(
+  content: string,
+): { ops: Array<Record<string, unknown>>; message: string } | null {
+  const trimmed = content
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/, "")
+    .trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
+  let doc: Record<string, unknown>;
+  try {
+    doc = JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(doc.ops) || doc.ops.length === 0) return null;
+  if (!doc.ops.every((o) => o && typeof (o as Record<string, unknown>).op === "string")) return null;
+  const message =
+    typeof doc.message === "string" ? doc.message
+    : typeof doc.review === "string" ? doc.review
+    : "";
+  return { ops: doc.ops as Array<Record<string, unknown>>, message };
+}
+
 export function parseAgentOutput(content: string): ParsedOutput {
   const fileOps: FileOp[] = [];
   const searchOps: SearchOp[] = [];
   const scrapeOps: ScrapeOp[] = [];
   const cmdOps: CmdOp[] = [];
   const mcpOps: McpOp[] = [];
+  const researchOps: ResearchOp[] = [];
   const malformedOps: string[] = [];
 
   // Recover commands from leaked DSML tool-call markup FIRST (it needs the
@@ -290,10 +332,25 @@ export function parseAgentOutput(content: string): ParsedOutput {
   const stripped = stripSpecialTokenWrappers(recovered);
   let cleanContent = stripped;
 
-  // ── Primary: JSON ops format ──────────────────────────────────────────────
-  // Agents now emit single-line {"op":"..."} JSON objects. Legacy <<TAG>> markers
-  // are parsed as fallback below. JSON ops are the source of truth — if an op
-  // was already consumed it is not re-parsed from legacy markers.
+  // ── Primary: one pure-JSON document per message ────────────────────────────
+  // The canonical agent format. When the whole reply parses as a document they
+  // are on, its ops array IS the op source and "message" is the visible prose;
+  // the inline scanner below is only reached as the fallback (models that
+  // ignore the format, or replies cut off at the token limit).
+  const doc = tryParseAgentDoc(stripped);
+  const docMode = doc !== null;
+  const docOps = doc?.ops ?? [];
+  if (docMode) cleanContent = doc?.message ?? "";
+
+  // Scan the wrapper-stripped text so ops previously trapped inside special
+  // tokens are now visible, and so malformed excerpts we surface to the user
+  // do not still carry the wrapper characters. In document mode the ops come
+  // pre-parsed from the doc — re-scanning the raw text would find the same ops
+  // nested inside the doc and double-apply them.
+  const { ops: jsonOps, malformed: malformedRaws } = docMode
+    ? { ops: [], malformed: [] }
+    : findJsonOpsInternal(stripped);
+  const opsToApply = docMode ? docOps : jsonOps;
 
   // Track which filepaths we already processed from JSON ops (avoids duplication
   // with legacy fallback). Variables for legacy fallback state.
@@ -308,10 +365,6 @@ export function parseAgentOutput(content: string): ParsedOutput {
   let requestApiKey: { name: string; description: string; howToGet: string } | undefined;
   const processedPaths = new Set<string>();
 
-  // Scan the wrapper-stripped text so ops previously trapped inside special
-  // tokens are now visible, and so malformed excerpts we surface to the user
-  // do not still carry the wrapper characters.
-  const { ops: jsonOps, malformed: malformedRaws } = findJsonOpsInternal(stripped);
   // Substitute malformed op excerpts BEFORE the successful-op loop rewrites
   // adjacent text — the excerpt is a literal slice of the current cleanContent,
   // so replace() finds it now; once other ops rewrite chunks around it the
@@ -339,8 +392,15 @@ export function parseAgentOutput(content: string): ParsedOutput {
     }
     cleanContent = cleanContent.slice(0, idx) + MALFORMED_MARKER + cleanContent.slice(stop);
   }
-  for (const op of jsonOps) {
-    const raw = JSON.stringify(op);
+  for (const op of opsToApply) {
+    // Inline mode the op is a literal slice of cleanContent, so the marker
+    // replaces the text in place; in document mode there is no raw text — the
+    // marker appends under the document's "message".
+    const raw = docMode ? "" : JSON.stringify(op);
+    const mark = (placeholder: string) => {
+      if (docMode) cleanContent = cleanContent.length > 0 ? `${cleanContent}\n\n${placeholder}` : placeholder;
+      else cleanContent = cleanContent.replace(raw, placeholder);
+    };
     // Op-name normalisation: feedback (and models' training data) call the
     // ops by MCP-style names — write_file, rewrite_file, edit_file,
     // delete_file, run_command. Fold underscores to hyphens and map the
@@ -356,21 +416,21 @@ export function parseAgentOutput(content: string): ParsedOutput {
         if (typeof op.path === "string" && typeof op.content === "string") {
           fileOps.push({ type: "create", filepath: op.path, content: op.content });
           processedPaths.add(`create:${op.path}`);
-          cleanContent = cleanContent.replace(raw, `[FILE CREATED: ${op.path}]`);
+          mark(`[FILE CREATED: ${op.path}]`);
         }
         break;
       case "edit-file":
         if (typeof op.path === "string" && typeof op.content === "string") {
           fileOps.push({ type: "edit", filepath: op.path, content: op.content });
           processedPaths.add(`edit:${op.path}`);
-          cleanContent = cleanContent.replace(raw, `[FILE EDITED: ${op.path}]`);
+          mark(`[FILE EDITED: ${op.path}]`);
         }
         break;
       case "delete-file":
         if (typeof op.path === "string") {
           fileOps.push({ type: "delete", filepath: op.path });
           processedPaths.add(`delete:${op.path}`);
-          cleanContent = cleanContent.replace(raw, `[FILE DELETED: ${op.path}]`);
+          mark(`[FILE DELETED: ${op.path}]`);
         }
         break;
       case "cmd":
@@ -380,84 +440,90 @@ export function parseAgentOutput(content: string): ParsedOutput {
           // pipelines mid-word ("… | he") and left the reader unable to tell
           // what actually ran — the opposite of what a transcript is for. Long
           // commands are rare and a wrapped line beats a lie.
-          cleanContent = cleanContent.replace(raw, `[CMD: ${op.command}]`);
+          mark(`[CMD: ${op.command}]`);
         }
         break;
       case "search":
         if (typeof op.query === "string") {
           searchOps.push({ query: op.query });
-          cleanContent = cleanContent.replace(raw, `[SEARCHING: ${op.query.slice(0, 80)}]`);
+          mark(`[SEARCHING: ${op.query.slice(0, 80)}]`);
         }
         break;
       case "scrape":
         if (typeof op.url === "string") {
           scrapeOps.push({ url: op.url });
-          cleanContent = cleanContent.replace(raw, `[SCRAPING: ${op.url.slice(0, 80)}]`);
+          mark(`[SCRAPING: ${op.url.slice(0, 80)}]`);
+        }
+        break;
+      case "research":
+        if (typeof op.query === "string") {
+          researchOps.push({ query: op.query, detail: typeof op.detail === "string" ? op.detail : undefined });
+          mark(`[RESEARCHING: ${op.query.slice(0, 80)}]`);
         }
         break;
       case "mcp":
         if (typeof op.server === "string" && typeof op.tool === "string") {
           mcpOps.push({ server: op.server, tool: op.tool, args: op.args as Record<string, unknown> | undefined });
-          cleanContent = cleanContent.replace(raw, `[MCP: ${op.server}/${op.tool}]`);
+          mark(`[MCP: ${op.server}/${op.tool}]`);
         } else {
-          cleanContent = cleanContent.replace(raw, `[MCP: invalid]`);
+          mark(`[MCP: invalid]`);
         }
         break;
       case "test-success":
         testerResult ??= "pass";
-        cleanContent = cleanContent.replace(raw, "[TEST: PASSED ✓]");
+        mark("[TEST: PASSED ✓]");
         break;
       case "test-failed":
         testerResult = "fail";
         testerFailReason = String(op.reason ?? "unknown");
-        cleanContent = cleanContent.replace(raw, `[TEST: FAILED - ${testerFailReason}]`);
+        mark(`[TEST: FAILED - ${testerFailReason}]`);
         break;
       case "security-pass":
         hackerResult ??= "pass";
         criticResult ??= "pass";
-        cleanContent = cleanContent.replace(raw, "[SECURITY: PASSED ✓]");
+        mark("[SECURITY: PASSED ✓]");
         break;
       case "security-fail":
         hackerResult = "fail";
         criticResult = "fail";
-        cleanContent = cleanContent.replace(raw, "[SECURITY: FAILED]");
+        mark("[SECURITY: FAILED]");
         break;
       case "deploy-commands":
         if (Array.isArray(op.commands) && op.commands.length > 0) {
           deployCommands = op.commands.map(String);
-          cleanContent = cleanContent.replace(raw, `[DEPLOY COMMANDS SET: ${deployCommands.length} command(s)]`);
+          mark(`[DEPLOY COMMANDS SET: ${deployCommands.length} command(s)]`);
         }
         break;
       case "request-api-key":
         if (typeof op.name === "string" && typeof op.description === "string" && typeof op.howToGet === "string") {
           requestApiKey = { name: op.name, description: op.description, howToGet: op.howToGet };
-          cleanContent = cleanContent.replace(raw, `[API KEY REQUIRED: ${op.name}]`);
+          mark(`[API KEY REQUIRED: ${op.name}]`);
         }
         break;
       case "get-info":
         if (op.fields && Array.isArray(op.fields)) {
           infoRequest = op as unknown as InfoRequest;
-          cleanContent = cleanContent.replace(raw, `[INFO REQUESTED: ${String(op.title ?? "?")}]`);
+          mark(`[INFO REQUESTED: ${String(op.title ?? "?")}]`);
         }
         break;
       case "instructions":
         if (op.steps && Array.isArray(op.steps)) {
           instructions = op as unknown as Instructions;
-          cleanContent = cleanContent.replace(raw, `[INSTRUCTIONS PROVIDED: ${String(op.title ?? "?")}]`);
+          mark(`[INSTRUCTIONS PROVIDED: ${String(op.title ?? "?")}]`);
         }
         break;
       case "change-mode":
         if (typeof op.mode === "string") {
           const validModes = ["Code", "Chat", "Minor"];
           changeMode = validModes.includes(op.mode) ? (op.mode as "Code" | "Chat" | "Minor") : undefined;
-          cleanContent = cleanContent.replace(raw, `[CHANGE MODE: ${op.mode}]`);
+          mark(`[CHANGE MODE: ${op.mode}]`);
         }
         break;
       case "generate-image":
         if (typeof op.prompt === "string") {
           const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(op.prompt.slice(0, 500))}?width=${(op.width as number) ?? 1024}&height=${(op.height as number) ?? 1024}&model=${(op.model as string) ?? "flux"}&seed=${Math.floor(Math.random() * 100000)}`;
           const imgHtml = `<div class="pollinations-image"><img src="${imgUrl}" alt="${op.prompt.replace(/"/g, "&quot;").slice(0, 200)}" style="max-width:100%;border-radius:8px;margin:8px 0;" loading="lazy" /><p style="font-size:11px;opacity:0.6;margin:2px 0;">Generated by Pollinations AI · <a href="${imgUrl}" target="_blank" rel="noopener">Open full size</a></p></div>`;
-          cleanContent = cleanContent.replace(raw, imgHtml);
+          mark(imgHtml);
         }
         break;
     }
@@ -593,7 +659,7 @@ export function parseAgentOutput(content: string): ParsedOutput {
   // Final sweep: neutralise orphaned <<...>> markers
   cleanContent = cleanContent.replace(/<<([^<>]{0,200}?)>>/g, "‹‹$1››");
 
-  return { fileOps, searchOps, scrapeOps, cmdOps, mcpOps, cleanContent, malformedOps, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode, requestApiKey };
+  return { fileOps, searchOps, scrapeOps, cmdOps, mcpOps, researchOps, cleanContent, malformedOps, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode, requestApiKey };
 }
 
 export interface PlannerTask {

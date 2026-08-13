@@ -200,6 +200,25 @@ export const cloneRepository = action({
 });
 
 // Push changes back to GitHub
+// Resolve the repo's ACTUAL default branch — syncs land on the default
+// branch, never on the obscure working branch. Repos created by
+// createObscureRepo have the obscure branch as their default (so behavior
+// there is unchanged); user-created repos default to main, which is what a
+// manual sync should update.
+async function resolveDefaultBranch(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  fallback: string,
+): Promise<string> {
+  try {
+    const { data } = await octokit.repos.get({ owner, repo });
+    return data.default_branch || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export const pushToGithub = action({
   args: {
     token: v.string(),
@@ -228,10 +247,12 @@ export const pushToGithub = action({
         auth: await resolveGithubToken(ctx, userId, args.githubToken),
       });
 
+      const defaultBranch = await resolveDefaultBranch(octokit, config.owner, config.repo, config.branch);
+
       const { data: refData } = await octokit.git.getRef({
         owner: config.owner,
         repo: config.repo,
-        ref: `heads/${config.branch}`,
+        ref: `heads/${defaultBranch}`,
       });
 
       const latestCommitSha = refData.object.sha;
@@ -292,7 +313,7 @@ const baseTreeSha = commitData.tree.sha;
       await octokit.git.updateRef({
         owner: config.owner,
         repo: config.repo,
-        ref: `heads/${config.branch}`,
+        ref: `heads/${defaultBranch}`,
         sha: newCommit.sha,
       });
 
@@ -346,10 +367,12 @@ export const autoPushToGithub = internalAction({
         auth: config.githubToken || process.env.GITHUB_TOKEN,
       });
 
+      const defaultBranch = await resolveDefaultBranch(octokit, config.owner, config.repo, config.branch);
+
       const { data: refData } = await octokit.git.getRef({
         owner: config.owner,
         repo: config.repo,
-        ref: `heads/${config.branch}`,
+        ref: `heads/${defaultBranch}`,
       });
 
       const latestCommitSha = refData.object.sha;
@@ -418,7 +441,7 @@ export const autoPushToGithub = internalAction({
       await octokit.git.updateRef({
         owner: config.owner,
         repo: config.repo,
-        ref: `heads/${config.branch}`,
+        ref: `heads/${defaultBranch}`,
         sha: newCommit.sha,
       });
 
@@ -447,65 +470,93 @@ export const pullFromGithub = action({
   handler: async (ctx, args): Promise<{ success: boolean; filesPulled: number }> => {
     const userId: Id<"users"> | null = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
     if (!userId) throw new Error("Not authenticated");
-
-    try {
-      const config: GithubConfig | null = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
-        projectId: args.projectId,
-        branchId: args.branchId,
-      });
-
-      if (!config) throw new Error("No GitHub repository connected");
-
-      const octokit = new Octokit({
-        auth: await resolveGithubToken(ctx, userId, args.githubToken),
-      });
-
-      const { data: tree } = await octokit.git.getTree({
-        owner: config.owner,
-        repo: config.repo,
-        tree_sha: config.branch,
-        recursive: "true",
-      });
-
-      let filesPulled = 0;
-
-      for (const item of tree.tree) {
-        if (item.type === "blob" && item.path && item.sha) {
-          try {
-            const { data: blob } = await octokit.git.getBlob({
-              owner: config.owner,
-              repo: config.repo,
-              file_sha: item.sha,
-            });
-
-            const content = Buffer.from(blob.content, "base64").toString("utf-8");
-
-            await ctx.runMutation(internal.codeBranches.upsertFile, {
-              branchId: args.branchId,
-              filepath: item.path,
-              content,
-              agent: "GitHub Pull",
-            });
-
-            filesPulled++;
-          } catch (err) {
-            console.error(`Failed to pull ${item.path}:`, err);
-          }
-        }
-      }
-
-      await ctx.runMutation(internal.githubSyncHelpers.updateLastSync, {
-        projectId: args.projectId,
-        branchId: args.branchId,
-      });
-
-      return {
-        success: true,
-        filesPulled,
-      };
-    } catch (err) {
-      console.error("Pull error:", err);
-      throw new Error(err instanceof Error ? err.message : "Failed to pull from GitHub");
-    }
+    const authToken = await resolveGithubToken(ctx, userId, args.githubToken);
+    return doPull(ctx, args.projectId, args.branchId, authToken);
   },
 });
+
+// Internal entry for the pipeline's pre-run sync: no session token, so the
+// identity is the project owner (the account the repo was created under).
+export const pullForPipeline = internalAction({
+  args: {
+    projectId: v.string(),
+    branchId: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean; filesPulled: number }> => {
+    const project: { userId: Id<"users"> } | null = await ctx.runQuery(internal.codeProjects.getProjectInternal, {
+      projectId: args.projectId,
+    });
+    if (!project) throw new Error("Project not found");
+    const authToken = await resolveGithubToken(ctx, project.userId);
+    return doPull(ctx, args.projectId, args.branchId, authToken);
+  },
+});
+
+async function doPull(
+  ctx: ActionCtx,
+  projectId: string,
+  branchId: string,
+  authToken: string | undefined,
+): Promise<{ success: boolean; filesPulled: number }> {
+  try {
+    const config: GithubConfig | null = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+      projectId,
+      branchId,
+    });
+
+    if (!config) throw new Error("No GitHub repository connected");
+
+    const octokit = new Octokit({
+      auth: authToken,
+    });
+
+    const defaultBranch = await resolveDefaultBranch(octokit, config.owner, config.repo, config.branch);
+
+    const { data: tree } = await octokit.git.getTree({
+      owner: config.owner,
+      repo: config.repo,
+      tree_sha: defaultBranch,
+      recursive: "true",
+    });
+
+    let filesPulled = 0;
+
+    for (const item of tree.tree) {
+      if (item.type === "blob" && item.path && item.sha) {
+        try {
+          const { data: blob } = await octokit.git.getBlob({
+            owner: config.owner,
+            repo: config.repo,
+            file_sha: item.sha,
+          });
+
+          const content = Buffer.from(blob.content, "base64").toString("utf-8");
+
+          await ctx.runMutation(internal.codeBranches.upsertFile, {
+            branchId,
+            filepath: item.path,
+            content,
+            agent: "GitHub Pull",
+          });
+
+          filesPulled++;
+        } catch (err) {
+          console.error(`Failed to pull ${item.path}:`, err);
+        }
+      }
+    }
+
+    await ctx.runMutation(internal.githubSyncHelpers.updateLastSync, {
+      projectId,
+      branchId,
+    });
+
+    return {
+      success: true,
+      filesPulled,
+    };
+  } catch (err) {
+    console.error("Pull error:", err);
+    throw new Error(err instanceof Error ? err.message : "Failed to pull from GitHub");
+  }
+}

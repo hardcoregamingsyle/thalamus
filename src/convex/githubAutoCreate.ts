@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Octokit } from "@octokit/rest";
 import type { Id } from "./_generated/dataModel";
-import { generateObscureRepoName, generateObscureBranchName } from "./lib/obscureRepoGenerator";
+import { generateReadableRepoName, generateObscureBranchName } from "./lib/obscureRepoGenerator";
 
 // Shape of the value ensureRepoForBranch's caller (createObscureRepo) returns.
 // Duplicated locally so the self-referential internal.githubAutoCreate.*
@@ -23,8 +23,11 @@ type GithubConfigRow = {
   branch: string;
 } | null;
 
-// Creates a public repo with a cryptographically random 256-char name.
-// Public = free tier. The random name is functionally undiscoverable.
+// Creates a public repo under the CALLER'S OWN GitHub account, named with a
+// readable three-word + six-digit name (e.g. "ancient-autumn-azure-482913") —
+// the user sees this repo on their profile, so the name should read like a
+// project, not like a token. Public = free tier; the name is collision-safe
+// in practice.
 //
 // internalAction, not action: every caller reaches this through `internal.*`,
 // and a public function referenced that way does not resolve at runtime. This
@@ -43,7 +46,7 @@ export const createObscureRepo = internalAction({
       const { data: ghUser } = await octokit.users.getAuthenticated();
       const username = ghUser.login;
 
-      const repoName = generateObscureRepoName();
+      const repoName = generateReadableRepoName();
       const branchName = generateObscureBranchName();
 
       const { data: repo } = await octokit.repos.createForAuthenticatedUser({
@@ -156,14 +159,14 @@ export const ensureRepoForBranch = internalAction({
       return { owner: existing.owner, repo: existing.repo, branch: existing.branch };
     }
 
-    // No connected GitHub account? Fall back to the platform's own token so
-    // the repo (and the GitHub Actions VM it doubles as) still gets created —
-    // just owned by the platform account instead of the user's.
+    // No connected GitHub account? The repo must live on the USER's personal
+    // account (that is the account the sync operates against), so there is no
+    // platform-token fallback here: without a user token the repo is not
+    // created and the UI is told to connect GitHub and retry.
     const githubAccount: { accessToken?: string } | null = await ctx.runQuery(internal.githubHelpers.getGithubToken, { userId: args.userId });
-    const githubToken = githubAccount?.accessToken || process.env.GITHUB_TOKEN;
+    const githubToken = githubAccount?.accessToken;
     if (!githubToken) {
-      const msg = "No GitHub account connected, and no platform GITHUB_TOKEN configured — "
-        + "connect GitHub on this account, or ask an admin to set GITHUB_TOKEN.";
+      const msg = "No GitHub account connected — connect GitHub on this account to create the project repository, then retry.";
       await ctx.runMutation(internal.codeBranches.setRepoSetupError, { branchId: args.branchId, error: msg });
       return null;
     }
