@@ -86,7 +86,7 @@ Managed in the Convex dashboard, not in `.env` files. This table is the single s
 |---|---|
 | `ZEN_API_KEY` | OpenCode Zen client (`lib/zenClient.ts`). Optional — the free tier works without a key. |
 | `DEADLYSIGNALS_API_KEY` | Required for the DeadlySignal leg of the pipeline chain (`lib/deadlySignalsClient.ts`). |
-| `MODELSCOPE_API_KEY` | Required for the ModelScope leg (`lib/modelscopeClient.ts`). Token format `ms-…` from modelscope.ai/my/myaccesstoken — the `.cn` host rejects them; the client hits the `.ai` host. |
+| `MODELSCOPE_API_KEY`, `MODELSCOPE_API_KEY_2` … `_10` | ModelScope leg (`lib/modelscopeClient.ts`). Token format `ms-…` from modelscope.ai/my/myaccesstoken — the `.cn` host rejects them; the client hits the `.ai` host. The numbered pool is a fallback: when a key is rate-limited, quota-exhausted or revoked the next key is tried in the same call. Read dynamically, so a literal grep for `MODELSCOPE_API_KEY_5` misses. |
 | `OLLAMA_API_KEY`, `OLLAMA_API_KEY_2` … `_10` | Ollama Cloud pool. Read dynamically by `lib/ollamaClient.ts`, so a literal grep for `OLLAMA_API_KEY_5` misses. |
 | `MODAL_ENDPOINT_URL` / `MODAL_MODEL` / `MODAL_API_KEY` | Single Modal endpoint fallback when the `modalEndpoints` table is empty (`lib/modalClient.ts`). |
 | `VLY_INTEGRATION_KEY` | VLY completion provider (`lib/vlyIntegrations.ts`). Last-resort leg for `/stream-chat` and several `study.ts` paths. Checked lazily at call time — a module-scope check would fail the whole Convex deploy, since push-time analysis loads every module without env vars. |

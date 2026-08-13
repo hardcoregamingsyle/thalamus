@@ -3,9 +3,10 @@
 // api-inference.modelscope.cn host rejects tokens minted on the .ai site —
 // tokens are site-scoped). OpenAI-compatible at /v1. Auth is the user's
 // "ms-…" access token from modelscope.ai/my/myaccesstoken, set in the Convex
-// dashboard as MODELSCOPE_API_KEY. Free quota: ~2000 requests/day total,
-// ~200 per model, resetting midnight UTC+8 — see /docs/model-service/API-
-// Inference/limits.
+// dashboard as MODELSCOPE_API_KEY, with MODELSCOPE_API_KEY_2 … _10 as a
+// fallback pool tried in order when the primary is rate-limited or revoked.
+// Free quota: ~2000 requests/day total, ~200 per model, resetting midnight
+// UTC+8 — see /docs/model-service/API-Inference/limits.
 //
 // Model caveat: only the models in MODELSCOPE_MODEL_CATALOG below were
 // verified live (2026-08-07) to return tokens from this key. Qwen3.8-Max
@@ -187,11 +188,30 @@ export interface ModelScopeChatResult {
   model: string;
 }
 
+// ── Key resolution ─────────────────────────────────────────────────────────────
+// MODELSCOPE_API_KEY first, then MODELSCOPE_API_KEY_2 … MODELSCOPE_API_KEY_10 —
+// the same numbered-pool pattern as the Ollama leg (ollamaClient.ts), so a
+// quota-exhausted or revoked primary key falls through to the next one in the
+// same call instead of failing the ModelScope seat outright. All keys are set
+// in the Convex dashboard.
+function resolveApiKeys(): string[] {
+  const keys: string[] = [];
+  for (let i = 1; ; i++) {
+    const name = i === 1 ? "MODELSCOPE_API_KEY" : `MODELSCOPE_API_KEY_${i}`;
+    const key = (process.env[name] ?? "").trim();
+    if (key) keys.push(key);
+    if (i > 10) break;
+  }
+  return keys;
+}
+
 /**
  * Call ModelScope chat completions (non-streaming).
  * Uses the OpenAI-compatible API at POST /chat/completions on the
  * international api-inference.modelscope.ai host.
- * Key comes from the MODELSCOPE_API_KEY env var (Convex dashboard).
+ * Key comes from the MODELSCOPE_API_KEY env var (Convex dashboard), with
+ * MODELSCOPE_API_KEY_2 … _10 tried in order when a key is rate-limited,
+ * quota-exhausted or revoked.
  */
 export async function callModelScope(
   prompt: string,
@@ -201,9 +221,9 @@ export async function callModelScope(
   _runQuery?: ActionCtx["runQuery"],
   deadlineMs?: number,
 ): Promise<ModelScopeChatResult> {
-  const apiKey = (process.env.MODELSCOPE_API_KEY ?? "").trim();
-  if (!apiKey) {
-    throw new Error("MODELSCOPE_NOT_CONFIGURED: set MODELSCOPE_API_KEY in the Convex dashboard");
+  const apiKeys = resolveApiKeys();
+  if (apiKeys.length === 0) {
+    throw new Error("MODELSCOPE_NOT_CONFIGURED: set MODELSCOPE_API_KEY (and MODELSCOPE_API_KEY_2 … for fallback) in the Convex dashboard");
   }
 
   const messages = [
@@ -218,54 +238,73 @@ export async function callModelScope(
     temperature: 0.7,
   });
 
-  const remaining = deadlineMs === undefined ? MODELSCOPE_ATTEMPT_TIMEOUT_MS : deadlineMs - Date.now();
-  if (remaining <= 5_000) {
-    throw new Error("ModelScope: no time left in chain budget");
+  let lastError: Error | null = null;
+
+  for (let k = 0; k < apiKeys.length; k++) {
+    const apiKey = apiKeys[k];
+
+    // Respect the caller's shared chain deadline — never run an attempt past
+    // the remaining budget.
+    const remaining = deadlineMs === undefined ? MODELSCOPE_ATTEMPT_TIMEOUT_MS : deadlineMs - Date.now();
+    if (remaining <= 5_000) break;
+
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), Math.min(MODELSCOPE_ATTEMPT_TIMEOUT_MS, remaining));
+
+    try {
+      const res = await fetch(`${BASE_URL}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body,
+        signal: ctrl.signal,
+      });
+
+      const raw = await res.text();
+      if (!res.ok) {
+        const msg = tryParseJson(raw) as Record<string, unknown> | null;
+        const errObj = msg?.error as Record<string, unknown> | undefined;
+        const err = new Error(`ModelScope ${res.status} (key ${k + 1}/${apiKeys.length}): ${typeof errObj?.message === "string" ? errObj.message : raw.slice(0, 300)}`);
+        lastError = err;
+        clearTimeout(timeout);
+        // Rate-limited, quota-exhausted (typically a 403/429) or a revoked key
+        // (401) — try the next key. Any other 4xx is fatal for this call.
+        if (res.status === 401 || res.status === 403 || res.status === 429 || res.status >= 500) continue;
+        throw err;
+      }
+
+      const data = JSON.parse(raw);
+      const msg = data.choices?.[0]?.message;
+      // Reasoning models (Step-3.5-Flash, GLM-5.2…) can stream their real answer
+      // on the "reasoning_content" channel when the content field comes back
+      // empty — observed live on this host. Read that too, or a model that only
+      // "thinks out loud" comes back as an empty, silently successful response.
+      const text = msg?.content ?? "";
+      const resolved = text && text.trim() ? text : (msg?.reasoning_content ?? "");
+      return {
+        text: resolved,
+        inputTokens: data.usage?.prompt_tokens ?? 0,
+        outputTokens: data.usage?.completion_tokens ?? 0,
+        model: data.model ?? model,
+      };
+    } catch (err) {
+      clearTimeout(timeout);
+      if (err instanceof Error && err.name === "AbortError") {
+        lastError = new Error(`ModelScope request timed out (key ${k + 1}/${apiKeys.length})`);
+        continue; // timeout — try next key
+      }
+      // A non-ok response error was already captured above — it is the one
+      // 4xx that is fatal, so re-throw it directly.
+      if (err === lastError) throw err;
+      lastError = err instanceof Error ? err : new Error(String(err));
+      continue; // network failure — try next key
+    }
   }
 
-  const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), Math.min(MODELSCOPE_ATTEMPT_TIMEOUT_MS, remaining));
-
-  try {
-    const res = await fetch(`${BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body,
-      signal: ctrl.signal,
-    });
-
-    const raw = await res.text();
-    if (!res.ok) {
-      const msg = tryParseJson(raw) as Record<string, unknown> | null;
-      const errObj = msg?.error as Record<string, unknown> | undefined;
-      throw new Error(`ModelScope ${res.status}: ${typeof errObj?.message === "string" ? errObj.message : raw.slice(0, 300)}`);
-    }
-
-    const data = JSON.parse(raw);
-    const msg = data.choices?.[0]?.message;
-    // Reasoning models (Step-3.5-Flash, GLM-5.2…) can stream their real answer
-    // on the "reasoning_content" channel when the content field comes back
-    // empty — observed live on this host. Read that too, or a model that only
-    // "thinks out loud" comes back as an empty, silently successful response.
-    const text = msg?.content ?? "";
-    const resolved = text && text.trim() ? text : (msg?.reasoning_content ?? "");
-    return {
-      text: resolved,
-      inputTokens: data.usage?.prompt_tokens ?? 0,
-      outputTokens: data.usage?.completion_tokens ?? 0,
-      model: data.model ?? model,
-    };
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      throw new Error(`ModelScope request timed out`);
-    }
-    throw err;
-  } finally {
-    clearTimeout(timeout);
-  }
+  // All keys exhausted (or the chain deadline left no time to try any)
+  throw lastError ?? new Error("ModelScope request failed — keys exhausted or time budget spent");
 }
 
 function tryParseJson(raw: string): Record<string, unknown> | null {
