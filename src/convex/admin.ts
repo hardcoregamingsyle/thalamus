@@ -393,7 +393,7 @@ export const trackDailyActivity = mutation({
   },
 });
 
-/** Admin: get DAU counts for the last N days */
+/** Admin: get DAU counts for the last N days, with the users behind each day. */
 export const getDauStats = query({
   args: { adminToken: v.string(), days: v.optional(v.number()) },
   handler: async (ctx, args) => {
@@ -408,14 +408,36 @@ export const getDauStats = query({
       dateKeys.push(d.toISOString().slice(0, 10));
     }
 
-    // Fetch records for each day
-    const results: { date: string; dau: number }[] = [];
+    // Fetch records for each day, resolving each active user to their email —
+    // a count alone cannot tell the admin who actually used the platform.
+    const results: Array<{
+      date: string;
+      dau: number;
+      users: Array<{
+        userId: string;
+        email: string;
+        firstSeenAt: number;
+        lastSeenAt: number;
+        sessionCount: number;
+      }>;
+    }> = [];
     for (const dateKey of dateKeys) {
       const records = await ctx.db
         .query("dailyActiveUsers")
         .withIndex("by_date", q => q.eq("dateKey", dateKey))
         .take(10000);
-      results.push({ date: dateKey, dau: records.length });
+      const users = [];
+      for (const r of records) {
+        const user = await ctx.db.get(r.userId);
+        users.push({
+          userId: r.userId,
+          email: user?.email ?? "(deleted user)",
+          firstSeenAt: r.firstSeenAt,
+          lastSeenAt: r.lastSeenAt,
+          sessionCount: r.sessionCount,
+        });
+      }
+      results.push({ date: dateKey, dau: records.length, users });
     }
 
     return results.reverse(); // oldest first

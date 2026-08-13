@@ -1,18 +1,38 @@
-// DAU tab — daily active-user counts and trend chart.
+// DAU tab — daily active-user counts, trend chart, and the emails of every
+// user active on a given day (click a bar to inspect that day).
 // Drives api.admin.getDauStats and api.admin.getTodayDau.
 
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Activity, TrendingUp, Users, Loader2 } from "lucide-react";
+import { Activity, TrendingUp, Users, Mail, Loader2 } from "lucide-react";
+
+type DauDay = {
+  date: string;
+  dau: number;
+  users: Array<{
+    userId: string;
+    email: string;
+    firstSeenAt: number;
+    lastSeenAt: number;
+    sessionCount: number;
+  }>;
+};
 
 export function DauTab({ adminToken }: { adminToken: string }) {
   const [days, setDays] = useState(30);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const dauStats = useQuery(api.admin.getDauStats, { adminToken, days });
   const todayDau = useQuery(api.admin.getTodayDau, { adminToken });
 
-  const maxDau = dauStats ? Math.max(...dauStats.map((d: { date: string; dau: number }) => d.dau), 1) : 1;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  // Default to today; fall back to the most recent day with data when the
+  // UTC day boundary leaves today's row absent from the queried window.
+  const detailDay = dauStats?.find((d: DauDay) => d.date === (selectedDate ?? todayKey))
+    ?? (dauStats && dauStats.length > 0 ? dauStats[dauStats.length - 1] : undefined);
+
+  const maxDau = dauStats ? Math.max(...dauStats.map((d: DauDay) => d.dau), 1) : 1;
 
   return (
     <div className="space-y-6">
@@ -68,7 +88,7 @@ export function DauTab({ adminToken }: { adminToken: string }) {
       ) : (
         <div className="bg-card border border-border rounded-xl p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold text-foreground">DAU Trend</h3>
+            <h3 className="text-sm font-bold text-foreground">DAU Trend — click a bar to see who was active that day</h3>
             <div className="flex items-center gap-4 text-xs">
               <div className="flex items-center gap-1.5">
                 <TrendingUp className="h-3 w-3 text-emerald-400" />
@@ -79,7 +99,7 @@ export function DauTab({ adminToken }: { adminToken: string }) {
                 <Activity className="h-3 w-3 text-primary" />
                 <span className="text-muted-foreground">Avg:</span>
                 <span className="font-bold text-primary">
-                  {dauStats.length > 0 ? Math.round(dauStats.reduce((sum: number, d: { date: string; dau: number }) => sum + d.dau, 0) / dauStats.length).toLocaleString() : 0}
+                  {dauStats.length > 0 ? Math.round(dauStats.reduce((sum: number, d: DauDay) => sum + d.dau, 0) / dauStats.length).toLocaleString() : 0}
                 </span>
               </div>
             </div>
@@ -87,57 +107,119 @@ export function DauTab({ adminToken }: { adminToken: string }) {
 
           {/* Bar chart */}
           <div className="space-y-1">
-            {dauStats.map((stat: { date: string; dau: number }, idx: number) => {
+            {dauStats.map((stat: DauDay, idx: number) => {
               const pct = maxDau > 0 ? (stat.dau / maxDau) * 100 : 0;
-              const isToday = stat.date === new Date().toISOString().slice(0, 10);
+              const isToday = stat.date === todayKey;
+              const selected = detailDay?.date === stat.date;
               const dateObj = new Date(stat.date + "T00:00:00Z");
               const dateLabel = dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
               return (
-                <motion.div
+                <button
                   key={stat.date}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: idx * 0.01 }}
-                  className="flex items-center gap-3"
+                  onClick={() => setSelectedDate(stat.date)}
+                  className={`block w-full text-left rounded-lg transition-all ${
+                    selected ? "ring-2 ring-primary/70" : "hover:bg-muted/40"
+                  }`}
                 >
-                  <div className="w-16 text-[10px] text-muted-foreground text-right shrink-0">
-                    {dateLabel}
-                  </div>
-                  <div className="flex-1 relative">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${pct}%` }}
-                      transition={{ duration: 0.5, delay: idx * 0.01 }}
-                      className={`h-8 rounded-lg flex items-center justify-end px-2 ${
-                        isToday
-                          ? "bg-primary/20 border border-primary/40"
-                          : pct > 70
-                          ? "bg-emerald-400/20 border border-emerald-400/30"
-                          : pct > 40
-                          ? "bg-blue-400/20 border border-blue-400/30"
-                          : "bg-muted/60 border border-border"
-                      }`}
-                    >
-                      <span className={`text-xs font-bold ${
-                        isToday ? "text-primary" : pct > 40 ? "text-foreground" : "text-muted-foreground"
-                      }`}>
-                        {stat.dau}
+                  <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.01 }}
+                    className="flex items-center gap-3"
+                  >
+                    <div className="w-16 text-[10px] text-muted-foreground text-right shrink-0">
+                      {dateLabel}
+                    </div>
+                    <div className="flex-1 relative">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ duration: 0.5, delay: idx * 0.01 }}
+                        className={`h-8 rounded-lg flex items-center justify-end px-2 ${
+                          isToday
+                            ? "bg-primary/20 border border-primary/40"
+                            : selected
+                            ? "bg-primary/30 border border-primary/50"
+                            : pct > 70
+                            ? "bg-emerald-400/20 border border-emerald-400/30"
+                            : pct > 40
+                            ? "bg-blue-400/20 border border-blue-400/30"
+                            : "bg-muted/60 border border-border"
+                        }`}
+                      >
+                        <span className={`text-xs font-bold ${
+                          isToday || selected ? "text-primary" : pct > 40 ? "text-foreground" : "text-muted-foreground"
+                        }`}>
+                          {stat.dau}
+                        </span>
+                      </motion.div>
+                    </div>
+                    {isToday && (
+                      <span className="text-[10px] bg-primary/15 text-primary border border-primary/30 px-1.5 py-0.5 rounded-full font-bold shrink-0">
+                        TODAY
                       </span>
-                    </motion.div>
-                  </div>
-                  {isToday && (
-                    <span className="text-[10px] bg-primary/15 text-primary border border-primary/30 px-1.5 py-0.5 rounded-full font-bold shrink-0">
-                      TODAY
-                    </span>
-                  )}
-                </motion.div>
+                    )}
+                  </motion.div>
+                </button>
               );
             })}
           </div>
 
           {dauStats.length === 0 && (
             <p className="text-center text-muted-foreground py-12 text-sm">No DAU data available</p>
+          )}
+        </div>
+      )}
+
+      {/* Users active on the selected day */}
+      {detailDay && (
+        <div className="bg-card border border-border rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Mail className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-bold text-foreground">
+                Users active on {new Date(detailDay.date + "T00:00:00Z").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+              </h3>
+            </div>
+            <span className="text-xs bg-primary/15 text-primary border border-primary/30 px-2 py-1 rounded-full font-bold">
+              {detailDay.dau} user{detailDay.dau === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          {detailDay.users.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8 text-sm">No activity recorded for this day</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-border text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <th className="py-2 pr-4 font-bold">Email</th>
+                    <th className="py-2 pr-4 font-bold">First seen</th>
+                    <th className="py-2 pr-4 font-bold">Last seen</th>
+                    <th className="py-2 font-bold">Sessions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detailDay.users.map((u) => (
+                    <tr key={u.userId} className="border-b border-border/50 last:border-0">
+                      <td className="py-2.5 pr-4">
+                        <span className={u.email === "(deleted user)" ? "italic text-muted-foreground" : "font-mono text-foreground"}>
+                          {u.email}
+                        </span>
+                      </td>
+                      <td className="py-2.5 pr-4 text-muted-foreground">
+                        {new Date(u.firstSeenAt).toLocaleString()}
+                      </td>
+                      <td className="py-2.5 pr-4 text-muted-foreground">
+                        {new Date(u.lastSeenAt).toLocaleString()}
+                      </td>
+                      <td className="py-2.5 font-bold text-foreground">{u.sessionCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -159,7 +241,7 @@ export function DauTab({ adminToken }: { adminToken: string }) {
               <p className="text-xs font-bold text-muted-foreground">AVERAGE DAU</p>
             </div>
             <p className="text-2xl font-bold text-primary">
-              {Math.round(dauStats.reduce((sum: number, d: { date: string; dau: number }) => sum + d.dau, 0) / dauStats.length).toLocaleString()}
+              {Math.round(dauStats.reduce((sum: number, d: DauDay) => sum + d.dau, 0) / dauStats.length).toLocaleString()}
             </p>
             <p className="text-[10px] text-muted-foreground mt-1">Mean across {days} days</p>
           </div>
