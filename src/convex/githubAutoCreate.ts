@@ -23,11 +23,27 @@ type GithubConfigRow = {
   branch: string;
 } | null;
 
-// Creates a public repo under the CALLER'S OWN GitHub account, named with a
-// readable three-word + six-digit name (e.g. "ancient-autumn-azure-482913") —
-// the user sees this repo on their profile, so the name should read like a
-// project, not like a token. Public = free tier; the name is collision-safe
-// in practice.
+// GitHub repo names: lowercase letters, digits, hyphens, underscores; no
+// leading/trailing hyphen, max 100 chars. The Thalamus branch name is the
+// default, so anything a user types gets normalized instead of rejected.
+function sanitizeRepoName(name: string): string {
+  const cleaned = name
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^[-_]+/, "")
+    .replace(/[-_]+$/, "");
+  if (!cleaned) return "";
+  return cleaned.length > 100 ? cleaned.slice(0, 100) : cleaned;
+}
+
+// Creates a public repo under the CALLER'S OWN GitHub account — the user sees
+// this repo on their profile, so the name should read like a project, not like
+// a token. Named after the branch the user gave inside Thalamus when one is
+// requested (the Git Sync create box, and the default for the auto-create
+// path); without a usable name it falls back to a readable three-word +
+// six-digit name (e.g. "ancient-autumn-azure-482913"). Public = free tier;
+// collisions on a requested name get a -2, -3, ... suffix instead of failing.
 //
 // internalAction, not action: every caller reaches this through `internal.*`,
 // and a public function referenced that way does not resolve at runtime. This
@@ -39,6 +55,7 @@ export const createObscureRepo = internalAction({
     branchId: v.string(),
     projectName: v.string(),
     githubToken: v.string(),
+    requestedName: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<CreatedRepo> => {
     try {
@@ -46,18 +63,39 @@ export const createObscureRepo = internalAction({
       const { data: ghUser } = await octokit.users.getAuthenticated();
       const username = ghUser.login;
 
-      const repoName = generateReadableRepoName();
       const branchName = generateObscureBranchName();
+      const requestedName = args.requestedName ? sanitizeRepoName(args.requestedName) : "";
+      let repoName = requestedName || generateReadableRepoName();
 
-      const { data: repo } = await octokit.repos.createForAuthenticatedUser({
-        name: repoName,
-        description: "Thalamus Code Project",
-        private: false,
-        auto_init: false,
-        has_issues: false,
-        has_projects: false,
-        has_wiki: false,
-      });
+      // A 422 from createForAuthenticatedUser is almost always "name already
+      // exists on this account" — suffix the requested name (-2, -3, ...)
+      // instead of failing the whole creation. The readable default is
+      // collision-safe by construction, so a 422 there is not retried.
+      let repo: { html_url: string } | null = null;
+      for (let attempt = 0; attempt < 5 && !repo; attempt++) {
+        try {
+          const { data } = await octokit.repos.createForAuthenticatedUser({
+            name: repoName,
+            description: "Thalamus Code Project",
+            private: false,
+            auto_init: false,
+            has_issues: false,
+            has_projects: false,
+            has_wiki: false,
+          });
+          repo = data;
+        } catch (err) {
+          const status =
+            (err as { status?: number; response?: { status?: number } })?.status ??
+            (err as { response?: { status?: number } })?.response?.status;
+          if (status === 422 && requestedName) {
+            repoName = `${requestedName}-${attempt + 2}`;
+            continue;
+          }
+          throw err;
+        }
+      }
+      if (!repo) throw new Error("Failed to create repository after name collisions");
 
       // No auto_init means main is unborn — create an initial commit so the
       // ref exists, then fork the feature branch from it.
@@ -149,6 +187,7 @@ export const ensureRepoForBranch = internalAction({
     projectId: v.string(),
     branchId: v.string(),
     projectName: v.string(),
+    requestedName: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ owner: string; repo: string; branch: string } | null> => {
     const existing: GithubConfigRow = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
@@ -157,6 +196,15 @@ export const ensureRepoForBranch = internalAction({
     });
     if (existing?.owner && existing.repo) {
       return { owner: existing.owner, repo: existing.repo, branch: existing.branch };
+    }
+
+    // Name the repo after the branch the user gave it inside Thalamus. The
+    // scheduled auto-create path passes no name, so resolve it here; callers
+    // like createRepoWithName (Git Sync tab) pass their own.
+    let requestedName = args.requestedName ?? "";
+    if (!requestedName) {
+      const branchRow: { name?: string } | null = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
+      requestedName = branchRow?.name ?? "";
     }
 
     // No connected GitHub account? The repo must live on the USER's personal
@@ -177,6 +225,7 @@ export const ensureRepoForBranch = internalAction({
         branchId: args.branchId,
         projectName: args.projectName,
         githubToken,
+        requestedName,
       });
       await ctx.runMutation(internal.codeBranches.setRepoSetupError, { branchId: args.branchId, error: null });
       return { owner: created.owner, repo: created.repoName, branch: created.branchName };
@@ -214,6 +263,51 @@ export const retryRepoSetup = action({
       throw new Error(branch?.repoSetupError ?? "Failed to set up the repository");
     }
     return result;
+  },
+});
+
+// Public entry point for the Git Sync tab: create this branch's repository
+// with an explicit name (normalized server-side) on the user's OWN GitHub
+// account, then push the project files and the conversation transcript so the
+// repo is never an empty shell. Idempotent via ensureRepoForBranch — a branch
+// that already has a repo keeps it and just gets its files re-synced.
+export const createRepoWithName = action({
+  args: {
+    token: v.string(),
+    projectId: v.string(),
+    branchId: v.string(),
+    repoName: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ owner: string; repo: string; branch: string; repoUrl: string }> => {
+    const userId: Id<"users"> | null = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
+    if (!userId) throw new Error("Not authenticated");
+
+    const project: { name?: string } | null = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: args.projectId });
+    const result: { owner: string; repo: string; branch: string } | null = await ctx.runAction(internal.githubAutoCreate.ensureRepoForBranch, {
+      userId,
+      projectId: args.projectId,
+      branchId: args.branchId,
+      projectName: project?.name ?? "",
+      requestedName: args.repoName,
+    });
+    if (!result) {
+      const branch: { repoSetupError?: string } | null = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
+      throw new Error(branch?.repoSetupError ?? "Failed to create the repository");
+    }
+
+    // The repo exists now — land the code and the chat log immediately instead
+    // of leaving an empty shell waiting for the first pipeline push.
+    await ctx.runAction(internal.githubSync.autoPushToGithub, {
+      branchId: args.branchId,
+      commitMessage: "chore: initial sync after repository creation",
+    });
+
+    return {
+      owner: result.owner,
+      repo: result.repo,
+      branch: result.branch,
+      repoUrl: `https://github.com/${result.owner}/${result.repo}`,
+    };
   },
 });
 

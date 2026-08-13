@@ -44,6 +44,15 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
   const getAuthorizationUrl = useAction(api.github.getAuthorizationUrl);
   const disconnectGithub = useMutation(api.githubHelpers.disconnectGithub);
 
+  // Null means the branch has no repository yet — the tab swaps the
+  // clone/push/pull cards for a single create box that makes one on the
+  // user's own account and syncs the project into it.
+  const gitConfig = useQuery(api.githubQueries.getGithubConfig, token ? { token, projectId, branchId } : "skip");
+  const branch = useQuery(api.codeBranches.getBranch, token ? { token, branchId } : "skip");
+  const createRepoWithName = useAction(api.githubAutoCreate.createRepoWithName);
+
+  const [repoName, setRepoName] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
   const [repoUrl, setRepoUrl] = useState("");
   const [commitMessage, setCommitMessage] = useState("");
   const [isCloning, setIsCloning] = useState(false);
@@ -85,6 +94,26 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
       toast.error(errMsg(err, "Failed to disconnect GitHub"));
     } finally {
       setDisconnecting(false);
+    }
+  };
+
+  const handleCreateRepo = async () => {
+    if (!token || !repoName.trim()) return;
+    setIsCreating(true);
+    try {
+      const result = await createRepoWithName({
+        token,
+        projectId,
+        branchId,
+        repoName: repoName.trim(),
+      });
+
+      toast.success(`Repository created — https://github.com/${result.owner}/${result.repo}`);
+      setRepoName("");
+    } catch (err) {
+      toast.error(errMsg(err, "Failed to create repository"));
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -236,7 +265,64 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
         </Card>
       )}
 
-      {/* Clone Repository */}
+      {/* No repository yet — one create box instead of clone/push/pull, which
+          have nothing to act on. The repo is made on the user's own GitHub
+          account with the exact name typed (the branch's Thalamus name for a
+          prefilled suggestion), and the project code plus the full chat log
+          are pushed into it immediately. */}
+      {gitConfig === null ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <GitBranch className="h-5 w-5" />
+              Create Repository
+            </CardTitle>
+            <CardDescription>
+              This branch has no GitHub repository yet. Creating one makes a public repo on your
+              GitHub account and immediately syncs the project code and the full chat history to it.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="repo-name">Repository name</Label>
+              <Input
+                id="repo-name"
+                placeholder={branch?.name ?? "my-thalamus-project"}
+                value={repoName}
+                onChange={(e) => setRepoName(e.target.value)}
+                disabled={isCreating}
+                maxLength={100}
+              />
+            </div>
+            <Button
+              className="w-full gap-2"
+              onClick={handleCreateRepo}
+              disabled={isCreating || !repoName.trim()}
+            >
+              {isCreating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Github className="h-4 w-4" />
+                  Create Repository &amp; Sync Code
+                </>
+              )}
+            </Button>
+            {!githubStatus?.connected && (
+              <p className="text-xs text-muted-foreground">
+                The repo is created on <strong>your</strong> GitHub account — connect GitHub above
+                first if this fails with "No GitHub account connected".
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        gitConfig && (
+          <>
+            {/* Clone Repository */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -379,6 +465,9 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
           </p>
         </CardContent>
       </Card>
+          </>
+        )
+      )}
     </div>
   );
 }

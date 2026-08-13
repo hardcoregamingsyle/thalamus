@@ -25,6 +25,28 @@ async function resolveGithubToken(
   return account?.accessToken || explicit || process.env.GITHUB_TOKEN;
 }
 
+// The branch's whole conversation, one line per message — the durable record
+// of the Code-mode chat. Every push carries it, so the chat history lives on
+// GitHub and Convex only keeps the working window the pipeline reads. An
+// empty transcript yields no file (nothing to record yet).
+async function buildConversationLog(
+  ctx: ActionCtx,
+  branchId: string,
+): Promise<{ filepath: string; content: string }> {
+  const messages = await ctx.runQuery(internal.codeBranches.getConversationLogInternal, { branchId });
+  if (messages.length === 0) return { filepath: ".thalamus/conversation.jsonl", content: "" };
+  const lines = messages.map((m) =>
+    JSON.stringify({
+      agent: m.agent,
+      content: m.content,
+      round: m.round ?? null,
+      messageIndex: m.messageIndex ?? null,
+      createdAt: m.createdAt,
+    })
+  );
+  return { filepath: ".thalamus/conversation.jsonl", content: lines.join("\n") + "\n" };
+}
+
 // SHA-256 over sorted file paths, ignoring build artifacts.
 // Path-only (no content) so trivial edits don't evade the fingerprint.
 const IGNORE_PREFIXES = [
@@ -245,6 +267,9 @@ export const pushToGithub = action({
         branchId: args.branchId,
       });
 
+      const log = await buildConversationLog(ctx, args.branchId);
+      if (log.content) files.push(log);
+
       const octokit = new Octokit({
         auth: await resolveGithubToken(ctx, userId, args.githubToken),
       });
@@ -364,6 +389,9 @@ export const autoPushToGithub = internalAction({
       const files: CodeFile[] = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
         branchId: args.branchId,
       });
+
+      const log = await buildConversationLog(ctx, args.branchId);
+      if (log.content) files.push(log);
 
       // Same identity the VM worker uses: the connected account's live token
       // when it owns the repo, else the snapshot, else the platform fallback.

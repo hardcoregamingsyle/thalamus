@@ -187,6 +187,34 @@ export const getMessagesInternal = internalQuery({
   },
 });
 
+// Internal: the branch's ENTIRE conversation in index order — the durable
+// source for the .thalamus/conversation.jsonl that ships with every push.
+// getMessagesInternal only returns the latest 100, which is all the pipeline
+// needs for context; the transcript needs everything, so this paginates.
+export const getConversationLogInternal = internalQuery({
+  args: { branchId: v.string() },
+  handler: async (ctx, args) => {
+    const messages: Array<{
+      agent: string;
+      content: string;
+      round?: number | null;
+      messageIndex?: number | null;
+      createdAt: number;
+    }> = [];
+    let cursor: string | null = null;
+    do {
+      const page = await ctx.db
+        .query("codeMessages")
+        .withIndex("by_branch_and_index", (q) => q.eq("branchId", args.branchId))
+        .order("asc")
+        .paginate({ numItems: 500, cursor: cursor ?? null });
+      messages.push(...page.page);
+      cursor = page.isDone ? null : page.continueCursor;
+    } while (cursor);
+    return messages;
+  },
+});
+
 // Internal: Get files
 export const getFilesInternal = internalQuery({
   args: { branchId: v.string() },
