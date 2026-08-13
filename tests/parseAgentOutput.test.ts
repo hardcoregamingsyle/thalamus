@@ -501,3 +501,67 @@ describe("parseAgentOutput — inline research ops (fallback format)", () => {
     expect(parsed.researchOps).toEqual([{ query: "vite config", detail: "production build tweaks" }]);
   });
 });
+
+describe("parseAgentOutput — marker strings echoed back inside a document", () => {
+  it("maps an echoed [SECURITY: FAILED] marker in ops to security-fail", () => {
+    const out = `{"message":"final review","ops":["[SECURITY: FAILED]"]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.criticResult).toBe("fail");
+    expect(parsed.hackerResult).toBe("fail");
+    expect(parsed.cleanContent).toContain("final review");
+    expect(parsed.cleanContent).toContain("[SECURITY: FAILED]");
+  });
+
+  it("maps a double-bracketed marker (the transcript shape) to the verdict", () => {
+    const out = `{"message":"The build failed","ops":[[SECURITY: FAILED]]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.criticResult).toBe("fail");
+    expect(parsed.cleanContent).toContain("The build failed");
+  });
+
+  it("maps an echoed [TEST: PASSED ✓] marker to test-success", () => {
+    const out = `{"message":"all green","ops":["[TEST: PASSED ✓]"]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.testerResult).toBe("pass");
+  });
+
+  it("maps an echoed [TEST: FAILED - reason] marker with its reason", () => {
+    const out = `{"message":"oops","ops":["[TEST: FAILED - missing package.json]"]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.testerResult).toBe("fail");
+    expect(parsed.testerFailReason).toContain("[TEST: FAILED");
+  });
+
+  it("handles a mix of real ops and echoed markers in one document", () => {
+    const out = `{"message":"done","ops":[{"op":"cmd","command":"ls"},["[SECURITY: PASSED ✓]"]]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["ls"]);
+    expect(parsed.criticResult).toBe("pass");
+  });
+});
+
+describe("parseAgentOutput — broken documents never execute quoted inline examples", () => {
+  it("rejects a malformed document without executing op examples in its message", () => {
+    // The exact production shape: the Critic's message quotes {"op":
+    // "security-fail"} as an example, and the document itself is broken.
+    const out = `{"message":"use {"op":"security-fail"} here","ops":[[SECURITY: FAILED]]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.criticResult).toBe("fail");
+    expect(parsed.malformedOps.length).toBeGreaterThan(0);
+  });
+
+  it("keeps the message prose from a broken document and stamps the marker", () => {
+    const out = `{"message":"index.html ends mid-CSS","ops":[{"op":"cmd","command":"npm test"`; // cut off mid-doc
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps).toEqual([]);
+    expect(parsed.malformedOps.length).toBeGreaterThan(0);
+    expect(parsed.cleanContent).toContain("index.html ends mid-CSS");
+    expect(parsed.cleanContent).toContain("MALFORMED OP");
+  });
+
+  it("does not confuse a leading inline op with a broken document", () => {
+    const out = `{"op":"cmd","command":"npm test"} {"message":"done","ops":[]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["npm test"]);
+  });
+});

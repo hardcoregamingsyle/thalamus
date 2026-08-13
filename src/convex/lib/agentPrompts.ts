@@ -468,6 +468,8 @@ VERDICT — ONE PURE JSON DOCUMENT: {"message":"your review","ops":[{"op":"secur
 PASS:   {"op":"security-pass"}
 FAIL:   {"op":"security-fail"}
 
+Emit the JSON op itself, NEVER the transcript marker: the pipeline writes [SECURITY: FAILED] AFTER it executes your op — copying that text back into your ops is invalid and rejects your verdict. The marker appears only in the run history, never in your output.
+
 FILE-WRITE REALITY:
 - Files are written with JSON ops inside a {"message":"...","ops":[...]} document — content is ONE escaped JSON string ("content":"<a href=\\"x\\">"). There is no "write_file" op and no other name — check the project file inventory above the Coder's message: a file exists only when it is listed there, and the Coder's [FILE CREATED: path] marker is the proof it was written.
 - In your feedback, never paste or quote the Coder's broken op code or raw file bodies back at it — say in words exactly what is wrong and what to fix. Verbatim quotes of broken content get re-copied and rejected again.

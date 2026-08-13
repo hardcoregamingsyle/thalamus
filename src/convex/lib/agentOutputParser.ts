@@ -288,7 +288,14 @@ const C = "(?:>>|››|»|›)";
  *  canonical output format — every agent reply is a single JSON object, so
  *  nothing HTML-tag-like ever appears in the transcript. Returns the parsed
  *  doc fields when it matches, null otherwise (the inline-op scanner takes
- *  over as the fallback). */
+ *  over as the fallback).
+ *
+ *  "ops" entries may be op objects, or the transcript MARKER strings agents
+ *  keep echoing back ([SECURITY: FAILED], [TEST: PASSED ✓], ...) — a model
+ *  that copies the marker it read in history instead of re-emitting the op.
+ *  Markers are mapped back to the verdict ops so the pipeline still advances
+ *  correctly, and one level of array nesting ([[...]]) is flattened for the
+ *  same reason. */
 export function tryParseAgentDoc(
   content: string,
 ): { ops: Array<Record<string, unknown>>; message: string } | null {
@@ -305,12 +312,65 @@ export function tryParseAgentDoc(
     return null;
   }
   if (!Array.isArray(doc.ops) || doc.ops.length === 0) return null;
-  if (!doc.ops.every((o) => o && typeof (o as Record<string, unknown>).op === "string")) return null;
+  const ops: Array<Record<string, unknown>> = [];
+  for (const entry of doc.ops) {
+    if (entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as Record<string, unknown>).op === "string") {
+      ops.push(entry as Record<string, unknown>);
+      continue;
+    }
+    const verdict = markerToVerdictOp(entry);
+    if (verdict) ops.push(verdict);
+  }
+  if (ops.length === 0) return null;
   const message =
     typeof doc.message === "string" ? doc.message
     : typeof doc.review === "string" ? doc.review
     : "";
-  return { ops: doc.ops as Array<Record<string, unknown>>, message };
+  return { ops, message };
+}
+
+const MARKER_VERDICT_OPS: Record<string, Record<string, unknown>> = {
+  "[SECURITY: PASSED ✓]": { op: "security-pass" },
+  "[SECURITY: FAILED]": { op: "security-fail" },
+  "[TEST: PASSED ✓]": { op: "test-success" },
+};
+
+/** Map a transcript marker string (or one-level nested array of one) back to
+ *  the verdict op it stands for. Null when the value is not a known marker. */
+function markerToVerdictOp(value: unknown): Record<string, unknown> | null {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null;
+    return markerToVerdictOp(value[0]);
+  }
+  if (typeof value !== "string") return null;
+  const v = value.trim();
+  if (v.startsWith("[TEST: FAILED")) return { op: "test-failed", reason: v };
+  return MARKER_VERDICT_OPS[v] ?? null;
+}
+
+/** A reply is doc-shaped — starts {"message"|"review"|"ops": — even when it
+ *  failed to parse as a document. Used to keep the inline op scanner away
+ *  from broken documents (see parseAgentOutput). */
+const LOOKS_LIKE_DOC_RE = /^\{\s*"(?:message|review|ops)"\s*:/;
+
+/** Marker texts the pipeline itself writes into the transcript (and agents
+ *  sometimes echo back instead of re-emitting the verdict op). */
+const MARKER_RE = /\[(?:SECURITY: (?:PASSED ✓|FAILED)|TEST: (?:PASSED ✓|FAILED[^\]]*))\]/g;
+
+/** The ops-array portion of a broken document — everything from the first
+ *  "ops" key onward. Verdict recovery is confined to this tail so op
+ *  examples quoted inside the message prose can never execute. */
+function opsArrayTail(content: string): string {
+  const idx = content.search(/"ops"\s*:/);
+  return idx === -1 ? content : content.slice(idx);
+}
+
+/** Best-effort recovery of the message/review prose from a malformed
+ *  document, unescaping the JSON string escapes. */
+function extractDocMessage(content: string): string {
+  const m = content.match(/\{\s*"(?:message|review)"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (!m) return "";
+  return m[1].replace(/\\(["\\n])/g, (_ch, c: string) => (c === "n" ? "\n" : c));
 }
 
 export function parseAgentOutput(content: string): ParsedOutput {
@@ -332,6 +392,11 @@ export function parseAgentOutput(content: string): ParsedOutput {
   const stripped = stripSpecialTokenWrappers(recovered);
   let cleanContent = stripped;
 
+  // Marker stamped where a malformed op or broken document is scrubbed from
+  // the transcript — visible to both the agent and the user, and matched by
+  // the pipeline's feedback scrub.
+  const MALFORMED_MARKER = "[MALFORMED OP — not executed]";
+
   // ── Primary: one pure-JSON document per message ────────────────────────────
   // The canonical agent format. When the whole reply parses as a document they
   // are on, its ops array IS the op source and "message" is the visible prose;
@@ -347,9 +412,40 @@ export function parseAgentOutput(content: string): ParsedOutput {
   // do not still carry the wrapper characters. In document mode the ops come
   // pre-parsed from the doc — re-scanning the raw text would find the same ops
   // nested inside the doc and double-apply them.
-  const { ops: jsonOps, malformed: malformedRaws } = docMode
-    ? { ops: [], malformed: [] }
-    : findJsonOpsInternal(stripped);
+  let jsonOps: Array<Record<string, unknown>> = [];
+  let malformedRaws: MalformedOpExcerpt[] = [];
+  if (!docMode) {
+    // Broken document: doc-shaped ({"message"|"review"|"ops":) with an "ops"
+    // key, but JSON.parse failed — most commonly an unescaped quote. An
+    // ops-LESS {"message":"..."} reply is a legitimate no-tool-call message
+    // and stays on the inline fallback path.
+    if (LOOKS_LIKE_DOC_RE.test(stripped) && /"ops"\s*:/.test(stripped)) {
+      // CRITICAL: never run the inline op scanner over a broken document.
+      // Op examples the agent quoted inside its own message text would
+      // execute — a Critic that reviewed "use {"op":"security-fail"} here"
+      // got its run rejected by its own example. Keep the message text if
+      // extractable, stamp the marker, and report the raw blob as malformed.
+      const msg = extractDocMessage(stripped);
+      cleanContent = msg ? `${msg}\n\n${MALFORMED_MARKER}` : MALFORMED_MARKER;
+      malformedRaws = [{ raw: stripped.slice(0, 200), unterminated: false }];
+      // Verdict recovery is confined to the OPS TAIL (from the first "ops"
+      // key onward): real ops the model got there still execute, and marker
+      // texts it echoed back ([SECURITY: FAILED] etc.) map to their verdicts.
+      // The message prose — where the model quotes op examples — is excluded.
+      const tail = opsArrayTail(stripped);
+      const tailScan = findJsonOpsInternal(tail);
+      jsonOps = tailScan.ops;
+      malformedRaws = [...malformedRaws, ...tailScan.malformed];
+      for (const m of tail.matchAll(MARKER_RE)) {
+        const verdict = markerToVerdictOp(m[0]);
+        if (verdict) jsonOps.push(verdict);
+      }
+    } else {
+      const found = findJsonOpsInternal(stripped);
+      jsonOps = found.ops;
+      malformedRaws = found.malformed;
+    }
+  }
   const opsToApply = docMode ? docOps : jsonOps;
 
   // Track which filepaths we already processed from JSON ops (avoids duplication
@@ -370,7 +466,6 @@ export function parseAgentOutput(content: string): ParsedOutput {
   // so replace() finds it now; once other ops rewrite chunks around it the
   // literal may no longer be present. Marker is deliberately visible in-line
   // so both the agent and the user can see that something was rejected.
-  const MALFORMED_MARKER = "[MALFORMED OP — not executed]";
   for (const excerpt of malformedRaws) {
     malformedOps.push(excerpt.raw);
     const idx = cleanContent.indexOf(excerpt.raw);
