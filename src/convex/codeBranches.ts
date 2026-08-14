@@ -396,6 +396,9 @@ export const updateBranchStatus = internalMutation({
     // Set by runPipelineAction's transient-error path; reset to 0 whenever a
     // step completes, so the allowance is per-stall, not per-run.
     providerBackoffCount: v.optional(v.number()),
+    // One-shot "this invocation is a rate-limit resume, don't re-dispatch"
+    // marker — see the field's schema comment.
+    skipDispatchOnResume: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const branch = await ctx.db
@@ -434,6 +437,7 @@ export const updateBranchStatus = internalMutation({
       // and turn the bounded retry into an endless loop.
       updates.providerBackoffCount = 0;
     }
+    if (args.skipDispatchOnResume !== undefined) updates.skipDispatchOnResume = args.skipDispatchOnResume;
 
     // A finished branch must not keep a cloud sandbox running (~$54/month
     // each). Tear it down and clear the reference — a later re-run simply

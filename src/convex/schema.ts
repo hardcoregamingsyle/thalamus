@@ -226,6 +226,12 @@ const schema = defineSchema(
       // discarded. Cleared when a step actually produces a message. See the
       // transient-error branch in codePipeline.runPipelineAction.
       providerBackoffCount: v.optional(v.number()),
+      // Set by the transient-error path when it parks the run; consumed and
+      // cleared by the very next invocation. Tells the resumed step that the
+      // Dispatcher phase it finds itself in is a rate-limit hold from a
+      // mid-dispatch stall, not a fresh user prompt — so it continues with the
+      // last dispatch instead of burning another model call on re-dispatching.
+      skipDispatchOnResume: v.optional(v.boolean()),
       // Short human-readable reason the cloud executor cannot run commands at
       // all on this branch (e.g. connected GitHub token missing the `workflow`
       // scope, no token, no repo). Set from githubActionsRunner when a VM boot

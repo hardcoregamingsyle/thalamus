@@ -421,6 +421,20 @@ export const runPipelineAction = internalAction({
       const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
       if (!branch) return;
 
+      // A rate-limit hold parks the run and re-invokes this action after a
+      // backoff, setting skipDispatchOnResume so the resumed step knows it is
+      // a stall — not a fresh user prompt — and must not re-run the Dispatcher
+      // (re-dispatching would only burn another model call on rate-limited
+      // providers). Captured and cleared here so the one-shot flag can never
+      // leak into a later invocation.
+      const skipDispatchOnResume = !!branch.skipDispatchOnResume;
+      if (skipDispatchOnResume) {
+        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+          branchId,
+          skipDispatchOnResume: false,
+        });
+      }
+
       // User pressed Stop — halt this run WITHOUT rescheduling, and clear the flag
       // so a later start isn't immediately cancelled. (The pipeline writes "idle"
       // between every step, so status alone can't tell a Stop from normal state.)
@@ -703,6 +717,56 @@ export const runPipelineAction = internalAction({
       // Runs at the start AND between every task to decide which agents are
       // needed for the current subtask (agents are re-evaluated per-task).
       if (executionPhase === "dispatching" || currentPhase === "Dispatcher") {
+        // Rate-limit resume mid-dispatch: the stall hit inside the Dispatcher's
+        // own model call, no new user prompt arrived since, so re-running it
+        // would just spend another turn on rate-limited providers. Reuse the
+        // last dispatch (or the default pipeline when nothing was dispatched
+        // yet) and continue from the current task — exactly where the hold
+        // message promised the run would resume. Every path below returns.
+        if (skipDispatchOnResume) {
+          const resumePlanningAgents = buildPlanningPipeline(dispatchedAgents);
+          const resumeTaskAgents = buildTaskPipeline(dispatchedAgents);
+          let resumePlannerTasks: Array<{ title: string; description: string }> = [];
+          try { resumePlannerTasks = JSON.parse(branch.plannerTasksJson || "[]"); } catch { /* ignore */ }
+
+          if (resumePlannerTasks.length === 0) {
+            // The Planner never ran (the very first dispatch stalled) — enter
+            // planning with the default agent set rather than refusing to go on.
+            const firstPlanningAgent = resumePlanningAgents[0] ?? "Coder";
+            round++;
+            await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+              branchId,
+              status: "idle",
+              currentAgent: firstPlanningAgent,
+              phase: firstPlanningAgent,
+              executionPhase: "planning",
+              round,
+              totalMessages,
+              mcpRoundCount: 0,
+            });
+            await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+            return;
+          }
+
+          // The plan already exists — resume execution at the current task.
+          const firstTaskAgent = resumeTaskAgents[0] ?? "Coder";
+          round++;
+          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+            branchId,
+            status: "idle",
+            currentAgent: firstTaskAgent,
+            phase: firstTaskAgent,
+            executionPhase: "executing",
+            round,
+            totalMessages,
+            currentTaskIndex,
+            criticRetryCount: 0,
+            mcpRoundCount: 0,
+          });
+          await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+          return;
+        }
+
         await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
           branchId,
           status: "running",
@@ -1728,6 +1792,10 @@ message.includes("socket hang up") ||
               branchId,
               status: "running",
               providerBackoffCount: attempt,
+              // One-shot marker: the NEXT invocation is a stall resume, not a
+              // new user prompt, so the Dispatcher phase it may find must not
+              // re-run. Consumed and cleared at the top of runPipelineAction.
+              skipDispatchOnResume: true,
             });
             await ctx.scheduler.runAfter(delayMs, internal.codePipeline.runPipelineAction, { branchId });
             return;
