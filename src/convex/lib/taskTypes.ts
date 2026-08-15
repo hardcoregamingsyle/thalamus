@@ -31,5 +31,9 @@ export function agentToTaskType(agentName: string): TaskType {
   if (name.includes("analyser") || name.includes("planner") || name.includes("critic")) return "reasoning";
   if (name.includes("researcher") || name.includes("research") || name.includes("reportmaker") || name.includes("scout")) return "research";
   if (name.includes("tester") || name.includes("hacker") || name.includes("auditor") || name.includes("security")) return "agent";
+  // KnowItAll answers questions — the chat model class is the right seat. The
+  // default below would land it there anyway, but the mapping is explicit so a
+  // future refactor of the fallback cannot silently misroute it.
+  if (name.includes("knowitall") || name.includes("knowledge")) return "chat";
   return "chat"; // default for unknown agents
 }

@@ -85,6 +85,12 @@ export interface ParsedOutput {
   instructions?: Instructions;
   changeMode?: "Code" | "Chat" | "Minor";
   requestApiKey?: { name: string; description: string; howToGet: string };
+  // KnowItAll's hand-off op: {"op":"dispatch","reason":"..."} — the answering
+  // agent found a problem or bug that needs the real build pipeline, so the
+  // pipeline re-runs the Dispatcher (with the reason in the transcript) to set
+  // up the fix instead of completing the run.
+  dispatchRequested: boolean;
+  dispatchReason?: string;
 }
 
 // ── JSON ops parser ───────────────────────────────────────────────────────────
@@ -104,6 +110,8 @@ export interface ParsedOutput {
 //   {"op":"security-fail"}
 //   {"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}
 //   {"op":"continue"}   — ask the pipeline for another turn of the SAME agent
+//   {"op":"dispatch","reason":"..."} — KnowItAll found a problem/bug; re-run the
+//                                      Dispatcher to set up the build pipeline
 //
 // The parser finds these by scanning for `{"op":"` (whitespace around `:` and
 // inside the braces tolerated — models add spaces freely) and reading the
@@ -467,6 +475,8 @@ export function parseAgentOutput(content: string): ParsedOutput {
   let changeMode: "Code" | "Chat" | "Minor" | undefined;
   let requestApiKey: { name: string; description: string; howToGet: string } | undefined;
   let continueRequested = false;
+  let dispatchRequested = false;
+  let dispatchReason: string | undefined;
   const processedPaths = new Set<string>();
 
   // Substitute malformed op excerpts BEFORE the successful-op loop rewrites
@@ -638,6 +648,18 @@ export function parseAgentOutput(content: string): ParsedOutput {
         continueRequested = true;
         mark("[CONTINUE]");
         break;
+      case "dispatch":
+        // KnowItAll's escalation: the answering agent found a problem/bug that
+        // needs the build pipeline. The reason lands in the transcript so the
+        // Dispatcher re-run has the context.
+        dispatchRequested = true;
+        if (typeof op.reason === "string" && op.reason.trim()) {
+          dispatchReason = op.reason.trim().slice(0, 500);
+          mark(`[DISPATCH REQUESTED: ${dispatchReason.slice(0, 120)}]`);
+        } else {
+          mark("[DISPATCH REQUESTED]");
+        }
+        break;
     }
   }
 
@@ -771,7 +793,7 @@ export function parseAgentOutput(content: string): ParsedOutput {
   // Final sweep: neutralise orphaned <<...>> markers
   cleanContent = cleanContent.replace(/<<([^<>]{0,200}?)>>/g, "‹‹$1››");
 
-  return { fileOps, searchOps, scrapeOps, cmdOps, mcpOps, researchOps, cleanContent, malformedOps, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode, requestApiKey, continueRequested };
+  return { fileOps, searchOps, scrapeOps, cmdOps, mcpOps, researchOps, cleanContent, malformedOps, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode, requestApiKey, continueRequested, dispatchRequested, dispatchReason };
 }
 
 export interface PlannerTask {

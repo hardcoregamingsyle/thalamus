@@ -393,6 +393,13 @@ export const updateBranchStatus = internalMutation({
     // One-shot "this invocation is a rate-limit resume, don't re-dispatch"
     // marker — see the field's schema comment.
     skipDispatchOnResume: v.optional(v.boolean()),
+    // Whether the Dispatcher's skip-agents list still applies (first iteration
+    // only — cleared when the run advances past the first task).
+    skipActive: v.optional(v.boolean()),
+    // Prompt-generation counter, bumped by startPipeline per user prompt (see
+    // the field's schema comment). Only meaningful via the pipeline's advance
+    // helper, which compares before every phase transition.
+    userPromptGen: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const branch = await ctx.db
@@ -441,6 +448,8 @@ export const updateBranchStatus = internalMutation({
       updates.providerBackoffCount = 0;
     }
     if (args.skipDispatchOnResume !== undefined) updates.skipDispatchOnResume = args.skipDispatchOnResume;
+    if (args.skipActive !== undefined) updates.skipActive = args.skipActive;
+    if (args.userPromptGen !== undefined) updates.userPromptGen = args.userPromptGen;
 
     // A finished branch must not keep a cloud sandbox running (~$54/month
     // each). Tear it down and clear the reference — a later re-run simply
@@ -590,6 +599,30 @@ export const setDispatchedModels = internalMutation({
     if (!branch) return;
     await ctx.db.patch(branch._id, {
       dispatchedModelsJson: args.modelsJson,
+    });
+  },
+});
+
+// Store the Dispatcher's custom agents and first-iteration skip list. Both are
+// always written together (as "[]" when absent) so a stale list from a previous
+// dispatch can never leak into the current run.
+export const setDispatchedExtras = internalMutation({
+  args: {
+    branchId: v.string(),
+    customAgentsJson: v.string(),
+    skipAgentsJson: v.string(),
+    skipActive: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const branch = await ctx.db
+      .query("codeBranches")
+      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (!branch) return;
+    await ctx.db.patch(branch._id, {
+      customAgentsJson: args.customAgentsJson,
+      skipAgentsJson: args.skipAgentsJson,
+      skipActive: args.skipActive,
     });
   },
 });

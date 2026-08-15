@@ -99,7 +99,7 @@ Pure helper modules with no Convex framework imports — load fast, easy to test
 | Module | Responsibility |
 |---|---|
 | `agentCore.ts` | `FREE_UNLIMITED`, `callModel` (the router), `mapModelIdToOllama`, `calcAgentBucksForTier`, `performSearch`, `performScrape`. Re-exports the three modules below so old `from "./lib/agentCore"` imports keep working. |
-| `agentPrompts.ts` | `AGENT_SYSTEM_PROMPTS` — per-agent system prompts for the pipeline (Dispatcher, ResearchPlanner, Researcher, ReportMaker, FactCheck, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic). Treat every edit like a schema migration. |
+| `agentPrompts.ts` | `AGENT_SYSTEM_PROMPTS` — per-agent system prompts for the pipeline (Dispatcher, KnowItAll, ResearchPlanner, Researcher, ReportMaker, FactCheck, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic). Treat every edit like a schema migration. |
 | `modePrompts.ts` | `MODE_ADHD`, `MODE_SYSTEM_PROMPTS`, `adhdToTemperature` — per-conversation-mode prompts + temperature mapping. |
 | `agentOutputParser.ts` | JSON-op parser (single-line `{"op":…}`), legacy `<<TAG>>` marker fallback for old stored messages. |
 | `taskTypes.ts` | `TaskType` union + `agentToTaskType()` — the routing key for `callModel`. Only surviving export of the old `nimClient.ts`; every NIM-specific export was deleted with NIM itself. |

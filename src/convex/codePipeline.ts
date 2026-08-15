@@ -71,8 +71,11 @@ const STALE_COMMAND_MS = 15 * 60 * 1000;
 
 // All known agents in their natural order.
 // Researcher is a three-agent team: ResearchPlanner → Researcher (data gatherer) → ReportMaker.
+// KnowItAll answers questions directly and can hand back to the Dispatcher via
+// {"op":"dispatch"} — it is a task-phase agent (a question dispatch runs the
+// task pipeline with just KnowItAll in it).
 const ALL_PLANNING_AGENTS = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Planner"] as const;
-const ALL_TASK_AGENTS     = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"] as const;
+const ALL_TASK_AGENTS     = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic", "KnowItAll"] as const;
 
 // The full fallback pipelines (used when no Dispatcher output exists)
 const DEFAULT_PLANNING_PIPELINE = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Planner"];
@@ -89,35 +92,90 @@ function expandResearchTeam(agents: string[]): string[] {
   return [...set];
 }
 
-/** Build the actual planning pipeline from the Dispatcher's chosen agent list. */
-function buildPlanningPipeline(dispatched: string[]): string[] {
+// Dispatcher-defined agents: anything in the dispatched list that is not a
+// standard agent is a custom agent (declared in customAgentsJson with its own
+// system prompt). They run after the standard agents, in dispatch order.
+function customAgentNames(dispatched: string[]): string[] {
+  const standard = new Set<string>([...ALL_PLANNING_AGENTS, ...ALL_TASK_AGENTS]);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const a of dispatched) {
+    if (!standard.has(a) && a && !seen.has(a)) {
+      seen.add(a);
+      out.push(a);
+    }
+  }
+  return out;
+}
+
+/** Build the actual planning pipeline from the Dispatcher's chosen agent list.
+ *  `skip` (the Dispatcher's first-iteration skip list, honored while
+ *  skipActive) drops those agents for this pass — a continuation run that
+ *  picks up where a stopped run got to. */
+function buildPlanningPipeline(dispatched: string[], skip: string[] = []): string[] {
   if (!dispatched || dispatched.length === 0) return DEFAULT_PLANNING_PIPELINE;
-  return ALL_PLANNING_AGENTS.filter(a => expandResearchTeam(dispatched).includes(a));
+  const skipSet = new Set(skip);
+  return [
+    ...ALL_PLANNING_AGENTS.filter(a => expandResearchTeam(dispatched).includes(a) && !skipSet.has(a)),
+    ...customAgentNames(dispatched).filter(a => !skipSet.has(a)),
+  ];
 }
 
 /** Build the actual task pipeline from the Dispatcher's chosen agent list.
- *  Coder and Critic are always guaranteed to appear (they were enforced at dispatch time). */
-function buildTaskPipeline(dispatched: string[]): string[] {
+ *  Coder is always guaranteed to appear (enforced at dispatch time); the
+ *  Critic is NOT forced — the Dispatcher decides whether verification is
+ *  needed for this task. Custom agents are appended in dispatch order.
+ *  `skip` (the Dispatcher's first-iteration skip list, honored while
+ *  skipActive) drops those agents for this pass. */
+function buildTaskPipeline(dispatched: string[], skip: string[] = []): string[] {
   if (!dispatched || dispatched.length === 0) return DEFAULT_TASK_PIPELINE;
-  return ALL_TASK_AGENTS.filter(a => expandResearchTeam(dispatched).includes(a));
+  const skipSet = new Set(skip);
+  return [
+    ...ALL_TASK_AGENTS.filter(a => expandResearchTeam(dispatched).includes(a) && !skipSet.has(a)),
+    ...customAgentNames(dispatched).filter(a => !skipSet.has(a)),
+  ];
 }
 
 /** Parse and validate the Dispatcher's JSON output. Returns null on failure.
  *  startFrom: null (or absent) = fresh pipeline; a 1-based task number = start
- *  execution at that task; an agent name = start the run at that agent. */
+ *  execution at that task; an agent name = start the run at that agent.
+ *  skipAgents: agents to skip on the first pass of this run (continuation).
+ *  customAgents: Dispatcher-defined bespoke agents (name + systemPrompt). */
 function parseDispatcherOutput(
   text: string,
-): { tier: string; agents: string[]; models?: Record<string, string>; startFrom?: number | string } | null {
+): { tier: string; agents: string[]; models?: Record<string, string>; startFrom?: number | string; skipAgents?: string[]; customAgents?: Array<{ name: string; systemPrompt: string }> } | null {
   try {
     // Strip markdown fences if the model wrapped them anyway
     const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
     const parsed = JSON.parse(cleaned);
     if (!Array.isArray(parsed.agents) || parsed.agents.length === 0) return null;
-    const VALID = new Set(["ResearchPlanner","Researcher","ReportMaker","FactCheck","Analyser","Planner","Coder","Optimiser","Organizer","Tester","Hacker","Critic"]);
+    const STANDARD = new Set(["ResearchPlanner","Researcher","ReportMaker","FactCheck","Analyser","Planner","Coder","Optimiser","Organizer","Tester","Hacker","Critic","KnowItAll"]);
+
+    // Custom agents first — their names are valid targets in the agents list.
+    let customAgents: Array<{ name: string; systemPrompt: string }> | undefined;
+    if (Array.isArray(parsed.customAgents)) {
+      const seen = new Set<string>();
+      const collected: Array<{ name: string; systemPrompt: string }> = [];
+      for (const c of parsed.customAgents) {
+        if (!c || typeof c !== "object") continue;
+        const name = typeof c.name === "string" ? c.name.trim() : "";
+        if (!name || name.length > 40 || STANDARD.has(name) || seen.has(name)) continue;
+        if (typeof c.systemPrompt !== "string" || !c.systemPrompt.trim()) continue;
+        seen.add(name);
+        collected.push({ name, systemPrompt: c.systemPrompt.trim().slice(0, 4000) });
+        if (collected.length >= 2) break;
+      }
+      if (collected.length > 0) customAgents = collected;
+    }
+    const VALID = new Set(STANDARD);
+    if (customAgents) for (const c of customAgents) VALID.add(c.name);
+
     const agents = (parsed.agents as string[]).filter(a => VALID.has(a));
-    // Always guarantee Coder and Critic
-    if (!agents.includes("Coder"))  agents.push("Coder");
-    if (!agents.includes("Critic")) agents.push("Critic");
+    // Coder is always guaranteed — the writer seat cannot be dropped.
+    if (!agents.includes("Coder")) agents.push("Coder");
+    // The Critic is NOT forced: the Dispatcher decides whether verification is
+    // needed. A trivial change with a full review pass is quota burned for
+    // nothing.
 
     // Extract per-agent model assignments if the Dispatcher provided them
     let models: Record<string, string> | undefined;
@@ -135,7 +193,13 @@ function parseDispatcherOutput(
     if (typeof parsed.startFrom === "number") startFrom = parsed.startFrom;
     else if (typeof parsed.startFrom === "string" && VALID.has(parsed.startFrom)) startFrom = parsed.startFrom;
 
-    return { tier: parsed.tier ?? "medium", agents, models, startFrom };
+    let skipAgents: string[] | undefined;
+    if (Array.isArray(parsed.skipAgents)) {
+      const skips = (parsed.skipAgents as string[]).filter(s => typeof s === "string" && STANDARD.has(s)).slice(0, 8);
+      if (skips.length > 0) skipAgents = skips;
+    }
+
+    return { tier: parsed.tier ?? "medium", agents, models, startFrom, skipAgents, customAgents };
   } catch {
     return null;
   }
@@ -312,9 +376,11 @@ function hasUnclosedJsonOp(content: string): boolean {
 // Streaming-aware model call — writes partial output to the branch's streamingContent
 // field so the UI can show real-time token output. Falls back to batch callModel if
 // streaming is unavailable (Gemini, AgentRouter) or credentials are missing.
-// NOTE: "streaming" here is simulated — the full response is fetched first, then
-// drip-fed to streamingContent in 300-char chunks. True token streaming from
-// Real token streaming proved unreliable inside Convex actions.
+// Streaming seats (OpenRouter) deliver true SSE tokens through callModel's
+// `streaming` override and each throttled delta is written to streamingContent
+// as it arrives; the reply grows live and the drip below is skipped. Seats
+// without a streaming path still get the old simulated drip — the full response
+// is fetched first, then drip-fed to streamingContent in 300-char chunks.
 async function callModelWithStreaming(
   ctx: { runMutation: ActionCtx["runMutation"]; runQuery: ActionCtx["runQuery"] },
   prompt: string,
@@ -334,20 +400,35 @@ async function callModelWithStreaming(
   const overrides: Record<string, unknown> = {};
   if (agentModelAssignments?.[agentName]) overrides.assignedModel = agentModelAssignments[agentName];
   if (deadlineMs) overrides.deadlineMs = deadlineMs;
+  let streamedChars = 0;
+  let streamedAcc = "";
+  overrides.streaming = async (delta: string) => {
+    if (!delta) return;
+    streamedChars += delta.length;
+    streamedAcc += delta;
+    try {
+      await ctx.runMutation(internal.codeBranches.setStreamingContent, {
+        branchId, content: streamedAcc, agentName,
+      });
+    } catch { /* live streaming is best-effort — never fail the model call */ }
+  };
   const modelArg = Object.keys(overrides).length > 0 ? overrides : undefined;
   const result = await callModel(prompt, systemPrompt, agentName, geminiKeys, dbCreds, ctx, modelArg);
 
   // Simulated streaming. A Convex action cannot stream tokens out to a client,
   // so the finished response is drip-fed into streamingContent and the UI
   // watches that document — the reply grows instead of landing in one block.
-  //
-  // This was here, and I deleted it by accident collapsing this function during
-  // the run-mode removal. One setStreamingContent with the whole string is
-  // functionally "correct" and silently removes the only streaming the product
-  // has, which is exactly the kind of regression no gate catches.
+  // A seat that already streamed live wrote the content progressively, so only
+  // the final authoritative write is needed; the drip would re-animate it.
   const CHUNK = 300;
   if (!result.text) {
     await ctx.runMutation(internal.codeBranches.setStreamingContent, { branchId, content: "", agentName });
+    return result;
+  }
+  if (streamedChars > 0) {
+    await ctx.runMutation(internal.codeBranches.setStreamingContent, {
+      branchId, content: result.text, agentName,
+    });
     return result;
   }
   let sent = 0;
@@ -652,15 +733,59 @@ export const runPipelineAction = internalAction({
         }
       } catch { /* ignored */ }
 
-      // Mark as running
-      await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-        branchId,
+      // Dispatcher-defined custom agents (name → system prompt) and the
+      // first-iteration skip list from the last dispatch.
+      const customAgentPrompts: Record<string, string> = {};
+      try {
+        if (branch.customAgentsJson) {
+          const parsed = JSON.parse(branch.customAgentsJson);
+          if (Array.isArray(parsed)) {
+            for (const c of parsed) {
+              if (c && typeof c.name === "string" && typeof c.systemPrompt === "string" && c.name) {
+                customAgentPrompts[c.name] = c.systemPrompt;
+              }
+            }
+          }
+        }
+      } catch { /* ignored */ }
+      const skipAgents: string[] = [];
+      try {
+        if (branch.skipAgentsJson) {
+          const parsed = JSON.parse(branch.skipAgentsJson);
+          if (Array.isArray(parsed)) skipAgents.push(...parsed.filter(s => typeof s === "string"));
+        }
+      } catch { /* ignored */ }
+      let skipActive = !!branch.skipActive;
+
+      // Every user prompt bumps this counter in startPipeline. An invocation
+      // that loaded the branch BEFORE the bump must not advance the state
+      // machine past the newer prompt's dispatch — it would clobber the fresh
+      // routing (the "dispatcher only ran on the first prompt" bug: an
+      // in-flight chain's advance overwrote the new dispatch's phase). All
+      // phase transitions go through advance(), which re-reads the branch and
+      // refuses when the generation moved; the newest prompt's chain then owns
+      // the branch uncontested.
+      const promptGen = branch.userPromptGen ?? 0;
+      const advance = async (patch: Record<string, unknown>): Promise<boolean> => {
+        const fresh = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
+        if (!fresh) return false;
+        if ((fresh.userPromptGen ?? 0) !== promptGen) return false;
+        await ctx.runMutation(internal.codeBranches.updateBranchStatus, { branchId, ...patch });
+        return true;
+      };
+
+      // Mark as running. Gen-guarded like every other write: a superseded
+      // invocation (a newer prompt bumped userPromptGen mid-run) must not
+      // overwrite the fresh dispatch's round/totalMessages with the stale
+      // values it loaded — that would make subsequent messages collide on
+      // messageIndex.
+      if (!(await advance({
         status: "running",
         currentAgent: currentPhase,
         phase: currentPhase,
         round,
         totalMessages,
-      });
+      }))) return;
 
       // allMessages already loaded above for task recovery
       const messages = allMessages;
@@ -730,8 +855,8 @@ export const runPipelineAction = internalAction({
         // yet) and continue from the current task — exactly where the hold
         // message promised the run would resume. Every path below returns.
         if (skipDispatchOnResume) {
-          const resumePlanningAgents = buildPlanningPipeline(dispatchedAgents);
-          const resumeTaskAgents = buildTaskPipeline(dispatchedAgents);
+          const resumePlanningAgents = buildPlanningPipeline(dispatchedAgents, skipActive ? skipAgents : undefined);
+          const resumeTaskAgents = buildTaskPipeline(dispatchedAgents, skipActive ? skipAgents : undefined);
           let resumePlannerTasks: Array<{ title: string; description: string }> = [];
           try { resumePlannerTasks = JSON.parse(branch.plannerTasksJson || "[]"); } catch { /* ignore */ }
 
@@ -740,8 +865,7 @@ export const runPipelineAction = internalAction({
             // planning with the default agent set rather than refusing to go on.
             const firstPlanningAgent = resumePlanningAgents[0] ?? "Coder";
             round++;
-            await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-              branchId,
+            if (!(await advance({
               status: "idle",
               currentAgent: firstPlanningAgent,
               phase: firstPlanningAgent,
@@ -749,7 +873,7 @@ export const runPipelineAction = internalAction({
               round,
               totalMessages,
               mcpRoundCount: 0,
-            });
+            }))) return;
             await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
             return;
           }
@@ -757,8 +881,7 @@ export const runPipelineAction = internalAction({
           // The plan already exists — resume execution at the current task.
           const firstTaskAgent = resumeTaskAgents[0] ?? "Coder";
           round++;
-          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-            branchId,
+          if (!(await advance({
             status: "idle",
             currentAgent: firstTaskAgent,
             phase: firstTaskAgent,
@@ -768,7 +891,7 @@ export const runPipelineAction = internalAction({
             currentTaskIndex,
             criticRetryCount: 0,
             mcpRoundCount: 0,
-          });
+          }))) return;
           await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
           return;
         }
@@ -800,8 +923,21 @@ export const runPipelineAction = internalAction({
           ? `\n\n## Live model menu (assign from these exact ids)\n${liveModelIds.map(id => `- ${id}`).join("\n")}`
           : "";
 
+        // KnowItAll hands the conversation back by ending its reply with
+        // {"op":"dispatch","reason":...}; the marker lands in the transcript as
+        // the LAST message, so the re-dispatch reads the reason out of it here
+        // instead of re-routing the original question back to KnowItAll (which
+        // would loop forever). Anything else ending the transcript means the
+        // reason is stale and must not leak into this decision.
+        const marker = "[DISPATCH REQUESTED — handed off to the Dispatcher]: ";
+        const lastContent = allMessages.length > 0 ? allMessages[allMessages.length - 1]?.content ?? "" : "";
+        const handoffIdx = lastContent.indexOf(marker);
+        const handoffNote = handoffIdx >= 0
+          ? `\n\n## Handoff from KnowItAll\nA previous run ended by handing the conversation back to you. A problem was found that needs the build pipeline. Investigate and dispatch the fix:\n${lastContent.slice(handoffIdx + marker.length)}`
+          : "";
+
         const dispatchPrompt = `## Project Goal\n${task}${subtaskContext}\n\n## Existing project files\n${files.length > 0 ? files.map(f => `- ${f.filepath}`).join("\n") : "None (greenfield project)"}
-\n## Previously dispatched agents\n${dispatchedAgents.length > 0 ? dispatchedAgents.join(", ") : "None yet (first dispatch)"}\n\n## Dispatch trigger\nThis run was triggered by a new user message (or the previous task completing). Decide "startFrom" per your instructions: fresh pipeline, resume at a task number, or resume at an agent.${modelMenu}\n\n${currentDateLine}`;
+\n## Previously dispatched agents\n${dispatchedAgents.length > 0 ? dispatchedAgents.join(", ") : "None yet (first dispatch)"}\n\n## Dispatch trigger\nThis run was triggered by a new user message (or the previous task completing). Decide "startFrom" per your instructions: fresh pipeline, resume at a task number, or resume at an agent.${handoffNote}${modelMenu}\n\n${currentDateLine}`;
         const dispatchResult = await callModelWithStreaming(
           ctx, dispatchPrompt, AGENT_SYSTEM_PROMPTS["Dispatcher"] ?? "",
           branchId, "Dispatcher", geminiKeys, dbCreds, undefined, 60_000,
@@ -814,6 +950,8 @@ export const runPipelineAction = internalAction({
         const tier = dispatched?.tier ?? "medium";
         const modelAssignments = dispatched?.models;
         const startFrom = dispatched?.startFrom;
+        const skipList = dispatched?.skipAgents;
+        const customAgents = dispatched?.customAgents;
 
         // Persist so every subsequent pipeline invocation can read the agent list
         // and per-agent model assignments.
@@ -827,6 +965,19 @@ export const runPipelineAction = internalAction({
             modelsJson: JSON.stringify(modelAssignments),
           });
         }
+        // Custom agents + first-iteration skip list, always written together so
+        // a previous dispatch's lists can never leak into this run.
+        await ctx.runMutation(internal.codeBranches.setDispatchedExtras, {
+          branchId,
+          customAgentsJson: JSON.stringify(customAgents ?? []),
+          skipAgentsJson: JSON.stringify(skipList ?? []),
+          skipActive: (skipList?.length ?? 0) > 0,
+        });
+        // Make THIS invocation see the fresh lists (what was read off the
+        // branch before the dispatch could be from a previous run).
+        skipAgents.length = 0;
+        if (skipList) skipAgents.push(...skipList);
+        skipActive = (skipList?.length ?? 0) > 0;
         dispatchedAgents = agents;
         if (modelAssignments) {
           for (const [agent, model] of Object.entries(modelAssignments)) {
@@ -848,8 +999,8 @@ export const runPipelineAction = internalAction({
         // Decide where to go next. "startFrom" chosen by the Dispatcher may
         // override the default fresh-pipeline routing: jump to a specific task
         // in execution, or resume at a specific agent.
-        const planningAgents = buildPlanningPipeline(agents);
-        const taskAgents = buildTaskPipeline(agents);
+        const planningAgents = buildPlanningPipeline(agents, skipActive ? skipAgents : undefined);
+        const taskAgents = buildTaskPipeline(agents, skipActive ? skipAgents : undefined);
         if (startFrom !== undefined && typeof startFrom === "number") {
           // Skip planning entirely — resume EXECUTION at the requested task.
           let plannerTasks: Array<{ title: string; description: string }> = [];
@@ -864,8 +1015,7 @@ export const runPipelineAction = internalAction({
           }
           const firstTaskAgent = taskAgents[0] ?? "Coder";
           round++;
-          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-            branchId,
+          if (!(await advance({
             status: "idle",
             currentAgent: firstTaskAgent,
             phase: firstTaskAgent,
@@ -875,7 +1025,7 @@ export const runPipelineAction = internalAction({
             currentTaskIndex: targetIndex,
             criticRetryCount: 0,
             mcpRoundCount: 0,
-          });
+          }))) return;
           await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
           return;
         }
@@ -885,8 +1035,7 @@ export const runPipelineAction = internalAction({
           const resumeAgent = startFrom;
           const executionPhase = planningAgents.includes(resumeAgent) ? "planning" : "executing";
           round++;
-          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-            branchId,
+          if (!(await advance({
             status: "idle",
             currentAgent: resumeAgent,
             phase: resumeAgent,
@@ -895,7 +1044,7 @@ export const runPipelineAction = internalAction({
             totalMessages,
             criticRetryCount: 0,
             mcpRoundCount: 0,
-          });
+          }))) return;
           await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
           return;
         }
@@ -903,15 +1052,18 @@ export const runPipelineAction = internalAction({
           // At least one planning agent was selected — run the planning phase
           const firstPlanningAgent = planningAgents[0];
           round++;
-          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-            branchId,
+          if (!(await advance({
             status: "idle",
             currentAgent: firstPlanningAgent,
             phase: firstPlanningAgent,
             executionPhase: "planning",
             round,
             totalMessages,
-          });
+            // Fresh pipeline: planning always starts at task 0. A stale
+            // index from a previous run would make the planner's prompt
+            // point at the wrong current task.
+            currentTaskIndex: 0,
+          }))) return;
           await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
           return;
         } else {
@@ -922,11 +1074,10 @@ export const runPipelineAction = internalAction({
             branchId,
             plannerTasksJson: syntheticTask,
           });
-          const taskAgents = buildTaskPipeline(agents);
+          const taskAgents = buildTaskPipeline(agents, skipActive ? skipAgents : undefined);
           const firstTaskAgent = taskAgents[0] ?? "Coder";
           round++;
-          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-            branchId,
+          if (!(await advance({
             status: "idle",
             currentAgent: firstTaskAgent,
             phase: firstTaskAgent,
@@ -934,7 +1085,8 @@ export const runPipelineAction = internalAction({
             round,
             totalMessages,
             mcpRoundCount: 0,
-          });
+            currentTaskIndex: 0,
+          }))) return;
           await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
           return;
         }
@@ -944,8 +1096,8 @@ export const runPipelineAction = internalAction({
       // Determine which pipeline list applies for the current phase.
       const isPlanning = executionPhase === "planning";
       const currentPipeline = isPlanning
-        ? buildPlanningPipeline(dispatchedAgents)
-        : buildTaskPipeline(dispatchedAgents);
+        ? buildPlanningPipeline(dispatchedAgents, skipActive ? skipAgents : undefined)
+        : buildTaskPipeline(dispatchedAgents, skipActive ? skipAgents : undefined);
       const phaseIndex = currentPipeline.indexOf(currentPhase);
 
       // Phase not in the dispatched pipeline (e.g. Dispatcher dropped it, or a
@@ -959,12 +1111,11 @@ export const runPipelineAction = internalAction({
           round,
           messageIndex: totalMessages,
         });
-        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-          branchId,
+        if (!(await advance({
           status: "completed",
           executionPhase: "completed",
           totalMessages,
-        });
+        }))) return;
         return;
       }
 
@@ -975,9 +1126,15 @@ export const runPipelineAction = internalAction({
       // at the top does NOT reflect tasks the Planner just saved — use this).
       let parsedPlannerTasks: Array<{ title: string; description: string }> = [];
 
-      const systemPrompt = currentPhase === "Planner"
-        ? (AGENT_SYSTEM_PROMPTS["Planner"] ?? "")
-        : (AGENT_SYSTEM_PROMPTS[currentPhase] ?? `You are the ${currentPhase} agent.`);
+      // Custom agents (Dispatcher-defined) use their own system prompt; standard
+      // agents fall back to the built-in prompts. A custom agent's prompt comes
+      // from branch.customAgentsJson, which is always persisted before a custom
+      // agent's phase can start, so the invocation that RUNS the agent reads it
+      // fresh off the branch.
+      const systemPrompt = customAgentPrompts[currentPhase]
+        ?? (currentPhase === "Planner"
+          ? (AGENT_SYSTEM_PROMPTS["Planner"] ?? "")
+          : (AGENT_SYSTEM_PROMPTS[currentPhase] ?? `You are the ${currentPhase} agent.`));
 
       if (currentPhase === "Planner") {
         if (outOfBudget()) { await rescheduleForBudget("Planner"); return; }
@@ -1303,6 +1460,12 @@ export const runPipelineAction = internalAction({
         // vanished outright. Merge both.
         parsed.cmdOps.push(...reParsed.cmdOps);
         parsed.mcpOps.push(...reParsed.mcpOps);
+        // Same class of gap: a KnowItAll that searched and THEN handed the run
+        // back to the Dispatcher had its dispatch op (which lives in the
+        // post-search output) dropped — without the merge the handoff vanished
+        // and the run completed as if nothing was found.
+        parsed.dispatchRequested = parsed.dispatchRequested || reParsed.dispatchRequested;
+        parsed.dispatchReason = reParsed.dispatchReason || parsed.dispatchReason;
       }
 
       // ── MCP tool calls ──────────────────────────────────────────────────
@@ -1550,6 +1713,41 @@ export const runPipelineAction = internalAction({
         return;
       }
 
+      // ── KnowItAll handoff ───────────────────────────────────────────────────
+      // KnowItAll is the answering agent; when it ends its reply with
+      // {"op":"dispatch","reason":"..."} it found a real problem that needs the
+      // build pipeline. Hand the run back to the Dispatcher like a fresh prompt
+      // would: save the message with a visible marker (the re-dispatch prompt
+      // reads the reason out of it), then route through the Dispatcher phase.
+      // skipActive is cleared so the previous dispatch's skip list cannot leak
+      // into the fix run.
+      if (currentPhase === "KnowItAll" && parsed.dispatchRequested) {
+        const reason = parsed.dispatchReason?.trim() || "no reason given";
+        totalMessages++;
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId,
+          agent: agentName,
+          content: `${parsed.cleanContent}\n\n[DISPATCH REQUESTED — handed off to the Dispatcher]: ${reason}`,
+          round,
+          messageIndex: totalMessages,
+        });
+        round++;
+        if (!(await advance({
+          status: "idle",
+          currentAgent: "Dispatcher",
+          phase: "Dispatcher",
+          executionPhase: "dispatching",
+          round,
+          totalMessages,
+          criticRetryCount: 0,
+          mcpRoundCount: 0,
+          continueCount: 0,
+          skipActive: false,
+        }))) return;
+        await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+        return;
+      }
+
       // Parsed and applied at the top of this block — every path shares it now.
       // Save message
       totalMessages++;
@@ -1588,8 +1786,7 @@ export const runPipelineAction = internalAction({
         // Critic reads to know how long it has been holding this task.
         const retryCount = branch.criticRetryCount ?? 0;
         round++;
-        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-          branchId,
+        if (!(await advance({
           status: "idle",
           currentAgent: "Coder",
           phase: "Coder",
@@ -1598,7 +1795,7 @@ export const runPipelineAction = internalAction({
           totalMessages,
           criticRetryCount: retryCount + 1,
           mcpRoundCount: 0,
-        });
+        }))) return;
         // Append a system prompt to context so Coder knows exactly what failed
         await ctx.runMutation(internal.codeBranches.saveMessage, {
           branchId,
@@ -1621,8 +1818,7 @@ export const runPipelineAction = internalAction({
       // mcpRoundCount).
       const continueCount = branch.continueCount ?? 0;
       if (parsed.continueRequested && continueCount < MAX_CONTINUE_ROUNDS) {
-        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-          branchId,
+        if (!(await advance({
           status: "idle",
           currentAgent: agentName,
           phase: currentPhase,
@@ -1630,7 +1826,7 @@ export const runPipelineAction = internalAction({
           round,
           totalMessages,
           continueCount: continueCount + 1,
-        });
+        }))) return;
         await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
         return;
       }
@@ -1646,11 +1842,10 @@ export const runPipelineAction = internalAction({
 
         if (plannerTasks.length > 0) {
           // Start at the first agent in the dynamic task pipeline
-          const taskPipeline = buildTaskPipeline(dispatchedAgents);
+          const taskPipeline = buildTaskPipeline(dispatchedAgents, skipActive ? skipAgents : undefined);
           const firstTaskAgent = taskPipeline[0] ?? "Coder";
           round++;
-          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-            branchId,
+          if (!(await advance({
             status: "idle",
             currentAgent: firstTaskAgent,
             phase: firstTaskAgent,
@@ -1658,18 +1853,17 @@ export const runPipelineAction = internalAction({
             round,
             totalMessages,
             mcpRoundCount: 0,
-          });
+          }))) return;
 
           await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, {
             branchId,
           });
         } else {
-          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-            branchId,
+          if (!(await advance({
             status: "completed",
             executionPhase: "completed",
             totalMessages,
-          });
+          }))) return;
         }
       } else if (nextPhaseIndex >= currentPipeline.length) {
         // Pipeline complete for this task
@@ -1687,9 +1881,11 @@ export const runPipelineAction = internalAction({
             // mix (e.g. after Coder writes code, Tester may not be needed for
             // a documentation task). The saved dispatchedAgentsJson is preserved;
             // the Dispatcher re-evaluates against the fresh task context.
+            // skipActive (first-iteration-only agent skipping) is cleared on the
+            // hand-off: a skip is a "continue where the stopped run got to"
+            // directive for one pass, never something a fresh task inherits.
             round++;
-            await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-              branchId,
+            if (!(await advance({
               status: "idle",
               currentAgent: "Dispatcher",
               phase: "Dispatcher",
@@ -1699,19 +1895,19 @@ export const runPipelineAction = internalAction({
               currentTaskIndex: nextTaskIndex,
               criticRetryCount: 0,
               mcpRoundCount: 0,
-            });
+              skipActive: false,
+            }))) return;
 
             await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, {
               branchId,
             });
           } else {
             // All done
-            await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-              branchId,
+            if (!(await advance({
               status: "completed",
               executionPhase: "completed",
               totalMessages,
-            });
+            }))) return;
           }
         } else {
           // Planning phase finished WITHOUT a Planner agent in the dispatched
@@ -1732,11 +1928,10 @@ export const runPipelineAction = internalAction({
               plannerTasksJson: syntheticTask,
             });
           }
-          const taskPipeline = buildTaskPipeline(dispatchedAgents);
+          const taskPipeline = buildTaskPipeline(dispatchedAgents, skipActive ? skipAgents : undefined);
           const firstTaskAgent = taskPipeline[0] ?? "Coder";
           round++;
-          await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-            branchId,
+          if (!(await advance({
             status: "idle",
             currentAgent: firstTaskAgent,
             phase: firstTaskAgent,
@@ -1744,15 +1939,14 @@ export const runPipelineAction = internalAction({
             round,
             totalMessages,
             mcpRoundCount: 0,
-          });
+          }))) return;
           await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
         }
       } else {
         // Next agent in pipeline
         const nextPhase = currentPipeline[nextPhaseIndex];
         round++;
-        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-          branchId,
+        if (!(await advance({
           status: "idle",
           currentAgent: nextPhase,
           phase: nextPhase,
@@ -1760,7 +1954,7 @@ export const runPipelineAction = internalAction({
           round,
           totalMessages,
           mcpRoundCount: 0,
-        });
+        }))) return;
 
         await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, {
           branchId,
@@ -1904,6 +2098,17 @@ export const startPipeline = action({
       phase: "Dispatcher",
       currentAgent: "Dispatcher",
       executionPhase: "dispatching",
+      // userPromptGen: bumped once per user prompt. Any pipeline invocation
+      // that loaded the branch BEFORE this bump must not advance past it —
+      // its phase transitions go through the advance() helper, which
+      // re-reads the branch and refuses when the generation moved, so the
+      // freshest prompt's dispatch always wins (a mid-run chain can no
+      // longer clobber the new dispatch's routing).
+      userPromptGen: (branch.userPromptGen ?? 0) + 1,
+      // skipActive: a skip list is a "continue where the stopped run got to"
+      // directive for one pass. A brand-new prompt never inherits it — the
+      // fresh dispatch decides its own skips (or none).
+      skipActive: false,
     });
 
     // Save user message if provided

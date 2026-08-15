@@ -4,26 +4,39 @@ The dynamic multi-agent pipeline that drives Code mode. Implementation: `src/con
 
 ## Dispatcher
 
-Before the pipeline runs, a Dispatcher agent classifies the task and returns the minimum agent set. Its system prompt lists the available roster and the tier heuristics:
+The Dispatcher runs before EVERY pipeline — every fresh user prompt re-enters through it (a new prompt interrupts any in-flight run; see `userPromptGen` below), and it also re-runs between tasks. It classifies the message and returns the minimum agent set. Its system prompt lists the available roster and the tier heuristics:
 
 - **Model**: whatever the Dispatcher provider chain returns for the `dispatcher` task type.
-- **Output**: JSON `{ tier: "trivial" | "simple" | "medium" | "complex" | "full", reasoning: "...", agents: [...] }`
+- **Output**: JSON `{ tier: "trivial" | "simple" | "medium" | "complex" | "full" | "question", reasoning: "...", agents: [...], assignments: [...], skipAgents: [...], customAgents: [...], startFrom: null | number | agent-name }`
 - **Rules** (enforced after parsing so a forgetful model cannot omit them):
-  - Coder and Critic are always included.
+  - A QUESTION/INQUIRY is dispatched to `["KnowItAll"]` alone — no other agents.
+  - Coder is always guaranteed (enforced after parsing); the Critic is NOT forced — the Dispatcher decides whether verification is needed for the task.
   - Hacker is only included if the user explicitly asks for a security audit / pen test / vuln scan.
+  - `startFrom`: null = fresh pipeline; a 1-based task number = skip planning and start execution at that task; an agent name = resume the run at that agent (for follow-ups on an ongoing task).
+  - `skipAgents`: continuation when a task stopped mid-run — agents to skip on the FIRST pass of this run only (honored while `skipActive`, cleared at the next task hand-off or fresh prompt).
+  - `customAgents`: bespoke agents (max 2, name ≤ 40 chars, own `systemPrompt`) created only when no standard agent fits; they run after the standard agents, in dispatch order.
   - If no planning agents are selected (trivial/simple), planning is skipped entirely and a synthetic single-task plan is created so the Coder gets a well-defined prompt.
 
-The picked agent set is persisted on `codeBranches.dispatchedAgentsJson`; the pipeline filters each phase's list against it.
+The picked agent set is persisted on `codeBranches.dispatchedAgentsJson`; custom agents + the skip list live on `customAgentsJson` / `skipAgentsJson` (written together via `setDispatchedExtras`); the pipeline filters each phase's list against them.
+
+### Interrupts and generations
+
+`codeBranches.userPromptGen` is bumped once per user prompt by `startPipeline`. Every phase transition in `runPipelineAction` goes through the `advance()` helper, which re-reads the branch and refuses when the generation moved — so a mid-run chain can never clobber the routing of a newer prompt. The newest prompt's dispatch owns the branch uncontested; superseded invocations yield.
+
+### KnowItAll handoff
+
+KnowItAll answers the question directly and is the only agent with the power to re-activate the Dispatcher: it ends its reply with `{"op":"dispatch","reason":"..."}` when answering exposes a problem that needs the build pipeline. The pipeline saves the message with a `[DISPATCH REQUESTED]` marker, routes back through the Dispatcher phase, and the re-dispatch prompt carries the reason (read out of the marker in the transcript) so the Dispatcher does not re-route the original question back to KnowItAll and loop.
 
 ### Complexity tiers (guidance from the Dispatcher prompt)
 
 | Tier | Typical task | Agents selected |
 |---|---|---|
-| trivial | Rename, typo, one-liner | Coder, Critic |
-| simple | Add a UI component, fix a bug | Coder, Tester, Critic |
+| question | Doubt, how-to, explanation | KnowItAll |
+| trivial | Rename, typo, one-liner | Coder |
+| simple | Add a UI component, fix a bug | Coder, Critic |
 | medium | Multi-file feature, new endpoint, refactor | FactCheck, Planner, Coder, Tester, Critic |
 | complex | New module, full integration, architecture change | FactCheck, Analyser, Planner, Coder, Optimiser, Tester, Critic |
-| full | Greenfield app or security audit requested | All 13 agents |
+| full | Greenfield app or security audit requested | All agents |
 
 Research is not a tier — it is a team (ResearchPlanner + Researcher + ReportMaker + FactCheck) added to any tier when the task needs current docs, third-party APIs, or external context.
 
@@ -33,7 +46,8 @@ Order of appearance in the pipeline. Task type is what `agentToTaskType()` in `s
 
 | Agent | Task type | Role |
 |---|---|---|
-| Dispatcher | `dispatcher` | Classifies the task; picks the crew. |
+| Dispatcher | `dispatcher` | Classifies the task; picks the crew. Runs on every prompt. |
+| KnowItAll | `chat` | Answers any question directly; can hand back to the Dispatcher with `{"op":"dispatch"}`. |
 | ResearchPlanner | `research` | Breaks the research topic into search keywords and scrape targets. |
 | Researcher | `research` | Executes the plan; collects raw data as JSON. |
 | ReportMaker | `research` | Synthesises the raw JSON into a structured report. |
@@ -45,7 +59,9 @@ Order of appearance in the pipeline. Task type is what `agentToTaskType()` in `s
 | Organizer | `dispatcher` | Structure, docs, README. Both spellings (`organiser`, `organizer`) match `dispatcher`. |
 | Tester | `agent` | Writes and runs tests. |
 | Hacker | `agent` | Adversarial security pass (only if requested). |
-| Critic (always) | `reasoning` | Final gate. Rejects substandard work with `{"op":"critic-fail"}` and specific feedback. |
+| Critic | `reasoning` | Final gate. Rejects substandard work with `{"op":"critic-fail"}` and specific feedback. Included only when the Dispatcher says the task needs verification. |
+
+Custom agents (Dispatcher-defined) are appended after the standard set, in dispatch order, and run with their own system prompt from `customAgentsJson`.
 
 ### Critic retry loop
 
@@ -61,14 +77,14 @@ The previous `MAX_CRITIC_RETRIES = 3` was removed because a fixed count fails in
 
 ## Provider chain
 
-Single entry point: `callModel(prompt, systemPrompt, agentName, …extra)` in `src/convex/lib/agentCore.ts`. `extra` may carry a `ctx`, an `assignedModel` string (Dispatcher-chosen), and a `deadlineMs` override. The whole chain runs inside a shared 7-minute wall-clock budget (Convex kills actions at 10 minutes); the Dispatcher call carries an extra 60-second fail-fast deadline so a dead provider surfaces in about a minute.
+Single entry point: `callModel(prompt, systemPrompt, agentName, …extra)` in `src/convex/lib/agentCore.ts`. `extra` may carry a `ctx`, an `assignedModel` string (Dispatcher-chosen), a `deadlineMs` override, and a `streaming` callback (live SSE deltas for the OpenRouter leg). The whole chain runs inside a shared 7-minute wall-clock budget (Convex kills actions at 10 minutes); the Dispatcher call carries an extra 60-second fail-fast deadline so a dead provider surfaces in about a minute.
 
 ### Order
 
 1. **Dispatcher short-circuit** — if `assignedModel` matches `findZenModel()`, `findOpenRouterModel()`, `findDeadlySignalsModel()`, or `findModelScopeModel()`, that provider is tried first with that exact model id. Modal is skipped for that call because it does not know the free-tier providers' catalog ids.
 2. **Modal** — admin-registered `modalEndpoints` (primary row first). Only tried when a `ctx` is passed. Falls through if `MODAL_NOT_CONFIGURED` or on error.
 3. **OpenCode Zen** — anonymous free tier, `ZEN_API_KEY` optional. `ZEN_DISPATCHER_MODEL` / `ZEN_DEFAULT_MODEL` for the two seats (`src/convex/lib/zenClient.ts`).
-4. **OpenRouter** — keyed free-model gateway (`OPENROUTER_API_KEY`, `openrouter.ai/api/v1`). Defaults to the `openrouter/free` auto-router because the `:free` roster rotates (DeepSeek/Gemini/Mistral free variants were pulled in 2026); 20 req/min per free model. `OPENROUTER_DISPATCHER_MODEL` / `OPENROUTER_DEFAULT_MODEL` (`src/convex/lib/openrouterClient.ts`).
+4. **OpenRouter** — keyed free-model gateway (`OPENROUTER_API_KEY`, `openrouter.ai/api/v1`). Defaults to the `openrouter/free` auto-router because the `:free` roster rotates (DeepSeek/Gemini/Mistral free variants were pulled in 2026); 20 req/min per free model. Streams via SSE — timeouts are idle-based (60s to the first chunk, 60s between chunks) so a slow-but-alive model keeps the leg until the chain deadline instead of dying on a fixed per-attempt cap; deltas pipe live into `streamingContent`. `OPENROUTER_DISPATCHER_MODEL` / `OPENROUTER_DEFAULT_MODEL` (`src/convex/lib/openrouterClient.ts`).
 5. **DeadlySignal** — keyed New API gateway (`DEADLYSIGNALS_API_KEY`, `myapi.creitingameplays.com/v1`). `DEADLYSIGNALS_DISPATCHER_MODEL` / `DEADLYSIGNALS_DEFAULT_MODEL`.
 6. **ModelScope** — Alibaba's official free API-Inference tier (`MODELSCOPE_API_KEY` plus fallback pool `MODELSCOPE_API_KEY_2` … `_10`, tried in order on rate-limit/quota/revoked key; `api-inference.modelscope.ai/v1` — the `.cn` host rejects `ms-…` tokens). `MODELSCOPE_DISPATCHER_MODEL` / `MODELSCOPE_DEFAULT_MODEL`.
 7. **Ollama Cloud** — keyed pool (`OLLAMA_API_KEY`, `OLLAMA_API_KEY_2` … `_10`; the module builds the pool dynamically so a literal grep misses those). Task-type mapped by `mapModelIdToOllama()` in `agentCore.ts`.
@@ -196,8 +212,13 @@ Branch status fields (`codeBranches` in `schema.ts`):
 - `status`: `running` | `paused` | `completed` | `idle`.
 - `currentTaskIndex`: which task in the plan is currently running.
 - `dispatchedAgentsJson`: JSON array of agent names the Dispatcher selected.
+- `dispatchedModelsJson`: per-agent model assignments the Dispatcher selected.
+- `customAgentsJson`: JSON array of Dispatcher-defined custom agents (`{name, systemPrompt}`).
+- `skipAgentsJson`: JSON array of agents to skip on the first pass of this run (continuation after a mid-run stop).
+- `skipActive`: whether the skip list still applies — set by the dispatch, cleared on the next task hand-off or fresh prompt.
+- `userPromptGen`: monotonic counter bumped once per user prompt by `startPipeline`; phase transitions refuse to advance when it moved, so a newer prompt always interrupts an in-flight run and the newest dispatch wins.
 - `criticRetryCount`: persisted retry counter for the current task.
-- `streamingContent` / `streamingAgent` / `streamingAt`: live agent output (drip-fed in ~300-char chunks — real token streaming was abandoned as unreliable in Convex actions).
+- `streamingContent` / `streamingAgent` / `streamingAt`: live agent output. Streaming seats (OpenRouter) write true SSE deltas as they arrive; other seats drip-feed the finished response in ~300-char chunks. Either way the reply grows instead of landing in one block.
 - `executor`: `cloud` | `local` — chosen at `startPipeline` and never changed after; a local branch is never scheduled server-side, a cloud branch is never polled by the desktop app.
 
 `stopPipeline` sets `stopRequested`; the runner halts without rescheduling and clears the flag.

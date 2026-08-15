@@ -244,6 +244,23 @@ const schema = defineSchema(
       // successful VM workflow install. Read by the pipeline's prompt builder
       // so agents stop emitting {"op":"cmd"} ops that can never execute.
       executorBlockedReason: v.optional(v.string()),
+      // Dispatcher-defined custom agents: JSON array of {"name","systemPrompt"}
+      // (max 2, name ≤ 40 chars). Custom agent names ride inside
+      // dispatchedAgentsJson too, and the pipeline runs them after the standard
+      // agents with their own system prompt.
+      customAgentsJson: v.optional(v.string()),
+      // Agents the Dispatcher wants skipped on the FIRST pass of this run —
+      // JSON array of agent names, for continuation when a task stopped
+      // mid-run and analysis/planning agents already did their job. Gated by
+      // skipActive; the next task hand-off clears the gate so later iterations
+      // run the full pipeline.
+      skipAgentsJson: v.optional(v.string()),
+      skipActive: v.optional(v.boolean()),
+      // Monotonic counter bumped by startPipeline on EVERY user prompt. The
+      // pipeline's phase transitions re-read the branch and refuse to advance
+      // when the generation moved — so a fresh prompt's dispatch always wins
+      // over an in-flight invocation, instead of the old chain clobbering it.
+      userPromptGen: v.optional(v.number()),
     })
       .index("by_project", ["projectId"])
       .index("by_branch_id", ["branchId"])

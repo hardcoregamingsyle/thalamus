@@ -27,6 +27,10 @@ const EXPECTED: Record<string, ReturnType<typeof agentToTaskType>> = {
   Hacker: "agent",
   Critic: "reasoning",
   FactCheck: "factcheck",
+  // KnowItAll answers questions on the chat seat — mapped explicitly so the
+  // routing is a pinned decision, not a silent default (see the chat-map in
+  // taskTypes.ts; the "no silent default" test below skips chat-pinned agents).
+  KnowItAll: "chat",
 };
 
 describe("agentToTaskType", () => {
@@ -50,8 +54,14 @@ describe("agentToTaskType", () => {
   });
 
   test("no pipeline agent falls through to the generic chat default", () => {
-    for (const agent of Object.keys(EXPECTED)) {
-      expect(agentToTaskType(agent)).not.toBe("chat");
+    for (const [agent, taskType] of Object.entries(EXPECTED)) {
+      // Agents explicitly pinned to "chat" (KnowItAll) are deliberate — they
+      // only pass the intent if they are pinned, not if they fall through.
+      if (taskType === "chat") {
+        expect(agentToTaskType(agent)).toBe("chat");
+      } else {
+        expect(agentToTaskType(agent)).not.toBe("chat");
+      }
     }
   });
 });

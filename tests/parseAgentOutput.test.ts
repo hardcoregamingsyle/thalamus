@@ -566,6 +566,40 @@ describe("parseAgentOutput — broken documents never execute quoted inline exam
   });
 });
 
+describe("parseAgentOutput — dispatch op (KnowItAll handoff)", () => {
+  // KnowItAll ends its reply with {"op":"dispatch","reason":"..."} when
+  // answering exposes a problem that needs the build pipeline. The pipeline
+  // routes the run back through the Dispatcher on this flag.
+  it("sets dispatchRequested with the reason when the op is present", () => {
+    const out = `Your build is broken — the import in src/main.ts points at a file that does not exist. {"op":"dispatch","reason":"src/main.ts imports a missing module"}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.dispatchRequested).toBe(true);
+    expect(parsed.dispatchReason).toBe("src/main.ts imports a missing module");
+    expect(parsed.cleanContent).toContain("[DISPATCH REQUESTED");
+  });
+
+  it("leaves dispatchRequested false when the op is absent", () => {
+    const out = `That should fix it — nothing else needs changing.`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.dispatchRequested).toBe(false);
+    expect(parsed.dispatchReason).toBeUndefined();
+  });
+
+  it("does not trigger on a dispatch word inside another op's value", () => {
+    const out = `{"message":"ok","ops":[{"op":"cmd","command":"npm run dispatch -- --dry"}]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.dispatchRequested).toBe(false);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["npm run dispatch -- --dry"]);
+  });
+
+  it("caps the reason length so the transcript marker stays bounded", () => {
+    const out = `{"op":"dispatch","reason":"${"x".repeat(2000)}"}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.dispatchRequested).toBe(true);
+    expect(parsed.dispatchReason?.length).toBeLessThanOrEqual(500);
+  });
+});
+
 describe("parseAgentOutput — continue op", () => {
   it("sets continueRequested when the document ends with the op", () => {
     const out = `{"message":"chunk 2 of the file","ops":[{"op":"edit-file","path":"src/big.ts","content":"part two"},{"op":"continue"}]}`;
