@@ -61,10 +61,11 @@ export async function callModel(
   // a miss and the chain moves on; a fully-blank chain throws so the caller
   // surfaces a real message instead of silence.
   const isBlank = (s: string): boolean => !s.trim();
-  // Extract ctx and optional assignedModel/deadlineMs overrides from _extra
+  // Extract ctx and optional assignedModel/deadlineMs/streaming overrides from _extra
   let ctx: { runQuery: ActionCtx["runQuery"]; runMutation?: ActionCtx["runMutation"] } | undefined;
   let assignedModel: string | undefined;
   let deadlineMs: number | undefined;
+  let streaming: ((delta: string) => Promise<void>) | undefined;
   for (const arg of _extra) {
     if (arg && typeof arg === "object" && "runQuery" in (arg as Record<string,unknown>)) {
       // Every real ctx is an ActionCtx, so runMutation rides along on the same
@@ -80,6 +81,10 @@ export async function callModel(
     if (arg && typeof arg === "object" && "deadlineMs" in (arg as Record<string,unknown>)) {
       const maybe = (arg as Record<string,unknown>).deadlineMs;
       if (typeof maybe === "number" && maybe > 0) deadlineMs = maybe;
+    }
+    if (arg && typeof arg === "object" && "streaming" in (arg as Record<string,unknown>)) {
+      const maybe = (arg as Record<string,unknown>).streaming;
+      if (typeof maybe === "function") streaming = maybe as (delta: string) => Promise<void>;
     }
   }
 
@@ -134,7 +139,7 @@ export async function callModel(
   // Dispatcher-chosen OpenRouter model: same as Zen — honor it directly.
   if (assignedModel && findOpenRouterModel(assignedModel)) {
     try {
-      const result = await callOpenRouter(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline);
+      const result = await callOpenRouter(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
       if (!isBlank(result.text)) {
         await logAttempt({ provider: "openrouter", model: result.model, ok: true });
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `openrouter:${result.model}` };
@@ -231,11 +236,14 @@ export async function callModel(
     // Second fallback after Zen: the `openrouter/free` auto-router serves
     // whatever free model fits the request, so the leg survives the roster
     // rotation. 20 req/min per free model — burst traffic falls through.
+    // Streams via SSE — deltas are piped to `streaming` (if the caller passed
+    // one) so the UI shows tokens as they arrive and the connection stays open
+    // until the chain deadline instead of dying on a fixed per-attempt cap.
     const openRouterModel = assignedModel && findOpenRouterModel(assignedModel)
       ? assignedModel
       : (taskType === "dispatcher" ? OPENROUTER_DISPATCHER_MODEL : OPENROUTER_DEFAULT_MODEL);
     try {
-      const result = await callOpenRouter(prompt, systemPrompt, openRouterModel, PIPELINE_MAX_TOKENS, undefined, deadline);
+      const result = await callOpenRouter(prompt, systemPrompt, openRouterModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
       if (!isBlank(result.text)) {
         await logAttempt({ provider: "openrouter", model: result.model, ok: true });
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `openrouter:${result.model}` };
