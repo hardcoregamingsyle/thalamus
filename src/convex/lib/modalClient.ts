@@ -80,7 +80,7 @@ export async function callModal(
   ctx: { runQuery: ActionCtx["runQuery"] },
   prompt: string,
   systemPrompt: string,
-  maxTokens: number = 8192,
+  maxTokens: number = 32768,
   temperature: number = 0.7,
   history?: Array<{ role: "user" | "assistant"; content: string }>,
   deadlineMs?: number,

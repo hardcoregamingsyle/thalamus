@@ -8,20 +8,27 @@ import type { ActionCtx } from "../_generated/server";
 // a separate economy with their own switch.
 export const FREE_UNLIMITED = true;
 
+// Output-token ceiling for pipeline agents. Raised from 8192 to 32768 by
+// request — long agent replies (large file writes) must not be cut off at 8k.
+// 32k is the practical ceiling the free-tier providers in the chain accept;
+// 64k is rejected outright by most OpenAI-compatible endpoints, which would
+// make every provider in the chain fail. The explicit {"op":"continue"} loop
+// covers anything still too big for one reply.
+export const PIPELINE_MAX_TOKENS = 32768;
+
 // Re-exported so study.ts can keep calling it directly from agentCore.
 export { callSiliconFlow } from "./ollamaClient";
 
 import { callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL, calcAgentBucksForModel } from "./ollamaClient";
 import { agentToTaskType, type TaskType } from "./taskTypes";
 import { callModal, calcModalAgentBucks } from "./modalClient";
-import { callOvhcloud, mapTaskToOvhModel } from "./ovhcloudClient";
 import { callZen, findZenModel, ZEN_DISPATCHER_MODEL, ZEN_DEFAULT_MODEL } from "./zenClient";
 import { callDeadlySignals, findDeadlySignalsModel, DEADLYSIGNALS_DISPATCHER_MODEL, DEADLYSIGNALS_DEFAULT_MODEL } from "./deadlySignalsClient";
 import { callModelScope, findModelScopeModel, MODELSCOPE_DISPATCHER_MODEL, MODELSCOPE_DEFAULT_MODEL } from "./modelscopeClient";
 import { dokobotSearch, dokobotRead, hasDokobotKey, type DokobotSearchItem } from "./dokobotClient";
 
 // The only tier-ish type left: callModel returns a provider-tagged string
-// ("zen:<model>", "ollama:<model>", "modal:<model>", "ovhcloud:<model>",
+// ("zen:<model>", "ollama:<model>", "modal:<model>",
 // "deadlysignals:<model>") that the billing helpers read.
 export type ModelTier = string;
 // TaskDifficulty (the return type of parseDifficultyFromPlannerOutput) now
@@ -29,9 +36,9 @@ export type ModelTier = string;
 // bottom of the file — importers see it exactly where they used to.
 
 /**
- * Unified model caller — provider chain: Modal → Zen → DeadlySignal → ModelScope → OVHcloud → Ollama.
- * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/Deadly/ModelScope/OVHcloud/Ollama
- * (Zen and OVHcloud are anonymous; DeadlySignal and ModelScope are keyed). A
+ * Unified model caller — provider chain: Modal → Zen → DeadlySignal → ModelScope → Ollama.
+ * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/Deadly/ModelScope/Ollama
+ * (Zen is anonymous; DeadlySignal and ModelScope are keyed). A
  * Dispatcher-chosen Zen, DeadlySignal or ModelScope model id is honored directly. Only the Dispatcher's model
  * is hardcoded (per provider); every other agent's model is decided by the
  * Dispatcher at runtime.
@@ -71,7 +78,7 @@ export async function callModel(
 
   // One shared wall-clock budget for the WHOLE provider chain. Convex kills
   // any action at 10 minutes with a "Transient error" that no try/catch in
-  // our code can see — so if Modal + Zen + DeadlySignal + ModelScope + OVHcloud
+  // our code can see — so if Modal + Zen + DeadlySignal + ModelScope
   // + Ollama retries are ever allowed to stack past that, the pipeline dies without
   // saving an error message and the user just sees nothing. 7 minutes here
   // leaves the rest of the step (billing, file ops, streaming drip-feed) room
@@ -84,7 +91,7 @@ export async function callModel(
   // on a model name it does not serve.
   if (assignedModel && findZenModel(assignedModel)) {
     try {
-      const result = await callZen(prompt, systemPrompt, assignedModel, 8192, undefined, deadline);
+      const result = await callZen(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `zen:${result.model}` };
       }
@@ -98,7 +105,7 @@ export async function callModel(
   // Dispatcher-chosen DeadlySignal model: same as Zen — honor it directly.
   if (assignedModel && findDeadlySignalsModel(assignedModel)) {
     try {
-      const result = await callDeadlySignals(prompt, systemPrompt, assignedModel, 8192, undefined, deadline);
+      const result = await callDeadlySignals(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `deadlysignals:${result.model}` };
       }
@@ -112,7 +119,7 @@ export async function callModel(
   // Dispatcher-chosen ModelScope model: same as Zen — honor it directly.
   if (assignedModel && findModelScopeModel(assignedModel)) {
     try {
-      const result = await callModelScope(prompt, systemPrompt, assignedModel, 8192, undefined, deadline);
+      const result = await callModelScope(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modelscope:${result.model}` };
       }
@@ -130,10 +137,10 @@ export async function callModel(
       // Modal first when an admin has registered an endpoint. Which endpoint is
       // decided by data (the isPrimary row comes back first), not by this code —
       // so swapping the primary model is a click in /admin, not a deploy. Falls
-      // through to Zen → DeadlySignal → ModelScope → OVHcloud → Ollama when
+      // through to Zen → DeadlySignal → ModelScope → Ollama when
       // nothing is registered or every endpoint errors.
       try {
-        const result = await callModal(ctx, prompt, systemPrompt, 8192, 0.7, undefined, deadline);
+        const result = await callModal(ctx, prompt, systemPrompt, PIPELINE_MAX_TOKENS, 0.7, undefined, deadline);
         if (!isBlank(result.text)) {
           return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modal:${result.model}` };
         }
@@ -152,7 +159,7 @@ export async function callModel(
       ? assignedModel
       : (taskType === "dispatcher" ? ZEN_DISPATCHER_MODEL : ZEN_DEFAULT_MODEL);
     try {
-      const result = await callZen(prompt, systemPrompt, zenModel, 8192, undefined, deadline);
+      const result = await callZen(prompt, systemPrompt, zenModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `zen:${result.model}` };
       }
@@ -169,7 +176,7 @@ export async function callModel(
       ? assignedModel
       : (taskType === "dispatcher" ? DEADLYSIGNALS_DISPATCHER_MODEL : DEADLYSIGNALS_DEFAULT_MODEL);
     try {
-      const result = await callDeadlySignals(prompt, systemPrompt, deadlyModel, 8192, undefined, deadline);
+      const result = await callDeadlySignals(prompt, systemPrompt, deadlyModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `deadlysignals:${result.model}` };
       }
@@ -186,32 +193,18 @@ export async function callModel(
       ? assignedModel
       : (taskType === "dispatcher" ? MODELSCOPE_DISPATCHER_MODEL : MODELSCOPE_DEFAULT_MODEL);
     try {
-      const result = await callModelScope(prompt, systemPrompt, scopeModel, 8192, undefined, deadline);
+      const result = await callModelScope(prompt, systemPrompt, scopeModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modelscope:${result.model}` };
       }
-      console.warn("ModelScope returned empty output, falling back to OVHcloud:", scopeModel);
+      console.warn("ModelScope returned empty output, falling back to Ollama:", scopeModel);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`ModelScope call failed, falling back to OVHcloud:`, msg);
-    }
-
-    // OVHcloud — free anonymous tier, no API key needed, 2 RPM.
-    // Catches requests when Zen is down before falling to Ollama.
-    const ovhModel = mapTaskToOvhModel(taskType);
-    try {
-      const result = await callOvhcloud(prompt, systemPrompt, ovhModel, 8192, ctx?.runQuery, deadline);
-      if (!isBlank(result.text)) {
-        return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `ovhcloud:${result.model}` };
-      }
-      console.warn("OVHcloud returned empty output, falling back to Ollama:", ovhModel);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`OVHcloud call failed, falling back to Ollama:`, msg);
+      console.warn(`ModelScope call failed, falling back to Ollama:`, msg);
     }
 
     const ollamaModel = mapModelIdToOllama(modelId);
-    const result = await callSiliconFlow(prompt, systemPrompt, ollamaModel, 16384, undefined, ctx?.runQuery, deadline);
+    const result = await callSiliconFlow(prompt, systemPrompt, ollamaModel, PIPELINE_MAX_TOKENS, undefined, ctx?.runQuery, deadline);
     if (!isBlank(result.text)) {
       return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `ollama:${result.model}` };
     }
@@ -222,7 +215,7 @@ export async function callModel(
   };
 
   // The free seats rate-limit TOGETHER under burst traffic (Zen 429s on shared
-  // egress, ModelScope daily/per-model quotas, OVHcloud's 2 RPM) — which used
+  // egress, ModelScope daily/per-model quotas) — which used
   // to surface as "no provider configured" after a few quick messages even
   // though every provider was fine a minute earlier. One backoff'd second pass
   // rides out the burst when the chain budget allows it.
@@ -240,7 +233,7 @@ export async function callModel(
     }
     const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
     if (msg.includes("not configured")) {
-      throw new Error(`No AI provider configured — add Modal or Ollama keys via /admin, then a Zen/DeadlySignal/ModelScope/OVHcloud call can serve.`);
+      throw new Error(`No AI provider configured — add Modal or Ollama keys via /admin, then a Zen/DeadlySignal/ModelScope call can serve.`);
     }
     throw new Error(`All AI provider seats failed (likely rate-limited under burst — retried once). Last error: ${msg.slice(0, 300)}`);
   }
@@ -267,9 +260,6 @@ export function calcAgentBucksForTier(
 ): number {
   if (tier.startsWith("modal:")) {
     return calcModalAgentBucks(inputTokens, outputTokens);
-  }
-  if (tier.startsWith("ovhcloud:")) {
-    return 0; // OVHcloud free anonymous tier — no cost
   }
   if (tier.startsWith("zen:")) {
     return 0; // OpenCode Zen free anonymous tier — no cost

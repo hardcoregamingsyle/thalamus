@@ -225,7 +225,7 @@ export async function callSiliconFlow(
   prompt: string,
   systemPrompt: string,
   model: string = DEFAULT_CHAT_MODEL,
-  maxTokens: number = 16384,
+  maxTokens: number = 32768,
   history?: Array<{ role: "user" | "assistant"; content: string }>,
   runQuery?: ActionCtx["runQuery"],
   deadlineMs?: number,
@@ -322,7 +322,7 @@ export async function callSiliconFlowStreaming(
   systemPrompt: string,
   model: string,
   onDelta: (text: string) => Promise<void>,
-  maxTokens: number = 16384,
+  maxTokens: number = 32768,
   history?: Array<{ role: "user" | "assistant"; content: string }>,
   runQuery?: ActionCtx["runQuery"],
 ): Promise<ChatResult> {

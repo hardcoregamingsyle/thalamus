@@ -58,6 +58,12 @@ export interface ParsedOutput {
   cmdOps: CmdOp[];
   mcpOps: McpOp[];
   cleanContent: string;
+  // True when the agent ended its reply with {"op":"continue"} — the pipeline
+  // re-runs the SAME agent instead of advancing, so a file too large for one
+  // response can be written across multiple turns (each turn's file ops are
+  // applied before the next begins). Bounded by the pipeline's
+  // continue-count cap so a model stuck emitting continue can't run forever.
+  continueRequested: boolean;
   // Additive: raw excerpts (truncated to 200 chars) of lines that clearly
   // intended to be JSON ops (`{"op":…` / `{ "op":…`) but failed to parse — most
   // commonly a create-file whose content string has unescaped double quotes.
@@ -97,6 +103,7 @@ export interface ParsedOutput {
 //   {"op":"security-pass"}
 //   {"op":"security-fail"}
 //   {"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}
+//   {"op":"continue"}   — ask the pipeline for another turn of the SAME agent
 //
 // The parser finds these by scanning for `{"op":"` (whitespace around `:` and
 // inside the braces tolerated — models add spaces freely) and reading the
@@ -459,6 +466,7 @@ export function parseAgentOutput(content: string): ParsedOutput {
   let instructions: Instructions | undefined;
   let changeMode: "Code" | "Chat" | "Minor" | undefined;
   let requestApiKey: { name: string; description: string; howToGet: string } | undefined;
+  let continueRequested = false;
   const processedPaths = new Set<string>();
 
   // Substitute malformed op excerpts BEFORE the successful-op loop rewrites
@@ -621,6 +629,15 @@ export function parseAgentOutput(content: string): ParsedOutput {
           mark(imgHtml);
         }
         break;
+      case "continue":
+        // Explicit "give me another turn" signal. The pipeline re-runs this
+        // same agent after applying this round's file ops — the mechanism that
+        // lets a single large file be written across several responses. The
+        // op itself carries no data; the agent just keeps its document short
+        // and asks for more room instead of emitting a truncated file.
+        continueRequested = true;
+        mark("[CONTINUE]");
+        break;
     }
   }
 
@@ -754,7 +771,7 @@ export function parseAgentOutput(content: string): ParsedOutput {
   // Final sweep: neutralise orphaned <<...>> markers
   cleanContent = cleanContent.replace(/<<([^<>]{0,200}?)>>/g, "‹‹$1››");
 
-  return { fileOps, searchOps, scrapeOps, cmdOps, mcpOps, researchOps, cleanContent, malformedOps, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode, requestApiKey };
+  return { fileOps, searchOps, scrapeOps, cmdOps, mcpOps, researchOps, cleanContent, malformedOps, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode, requestApiKey, continueRequested };
 }
 
 export interface PlannerTask {

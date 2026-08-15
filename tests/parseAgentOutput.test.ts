@@ -565,3 +565,24 @@ describe("parseAgentOutput — broken documents never execute quoted inline exam
     expect(parsed.cmdOps.map((c) => c.command)).toEqual(["npm test"]);
   });
 });
+
+describe("parseAgentOutput — continue op", () => {
+  it("sets continueRequested when the document ends with the op", () => {
+    const out = `{"message":"chunk 2 of the file","ops":[{"op":"edit-file","path":"src/big.ts","content":"part two"},{"op":"continue"}]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.continueRequested).toBe(true);
+    expect(parsed.fileOps.map((f) => f.filepath)).toEqual(["src/big.ts"]);
+  });
+
+  it("leaves continueRequested false when the op is absent", () => {
+    const out = `{"message":"final chunk","ops":[{"op":"edit-file","path":"src/big.ts","content":"part three"}]}`;
+    expect(parseAgentOutput(out).continueRequested).toBe(false);
+  });
+
+  it("does not trigger on a continue word inside another op's value", () => {
+    const out = `{"message":"keep going","ops":[{"op":"cmd","command":"npm run dev -- --continue"}]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.continueRequested).toBe(false);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["npm run dev -- --continue"]);
+  });
+});

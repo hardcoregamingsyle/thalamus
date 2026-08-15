@@ -190,28 +190,21 @@ export const getMessagesInternal = internalQuery({
 // Internal: the branch's ENTIRE conversation in index order — the durable
 // source for the .thalamus/conversation.jsonl that ships with every push.
 // getMessagesInternal only returns the latest 100, which is all the pipeline
-// needs for context; the transcript needs everything, so this paginates.
+// needs for context; the transcript needs everything. NOT paginated: Convex
+// allows a single paginated query per function execution, so the old
+// do/while paginate() loop threw "ran multiple paginated queries" on any
+// branch with more than one page of messages — and because the push action
+// autoPushToGithub calls this via ctx.runQuery, the crash silently killed
+// every file push, leaving the Actions clone permanently empty. A branch's
+// message log is tightly bounded, so .collect() is the right tool here.
 export const getConversationLogInternal = internalQuery({
   args: { branchId: v.string() },
   handler: async (ctx, args) => {
-    const messages: Array<{
-      agent: string;
-      content: string;
-      round?: number | null;
-      messageIndex?: number | null;
-      createdAt: number;
-    }> = [];
-    let cursor: string | null = null;
-    do {
-      const page = await ctx.db
-        .query("codeMessages")
-        .withIndex("by_branch_and_index", (q) => q.eq("branchId", args.branchId))
-        .order("asc")
-        .paginate({ numItems: 500, cursor: cursor ?? null });
-      messages.push(...page.page);
-      cursor = page.isDone ? null : page.continueCursor;
-    } while (cursor);
-    return messages;
+    return await ctx.db
+      .query("codeMessages")
+      .withIndex("by_branch_and_index", (q) => q.eq("branchId", args.branchId))
+      .order("asc")
+      .collect();
   },
 });
 
@@ -390,6 +383,7 @@ export const updateBranchStatus = internalMutation({
     currentTaskDifficulty: v.optional(v.string()),
     criticRetryCount: v.optional(v.number()),
     mcpRoundCount: v.optional(v.number()),
+    continueCount: v.optional(v.number()),
     stopRequested: v.optional(v.boolean()),
     executor: v.optional(v.union(v.literal("cloud"), v.literal("local"))),
     // How many times this run has been parked waiting for model capacity.
@@ -421,6 +415,15 @@ export const updateBranchStatus = internalMutation({
     if (args.currentTaskDifficulty !== undefined) updates.currentTaskDifficulty = args.currentTaskDifficulty;
     if (args.criticRetryCount !== undefined) updates.criticRetryCount = args.criticRetryCount;
     if (args.mcpRoundCount !== undefined) updates.mcpRoundCount = args.mcpRoundCount;
+    if (args.continueCount !== undefined) {
+      updates.continueCount = args.continueCount;
+    } else if (args.phase !== undefined && args.phase !== branch.phase) {
+      // A phase change to a DIFFERENT agent resets the explicit-continuation
+      // budget — {"op":"continue"} re-runs the same agent, so the counter only
+      // makes sense within one agent's turn. Same-agent transitions (MCP round,
+      // command pause/resume) leave phase untouched and keep the budget.
+      updates.continueCount = 0;
+    }
     if (args.stopRequested !== undefined) updates.stopRequested = args.stopRequested;
     if (args.executor !== undefined) updates.executor = args.executor;
     if (args.providerBackoffCount !== undefined) {

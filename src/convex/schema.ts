@@ -167,6 +167,11 @@ const schema = defineSchema(
       // MCP tool-call loop guard — how many times the current agent has been
       // re-run with MCP results this phase. Reset to 0 on every phase advance.
       mcpRoundCount: v.optional(v.number()),
+      // Explicit-continuation loop guard — how many times the current agent has
+      // been re-run because it ended a reply with {"op":"continue"}. Reset to 0
+      // on every phase advance. Bounds the same-agent loop so a model stuck
+      // emitting continue can't re-bill forever.
+      continueCount: v.optional(v.number()),
       // Real-time streaming state — updated frequently during agent generation
       streamingContent: v.optional(v.string()),
       streamingAgent: v.optional(v.string()),

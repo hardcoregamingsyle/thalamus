@@ -70,8 +70,7 @@ Single entry point: `callModel(prompt, systemPrompt, agentName, …extra)` in `s
 3. **OpenCode Zen** — anonymous free tier, `ZEN_API_KEY` optional. `ZEN_DISPATCHER_MODEL` / `ZEN_DEFAULT_MODEL` for the two seats (`src/convex/lib/zenClient.ts`).
 4. **DeadlySignal** — keyed New API gateway (`DEADLYSIGNALS_API_KEY`, `myapi.creitingameplays.com/v1`). `DEADLYSIGNALS_DISPATCHER_MODEL` / `DEADLYSIGNALS_DEFAULT_MODEL`.
 5. **ModelScope** — Alibaba's official free API-Inference tier (`MODELSCOPE_API_KEY` plus fallback pool `MODELSCOPE_API_KEY_2` … `_10`, tried in order on rate-limit/quota/revoked key; `api-inference.modelscope.ai/v1` — the `.cn` host rejects `ms-…` tokens). `MODELSCOPE_DISPATCHER_MODEL` / `MODELSCOPE_DEFAULT_MODEL`.
-6. **OVHcloud** — anonymous free tier at `oai.endpoints.kepler.ai.cloud.ovh.net/v1`, 2 RPM. Task-type mapped by `mapTaskToOvhModel()`.
-7. **Ollama Cloud** — keyed pool (`OLLAMA_API_KEY`, `OLLAMA_API_KEY_2` … `_10`; the module builds the pool dynamically so a literal grep misses those). Task-type mapped by `mapModelIdToOllama()` in `agentCore.ts`.
+6. **Ollama Cloud** — keyed pool (`OLLAMA_API_KEY`, `OLLAMA_API_KEY_2` … `_10`; the module builds the pool dynamically so a literal grep misses those). Task-type mapped by `mapModelIdToOllama()` in `agentCore.ts`.
 
 Without a `ctx`, Modal is skipped and the chain runs from Zen onward. Every leg wraps its call in try/catch and logs the failure before falling through.
 
@@ -101,10 +100,9 @@ Both `organizer` and `organiser` match — the Organizer routes to the dispatche
 - `zen:<model>`
 - `deadlysignals:<model>`
 - `modelscope:<model>`
-- `ovhcloud:<model>`
 - `ollama:<model>`
 
-`calcAgentBucksForTier()` branches on this prefix. Modal delegates to `calcModalAgentBucks`; Ollama delegates to `calcAgentBucksForModel`; every keyless / free-tier prefix contributes 0 (`ovhcloud:`, `zen:`, `deadlysignals:`, `modelscope:`). Billing keys off the exact tier string; renaming a prefix here means updating `admin.calcPlatformCost` in the same commit.
+`calcAgentBucksForTier()` branches on this prefix. Modal delegates to `calcModalAgentBucks`; Ollama delegates to `calcAgentBucksForModel`; every keyless / free-tier prefix contributes 0 (`zen:`, `deadlysignals:`, `modelscope:`). Billing keys off the exact tier string; renaming a prefix here means updating `admin.calcPlatformCost` in the same commit.
 
 ### Per-provider default constants
 
@@ -113,7 +111,6 @@ Both `organizer` and `organiser` match — the Organizer routes to the dispatche
 | Zen | `ZEN_DISPATCHER_MODEL` in `lib/zenClient.ts` | `ZEN_DEFAULT_MODEL` |
 | DeadlySignal | `DEADLYSIGNALS_DISPATCHER_MODEL` in `lib/deadlySignalsClient.ts` | `DEADLYSIGNALS_DEFAULT_MODEL` |
 | ModelScope | `MODELSCOPE_DISPATCHER_MODEL` in `lib/modelscopeClient.ts` | `MODELSCOPE_DEFAULT_MODEL` |
-| OVHcloud | n/a — `mapTaskToOvhModel(taskType)` returns `OVHCLOUD_CODE_MODEL` for `code`, `OVHCLOUD_DEFAULT_MODEL` otherwise | same |
 | Ollama | `DISPATCHER_MODEL` in `lib/ollamaClient.ts` | `DEFAULT_CHAT_MODEL`; `mapModelIdToOllama` in `agentCore.ts` picks by agent-name substring |
 
 Constants are cited so drift is grep-able rather than copy-pasted. There is no separate model tiers table, no run-mode control, no `AGENT_MODEL_MAP`.
@@ -168,6 +165,14 @@ Every pipeline run has the built-in AgentOverflow (`AO_MCP_URL` or `${CONVEX_SIT
 {"op":"security-pass"}  {"op":"security-fail"}
 {"op":"critic-pass"}    {"op":"critic-fail","reason":"…"}
 ```
+
+### Continue
+
+```
+{"op":"continue"}
+```
+
+Ending a reply with this op re-runs the SAME agent instead of advancing the pipeline, after this round's file ops are applied — the mechanism that writes one large file across several outputs. Bounded by `MAX_CONTINUE_ROUNDS` (10) per agent turn; the counter lives on `codeBranches.continueCount` and resets on every phase advance. Works alongside the token-limit continuation (unclosed-document stitching), which is independent.
 
 Legacy `<<TAG>>` markers (`<<CREATEFILE>>`, `<<RUN-CMD>>`, `<<pass>>`, …) are still parsed as a fallback so old stored messages keep working, but no current prompt teaches them.
 

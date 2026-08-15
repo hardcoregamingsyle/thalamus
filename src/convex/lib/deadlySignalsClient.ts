@@ -19,7 +19,7 @@ import type { ActionCtx } from "../_generated/server";
 const BASE_URL = "https://myapi.creitingameplays.com/v1";
 
 // Per-attempt abort — sized so the whole Modal → Zen → DeadlySignal → ModelScope
-// → OVHcloud → Ollama chain fits inside Convex's 10-minute action kill.
+// → Ollama chain fits inside Convex's 10-minute action kill.
 const DEADLYSIGNALS_ATTEMPT_TIMEOUT_MS = 60_000;
 
 // ── Model Catalog ─────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ export async function callDeadlySignals(
   prompt: string,
   systemPrompt: string,
   model: string = DEADLYSIGNALS_DEFAULT_MODEL,
-  maxTokens: number = 8192,
+  maxTokens: number = 32768,
   _runQuery?: ActionCtx["runQuery"],
   deadlineMs?: number,
 ): Promise<DeadlySignalsChatResult> {

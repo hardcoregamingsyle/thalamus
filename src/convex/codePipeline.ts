@@ -238,6 +238,12 @@ function parseApiKeyRequests(content: string): Array<{variableName: string; desc
 // loop can't blow the action's time budget.
 const MAX_OP_CONTINUATIONS = 2;
 
+// How many extra turns {"op":"continue"} can buy for one agent before the
+// pipeline forces the advance. Generous (a full file per turn at 32k tokens)
+// but bounded so a model stuck emitting continue can't re-bill forever; the
+// counter resets on every phase advance.
+const MAX_CONTINUE_ROUNDS = 10;
+
 // True when a <<CREATEFILE/EDITFILE>> block was opened but never closed — the
 // signature of output truncated mid-file. We strip every COMPLETE block first
 // (non-greedy to its own <<END.CREATEFILE>>, exactly how parseAgentOutput reads
@@ -1061,8 +1067,8 @@ export const runPipelineAction = internalAction({
             // against the file store can still happen.
             const blockedReason = branch.executorBlockedReason;
             const toolUsageBlock = blockedReason
-              ? `## Command Execution UNAVAILABLE\n${blockedReason}\nDo NOT emit {"op":"cmd"} ops — they cannot run. Work from the file contents shown above; write files with JSON ops instead. The user must reconnect GitHub from this branch's Git Sync tab to enable commands.\n\n## Tool Usage\nEvery tool call belongs INSIDE your message's JSON document (see Output Format):\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}`
-              : `## Tool Usage\nEvery tool call belongs INSIDE your message's JSON document (see Output Format):\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n{"op":"research","query":"React 19 concurrent rendering pitfalls","detail":"focus on server components"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes are JSON ops inside your document — escape every " as \\" and every \\ as \\\\ inside "content":\n{"op":"create-file","path":"src/index.html","content":"<!DOCTYPE html>\\n<html>\\n...entire file verbatim...\\n</html>"}\n{"op":"edit-file","path":"src/index.ts","oldText":"the exact old text","newText":"the exact new text"}\n\nWrong: {"op":"write_file",...} — there is no such op\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">>, <<CREATEFILE="...">> or any angle-bracket tags — the pipeline reads pure JSON documents only`;
+              ? `## Command Execution UNAVAILABLE\n${blockedReason}\nDo NOT emit {"op":"cmd"} ops — they cannot run. Work from the file contents shown above; write files with JSON ops instead. The user must reconnect GitHub from this branch's Git Sync tab to enable commands.\n\n## Tool Usage\nEvery tool call belongs INSIDE your message's JSON document (see Output Format):\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nEnd your document with {"op":"continue"} when you need another turn to keep writing a large file.`
+              : `## Tool Usage\nEvery tool call belongs INSIDE your message's JSON document (see Output Format):\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n{"op":"research","query":"React 19 concurrent rendering pitfalls","detail":"focus on server components"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes are JSON ops inside your document — escape every " as \\" and every \\ as \\\\ inside "content":\n{"op":"create-file","path":"src/index.html","content":"<!DOCTYPE html>\\n<html>\\n...entire file verbatim...\\n</html>"}\n{"op":"edit-file","path":"src/index.ts","content":"[the COMPLETE new file content]"}\nWrite ONE file per reply — the pipeline runs your ops, then you get the next turn. Large files: create-file the first part, then edit-file the COMPLETE accumulated content on the following turns. Never cram several large files into one response — the token cap cuts it mid-file and the file lands truncated.\n\nNeed more room than one reply? End your document with:\n{"op":"continue"}\nThe pipeline runs you again immediately after applying this reply's ops — keep writing the same file across multiple turns (each turn shows the file's current content in File Contents above). Never emit a truncated file; emit {"op":"continue"} instead.\n\nWrong: {"op":"write_file",...} — there is no such op\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <<RUN-CMD="...">>, <<CREATEFILE="...">> or any angle-bracket tags — the pipeline reads pure JSON documents only`;
 
             prompt = [
               `## Overall Project Goal\n${task}`,
@@ -1600,6 +1606,30 @@ export const runPipelineAction = internalAction({
           content: `[RETRY ${retryCount + 1}] Critic rejected this task. Coder must fix the issues above. Review the Critic's feedback and fix ALL issues before this task can pass.`,
           round,
           messageIndex: totalMessages + 1,
+        });
+        await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+        return;
+      }
+
+      // ── Explicit continue loop ──────────────────────────────────────────────
+      // {"op":"continue"} asks for another turn of the SAME agent. The file ops
+      // from this round are already applied above and the message saved, so the
+      // re-run sees the file in its inventory and keeps writing — one large file
+      // crosses several outputs this way. Bounded by MAX_CONTINUE_ROUNDS so a
+      // model stuck emitting continue can't re-bill forever; the counter resets
+      // on every phase advance (updateBranchStatus clears it alongside
+      // mcpRoundCount).
+      const continueCount = branch.continueCount ?? 0;
+      if (parsed.continueRequested && continueCount < MAX_CONTINUE_ROUNDS) {
+        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
+          branchId,
+          status: "idle",
+          currentAgent: agentName,
+          phase: currentPhase,
+          executionPhase,
+          round,
+          totalMessages,
+          continueCount: continueCount + 1,
         });
         await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
         return;

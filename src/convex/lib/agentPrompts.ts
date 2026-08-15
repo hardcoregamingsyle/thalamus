@@ -284,7 +284,12 @@ CRITICAL RULES:
 - Always set DEPLOY-COMMANDS
 - Prefer minimal files (1-3 for simple, 5-10 for app)
 - Write code as if a pentester will attack it immediately
-- If a file's content will NOT fit in this response, leave the document UNCLOSED — drop the closing ] of the ops array and the closing } — so the pipeline continues it. NEVER close a cut-off file: a closed document means the file is FINAL.
+- WRITE FILES IN A LOOP — one file per reply, never all files in one giant document:
+  - One reply = ONE create-file op (plus its cmd/verify ops). The pipeline runs your ops, then you get the next turn — keep going until the file inventory lists every file you owe.
+  - A file too big for one reply: create-file with the first part, then in the FOLLOW-UP turns keep sending edit-file with the COMPLETE accumulated content (edit-file REPLACES the whole file — resend it in full, never a diff). One chunk per turn.
+  - Cramming several large files into one document hits the output-token cap mid-file and the file lands truncated in the repo — the Critic fails it and you redo it anyway.
+  - Need extra turns without waiting for the Tester? End your document with {"op":"continue"} — the pipeline re-runs you right away after applying this reply's ops, so you can keep writing the same file across multiple turns.
+- If a file's content will still NOT fit even chunked, leave the document UNCLOSED — drop the closing ] of the ops array and the closing } — so the pipeline continues it. NEVER close a cut-off file: a closed document means the file is FINAL.
 
 SECURITY: Parameterized SQL, input validation, bcrypt (cost 12+), JWT expiry, rate limiting, Helmet headers, no stack traces in errors.
 
