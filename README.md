@@ -18,7 +18,7 @@ The `conversations.mode` union in `src/convex/schema.ts` lists ten literals; `sr
 
 The pipeline lives in `src/convex/codePipeline.ts`. A Dispatcher runs first, classifies the task, and returns the minimum agent set. Coder and Critic are always forced in; every other agent has to earn its slot. The full roster (`src/convex/lib/agentPrompts.ts`, `AGENT_SYSTEM_PROMPTS`): Dispatcher, ResearchPlanner, Researcher, ReportMaker, FactCheck, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic. Critic can reject a task and loop back to the Coder as many times as it judges necessary — there is no retry cap. The task advances only when the Critic passes it, and the Critic is told on each attempt how long it has been holding the task so it can weigh shipping something imperfect against blocking the rest of the build.
 
-Provider chain (`src/convex/lib/agentCore.ts`, `callModel`): Modal → OpenCode Zen → DeadlySignal → ModelScope → OVHcloud → Ollama Cloud. A Dispatcher-assigned model id that `findZenModel` / `findDeadlySignalsModel` / `findModelScopeModel` recognises short-circuits directly to that provider. NVIDIA NIM has been removed from the pipeline. See [`docs/ai-pipeline.md`](docs/ai-pipeline.md).
+Provider chain (`src/convex/lib/agentCore.ts`, `callModel`): Modal → OpenCode Zen → DeadlySignal → ModelScope → Ollama Cloud. A Dispatcher-assigned model id that `findZenModel` / `findDeadlySignalsModel` / `findModelScopeModel` recognises short-circuits directly to that provider. NVIDIA NIM and OVHcloud (whose anonymous tier stopped being free) have been removed from the pipeline. See [`docs/ai-pipeline.md`](docs/ai-pipeline.md).
 
 ## Quickstart
 
@@ -59,7 +59,7 @@ src/
     landing/                Landing sections (9) — Hero, ModeGrid, PipelineSection, StudySection, CapabilityBand, FaqSection, FinalCta, NavBar, Footer
     admin/                  15 lazy-loaded admin tabs (Users, DAU, Credits, PromoCodes, Suggestions, StudyMaterials, ProviderB/C/D/E, Ads, Payments, VmIsos, Corpus (AgentOverflow), Maintenance)
   convex/                   backend — 312 exported Convex functions
-    lib/                    pure helper modules — agentCore, agentPrompts, modePrompts, agentOutputParser, ollamaClient, zenClient, deadlySignalsClient, modelscopeClient, ovhcloudClient, modalClient, mcpClient, mcpParse, taskTypes, codeAuth, obscureRepoGenerator, studyPrompt, vlyIntegrations
+    lib/                    pure helper modules — agentCore, agentPrompts, modePrompts, agentOutputParser, ollamaClient, zenClient, deadlySignalsClient, modelscopeClient, modalClient, mcpClient, mcpParse, taskTypes, codeAuth, obscureRepoGenerator, studyPrompt, vlyIntegrations
   components/
     ui/                     shadcn (trimmed to 13 primitives) — do not customize
     student-suite/          Study-mode toolset shell over 8 view files

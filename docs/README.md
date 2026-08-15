@@ -42,7 +42,7 @@ Desktop build instructions: [`thalamus-native/BUILD.md`](../thalamus-native/BUIL
 │                                                                │
 │  Pipeline provider chain (callModel in lib/agentCore.ts):     │
 │    Modal → OpenCode Zen → DeadlySignal → ModelScope           │
-│      → OVHcloud → Ollama Cloud                                 │
+│      → Ollama Cloud                                         │
 │                                                                │
 │  Legacy chat/study chain (ai.ts, study.ts, /stream-chat):     │
 │    AWS Bedrock → Gemini → VLY                                 │
@@ -61,7 +61,7 @@ Desktop build instructions: [`thalamus-native/BUILD.md`](../thalamus-native/BUIL
 |---|---|
 | Frontend | React 19, Vite 7, TailwindCSS 4, shadcn (trimmed to 13 primitives), Framer Motion, React Router 7 |
 | Backend | Convex — 312 exported functions across ~50 modules + `src/convex/lib/` |
-| Pipeline models | Modal (admin-registered), OpenCode Zen, DeadlySignal, ModelScope, OVHcloud, Ollama Cloud |
+| Pipeline models | Modal (admin-registered), OpenCode Zen, DeadlySignal, ModelScope, Ollama Cloud |
 | Legacy chat/study models | AWS Bedrock (Claude Haiku default), Google Gemini Flash Lite, VLY (last resort) |
 | Desktop | WPF, .NET 8, self-contained single-file `Thalamus.exe`, zero NuGet dependencies in the shipping project |
 | Auth | Custom-token — email OTP via Brevo, Google/GitHub OAuth, desktop device-code pairing |

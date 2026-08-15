@@ -31,7 +31,7 @@ export const getAdminUiMeta = query({
           readyLabel: "keys — Ollama fallback ready",
           help: [
             "Get keys at ollama.com → Account → API Keys",
-            "Chain order: Modal → Zen → DeadlySignal → ModelScope → OVHcloud → Ollama",
+            "Chain order: Modal → Zen → DeadlySignal → ModelScope → Ollama",
           ],
         },
         providerC: {
@@ -40,7 +40,7 @@ export const getAdminUiMeta = query({
           subtitle: "OpenAI-compatible endpoints served from Modal. The starred one is tried first; the rest act as backups in order. Register a self-hosted serverless model here and it goes live without a deploy.",
           namePlaceholder: "vLLM Qwen A100",
           modelPlaceholder: "Qwen/Qwen3-Coder-30B",
-          emptyHint: "No endpoints yet. Requests fall through to the free-tier seats (Zen, DeadlySignal, ModelScope, OVHcloud), then Ollama Cloud.",
+          emptyHint: "No endpoints yet. Requests fall through to the free-tier seats (Zen, DeadlySignal, ModelScope), then Ollama Cloud.",
           help: [],
         },
         providerD: {

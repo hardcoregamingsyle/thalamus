@@ -107,7 +107,6 @@ Pure helper modules with no Convex framework imports — load fast, easy to test
 | `zenClient.ts` | OpenCode Zen client — anonymous free tier, `ZEN_API_KEY` optional. |
 | `deadlySignalsClient.ts` | Keyed New API gateway (`DEADLYSIGNALS_API_KEY`). |
 | `modelscopeClient.ts` | Alibaba's free API-Inference (`MODELSCOPE_API_KEY`, `.ai` host). |
-| `ovhcloudClient.ts` | OVHcloud AI Endpoints — anonymous free tier, 2 RPM. |
 | `modalClient.ts` | Modal endpoint client. |
 | `mcpClient.ts` / `mcpParse.ts` | MCP server plumbing shared by the pipeline. |
 | `codeAuth.ts` | Shared auth checks for Code-mode functions. |
@@ -179,7 +178,7 @@ Convex provides built-in subscriptions. Any `useQuery` re-renders when a mutatio
 Deliberately kept — the current failure modes are known and either harmless under the free-and-unlimited product decision or intentional trade-offs.
 
 - **Chat billing is hardcoded to Gemini rates** (`ai.ts`) regardless of which model answered. Masked by `FREE_UNLIMITED`.
-- **`admin.deductPlatformCost` prices no current pipeline provider by design.** `PLATFORM_PRICING` in `admin.ts` only knows `gemini-3.1-flash-lite`, `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-opus-4-8`. Every current pipeline provider (Modal, Zen, DeadlySignal, ModelScope, OVHcloud, Ollama) is free-tier and costs 0. The `platformBudget` auto-disable-at-$5 guard cannot trip on Thalamus usage; it only trips on the two AgentOverflow paths that still charge Bedrock rates (`agentoverflow.ts:908`, `agentoverflowHttp.ts:312` — they bill the `result.tier` string against `PLATFORM_PRICING`, which resolves to 0 for every current tier prefix).
+- **`admin.deductPlatformCost` prices no current pipeline provider by design.** `PLATFORM_PRICING` in `admin.ts` only knows `gemini-3.1-flash-lite`, `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-opus-4-8`. Every current pipeline provider (Modal, Zen, DeadlySignal, ModelScope, Ollama) is free-tier and costs 0. The `platformBudget` auto-disable-at-$5 guard cannot trip on Thalamus usage; it only trips on the two AgentOverflow paths that still charge Bedrock rates (`agentoverflow.ts:908`, `agentoverflowHttp.ts:312` — they bill the `result.tier` string against `PLATFORM_PRICING`, which resolves to 0 for every current tier prefix).
 - **`rag.ts` reads Gemini keys from env, not the DB.** `GEMINI_API_KEY`/`GOOGLE_AI_API_KEY` env vars only. Setting only DB `geminiKeys` rows makes RAG silently return no context.
 - **`/github/webhook` performs no signature verification.**
 - **`userApiKeys.generateApiKey` uses `Math.random`** for the `thal_` key body while `agentoverflow.generateAoKey` uses CSPRNG. Known asymmetry. The 6-digit email OTP is also `Math.random`.

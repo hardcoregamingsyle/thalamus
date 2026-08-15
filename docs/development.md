@@ -174,7 +174,7 @@ dotnet build ThalamusApp/ThalamusApp.csproj -c Debug   # dev
 | `Cannot find module convex/_generated` | Run `npx convex dev` to regenerate. |
 | Convex subscription returns `undefined` | Check auth — the query probably requires a `token` you have not passed. |
 | `bun run build` fails on types | Run `bun run type-check` to see specific errors. |
-| Pipeline throws `No AI provider configured — add Modal or Ollama keys via /admin, then a Zen/DeadlySignal/ModelScope/OVHcloud call can serve.` | Add Modal endpoints or Ollama keys at `/admin`. The keyless legs (Zen, DeadlySignal, ModelScope, OVHcloud) only serve after the keyed fallbacks work — the chain fails through them and lands on Ollama at the end. |
+| Pipeline throws `No AI provider configured — add Modal or Ollama keys via /admin, then a Zen/DeadlySignal/ModelScope call can serve.` | Add Modal endpoints or Ollama keys at `/admin`. The keyless legs (Zen, DeadlySignal, ModelScope) only serve after the keyed fallbacks work — the chain fails through them and lands on Ollama at the end. |
 | `Rate limited` in chat or study mode | Those paths still run on Bedrock/Gemini — check AWS credentials and Gemini keys in the admin panel or env vars. |
 | Convex call fails at runtime but `tsc` was clean | Run `bun run check-refs`. The generated `api` object degrades to `any`, so wrong function names only surface at runtime. |
 | Desktop app crashes on launch | Shared resources must be in `App.xaml`, not `Window.Resources` — see [`desktop-app.md`](./desktop-app.md). |

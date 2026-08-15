@@ -7,8 +7,8 @@
 
 /**
  * The task classes the model router understands. Each provider client maps a
- * task type to its own best available model (e.g. mapTaskToOvhModel in
- * ovhcloudClient.ts, mapModelIdToOllama in agentCore.ts).
+ * task type to its own best available model (e.g. mapModelIdToOllama in
+ * agentCore.ts).
  */
 export type TaskType = "dispatcher" | "chat" | "code" | "reasoning" | "agent" | "research" | "factcheck";
 

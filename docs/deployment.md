@@ -84,14 +84,14 @@ Managed in the Convex dashboard, not in `.env` files. This table is the single s
 
 | Variable | Purpose |
 |---|---|
-| `ZEN_API_KEY` | OpenCode Zen client (`lib/zenClient.ts`). Optional — the free tier works without a key. |
+| `ZEN_API_KEY` | OpenCode Zen client (`lib/zenClient.ts`). Optional — the free tier works without a key, but keyed calls ride a dedicated rate bucket instead of Convex's throttled shared egress. Key format `sk-…` from opencode.ai/zen. |
 | `DEADLYSIGNALS_API_KEY` | Required for the DeadlySignal leg of the pipeline chain (`lib/deadlySignalsClient.ts`). |
 | `MODELSCOPE_API_KEY`, `MODELSCOPE_API_KEY_2` … `_10` | ModelScope leg (`lib/modelscopeClient.ts`). Token format `ms-…` from modelscope.ai/my/myaccesstoken — the `.cn` host rejects them; the client hits the `.ai` host. The numbered pool is a fallback: when a key is rate-limited, quota-exhausted or revoked the next key is tried in the same call. Read dynamically, so a literal grep for `MODELSCOPE_API_KEY_5` misses. |
 | `OLLAMA_API_KEY`, `OLLAMA_API_KEY_2` … `_10` | Ollama Cloud pool. Read dynamically by `lib/ollamaClient.ts`, so a literal grep for `OLLAMA_API_KEY_5` misses. |
 | `MODAL_ENDPOINT_URL` / `MODAL_MODEL` / `MODAL_API_KEY` | Single Modal endpoint fallback when the `modalEndpoints` table is empty (`lib/modalClient.ts`). |
 | `VLY_INTEGRATION_KEY` | VLY completion provider (`lib/vlyIntegrations.ts`). Last-resort leg for `/stream-chat` and several `study.ts` paths. Checked lazily at call time — a module-scope check would fail the whole Convex deploy, since push-time analysis loads every module without env vars. |
 
-OVHcloud is anonymous — no API key needed. NVIDIA NIM is not called from the pipeline; there is no `NVAPI_KEY` reader anywhere. `HF_RAG_SPACE_URL` and `HF_RAG_BASE_URL` do not exist in this codebase.
+NVIDIA NIM is not called from the pipeline; there is no `NVAPI_KEY` reader anywhere. OVHcloud AI Endpoints is not called either — its anonymous tier stopped being free, so the OVHcloud leg and `ovhcloudClient.ts` were removed from the chain. `HF_RAG_SPACE_URL` and `HF_RAG_BASE_URL` do not exist in this codebase.
 
 ### Legacy chat/study providers
 

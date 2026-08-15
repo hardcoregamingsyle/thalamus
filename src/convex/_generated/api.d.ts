@@ -56,7 +56,6 @@ import type * as lib_modePrompts from "../lib/modePrompts.js";
 import type * as lib_modelscopeClient from "../lib/modelscopeClient.js";
 import type * as lib_obscureRepoGenerator from "../lib/obscureRepoGenerator.js";
 import type * as lib_ollamaClient from "../lib/ollamaClient.js";
-import type * as lib_ovhcloudClient from "../lib/ovhcloudClient.js";
 import type * as lib_studyPrompt from "../lib/studyPrompt.js";
 import type * as lib_taskTypes from "../lib/taskTypes.js";
 import type * as lib_vlyIntegrations from "../lib/vlyIntegrations.js";
@@ -126,7 +125,6 @@ declare const fullApi: ApiFromModules<{
   "lib/modelscopeClient": typeof lib_modelscopeClient;
   "lib/obscureRepoGenerator": typeof lib_obscureRepoGenerator;
   "lib/ollamaClient": typeof lib_ollamaClient;
-  "lib/ovhcloudClient": typeof lib_ovhcloudClient;
   "lib/studyPrompt": typeof lib_studyPrompt;
   "lib/taskTypes": typeof lib_taskTypes;
   "lib/vlyIntegrations": typeof lib_vlyIntegrations;
