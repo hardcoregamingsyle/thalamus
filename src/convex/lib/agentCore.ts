@@ -30,6 +30,7 @@ import { callZen, findZenModel, ZEN_DISPATCHER_MODEL, ZEN_DEFAULT_MODEL } from "
 import { callOpenRouter, findOpenRouterModel, OPENROUTER_DISPATCHER_MODEL, OPENROUTER_DEFAULT_MODEL } from "./openrouterClient";
 import { callDeadlySignals, findDeadlySignalsModel, DEADLYSIGNALS_DISPATCHER_MODEL, DEADLYSIGNALS_DEFAULT_MODEL } from "./deadlySignalsClient";
 import { callModelScope, findModelScopeModel, MODELSCOPE_DISPATCHER_MODEL, MODELSCOPE_DEFAULT_MODEL } from "./modelscopeClient";
+import { callPollinations, findPollinationsModel, isPollinationsAvailable, POLLINATIONS_DISPATCHER_MODEL, POLLINATIONS_DEFAULT_MODEL } from "./pollinationsClient";
 import { dokobotSearch, dokobotRead, hasDokobotKey, type DokobotSearchItem } from "./dokobotClient";
 
 // The only tier-ish type left: callModel returns a provider-tagged string
@@ -41,7 +42,7 @@ export type ModelTier = string;
 // bottom of the file — importers see it exactly where they used to.
 
 /**
- * Unified model caller — provider chain: Modal → Zen → OpenRouter → DeadlySignal → ModelScope → Ollama.
+ * Unified model caller — provider chain: Modal → Zen → OpenRouter → DeadlySignal → ModelScope → Pollinations → Ollama.
  * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/OpenRouter/Deadly/ModelScope/Ollama
  * (Zen is anonymous; OpenRouter, DeadlySignal and ModelScope are keyed). A
  * Dispatcher-chosen Zen, OpenRouter, DeadlySignal or ModelScope model id is honored directly. Only the Dispatcher's model
@@ -288,12 +289,34 @@ export async function callModel(
         await logAttempt({ provider: "modelscope", model: result.model, ok: true });
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modelscope:${result.model}` };
       }
-      console.warn("ModelScope returned empty output, falling back to Ollama:", scopeModel);
+      console.warn("ModelScope returned empty output, falling back to Pollinations:", scopeModel);
       await logAttempt({ provider: "modelscope", model: scopeModel, ok: false, error: "empty output" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`ModelScope call failed, falling back to Ollama:`, msg);
+      console.warn(`ModelScope call failed, falling back to Pollinations:`, msg);
       await logAttempt({ provider: "modelscope", model: scopeModel, ok: false, error: msg });
+    }
+
+    // Pollinations — free OpenAI-compatible tier (POLLINATIONS_API_KEY). Skipped
+    // outright when unconfigured or known out of pollen, so a dead seat never
+    // costs the chain a round-trip.
+    if (isPollinationsAvailable()) {
+      const pollenModel = assignedModel && findPollinationsModel(assignedModel)
+        ? assignedModel
+        : (taskType === "dispatcher" ? POLLINATIONS_DISPATCHER_MODEL : POLLINATIONS_DEFAULT_MODEL);
+      try {
+        const result = await callPollinations(prompt, systemPrompt, pollenModel, PIPELINE_MAX_TOKENS, undefined, deadline);
+        if (!isBlank(result.text)) {
+          await logAttempt({ provider: "pollinations", model: result.model, ok: true });
+          return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `pollinations:${result.model}` };
+        }
+        console.warn("Pollinations returned empty output, falling back to Ollama:", pollenModel);
+        await logAttempt({ provider: "pollinations", model: pollenModel, ok: false, error: "empty output" });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`Pollinations call failed, falling back to Ollama:`, msg);
+        await logAttempt({ provider: "pollinations", model: pollenModel, ok: false, error: msg });
+      }
     }
 
     const ollamaModel = mapModelIdToOllama(modelId);
@@ -367,6 +390,9 @@ export function calcAgentBucksForTier(
   }
   if (tier.startsWith("modelscope:")) {
     return 0; // ModelScope official free API-Inference tier — no cost
+  }
+  if (tier.startsWith("pollinations:")) {
+    return 0; // Pollinations free tier — metered in their own "pollen", not AgentBucks
   }
   return calcAgentBucksForModel(tier.replace("ollama:", ""), inputTokens, outputTokens);
 }

@@ -30,6 +30,11 @@ const BASE_URL = "https://openrouter.ai/api/v1";
 const OPENROUTER_FIRST_CHUNK_TIMEOUT_MS = 60_000;
 const OPENROUTER_STREAM_IDLE_TIMEOUT_MS = 60_000;
 
+// A stalled stream that already delivered at least this much text is salvaged
+// rather than failed — a truncated agent message the pipeline can act on beats
+// a dead run, and the agents' own JSON-op parser tolerates a cut-off tail.
+const SALVAGEABLE_STREAM_CHARS = 400;
+
 // ── Model Catalog ─────────────────────────────────────────────────────────────
 // Verified free ($0 prompt AND completion) on OpenRouter, snapshot Aug 2026.
 // Treat every id here as perishable — the roster is documented to rotate.
@@ -163,6 +168,12 @@ export async function callOpenRouter(
 
   let lastChunkAt = Date.now();
   let firstChunkSeen = false;
+  // Accumulated stream state lives out here so the catch block can salvage a
+  // partial response when the stream stalls mid-generation.
+  let text = "";
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let resolvedModel = model;
   let done = false;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -221,10 +232,6 @@ export async function callOpenRouter(
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let text = "";
-    let promptTokens = 0;
-    let completionTokens = 0;
-    let resolvedModel = model;
     let pendingFlush = "";
     let lastFlushAt = Date.now();
 
@@ -294,7 +301,21 @@ export async function callOpenRouter(
     clearTimeout(idleTimer);
     if (err instanceof Error && err.name === "AbortError") {
       if (firstChunkSeen) {
-        throw new Error("OpenRouter stream stalled — no data for too long");
+        // The stream died mid-generation. Everything already streamed is real
+        // model output — throwing it away costs the whole agent call, and when
+        // this is the only healthy provider that means the run dies outright.
+        // Salvage anything substantial enough to be usable and let the pipeline
+        // continue; only a stall with near-nothing in hand is a true failure.
+        if (text.trim().length >= SALVAGEABLE_STREAM_CHARS) {
+          console.warn(`OpenRouter stream stalled after ${text.length} chars — returning the partial response instead of failing the call`);
+          return {
+            text,
+            inputTokens: promptTokens,
+            outputTokens: completionTokens,
+            model: resolvedModel,
+          };
+        }
+        throw new Error(`OpenRouter stream stalled — no data for too long (only ${text.trim().length} chars received)`);
       }
       throw new Error(`OpenRouter request timed out`);
     }
