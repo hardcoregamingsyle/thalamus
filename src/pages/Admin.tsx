@@ -7,12 +7,12 @@ import {
   Shield, Users, Tag, Lightbulb, DollarSign, LogOut, ChevronRight,
   Eye, EyeOff, Loader2,
   Coins, BookOpen,
-  TrendingUp, Activity, Cpu, Search, Server, Wrench, Database, Globe, Zap,
+  TrendingUp, Activity, Cpu, Search, Server, Wrench, Database, Globe, Zap, Radio,
   type LucideIcon,
 } from "lucide-react";
 import { useAdminMeta, type ProviderMeta, type ProviderSlug } from "./admin/shared";
 
-type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "study-materials" | "dau" | "providerD" | "providerE" | "providerB" | "providerC" | "gravity-ads" | "payments" | "vm-isos" | "corpus" | "maintenance";
+type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "study-materials" | "dau" | "providerD" | "providerE" | "providerB" | "providerC" | "provider-log" | "gravity-ads" | "payments" | "vm-isos" | "corpus" | "maintenance";
 
 const ADMIN_SESSION_KEY = "thalamus_admin_v2";
 
@@ -34,6 +34,7 @@ const AdsTab = lazy(() => import("./admin/AdsTab").then(m => ({ default: m.AdsTa
 const PaymentsTab = lazy(() => import("./admin/PaymentsTab").then(m => ({ default: m.PaymentsTab })));
 const VmIsoCatalogTab = lazy(() => import("./admin/VmIsoCatalogTab").then(m => ({ default: m.VmIsoCatalogTab })));
 const AgentOverflowTab = lazy(() => import("./admin/AgentOverflowTab").then(m => ({ default: m.AgentOverflowTab })));
+const ProviderLogTab = lazy(() => import("./admin/ProviderLogTab").then(m => ({ default: m.ProviderLogTab })));
 
 export default function AdminPage() {
   const [adminToken, setAdminToken] = useState(() => {
@@ -205,6 +206,7 @@ export default function AdminPage() {
             { id: "providerC", label: providerLabel("providerC"), icon: Server },
             { id: "providerD", label: providerLabel("providerD"), icon: Zap },
             { id: "providerE", label: providerLabel("providerE"), icon: Activity },
+            { id: "provider-log", label: "Provider Log", icon: Radio },
             { id: "gravity-ads", label: "Ads (Gravity)", icon: Globe },
             { id: "payments", label: "Payments", icon: Coins },
             { id: "vm-isos", label: "VM ISOs", icon: Database },
@@ -249,6 +251,7 @@ export default function AdminPage() {
                 {tab === "providerE" && <ProviderEKeysTab adminToken={adminToken} />}
                 {tab === "providerB" && <ProviderBKeysTab adminToken={adminToken} />}
                 {tab === "providerC" && <ProviderCEndpointsTab adminToken={adminToken} />}
+                {tab === "provider-log" && <ProviderLogTab adminToken={adminToken} />}
                 {tab === "maintenance" && <MaintenanceTab adminToken={adminToken} />}
                 {tab === "gravity-ads" && <AdsTab adminToken={adminToken} />}
                 {tab === "payments" && <PaymentsTab adminToken={adminToken} />}

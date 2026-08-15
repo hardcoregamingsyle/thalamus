@@ -85,6 +85,7 @@ Managed in the Convex dashboard, not in `.env` files. This table is the single s
 | Variable | Purpose |
 |---|---|
 | `ZEN_API_KEY` | OpenCode Zen client (`lib/zenClient.ts`). Optional — the free tier works without a key, but keyed calls ride a dedicated rate bucket instead of Convex's throttled shared egress. Key format `sk-…` from opencode.ai/zen. |
+| `OPENROUTER_API_KEY` | OpenRouter leg of the pipeline chain (`lib/openrouterClient.ts`). Required — OpenRouter free models need a key even though they cost $0. Key format `sk-or-v1-…` from openrouter.ai/keys; a $0-balance account works. |
 | `DEADLYSIGNALS_API_KEY` | Required for the DeadlySignal leg of the pipeline chain (`lib/deadlySignalsClient.ts`). |
 | `MODELSCOPE_API_KEY`, `MODELSCOPE_API_KEY_2` … `_10` | ModelScope leg (`lib/modelscopeClient.ts`). Token format `ms-…` from modelscope.ai/my/myaccesstoken — the `.cn` host rejects them; the client hits the `.ai` host. The numbered pool is a fallback: when a key is rate-limited, quota-exhausted or revoked the next key is tried in the same call. Read dynamically, so a literal grep for `MODELSCOPE_API_KEY_5` misses. |
 | `OLLAMA_API_KEY`, `OLLAMA_API_KEY_2` … `_10` | Ollama Cloud pool. Read dynamically by `lib/ollamaClient.ts`, so a literal grep for `OLLAMA_API_KEY_5` misses. |

@@ -18,7 +18,7 @@ The `conversations.mode` union in `src/convex/schema.ts` lists ten literals; `sr
 
 The pipeline lives in `src/convex/codePipeline.ts`. A Dispatcher runs first, classifies the task, and returns the minimum agent set. Coder and Critic are always forced in; every other agent has to earn its slot. The full roster (`src/convex/lib/agentPrompts.ts`, `AGENT_SYSTEM_PROMPTS`): Dispatcher, ResearchPlanner, Researcher, ReportMaker, FactCheck, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic. Critic can reject a task and loop back to the Coder as many times as it judges necessary — there is no retry cap. The task advances only when the Critic passes it, and the Critic is told on each attempt how long it has been holding the task so it can weigh shipping something imperfect against blocking the rest of the build.
 
-Provider chain (`src/convex/lib/agentCore.ts`, `callModel`): Modal → OpenCode Zen → DeadlySignal → ModelScope → Ollama Cloud. A Dispatcher-assigned model id that `findZenModel` / `findDeadlySignalsModel` / `findModelScopeModel` recognises short-circuits directly to that provider. NVIDIA NIM and OVHcloud (whose anonymous tier stopped being free) have been removed from the pipeline. See [`docs/ai-pipeline.md`](docs/ai-pipeline.md).
+Provider chain (`src/convex/lib/agentCore.ts`, `callModel`): Modal → OpenCode Zen → OpenRouter → DeadlySignal → ModelScope → Ollama Cloud. A Dispatcher-assigned model id that `findZenModel` / `findOpenRouterModel` / `findDeadlySignalsModel` / `findModelScopeModel` recognises short-circuits directly to that provider. NVIDIA NIM and OVHcloud (whose anonymous tier stopped being free) have been removed from the pipeline. See [`docs/ai-pipeline.md`](docs/ai-pipeline.md).
 
 ## Quickstart
 
