@@ -344,6 +344,19 @@ const schema = defineSchema(
       .index("by_project", ["projectId"])
       .index("by_branch", ["branchId"]),
 
+    // One row per provider attempt inside callModel's chain — which provider
+    // was tried, whether it answered, and what error it returned. Written
+    // fire-and-forget from lib/agentCore.ts; surfaced on the admin panel's
+    // Provider Log tab. Bounded by providerLog.ts's pruning.
+    providerCallLogs: defineTable({
+      ts: v.number(),
+      provider: v.string(),
+      model: v.string(),
+      ok: v.boolean(),
+      error: v.optional(v.string()),
+      agent: v.optional(v.string()),
+    }).index("by_ts", ["ts"]),
+
     // Messages for `conversations` above (plain chat portal) — not related to
     // codeMessages.
     messages: defineTable({

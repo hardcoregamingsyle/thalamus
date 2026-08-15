@@ -1,7 +1,11 @@
-// Pure utility module - no Convex imports, just logic
+// Pure utility module - no Convex framework imports, just logic (the lone
+// exception is the `internal` provider-log reference used to record which
+// provider answered and which errored — see providerLog.ts; ollamaClient and
+// modalClient set the same precedent).
 // This keeps agentTeam.ts lean for faster module loading
 
 import type { ActionCtx } from "../_generated/server";
+import { internal } from "../_generated/api";
 
 // Platform-wide free+unlimited switch for Thalamus AgentBucks. While true, no
 // user is charged and no usage cap blocks them. AgentOverflow's aoCredits are
@@ -23,6 +27,7 @@ import { callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL, calcAgentBucksFo
 import { agentToTaskType, type TaskType } from "./taskTypes";
 import { callModal, calcModalAgentBucks } from "./modalClient";
 import { callZen, findZenModel, ZEN_DISPATCHER_MODEL, ZEN_DEFAULT_MODEL } from "./zenClient";
+import { callOpenRouter, findOpenRouterModel, OPENROUTER_DISPATCHER_MODEL, OPENROUTER_DEFAULT_MODEL } from "./openrouterClient";
 import { callDeadlySignals, findDeadlySignalsModel, DEADLYSIGNALS_DISPATCHER_MODEL, DEADLYSIGNALS_DEFAULT_MODEL } from "./deadlySignalsClient";
 import { callModelScope, findModelScopeModel, MODELSCOPE_DISPATCHER_MODEL, MODELSCOPE_DEFAULT_MODEL } from "./modelscopeClient";
 import { dokobotSearch, dokobotRead, hasDokobotKey, type DokobotSearchItem } from "./dokobotClient";
@@ -36,10 +41,10 @@ export type ModelTier = string;
 // bottom of the file — importers see it exactly where they used to.
 
 /**
- * Unified model caller — provider chain: Modal → Zen → DeadlySignal → ModelScope → Ollama.
- * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/Deadly/ModelScope/Ollama
- * (Zen is anonymous; DeadlySignal and ModelScope are keyed). A
- * Dispatcher-chosen Zen, DeadlySignal or ModelScope model id is honored directly. Only the Dispatcher's model
+ * Unified model caller — provider chain: Modal → Zen → OpenRouter → DeadlySignal → ModelScope → Ollama.
+ * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/OpenRouter/Deadly/ModelScope/Ollama
+ * (Zen is anonymous; OpenRouter, DeadlySignal and ModelScope are keyed). A
+ * Dispatcher-chosen Zen, OpenRouter, DeadlySignal or ModelScope model id is honored directly. Only the Dispatcher's model
  * is hardcoded (per provider); every other agent's model is decided by the
  * Dispatcher at runtime.
  */
@@ -57,12 +62,16 @@ export async function callModel(
   // surfaces a real message instead of silence.
   const isBlank = (s: string): boolean => !s.trim();
   // Extract ctx and optional assignedModel/deadlineMs overrides from _extra
-  let ctx: { runQuery: ActionCtx["runQuery"] } | undefined;
+  let ctx: { runQuery: ActionCtx["runQuery"]; runMutation?: ActionCtx["runMutation"] } | undefined;
   let assignedModel: string | undefined;
   let deadlineMs: number | undefined;
   for (const arg of _extra) {
     if (arg && typeof arg === "object" && "runQuery" in (arg as Record<string,unknown>)) {
-      ctx = arg as { runQuery: ActionCtx["runQuery"] };
+      // Every real ctx is an ActionCtx, so runMutation rides along on the same
+      // object when the caller has one (it always does) — captured here so the
+      // provider-log write below can use it.
+      const a = arg as { runQuery: ActionCtx["runQuery"]; runMutation?: ActionCtx["runMutation"] };
+      ctx = { runQuery: a.runQuery, runMutation: a.runMutation };
     }
     if (arg && typeof arg === "object" && "assignedModel" in (arg as Record<string,unknown>)) {
       const maybe = (arg as Record<string,unknown>).assignedModel;
@@ -74,11 +83,28 @@ export async function callModel(
     }
   }
 
+  // Record a provider attempt on the admin's Provider Log. Fire-and-forget
+  // guarded by try/catch: logging must never break (or slow into failure) the
+  // model call it is observing. Without a ctx there is nowhere to write and
+  // the call proceeds unlogged.
+  const logAttempt = async (entry: { provider: string; model: string; ok: boolean; error?: string }) => {
+    if (!ctx?.runMutation) return;
+    try {
+      await ctx.runMutation(internal.providerLog.record, {
+        provider: entry.provider,
+        model: entry.model,
+        ok: entry.ok,
+        error: entry.error,
+        agent: modelId,
+      });
+    } catch { /* logging is best-effort */ }
+  };
+
   const taskType: TaskType = agentToTaskType(modelId);
 
   // One shared wall-clock budget for the WHOLE provider chain. Convex kills
   // any action at 10 minutes with a "Transient error" that no try/catch in
-  // our code can see — so if Modal + Zen + DeadlySignal + ModelScope
+  // our code can see — so if Modal + Zen + OpenRouter + DeadlySignal + ModelScope
   // + Ollama retries are ever allowed to stack past that, the pipeline dies without
   // saving an error message and the user just sees nothing. 7 minutes here
   // leaves the rest of the step (billing, file ops, streaming drip-feed) room
@@ -93,12 +119,32 @@ export async function callModel(
     try {
       const result = await callZen(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
+        await logAttempt({ provider: "zen", model: result.model, ok: true });
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `zen:${result.model}` };
       }
       console.warn("Zen returned empty output for an assigned model, falling back to the provider chain:", assignedModel);
+      await logAttempt({ provider: "zen", model: assignedModel, ok: false, error: "empty output" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn("Zen call failed, falling back to the provider chain:", msg);
+      await logAttempt({ provider: "zen", model: assignedModel, ok: false, error: msg });
+    }
+  }
+
+  // Dispatcher-chosen OpenRouter model: same as Zen — honor it directly.
+  if (assignedModel && findOpenRouterModel(assignedModel)) {
+    try {
+      const result = await callOpenRouter(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline);
+      if (!isBlank(result.text)) {
+        await logAttempt({ provider: "openrouter", model: result.model, ok: true });
+        return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `openrouter:${result.model}` };
+      }
+      console.warn("OpenRouter returned empty output for an assigned model, falling back to the provider chain:", assignedModel);
+      await logAttempt({ provider: "openrouter", model: assignedModel, ok: false, error: "empty output" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn("OpenRouter call failed, falling back to the provider chain:", msg);
+      await logAttempt({ provider: "openrouter", model: assignedModel, ok: false, error: msg });
     }
   }
 
@@ -107,12 +153,15 @@ export async function callModel(
     try {
       const result = await callDeadlySignals(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
+        await logAttempt({ provider: "deadlysignals", model: result.model, ok: true });
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `deadlysignals:${result.model}` };
       }
       console.warn("DeadlySignal returned empty output for an assigned model, falling back to the provider chain:", assignedModel);
+      await logAttempt({ provider: "deadlysignals", model: assignedModel, ok: false, error: "empty output" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn("DeadlySignal call failed, falling back to the provider chain:", msg);
+      await logAttempt({ provider: "deadlysignals", model: assignedModel, ok: false, error: msg });
     }
   }
 
@@ -121,12 +170,15 @@ export async function callModel(
     try {
       const result = await callModelScope(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
+        await logAttempt({ provider: "modelscope", model: result.model, ok: true });
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modelscope:${result.model}` };
       }
       console.warn("ModelScope returned empty output for an assigned model, falling back to the provider chain:", assignedModel);
+      await logAttempt({ provider: "modelscope", model: assignedModel, ok: false, error: "empty output" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn("ModelScope call failed, falling back to the provider chain:", msg);
+      await logAttempt({ provider: "modelscope", model: assignedModel, ok: false, error: msg });
     }
   }
 
@@ -137,18 +189,21 @@ export async function callModel(
       // Modal first when an admin has registered an endpoint. Which endpoint is
       // decided by data (the isPrimary row comes back first), not by this code —
       // so swapping the primary model is a click in /admin, not a deploy. Falls
-      // through to Zen → DeadlySignal → ModelScope → Ollama when
+      // through to Zen → OpenRouter → DeadlySignal → ModelScope → Ollama when
       // nothing is registered or every endpoint errors.
       try {
         const result = await callModal(ctx, prompt, systemPrompt, PIPELINE_MAX_TOKENS, 0.7, undefined, deadline);
         if (!isBlank(result.text)) {
+          await logAttempt({ provider: "modal", model: result.model, ok: true });
           return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modal:${result.model}` };
         }
         console.warn("Modal returned empty output, falling back to Zen:", result.model);
+        await logAttempt({ provider: "modal", model: result.model, ok: false, error: "empty output" });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (!msg.includes("MODAL_NOT_CONFIGURED")) {
           console.warn("Modal call failed, falling back to Zen:", msg);
+          await logAttempt({ provider: "modal", model: "unknown", ok: false, error: msg });
         }
       }
     }
@@ -161,53 +216,85 @@ export async function callModel(
     try {
       const result = await callZen(prompt, systemPrompt, zenModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
+        await logAttempt({ provider: "zen", model: result.model, ok: true });
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `zen:${result.model}` };
       }
-      console.warn("Zen returned empty output, falling back to DeadlySignal:", zenModel);
+      console.warn("Zen returned empty output, falling back to OpenRouter:", zenModel);
+      await logAttempt({ provider: "zen", model: zenModel, ok: false, error: "empty output" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`Zen call failed, falling back to DeadlySignal:`, msg);
+      console.warn(`Zen call failed, falling back to OpenRouter:`, msg);
+      await logAttempt({ provider: "zen", model: zenModel, ok: false, error: msg });
+    }
+
+    // OpenRouter — keyed free-model gateway (OPENROUTER_API_KEY env var).
+    // Second fallback after Zen: the `openrouter/free` auto-router serves
+    // whatever free model fits the request, so the leg survives the roster
+    // rotation. 20 req/min per free model — burst traffic falls through.
+    const openRouterModel = assignedModel && findOpenRouterModel(assignedModel)
+      ? assignedModel
+      : (taskType === "dispatcher" ? OPENROUTER_DISPATCHER_MODEL : OPENROUTER_DEFAULT_MODEL);
+    try {
+      const result = await callOpenRouter(prompt, systemPrompt, openRouterModel, PIPELINE_MAX_TOKENS, undefined, deadline);
+      if (!isBlank(result.text)) {
+        await logAttempt({ provider: "openrouter", model: result.model, ok: true });
+        return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `openrouter:${result.model}` };
+      }
+      console.warn("OpenRouter returned empty output, falling back to DeadlySignal:", openRouterModel);
+      await logAttempt({ provider: "openrouter", model: openRouterModel, ok: false, error: "empty output" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`OpenRouter call failed, falling back to DeadlySignal:`, msg);
+      await logAttempt({ provider: "openrouter", model: openRouterModel, ok: false, error: msg });
     }
 
     // DeadlySignal — keyed New API gateway (DEADLYSIGNALS_API_KEY env var).
-    // Second fallback after Zen: serves frontier models (kimi-k2.5, gpt-5.x,
-    // glm-5.2) when Zen is down or too slow.
+    // Third fallback after OpenRouter: serves frontier models (kimi-k2.5, gpt-5.x,
+    // glm-5.2) when the free seats are down or too slow.
     const deadlyModel = assignedModel && findDeadlySignalsModel(assignedModel)
       ? assignedModel
       : (taskType === "dispatcher" ? DEADLYSIGNALS_DISPATCHER_MODEL : DEADLYSIGNALS_DEFAULT_MODEL);
     try {
       const result = await callDeadlySignals(prompt, systemPrompt, deadlyModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
+        await logAttempt({ provider: "deadlysignals", model: result.model, ok: true });
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `deadlysignals:${result.model}` };
       }
       console.warn("DeadlySignal returned empty output, falling back to ModelScope:", deadlyModel);
+      await logAttempt({ provider: "deadlysignals", model: deadlyModel, ok: false, error: "empty output" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`DeadlySignal call failed, falling back to ModelScope:`, msg);
+      await logAttempt({ provider: "deadlysignals", model: deadlyModel, ok: false, error: msg });
     }
 
     // ModelScope — Alibaba's official free API-Inference tier (MODELSCOPE_API_KEY
-    // env var, .ai host). Third fallback when Zen and Deadly are down: serves
-    // DeepSeek-V4-Pro — the frontier seat every other provider in the chain fails.
+    // env var, .ai host). Fourth fallback when Zen, OpenRouter and Deadly are down:
+    // serves DeepSeek-V4-Pro — the frontier seat every other provider in the chain fails.
     const scopeModel = assignedModel && findModelScopeModel(assignedModel)
       ? assignedModel
       : (taskType === "dispatcher" ? MODELSCOPE_DISPATCHER_MODEL : MODELSCOPE_DEFAULT_MODEL);
     try {
       const result = await callModelScope(prompt, systemPrompt, scopeModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
+        await logAttempt({ provider: "modelscope", model: result.model, ok: true });
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modelscope:${result.model}` };
       }
       console.warn("ModelScope returned empty output, falling back to Ollama:", scopeModel);
+      await logAttempt({ provider: "modelscope", model: scopeModel, ok: false, error: "empty output" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`ModelScope call failed, falling back to Ollama:`, msg);
+      await logAttempt({ provider: "modelscope", model: scopeModel, ok: false, error: msg });
     }
 
     const ollamaModel = mapModelIdToOllama(modelId);
     const result = await callSiliconFlow(prompt, systemPrompt, ollamaModel, PIPELINE_MAX_TOKENS, undefined, ctx?.runQuery, deadline);
     if (!isBlank(result.text)) {
+      await logAttempt({ provider: "ollama", model: result.model, ok: true });
       return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `ollama:${result.model}` };
     }
+    await logAttempt({ provider: "ollama", model: ollamaModel, ok: false, error: "empty output" });
     // Last seat — nothing left to fall back to. The sentinel phrase routes
     // through the pipeline's transient-error handling (visible backoff message
     // and an automatic retry) instead of an invisible blank agent turn.
@@ -263,6 +350,9 @@ export function calcAgentBucksForTier(
   }
   if (tier.startsWith("zen:")) {
     return 0; // OpenCode Zen free anonymous tier — no cost
+  }
+  if (tier.startsWith("openrouter:")) {
+    return 0; // OpenRouter free-model tier — $0 prompt and completion
   }
   if (tier.startsWith("deadlysignals:")) {
     return 0; // DeadlySignal keyed gateway — community/free tier, no cost
