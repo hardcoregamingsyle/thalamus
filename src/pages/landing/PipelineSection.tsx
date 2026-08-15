@@ -1,64 +1,63 @@
-// Landing "AI app builder" pipeline story — the 10-agent grid the scroll
-// walks through.
+// Landing "AI app builder" section — the agent roster as a visual flow plus a
+// three-number price contrast. The long explainer paragraphs that used to sit
+// here moved into the FAQ: crawlable for search, collapsed for the reader.
 
 import { motion } from "framer-motion";
 
-// The build pipeline, told as a scroll story — each agent card slides in as
-// you reach it, so scrolling literally walks the pipeline.
+// Two words each. The grid is a picture of the pipeline, not a description of it.
 const PIPELINE_AGENTS = [
-  { name: "Dispatcher", role: "Reads your task and picks the smallest crew that can nail it" },
-  { name: "Researcher", role: "Pulls current docs and APIs before a line is written" },
-  { name: "Analyser", role: "Turns the request into an architecture" },
-  { name: "Planner", role: "Breaks it into atomic, checkable tasks" },
-  { name: "Coder", role: "Writes the complete implementation — real files, real commands" },
-  { name: "Optimiser", role: "Performance and quality pass" },
-  { name: "Organizer", role: "Structure, docs, readme" },
-  { name: "Tester", role: "Writes and runs the tests" },
-  { name: "Hacker", role: "Attacks the code before you ever see it" },
-  { name: "Critic", role: "Final gate — rejects weak work and sends it back" },
+  { name: "Dispatcher", role: "picks the crew" },
+  { name: "Researcher", role: "reads the docs" },
+  { name: "Analyser", role: "designs it" },
+  { name: "Planner", role: "splits the work" },
+  { name: "Coder", role: "writes the code" },
+  { name: "Optimiser", role: "tightens it" },
+  { name: "Organizer", role: "docs & structure" },
+  { name: "Tester", role: "runs the tests" },
+  { name: "Hacker", role: "attacks it" },
+  { name: "Critic", role: "final gate" },
+];
+
+const STATS = [
+  { value: "10", label: "agents on call" },
+  { value: "$0", label: "to start, every day" },
+  { value: "1", label: "prompt to ship" },
 ];
 
 export default function PipelineSection() {
   return (
     <section id="pipeline" className="px-4 py-20 sm:px-6">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-10 max-w-3xl">
-          <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-emerald-300">AI app builder</p>
-          <h2 className="mt-3 text-3xl font-semibold text-foreground sm:text-5xl">
-            AI app builder: describe it once, a team of AI agents builds it.
+      <div className="mx-auto max-w-5xl">
+        <div className="text-center">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-300">AI app builder</p>
+          <h2 className="mx-auto mt-4 max-w-2xl text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+            One prompt in. A whole team on it.
           </h2>
-          <p className="mt-4 text-sm leading-6 text-muted-foreground">
-            Thalamus runs a dynamic multi-agent pipeline: a dispatcher sizes up your task and sends in only the
-            agents it needs — up to nine of them — to research, plan, write, test, attack, and review real code.
-            A typo fix gets two agents. A full app gets the whole crew. Files get written, commands get executed,
-            and finished projects can push straight to GitHub.
-          </p>
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            The big AI coding tools charge $20–200 a month for a single agent. Thalamus runs the whole team on
-            free daily credits — you pay only if you want more. <span className="text-foreground/80">L3.5 means it
-            plans and executes multi-step builds end to end, verifies its own work through the Tester and Critic,
-            and leaves you the final say — autonomy where it helps, control where it matters.</span>
-          </p>
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="mt-12 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {PIPELINE_AGENTS.map((agent, index) => (
             <motion.div
               key={agent.name}
-              initial={{ opacity: 0, y: 24, scale: 0.96 }}
-              whileInView={{ opacity: 1, y: 0, scale: 1 }}
-              viewport={{ once: true, margin: "-60px" }}
-              transition={{ delay: index * 0.07, duration: 0.45 }}
-              className="rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] p-4"
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-40px" }}
+              transition={{ delay: index * 0.05, duration: 0.4 }}
+              className="rounded-xl border border-emerald-300/15 bg-emerald-300/[0.04] p-4"
             >
-              <div className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-emerald-300/30 text-[10px] font-bold text-emerald-300">
-                  {index + 1}
-                </span>
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-foreground">{agent.name}</p>
-              </div>
-              <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{agent.role}</p>
+              <span className="text-[10px] font-semibold text-emerald-300/70">{String(index + 1).padStart(2, "0")}</span>
+              <p className="mt-1.5 text-[13px] font-semibold text-foreground">{agent.name}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">{agent.role}</p>
             </motion.div>
+          ))}
+        </div>
+
+        <div className="mt-14 grid gap-6 border-t border-foreground/10 pt-10 sm:grid-cols-3">
+          {STATS.map((stat) => (
+            <div key={stat.label} className="text-center">
+              <p className="text-4xl font-semibold tracking-tight text-foreground">{stat.value}</p>
+              <p className="mt-1.5 text-[13px] text-muted-foreground">{stat.label}</p>
+            </div>
           ))}
         </div>
       </div>

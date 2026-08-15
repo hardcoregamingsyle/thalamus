@@ -36,6 +36,14 @@ export const FAQ_ITEMS: FaqItem[] = [
     a: "A dispatcher reads your request and runs a dynamic pipeline of up to nine AI agents — researcher, planner, coder, tester, security attacker, and critic. They write real files, run real commands, and can push finished projects to GitHub.",
   },
   {
+    q: "What does an L3.5 agent mean?",
+    a: "L3.5 describes how much the agent does on its own. It plans and executes multi-step builds end to end and verifies its own work through a Tester and a Critic before handing anything back — autonomy where it helps, while you keep the final say on what ships.",
+  },
+  {
+    q: "How much does Thalamus cost compared to other AI coding tools?",
+    a: "The big AI coding tools charge $20 to $200 a month for a single agent. Thalamus runs the whole ten-agent team on free daily credits — you only pay if you want more than the daily allowance, and study mode is free for partner schools.",
+  },
+  {
     q: "Is there a Windows desktop app?",
     a: "Yes. Thalamus ships a native Windows app with the same chat, research, study, and build modes — and your conversations sync with the cloud, so desktop and web always match.",
   },

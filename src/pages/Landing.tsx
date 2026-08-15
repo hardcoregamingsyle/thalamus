@@ -17,7 +17,6 @@ import Hero from "./landing/Hero";
 import ModeGrid, { type ModeId } from "./landing/ModeGrid";
 import PipelineSection from "./landing/PipelineSection";
 import StudySection from "./landing/StudySection";
-import CapabilityBand from "./landing/CapabilityBand";
 import FaqSection from "./landing/FaqSection";
 import FinalCta from "./landing/FinalCta";
 import Footer from "./landing/Footer";
@@ -102,7 +101,6 @@ export default function Landing() {
         <ModeGrid onSelect={handleModeSelect} />
         <PipelineSection />
         <StudySection />
-        <CapabilityBand />
         <FaqSection />
         <FinalCta onLaunch={handleLaunch} onSelect={handleModeSelect} />
         <Footer />
