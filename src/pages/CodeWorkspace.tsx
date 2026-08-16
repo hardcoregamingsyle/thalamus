@@ -400,10 +400,6 @@ export default function CodeWorkspace() {
   const [sponsoredAd, setSponsoredAd] = useState<GravityAd | null>(null);
   const adRequestedRef = useRef(false);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
   // Newest first so a stalled branch surfaces its most recent command; the
   // pipeline parks the branch "paused" while a command is in flight, so the
   // status alone reads as "nothing happening" without this.
@@ -412,6 +408,23 @@ export default function CodeWorkspace() {
     [...commands]
       .reverse()
       .find((c) => c.status === "pending" || c.status === "running");
+
+  // Keep the transcript pinned to the newest activity. Follows committed
+  // messages plus the live agent stream and terminal output; only auto-scrolls
+  // when the user is already near the bottom so reading history doesn't yank.
+  useEffect(() => {
+    if (messages === undefined) return;
+    const activity = branch?.streamingContent || (activeCommand?._id ? "cmd" : "");
+    const end = messagesEndRef.current;
+    if (!end) return;
+    const container = end.closest(".overflow-auto") as HTMLElement | null;
+    const nearBottom = container
+      ? container.scrollHeight - container.scrollTop - container.clientHeight < 240
+      : true;
+    if (nearBottom) {
+      end.scrollIntoView({ behavior: activity ? "auto" : "smooth", block: "end" });
+    }
+  }, [messages, branch?.streamingContent, branch?.status, activeCommand?._id]);
 
   useEffect(() => {
     if (adRequestedRef.current || !messages || messages.length === 0) return;

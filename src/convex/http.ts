@@ -356,151 +356,190 @@ http.route({
     ];
 
     const encoder = new TextEncoder();
-    let fullText = "";
-    let usedClaude = false;
+    const sse = (payload: unknown) => encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
 
-    // Load AWS credentials: DB first, then env var fallback
+    // Load provider credentials up front (ctx calls must stay before the
+    // stream is handed back — the transform body below only does plain fetch
+    // plus the deferred DB save, mirroring Convex's documented streaming
+    // pattern where the action context stays alive until the writer closes).
     const dbCreds = await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {});
     const bedrockCreds = dbCreds ?? parseBedrockCredsFromEnv();
     const hasBedrock = !!bedrockCreds;
+    const geminiKeys = await ctx.runQuery(internal.admin.getGeminiKeysInternal, {}) as string[];
 
-    // Run all AI calls BEFORE creating the stream, so ctx is still valid
-    let streamSuccess = false;
-    let geminiStreamBody = "";
+    // True token streaming: the model call runs inside the stream body and
+    // every provider delta is pushed to the SSE response the instant it
+    // arrives, instead of buffering the whole answer and drip-feeding it as one
+    // large block once the call finally returns.
+    const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+    const writer = writable.getWriter();
+    let streamClosed = false;
+    const write = async (payload: unknown) => {
+      if (streamClosed) return;
+      try { await writer.write(sse(payload)); } catch { /* client gone */ }
+    };
 
-    // Try Claude (non-streaming invoke first to get full text, then stream it).
-    if (!streamSuccess && hasBedrock && bedrockCreds && preferHighTier !== false) {
-      try {
-        const result = await streamClaudeWithCreds(bedrockCreds, fullSystem, messages, () => {}, temperature);
-        fullText = result.fullText;
-        usedClaude = true;
-        streamSuccess = true;
-      } catch (bedrockErr) {
-        console.error("Bedrock failed:", bedrockErr instanceof Error ? bedrockErr.message : String(bedrockErr));
-        fullText = "";
+    const run = async () => {
+      let fullText = "";
+      let usedClaude = false;
+      let streamSuccess = false;
+
+      // Brief activity notes so the UI shows movement before the first token.
+      const thinkingNotes = [
+        `Mode: ${mode || "chat"}`,
+        "Reading conversation context",
+        "Reasoning\u2026",
+      ];
+      for (const note of thinkingNotes) {
+        await write({ type: "thinking", chunk: `${note}\n` });
+        await new Promise(r => setTimeout(r, 70));
       }
-    }
+      await write({ type: "answer_start" });
 
-    // Fallback: Gemini
-    if (!streamSuccess) {
-      const geminiContents = messages.map(m => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }],
-      }));
-      geminiStreamBody = JSON.stringify({
-        system_instruction: { parts: [{ text: fullSystem }] },
-        contents: geminiContents,
-        generationConfig: { maxOutputTokens: 4096, temperature },
-      });
-
-      const geminiKeys = await ctx.runQuery(internal.admin.getGeminiKeysInternal, {}) as string[];
-      for (let attempt = 0; attempt < geminiKeys.length && !streamSuccess; attempt++) {
+      // 1) Bedrock Claude — true token streaming (deltas pushed as they arrive).
+      if (!streamSuccess && hasBedrock && bedrockCreds && preferHighTier !== false) {
         try {
-          const key = geminiKeys[attempt % geminiKeys.length];
-          const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
-          const geminiRes = await fetch(streamUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: geminiStreamBody,
+          await streamClaudeWithCreds(bedrockCreds, fullSystem, messages, (delta) => {
+            fullText += delta;
+            void write({ type: "answer", chunk: delta });
+          }, temperature);
+          usedClaude = true;
+          streamSuccess = fullText.length > 0;
+        } catch (bedrockErr) {
+          console.error("Bedrock streaming failed:", bedrockErr instanceof Error ? bedrockErr.message : String(bedrockErr));
+          fullText = "";
+        }
+      }
+
+      // 2) Gemini — streamGenerateContent SSE, real deltas as they arrive.
+      if (!streamSuccess) {
+        const geminiContents = messages.map(m => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: [{ text: m.content }],
+        }));
+        const geminiBody = JSON.stringify({
+          system_instruction: { parts: [{ text: fullSystem }] },
+          contents: geminiContents,
+          generationConfig: { maxOutputTokens: 4096, temperature },
+        });
+        for (let attempt = 0; attempt < geminiKeys.length && !streamSuccess; attempt++) {
+          try {
+            const key = geminiKeys[attempt % geminiKeys.length];
+            const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${key}`;
+            const geminiRes = await fetch(streamUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: geminiBody,
+            });
+            if (geminiRes.status === 429 || geminiRes.status === 403) continue;
+            if (!geminiRes.ok || !geminiRes.body) continue;
+            const reader = geminiRes.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() ?? "";
+              for (const line of lines) {
+                if (!line.startsWith("data: ")) continue;
+                const data = line.slice(6).trim();
+                if (!data || data === "[DONE]") continue;
+                try {
+                  const obj = JSON.parse(data) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+                  const text = obj.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+                  if (text) { fullText += text; await write({ type: "answer", chunk: text }); }
+                } catch { /* skip malformed frame */ }
+              }
+            }
+            streamSuccess = fullText.length > 0;
+          } catch { /* try next key */ }
+        }
+      }
+
+      // 3) VLY fallback — non-streaming, drip-feed so the UI still animates.
+      if (!streamSuccess) {
+        try {
+          const vlyText = await ctx.runAction(internal.ai.vlyFallbackCompletion, {
+            systemPrompt: fullSystem,
+            messages,
           });
-          if (geminiRes.status === 429 || geminiRes.status === 403) continue;
-          if (geminiRes.ok) {
-            const data = await geminiRes.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-            if (text) { fullText = text; streamSuccess = true; }
+          if (vlyText) {
+            fullText = vlyText;
+            const words = fullText.split(/(?<=\s)|(?=\s)/);
+            for (let i = 0; i < words.length; i += 3) {
+              await write({ type: "answer", chunk: words.slice(i, i + 3).join("") });
+              await new Promise(r => setTimeout(r, 8));
+            }
+            streamSuccess = true;
           }
-        } catch { /* skip */ }
+        } catch (vlyErr) {
+          console.error("VLY fallback failed:", vlyErr instanceof Error ? vlyErr.message : String(vlyErr));
+        }
       }
-    }
 
-    // Final fallback: VLY
-    if (!streamSuccess) {
-      try {
-        const vlyText = await ctx.runAction(internal.ai.vlyFallbackCompletion, {
-          systemPrompt: fullSystem,
-          messages,
+      if (!streamSuccess || !fullText) {
+        fullText = "Sorry, I couldn't generate a response. Please try again.";
+        await write({ type: "answer", chunk: fullText });
+      }
+
+      // Process ASK-QUESTION / ASK-MCQ and JSON-format ask ops into injectable HTML.
+      if (mode === "study" && fullText) {
+        // Handle JSON ops format: {"op":"ask-question","question":"..."}
+        fullText = fullText.replace(/\{"op":"ask-question","question":"([^"]+)"\}/g, (_, question) =>
+          `<div class="thalamus-ask" data-ask='${JSON.stringify({type:"question",question})}' style="border:1px solid #6366f1;border-radius:8px;padding:1em;margin:0.8em 0;background:rgba(99,102,241,0.08)"><p style="margin:0 0 0.5em;font-weight:bold;color:#e5e7eb">Question:</p><p style="margin:0 0 0.8em;color:#d1d5db">${question}</p><input type="text" style="width:100%;padding:0.5em;border:1px solid #4b5563;border-radius:6px;background:#1f2937;color:#e5e7eb" placeholder="Type your answer here..." disabled /><p style="margin:0.5em 0 0;font-size:0.8em;color:#9ca3af">Type your answer and send - I'll grade it.</p></div>`
+        );
+        // Handle JSON ops format: {"op":"ask-mcq","question":"...","options":[...],"correct":N}
+        fullText = fullText.replace(/\{"op":"ask-mcq","question":"([^"]+)","options":(\[[^\]]+\]),"correct":(\d+)\}/g, (_, question, optionsJson, correctIdx) => {
+          try {
+            const options = JSON.parse(optionsJson) as string[];
+            return `<div class="thalamus-mcq" data-mcq='${JSON.stringify({type:"mcq",question,options,correct:parseInt(correctIdx,10)})}' style="border:1px solid #6366f1;border-radius:8px;padding:1em;margin:0.8em 0;background:rgba(99,102,241,0.08)"><p style="margin:0 0 0.5em;font-weight:bold;color:#e5e7eb">Multiple Choice:</p><p style="margin:0 0 0.8em;color:#d1d5db">${question}</p>${options.map((opt) => `<div style="padding:0.4em 0.6em;margin:0.2em 0;border:1px solid #4b5563;border-radius:6px;background:#1f2937;color:#d1d5db"><input type="radio" disabled /> ${opt}</div>`).join("")}<p style="margin:0.5em 0 0;font-size:0.8em;color:#9ca3af">Select an option and send - I'll tell you if you're right.</p></div>`;
+          } catch { return `<p>[MCQ: ${question}]</p>`; }
         });
-        if (vlyText) { fullText = vlyText; streamSuccess = true; }
-      } catch (vlyErr) {
-        console.error("VLY fallback failed:", vlyErr instanceof Error ? vlyErr.message : String(vlyErr));
       }
-    }
 
-    if (!streamSuccess || !fullText) {
-      fullText = "Sorry, I couldn't generate a response. Please try again.";
-    }
-
-    // Process ASK-QUESTION / ASK-MCQ and JSON-format ask ops into injectable HTML.
-    if (mode === "study" && fullText) {
-      // Handle JSON ops format: {"op":"ask-question","question":"..."}
-      fullText = fullText.replace(/\{"op":"ask-question","question":"([^"]+)"\}/g, (_, question) =>
-        `<div class="thalamus-ask" data-ask='${JSON.stringify({type:"question",question})}' style="border:1px solid #6366f1;border-radius:8px;padding:1em;margin:0.8em 0;background:rgba(99,102,241,0.08)"><p style="margin:0 0 0.5em;font-weight:bold;color:#e5e7eb">Question:</p><p style="margin:0 0 0.8em;color:#d1d5db">${question}</p><input type="text" style="width:100%;padding:0.5em;border:1px solid #4b5563;border-radius:6px;background:#1f2937;color:#e5e7eb" placeholder="Type your answer here..." disabled /><p style="margin:0.5em 0 0;font-size:0.8em;color:#9ca3af">Type your answer and send - I'll grade it.</p></div>`
-      );
-      // Handle JSON ops format: {"op":"ask-mcq","question":"...","options":["..."],"correct":N}
-      fullText = fullText.replace(/\{"op":"ask-mcq","question":"([^"]+)","options":(\[[^\]]+\]),"correct":(\d+)\}/g, (_, question, optionsJson, correctIdx) => {
+      // Save the completed exchange to DB now that the stream has finished.
+      if (token && conversationId && fullText && fullText !== "Sorry, I couldn't generate a response. Please try again.") {
         try {
-          const options = JSON.parse(optionsJson) as string[];
-          return `<div class="thalamus-mcq" data-mcq='${JSON.stringify({type:"mcq",question,options,correct:parseInt(correctIdx,10)})}' style="border:1px solid #6366f1;border-radius:8px;padding:1em;margin:0.8em 0;background:rgba(99,102,241,0.08)"><p style="margin:0 0 0.5em;font-weight:bold;color:#e5e7eb">Multiple Choice:</p><p style="margin:0 0 0.8em;color:#d1d5db">${question}</p>${options.map((opt) => `<div style="padding:0.4em 0.6em;margin:0.2em 0;border:1px solid #4b5563;border-radius:6px;background:#1f2937;color:#d1d5db"><input type="radio" disabled /> ${opt}</div>`).join("")}<p style="margin:0.5em 0 0;font-size:0.8em;color:#9ca3af">Select an option and send - I'll tell you if you're right.</p></div>`;
-        } catch { return `<p>[MCQ: ${question}]</p>`; }
-      });
-
-    }
-
-    // Save to DB NOW while ctx is still valid
-    if (token && conversationId && fullText && fullText !== "Sorry, I couldn't generate a response. Please try again.") {
-      try {
-        const inputCostPerMillion = usedClaude ? 1.80 : 0.60;
-        const outputCostPerMillion = usedClaude ? 7.20 : 2.40;
-        await ctx.runMutation(internal.aiHelpers.saveStreamedMessage, {
-          conversationId: conversationId as Id<"conversations">,
-          token,
-          content,
-          response: fullText,
-          inputCostPerMillion,
-          outputCostPerMillion,
-          mode,
-          skipUserSave,
-        });
-      } catch (saveErr) {
-        console.error("Failed to save streamed message:", saveErr);
+          const inputCostPerMillion = usedClaude ? 1.80 : 0.60;
+          const outputCostPerMillion = usedClaude ? 7.20 : 2.40;
+          await ctx.runMutation(internal.aiHelpers.saveStreamedMessage, {
+            conversationId: conversationId as Id<"conversations">,
+            token,
+            content,
+            response: fullText,
+            inputCostPerMillion,
+            outputCostPerMillion,
+            mode,
+            skipUserSave,
+          });
+        } catch (saveErr) {
+          console.error("Failed to save streamed message:", saveErr);
+        }
       }
-    }
 
-    // Stream thinking notes first, then answer content for UX
-    const thinkingNotes = [
-      `Mode: ${mode || "chat"}`,
-      "Reading conversation context",
-      token && conversationId ? "Preparing saved response" : "Preparing guest response",
-      "Answer stream ready",
-    ];
-    const words = fullText.split(/(?<=\s)|(?=\s)/);
-    const transformedStream = new ReadableStream({
-      async start(controller) {
-        for (const note of thinkingNotes) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "thinking", chunk: `${note}\n` })}\n\n`));
-          await new Promise(r => setTimeout(r, 120));
-        }
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "answer_start" })}\n\n`));
-        // Stream in chunks for smooth UX
-        const chunkSize = 3;
-        for (let i = 0; i < words.length; i += chunkSize) {
-          const chunk = words.slice(i, i + chunkSize).join("");
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "answer", chunk })}\n\n`));
-          // Small delay for streaming effect
-          await new Promise(r => setTimeout(r, 8));
-        }
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done", done: true, fullText })}\n\n`));
-        controller.close();
-      },
+      await write({ type: "done", done: true, fullText });
+      streamClosed = true;
+      try { await writer.close(); } catch { /* already closed */ }
+    };
+
+    // Kick off the stream but don't await it — the Response is returned now and
+    // Convex keeps the action alive until the writer closes.
+    void run().catch((err) => {
+      console.error("Stream error:", err instanceof Error ? err.message : String(err));
+      streamClosed = true;
+      try { writer.close(); } catch { /* ignore */ }
     });
 
-    return new Response(transformedStream, {
+    return new Response(readable, {
       status: 200,
       headers: {
         ...corsHeaders(),
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         "X-Accel-Buffering": "no",
+        "Connection": "keep-alive",
       },
     });
   }),

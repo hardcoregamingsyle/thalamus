@@ -267,3 +267,18 @@
   font-size: 1em;
   overflow-x: auto;
 }
+/* Blinking caret shown while an assistant answer is streaming in. */
+@keyframes streamingCaretBlink {
+  0%, 45% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.streaming-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: currentColor;
+  border-radius: 1px;
+  animation: streamingCaretBlink 0.9s steps(1, end) infinite;
+}

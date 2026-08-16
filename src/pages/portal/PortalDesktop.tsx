@@ -22,10 +22,10 @@ import CreditModal from "@/components/CreditModal";
 import OnboardingModal from "@/components/OnboardingModal";
 import StudyProfileModal from "@/components/StudyProfileModal";
 import StudentSuite from "@/components/StudentSuite";
-import MathRenderer from "@/components/MathRenderer";
 import ThinkingPanel from "@/components/ThinkingPanel";
 import SuggestionFormModal, { type SuggestionFile } from "@/components/SuggestionFormModal";
 import ChatMessageBubble from "@/components/ChatMessageBubble";
+import StreamingBubble from "@/components/StreamingBubble";
 import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
 import { fetchSponsoredAd } from "@/lib/requestAd";
 import { getSessionToken } from "@/lib/session";
@@ -105,6 +105,7 @@ export default function PortalDesktop() {
   const lastAdRefreshRef = useRef(0);
   const lastActivityRef = useRef(0); // stamped on mount by the activity effect
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const ensureDailyBalance = useMutation(api.customAuthHelpers.ensureDailyBalance);
@@ -339,8 +340,28 @@ export default function PortalDesktop() {
       .catch(() => { /* best-effort — a failed migration just leaves a fresh account */ });
   }, [token, isAuthenticated, importGuestConversation, navigate]);
 
+  // Auto-grow the composer up to a max height.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 140) + "px";
+  }, [input]);
+
+  // Stick to the newest message. High-frequency streaming updates use instant
+  // (auto) scroll to avoid smooth-scroll jank; discrete message arrivals get a
+  // gentle smooth scroll. Only auto-scroll when the user is already near the
+  // bottom so they can scroll up to read without being yanked down.
+  useEffect(() => {
+    const end = messagesEndRef.current;
+    if (!end) return;
+    const container = end.closest(".overflow-auto") as HTMLElement | null;
+    const nearBottom = container
+      ? container.scrollHeight - container.scrollTop - container.clientHeight < 200
+      : true;
+    if (nearBottom) {
+      end.scrollIntoView({ behavior: streamingContent !== null ? "auto" : "smooth", block: "end" });
+    }
   }, [messages, isThinking, streamingContent]);
 
   // Track how many messages existed before sending, so we only clear streaming
@@ -1077,19 +1098,14 @@ export default function PortalDesktop() {
                     ))
                   )}
                   {streamingContent !== null && (
-                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex justify-start">
-                      <div className="max-w-[82%] rounded-2xl px-4 py-3 text-xs leading-relaxed bg-card border border-border text-foreground">
-                        {streamingContent === "" ? (
-                          <div className="flex items-center gap-1">
-                            {[0, 1, 2].map(i => (
-                              <motion.div key={i} className="w-2 h-2 rounded-full bg-primary"
-                                animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
-                                transition={{ duration: 0.7, delay: i * 0.15, repeat: Infinity }} />
-                            ))}
-                          </div>
-                        ) : (
-                          <MathRenderer html={streamingContent.startsWith("<") ? streamingContent : streamingContent.replace(/\n/g, "<br/>")} />
-                        )}
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ duration: 0.18, ease: "easeOut" }}
+                      className="flex justify-start"
+                    >
+                      <div className="max-w-[82%] rounded-2xl px-4 py-3 text-xs leading-relaxed bg-card border border-border/60 text-foreground shadow-sm">
+                        <StreamingBubble content={streamingContent} />
                       </div>
                     </motion.div>
                   )}
@@ -1171,23 +1187,25 @@ export default function PortalDesktop() {
                       onChange={handleAttachFiles} />
                   </label>
                   <textarea
+                    ref={inputRef}
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
                     onPaste={handlePaste}
                     placeholder={activeMode === "study" ? "Ask a study question — live web search enabled..." : activeMode === "research" ? "Research topic or question..." : "Type a message..."}
                     rows={1}
-                    className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary/60 transition-colors"
-                    style={{ minHeight: "36px", maxHeight: "120px" }}
+                    className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/30 transition-all"
+                    style={{ minHeight: "38px", maxHeight: "140px" }}
                   />
-                  <button
+                  <motion.button
                     aria-label="Send message"
                     onClick={handleSend}
+                    whileTap={{ scale: 0.94 }}
                     disabled={(!input.trim() && attachedFiles.length === 0) || isThinking}
-                    className={`px-3 py-2 rounded-xl disabled:opacity-50 transition-all shrink-0 ${activeMode === "study" ? "bg-indigo-500 text-white hover:bg-indigo-500/90" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}
+                    className={`px-3.5 py-2 rounded-xl disabled:opacity-50 transition-all shrink-0 flex items-center gap-1.5 ${activeMode === "study" ? "bg-indigo-500 text-white hover:bg-indigo-500/90" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}
                   >
                     {isThinking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  </button>
+                  </motion.button>
                 </div>
                 <div className="max-w-4xl mx-auto mt-1.5 flex items-center justify-center gap-1.5">
                   <Lock className="h-2.5 w-2.5 text-muted-foreground/40" />
