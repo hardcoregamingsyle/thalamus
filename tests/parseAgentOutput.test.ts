@@ -652,6 +652,79 @@ describe("parseAgentOutput — dispatch op (KnowItAll handoff)", () => {
   });
 });
 
+describe("parseAgentOutput — leading-slash paths are normalized (GitHub push)", () => {
+  // A live run's Coder wrote files with absolute paths ("/src/game.js") and the
+  // auto-push to GitHub failed with "tree.path cannot start with a slash",
+  // leaving commands running on an empty clone forever. Every file-op source
+  // (JSON op, raw block, bare block, XML tool call) must normalize the path to
+  // repo-relative before it reaches the file store.
+  it("strips a leading slash from a JSON create-file path", () => {
+    const out = `{"message":"write it","ops":[{"op":"create-file","path":"/src/game.js","content":"const x = 1;"}]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toEqual([{ type: "create", filepath: "src/game.js", content: "const x = 1;" }]);
+  });
+
+  it("strips a /home/<user>/... prefix down to the repo-relative path", () => {
+    const out = `{"op":"create-file","path":"/home/user/src/a.ts","content":"export const a = 1;"}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps[0].filepath).toBe("src/a.ts");
+  });
+
+  it("normalizes a raw-block path and a Windows-style separator", () => {
+    const out = `<<CREATEFILE="\\src\\game.js">>const y = 2;<<END.CREATEFILE>>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps[0].filepath).toBe("src/game.js");
+  });
+
+  it("normalizes the bare-block paired path", () => {
+    const out = `{"op":"create-file","path":"/index.html"}\n<<CREATEFILE>>\n<h1>hi</h1>\n<<END.CREATEFILE>>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toEqual([{ type: "create", filepath: "index.html", content: "<h1>hi</h1>" }]);
+  });
+
+  it("normalizes delete-file paths", () => {
+    const out = `{"op":"delete-file","path":"/src/old.ts"}`;
+    expect(parseAgentOutput(out).fileOps).toEqual([{ type: "delete", filepath: "src/old.ts" }]);
+  });
+});
+
+describe("parseAgentOutput — echoed transcript markers recover to real ops", () => {
+  // A live run's Critic/Coder put the VISIBLE transcript markers into their
+  // ops array instead of the underlying JSON op (the markers are what they
+  // read back from history). Previously those were dropped and the whole doc
+  // flagged [MALFORMED OP — not executed], so a command the model clearly meant
+  // to run silently never ran and the doc told it the work was dropped.
+  it("recovers [CMD: ...] markers in the ops array to cmd ops", () => {
+    const out = `{"message":"Verifying project state.","ops":[[CMD: ls -la src/ tests/ 2>&1],[CMD: cat package.json 2>&1]]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual([
+      "ls -la src/ tests/ 2>&1",
+      "cat package.json 2>&1",
+    ]);
+    // No false MALFORMED marker — the commands run.
+    expect(parsed.cleanContent).not.toContain("MALFORMED OP");
+    expect(parsed.cleanContent).toContain("Verifying project state.");
+  });
+
+  it("does NOT flag a broken doc malformed when actionable ops were recovered", () => {
+    const out = `{"message":"creating","ops":[[CMD: npm install 2>&1],[CMD: npm test 2>&1]]}`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps.length).toBe(2);
+    expect(parsed.malformedOps.length).toBe(0);
+    expect(parsed.cleanContent).not.toContain("MALFORMED");
+  });
+
+  it("recovers a [FILE CREATED: path] marker and normalizes its path", () => {
+    const out = `{"message":"done","ops":[[FILE CREATED: /src/game.js]]}`;
+    const parsed = parseAgentOutput(out);
+    // The marker carries a path but no content — mapping to create-file yields
+    // an empty op that the content check safely drops (no empty file written),
+    // but the doc is accepted and the message preserved.
+    expect(parsed.cleanContent).toBe("done");
+    expect(parsed.cleanContent).not.toContain("MALFORMED");
+  });
+});
+
 describe("parseAgentOutput — continue op", () => {
   it("sets continueRequested when the document ends with the op", () => {
     const out = `{"message":"chunk 2 of the file","ops":[{"op":"edit-file","path":"src/big.ts","content":"part two"},{"op":"continue"}]}`;

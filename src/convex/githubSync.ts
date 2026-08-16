@@ -14,6 +14,22 @@ import { resolveTokenForBranch } from "./githubActionsRunner";
 type GithubConfig = Doc<"githubConfigs">;
 type CodeFile = { filepath: string; content: string };
 
+// GitHub's git/trees API rejects any tree path that starts with a slash
+// ("tree.path cannot start with a slash"), and an absolute /home/<user>/...
+// path is meaningless against the repo root. The output parser already
+// normalizes agent-emitted paths, but this is the last line of defense: a
+// path that somehow reaches the push still gets made repo-relative so a
+// single bad path can't fail the whole push and leave the VM working on an
+// empty clone.
+function normalizeGitPath(raw: string): string {
+  let p = (raw ?? "").trim();
+  p = p.replace(/\\/g, "/").replace(/^\.\//, "");
+  p = p.replace(/^\/home\/[^/]+\//, "");
+  if (p.startsWith("/")) p = p.slice(1);
+  p = p.split("/").filter(Boolean).join("/");
+  return p;
+}
+
 // The user's own OAuth-connected token beats an explicitly-passed one (there's
 // no PAT-entry UI left to pass one anyway) beats the platform's fallback token.
 async function resolveGithubToken(
@@ -304,7 +320,7 @@ const baseTreeSha = commitData.tree.sha;
               content: Buffer.from(file.content).toString("base64"),
               encoding: "base64",
             });
-            tree.push({ path: file.filepath, mode: "100644" as const, type: "blob" as const, sha: blob.sha });
+            tree.push({ path: normalizeGitPath(file.filepath), mode: "100644" as const, type: "blob" as const, sha: blob.sha });
             lastErr = undefined;
             break;
           } catch (err: unknown) {
@@ -438,7 +454,7 @@ export const autoPushToGithub = internalAction({
               content: Buffer.from(file.content).toString("base64"),
               encoding: "base64",
             });
-            tree.push({ path: file.filepath, mode: "100644" as const, type: "blob" as const, sha: blob.sha });
+            tree.push({ path: normalizeGitPath(file.filepath), mode: "100644" as const, type: "blob" as const, sha: blob.sha });
             lastErr = undefined;
             break;
           } catch (err: unknown) {

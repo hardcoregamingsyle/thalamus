@@ -359,7 +359,7 @@ function recoverXmlToolCalls(
     }
 
     if (tool === "create-file" || tool === "write-file" || tool === "rewrite-file") {
-      const path = value("path") || value("filepath") || value("file_path");
+      const path = normalizeFilePath(value("path") || value("filepath") || value("file_path"));
       const contentValue = value("content") || value("code") || value("body");
       if (path && typeof contentValue === "string") {
         const exists = state.fileOps.some((f) => f.type === "create" && f.filepath === path);
@@ -370,7 +370,7 @@ function recoverXmlToolCalls(
     }
 
     if (tool === "edit-file") {
-      const path = value("path") || value("filepath") || value("file_path");
+      const path = normalizeFilePath(value("path") || value("filepath") || value("file_path"));
       const contentValue = value("content") || value("code") || value("body");
       if (path && typeof contentValue === "string") {
         const exists = state.fileOps.some((f) => f.type === "edit" && f.filepath === path);
@@ -416,6 +416,35 @@ function recoverXmlToolCalls(
       .trim();
     return inner ? `[TOOL: ${name}] ${inner}` : `[TOOL: ${name}]`;
   });
+}
+
+// Normalize an agent-supplied file path into a repo-relative path. Models
+// frequently write an absolute path ("/src/game.js", "/home/user/src/a.ts") or
+// a Windows-style one ("src\\game.js"); GitHub's git/trees API rejects any path
+// starting with a slash ("tree.path cannot start with a slash"), which made the
+// auto-push fail and left every command running against an empty clone — the
+// exact loop in the transcript. Strip a leading root marker (a single leading
+// slash, or a whole "/home/..." prefix that walks to the repo root), collapse
+// "./" prefixes, and fold backslashes to forward slashes.
+function normalizeFilePath(raw: string): string {
+  let p = (raw ?? "").trim();
+  if (!p) return p;
+  // Windows-style separators.
+  p = p.replace(/\\/g, "/");
+  // Drop a leading "./".
+  p = p.replace(/^\.\//, "");
+  // Drop a /home/<user>/ (or /home/user/) home-directory prefix — models write
+  // absolute paths like "/home/user/src/a.ts" or "/home/runner/README.md" and
+  // the repo is checked out somewhere under the user's home, so the real
+  // repo-relative path starts after that prefix.
+  p = p.replace(/^\/home\/[^/]+\//, "");
+  // Drop a leading root slash (e.g. "/src/game.js" → "src/game.js"). Repo
+  // paths never start with a slash, so a leading slash is always a mistake
+  // worth stripping.
+  if (p.startsWith("/")) p = p.slice(1);
+  // Collapse any leftover empty segments from double slashes.
+  p = p.split("/").filter(Boolean).join("/");
+  return p;
 }
 
 // Legacy tag parsers — keep for backwards compatibility with older conversations.
@@ -476,7 +505,16 @@ const MARKER_VERDICT_OPS: Record<string, Record<string, unknown>> = {
 };
 
 /** Map a transcript marker string (or one-level nested array of one) back to
- *  the verdict op it stands for. Null when the value is not a known marker. */
+ *  the op it stands for. Agents copy the visible markers the pipeline writes
+ *  into the transcript back into their ops array (instead of re-emitting the
+ *  underlying op) — [CMD: ls -la], [FILE CREATED: src/a.ts], [SEARCHING: x].
+ *  Without this mapping those echoes were dropped and the whole doc flagged
+ *  MALFORMED, so a command the model clearly meant to run silently never ran.
+ *  Each marker carries enough to reconstruct its op: a cmd marker holds the
+ *  full command; file-created/edited markers carry the path (content-less —
+ *  the pipeline writes the file from the preceding create op, so an echoed
+ *  path marker just re-confirms it); search/scrape carry their query/url.
+ *  Null when the value is not a known marker. */
 function markerToVerdictOp(value: unknown): Record<string, unknown> | null {
   if (Array.isArray(value)) {
     if (value.length === 0) return null;
@@ -485,6 +523,26 @@ function markerToVerdictOp(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "string") return null;
   const v = value.trim();
   if (v.startsWith("[TEST: FAILED")) return { op: "test-failed", reason: v };
+  if (v.startsWith("[CMD: ")) {
+    const command = v.slice("[CMD: ".length, v.length - (v.endsWith("]") ? 1 : 0));
+    return command ? { op: "cmd", command } : null;
+  }
+  if (v.startsWith("[FILE CREATED: ")) {
+    const p = v.slice("[FILE CREATED: ".length, v.length - (v.endsWith("]") ? 1 : 0));
+    return p ? { op: "create-file", path: normalizeFilePath(p) } : null;
+  }
+  if (v.startsWith("[FILE EDITED: ")) {
+    const p = v.slice("[FILE EDITED: ".length, v.length - (v.endsWith("]") ? 1 : 0));
+    return p ? { op: "edit-file", path: normalizeFilePath(p) } : null;
+  }
+  if (v.startsWith("[SEARCHING: ")) {
+    const q = v.slice("[SEARCHING: ".length, v.length - (v.endsWith("]") ? 1 : 0));
+    return q ? { op: "search", query: q } : null;
+  }
+  if (v.startsWith("[SCRAPING: ")) {
+    const u = v.slice("[SCRAPING: ".length, v.length - (v.endsWith("]") ? 1 : 0));
+    return u ? { op: "scrape", url: u } : null;
+  }
   return MARKER_VERDICT_OPS[v] ?? null;
 }
 
@@ -494,8 +552,10 @@ function markerToVerdictOp(value: unknown): Record<string, unknown> | null {
 const LOOKS_LIKE_DOC_RE = /^\{\s*"(?:message|review|ops)"\s*:/;
 
 /** Marker texts the pipeline itself writes into the transcript (and agents
- *  sometimes echo back instead of re-emitting the verdict op). */
-const MARKER_RE = /\[(?:SECURITY: (?:PASSED ✓|FAILED)|TEST: (?:PASSED ✓|FAILED[^\]]*))\]/g;
+ *  sometimes echo back instead of re-emitting the underlying op). Covers the
+ *  verdicts plus the cmd/file/search/scrape markers so the broken-document
+ *  recovery tail can turn an echoed marker back into its real op. */
+const MARKER_RE = /\[(?:SECURITY: (?:PASSED ✓|FAILED)|TEST: (?:PASSED ✓|FAILED[^\]]*)|CMD: [^\]]*|FILE (?:CREATED|EDITED): [^\]]*|SEARCHING: [^\]]*|SCRAPING: [^\]]*)\]/g;
 
 /** The ops-array portion of a broken document — everything from the first
  *  "ops" key onward. Verdict recovery is confined to this tail so op
@@ -567,21 +627,36 @@ export function parseAgentOutput(content: string): ParsedOutput {
       // Op examples the agent quoted inside its own message text would
       // execute — a Critic that reviewed "use {"op":"security-fail"} here"
       // got its run rejected by its own example. Keep the message text if
-      // extractable, stamp the marker, and report the raw blob as malformed.
+      // extractable and report the raw blob as malformed.
       const msg = extractDocMessage(stripped);
-      cleanContent = msg ? `${msg}\n\n${MALFORMED_MARKER}` : MALFORMED_MARKER;
-      malformedRaws = [{ raw: stripped.slice(0, 200), unterminated: false }];
       // Verdict recovery is confined to the OPS TAIL (from the first "ops"
       // key onward): real ops the model got there still execute, and marker
-      // texts it echoed back ([SECURITY: FAILED] etc.) map to their verdicts.
-      // The message prose — where the model quotes op examples — is excluded.
+      // texts it echoed back ([SECURITY: FAILED], [CMD: ...], [FILE CREATED:
+      // ...]) map back to their real ops. The message prose — where the model
+      // quotes op examples — is excluded.
       const tail = opsArrayTail(stripped);
       const tailScan = findJsonOpsInternal(tail);
       jsonOps = tailScan.ops;
-      malformedRaws = [...malformedRaws, ...tailScan.malformed];
+      malformedRaws = tailScan.malformed;
       for (const m of tail.matchAll(MARKER_RE)) {
         const verdict = markerToVerdictOp(m[0]);
         if (verdict) jsonOps.push(verdict);
+      }
+      // If we recovered an ACTIONABLE op (cmd/file/search/scrape — not just a
+      // security/test verdict) from the tail, this is an agent that echoed
+      // transcript markers and the work DOES run — do not stamp the misleading
+      // "[MALFORMED OP — not executed]" that would tell it the work was
+      // dropped. Only surface the malformed marker when nothing actionable was
+      // recovered: a broken doc whose only tail recovery is a verdict still
+      // had its review prose mangled, and the agent needs to know it did not
+      // parse cleanly.
+      const ACTIONABLE_OPS = new Set(["cmd", "create-file", "edit-file", "delete-file", "search", "scrape", "mcp", "research"]);
+      const hasActionable = jsonOps.some((o) => typeof o.op === "string" && ACTIONABLE_OPS.has(String(o.op).toLowerCase()));
+      if (!hasActionable) {
+        cleanContent = msg ? `${msg}\n\n${MALFORMED_MARKER}` : MALFORMED_MARKER;
+        malformedRaws = [{ raw: stripped.slice(0, 200), unterminated: false }, ...malformedRaws];
+      } else {
+        cleanContent = msg || "";
       }
     } else {
       const found = findJsonOpsInternal(stripped);
@@ -655,23 +730,26 @@ export function parseAgentOutput(content: string): ParsedOutput {
     switch (opName) {
       case "create-file":
         if (typeof op.path === "string" && typeof op.content === "string") {
-          fileOps.push({ type: "create", filepath: op.path, content: op.content });
-          processedPaths.add(`create:${op.path}`);
-          mark(`[FILE CREATED: ${op.path}]`);
+          const filepath = normalizeFilePath(op.path);
+          fileOps.push({ type: "create", filepath, content: op.content });
+          processedPaths.add(`create:${filepath}`);
+          mark(`[FILE CREATED: ${filepath}]`);
         }
         break;
       case "edit-file":
         if (typeof op.path === "string" && typeof op.content === "string") {
-          fileOps.push({ type: "edit", filepath: op.path, content: op.content });
-          processedPaths.add(`edit:${op.path}`);
-          mark(`[FILE EDITED: ${op.path}]`);
+          const filepath = normalizeFilePath(op.path);
+          fileOps.push({ type: "edit", filepath, content: op.content });
+          processedPaths.add(`edit:${filepath}`);
+          mark(`[FILE EDITED: ${filepath}]`);
         }
         break;
       case "delete-file":
         if (typeof op.path === "string") {
-          fileOps.push({ type: "delete", filepath: op.path });
-          processedPaths.add(`delete:${op.path}`);
-          mark(`[FILE DELETED: ${op.path}]`);
+          const filepath = normalizeFilePath(op.path);
+          fileOps.push({ type: "delete", filepath });
+          processedPaths.add(`delete:${filepath}`);
+          mark(`[FILE DELETED: ${filepath}]`);
         }
         break;
       case "cmd":
@@ -795,16 +873,18 @@ export function parseAgentOutput(content: string): ParsedOutput {
   const createRegex = new RegExp(`(?:<<<<<|${O})CREATEFILE="([^"]+)"(?:>>>>>|${C})([\\s\\S]*?)(?:<<<<<|${O})END\\.CREATEFILE(?:>>>>>|${C})`, "g");
   let match;
   while ((match = createRegex.exec(content)) !== null) {
-    fileOps.push({ type: "create", filepath: match[1], content: match[2].trim() });
-    cleanContent = cleanContent.replace(match[0], `[FILE CREATED: ${match[1]}]`);
+    const filepath = normalizeFilePath(match[1]);
+    fileOps.push({ type: "create", filepath, content: match[2].trim() });
+    cleanContent = cleanContent.replace(match[0], `[FILE CREATED: ${filepath}]`);
   }
 
   // Intentional: EDITFILE blocks close with END.CREATEFILE — that is the tag
   // the agent prompts specify for both block types. Do not "fix" to END.EDITFILE.
   const editRegex = new RegExp(`(?:<<<<<|${O})EDITFILE="([^"]+)"(?:>>>>>|${C})([\\s\\S]*?)(?:<<<<<|${O})END\\.CREATEFILE(?:>>>>>|${C})`, "g");
   while ((match = editRegex.exec(content)) !== null) {
-    fileOps.push({ type: "edit", filepath: match[1], content: match[2].trim() });
-    cleanContent = cleanContent.replace(match[0], `[FILE EDITED: ${match[1]}]`);
+    const filepath = normalizeFilePath(match[1]);
+    fileOps.push({ type: "edit", filepath, content: match[2].trim() });
+    cleanContent = cleanContent.replace(match[0], `[FILE EDITED: ${filepath}]`);
   }
 
   // Bare-block pairing — the model often writes the path into a JSON op and
@@ -822,7 +902,7 @@ export function parseAgentOutput(content: string): ParsedOutput {
     let m2: RegExpExecArray | null;
     while ((m2 = opTypeRe.exec(content.slice(0, match.index))) !== null) last = m2;
     if (!last) continue;
-    const path = last[2];
+    const path = normalizeFilePath(last[2]);
     const key = `${last[1] === "edit-file" ? "edit" : "create"}:${path}`;
     if (processedPaths.has(key)) continue;
     processedPaths.add(key);
@@ -833,8 +913,9 @@ export function parseAgentOutput(content: string): ParsedOutput {
   // Legacy fallback — only applies if JSON ops didn't already consume the op.
   const deleteRe = new RegExp(`(?:<<<<<|${O})DELETE="([^"]+)"(?:>>>>>|${C})`, "g");
   for (const m of content.matchAll(deleteRe)) {
-    if (!processedPaths.has(`delete:${m[1]}`)) fileOps.push({ type: "delete", filepath: m[1] });
-    cleanContent = cleanContent.replace(m[0], `[FILE DELETED: ${m[1]}]`);
+    const filepath = normalizeFilePath(m[1]);
+    if (!processedPaths.has(`delete:${filepath}`)) fileOps.push({ type: "delete", filepath });
+    cleanContent = cleanContent.replace(m[0], `[FILE DELETED: ${filepath}]`);
   }
 
   const searchRe = new RegExp(`(?:<<<<<|${O})SEARCH-TOOL="((?:[^"]|"(?!>))*)"(?:>>>>>|${C})`, "g");
