@@ -714,14 +714,19 @@ describe("parseAgentOutput — echoed transcript markers recover to real ops", (
     expect(parsed.cleanContent).not.toContain("MALFORMED");
   });
 
-  it("recovers a [FILE CREATED: path] marker and normalizes its path", () => {
+  it("flags a content-less [FILE CREATED: path] marker as malformed, not success", () => {
+    // A [FILE CREATED: x] marker echo carries the path but NOT the file body —
+    // mapping it to create-file writes nothing. Previously the parser accepted
+    // the doc as clean, so the Coder was told it created the file while the
+    // repo stayed empty forever (the exact loop where the Critic coached the
+    // Coder into emitting {"ops":[[FILE CREATED: package.json]]}). It must be
+    // surfaced as malformed so the caller's REJECTED OPS feedback tells the
+    // agent to include the content.
     const out = `{"message":"done","ops":[[FILE CREATED: /src/game.js]]}`;
     const parsed = parseAgentOutput(out);
-    // The marker carries a path but no content — mapping to create-file yields
-    // an empty op that the content check safely drops (no empty file written),
-    // but the doc is accepted and the message preserved.
-    expect(parsed.cleanContent).toBe("done");
-    expect(parsed.cleanContent).not.toContain("MALFORMED");
+    expect(parsed.fileOps).toEqual([]);
+    expect(parsed.malformedOps.some((m) => m.includes("has no content"))).toBe(true);
+    expect(parsed.cleanContent).toContain("MALFORMED OP");
   });
 });
 

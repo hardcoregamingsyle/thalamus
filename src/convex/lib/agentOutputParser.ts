@@ -651,7 +651,16 @@ export function parseAgentOutput(content: string): ParsedOutput {
       // had its review prose mangled, and the agent needs to know it did not
       // parse cleanly.
       const ACTIONABLE_OPS = new Set(["cmd", "create-file", "edit-file", "delete-file", "search", "scrape", "mcp", "research"]);
-      const hasActionable = jsonOps.some((o) => typeof o.op === "string" && ACTIONABLE_OPS.has(String(o.op).toLowerCase()));
+      // A file op is only actionable if it carries content — a marker echo
+      // ([FILE CREATED: x]) maps to a content-less create-file that writes
+      // nothing, so it must not suppress the malformed marker.
+      const hasActionable = jsonOps.some((o) => {
+        const name = String(o.op ?? "").toLowerCase();
+        if (name === "create-file" || name === "edit-file") {
+          return typeof (o as { content?: unknown }).content === "string";
+        }
+        return ACTIONABLE_OPS.has(name);
+      });
       if (!hasActionable) {
         cleanContent = msg ? `${msg}\n\n${MALFORMED_MARKER}` : MALFORMED_MARKER;
         malformedRaws = [{ raw: stripped.slice(0, 200), unterminated: false }, ...malformedRaws];
@@ -734,6 +743,18 @@ export function parseAgentOutput(content: string): ParsedOutput {
           fileOps.push({ type: "create", filepath, content: op.content });
           processedPaths.add(`create:${filepath}`);
           mark(`[FILE CREATED: ${filepath}]`);
+        } else if (typeof op.path === "string") {
+          // A create-file with a path but NO content writes nothing. This is
+          // exactly what happens when the agent echoes a [FILE CREATED: x]
+          // marker back into its ops array (the marker carries the path but
+          // not the file body), or emits a bare {"op":"create-file","path":x}.
+          // It used to be silently dropped, so the agent was told success while
+          // writing nothing and the repo stayed empty forever. Surface it so
+          // the caller's REJECTED OPS feedback tells the agent to include the
+          // content.
+          const filepath = normalizeFilePath(op.path);
+          malformedOps.push(`create-file "${filepath}" has no content — nothing was written. Include a "content" field.`);
+          mark(`[MALFORMED OP — no content for ${filepath}]`);
         }
         break;
       case "edit-file":
@@ -742,6 +763,10 @@ export function parseAgentOutput(content: string): ParsedOutput {
           fileOps.push({ type: "edit", filepath, content: op.content });
           processedPaths.add(`edit:${filepath}`);
           mark(`[FILE EDITED: ${filepath}]`);
+        } else if (typeof op.path === "string") {
+          const filepath = normalizeFilePath(op.path);
+          malformedOps.push(`edit-file "${filepath}" has no content — nothing was written. Include a "content" field.`);
+          mark(`[MALFORMED OP — no content for ${filepath}]`);
         }
         break;
       case "delete-file":

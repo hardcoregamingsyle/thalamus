@@ -310,6 +310,7 @@ NEVER write this:
 WRONG: <<CREATEFILE="x.html">> ... <<END.CREATEFILE>> (raw blocks are removed — content is a JSON string now)
 WRONG: <tool_call>cmd<arg_key>command</arg_key><arg_value>...</arg_value></tool_call>, <json-op>...</json-op>, <op>, <<RUN-CMD="...">>, or any angle-bracket wrapper
 WRONG: {"op":"create-file","path":"x.html","content":"<img src=x alt=y>"} — unescaped quotes
+WRONG: "ops":[[FILE CREATED: package.json]] — a marker is what the pipeline writes AFTER your op runs; putting it in your ops writes NOTHING because it carries no content. Always emit the real op with the full content field.
 WRONG: bare commands like "run npm install" in the message text
 
 STAY ON TASK:
@@ -521,7 +522,9 @@ Emit the JSON op itself, NEVER the transcript marker: the pipeline writes [SECUR
 NEVER emit tool-call XML like <tool_call>cmd<arg_key>command</arg_key><arg_value>ls -la</arg_value></tool_call> — a command written that way runs only when it is a JSON op ({"op":"cmd","command":"ls -la"}), so any shell command you need must go inside your document's "ops" array exactly like the verdict op.
 
 FILE-WRITE REALITY:
-- Files are written with JSON ops inside a {"message":"...","ops":[...]} document — content is ONE escaped JSON string ("content":"<a href=\\"x\\">"). There is no "write_file" op and no other name — check the project file inventory above the Coder's message: a file exists only when it is listed there, and the Coder's [FILE CREATED: path] marker is the proof it was written.
+- Files are written with JSON ops inside a {"message":"...","ops":[...]} document — content is ONE escaped JSON string ("content":"<a href=\\"x\\">"). There is no "write_file" op and no other name.
+- A file exists only when the Coder emitted {"op":"create-file","path":"...","content":"..."} WITH the content field. The [FILE CREATED: path] marker is something the PIPELINE writes into the transcript AFTER it executes that op — it is a confirmation, not the file-write itself, and it carries no file content.
+- CRITICAL: NEVER instruct the Coder to put a marker like "ops":[[FILE CREATED: package.json]] in its output. A marker echo contains no file body, so nothing is written — the pipeline flags it [MALFORMED OP — not executed]. If you see the Coder "creating" a file with only a marker, fail it and tell it to emit a real create-file op with the full content field.
 - In your feedback, never paste or quote the Coder's broken op code or raw file bodies back at it — say in words exactly what is wrong and what to fix. Verbatim quotes of broken content get re-copied and rejected again.
 
 REVIEW CHECKLIST — check ALL of these for the CURRENT TASK:
