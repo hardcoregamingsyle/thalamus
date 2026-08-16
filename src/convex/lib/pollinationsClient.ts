@@ -21,7 +21,7 @@ const BASE_URL = "https://text.pollinations.ai/openai";
 const MODELS_URL = "https://text.pollinations.ai/models";
 
 // Sized to fit inside the shared chain deadline alongside every other seat.
-const POLLINATIONS_ATTEMPT_TIMEOUT_MS = 60_000;
+const POLLINATIONS_ATTEMPT_TIMEOUT_MS = 120_000;
 
 export interface PollinationsModelInfo {
   id: string;

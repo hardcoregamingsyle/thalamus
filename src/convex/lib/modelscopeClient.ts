@@ -19,12 +19,28 @@ import type { ActionCtx } from "../_generated/server";
 // ── Base URL ───────────────────────────────────────────────────────────────────
 const BASE_URL = "https://api-inference.modelscope.ai/v1";
 
-// Per-attempt abort — sized so the whole Modal → Zen → DeadlySignal → ModelScope
-// → Ollama chain fits inside Convex's 10-minute action kill.
-const MODELSCOPE_ATTEMPT_TIMEOUT_MS = 60_000;
+// Per-attempt abort — sized so the whole Modal → Zen → OpenRouter → DeadlySignal
+// → ModelScope → Pollinations → Ollama chain fits inside Convex's 10-minute
+// action kill. Raised from 60s to 120s: the account's frontier seat is a
+// reasoning model (DeepSeek-V4-Pro) asked for up to 32k tokens; a 60s abort cut
+// legitimate long generations short. Still bounded by the caller's chain
+// deadline, so a hung seat cannot blow the budget.
+const MODELSCOPE_ATTEMPT_TIMEOUT_MS = 120_000;
 
 // ── Model Catalog ─────────────────────────────────────────────────────────────
 // Only models verified live against the .ai host on 2026-08-07.
+
+// Models this account is KNOWN to be unable to serve. Qwen3.8-Max is in the
+// ModelScope catalog and shows up on the live /v1/models listing, but this key
+// gets a 403 ("your current account does not have access to this model") — it
+// needs a per-model access application. Left in the Dispatcher's menu, the
+// Dispatcher keeps assigning it (it reads as a strong name), the call 403s,
+// and the whole provider chain falls through — which is exactly the "random"
+// provider-hopping the logs show. Blocking it here keeps it out of the menu
+// (and out of any assignment the Dispatcher might still try) so the chain
+// doesn't burn a hop on a model that can never answer. Add any future model
+// that 403s on this account to this list.
+const MODEL_BLOCKLIST: string[] = ["Qwen-Ambassador/Qwen3.8-Max", "Qwen/Qwen3.8-Max"];
 
 export interface ModelScopeModelInfo {
   id: string;
@@ -103,6 +119,7 @@ export const MODELSCOPE_MODEL_CATALOG: ModelScopeModelInfo[] = [
 ];
 
 export function findModelScopeModel(id: string): ModelScopeModelInfo | undefined {
+  if (MODEL_BLOCKLIST.includes(id)) return undefined;
   const fromCatalog = MODELSCOPE_MODEL_CATALOG.find(m => m.id === id);
   if (fromCatalog) return fromCatalog;
   // Also honor any id the live /v1/models listing reported (see
@@ -155,7 +172,7 @@ export async function fetchModelScopeModelIds(): Promise<string[]> {
       if (!res.ok) return;
       const data = await res.json() as { data?: Array<{ id?: string }> };
       for (const m of data.data ?? []) {
-        if (typeof m.id === "string" && m.id) ids.add(m.id);
+        if (typeof m.id === "string" && m.id && !MODEL_BLOCKLIST.includes(m.id)) ids.add(m.id);
       }
     } catch {
       // One host down is fine; both down falls through to the catalog below.
@@ -164,7 +181,8 @@ export async function fetchModelScopeModelIds(): Promise<string[]> {
     }
   }));
   if (ids.size === 0) {
-    return MODELSCOPE_MODEL_CATALOG.map(m => m.id);
+    // Fall back to the catalog, with blocked models filtered out.
+    return MODELSCOPE_MODEL_CATALOG.map(m => m.id).filter(id => !MODEL_BLOCKLIST.includes(id));
   }
   liveModelIdsCache = { ids, fetchedAt: Date.now() };
   return [...ids];

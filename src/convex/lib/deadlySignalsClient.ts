@@ -20,7 +20,7 @@ const BASE_URL = "https://myapi.creitingameplays.com/v1";
 
 // Per-attempt abort — sized so the whole Modal → Zen → DeadlySignal → ModelScope
 // → Ollama chain fits inside Convex's 10-minute action kill.
-const DEADLYSIGNALS_ATTEMPT_TIMEOUT_MS = 60_000;
+const DEADLYSIGNALS_ATTEMPT_TIMEOUT_MS = 120_000;
 
 // ── Model Catalog ─────────────────────────────────────────────────────────────
 // Only models verified live against the gateway on 2026-08-07.

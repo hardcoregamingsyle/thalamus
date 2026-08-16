@@ -14,9 +14,14 @@ import type { ActionCtx } from "../_generated/server";
 // ── Base URL ───────────────────────────────────────────────────────────────────
 const BASE_URL = "https://opencode.ai/zen/v1";
 
-// Per-attempt abort — sized so the whole Modal → Zen → DeadlySignal → ModelScope
-// → Ollama chain fits inside Convex's 10-minute action kill.
-const ZEN_ATTEMPT_TIMEOUT_MS = 60_000;
+// Per-attempt abort — sized so the whole Modal → Zen → OpenRouter → DeadlySignal
+// → ModelScope → Pollinations → Ollama chain fits inside Convex's 10-minute
+// action kill. Raised from 60s to 150s: DeepSeek V4 Flash is a reasoning model
+// and the pipeline asks it for up to 32k tokens of code, which a 60s abort
+// killed mid-generation almost every run. The abort is still bounded by the
+// caller's chain deadline (callModel passes `deadlineMs`), so a hung seat cannot
+// blow the whole budget — it just gets enough time to actually finish.
+const ZEN_ATTEMPT_TIMEOUT_MS = 150_000;
 
 // ── Model Catalog ─────────────────────────────────────────────────────────────
 // Only models verified working anonymously (no key) on OpenCode Zen.
