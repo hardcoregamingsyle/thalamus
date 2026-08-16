@@ -293,6 +293,131 @@ function recoverDsmlCommands(
   });
 }
 
+// Decode the minimal XML-entity set a leaked tool-call body can carry. Not a
+// general HTML decoder — just the escapes providers emit inside arg values
+// (newlines, quotes, angle brackets, ampersands).
+function xmlToolValueDecode(value: string): string {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&#10;/g, "\n")
+    .replace(/&#13;/g, "\r");
+}
+
+// Recover commands and file ops from a provider's leaked ASCII XML tool-call
+// syntax. Production Critic output shipped this verbatim into the transcript
+// and the command silently never ran:
+//   <tool_call>cmd<arg_key>command</arg_key><arg_value>ls -la src/ tests/ 2>&1</arg_value></tool_call>
+// The tool name lives either in an attribute (<tool_call name="cmd">) or as
+// leading text inside the block, and each argument is an
+// <arg_key>NAME</arg_key><arg_value>VALUE</arg_value> pair. <parameter
+// name="X">VALUE</parameter> (Anthropic-style) is accepted too. The block is
+// mapped to the same op types JSON ops produce and replaced with the visible
+// [CMD: …] / [FILE CREATED: …] markers so it never leaks as literal HTML.
+function recoverXmlToolCalls(
+  content: string,
+  state: {
+    fileOps: FileOp[];
+    searchOps: SearchOp[];
+    scrapeOps: ScrapeOp[];
+    cmdOps: CmdOp[];
+    mcpOps: McpOp[];
+  },
+): string {
+  const toolCallRe = /<tool_call\b([^>]*)>([\s\S]*?)<\/tool_call\s*>/gi;
+  return content.replace(toolCallRe, (whole: string, openAttrs: string, body: string) => {
+    // Tool name: prefer the name= attribute, else the leading text in the body.
+    const attrName = openAttrs.match(/name\s*=\s*["']([^"']+)/i);
+    const leadingText = (body.match(/^([^<]*)/)?.[1] ?? "").trim();
+    const name = (attrName ? attrName[1] : leadingText).trim();
+    if (!name) return whole; // malformed — leave it for the sentinel sweep
+
+    // Argument pairs, in order. arg_key/arg_value pairs are zipped together;
+    // parameter name="X" blocks are keyed by their name.
+    const keys = Array.from(body.matchAll(/<arg_key>([\s\S]*?)<\/arg_key>/gi)).map((m) => xmlToolValueDecode(m[1]).trim());
+    const values = Array.from(body.matchAll(/<arg_value>([\s\S]*?)<\/arg_value>/gi)).map((m) => xmlToolValueDecode(m[1]));
+    const args: Record<string, string> = {};
+    keys.forEach((k, i) => { if (k) args[k] = values[i] ?? ""; });
+    for (const m of body.matchAll(/<parameter\s+name="([^"]+)">([\s\S]*?)<\/parameter>/gi)) {
+      args[xmlToolValueDecode(m[1]).trim()] = xmlToolValueDecode(m[2]);
+    }
+
+    const tool = name.toLowerCase().replace(/[\s_]+/g, "-");
+    const value = (key: string) => args[key] ?? args[key.replace(/-/g, "_")];
+
+    if (tool === "cmd" || tool === "command" || tool === "run-command" || tool === "bash" || tool === "shell" || tool === "terminal" || tool === "exec") {
+      const command = (value("command") || value("cmd") || values[0] || "").trim();
+      if (command) {
+        if (!state.cmdOps.some((c) => c.command === command)) state.cmdOps.push({ command });
+        return `[CMD: ${command}]`;
+      }
+      return whole;
+    }
+
+    if (tool === "create-file" || tool === "write-file" || tool === "rewrite-file") {
+      const path = value("path") || value("filepath") || value("file_path");
+      const contentValue = value("content") || value("code") || value("body");
+      if (path && typeof contentValue === "string") {
+        const exists = state.fileOps.some((f) => f.type === "create" && f.filepath === path);
+        if (!exists) state.fileOps.push({ type: "create", filepath: path, content: contentValue });
+        return `[FILE CREATED: ${path}]`;
+      }
+      return whole;
+    }
+
+    if (tool === "edit-file") {
+      const path = value("path") || value("filepath") || value("file_path");
+      const contentValue = value("content") || value("code") || value("body");
+      if (path && typeof contentValue === "string") {
+        const exists = state.fileOps.some((f) => f.type === "edit" && f.filepath === path);
+        if (!exists) state.fileOps.push({ type: "edit", filepath: path, content: contentValue });
+        return `[FILE EDITED: ${path}]`;
+      }
+      return whole;
+    }
+
+    if (tool === "search") {
+      const query = value("query") || value("q") || values[0] || "";
+      if (query && !state.searchOps.some((s) => s.query === query)) state.searchOps.push({ query });
+      return query ? `[SEARCHING: ${query.slice(0, 80)}]` : whole;
+    }
+
+    if (tool === "scrape") {
+      const url = value("url") || values[0] || "";
+      if (url && !state.scrapeOps.some((s) => s.url === url)) state.scrapeOps.push({ url });
+      return url ? `[SCRAPING: ${url.slice(0, 80)}]` : whole;
+    }
+
+    if (tool === "mcp") {
+      const server = value("server") ?? "";
+      const toolName = value("tool") ?? "";
+      if (server && toolName) {
+        const argsObj: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(args)) {
+          if (k === "server" || k === "tool") continue;
+          argsObj[k] = v;
+        }
+        state.mcpOps.push({ server, tool: toolName, args: Object.keys(argsObj).length ? argsObj : undefined });
+        return `[MCP: ${server}/${toolName}]`;
+      }
+      return whole;
+    }
+
+    // Unknown tool — do not silently drop the block, but do strip the tags so
+    // it cannot leak as executable-looking HTML into the transcript.
+    const inner = body
+      .replace(/<arg_key>[\s\S]*?<\/arg_key>/gi, "")
+      .replace(/<arg_value>[\s\S]*?<\/arg_value>/gi, "")
+      .replace(/<parameter\b[^>]*>[\s\S]*?<\/parameter>/gi, "")
+      .trim();
+    return inner ? `[TOOL: ${name}] ${inner}` : `[TOOL: ${name}]`;
+  });
+}
+
 // Legacy tag parsers — keep for backwards compatibility with older conversations.
 // Match any bracket variant agents might output: <<, ‹‹, «
 const O = "(?:<<|‹‹|«|‹)";
@@ -398,12 +523,15 @@ export function parseAgentOutput(content: string): ParsedOutput {
   const malformedOps: string[] = [];
 
   // Recover commands from leaked DSML tool-call markup FIRST (it needs the
-  // wrapper tags intact to find the parameter boundaries), THEN strip the
-  // remaining special-token wrappers so (a) a JSON op wrapped in `<｜…｜>`
-  // still finds its opener and (b) no wrapper characters survive into
-  // cleanContent. Legacy `<<TAG>>` markers use double angle brackets, so they
-  // are unaffected by either pass.
-  const recovered = recoverDsmlCommands(content, cmdOps);
+  // wrapper tags intact to find the parameter boundaries), then the ASCII
+  // <tool_call> XML form some providers emit, THEN strip the remaining
+  // special-token wrappers so (a) a JSON op wrapped in `<｜…｜>` still finds
+  // its opener and (b) no wrapper characters survive into cleanContent.
+  // Legacy `<<TAG>>` markers use double angle brackets, so they are unaffected
+  // by these passes.
+  const recovered = recoverXmlToolCalls(recoverDsmlCommands(content, cmdOps), {
+    fileOps, searchOps, scrapeOps, cmdOps, mcpOps,
+  });
   const stripped = stripSpecialTokenWrappers(recovered);
   let cleanContent = stripped;
 

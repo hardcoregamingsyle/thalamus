@@ -148,7 +148,7 @@ TOOL SYNTAX — ONE PURE JSON DOCUMENT PER REPLY ({"message":"...","ops":[{"op":
 Search:  {"op":"search","query":"your query here"}
 Scrape:  {"op":"scrape","url":"https://exact-url-here"}
 
-NEVER wrap ops or their text in angle brackets (<json-op>, <op>, <tool>, ...) — the pipeline reads raw {"op":"..."} JSON and plain prose only.
+NEVER wrap ops or their text in angle brackets. In particular NEVER emit <tool_call>, <arg_key>, <arg_value>, <parameter>, <json-op>, <op>, <tool> or any other XML/HTML tag — the pipeline reads raw {"op":"..."} JSON and plain prose only.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RESEARCH STRATEGY — BE EXHAUSTIVE:
@@ -199,7 +199,7 @@ TOOL SYNTAX — ONE PURE JSON DOCUMENT PER REPLY ({"message":"...","ops":[...]})
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SEARCH:   {"op":"search","query":"your query here"}
 
-NEVER wrap ops or their text in angle brackets (<json-op>, <op>, <tool>, ...) — the pipeline reads raw {"op":"..."} JSON and plain prose only.
+NEVER wrap ops or their text in angle brackets. In particular NEVER emit <tool_call>, <arg_key>, <arg_value>, <parameter>, <json-op>, <op>, <tool> or any other XML/HTML tag — the pipeline reads raw {"op":"..."} JSON and plain prose only.
 
 ANALYSIS REQUIREMENTS — cover ALL of these:
 1. Full file structure with EVERY file that needs to be created (list them all)
@@ -306,7 +306,7 @@ RESEARCH: if you need facts, code patterns, or reference material that isn't in 
 
 NEVER write this:
 WRONG: <<CREATEFILE="x.html">> ... <<END.CREATEFILE>> (raw blocks are removed — content is a JSON string now)
-WRONG: <json-op>...</json-op>, <op>, <<RUN-CMD="...">>, or any angle-bracket wrapper
+WRONG: <tool_call>cmd<arg_key>command</arg_key><arg_value>...</arg_value></tool_call>, <json-op>...</json-op>, <op>, <<RUN-CMD="...">>, or any angle-bracket wrapper
 WRONG: {"op":"create-file","path":"x.html","content":"<img src=x alt=y>"} — unescaped quotes
 WRONG: bare commands like "run npm install" in the message text
 
@@ -416,7 +416,7 @@ Create file: {"op":"create-file","path":"tests/test.ts","content":"...test conte
 Test passed: {"op":"test-success"}
 Test failed: {"op":"test-failed","reason":"description"}
 
-WRONG:  <<RUN: "cmd">>  /  <<RUN-CMD="...">>  /  <<test: success>>  /  <<TOOL>>  /  [CMD: cmd]
+WRONG:  <tool_call>cmd<arg_key>command</arg_key><arg_value>...</arg_value></tool_call>  /  <<RUN: "cmd">>  /  <<RUN-CMD="...">>  /  <<test: success>>  /  <<TOOL>>  /  [CMD: cmd]
 
 TESTING REQUIREMENTS — cover ALL of these:
 1. Unit tests for ALL functions and methods
@@ -516,6 +516,8 @@ FAIL:   {"op":"security-fail"}
 
 Emit the JSON op itself, NEVER the transcript marker: the pipeline writes [SECURITY: FAILED] AFTER it executes your op — copying that text back into your ops is invalid and rejects your verdict. The marker appears only in the run history, never in your output.
 
+NEVER emit tool-call XML like <tool_call>cmd<arg_key>command</arg_key><arg_value>ls -la</arg_value></tool_call> — a command written that way runs only when it is a JSON op ({"op":"cmd","command":"ls -la"}), so any shell command you need must go inside your document's "ops" array exactly like the verdict op.
+
 FILE-WRITE REALITY:
 - Files are written with JSON ops inside a {"message":"...","ops":[...]} document — content is ONE escaped JSON string ("content":"<a href=\\"x\\">"). There is no "write_file" op and no other name — check the project file inventory above the Coder's message: a file exists only when it is listed there, and the Coder's [FILE CREATED: path] marker is the proof it was written.
 - In your feedback, never paste or quote the Coder's broken op code or raw file bodies back at it — say in words exactly what is wrong and what to fix. Verbatim quotes of broken content get re-copied and rejected again.
@@ -585,7 +587,7 @@ SCRAPE:  {"op":"scrape","url":"https://exact-url-here"}
 PASS:    {"op":"security-pass"}
 FAIL:    {"op":"security-fail"}
 
-NEVER wrap ops or their text in angle brackets (<json-op>, <op>, <tool>, ...) — the pipeline reads raw {"op":"..."} JSON and plain prose only.
+NEVER wrap ops or their text in angle brackets. In particular NEVER emit <tool_call>, <arg_key>, <arg_value>, <parameter>, <json-op>, <op>, <tool> or any other XML/HTML tag — the pipeline reads raw {"op":"..."} JSON and plain prose only.
 
 FACT-CHECK CHECKLIST — check EVERY claim against web sources:
 1. **API Endpoints & Signatures** — Do the documented endpoints/params actually exist? Verify against official docs.

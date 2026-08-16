@@ -214,6 +214,58 @@ describe("parseAgentOutput — LLM special-token wrappers", () => {
   });
 });
 
+describe("parseAgentOutput — leaked <tool_call> XML tool-call markup", () => {
+  // A live run's Critic emitted its native function-call markup instead of a
+  // JSON op — <tool_call>cmd<arg_key>command</arg_key><arg_value>ls -la src/
+  // tests/ 2>&1</arg_value></tool_call> — and the command silently never ran,
+  // leaking as literal HTML into the transcript. It must EXECUTE like the
+  // JSON op would, and the markup must be replaced by the [CMD: ...] marker.
+  it("recovers a command from the exact leaked tool_call shape", () => {
+    const out = `<tool_call>cmd<arg_key>command</arg_key><arg_value>ls -la src/ tests/ 2>&1</arg_value></tool_call>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["ls -la src/ tests/ 2>&1"]);
+    expect(parsed.cleanContent).toContain("[CMD: ls -la src/ tests/ 2>&1]");
+    expect(parsed.cleanContent).not.toContain("tool_call");
+    expect(parsed.cleanContent).not.toContain("arg_value");
+  });
+
+  it("recovers a command when the tool name is a name= attribute", () => {
+    const out = `<tool_call name="cmd"><arg_key>command</arg_key><arg_value>npm install 2>&1</arg_value></tool_call> trailing`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["npm install 2>&1"]);
+    expect(parsed.cleanContent).toContain("[CMD: npm install 2>&1]");
+    expect(parsed.cleanContent).toContain("trailing");
+  });
+
+  it("recovers a multi-word command from a parameter block", () => {
+    const out = `<tool_call name="cmd"><parameter name="command">cat package.json || cat go.mod</parameter></tool_call>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["cat package.json || cat go.mod"]);
+  });
+
+  it("recovers a create-file tool call into a file op", () => {
+    const out = `<tool_call name="create_file"><arg_key>file_path</arg_key><arg_value>src/game.js</arg_value><arg_key>content</arg_key><arg_value>const x = 1;</arg_value></tool_call>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toEqual([{ type: "create", filepath: "src/game.js", content: "const x = 1;" }]);
+    expect(parsed.cleanContent).toContain("[FILE CREATED: src/game.js]");
+  });
+
+  it("decodes XML entities inside an arg value", () => {
+    const out = `<tool_call>cmd<arg_key>command</arg_key><arg_value>echo "hi &amp; bye" &gt; out.txt</arg_value></tool_call>`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual([`echo "hi & bye" > out.txt`]);
+  });
+
+  it("collapses an unknown tool to a visible placeholder, not literal HTML", () => {
+    const out = `Before <tool_call name="weather"><arg_key>city</arg_key><arg_value>Punjab</arg_value></tool_call> after`;
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cleanContent).not.toContain("tool_call");
+    expect(parsed.cleanContent).toContain("[TOOL: weather]");
+    expect(parsed.cleanContent).toContain("Before");
+    expect(parsed.cleanContent).toContain("after");
+  });
+});
+
 describe("parseAgentOutput — malformed JSON ops are surfaced, not dropped", () => {
   // Real production output: a create-file with unescaped double quotes inside
   // the content string. JSON.parse fails, the op used to be silently dropped,
