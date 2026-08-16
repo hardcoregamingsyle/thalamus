@@ -27,6 +27,19 @@ Minimum code that solves the stated problem. If a 200-line change could be 50 li
 ### Always ship
 After every completed task, commit and push to `main` without being asked. Pushing to `main` triggers CI, which gates the automatic Convex deploy — committing is the deploy path.
 
+Sandboxed sessions may start on a per-session feature branch rather than `main` (for example `arena/<id>`). That is an environment detail, not a change to the shipping policy: the owner wants every commit to land on `main` directly with no manual merge. When the working branch is not `main`, fast-forward `main` to the session commit and push it as part of the same task:
+
+```bash
+git fetch origin
+# after committing on the session branch:
+git branch -f main origin/main
+git merge --ff-only main   # or: git branch -f main <session-commit> when main is an ancestor
+git push origin main
+git push origin <session-branch>   # keep the session ref in sync too
+```
+
+Only fall back to a PR if `main` is branch-protected and rejects the push; do not silently stop at a feature branch.
+
 ### Surgical changes
 - Match existing style. Do not "improve" adjacent code, comments, or formatting.
 - Update every dependent when modifying a file — including the sibling `agentoverflow` repo and the shipped desktop `.exe` (§5).
