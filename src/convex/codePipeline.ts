@@ -152,9 +152,24 @@ function buildContext(messages: Array<{ agent: string; content: string }>, maxCh
 
 function buildFileContext(files: Array<{ filepath: string; content: string }>, maxChars = 4000): string {
   if (files.length === 0) return "No files yet.";
+  // Preview length per file. MUST stay clearly smaller than maxChars so a few
+  // files always fit. A preview that is cut off must say so explicitly — a
+  // long file shown to the Critic as "…ends mid-CSS at 'bor'" reads as a
+  // TRUNCATED FILE, and the Critic failed index.html for 6+ rounds over a
+  // preview truncation the file did not actually have. With an explicit
+  // "[preview truncated — run `cat <path>` to read the rest]" note, the agent
+  // knows the file is complete and can verify it via a command.
+  const PREVIEW_LEN = 800;
   let ctx = "## Project Files:\n";
   for (const f of files) {
-    const entry = `${f.filepath}:\n\`\`\`\n${f.content.slice(0, 800)}\n\`\`\`\n\n`;
+    const content = f.content ?? "";
+    const truncated = content.length > PREVIEW_LEN;
+    const shown = content.slice(0, PREVIEW_LEN);
+    let entry = `${f.filepath}:\n\`\`\`\n${shown}\n\`\`\``;
+    if (truncated) {
+      entry += `\n> [preview truncated — file is ${content.length} chars; run \`cat ${f.filepath}\` to read the rest]`;
+    }
+    entry += "\n\n";
     if (ctx.length + entry.length > maxChars) {
       ctx += `... (${files.length} files, showing ${files.indexOf(f)})\n`;
       break;

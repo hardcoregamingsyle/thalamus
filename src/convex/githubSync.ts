@@ -310,7 +310,14 @@ const baseTreeSha = commitData.tree.sha;
 
       // Sequential blob creation with spacing + retry on 403 rate limits.
       const tree: Array<{ path: string; mode: "100644"; type: "blob"; sha: string }> = [];
+      // Dedup by normalized path: the store can briefly hold a legacy "/src/x"
+      // row next to a corrected "src/x" row, and both normalize to "src/x" — a
+      // duplicate tree path that GitHub rejects. Keep only the first.
+      const seenTreePaths = new Set<string>();
       for (const file of files) {
+        const normPath = normalizeGitPath(file.filepath);
+        if (seenTreePaths.has(normPath)) continue;
+        seenTreePaths.add(normPath);
         let lastErr: unknown;
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
@@ -320,7 +327,7 @@ const baseTreeSha = commitData.tree.sha;
               content: Buffer.from(file.content).toString("base64"),
               encoding: "base64",
             });
-            tree.push({ path: normalizeGitPath(file.filepath), mode: "100644" as const, type: "blob" as const, sha: blob.sha });
+            tree.push({ path: normPath, mode: "100644" as const, type: "blob" as const, sha: blob.sha });
             lastErr = undefined;
             break;
           } catch (err: unknown) {
@@ -444,7 +451,14 @@ export const autoPushToGithub = internalAction({
       // Sequential blob creation with spacing to avoid GitHub secondary rate limits.
       // Retries individual blobs on 403 with Retry-After backoff (up to 3 tries).
       const tree: Array<{ path: string; mode: "100644"; type: "blob"; sha: string }> = [];
+      // Dedup by normalized path: the store can briefly hold a legacy "/src/x"
+      // row next to a corrected "src/x" row, and both normalize to "src/x" — a
+      // duplicate tree path that GitHub rejects. Keep only the first.
+      const seenTreePaths = new Set<string>();
       for (const file of files) {
+        const normPath = normalizeGitPath(file.filepath);
+        if (seenTreePaths.has(normPath)) continue;
+        seenTreePaths.add(normPath);
         let lastErr: unknown;
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
@@ -454,7 +468,7 @@ export const autoPushToGithub = internalAction({
               content: Buffer.from(file.content).toString("base64"),
               encoding: "base64",
             });
-            tree.push({ path: normalizeGitPath(file.filepath), mode: "100644" as const, type: "blob" as const, sha: blob.sha });
+            tree.push({ path: normPath, mode: "100644" as const, type: "blob" as const, sha: blob.sha });
             lastErr = undefined;
             break;
           } catch (err: unknown) {

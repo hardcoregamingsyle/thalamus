@@ -479,6 +479,21 @@ export const saveMessage = internalMutation({
   },
 });
 
+// Normalize an agent-supplied file path to a repo-relative path before it is
+// stored. This is the store boundary — the output parser also normalizes, but
+// a bad path must never be persisted here either (GitHub's git/trees API
+// rejects paths starting with a slash, which failed every push and left the VM
+// running on an empty clone). Strips a leading "/", a "/home/<user>/" prefix,
+// a "./", and Windows-style separators.
+function normalizeStoredPath(raw: string): string {
+  let p = (raw ?? "").trim();
+  p = p.replace(/\\/g, "/").replace(/^\.\//, "");
+  p = p.replace(/^\/home\/[^/]+\//, "");
+  if (p.startsWith("/")) p = p.slice(1);
+  p = p.split("/").filter(Boolean).join("/");
+  return p;
+}
+
 export const upsertFile = internalMutation({
   args: {
     branchId: v.string(),
@@ -487,10 +502,11 @@ export const upsertFile = internalMutation({
     agent: v.string(),
   },
   handler: async (ctx, args) => {
+    const filepath = normalizeStoredPath(args.filepath);
     const existing = await ctx.db
       .query("codeFiles")
       .withIndex("by_branch_and_path", (q) =>
-        q.eq("branchId", args.branchId).eq("filepath", args.filepath)
+        q.eq("branchId", args.branchId).eq("filepath", filepath)
       )
       .first();
 
@@ -501,9 +517,19 @@ export const upsertFile = internalMutation({
         lastModifiedAt: Date.now(),
       });
     } else {
+      // Clean up any legacy row that held the un-normalized path (e.g.
+      // "/src/game.js" from before path normalization existed), so the store
+      // never ends up with a bad-path duplicate that would fail the push.
+      const legacy = await ctx.db
+        .query("codeFiles")
+        .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
+        .filter((q) => q.eq(q.field("filepath"), args.filepath))
+        .first();
+      if (legacy && legacy.filepath !== filepath) await ctx.db.delete(legacy._id);
+
       await ctx.db.insert("codeFiles", {
         branchId: args.branchId,
-        filepath: args.filepath,
+        filepath,
         content: args.content,
         lastModifiedBy: args.agent,
         lastModifiedAt: Date.now(),
@@ -535,10 +561,11 @@ export const updatePlannerTasks = internalMutation({
 export const deleteFileByPath = internalMutation({
   args: { branchId: v.string(), filepath: v.string() },
   handler: async (ctx, args) => {
+    const filepath = normalizeStoredPath(args.filepath);
     const file = await ctx.db
       .query("codeFiles")
       .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
-      .filter((q) => q.eq(q.field("filepath"), args.filepath))
+      .filter((q) => q.eq(q.field("filepath"), filepath))
       .first();
     if (file) await ctx.db.delete(file._id);
   },
