@@ -398,10 +398,22 @@ export const runPipelineAction = internalAction({
     // gets what is actually left, and a call that cannot fit is not started at
     // all — the step reschedules instead, which the pipeline already supports
     // everywhere (state lives on the branch doc, so resuming is free).
-    const ACTION_DEADLINE = Date.now() + 450_000; // 7.5 min of the 10-min ceiling
+    //
+    // Each runPipelineAction invocation is a FRESH Convex action with its own
+    // ~600s pool (the pipeline reschedules itself after every agent step), so
+    // the model chain that runs here should get almost the whole pool, not a
+    // tight cap. The old 240s PER_CALL_CAP meant that when the first free
+    // seats failed slowly (Zen 429 -> OpenRouter 60s timeout), the chain hit
+    // "no time left in chain budget" before ever reaching DeadlySignal /
+    // ModelScope / Pollinations — burning an entire run on rate limits. We
+    // hand the chain the near-full fresh budget and reserve only a tail for
+    // billing/streaming/file ops; the reschedule floor still prevents starting
+    // a call that could not fit, so a step never blows past Convex's 10-min
+    // ceiling.
+    const ACTION_DEADLINE = Date.now() + 540_000; // 9 min of the 10-min ceiling
     const RESCHEDULE_FLOOR_MS = 90_000;  // don't start a model call under this
-    const PER_CALL_CAP_MS = 240_000;     // no single call may eat the whole budget
-    const CALL_TAIL_MS = 30_000;         // reserve for billing/streaming/file ops
+    const PER_CALL_CAP_MS = 500_000;     // give the whole fresh chain this budget
+    const CALL_TAIL_MS = 40_000;         // reserve for billing/streaming/file ops
     const budgetLeft = () => ACTION_DEADLINE - Date.now();
     const callBudget = () => Math.min(PER_CALL_CAP_MS, Math.max(0, budgetLeft() - CALL_TAIL_MS));
     /** True when the remaining budget is too small to start another model call. */
