@@ -35,6 +35,7 @@ import {
   type ModelTier,
 } from "./lib/agentCore";
 import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./lib/mcpClient";
+import { buildPlanningPipeline, buildTaskPipeline } from "./lib/pipelineAgents";
 import { fetchModelScopeModelIds } from "./lib/modelscopeClient";
 import { parseMcpCalls, stripMcpBlocks, type ParsedMcpCall } from "./lib/mcpParse";
 
@@ -68,73 +69,6 @@ function findMcpServer<T extends { name: string }>(servers: T[], requested: stri
 // codebase times that out, so without this a branch parks "paused" forever
 // with zero further messages the moment that happens.
 const STALE_COMMAND_MS = 15 * 60 * 1000;
-
-// All known agents in their natural order.
-// Researcher is a three-agent team: ResearchPlanner → Researcher (data gatherer) → ReportMaker.
-// KnowItAll answers questions directly and can hand back to the Dispatcher via
-// {"op":"dispatch"} — it is a task-phase agent (a question dispatch runs the
-// task pipeline with just KnowItAll in it).
-const ALL_PLANNING_AGENTS = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Planner"] as const;
-const ALL_TASK_AGENTS     = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic", "KnowItAll"] as const;
-
-// The full fallback pipelines (used when no Dispatcher output exists)
-const DEFAULT_PLANNING_PIPELINE = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Planner"];
-const DEFAULT_TASK_PIPELINE     = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
-
-/** Ensure the research team is always included as a group. */
-function expandResearchTeam(agents: string[]): string[] {
-  const hasAny = agents.some(a => a === "ResearchPlanner" || a === "Researcher" || a === "ReportMaker");
-  if (!hasAny) return agents;
-  const set = new Set(agents);
-  set.add("ResearchPlanner");
-  set.add("Researcher");
-  set.add("ReportMaker");
-  return [...set];
-}
-
-// Dispatcher-defined agents: anything in the dispatched list that is not a
-// standard agent is a custom agent (declared in customAgentsJson with its own
-// system prompt). They run after the standard agents, in dispatch order.
-function customAgentNames(dispatched: string[]): string[] {
-  const standard = new Set<string>([...ALL_PLANNING_AGENTS, ...ALL_TASK_AGENTS]);
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const a of dispatched) {
-    if (!standard.has(a) && a && !seen.has(a)) {
-      seen.add(a);
-      out.push(a);
-    }
-  }
-  return out;
-}
-
-/** Build the actual planning pipeline from the Dispatcher's chosen agent list.
- *  `skip` (the Dispatcher's first-iteration skip list, honored while
- *  skipActive) drops those agents for this pass — a continuation run that
- *  picks up where a stopped run got to. */
-function buildPlanningPipeline(dispatched: string[], skip: string[] = []): string[] {
-  if (!dispatched || dispatched.length === 0) return DEFAULT_PLANNING_PIPELINE;
-  const skipSet = new Set(skip);
-  return [
-    ...ALL_PLANNING_AGENTS.filter(a => expandResearchTeam(dispatched).includes(a) && !skipSet.has(a)),
-    ...customAgentNames(dispatched).filter(a => !skipSet.has(a)),
-  ];
-}
-
-/** Build the actual task pipeline from the Dispatcher's chosen agent list.
- *  Coder is always guaranteed to appear (enforced at dispatch time); the
- *  Critic is NOT forced — the Dispatcher decides whether verification is
- *  needed for this task. Custom agents are appended in dispatch order.
- *  `skip` (the Dispatcher's first-iteration skip list, honored while
- *  skipActive) drops those agents for this pass. */
-function buildTaskPipeline(dispatched: string[], skip: string[] = []): string[] {
-  if (!dispatched || dispatched.length === 0) return DEFAULT_TASK_PIPELINE;
-  const skipSet = new Set(skip);
-  return [
-    ...ALL_TASK_AGENTS.filter(a => expandResearchTeam(dispatched).includes(a) && !skipSet.has(a)),
-    ...customAgentNames(dispatched).filter(a => !skipSet.has(a)),
-  ];
-}
 
 /** Parse and validate the Dispatcher's JSON output. Returns null on failure.
  *  startFrom: null (or absent) = fresh pipeline; a 1-based task number = start
@@ -1103,6 +1037,18 @@ export const runPipelineAction = internalAction({
       // Phase not in the dispatched pipeline (e.g. Dispatcher dropped it, or a
       // stale phase from a previous run) — treat as done rather than erroring.
       if (phaseIndex === -1) {
+        // Before giving up: if the only reason this phase is missing is the
+        // first-pass skip list, retire the list and run the phase. Stopping the
+        // whole run because a skip hid the agent we were explicitly routed to
+        // forced the user to press send again for no reason.
+        const unskipped = isPlanning
+          ? buildPlanningPipeline(dispatchedAgents)
+          : buildTaskPipeline(dispatchedAgents);
+        if (skipActive && unskipped.includes(currentPhase)) {
+          await ctx.runMutation(internal.codeBranches.updateBranchStatus, { branchId, skipActive: false });
+          await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+          return;
+        }
         totalMessages++;
         await ctx.runMutation(internal.codeBranches.saveMessage, {
           branchId,
@@ -1323,7 +1269,13 @@ export const runPipelineAction = internalAction({
       // unescaped quotes. Say plainly what to do instead, inside the very
       // message the next agents read from history.
       if (parsed.malformedOps.length > 0) {
-        parsed.cleanContent = `${parsed.cleanContent}\n\n[REJECTED OPS: ${parsed.malformedOps.length} JSON op(s) did not parse and executed nothing. Escape file content strictly: every " as \\", every \\ as \\\\, every real newline as \\n — ONE unescaped quote breaks the whole document. Prefer small edit-file ops over huge create-file content. Use {"op":"..."} JSON inside a single {"message":"...","ops":[...]} document.]`;
+        // Steer the retry at the format that CANNOT break instead of asking for
+        // stricter escaping. Demanding perfect JSON escaping of whole source
+        // files is what produced this failure in the first place: one stray
+        // quote in a 200-line file voids the entire document and the run writes
+        // nothing, which then looks to the Tester like an empty repo. The raw
+        // block below takes file content verbatim — no escaping at all.
+        parsed.cleanContent = `${parsed.cleanContent}\n\n[REJECTED OPS: ${parsed.malformedOps.length} JSON op(s) did not parse and executed nothing — no file was written.\nDo NOT retry with JSON for file content. Write files with the RAW block form, which needs NO escaping — put the code in exactly as it is, quotes, backslashes, newlines and all:\n<<CREATEFILE="src/game.js">>\n...file content exactly as it should appear on disk...\n<<END.CREATEFILE>>\nOne block per file, and keep {"op":"..."} JSON for non-file ops only (cmd, dispatch, request-api-key).]`;
       }
       for (const op of parsed.fileOps) {
         if (op.type === "create" || op.type === "edit") {
@@ -1786,6 +1738,13 @@ export const runPipelineAction = internalAction({
         // Critic reads to know how long it has been holding this task.
         const retryCount = branch.criticRetryCount ?? 0;
         round++;
+        // The skip list only ever applies to the FIRST pass of a continuation
+        // run. Leaving it active here is what dead-ended runs: the Critic sends
+        // the task back to the Coder, but a skip list containing "Coder" had
+        // filtered it out of the pipeline, so the very next step found its own
+        // target missing and stopped with "Coder is no longer part of the
+        // current plan". Retiring the list at the moment we bounce back
+        // guarantees the Coder is present to receive the fix request.
         if (!(await advance({
           status: "idle",
           currentAgent: "Coder",
@@ -1795,7 +1754,9 @@ export const runPipelineAction = internalAction({
           totalMessages,
           criticRetryCount: retryCount + 1,
           mcpRoundCount: 0,
+          skipActive: false,
         }))) return;
+        skipActive = false;
         // Append a system prompt to context so Coder knows exactly what failed
         await ctx.runMutation(internal.codeBranches.saveMessage, {
           branchId,
