@@ -1,6 +1,6 @@
-// Landing hero: badge, headline, one-line subhead, two CTAs, and the animated
-// BuildDemo. Deliberately sparse — the demo shows what the old text console
-// used to describe. Also owns EXE_URL; Footer.tsx imports it from here.
+// Landing hero: headline, two CTAs, and the animated BuildDemo. Deliberately
+// sparse — the demo shows what the old text console used to describe. Also
+// owns EXE_URL; Footer.tsx imports it from here.
 
 import { lazy, Suspense } from "react";
 import { motion } from "framer-motion";
@@ -19,15 +19,6 @@ export default function Hero({ onLaunch }: { onLaunch: () => void }) {
       </div>
 
       <div className="mx-auto max-w-4xl text-center">
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-8 inline-flex items-center gap-2 rounded-full border border-foreground/10 bg-foreground/[0.04] px-4 py-1.5 text-[11px] font-medium tracking-wide text-muted-foreground backdrop-blur-xl"
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-          L3.5 agent · free every day
-        </motion.div>
-
         <motion.h1
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -39,15 +30,6 @@ export default function Hero({ onLaunch }: { onLaunch: () => void }) {
             Watch it get built.
           </span>
         </motion.h1>
-
-        <motion.p
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1, duration: 0.5 }}
-          className="mx-auto mt-5 max-w-xl text-base leading-7 text-muted-foreground"
-        >
-          A team of AI agents plans, writes, tests, and reviews real code — for a fraction of what the other tools charge.
-        </motion.p>
 
         <motion.div
           initial={{ opacity: 0, y: 12 }}
