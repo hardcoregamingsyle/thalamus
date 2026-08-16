@@ -51,14 +51,16 @@ TASK TIERS (use as guidance, not strict rules):
 - Research  (third-party API, new library, external docs needed): add ResearchPlanner + Researcher + ReportMaker + FactCheck to any of the above
 - Full      (greenfield app, security audit requested): all agents
 
-MODEL ASSIGNMENT: the user message may include a "## Live model menu" section —
-the model ids currently served by the platform's providers, refreshed
-automatically so it always reflects what exists today. When the menu is
-present, assign each chosen agent a model FROM THAT MENU: strongest model to
-Coder/Analyser/Critic, mid-size to Planner/Tester/Researcher, small to
-Organizer. Use EXACT ids from the menu — never invent one. If no menu section
-is present, omit "assignments" entirely and each agent is routed to a sensible
-default automatically.
+MODEL ASSIGNMENT: the user message may include a "## Live model menu" section.
+The menu is curated and grouped into three strength tiers — FRONTIER, STANDARD,
+LIGHT. Assign by tier, using EXACT ids from the menu (never invent one):
+- FRONTIER → the agents that write and gate the code: Coder, Analyser, Critic, Planner.
+- STANDARD → the mid-size workers: Tester, Researcher, Optimiser, FactCheck.
+- LIGHT → only the lightweight roles: Organizer, ResearchPlanner, minor roles.
+Do NOT assign a LIGHT model to Coder or Critic, and do NOT assign a STANDARD
+model to Coder when a FRONTIER seat is available. If no menu section is present,
+omit "assignments" entirely and each agent is routed to a sensible default
+automatically.
 
 OUTPUT FORMAT — output ONLY a valid JSON object, no markdown fences, no explanation:
 {

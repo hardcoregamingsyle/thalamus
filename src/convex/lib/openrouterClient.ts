@@ -5,12 +5,15 @@
 // key even though they cost $0 — a $0-balance account is fine).
 //
 // Free-model caveat: the `:free` roster rotates constantly (DeepSeek, Gemini
-// and Mistral free variants were pulled during 2026). The defaults below use
-// OpenRouter's own `openrouter/free` auto-router, which picks a free model that
-// fits the request and keeps working as individual models rotate out. The
-// catalog only feeds the Dispatcher short-circuit (findOpenRouterModel) — an id
-// that has since gone paid simply stops short-circuiting and the chain falls
-// through as usual.
+// and Mistral free variants were pulled during 2026). The defaults are pinned
+// to a specific STRONG free model (nemotron-3-ultra-550b) rather than the
+// `openrouter/free` auto-router: production logs showed the auto-router
+// selecting weak 30B seats (nemotron-3-nano-30b) for Coder. If the pinned id
+// is ever rotated off the free roster it stops answering and the chain falls
+// through to the next leg (DeadlySignal) — preferable to silently serving a
+// weak model. The catalog feeds the Dispatcher short-circuit
+// (findOpenRouterModel) — an id that has since gone paid simply stops
+// short-circuiting and the chain falls through as usual.
 // Free-tier limits: 20 requests/minute per free model; $0-balance accounts get
 // 50 requests/day on free models — burst traffic lands on the next chain leg.
 // Docs: https://openrouter.ai/docs
@@ -101,8 +104,16 @@ export function findOpenRouterModel(id: string): OpenRouterModelInfo | undefined
 // `openrouter/free` is the auto-router: OpenRouter picks a live free model that
 // fits the request, so a `:free` id going paid cannot take the leg down.
 
-export const OPENROUTER_DISPATCHER_MODEL = "openrouter/free";
-export const OPENROUTER_DEFAULT_MODEL = "openrouter/free";
+// Pointed at specific STRONG free models rather than the `openrouter/free`
+// auto-router. The auto-router picks whatever free model currently fits the
+// request, and production logs showed it selecting weak 30B seats (e.g.
+// nemotron-3-nano-30b) for Coder. A specific strong id means the OpenRouter
+// leg only answers with a strong model; if that model is ever rotated off the
+// free roster the call 403s/404s and the chain falls through to the next leg
+// (DeadlySignal has frontier seats), which is preferable to silently serving
+// a weak model.
+export const OPENROUTER_DISPATCHER_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free";
+export const OPENROUTER_DEFAULT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free";
 
 // ── OpenAI-compatible Chat API ────────────────────────────────────────────────
 

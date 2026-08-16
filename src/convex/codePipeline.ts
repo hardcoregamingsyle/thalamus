@@ -36,7 +36,7 @@ import {
 } from "./lib/agentCore";
 import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./lib/mcpClient";
 import { buildPlanningPipeline, buildTaskPipeline } from "./lib/pipelineAgents";
-import { fetchModelScopeModelIds } from "./lib/modelscopeClient";
+import { buildDispatcherModelMenu } from "./lib/modelMenu";
 import { parseMcpCalls, stripMcpBlocks, type ParsedMcpCall } from "./lib/mcpParse";
 
 // MCP loop guard: how many times one agent may be re-run with tool results
@@ -847,15 +847,15 @@ export const runPipelineAction = internalAction({
           subtaskContext = `\n## Overall Plan (${plannerTasks.length} tasks)\n${plannerTasks.map((t, i) => `${i < currentTaskIndex ? "✓" : (i === currentTaskIndex ? "→" : "○")} Task ${i + 1}: ${t.title}`).join("\n")}\n\n## Current Task (${currentTaskIndex + 1}/${plannerTasks.length}): ${ct.title}\n${ct.description}\n\n### Already completed (${completed.length} done)\n${completed.map((t, i) => `${i + 1}. ${t.title}`).join("\n")}`;
         }
 
-        // Live model menu for the Dispatcher's per-agent assignments. Fetched
-        // from ModelScope's /v1/models at dispatch time (union of both hosts,
-        // cached 10 min, catalog fallback on failure) so the assignable set
-        // auto-adds and auto-drops models as ModelScope's offering changes —
-        // no code edit when a new model ships. See modelscopeClient.ts.
-        const liveModelIds = await fetchModelScopeModelIds();
-        const modelMenu = liveModelIds.length > 0
-          ? `\n\n## Live model menu (assign from these exact ids)\n${liveModelIds.map(id => `- ${id}`).join("\n")}`
-          : "";
+        // Curated, strength-ranked model menu for the Dispatcher's per-agent
+        // assignments. Built from the verified provider catalogs and grouped
+        // into FRONTIER / STANDARD / LIGHT tiers, so the Dispatcher assigns
+        // strong models to the agents that write and gate code instead of
+        // guessing from an unranked dump (see lib/modelMenu.ts). The raw
+        // ModelScope /v1/models listing was dropped because it carried no
+        // strength signal and its unservable picks fell through to the weak
+        // OpenRouter auto-router.
+        const modelMenu = buildDispatcherModelMenu();
 
         // KnowItAll hands the conversation back by ending its reply with
         // {"op":"dispatch","reason":...}; the marker lands in the transcript as
