@@ -24,6 +24,9 @@ Any user-facing change made to the website must ship to the desktop app in the s
 ### Simplicity first
 Minimum code that solves the stated problem. If a 200-line change could be 50 lines, rewrite it.
 
+### Always ship
+After every completed task, commit and push to `main` without being asked. Pushing to `main` triggers CI, which gates the automatic Convex deploy — committing is the deploy path.
+
 ### Surgical changes
 - Match existing style. Do not "improve" adjacent code, comments, or formatting.
 - Update every dependent when modifying a file — including the sibling `agentoverflow` repo and the shipped desktop `.exe` (§5).
