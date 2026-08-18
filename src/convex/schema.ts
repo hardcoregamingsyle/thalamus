@@ -383,6 +383,7 @@ const schema = defineSchema(
       content: v.string(),
       tokensUsed: v.optional(v.number()),
       costCents: v.optional(v.number()),
+      createdAt: v.optional(v.number()),
     })
       .index("by_conversation", ["conversationId"])
       .index("by_user", ["userId"]),

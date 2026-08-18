@@ -24,7 +24,7 @@ const StreamingBubble = memo(function StreamingBubble({ content }: { content: st
   }
   const html = content.startsWith("<") ? content : content.replace(/\n/g, "<br/>");
   return (
-    <div className="prose-html text-xs leading-relaxed">
+    <div className="prose-html text-[15px] leading-relaxed">
       <span dangerouslySetInnerHTML={{ __html: sanitizeAiHtml(html) }} />
       <span className="streaming-caret" aria-hidden="true" />
     </div>

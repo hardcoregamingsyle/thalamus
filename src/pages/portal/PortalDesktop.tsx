@@ -803,7 +803,10 @@ export default function PortalDesktop() {
   const studyHasProfile = !!(studyGrade || studyBoard);
 
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
+    <div
+      className="h-screen flex flex-col bg-background text-foreground overflow-hidden"
+      style={{ ["--accent-hex" as string]: currentMode.accentColor }}
+    >
       {/* ── Top bar ─────────────────────────────────────────────────────────── */}
       <header className="shrink-0 z-30 border-b border-border bg-card/70 backdrop-blur-md">
         <div className="flex items-center justify-between px-3 sm:px-4 h-14">
@@ -834,7 +837,7 @@ export default function PortalDesktop() {
                 onClick={() => setActiveMode(mode.id)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium transition-all ${
                   activeMode === mode.id
-                    ? "bg-primary text-primary-foreground shadow-sm"
+                    ? "accent-pill-active"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >

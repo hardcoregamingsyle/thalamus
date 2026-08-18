@@ -19,4 +19,5 @@ export interface Message {
   content: string;
   tokensUsed?: number;
   costCents?: number;
+  createdAt?: number;
 }

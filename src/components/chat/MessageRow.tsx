@@ -1,12 +1,14 @@
 // Clean, modern message row for the portal chat (ChatGPT/Claude-style). User
 // messages are right-aligned accent bubbles; assistant messages are full-width
-// rows with a compact avatar chip and the rendered content, plus a copy button.
-// Memoized so per-chunk streaming updates don't re-render the whole history.
+// rows with a compact avatar chip, a timestamp, a copy button, and rendered
+// content (code blocks get their own copy buttons). Memoized so per-chunk
+// streaming updates don't re-render the whole history.
 
 import { memo, useState } from "react";
 import { motion } from "framer-motion";
 import { Check, Copy, Sparkles } from "lucide-react";
-import MathRenderer from "@/components/MathRenderer";
+import RichContent from "@/components/chat/RichContent";
+import { formatMessageTime } from "@/lib/dateFormat";
 import type { Message } from "@/pages/portal/types";
 
 interface MessageRowProps {
@@ -17,6 +19,7 @@ interface MessageRowProps {
 const MessageRow = memo(function MessageRow({ msg, accentColor }: MessageRowProps) {
   const [copied, setCopied] = useState(false);
   const isUser = msg.role === "user";
+  const time = formatMessageTime(msg.createdAt);
 
   const copyText = async () => {
     try {
@@ -33,8 +36,11 @@ const MessageRow = memo(function MessageRow({ msg, accentColor }: MessageRowProp
         animate={{ opacity: 1, y: 0 }}
         className="flex justify-end"
       >
-        <div className="max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-br-md bg-primary text-primary-foreground px-4 py-2.5 text-[15px] leading-relaxed shadow-sm whitespace-pre-wrap">
-          {msg.content}
+        <div className="flex flex-col items-end max-w-[85%] sm:max-w-[75%]">
+          <div className="rounded-2xl rounded-br-md bg-primary text-primary-foreground px-4 py-2.5 text-[15px] leading-relaxed shadow-sm whitespace-pre-wrap">
+            {msg.content}
+          </div>
+          {time && <span className="mt-1 text-[10px] text-muted-foreground/70">{time}</span>}
         </div>
       </motion.div>
     );
@@ -52,6 +58,7 @@ const MessageRow = memo(function MessageRow({ msg, accentColor }: MessageRowProp
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 h-8 mb-0.5">
           <span className="text-xs font-medium text-muted-foreground">Thalamus</span>
+          {time && <span className="text-[10px] text-muted-foreground/60">{time}</span>}
           <button
             onClick={copyText}
             aria-label="Copy response"
@@ -60,8 +67,8 @@ const MessageRow = memo(function MessageRow({ msg, accentColor }: MessageRowProp
             {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
           </button>
         </div>
-        <div className="text-[15px] leading-relaxed text-foreground prose-html max-w-full">
-          <MathRenderer
+        <div className="text-[15px] leading-relaxed text-foreground max-w-full">
+          <RichContent
             html={msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")}
           />
           {msg.costCents !== undefined && msg.costCents > 0 && (

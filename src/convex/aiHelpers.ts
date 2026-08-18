@@ -77,6 +77,7 @@ export const saveMessage = internalMutation({
       userId: args.userId,
       role: args.role,
       content: args.content,
+      createdAt: Date.now(),
     });
     await ctx.db.patch(args.conversationId, { lastMessageAt: Date.now() });
   },
@@ -103,6 +104,7 @@ export const saveAssistantMessage = internalMutation({
       content: args.content,
       tokensUsed: args.tokensUsed,
       costCents: args.costCents,
+      createdAt: Date.now(),
     });
     await ctx.db.patch(args.conversationId, { lastMessageAt: Date.now() });
 
@@ -183,6 +185,7 @@ export const saveStreamedMessage = internalMutation({
         userId,
         role: "user",
         content: args.content,
+        createdAt: Date.now(),
       });
     }
 
@@ -200,6 +203,7 @@ export const saveStreamedMessage = internalMutation({
       content: args.response,
       tokensUsed: inputTokens + outputTokens,
       costCents,
+      createdAt: Date.now(),
     });
 
     await ctx.db.patch(args.conversationId, { lastMessageAt: Date.now() });

@@ -301,18 +301,38 @@
   font-size: 1em;
   overflow-x: auto;
 }
-/* Blinking caret shown while an assistant answer is streaming in. */
-@keyframes streamingCaretBlink {
-  0%, 45% { opacity: 1; }
-  50%, 100% { opacity: 0; }
+/* Per-mode accent theming. PortalDesktop sets --accent-hex on its root from the
+   active mode's accentColor, so highlights (active mode pill, composer focus
+   ring, glows) tint to match the mode instead of a single brand color. */
+.accent-pill-active {
+  background: color-mix(in oklab, var(--accent-hex, oklch(0.62 0.20 250)) 90%, transparent);
+  color: oklch(0.99 0 0);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent-hex, oklch(0.62 0.20 250)) 60%, transparent),
+    0 4px 14px -4px var(--accent-hex, oklch(0.62 0.20 250));
+}
+.accent-glow {
+  background: radial-gradient(circle, color-mix(in oklab, var(--accent-hex, oklch(0.62 0.20 250)) 35%, transparent), transparent 70%);
+}
+.composer-accent:focus-within {
+  border-color: color-mix(in oklab, var(--accent-hex, oklch(0.62 0.20 250)) 60%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent-hex, oklch(0.62 0.20 250)) 12%, transparent);
+}
+
+/* Smoothly pulsing caret shown while an assistant answer is streaming in. The
+   soft opacity pulse (instead of a hard on/off blink) reads as calmer and more
+   polished than a stepper, and matches the mode accent via currentColor. */
+@keyframes streamingCaretPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
 }
 .streaming-caret {
   display: inline-block;
-  width: 2px;
-  height: 1em;
-  margin-left: 2px;
+  width: 3px;
+  height: 1.05em;
+  margin-left: 3px;
   vertical-align: -0.15em;
   background: currentColor;
-  border-radius: 1px;
-  animation: streamingCaretBlink 0.9s steps(1, end) infinite;
+  border-radius: 2px;
+  box-shadow: 0 0 6px currentColor;
+  animation: streamingCaretPulse 0.9s ease-in-out infinite;
 }

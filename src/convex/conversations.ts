@@ -168,6 +168,7 @@ export const importGuestConversation = mutation({
         userId: session.userId,
         role: m.role,
         content: m.content,
+        createdAt: Date.now(),
       });
     }
 
@@ -195,6 +196,7 @@ export const saveUserMessage = mutation({
       userId: session.userId,
       role: "user",
       content: args.content,
+      createdAt: Date.now(),
     });
     await ctx.db.patch(args.conversationId, { lastMessageAt: Date.now() });
   },

@@ -74,7 +74,7 @@ const Composer = memo(function Composer({
         </div>
       )}
 
-      <div className="rounded-2xl border border-border bg-card shadow-sm focus-within:border-ring/70 focus-within:ring-4 focus-within:ring-ring/10 transition-all">
+      <div className="composer-accent rounded-2xl border border-border bg-card shadow-sm transition-all">
         <textarea
           ref={taRef}
           value={value}

@@ -19,7 +19,7 @@ export default function EmptyState({ mode, onPick, resourceCount = 0 }: EmptySta
     <div className="flex flex-col items-center text-center px-4">
       {/* Mode emblem with soft glow */}
       <div className="relative mb-5">
-        <div className={`absolute inset-0 rounded-2xl blur-2xl opacity-40 ${mode.accent}`} />
+        <div className={`absolute -inset-3 accent-glow opacity-70`} />
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}

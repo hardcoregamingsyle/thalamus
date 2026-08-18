@@ -11,3 +11,16 @@ export function formatRelative(timestamp: number, now: number = Date.now()): str
   if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
   return new Date(timestamp).toLocaleDateString();
 }
+
+// Compact timestamp for chat message rows. Recent times use the relative form;
+// anything older falls back to a short clock time (e.g. "2:05 PM"). Returns an
+// empty string when no time is stored (legacy messages written before the
+// createdAt field existed).
+export function formatMessageTime(ts?: number): string {
+  if (!ts) return "";
+  const now = Date.now();
+  const diff = now - ts;
+  const DAY = 86_400_000;
+  if (diff < DAY) return formatRelative(ts, now);
+  return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
