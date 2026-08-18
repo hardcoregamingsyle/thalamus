@@ -1,65 +1,111 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { sanitizeAiHtml } from "@/lib/sanitizeHtml";
 
-// Live-streaming assistant bubble for the desktop portal. Renders the model's
-// output as a smooth word-by-word typewriter reveal (tags stripped to plain
-// text during streaming so the reveal never breaks mid-tag); the completed
-// message is then rendered as rich HTML by RichContent/MessageRow once the
-// stream ends. A pulsing caret marks the live cursor.
-
-// Minimal tag stripper for the streaming view — enough to show readable text.
-function stripTags(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n\n")
-    .replace(/<\/h[1-6]>/gi, "\n\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-// How many words to reveal per animation frame while catching up to the stream.
+// Live-streaming assistant bubble for the desktop portal.
+//
+// Two goals must hold at once:
+//   1. "Perfectly formatted" — the accumulated reply is rendered as sanitized
+//      HTML every chunk, so headings, code blocks, tables, bold, etc. appear
+//      and reflow correctly the moment their tags finish streaming.
+//   2. "Typewriter" — words are revealed progressively, not dumped as one wall.
+//
+// We render the whole sanitized HTML (formatting always live) and then reveal
+// words by walking the rendered DOM's text nodes: each word is wrapped in a
+// span and set to `visibility:hidden` until its turn. Hidden words still occupy
+// their space, so the layout — and therefore the formatting — is identical to
+// the final message the whole way through. As new chunks arrive the HTML is
+// re-rendered and the reveal count carries over.
 const WORDS_PER_FRAME = 3;
 
 const StreamingBubble = memo(function StreamingBubble({ content }: { content: string }) {
-  const text = stripTags(content);
-  const words = text ? text.split(/\s+/) : [];
-  const [visible, setVisible] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [revealed, setRevealed] = useState(0);
+  const revealedRef = useRef(0);
+  const totalRef = useRef(0);
   const rafRef = useRef<number | null>(null);
 
-  // Reveal words up to the full length at a controlled rate, always catching up
-  // to the current content so a fast stream doesn't lag behind forever.
+  const sanitized = content ? sanitizeAiHtml(content.startsWith("<") ? content : content.replace(/\n/g, "<br/>")) : "";
+
+  // Recompute total word count whenever content changes, and keep revealing.
   useEffect(() => {
-    if (words.length === 0) {
-      setVisible(0);
+    if (!content) {
+      totalRef.current = 0;
+      revealedRef.current = 0;
+      setRevealed(0);
       return;
     }
-    let raf: number;
+    // Count words from the sanitized HTML's text.
+    const tmp = document.createElement("div");
+    tmp.innerHTML = sanitized;
+    const text = (tmp.textContent ?? "").trim();
+    totalRef.current = text ? text.split(/\s+/).length : 0;
+    if (revealedRef.current > totalRef.current) revealedRef.current = totalRef.current;
+    setRevealed(revealedRef.current);
+  }, [content, sanitized]);
+
+  // Reveal loop: advance revealedRef toward total.
+  useEffect(() => {
+    if (totalRef.current === 0) return;
     const step = () => {
-      setVisible((v) => {
-        const next = Math.min(words.length, v + WORDS_PER_FRAME);
-        if (next < words.length) {
-          raf = requestAnimationFrame(step);
-        } else {
-          rafRef.current = null;
-        }
-        return next;
-      });
+      if (revealedRef.current < totalRef.current) {
+        revealedRef.current = Math.min(totalRef.current, revealedRef.current + WORDS_PER_FRAME);
+        setRevealed(revealedRef.current);
+        rafRef.current = requestAnimationFrame(step);
+      }
     };
-    raf = requestAnimationFrame(step);
-    rafRef.current = raf;
+    rafRef.current = requestAnimationFrame(step);
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      cancelAnimationFrame(raf);
     };
-  }, [words.length]);
+  }, [content]);
+
+  // Apply the reveal to the rendered DOM. When the sanitized HTML changes React
+  // resets the root's innerHTML, wiping any word spans — so we rebuild them from
+  // scratch each time, assigning fresh sequential word indices, then hide words
+  // beyond the current `revealed` count. On reveal-count ticks (no content
+  // change) the spans already exist and we only toggle visibility.
+  const lastHtmlRef = useRef<string | null>(null);
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+
+    const htmlChanged = lastHtmlRef.current !== sanitized;
+    lastHtmlRef.current = sanitized;
+
+    if (htmlChanged) {
+      // Rebuild spans across the whole subtree with sequential indices.
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const textNodes: Text[] = [];
+      let n: Node | null = walker.nextNode();
+      while (n) {
+        if ((n.textContent ?? "").trim().length > 0) textNodes.push(n as Text);
+        n = walker.nextNode();
+      }
+      let running = 0;
+      for (const tn of textNodes) {
+        const words = (tn.textContent ?? "").split(/(\s+)/);
+        const frag = document.createDocumentFragment();
+        for (const w of words) {
+          if (w === "") continue;
+          const span = document.createElement("span");
+          span.className = "tw-word";
+          span.textContent = w;
+          if (w.trim().length > 0) {
+            span.dataset.tw = String(running);
+            running++;
+          }
+          frag.appendChild(span);
+        }
+        tn.parentNode?.replaceChild(frag, tn);
+      }
+    }
+
+    root.querySelectorAll<HTMLSpanElement>(".tw-word").forEach((span) => {
+      const i = parseInt(span.dataset.tw as string, 10);
+      if (!Number.isNaN(i)) span.style.visibility = i < revealed ? "visible" : "hidden";
+    });
+  }, [revealed, sanitized]);
 
   if (!content) {
     // No text yet — typing dots.
@@ -77,11 +123,9 @@ const StreamingBubble = memo(function StreamingBubble({ content }: { content: st
     );
   }
 
-  const shown = words.slice(0, visible).join(" ");
-
   return (
-    <div className="text-[15px] leading-relaxed">
-      <span className="whitespace-pre-wrap text-foreground">{shown}</span>
+    <div className="text-[15px] leading-relaxed prose-html">
+      <div ref={rootRef} dangerouslySetInnerHTML={{ __html: sanitized }} />
       <span className="streaming-caret" aria-hidden="true" />
     </div>
   );
