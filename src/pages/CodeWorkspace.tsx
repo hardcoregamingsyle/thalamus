@@ -541,14 +541,31 @@ export default function CodeWorkspace() {
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
               ) : messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center">
-                  <div className="rounded-full bg-primary/10 p-6 mb-4">
-                    <FileCode className="h-12 w-12 text-primary" />
-                  </div>
-                  <h2 className="text-2xl font-semibold mb-2">Start Building</h2>
-                  <p className="text-muted-foreground max-w-md">
-                    Describe what you want to build and the agents will plan, write, and test it
-                  </p>
+                <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                  <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                    className="w-14 h-14 rounded-2xl bg-muted border border-border flex items-center justify-center mb-4"
+                  >
+                    <FileCode className="h-7 w-7 text-violet-400" />
+                  </motion.div>
+                  <motion.h2
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.05 }}
+                    className="text-2xl font-semibold mb-2"
+                  >
+                    Start Building
+                  </motion.h2>
+                  <motion.p
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="text-muted-foreground max-w-md text-sm"
+                  >
+                    Describe what you want to build and the agent team will plan, write, and test it
+                  </motion.p>
                 </div>
               ) : (
                 messages.map((msg: Doc<"codeMessages">) => (
@@ -674,15 +691,15 @@ export default function CodeWorkspace() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input Area */}
-            <div className="border-t bg-background p-4">
-              <div className="max-w-4xl mx-auto">
-                <div className="flex gap-2">
+            {/* Input Area — center-stage composer */}
+            <div className="shrink-0 border-t border-border bg-gradient-to-t from-background via-background to-transparent">
+              <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
+                <div className="rounded-2xl border border-border bg-card shadow-sm focus-within:border-ring/60 focus-within:ring-4 focus-within:ring-ring/10 transition-all">
                   <Textarea
                     placeholder={
                       branch?.status === "running"
-                        ? "Pipeline is running..."
-                        : "Tell the AI team what to build..."
+                        ? "Pipeline is running…"
+                        : "Tell the AI team what to build…"
                     }
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
@@ -692,35 +709,41 @@ export default function CodeWorkspace() {
                         handleSend();
                       }
                     }}
-                    className="min-h-[60px] resize-none"
+                    className="min-h-[70px] max-h-[200px] resize-none border-0 bg-transparent px-4 pt-3.5 text-[15px] focus-visible:ring-0 focus-visible:outline-none"
                     disabled={isSending || branch?.status === "running"}
                   />
-                  {branch?.status === "running" ? (
-                    <Button
-                      size="lg"
-                      onClick={handleStop}
-                      variant="destructive"
-                      className="px-8"
-                      aria-label="Stop pipeline"
-                    >
-                      <Pause className="h-5 w-5" />
-                    </Button>
-                  ) : (
-                    <Button
-                      size="lg"
-                      onClick={handleSend}
-                      disabled={!input.trim() || isSending}
-                      className="px-8"
-                    >
-                      {isSending ? (
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                      ) : (
-                        <Send className="h-5 w-5" />
-                      )}
-                    </Button>
-                  )}
+                  <div className="flex items-center justify-between px-2 pb-2 pt-1">
+                    <span className="px-2 text-[11px] text-muted-foreground/70">
+                      Enter to send · Shift+Enter for newline
+                    </span>
+                    {branch?.status === "running" ? (
+                      <Button
+                        size="icon"
+                        onClick={handleStop}
+                        variant="destructive"
+                        className="h-10 w-10 rounded-xl"
+                        aria-label="Stop pipeline"
+                      >
+                        <Pause className="h-5 w-5" />
+                      </Button>
+                    ) : (
+                      <Button
+                        size="icon"
+                        onClick={handleSend}
+                        disabled={!input.trim() || isSending}
+                        className="h-10 w-10 rounded-xl"
+                        aria-label="Send message"
+                      >
+                        {isSending ? (
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <Send className="h-5 w-5" />
+                        )}
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2 text-center">
+                <p className="mt-2 text-center text-[11px] text-muted-foreground/60">
                   The AI team will run commands in your VM and may request API keys
                 </p>
               </div>

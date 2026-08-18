@@ -9,9 +9,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { toast } from "sonner";
 import {
-  BookOpen, FileText, Globe, Hash, Image, Lightbulb,
-  Loader2, Lock, LogOut, Menu, Moon, Plus,
-  Send, Sparkles, Sun, Trash2, Upload,
+  BookOpen, FileText, Globe, Image,
+  Loader2, LogOut, Menu, Moon,
+  Sparkles, Sun, Trash2, Upload,
   X, Zap, GraduationCap,
 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
@@ -24,8 +24,11 @@ import StudyProfileModal from "@/components/StudyProfileModal";
 import StudentSuite from "@/components/StudentSuite";
 import ThinkingPanel from "@/components/ThinkingPanel";
 import SuggestionFormModal, { type SuggestionFile } from "@/components/SuggestionFormModal";
-import ChatMessageBubble from "@/components/ChatMessageBubble";
 import StreamingBubble from "@/components/StreamingBubble";
+import MessageRow from "@/components/chat/MessageRow";
+import Composer from "@/components/chat/Composer";
+import EmptyState from "@/components/chat/EmptyState";
+import ConversationSidebar from "@/components/chat/ConversationSidebar";
 import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
 import { fetchSponsoredAd } from "@/lib/requestAd";
 import { getSessionToken } from "@/lib/session";
@@ -88,12 +91,11 @@ export default function PortalDesktop() {
   const [suiteOpen, setSuiteOpen] = useState(false);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
-  const attachFileInputRef = useRef<HTMLInputElement>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showStudyProfile, setShowStudyProfile] = useState(false);
   const [sponsoredAd, setSponsoredAd] = useState<GravityAd | null>(null);
-  const [railAds, setRailAds] = useState<GravityAd[]>([]);
+  const [, setRailAds] = useState<GravityAd[]>([]);
   // Rail slots by viewport (see calc below): up to 4 on 1920+, scaling down to
   // 0 under 1024. Total ads = 1 in-chat + rail (max ~5 on wide screens).
   const [railCount, setRailCount] = useState(0);
@@ -787,7 +789,7 @@ export default function PortalDesktop() {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-6 w-6 text-primary animate-spin" />
-          <p className="text-primary font-mono text-xs animate-pulse">INITIALIZING THALAMUS_AI...</p>
+          <p className="text-primary text-xs animate-pulse">Loading Thalamus…</p>
         </div>
       </div>
     );
@@ -798,112 +800,121 @@ export default function PortalDesktop() {
     return <ModeSelection user={user} signOut={signOut} theme={theme} toggleTheme={toggleTheme} />;
   }
 
+  const studyHasProfile = !!(studyGrade || studyBoard);
+
   return (
-    <div className="h-screen flex flex-col bg-background font-mono overflow-hidden">
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <header className="shrink-0 border-b border-border bg-card/80 backdrop-blur-sm z-20">
-        <div className="flex items-center justify-between px-3 h-11">
-          <div className="flex items-center gap-2">
+    <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
+      {/* ── Top bar ─────────────────────────────────────────────────────────── */}
+      <header className="shrink-0 z-30 border-b border-border bg-card/70 backdrop-blur-md">
+        <div className="flex items-center justify-between px-3 sm:px-4 h-14">
+          <div className="flex items-center gap-2 min-w-0">
+            {/* Sidebar toggle (chat/research/study) */}
             {activeMode !== "code" && (
               <button
-                aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+                aria-label={sidebarOpen ? "Hide conversation list" : "Show conversation list"}
                 onClick={() => { userToggledSidebarRef.current = true; setSidebarOpen(o => !o); }}
-                className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10 md:hidden"
+                className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               >
-                {sidebarOpen ? <X className="h-3.5 w-3.5" /> : <Menu className="h-3.5 w-3.5" />}
+                <Menu className="h-5 w-5" />
               </button>
             )}
             <div className="flex items-center gap-2">
-              <div className="w-5 h-5 rounded border border-primary/40 overflow-hidden bg-card">
+              <div className="w-7 h-7 rounded-lg bg-primary/15 border border-primary/30 overflow-hidden flex items-center justify-center shrink-0">
                 <img src="/thalamus-logo.png" alt="Thalamus AI" className="h-full w-full object-cover" />
               </div>
-              <span className="text-primary font-bold text-xs tracking-widest hidden sm:block">THALAMUS_AI</span>
-            </div>
-            {/* Mode pills — desktop */}
-            <div className="hidden md:flex items-center gap-1 ml-2">
-              {MODES.map(mode => (
-                <button key={mode.id} onClick={() => setActiveMode(mode.id)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-bold transition-all ${activeMode === mode.id ? `${mode.accent} border ${mode.color}` : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
-                >
-                  <mode.icon className="h-3 w-3" />
-                  {mode.label}
-                </button>
-              ))}
-              {/* More Modes dropdown */}
-              <div className="relative">
-                <button onClick={() => setMoreModesOpen(o => !o)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-bold transition-all ${MORE_MODES.some(m => m.id === activeMode) ? "border border-purple-400/30 bg-purple-400/15 text-purple-400" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
-                >
-                  <Zap className="h-3 w-3" />
-                  MORE MODES
-                </button>
-                {moreModesOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setMoreModesOpen(false)} />
-                    <div className="absolute left-0 top-full mt-1 z-50 w-[200px] bg-card border border-border rounded-lg shadow-xl overflow-hidden">
-                      {MORE_MODES.map(mode => {
-                        const isActive = activeMode === mode.id;
-                        return (
-                          <button key={mode.id} onClick={() => { setActiveMode(mode.id); setMoreModesOpen(false); }}
-                            className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] font-bold transition-all text-left ${isActive ? `${mode.accent} border-l-2 ${mode.color}` : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
-                          >
-                            <mode.icon className={`h-3.5 w-3.5 shrink-0 ${isActive ? mode.color : ""}`} />
-                            <div className="flex-1 min-w-0">
-                              <div className="truncate">{mode.label}</div>
-                              <div className="text-[9px] opacity-60 font-normal">{mode.desc} · ADHD {mode.adhd}/5</div>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-              </div>
+              <span className="text-sm font-semibold text-foreground tracking-tight hidden sm:block">Thalamus</span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {/* Session ID display */}
-            {urlSessionId && activeMode !== "code" && (
-              <div className="hidden sm:flex items-center gap-1 text-[9px] text-muted-foreground/60 border border-border/50 px-2 py-0.5 rounded font-mono">
-                <Hash className="h-2.5 w-2.5" />
-                {urlSessionId}
-              </div>
+
+          {/* Mode switcher — centered */}
+          <div className="flex items-center gap-1 bg-muted/50 border border-border rounded-full p-1">
+            {MODES.map(mode => (
+              <button
+                key={mode.id}
+                onClick={() => setActiveMode(mode.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium transition-all ${
+                  activeMode === mode.id
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <mode.icon className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{mode.label.charAt(0) + mode.label.slice(1).toLowerCase()}</span>
+              </button>
+            ))}
+            {/* More Modes */}
+            <div className="relative">
+              <button
+                onClick={() => setMoreModesOpen(o => !o)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium transition-all ${
+                  MORE_MODES.some(m => m.id === activeMode)
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Zap className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">More</span>
+              </button>
+              {moreModesOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setMoreModesOpen(false)} />
+                  <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 w-56 bg-card border border-border rounded-xl shadow-xl overflow-hidden">
+                    {MORE_MODES.map(mode => (
+                      <button
+                        key={mode.id}
+                        onClick={() => { setActiveMode(mode.id); setMoreModesOpen(false); }}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors ${
+                          activeMode === mode.id ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                        }`}
+                      >
+                        <mode.icon className={`h-4 w-4 shrink-0 ${activeMode === mode.id ? mode.color : ""}`} />
+                        <span className="flex-1 truncate">{mode.label.charAt(0) + mode.label.slice(1).toLowerCase()}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Right actions */}
+          <div className="flex items-center gap-1.5">
+            {activeMode === "study" && (
+              <button
+                onClick={() => setStudyResourcesOpen(o => !o)}
+                className="hidden md:flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <BookOpen className="h-4 w-4" />
+                Resources {studyResources ? `(${studyResources.length})` : ""}
+              </button>
             )}
-            {/* Suggestions button — visible everywhere */}
             <button
-              onClick={() => setSuggestionsOpen(o => !o)}
-              title="Suggestions"
-              className={`flex items-center gap-1.5 text-[11px] border px-2 py-1 rounded-lg font-bold transition-all ${suggestionsOpen ? "border-amber-400/50 bg-amber-400/15 text-amber-400" : "border-border text-muted-foreground hover:border-amber-400/40 hover:bg-amber-400/10 hover:text-amber-400"}`}
+              onClick={() => setCreditModalOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] border border-amber-500/30 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 transition-colors"
+              title="Credits"
             >
-              <Lightbulb className="h-3 w-3" />
-              <span className="hidden sm:block">IDEAS</span>
-            </button>
-            <button onClick={() => setCreditModalOpen(true)} className="flex items-center gap-1.5 text-[11px] border border-amber-400/30 bg-amber-400/10 text-amber-400 px-2 py-1 rounded-lg font-bold hover:bg-amber-400/20 transition-all">
-              <Zap className="h-3 w-3" />
-              <span className="hidden sm:block">{totalAB.toLocaleString()}</span>
-              <span className="sm:hidden">{(totalAB / 1_000_000).toFixed(1)}M</span>
-              <span className="text-[9px] opacity-70">AB</span>
+              <Zap className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{totalAB.toLocaleString()}</span>
             </button>
             <button
               aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
               onClick={toggleTheme}
-              className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10"
-              title="Toggle theme"
+              className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
             >
-              {theme === "dark" ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
             <button
               aria-label="Sign out"
               onClick={signOut}
-              className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded hover:bg-primary/10"
+              className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
             >
-              <LogOut className="h-3.5 w-3.5" />
+              <LogOut className="h-4 w-4" />
             </button>
           </div>
         </div>
       </header>
 
-      {/* Suggestions Panel — rendered outside header, always on top */}
+      {/* Suggestions modal */}
       <AnimatePresence>
         {suggestionsOpen && (
           <SuggestionFormModal
@@ -915,430 +926,285 @@ export default function PortalDesktop() {
       </AnimatePresence>
 
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Mobile overlay */}
+        {/* Mobile overlay when sidebar open */}
         <AnimatePresence>
           {sidebarOpen && activeMode !== "code" && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="md:hidden fixed inset-0 bg-background/80 backdrop-blur-sm z-30"
-              onClick={() => setSidebarOpen(false)} />
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="md:hidden fixed inset-0 bg-background/70 backdrop-blur-sm z-30"
+              onClick={() => setSidebarOpen(false)}
+            />
           )}
         </AnimatePresence>
 
-        {/* ── Sidebar ─────────────────────────────────────────────────────── */}
-        <AnimatePresence>
-          {sidebarOpen && activeMode !== "code" && (
-            <motion.aside
-              initial={{ x: -220, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -220, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="fixed md:relative left-0 top-0 bottom-0 z-40 md:z-auto w-[220px] shrink-0 border-r border-border bg-card flex flex-col overflow-hidden"
-            >
-              {/* Mode tabs — mobile only */}
-              <div className="shrink-0 p-2 border-b border-border space-y-0.5 md:hidden">
-                {MODES.map(mode => (
-                  <button key={mode.id} onClick={() => { setActiveMode(mode.id); setSidebarOpen(typeof window !== "undefined" ? window.innerWidth >= 768 : true); }}
-                    className={`w-full flex items-center gap-2 px-3 py-2 rounded text-xs transition-all ${activeMode === mode.id ? `${mode.accent} border ${mode.color}` : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
-                  >
-                    <mode.icon className={`h-3.5 w-3.5 ${activeMode === mode.id ? mode.color : ""}`} />
-                    <span className="font-bold">{mode.label}</span>
-                    <span className="text-[10px] opacity-60 ml-auto">{mode.desc}</span>
-                  </button>
-                ))}
-                {/* Mobile More Modes */}
-                <div className="pt-1 mt-1 border-t border-border/50">
-                  <div className="text-[9px] text-muted-foreground/60 font-bold px-3 pb-1 uppercase tracking-wider">More Modes</div>
-                  {MORE_MODES.map(mode => (
-                    <button key={mode.id} onClick={() => { setActiveMode(mode.id); setSidebarOpen(typeof window !== "undefined" ? window.innerWidth >= 768 : true); }}
-                      className={`w-full flex items-center gap-2 px-3 py-2 rounded text-xs transition-all ${activeMode === mode.id ? `${mode.accent} border ${mode.color}` : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
-                    >
-                      <mode.icon className={`h-3.5 w-3.5 ${activeMode === mode.id ? mode.color : ""}`} />
-                      <span className="font-bold">{mode.label}</span>
-                      <span className="text-[10px] opacity-60 ml-auto">{mode.desc} · ADHD {mode.adhd}/5</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+        {/* Conversation sidebar (chat/research/study) */}
+        {activeMode !== "code" && (
+          <AnimatePresence>
+            <ConversationSidebar
+              open={sidebarOpen}
+              onClose={() => setSidebarOpen(false)}
+              conversations={filteredConvs}
+              activeConvId={activeConvId}
+              onSelect={handleSelectConversation}
+              onNew={handleNewConversation}
+              onDelete={(conv) => {
+                if (!token) return;
+                if (!confirm(`Delete conversation "${conv.title}"? This can't be undone.`)) return;
+                deleteConversation({ id: conv._id, token })
+                  .then(() => {
+                    if (activeConvId === conv._id) { setActiveConvId(null); navigate(`/portal/${activeMode}`); }
+                  })
+                  .catch(() => toast.error("Failed to delete"));
+              }}
+              mode={currentMode}
+              userName={(user as { name?: string } | null)?.name}
+            />
+          </AnimatePresence>
+        )}
 
-              {/* Sessions header */}
-              <div className="shrink-0 px-3 pt-3 pb-2 flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <currentMode.icon className={`h-3 w-3 ${currentMode.color}`} />
-                  <span className="text-[10px] text-muted-foreground font-bold">SESSIONS</span>
-                </div>
+        {/* ── Main chat column ────────────────────────────────────────────── */}
+        <div className="flex-1 flex flex-col min-w-0 relative">
+          {/* Study resource sub-header (compact) */}
+          {activeMode === "study" && (
+            <div className="shrink-0 flex items-center gap-2 px-4 py-1.5 border-b border-border bg-muted/20 text-xs text-muted-foreground">
+              <span className={`flex items-center gap-1 font-medium ${currentMode.color}`}>
+                <currentMode.icon className="h-3.5 w-3.5" />
+                Study
+              </span>
+              <span className="text-muted-foreground/70">· RAG over your uploads</span>
+              <div className="ml-auto flex items-center gap-2">
                 <button
-                  aria-label="New session"
-                  onClick={handleNewConversation}
-                  className="w-5 h-5 rounded border border-border text-muted-foreground hover:text-primary hover:border-primary transition-all flex items-center justify-center"
+                  onClick={() => setShowStudyProfile(true)}
+                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs border transition-colors ${
+                    studyHasProfile
+                      ? "border-border text-muted-foreground hover:text-foreground"
+                      : "border-amber-500/30 text-amber-500 bg-amber-500/10 animate-pulse"
+                  }`}
                 >
-                  <Plus className="h-3 w-3" />
+                  🎓 {studyHasProfile ? (studyGrade?.replace("Class ", "Cls ") ?? "Profile") : "Set Profile"}
+                </button>
+                <button
+                  onClick={() => setSuiteOpen(true)}
+                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs border border-border text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <GraduationCap className="h-3.5 w-3.5" />
+                  Student Suite
                 </button>
               </div>
-
-              {/* Conversations list */}
-              <div className="flex-1 overflow-auto min-h-0">
-                <div className="px-2 pb-2 space-y-0.5">
-                  {filteredConvs.length === 0 ? (
-                    <div className="text-center py-6">
-                      <p className="text-[10px] text-muted-foreground">No sessions yet</p>
-                      <button onClick={handleNewConversation} className={`mt-2 text-[10px] ${currentMode.color} hover:underline`}>
-                        + New session
-                      </button>
-                    </div>
-                  ) : (
-                    filteredConvs.map((conv: Conversation) => (
-                      <div key={conv._id} onClick={() => handleSelectConversation(conv)}
-                        className={`group flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-all ${activeConvId === conv._id ? `${currentMode.accent} border ${currentMode.color}` : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <span className="text-[10px] block truncate">{conv.title}</span>
-                          {conv.customId && <span className="text-[8px] text-muted-foreground/40 font-mono">{conv.customId}</span>}
-                        </div>
-                        {/* Deletion is permanent and the trash icon sits on a clickable row —
-                            confirm so a mis-click can't destroy a conversation. */}
-                        <button
-                          aria-label={`Delete conversation ${conv.title}`}
-                          onClick={async (e) => { e.stopPropagation(); if (!token) return; if (!confirm(`Delete conversation "${conv.title}"? This can't be undone.`)) return; try { await deleteConversation({ id: conv._id, token }); if (activeConvId === conv._id) { setActiveConvId(null); navigate(`/portal/${activeMode}`); } } catch { toast.error("Failed to delete"); } }}
-                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all shrink-0">
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </motion.aside>
-          )}
-        </AnimatePresence>
-
-        {/* ── Chat / Research / Study mode ────────────────────────────────── */}
-        {activeMode !== "code" && (
-          <div className="flex-1 flex overflow-hidden min-w-0">
-            <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-              {/* Sub-header: mode indicator + study resources toggle */}
-              <div className="shrink-0 px-3 py-1.5 border-b border-border bg-card/30 flex items-center gap-2">
-                <div className={`flex items-center gap-1.5 text-[11px] font-bold ${currentMode.color}`}>
-                  <currentMode.icon className="h-3 w-3" />
-                  {currentMode.label}
-                </div>
-                <span className="text-muted-foreground/40 text-[10px]">/portal/{activeMode}{urlSessionId ? `/${urlSessionId}` : ""}</span>
-                {activeMode === "study" && (
-                  <div className="ml-auto flex items-center gap-1.5">
-                    <button onClick={() => setShowStudyProfile(true)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] border transition-all ${studyGrade ? "border-indigo-400/30 text-indigo-400 bg-indigo-400/10" : "border-amber-400/30 text-amber-400 bg-amber-400/10 animate-pulse"}`}
-                      title={studyGrade ? `${studyGrade} · ${studyBoard}` : "Set your study profile for better answers"}
-                    >
-                      <span className="text-[10px]">🎓</span>
-                      {studyGrade ? `${studyGrade.replace("Class ", "Cls ")}` : "Set Profile"}
-                    </button>
-                    <button onClick={() => setSuiteOpen(true)}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] border transition-all border-indigo-400/30 text-indigo-400 bg-indigo-400/10 hover:bg-indigo-400/20"
-                    >
-                      <GraduationCap className="h-3 w-3" />
-                      Student Suite
-                    </button>
-                    <button onClick={() => setStudyResourcesOpen(o => !o)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] border transition-all ${studyResourcesOpen ? "bg-indigo-400/15 border-indigo-400/30 text-indigo-400 font-bold" : "border-border text-muted-foreground hover:text-indigo-400 hover:border-indigo-400/30"}`}
-                    >
-                      <BookOpen className="h-3 w-3" />
-                      Resources {studyResources ? `(${studyResources.length})` : ""}
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Messages + sponsored rail (rail only on 1280px+ viewports) */}
-              <div className="flex-1 min-h-0 flex">
-              <div className="flex-1 overflow-auto min-h-0">
-                <div className="p-4 space-y-4 max-w-4xl mx-auto">
-                  {(thinkingContent || isThinking) && (
-                    <div className="sticky top-2 z-10">
-                      <ThinkingPanel
-                        content={thinkingContent}
-                        active={isThinking && streamingContent === null}
-                      />
-                    </div>
-                  )}
-                  {!activeConvId ? (
-                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                      className="flex flex-col items-center justify-center h-64 gap-4">
-                      <div className={`w-14 h-14 rounded-2xl border flex items-center justify-center ${currentMode.accent} border`}>
-                        <currentMode.icon className={`h-7 w-7 ${currentMode.color}`} />
-                      </div>
-                      <div className="text-center">
-                        <p className="text-sm font-bold text-foreground">{currentMode.label} MODE</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {activeMode === "study"
-                            ? `${studyResources?.length ? `${studyResources.length} resource(s) loaded · ` : ""}Ask anything — live web search enabled`
-                            : "Start a new session or select one from the sidebar"}
-                        </p>
-                        <button onClick={handleNewConversation} className={`mt-3 flex items-center gap-1.5 mx-auto text-[11px] ${currentMode.color} border ${currentMode.accent} border px-3 py-1.5 rounded-lg hover:opacity-80 transition-all font-bold`}>
-                          <Plus className="h-3 w-3" />
-                          New Session
-                        </button>
-                      </div>
-                    </motion.div>
-                  ) : messages === undefined ? (
-                    <div className="p-4 space-y-3 max-w-4xl mx-auto">
-                      {[1, 2, 3].map(i => (
-                        <div key={i} className={`flex ${i % 2 === 0 ? "justify-end" : "justify-start"}`}>
-                          <div className={`rounded-2xl px-4 py-3 space-y-2 ${i % 2 === 0 ? "w-48" : "w-72"}`}>
-                            <div className="h-3 rounded animate-pulse" style={{ background: "rgba(255,255,255,0.15)" }} />
-                            <div className="h-3 rounded animate-pulse w-4/5" style={{ background: "rgba(255,255,255,0.10)" }} />
-                            {i % 2 !== 0 && <div className="h-3 rounded animate-pulse w-3/5" style={{ background: "rgba(255,255,255,0.07)" }} />}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : visibleMessages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-32 gap-2">
-                      <p className="text-xs text-muted-foreground">Send a message to begin</p>
-                    </div>
-                  ) : (
-                    visibleMessages.map((msg: Message) => (
-                      <ChatMessageBubble key={msg._id} msg={msg} />
-                    ))
-                  )}
-                  {streamingContent !== null && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{ duration: 0.18, ease: "easeOut" }}
-                      className="flex justify-start"
-                    >
-                      <div className="max-w-[82%] rounded-2xl px-4 py-3 text-xs leading-relaxed bg-card border border-border/60 text-foreground shadow-sm">
-                        <StreamingBubble content={streamingContent} />
-                      </div>
-                    </motion.div>
-                  )}
-                  {sponsoredAd && activeConvId && streamingContent === null && !isThinking && (
-                    <SponsoredAdCard ad={sponsoredAd} />
-                  )}
-                  {isThinking && streamingContent === null && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="flex justify-start"
-                    >
-                      <div className="rounded-2xl px-4 py-3.5 max-w-[75%] w-72 shadow-lg" style={{ background: "#5a5e7a", border: "1px solid #6a6e8a" }}>
-                        {/* Typing dots + label */}
-                        <div className="flex items-center gap-2 mb-3">
-                          <div className="flex items-center gap-1">
-                            {[0, 1, 2].map(i => (
-                              <motion.div key={i} className="w-2 h-2 rounded-full" style={{ background: "rgba(255,255,255,0.75)" }}
-                                animate={{ y: [0, -5, 0], opacity: [0.5, 1, 0.5] }}
-                                transition={{ duration: 0.7, delay: i * 0.15, repeat: Infinity }} />
-                            ))}
-                          </div>
-                          <span className="text-[11px] font-medium" style={{ color: "#d0d4ec" }}>
-                            {activeMode === "study" ? "Searching & thinking..." : activeMode === "research" ? "Researching..." : "Thinking..."}
-                          </span>
-                        </div>
-                        {/* Skeleton lines */}
-                        <div className="space-y-2">
-                          <motion.div className="h-3 rounded-full w-full" style={{ background: "rgba(255,255,255,0.80)" }} animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0 }} />
-                          <motion.div className="h-3 rounded-full w-5/6" style={{ background: "rgba(255,255,255,0.65)" }} animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.2 }} />
-                          <motion.div className="h-3 rounded-full w-4/6" style={{ background: "rgba(255,255,255,0.50)" }} animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.4 }} />
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                  <div ref={messagesEndRef} />
-                </div>
-              </div>
-              {/* railCount > 0 gate matters: between 1280px (xl, where the aside
-                  becomes visible) and 1536px (where railCount turns 1) the old
-                  condition rendered an empty bordered column with no cards.
-                  Index keys — ads at a rail position are interchangeable slots;
-                  keying by impUrl remounted every card on each ad refresh. */}
-              {railAds.length > 0 && railCount > 0 && activeConvId && (
-                <aside className="hidden xl:flex flex-col gap-3 w-64 shrink-0 p-4 overflow-auto border-l border-border/40">
-                  {railAds.slice(0, railCount).map((ad, i) => (
-                    <SponsoredAdCard key={i} ad={ad} rail />
-                  ))}
-                </aside>
-              )}
-              </div>
-
-              {/* Input */}
-              <div className="shrink-0 p-3 border-t border-border bg-card/30">
-                {/* Attached files chips */}
-                {attachedFiles.length > 0 && (
-                  <div className="max-w-4xl mx-auto mb-2 flex flex-wrap gap-1.5">
-                    {attachedFiles.map((f, i) => (
-                      <div key={i} className="flex items-center gap-1 bg-primary/10 border border-primary/20 rounded-lg px-2 py-1 text-[10px] text-primary">
-                        <FileText className="h-3 w-3 shrink-0" />
-                        <span className="max-w-[120px] truncate">{f.name}</span>
-                        <button
-                          aria-label={`Remove attachment ${f.name}`}
-                          onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))}
-                          className="ml-0.5 hover:text-destructive transition-colors"
-                        >
-                          <X className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="max-w-4xl mx-auto flex gap-2">
-                  {/* File upload button */}
-                  <label className="shrink-0 flex items-center justify-center w-9 h-9 rounded-xl border border-border text-muted-foreground hover:text-primary hover:border-primary/40 transition-all cursor-pointer bg-background">
-                    <Upload className="h-3.5 w-3.5" />
-                    <input ref={attachFileInputRef} type="file" multiple className="hidden"
-                      accept=".txt,.md,.csv,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.pdf,.doc,.docx"
-                      onChange={handleAttachFiles} />
-                  </label>
-                  <textarea
-                    ref={inputRef}
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    onPaste={handlePaste}
-                    placeholder={activeMode === "study" ? "Ask a study question — live web search enabled..." : activeMode === "research" ? "Research topic or question..." : "Type a message..."}
-                    rows={1}
-                    className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/30 transition-all"
-                    style={{ minHeight: "38px", maxHeight: "140px" }}
-                  />
-                  <motion.button
-                    aria-label="Send message"
-                    onClick={handleSend}
-                    whileTap={{ scale: 0.94 }}
-                    disabled={(!input.trim() && attachedFiles.length === 0) || isThinking}
-                    className={`px-3.5 py-2 rounded-xl disabled:opacity-50 transition-all shrink-0 flex items-center gap-1.5 ${activeMode === "study" ? "bg-indigo-500 text-white hover:bg-indigo-500/90" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}
-                  >
-                    {isThinking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  </motion.button>
-                </div>
-                <div className="max-w-4xl mx-auto mt-1.5 flex items-center justify-center gap-1.5">
-                  <Lock className="h-2.5 w-2.5 text-muted-foreground/40" />
-                  <span className="text-[9px] text-muted-foreground/40">End-to-End Encrypted Node. Your data is private to this session.</span>
-                </div>
-              </div>
             </div>
+          )}
 
-            {/* ── Study Resources Panel ──────────────────────────────────── */}
-            <AnimatePresence>
-              {activeMode === "study" && studyResourcesOpen && (
-                <motion.div
-                  initial={{ width: 0, opacity: 0 }}
-                  animate={{ width: 260, opacity: 1 }}
-                  exit={{ width: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="shrink-0 border-l border-border bg-card flex flex-col overflow-hidden"
-                  style={{ width: 260 }}
-                >
-                  <div className="shrink-0 px-3 py-2.5 border-b border-border flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <BookOpen className="h-3.5 w-3.5 text-indigo-400" />
-                      <span className="text-[11px] font-bold text-foreground">RESOURCES</span>
-                      {studyResources && <span className="text-[9px] text-indigo-400 border border-indigo-400/30 bg-indigo-400/10 px-1.5 py-0.5 rounded-full">{studyResources.length}</span>}
-                    </div>
-                    <button
-                      aria-label="Close resources panel"
-                      onClick={() => setStudyResourcesOpen(false)}
-                      className="text-muted-foreground hover:text-foreground p-1"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
+          {/* Messages scroll area */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <div className="max-w-3xl mx-auto px-4 py-6 sm:px-6 space-y-5">
+              {/* Thinking panel */}
+              {(thinkingContent || isThinking) && (
+                <ThinkingPanel content={thinkingContent} active={isThinking && streamingContent === null} />
+              )}
 
-                  {/* Add resource buttons */}
-                  <div className="shrink-0 p-2.5 border-b border-border space-y-2">
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <button onClick={() => setStudyAddMode(studyAddMode === "text" ? null : "text")}
-                        className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg text-[10px] border transition-all ${studyAddMode === "text" ? "bg-indigo-400/15 border-indigo-400/30 text-indigo-400" : "border-border text-muted-foreground hover:border-indigo-400/30 hover:text-indigo-400"}`}
-                      >
-                        <FileText className="h-3.5 w-3.5" />Text
-                      </button>
-                      <button onClick={() => setStudyAddMode(studyAddMode === "search" ? null : "search")}
-                        className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg text-[10px] border transition-all ${studyAddMode === "search" ? "bg-indigo-400/15 border-indigo-400/30 text-indigo-400" : "border-border text-muted-foreground hover:border-indigo-400/30 hover:text-indigo-400"}`}
-                      >
-                        <Sparkles className="h-3.5 w-3.5" />AI
-                      </button>
-                      <label className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg text-[10px] border transition-all cursor-pointer ${isAddingResource ? "opacity-50 pointer-events-none" : "border-border text-muted-foreground hover:border-indigo-400/30 hover:text-indigo-400"}`}>
-                        {isAddingResource ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-                        PDF/File
-                        <input ref={fileInputRef} type="file" className="hidden" accept="image/*,.pdf,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css" onChange={handleFileUpload} disabled={isAddingResource} />
-                      </label>
-                    </div>
-
-                    <AnimatePresence>
-                      {uploadStatus && (
-                        <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                          className="flex items-center gap-2 px-2.5 py-2 bg-indigo-400/10 border border-indigo-400/30 rounded-lg">
-                          <Loader2 className="h-3 w-3 animate-spin text-indigo-400 shrink-0" />
-                          <span className="text-[10px] text-indigo-300 leading-tight">{uploadStatus}</span>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    <AnimatePresence>
-                      {studyAddMode === "text" && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden space-y-1.5">
-                          <input value={studyTextTitle} onChange={e => setStudyTextTitle(e.target.value)} placeholder="Title..." className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-[10px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-400/60 transition-colors" />
-                          <textarea value={studyTextContent} onChange={e => setStudyTextContent(e.target.value)} placeholder="Paste notes or content..." rows={3} className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-[10px] text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-indigo-400/60 transition-colors" />
-                          <button onClick={handleAddTextResource} disabled={isAddingResource || !studyTextTitle.trim() || !studyTextContent.trim()}
-                            className="w-full py-1.5 bg-indigo-400/15 border border-indigo-400/30 text-indigo-400 text-[10px] rounded-lg hover:bg-indigo-400/25 disabled:opacity-50 transition-all font-bold">
-                            {isAddingResource ? <Loader2 className="h-3 w-3 animate-spin mx-auto" /> : "Add Resource"}
-                          </button>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    <AnimatePresence>
-                      {studyAddMode === "search" && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden space-y-1.5">
-                          <input value={studySearchQuery} onChange={e => setStudySearchQuery(e.target.value)} onKeyDown={e => { if (e.key === "Enter") handleSearchResource(); }} placeholder="Topic to research..." className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-[10px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-400/60 transition-colors" />
-                          <button onClick={handleSearchResource} disabled={isAddingResource || !studySearchQuery.trim()}
-                            className="w-full py-1.5 bg-indigo-400/15 border border-indigo-400/30 text-indigo-400 text-[10px] rounded-lg hover:bg-indigo-400/25 disabled:opacity-50 transition-all font-bold">
-                            {isAddingResource ? <><Loader2 className="h-3 w-3 animate-spin inline mr-1" />Researching...</> : "Research & Add"}
-                          </button>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-
-                  {/* Resources list */}
-                  <div className="flex-1 overflow-auto min-h-0 p-2 space-y-1.5">
-                    {!studyResources ? (
-                      <div className="flex items-center justify-center py-8"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
-                    ) : studyResources.length === 0 ? (
-                      <div className="text-center py-8">
-                        <BookOpen className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-                        <p className="text-[10px] text-muted-foreground">No resources yet</p>
-                        <p className="text-[9px] text-muted-foreground/60 mt-1">Add text, files, or AI-researched topics</p>
+              {!activeConvId ? (
+                <div className="flex flex-col items-center justify-center min-h-[40vh] pt-10">
+                  <EmptyState
+                    mode={currentMode}
+                    onPick={(p) => { setInput(p); inputRef.current?.focus(); }}
+                    resourceCount={studyResources?.length}
+                  />
+                </div>
+              ) : messages === undefined ? (
+                <div className="space-y-4 pt-4">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className={`flex ${i % 2 === 0 ? "justify-end" : "justify-start"}`}>
+                      <div className={`rounded-2xl px-4 py-3 space-y-2 bg-muted/40 ${i % 2 === 0 ? "w-48" : "w-72"}`}>
+                        <div className="h-3 rounded bg-muted animate-pulse" />
+                        <div className="h-3 rounded bg-muted/60 animate-pulse w-4/5" />
                       </div>
-                    ) : (
-                      studyResources.map((resource: StudyResource) => (
-                        <div key={resource._id} className="group bg-background border border-border rounded-lg p-2 hover:border-indigo-400/30 transition-all">
-                          <div className="flex items-start justify-between gap-1.5">
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              {resource.sourceType === "image" ? <Image className="h-3 w-3 text-indigo-400 shrink-0" /> :
-                               resource.sourceType === "web" ? <Globe className="h-3 w-3 text-indigo-400 shrink-0" /> :
-                               <FileText className="h-3 w-3 text-indigo-400 shrink-0" />}
-                              <p className="text-[10px] font-bold text-foreground truncate">{resource.title}</p>
-                            </div>
-                            <button
-                              aria-label={`Delete resource ${resource.title}`}
-                              onClick={async () => { if (!token) return; try { await deleteResource({ token, resourceId: resource._id }); toast.success("Deleted"); } catch { toast.error("Failed"); } }}
-                              className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all shrink-0"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </div>
-                          <p className="text-[9px] text-muted-foreground mt-1 line-clamp-2">{resource.content.slice(0, 80)}</p>
-                          <div className="flex items-center gap-1.5 mt-1">
-                            <span className={`text-[8px] px-1.5 py-0.5 rounded-full border font-bold ${resource.sourceType === "image" ? "bg-purple-400/10 text-purple-400 border-purple-400/20" : resource.sourceType === "web" ? "bg-blue-400/10 text-blue-400 border-blue-400/20" : "bg-indigo-400/10 text-indigo-400 border-indigo-400/20"}`}>
-                              {resource.sourceType.toUpperCase()}
-                            </span>
-                          </div>
-                        </div>
-                      ))
-                    )}
+                    </div>
+                  ))}
+                </div>
+              ) : visibleMessages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center min-h-[30vh] text-center">
+                  <p className="text-sm text-muted-foreground">Send a message to begin</p>
+                </div>
+              ) : (
+                visibleMessages.map((msg: Message) => (
+                  <MessageRow key={msg._id} msg={msg} accentColor={currentMode.color} />
+                ))
+              )}
+
+              {/* Live streaming assistant message */}
+              {streamingContent !== null && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex gap-3"
+                >
+                  <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-muted border border-border mt-0.5 ${currentMode.color}`}>
+                    <Sparkles className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1 text-[15px] leading-relaxed">
+                    <StreamingBubble content={streamingContent} />
                   </div>
                 </motion.div>
               )}
-            </AnimatePresence>
+
+              {/* Sponsored ad */}
+              {sponsoredAd && activeConvId && streamingContent === null && !isThinking && (
+                <SponsoredAdCard ad={sponsoredAd} />
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
           </div>
-        )}
+
+          {/* ── Composer (the center stage) ───────────────────────────────── */}
+          <div className="shrink-0 border-t border-border bg-gradient-to-t from-background via-background to-transparent">
+            <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
+              <Composer
+                value={input}
+                onChange={setInput}
+                onSend={handleSend}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                onAttach={handleAttachFiles}
+                placeholder={
+                  activeMode === "study"
+                    ? "Ask a study question…"
+                    : activeMode === "research"
+                    ? "Research a topic…"
+                    : "Message Thalamus…"
+                }
+                disabled={false}
+                accentText={currentMode.color}
+                attachedFiles={attachedFiles}
+                onRemoveFile={(i) => setAttachedFiles(prev => prev.filter((_, j) => j !== i))}
+              />
+              <p className="mt-2 text-center text-[11px] text-muted-foreground/60">
+                Thalamus can make mistakes. Check important info.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Study Resources panel (right drawer) ───────────────────────── */}
+        <AnimatePresence>
+          {activeMode === "study" && studyResourcesOpen && (
+            <motion.div
+              initial={{ x: 300 }}
+              animate={{ x: 0 }}
+              exit={{ x: 300 }}
+              transition={{ type: "tween", duration: 0.2 }}
+              className="absolute md:relative right-0 inset-y-0 z-40 w-[300px] shrink-0 border-l border-border bg-card/90 backdrop-blur flex flex-col"
+            >
+              <div className="shrink-0 px-4 py-3 border-b border-border flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <BookOpen className="h-4 w-4 text-indigo-400" />
+                  <span className="text-sm font-semibold text-foreground">Resources</span>
+                  {studyResources && (
+                    <span className="text-[11px] text-indigo-400 border border-indigo-400/30 bg-indigo-400/10 px-1.5 py-0.5 rounded-full">
+                      {studyResources.length}
+                    </span>
+                  )}
+                </div>
+                <button
+                  aria-label="Close resources"
+                  onClick={() => setStudyResourcesOpen(false)}
+                  className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Add resource controls */}
+              <div className="shrink-0 p-3 border-b border-border space-y-2">
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setStudyAddMode(studyAddMode === "text" ? null : "text")}
+                    className={`flex flex-col items-center gap-1 rounded-lg px-2 py-2 text-xs border transition-colors ${
+                      studyAddMode === "text" ? "border-indigo-400/40 text-indigo-400 bg-indigo-400/10" : "border-border text-muted-foreground hover:border-indigo-400/40 hover:text-indigo-400"
+                    }`}
+                  >
+                    <FileText className="h-4 w-4" /> Text
+                  </button>
+                  <button
+                    onClick={() => setStudyAddMode(studyAddMode === "search" ? null : "search")}
+                    className={`flex flex-col items-center gap-1 rounded-lg px-2 py-2 text-xs border transition-colors ${
+                      studyAddMode === "search" ? "border-indigo-400/40 text-indigo-400 bg-indigo-400/10" : "border-border text-muted-foreground hover:border-indigo-400/40 hover:text-indigo-400"
+                    }`}
+                  >
+                    <Sparkles className="h-4 w-4" /> AI
+                  </button>
+                  <label className={`flex flex-col items-center gap-1 rounded-lg px-2 py-2 text-xs border transition-colors cursor-pointer ${
+                    isAddingResource ? "opacity-50 pointer-events-none" : "border-border text-muted-foreground hover:border-indigo-400/40 hover:text-indigo-400"
+                  }`}>
+                    {isAddingResource ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    PDF/File
+                    <input ref={fileInputRef} type="file" className="hidden" accept="image/*,.pdf,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css" onChange={handleFileUpload} disabled={isAddingResource} />
+                  </label>
+                </div>
+
+                {uploadStatus && (
+                  <div className="flex items-center gap-2 rounded-lg bg-indigo-400/10 border border-indigo-400/30 px-2.5 py-2 text-xs text-indigo-300">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                    <span>{uploadStatus}</span>
+                  </div>
+                )}
+
+                <AnimatePresence>
+                  {studyAddMode === "text" && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden space-y-1.5">
+                      <input value={studyTextTitle} onChange={e => setStudyTextTitle(e.target.value)} placeholder="Title…" className="w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-400/60" />
+                      <textarea value={studyTextContent} onChange={e => setStudyTextContent(e.target.value)} placeholder="Paste notes…" rows={3} className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-400/60" />
+                      <button onClick={handleAddTextResource} disabled={isAddingResource || !studyTextTitle.trim() || !studyTextContent.trim()} className="w-full rounded-lg bg-indigo-500/20 border border-indigo-400/40 text-indigo-400 py-1.5 text-xs font-medium hover:bg-indigo-500/30 disabled:opacity-50">
+                        {isAddingResource ? <Loader2 className="h-3.5 w-3.5 animate-spin mx-auto" /> : "Add Resource"}
+                      </button>
+                    </motion.div>
+                  )}
+                  {studyAddMode === "search" && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden space-y-1.5">
+                      <input value={studySearchQuery} onChange={e => setStudySearchQuery(e.target.value)} onKeyDown={e => { if (e.key === "Enter") handleSearchResource(); }} placeholder="Topic to research…" className="w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-400/60" />
+                      <button onClick={handleSearchResource} disabled={isAddingResource || !studySearchQuery.trim()} className="w-full rounded-lg bg-indigo-500/20 border border-indigo-400/40 text-indigo-400 py-1.5 text-xs font-medium hover:bg-indigo-500/30 disabled:opacity-50">
+                        {isAddingResource ? <><Loader2 className="h-3.5 w-3.5 animate-spin inline mr-1" />Researching…</> : "Research & Add"}
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Resources list */}
+              <div className="flex-1 overflow-y-auto min-h-0 p-3 space-y-2">
+                {!studyResources ? (
+                  <div className="flex items-center justify-center py-8"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+                ) : studyResources.length === 0 ? (
+                  <div className="text-center py-8">
+                    <BookOpen className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                    <p className="text-xs text-muted-foreground">No resources yet</p>
+                  </div>
+                ) : (
+                  studyResources.map((resource: StudyResource) => (
+                    <div key={resource._id} className="group rounded-xl border border-border bg-muted/30 p-2.5 hover:border-indigo-400/40 transition-colors">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {resource.sourceType === "image" ? <Image className="h-3.5 w-3.5 text-indigo-400 shrink-0" /> :
+                           resource.sourceType === "web" ? <Globe className="h-3.5 w-3.5 text-indigo-400 shrink-0" /> :
+                           <FileText className="h-3.5 w-3.5 text-indigo-400 shrink-0" />}
+                          <p className="text-xs font-medium text-foreground truncate">{resource.title}</p>
+                        </div>
+                        <button
+                          aria-label={`Delete ${resource.title}`}
+                          onClick={async () => { if (!token) return; try { await deleteResource({ token, resourceId: resource._id }); toast.success("Deleted"); } catch { toast.error("Failed"); } }}
+                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">{resource.content.slice(0, 80)}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Onboarding Modal */}
@@ -1351,7 +1217,7 @@ export default function PortalDesktop() {
         )}
       </AnimatePresence>
 
-      {/* Study Profile Modal */}
+      {/* Student Suite + Study Profile modals */}
       <AnimatePresence>
         {suiteOpen && token && (
           <StudentSuite
@@ -1363,7 +1229,6 @@ export default function PortalDesktop() {
             onClose={() => setSuiteOpen(false)}
           />
         )}
-
         {showStudyProfile && (
           <StudyProfileModal
             onSave={handleSaveStudyProfile}
