@@ -33,6 +33,7 @@ import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
 import { fetchSponsoredAd } from "@/lib/requestAd";
 import { getSessionToken } from "@/lib/session";
 import { errMsg } from "@/lib/errorMessage";
+import { formatMessageDay } from "@/lib/dateFormat";
 import { convexSiteUrl } from "@/lib/convexUrls";
 import { isProbablyTextFile, fileToBase64, MAX_UPLOAD_BYTES } from "@/lib/fileEncoding";
 import ModeSelection from "./ModeSelection";
@@ -903,8 +904,17 @@ export default function PortalDesktop() {
               aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
               onClick={toggleTheme}
               className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title="Toggle theme"
             >
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              <motion.span
+                key={theme}
+                initial={{ rotate: -120, scale: 0.6, opacity: 0 }}
+                animate={{ rotate: 0, scale: 1, opacity: 1 }}
+                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                className="block"
+              >
+                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </motion.span>
             </button>
             <button
               aria-label="Sign out"
@@ -1029,9 +1039,18 @@ export default function PortalDesktop() {
                   <p className="text-sm text-muted-foreground">Send a message to begin</p>
                 </div>
               ) : (
-                visibleMessages.map((msg: Message) => (
-                  <MessageRow key={msg._id} msg={msg} accentColor={currentMode.color} />
-                ))
+                visibleMessages.map((msg: Message, i) => {
+                  // Group messages by day: show a divider when the day differs
+                  // from the previous message.
+                  const prev = visibleMessages[i - 1];
+                  const dayLabel =
+                    i === 0 || formatMessageDay(prev?.createdAt) !== formatMessageDay(msg.createdAt)
+                      ? formatMessageDay(msg.createdAt)
+                      : undefined;
+                  return (
+                    <MessageRow key={msg._id} msg={msg} accentColor={currentMode.color} dayLabel={dayLabel} />
+                  );
+                })
               )}
 
               {/* Live streaming assistant message */}

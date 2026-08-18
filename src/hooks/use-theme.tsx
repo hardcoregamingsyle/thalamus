@@ -50,15 +50,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(readStoredTheme);
 
   // Reflect the theme onto <html> so Tailwind's `.light` overrides apply.
+  // During a toggle we briefly add `theme-transition` so the CSS cross-fade in
+  // index.css plays, then remove it so normal interactions aren't slowed by a
+  // blanket transition.
   useEffect(() => {
     const root = document.documentElement;
+    const isToggling = root.classList.contains("theme-transition");
     root.classList.toggle("light", theme === "light");
     root.classList.toggle("dark", theme === "dark");
+    if (!isToggling) root.classList.add("theme-transition");
+    const t = setTimeout(() => root.classList.remove("theme-transition"), 400);
     try {
       localStorage.setItem(THEME_STORAGE_KEY, theme);
     } catch {
       // Non-fatal: the theme just won't persist.
     }
+    return () => clearTimeout(t);
   }, [theme]);
 
   // Keep multiple tabs in agreement: a toggle in one tab updates the others.

@@ -694,7 +694,7 @@ export default function CodeWorkspace() {
             {/* Input Area — center-stage composer */}
             <div className="shrink-0 border-t border-border bg-gradient-to-t from-background via-background to-transparent">
               <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
-                <div className="rounded-2xl border border-border bg-card shadow-sm focus-within:border-ring/60 focus-within:ring-4 focus-within:ring-ring/10 transition-all">
+                <div className="composer-accent rounded-2xl border border-border bg-card shadow-sm transition-all">
                   <Textarea
                     placeholder={
                       branch?.status === "running"
@@ -776,7 +776,7 @@ export default function CodeWorkspace() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-screen overflow-hidden bg-background" style={{ ["--accent-hex" as string]: "#a78bfa" }}>
       <meta name="robots" content="noindex" />
       {/* Persistent Sidebar */}
       <div className={cn(

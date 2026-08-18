@@ -135,6 +135,15 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* Smooth cross-fade when switching light/dark. Only color/background/shadow
+     properties transition (never layout), and it's scoped to the theme change so
+     normal interactions stay snappy. */
+  html.theme-transition *,
+  html.theme-transition *::before,
+  html.theme-transition *::after {
+    transition: background-color 0.35s ease, color 0.25s ease,
+      border-color 0.35s ease, box-shadow 0.35s ease, fill 0.3s ease;
+  }
   body {
     @apply text-foreground;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -316,6 +325,14 @@
 .composer-accent:focus-within {
   border-color: color-mix(in oklab, var(--accent-hex, oklch(0.62 0.20 250)) 60%, transparent);
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent-hex, oklch(0.62 0.20 250)) 12%, transparent);
+}
+/* Per-mode tint along the top of the conversation sidebar. */
+.sidebar-accent {
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--accent-hex, oklch(0.62 0.20 250)) 8%, transparent) 0,
+    transparent 72px
+  );
 }
 
 /* Smoothly pulsing caret shown while an assistant answer is streaming in. The

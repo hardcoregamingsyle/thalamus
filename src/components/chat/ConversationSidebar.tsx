@@ -43,7 +43,7 @@ export default function ConversationSidebar({
       animate={{ x: 0 }}
       exit={{ x: -260 }}
       transition={{ type: "tween", duration: 0.2 }}
-      className="fixed md:relative inset-y-0 left-0 z-40 w-[264px] shrink-0 border-r border-border bg-card/70 backdrop-blur flex flex-col"
+      className="fixed md:relative inset-y-0 left-0 z-40 w-[264px] shrink-0 border-r border-border bg-card/70 backdrop-blur flex flex-col sidebar-accent"
     >
       <div className="flex items-center justify-between px-4 h-14 border-b border-border shrink-0">
         <div className="flex items-center gap-2 min-w-0">

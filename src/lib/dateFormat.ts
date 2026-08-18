@@ -24,3 +24,18 @@ export function formatMessageTime(ts?: number): string {
   if (diff < DAY) return formatRelative(ts, now);
   return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
+
+// Day label for grouping messages ("Today", "Yesterday", or a date). Returns ""
+// when no timestamp is present so legacy messages just get no divider.
+export function formatMessageDay(ts?: number): string {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfMsg = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dayDiff = Math.round((startOfToday - startOfMsg) / 86_400_000);
+  if (dayDiff === 0) return "Today";
+  if (dayDiff === 1) return "Yesterday";
+  if (dayDiff > 1 && dayDiff < 7) return d.toLocaleDateString([], { weekday: "long" });
+  return d.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+}
