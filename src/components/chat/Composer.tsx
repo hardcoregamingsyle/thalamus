@@ -1,9 +1,9 @@
 // The center-stage composer. A large, focused, ChatGPT/Claude-style prompt box
 // pinned at the bottom of the chat view. Auto-grows up to a max height, supports
 // Enter-to-send / Shift+Enter for newlines, text-file attachments (button +
-// paste), and shows an animated send/stop affordance.
+// paste), and shows an animated send affordance.
 
-import { memo, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { ArrowUp, Paperclip, X } from "lucide-react";
 
@@ -22,7 +22,6 @@ interface ComposerProps {
   onAttach: (e: React.ChangeEvent<HTMLInputElement>) => void;
   placeholder: string;
   disabled?: boolean;
-  accentText: string; // tailwind text color for the send button accent
   attachedFiles: AttachedFile[];
   onRemoveFile: (i: number) => void;
 }
@@ -36,12 +35,20 @@ const Composer = memo(function Composer({
   onAttach,
   placeholder,
   disabled = false,
-  accentText,
   attachedFiles,
   onRemoveFile,
 }: ComposerProps) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
   const canSend = (value.trim().length > 0 || attachedFiles.length > 0) && !disabled;
+
+  // Auto-grow with content up to a max height.
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+  }, [value]);
 
   return (
     <div className="w-full">
@@ -53,6 +60,7 @@ const Composer = memo(function Composer({
               key={i}
               className="flex items-center gap-2 rounded-lg bg-muted border border-border px-2.5 py-1.5 text-xs"
             >
+              <Paperclip className="h-3 w-3 text-muted-foreground" />
               <span className="max-w-[140px] truncate text-foreground">{f.name}</span>
               <button
                 aria-label={`Remove ${f.name}`}
@@ -66,27 +74,33 @@ const Composer = memo(function Composer({
         </div>
       )}
 
-      <div className="rounded-2xl border border-border bg-card shadow-sm focus-within:border-ring/60 focus-within:ring-4 focus-within:ring-ring/10 transition-all">
+      <div className="rounded-2xl border border-border bg-card shadow-sm focus-within:border-ring/70 focus-within:ring-4 focus-within:ring-ring/10 transition-all">
         <textarea
+          ref={taRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           placeholder={placeholder}
           rows={1}
-          className="w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
+          className="w-full resize-none bg-transparent px-4 pt-4 text-[15px] leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
           style={{ maxHeight: "200px" }}
           disabled={disabled}
         />
         <div className="flex items-center justify-between px-2 pb-2 pt-1">
-          {/* Attach */}
-          <button
-            onClick={() => fileRef.current?.click()}
-            aria-label="Attach a text file"
-            className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-          >
-            <Paperclip className="h-4.5 w-4.5" />
-          </button>
+          {/* Left: attach + helper hint */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => fileRef.current?.click()}
+              aria-label="Attach a text file"
+              className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <Paperclip className="h-[18px] w-[18px]" />
+            </button>
+            <span className="hidden sm:inline pl-1 text-[11px] text-muted-foreground/70 select-none">
+              Enter to send · Shift+Enter for newline
+            </span>
+          </div>
           <input
             ref={fileRef}
             type="file"
@@ -104,8 +118,8 @@ const Composer = memo(function Composer({
             aria-label="Send message"
             className={`rounded-xl p-2.5 transition-all ${
               canSend
-                ? `${accentText} bg-primary text-primary-foreground hover:opacity-90`
-                : "bg-muted text-muted-foreground/60"
+                ? "bg-primary text-primary-foreground shadow-sm hover:opacity-90"
+                : "bg-muted text-muted-foreground/50"
             }`}
           >
             <ArrowUp className="h-5 w-5" />

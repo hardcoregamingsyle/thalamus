@@ -1038,11 +1038,16 @@ export default function PortalDesktop() {
                   animate={{ opacity: 1, y: 0 }}
                   className="flex gap-3"
                 >
-                  <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-muted border border-border mt-0.5 ${currentMode.color}`}>
-                    <Sparkles className="h-4 w-4" />
+                  <div className="shrink-0 w-8 h-8 rounded-lg bg-muted border border-border flex items-center justify-center mt-0.5 shadow-sm">
+                    <Sparkles className={`h-4 w-4 ${currentMode.color}`} />
                   </div>
-                  <div className="min-w-0 flex-1 text-[15px] leading-relaxed">
-                    <StreamingBubble content={streamingContent} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 h-8 mb-0.5">
+                      <span className="text-xs font-medium text-muted-foreground">Thalamus</span>
+                    </div>
+                    <div className="text-[15px] leading-relaxed">
+                      <StreamingBubble content={streamingContent} />
+                    </div>
                   </div>
                 </motion.div>
               )}
@@ -1074,7 +1079,6 @@ export default function PortalDesktop() {
                     : "Message Thalamus…"
                 }
                 disabled={false}
-                accentText={currentMode.color}
                 attachedFiles={attachedFiles}
                 onRemoveFile={(i) => setAttachedFiles(prev => prev.filter((_, j) => j !== i))}
               />

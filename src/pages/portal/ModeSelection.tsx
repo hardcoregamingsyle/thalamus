@@ -6,7 +6,7 @@ import { useNavigate } from "react-router";
 import { motion } from "framer-motion";
 import {
   ArrowRight, BookOpen, LogOut, MessageSquare, Moon,
-  Search, Sparkles, Sun, Users,
+  Search, Sun, Users,
 } from "lucide-react";
 
 export interface ModeSelectionProps {
@@ -65,15 +65,15 @@ export default function ModeSelection({ signOut, theme, toggleTheme }: ModeSelec
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border bg-card/50 backdrop-blur-md">
+      <header className="border-b border-border bg-card/70 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/40 flex items-center justify-center">
-              <Sparkles className="h-5 w-5 text-primary" />
+            <div className="w-9 h-9 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center">
+              <img src="/thalamus-logo.png" alt="Thalamus AI" className="w-full h-full object-cover rounded-xl" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-foreground">Thalamus AI</h1>
-              <p className="text-xs text-muted-foreground">Choose your mode</p>
+              <h1 className="text-base font-semibold text-foreground tracking-tight">Thalamus</h1>
+              <p className="text-[11px] text-muted-foreground">Choose your mode</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -101,7 +101,7 @@ export default function ModeSelection({ signOut, theme, toggleTheme }: ModeSelec
           <motion.h2
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-3xl sm:text-4xl font-bold text-foreground mb-3"
+            className="text-3xl sm:text-4xl font-bold text-foreground mb-3 tracking-tight"
           >
             What would you like to do?
           </motion.h2>

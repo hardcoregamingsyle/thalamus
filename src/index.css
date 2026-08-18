@@ -174,21 +174,55 @@
 ::selection { background: oklch(0.62 0.20 250 / 0.25); color: oklch(0.96 0.008 240); }
 
 .prose-html {
-  font-size: 0.8rem;
-  line-height: 1.6;
+  font-size: 0.875rem;
+  line-height: 1.7;
   color: var(--color-foreground);
   font-family: 'Inter', system-ui, sans-serif;
 }
 .prose-html h1, .prose-html h2, .prose-html h3, .prose-html h4 {
   font-family: 'Inter', system-ui, sans-serif;
-  font-weight: 700;
-  margin: 0.6em 0 0.3em;
+  font-weight: 650;
+  margin: 0.75em 0 0.35em;
   color: oklch(0.96 0.008 240);
+  letter-spacing: -0.01em;
+  line-height: 1.35;
 }
-.prose-html p { margin: 0.4em 0; }
-.prose-html ul, .prose-html ol { margin: 0.3em 0 0.3em 1.4em; }
-.prose-html li { margin: 0.15em 0; }
-.prose-html pre { overflow-x: auto; margin: 0.5em 0; }
+.prose-html h1 { font-size: 1.25em; }
+.prose-html h2 { font-size: 1.1em; }
+.prose-html h3 { font-size: 1em; }
+.prose-html h4 { font-size: 0.95em; }
+.prose-html p { margin: 0.45em 0; }
+.prose-html ul, .prose-html ol { margin: 0.4em 0 0.4em 1.5em; }
+.prose-html li { margin: 0.2em 0; }
+.prose-html li > p { margin: 0.1em 0; }
+.prose-html strong { font-weight: 650; color: oklch(0.97 0.008 240); }
+.prose-html pre {
+  overflow-x: auto;
+  margin: 0.7em 0;
+  padding: 0.85em 1em;
+  border-radius: 10px;
+  background: oklch(0.14 0.008 240);
+  border: 1px solid oklch(0.24 0.012 240);
+}
+.prose-html code {
+  font-family: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+  font-size: 0.8em;
+}
+.prose-html :not(pre) > code {
+  background: oklch(0.18 0.012 250);
+  color: oklch(0.9 0.05 250);
+  border: 1px solid oklch(0.28 0.018 250);
+  border-radius: 5px;
+  padding: 0.1em 0.4em;
+  font-size: 0.82em;
+}
+.prose-html pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: oklch(0.88 0.012 240);
+  line-height: 1.6;
+}
 .prose-html table { width: 100%; border-collapse: collapse; margin: 0.8em 0; overflow-x: auto; border-radius: 8px; display: block; }
 .prose-html th {
   background: oklch(0.18 0.015 250);
