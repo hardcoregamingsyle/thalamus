@@ -505,6 +505,25 @@ http.route({
             const multiSelect = isArray || multiSelectRaw === "true";
             return `<div class="thalamus-mcq" data-mcq='${JSON.stringify({type:"mcq",question,options,correct,multiSelect})}'></div>`;
           } catch { return `<p>[MCQ: ${question}]</p>`; }
+        })
+        // Flashcards op: {"op":"flashcards","cards":[{"front":"...","back":"..."},...]}
+        .replace(/\{"op":"flashcards","cards":(\[[\s\S]*?\])\}/g, (_, cardsJson) => {
+          try {
+            const cards = JSON.parse(cardsJson) as Array<{ front: string; back: string }>;
+            if (!Array.isArray(cards) || cards.length === 0) return "";
+            return `<div class="thalamus-flashcards" data-flashcards='${JSON.stringify({type:"flashcards",cards})}'></div>`;
+          } catch { return ""; }
+        })
+        // Pathway op: {"op":"pathway","title":"...","steps":[{"topic":"...","question":"...","options":[...],"correct":N|[...],"multiSelect":bool,"explain":"..."}]}
+        .replace(/\{"op":"pathway","title":"([^"]*)","steps":(\[[\s\S]*?\])\}/g, (_, title, stepsJson) => {
+          try {
+            const steps = JSON.parse(stepsJson) as Array<{
+              topic?: string; question: string; options: string[];
+              correct: number | number[]; multiSelect?: boolean; explain?: string;
+            }>;
+            if (!Array.isArray(steps) || steps.length === 0) return "";
+            return `<div class="thalamus-pathway" data-pathway='${JSON.stringify({type:"pathway",title,steps})}'></div>`;
+          } catch { return ""; }
         });
       }
 

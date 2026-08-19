@@ -96,4 +96,17 @@ describe("sanitizeAiHtml", () => {
     expect(out).not.toContain("data-evil");
     expect(out).toContain("data-ask");
   });
+
+  test("interactive study widget attributes survive (ask/mcq/flashcards/pathway)", () => {
+    const out = sanitizeAiHtml(
+      '<div data-ask=\'{"type":"question"}\'></div>' +
+      '<div data-mcq=\'{"type":"mcq"}\'></div>' +
+      '<div data-flashcards=\'{"type":"flashcards"}\'></div>' +
+      '<div data-pathway=\'{"type":"pathway"}\'></div>'
+    );
+    expect(out).toContain("data-ask");
+    expect(out).toContain("data-mcq");
+    expect(out).toContain("data-flashcards");
+    expect(out).toContain("data-pathway");
+  });
 });

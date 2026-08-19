@@ -688,6 +688,13 @@ export default function PortalDesktop() {
     void sendPrompt(`[Answer to: ${question}]\n${answer}`);
   };
 
+  // Study tool chips — send a short command to the tutor to build interactive
+  // content inline.
+  const handleSendWith = (text: string) => {
+    if (!text.trim()) return;
+    void sendPrompt(text);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
@@ -1104,6 +1111,31 @@ export default function PortalDesktop() {
           {/* ── Composer (the center stage) ───────────────────────────────── */}
           <div className="shrink-0 border-t border-border bg-gradient-to-t from-background via-background to-transparent">
             <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
+              {/* In-chat study tools — quick actions that ask the tutor to
+                  build interactive content inline. */}
+              {activeMode === "study" && (
+                <div className="mb-2.5 flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] text-muted-foreground/70">Study tools:</span>
+                  <button
+                    onClick={() => handleSendWith("Make me a set of flashcards for what we've covered so far")}
+                    className="flex items-center gap-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-[11px] font-medium text-indigo-400 hover:bg-indigo-500/20 transition-colors"
+                  >
+                    <Sparkles className="h-3 w-3" /> Flashcards
+                  </button>
+                  <button
+                    onClick={() => handleSendWith("Build me a learning pathway (guided quiz path) for this topic")}
+                    className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                  >
+                    <Sparkles className="h-3 w-3" /> Learning Path
+                  </button>
+                  <button
+                    onClick={() => handleSendWith("Quiz me on this topic")}
+                    className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] font-medium text-amber-400 hover:bg-amber-500/20 transition-colors"
+                  >
+                    <Sparkles className="h-3 w-3" /> Quiz
+                  </button>
+                </div>
+              )}
               <Composer
                 value={input}
                 onChange={setInput}
@@ -1113,7 +1145,7 @@ export default function PortalDesktop() {
                 onAttach={handleAttachFiles}
                 placeholder={
                   activeMode === "study"
-                    ? "Ask a study question…"
+                    ? "Tell your tutor what to cover…"
                     : activeMode === "research"
                     ? "Research a topic…"
                     : "Message Thalamus…"
@@ -1123,7 +1155,7 @@ export default function PortalDesktop() {
                 onRemoveFile={(i) => setAttachedFiles(prev => prev.filter((_, j) => j !== i))}
               />
               <p className="mt-2 text-center text-[11px] text-muted-foreground/60">
-                Thalamus can make mistakes. Check important info.
+                Your tutor drives the lesson — answer its questions right in the chat.
               </p>
             </div>
           </div>

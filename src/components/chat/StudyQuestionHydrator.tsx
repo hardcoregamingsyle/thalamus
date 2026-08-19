@@ -1,19 +1,21 @@
-// Hydrates the study-mode interactive question markers the backend emits into
-// real, usable widgets. The backend turns {"op":"ask-question",...} and
-// {"op":"ask-mcq",...} JSON ops into empty placeholder divs:
+// Hydrates the study-mode interactive markers the backend emits into real,
+// usable widgets. The backend turns JSON ops into empty placeholder divs:
 //   <div class="thalamus-ask" data-ask='{"type":"question","question":"..."}'></div>
-//   <div class="thalamus-mcq" data-mcq='{"type":"mcq","question":"...","options":[...],"correct":0|[...],"multiSelect":bool}'></div>
-// DOMPurify keeps the data-ask/data-mcq attributes, so after rendering we scan
-// the DOM for them, parse the JSON, and replace each placeholder with a proper
-// React widget via createPortal — a text input for ask-question, radio buttons
-// for single-select MCQs, checkboxes for multi-select MCQs. Submitting an
-// answer invokes onAnswer(question, answerText) so the caller can send it back
-// into the chat.
+//   <div class="thalamus-mcq" data-mcq='{"type":"mcq",...}'></div>
+//   <div class="thalamus-flashcards" data-flashcards='{"type":"flashcards","cards":[...]}'></div>
+//   <div class="thalamus-pathway" data-pathway='{"type":"pathway","title":"...","steps":[...]}'></div>
+// DOMPurify keeps the data-* attributes, so after rendering we scan the DOM,
+// parse the JSON, and replace each placeholder with the matching React widget
+// via createPortal. Answering an ask/mcq invokes onAnswer so the caller can
+// send it back into the chat for grading.
 
 import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Send } from "lucide-react";
 import MathRenderer from "@/components/MathRenderer";
+import FlashcardDeck from "@/components/chat/FlashcardDeck";
+import LearningPathway, { type PathwayStep } from "@/components/chat/LearningPathway";
+import { sfx } from "@/lib/sfx";
 
 export interface AskData {
   type: "question";
@@ -28,7 +30,18 @@ export interface McqData {
   multiSelect?: boolean;
 }
 
-export type QuestionData = AskData | McqData;
+export interface FlashcardsData {
+  type: "flashcards";
+  cards: Array<{ front: string; back: string }>;
+}
+
+export interface PathwayData {
+  type: "pathway";
+  title: string;
+  steps: PathwayStep[];
+}
+
+export type QuestionData = AskData | McqData | FlashcardsData | PathwayData;
 
 interface HydratedQuestion {
   id: number;
@@ -42,7 +55,7 @@ interface StudyQuestionHydratorProps {
   onAnswer?: (question: string, answer: string) => void;
 }
 
-// ── Individual question widgets ─────────────────────────────────────────────
+// ── Individual widgets ──────────────────────────────────────────────────────
 
 function AskWidget({
   data,
@@ -55,6 +68,7 @@ function AskWidget({
   const submit = () => {
     const t = text.trim();
     if (!t || !onAnswer) return;
+    sfx.click();
     onAnswer(data.question, t);
     setText("");
   };
@@ -106,6 +120,10 @@ function McqWidget({
   const submit = () => {
     if (selected.length === 0 || !onAnswer) return;
     setSubmitted(true);
+    const ok = multi
+      ? selected.length === correctArr.length && selected.every(s => correctArr.includes(s))
+      : selected[0] === correctArr[0];
+    if (ok) sfx.correct(); else sfx.wrong();
     const chosen = selected.map(i => data.options[i]).join(", ");
     onAnswer(data.question, chosen);
   };
@@ -170,8 +188,6 @@ const StudyQuestionHydrator = memo(function StudyQuestionHydrator({
   const [questions, setQuestions] = useState<HydratedQuestion[]>([]);
   const prevHtmlRef = useRef<string | null>(null);
 
-  // After the sanitized HTML is rendered, find the question placeholders and
-  // replace each with a live mount node (React portal target).
   useEffect(() => {
     const root = containerRef.current;
     if (!root) return;
@@ -179,16 +195,18 @@ const StudyQuestionHydrator = memo(function StudyQuestionHydrator({
     prevHtmlRef.current = html;
 
     const found: HydratedQuestion[] = [];
-    const nodes = Array.from(root.querySelectorAll<HTMLElement>("[data-ask],[data-mcq]"));
+    const nodes = Array.from(root.querySelectorAll<HTMLElement>(
+      "[data-ask],[data-mcq],[data-flashcards],[data-pathway]",
+    ));
     nodes.forEach((node, idx) => {
-      const rawAsk = node.getAttribute("data-ask");
-      const rawMcq = node.getAttribute("data-mcq");
+      const raw = node.getAttribute("data-ask")
+        ?? node.getAttribute("data-mcq")
+        ?? node.getAttribute("data-flashcards")
+        ?? node.getAttribute("data-pathway");
+      if (!raw) return;
       let data: QuestionData | null = null;
-      try {
-        if (rawAsk) data = JSON.parse(rawAsk) as QuestionData;
-        else if (rawMcq) data = JSON.parse(rawMcq) as QuestionData;
-      } catch { /* skip malformed */ }
-      if (!data) return;
+      try { data = JSON.parse(raw) as QuestionData; } catch { /* skip malformed */ }
+      if (!data || !data.type) return;
       // Replace the placeholder with a mount node for the widget.
       const mount = document.createElement("div");
       mount.className = "thalamus-question-mount";
@@ -199,22 +217,27 @@ const StudyQuestionHydrator = memo(function StudyQuestionHydrator({
     setQuestions(found);
   }, [html]);
 
+  const renderWidget = (q: HydratedQuestion) => {
+    switch (q.data.type) {
+      case "question":
+        return <AskWidget data={q.data} onAnswer={onAnswer} />;
+      case "mcq":
+        return <McqWidget data={q.data} onAnswer={onAnswer} />;
+      case "flashcards":
+        return <FlashcardDeck cards={q.data.cards} />;
+      case "pathway":
+        return <LearningPathway title={q.data.title} steps={q.data.steps} onAnswer={onAnswer} />;
+    }
+  };
+
   return (
     <div>
-      {/* Render the full sanitized HTML with math/formatting, then hydrate the
-          question placeholders inside it. */}
       <div ref={containerRef}>
         <MathRenderer html={html} className="text-[15px] leading-relaxed" />
       </div>
       {questions.map(q => (
         <div key={q.id}>
-          {q.el.isConnected &&
-            createPortal(
-              q.data.type === "question"
-                ? <AskWidget data={q.data} onAnswer={onAnswer} />
-                : <McqWidget data={q.data} onAnswer={onAnswer} />,
-              q.el,
-            )}
+          {q.el.isConnected && createPortal(renderWidget(q), q.el)}
         </div>
       ))}
     </div>
