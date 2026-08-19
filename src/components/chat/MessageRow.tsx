@@ -8,6 +8,7 @@ import { memo, useState } from "react";
 import { motion } from "framer-motion";
 import { Check, Copy, Sparkles } from "lucide-react";
 import RichContent from "@/components/chat/RichContent";
+import StudyQuestionHydrator from "@/components/chat/StudyQuestionHydrator";
 import { formatMessageTime } from "@/lib/dateFormat";
 import type { Message } from "@/pages/portal/types";
 
@@ -15,9 +16,13 @@ interface MessageRowProps {
   msg: Message;
   accentColor: string; // tailwind text color for the assistant avatar
   dayLabel?: string; // if set, render a "Today/Yesterday/date" divider above
+  // When provided (study mode), assistant messages hydrate any ask/mcq
+  // question markers into interactive in-chat widgets. onAnswer(question,
+  // answer) is called when the student submits an answer.
+  onStudyAnswer?: (question: string, answer: string) => void;
 }
 
-const MessageRow = memo(function MessageRow({ msg, accentColor, dayLabel }: MessageRowProps) {
+const MessageRow = memo(function MessageRow({ msg, accentColor, dayLabel, onStudyAnswer }: MessageRowProps) {
   const [copied, setCopied] = useState(false);
   const isUser = msg.role === "user";
   const time = formatMessageTime(msg.createdAt);
@@ -82,9 +87,16 @@ const MessageRow = memo(function MessageRow({ msg, accentColor, dayLabel }: Mess
             </button>
           </div>
           <div className="text-[15px] leading-relaxed text-foreground max-w-full">
-            <RichContent
-              html={msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")}
-            />
+            {onStudyAnswer ? (
+              <StudyQuestionHydrator
+                html={msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")}
+                onAnswer={onStudyAnswer}
+              />
+            ) : (
+              <RichContent
+                html={msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")}
+              />
+            )}
             {msg.costCents !== undefined && msg.costCents > 0 && (
               <p className="text-[11px] opacity-40 mt-2 text-right">{Math.ceil(msg.costCents * 15000).toLocaleString()} AB</p>
             )}

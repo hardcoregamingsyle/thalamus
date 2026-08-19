@@ -370,7 +370,17 @@ export default function MobileChatView({
         ) : (
           <>
             {visibleMessages.map((msg: Message) => (
-              <MobileMessageBubble key={msg._id} msg={msg} modeInfo={modeInfo} />
+              <MobileMessageBubble
+                key={msg._id}
+                msg={msg}
+                modeInfo={modeInfo}
+                onStudyAnswer={mode === "study" ? (q, a) => {
+                  if (!a.trim()) return;
+                  setInput(`[Answer to: ${q}]\n${a}`);
+                  // Send on the next tick so the input state lands first.
+                  setTimeout(() => void handleSend(), 0);
+                } : undefined}
+              />
             ))}
             {/* Streaming message */}
             {streamingContent !== null && (

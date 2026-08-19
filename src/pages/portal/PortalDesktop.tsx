@@ -483,12 +483,14 @@ export default function PortalDesktop() {
     toast.success(`${newFiles.length} file(s) attached`);
   };
 
-  const handleSend = async () => {
-    if ((!input.trim() && attachedFiles.length === 0) || isThinking || !token) return;
+  // Core send path — accepts an explicit message so both the composer and the
+  // in-chat study widgets (which submit answers in place) can reuse it.
+  const sendPrompt = async (rawText: string) => {
+    if ((!rawText.trim() && attachedFiles.length === 0) || isThinking || !token) return;
     const fileContext = attachedFiles.length > 0
       ? "\n\n[ATTACHED FILES]\n" + attachedFiles.map(f => `--- ${f.name} ---\n${f.content}`).join("\n\n")
       : "";
-    const msg = (input.trim() || "(See attached files)") + fileContext;
+    const msg = (rawText.trim() || "(See attached files)") + fileContext;
     setInput("");
     setAttachedFiles([]);
     setInFlightUserContent(msg);
@@ -674,6 +676,16 @@ export default function PortalDesktop() {
     setIsThinking(false);
     setStreamingContent(null);
     setInFlightUserContent(null);
+  };
+
+  // Composer submit — sends the typed input.
+  const handleSend = () => { void sendPrompt(input); };
+
+  // In-chat study answer — the student answered an ask/mcq widget in place, so
+  // send their answer as a message so the AI grades it.
+  const handleStudyAnswer = (question: string, answer: string) => {
+    if (!answer.trim()) return;
+    void sendPrompt(`[Answer to: ${question}]\n${answer}`);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -1048,7 +1060,13 @@ export default function PortalDesktop() {
                       ? formatMessageDay(msg.createdAt)
                       : undefined;
                   return (
-                    <MessageRow key={msg._id} msg={msg} accentColor={currentMode.color} dayLabel={dayLabel} />
+                    <MessageRow
+                      key={msg._id}
+                      msg={msg}
+                      accentColor={currentMode.color}
+                      dayLabel={dayLabel}
+                      onStudyAnswer={activeMode === "study" ? handleStudyAnswer : undefined}
+                    />
                   );
                 })
               )}

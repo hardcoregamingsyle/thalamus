@@ -6,10 +6,19 @@
 import { memo } from "react";
 import { motion } from "framer-motion";
 import { sanitizeAiHtml } from "@/lib/sanitizeHtml";
+import StudyQuestionHydrator from "@/components/chat/StudyQuestionHydrator";
 import type { ModeMeta } from "@/pages/portal/modes";
 import type { Message } from "@/pages/portal/types";
 
-const MobileMessageBubble = memo(function MobileMessageBubble({ msg, modeInfo }: { msg: Message; modeInfo: ModeMeta }) {
+const MobileMessageBubble = memo(function MobileMessageBubble({
+  msg,
+  modeInfo,
+  onStudyAnswer,
+}: {
+  msg: Message;
+  modeInfo: ModeMeta;
+  onStudyAnswer?: (question: string, answer: string) => void;
+}) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -28,7 +37,14 @@ const MobileMessageBubble = memo(function MobileMessageBubble({ msg, modeInfo }:
           : "bg-card border border-border/60 text-foreground rounded-[18px] rounded-bl-[5px]"
       }`}>
         {msg.role === "assistant" ? (
-          <div className="prose-html text-[13px]" dangerouslySetInnerHTML={{ __html: sanitizeAiHtml(msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")) }} />
+          onStudyAnswer ? (
+            <StudyQuestionHydrator
+              html={msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")}
+              onAnswer={onStudyAnswer}
+            />
+          ) : (
+            <div className="prose-html text-[13px]" dangerouslySetInnerHTML={{ __html: sanitizeAiHtml(msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")) }} />
+          )
         ) : (
           <p className="whitespace-pre-wrap">{msg.content}</p>
         )}

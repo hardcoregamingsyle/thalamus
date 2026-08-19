@@ -354,10 +354,14 @@ HOW TO ANSWER:
 
 {"op":"ask-question","question":"What is the capital of France?"}
 
-{"op":"ask-mcq","question":"Which planet is known as the Red Planet?","options":["Mars","Venus","Jupiter","Saturn"],"correct":0}
+{"op":"ask-mcq","question":"Which planet is known as the Red Planet?","options":["Mars","Venus","Jupiter","Saturn"],"correct":2}
+
+{"op":"ask-mcq","question":"Which of these are prime numbers?","options":["2","4","7","9"],"correct":[0,2],"multiSelect":true}
 
 - {"op":"ask-question",...} creates an open-ended text input question. The system will present an input field and wait for the student's answer.
-- {"op":"ask-mcq",...} creates a multiple-choice question. The options array is the list of choices. The correct field is the 0-based index of the right answer.
+- {"op":"ask-mcq",...} creates a MULTIPLE-CHOICE question. The options array is the list of choices. The correct field is the 0-based index (or array of indices) of the right answer(s).
+  - Single-select (one correct answer): correct is a NUMBER, e.g. "correct":2.
+  - Multi-select (multiple correct answers): correct is an ARRAY of indices, e.g. "correct":[0,2], and set "multiSelect":true. Prefer multi-select whenever a question has more than one correct option.
 - Use ask-question when you want the student to explain, describe, or write out something.
 - Use ask-mcq when you want quick comprehension checks on facts, definitions, or simple concepts.
 - The system handles the question/answer flow — you do NOT need to provide the answer in your response. The student will answer, and the system will show you their reply.
