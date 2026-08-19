@@ -11,10 +11,11 @@
 
 import { memo, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Check, Send } from "lucide-react";
+import { Check, Loader2, Send } from "lucide-react";
 import FlashcardDeck from "@/components/chat/FlashcardDeck";
 import LearningPathway, { type PathwayStep } from "@/components/chat/LearningPathway";
 import { sfx } from "@/lib/sfx";
+import { useStudyTaskContext } from "@/components/chat/StudyTaskContext";
 
 export interface AskData {
   type: "question";
@@ -108,41 +109,116 @@ function extractOps(content: string): ParsedOp[] {
 
 // ── Widgets ─────────────────────────────────────────────────────────────────
 
-function AskWidget({ data, onAnswer }: { data: AskData; onAnswer?: (q: string, a: string) => void }) {
+function AskWidget({
+  data,
+  itemId,
+  onAnswer,
+}: {
+  data: AskData;
+  itemId?: string;
+  onAnswer?: (q: string, a: string) => void;
+}) {
+  const { completeItem, gradeAnswer } = useStudyTaskContext();
   const [text, setText] = useState("");
-  const submit = () => {
+  const [attempt, setAttempt] = useState(0);
+  const [grading, setGrading] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [decision, setDecision] = useState<"retry-same" | "retry-different" | "move-on" | null>(null);
+  const [followUp, setFollowUp] = useState<string | undefined>(undefined);
+
+  const submit = async () => {
     const t = text.trim();
-    if (!t || !onAnswer) return;
+    if (!t) return;
     sfx.click();
-    onAnswer(data.question, t);
+    if (gradeAnswer) {
+      setGrading(true);
+      try {
+        const res = await gradeAnswer(data.question, t, attempt);
+        setFeedback(res.feedback);
+        setDecision(res.decision);
+        setFollowUp(res.followUpQuestion);
+        setAttempt(a => a + 1);
+        if (res.correct) sfx.correct(); else sfx.wrong();
+        if (itemId) completeItem?.(itemId, true);
+        setText("");
+      } catch {
+        // Fall back to sending as a normal chat message.
+        setGrading(false);
+        onAnswer?.(data.question, t);
+        setText("");
+      } finally {
+        setGrading(false);
+      }
+      return;
+    }
+    onAnswer?.(data.question, t);
     setText("");
   };
+
   return (
     <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-2 my-2">
       <p className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Question</p>
       <p className="text-sm text-foreground leading-relaxed">{data.question}</p>
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
-        rows={2}
-        placeholder="Type your answer here…"
-        className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-400/60"
-      />
-      <div className="flex justify-end">
-        <button
-          onClick={submit}
-          disabled={!text.trim()}
-          className="flex items-center gap-1.5 rounded-lg bg-indigo-500 text-white px-3 py-1.5 text-xs font-medium hover:bg-indigo-500/90 disabled:opacity-40 transition-colors"
-        >
-          <Send className="h-3.5 w-3.5" /> Submit answer
-        </button>
-      </div>
+
+      {/* Input — kept active while decision is retry-same; cleared on move-on */}
+      {decision !== "move-on" && (
+        <>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
+            rows={2}
+            placeholder={decision === "retry-same" ? "Try again with that hint…" : "Type your answer here…"}
+            className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-400/60"
+          />
+          <div className="flex justify-end">
+            <button
+              onClick={submit}
+              disabled={!text.trim() || grading}
+              className="flex items-center gap-1.5 rounded-lg bg-indigo-500 text-white px-3 py-1.5 text-xs font-medium hover:bg-indigo-500/90 disabled:opacity-40 transition-colors"
+            >
+              {grading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              {grading ? "Grading…" : "Submit answer"}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Inline AI feedback */}
+      {feedback && (
+        <div className={`rounded-lg border px-3 py-2 text-sm leading-relaxed ${decision === "move-on" ? "border-emerald-500/40 bg-emerald-500/5 text-foreground" : "border-indigo-500/40 bg-indigo-500/5 text-foreground"}`}>
+          {feedback}
+        </div>
+      )}
+
+      {/* Follow-up question on retry-different */}
+      {decision === "retry-different" && followUp && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2">
+          <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider mb-1">Fresh angle</p>
+          <p className="text-sm text-foreground leading-relaxed">{followUp}</p>
+        </div>
+      )}
+
+      {/* Done state */}
+      {decision === "move-on" && (
+        <div className="flex items-center gap-1.5 text-xs text-emerald-500">
+          <Check className="h-4 w-4" /> Nice — moving on.
+        </div>
+      )}
     </div>
   );
 }
 
-function McqWidget({ data, onAnswer }: { data: McqData; onAnswer?: (q: string, a: string) => void }) {
+function McqWidget({
+  data,
+  itemId,
+  onAnswer,
+}: {
+  data: McqData;
+  itemId?: string;
+  onAnswer?: (q: string, a: string) => void;
+}) {
+  const { completeItem } = useStudyTaskContext();
   const multi = data.multiSelect === true || Array.isArray(data.correct);
   const [selected, setSelected] = useState<number[]>([]);
   const [submitted, setSubmitted] = useState(false);
@@ -159,6 +235,7 @@ function McqWidget({ data, onAnswer }: { data: McqData; onAnswer?: (q: string, a
       ? selected.length === correctArr.length && selected.every(s => correctArr.includes(s))
       : selected[0] === correctArr[0];
     if (ok) sfx.correct(); else sfx.wrong();
+    if (itemId) completeItem?.(itemId, ok);
     onAnswer(data.question, selected.map(i => data.options[i]).join(", "));
   };
 
@@ -187,7 +264,9 @@ function McqWidget({ data, onAnswer }: { data: McqData; onAnswer?: (q: string, a
       </div>
       <div className="flex justify-end">
         {submitted ? (
-          <span className="text-xs text-muted-foreground">Answer sent — I'll grade it.</span>
+          <span className="text-xs text-muted-foreground">
+            {itemId ? "Locked in — nice work!" : "Answer sent — I'll grade it."}
+          </span>
         ) : (
           <button onClick={submit} disabled={selected.length === 0} className="flex items-center gap-1.5 rounded-lg bg-emerald-500 text-white px-3 py-1.5 text-xs font-medium hover:bg-emerald-500/90 disabled:opacity-40 transition-colors">
             <Send className="h-3.5 w-3.5" /> Submit answer
@@ -199,11 +278,13 @@ function McqWidget({ data, onAnswer }: { data: McqData; onAnswer?: (q: string, a
 }
 
 function widgetFor(op: string, data: Record<string, unknown>, onAnswer?: (q: string, a: string) => void): React.ReactNode {
+  const itemId = typeof data.id === "string" ? data.id : undefined;
+  const ids = Array.isArray(data.ids) ? data.ids.map(String) : undefined;
   switch (op) {
     case "ask-question": {
       const question = String(data.question ?? "");
       if (!question) return null;
-      return <AskWidget data={{ type: "question", question }} onAnswer={onAnswer} />;
+      return <AskWidget data={{ type: "question", question }} itemId={itemId} onAnswer={onAnswer} />;
     }
     case "ask-mcq": {
       const question = String(data.question ?? "");
@@ -212,20 +293,20 @@ function widgetFor(op: string, data: Record<string, unknown>, onAnswer?: (q: str
       const correct = Array.isArray(c) ? c.map(Number) : Number(c);
       const multiSelect = Array.isArray(c) || data.multiSelect === true;
       if (!question || options.length === 0) return null;
-      return <McqWidget data={{ type: "mcq", question, options, correct, multiSelect }} onAnswer={onAnswer} />;
+      return <McqWidget data={{ type: "mcq", question, options, correct, multiSelect }} itemId={itemId} onAnswer={onAnswer} />;
     }
     case "flashcards": {
       const cards = Array.isArray(data.cards)
         ? data.cards.filter((c): c is { front: string; back: string } => !!c && typeof (c as { front?: string }).front === "string" && typeof (c as { back?: string }).back === "string")
         : [];
       if (cards.length === 0) return null;
-      return <FlashcardDeck cards={cards} />;
+      return <FlashcardDeck cards={cards} deckItemIds={ids} />;
     }
     case "pathway": {
       const title = String(data.title ?? "Learning path");
       const steps = Array.isArray(data.steps) ? data.steps : [];
       if (steps.length === 0) return null;
-      return <LearningPathway title={title} steps={steps} onAnswer={onAnswer} />;
+      return <LearningPathway title={title} steps={steps} stepItemIds={ids} onAnswer={onAnswer} />;
     }
     default:
       return null;

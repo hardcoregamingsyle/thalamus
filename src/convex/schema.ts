@@ -388,6 +388,31 @@ const schema = defineSchema(
       .index("by_conversation", ["conversationId"])
       .index("by_user", ["userId"]),
 
+    // Active interactive study task — the tutor's current set of questions /
+    // flashcards / pathway steps that the student must complete before the chat
+    // unlocks. Persisted so refreshing or opening on another device resumes the
+    // exact same task (the lockout is server-side, not a localStorage flag).
+    // Each item is one question/flashcard/step; `done` is set as the student
+    // answers/marks it. When every item is done the task is complete and study
+    // mode is unlocked. Keyed by (userId, conversationId) — one active task per
+    // study conversation at a time; a fresh interactive reply replaces it.
+    studyTasks: defineTable({
+      userId: v.id("users"),
+      conversationId: v.id("conversations"),
+      // A stable id for this task instance (re-derivable from the source message
+      // content), used to avoid stale completions from a previous task.
+      taskKey: v.string(),
+      items: v.array(v.object({
+        id: v.string(),
+        kind: v.union(v.literal("question"), v.literal("mcq"), v.literal("flashcard"), v.literal("step")),
+        label: v.string(),
+        done: v.boolean(),
+      })),
+      updatedAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_user_and_conversation", ["userId", "conversationId"]),
+
     creditBatches: defineTable({
       userId: v.id("users"),
       amount: v.number(),

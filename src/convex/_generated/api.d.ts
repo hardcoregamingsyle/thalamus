@@ -69,6 +69,7 @@ import type * as ragHelpers from "../ragHelpers.js";
 import type * as sketchfabMcp from "../sketchfabMcp.js";
 import type * as study from "../study.js";
 import type * as studyHelpers from "../studyHelpers.js";
+import type * as studyTasks from "../studyTasks.js";
 import type * as userApiKeys from "../userApiKeys.js";
 import type * as users from "../users.js";
 
@@ -140,6 +141,7 @@ declare const fullApi: ApiFromModules<{
   sketchfabMcp: typeof sketchfabMcp;
   study: typeof study;
   studyHelpers: typeof studyHelpers;
+  studyTasks: typeof studyTasks;
   userApiKeys: typeof userApiKeys;
   users: typeof users;
 }>;

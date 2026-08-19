@@ -26,6 +26,7 @@ import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
 import { ALL_MODES, type Mode } from "@/pages/portal/modes";
 import type { Conversation, Message } from "@/pages/portal/types";
 import MobileMessageBubble from "./MobileMessageBubble";
+import { useStudyTask } from "@/hooks/use-study-task";
 
 // Mobile-specific system prompts. Deliberately terser than the desktop set
 // (see src/content/systemPrompts.ts) because mobile screens can't fit the
@@ -67,6 +68,15 @@ export default function MobileChatView({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Interactive study-task lock (persisted server-side). Blocks sending a new
+  // prompt until every question/flashcard/pathway step is complete.
+  const studyTask = useStudyTask(mode === "study" ? token : null, activeConvId);
+  const studyLocked = mode === "study" && studyTask.locked;
+  const studyTaskProgress =
+    studyTask.task && studyTask.task.total > 0
+      ? `${studyTask.task.completed}/${studyTask.task.total}`
+      : "";
 
   // Mobile treats all 10 modes as first-class cards (unlike desktop, which
   // hides the "MORE MODES" set behind a dropdown), so we look up in ALL_MODES.
@@ -133,6 +143,10 @@ export default function MobileChatView({
 
   const handleSend = async () => {
     if (!input.trim() || isThinking || !token) return;
+    if (studyLocked) {
+      toast.error(`Finish your study task (${studyTaskProgress}) before sending a new message.`);
+      return;
+    }
     const msg = input.trim();
     setInput("");
     setInFlightUserContent(msg);

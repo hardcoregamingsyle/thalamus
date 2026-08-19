@@ -7,13 +7,21 @@ import { memo, useState } from "react";
 import { motion } from "framer-motion";
 import { Check, RefreshCw, X } from "lucide-react";
 import { sfx } from "@/lib/sfx";
+import { useStudyTaskContext } from "@/components/chat/StudyTaskContext";
 
 interface Flashcard {
   front: string;
   back: string;
 }
 
-const FlashcardDeck = memo(function FlashcardDeck({ cards }: { cards: Flashcard[] }) {
+const FlashcardDeck = memo(function FlashcardDeck({
+  cards,
+  deckItemIds,
+}: {
+  cards: Flashcard[];
+  deckItemIds?: string[];
+}) {
+  const { completeItem } = useStudyTaskContext();
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [known, setKnown] = useState<Set<number>>(new Set());
@@ -33,6 +41,8 @@ const FlashcardDeck = memo(function FlashcardDeck({ cards }: { cards: Flashcard[
       return n;
     });
     if (k) sfx.correct(); else sfx.wrong();
+    // Report completion for this card to the persisted study task.
+    if (deckItemIds && deckItemIds[index]) completeItem?.(deckItemIds[index], k);
     setFlipped(false);
     setIndex(i => Math.min(cards.length - 1, i + 1));
   };

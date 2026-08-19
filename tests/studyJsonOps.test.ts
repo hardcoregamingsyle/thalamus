@@ -5,7 +5,7 @@
 // and the raw JSON leaked into the visible reply. These tests pin the robust
 // brace-matching extraction that handles pretty-printed + fenced ops.
 import { describe, expect, test } from "bun:test";
-import { convertStudyJsonOps, extractStudyJsonOps } from "../src/convex/lib/studyJsonOps";
+import { convertStudyJsonOps, extractStudyJsonOps, buildStudyTaskItems } from "../src/convex/lib/studyJsonOps";
 
 describe("studyJsonOps extraction", () => {
   test("extracts pretty-printed flashcards from a json fence", () => {
@@ -61,5 +61,24 @@ describe("studyJsonOps extraction", () => {
     const content = "Just some prose with no JSON ops at all.";
     expect(convertStudyJsonOps(content)).toBe(content);
     expect(extractStudyJsonOps(content)).toEqual([]);
+  });
+});
+
+describe("buildStudyTaskItems + convertStudyJsonOps id agreement", () => {
+  test("ids embedded in widgets match the task item ids", () => {
+    const content = [
+      '{"op":"ask-question","question":"Explain photosynthesis"}',
+      '{"op":"flashcards","cards":[{"front":"f1","back":"b1"},{"front":"f2","back":"b2"}]}',
+      '{"op":"pathway","title":"P","steps":[{"question":"s1"},{"question":"s2"}]}',
+    ].join("\n");
+    const { items } = buildStudyTaskItems(content);
+    const converted = convertStudyJsonOps(content);
+    // Task ids: q0, f1, f2, s3, s4 (sequential across all kinds)
+    const ids = items.map((i) => i.id);
+    expect(ids).toEqual(["q0", "f1", "f2", "s3", "s4"]);
+    // The widget placeholders should embed those ids.
+    expect(converted).toContain('"id":"q0"');
+    expect(converted).toContain('"ids":["f1","f2"]');
+    expect(converted).toContain('"ids":["s3","s4"]');
   });
 });

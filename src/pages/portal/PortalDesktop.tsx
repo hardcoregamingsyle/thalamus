@@ -29,6 +29,8 @@ import MessageRow from "@/components/chat/MessageRow";
 import Composer from "@/components/chat/Composer";
 import EmptyState from "@/components/chat/EmptyState";
 import ConversationSidebar from "@/components/chat/ConversationSidebar";
+import { StudyTaskProvider } from "@/components/chat/StudyTaskContext";
+import { useStudyTask } from "@/hooks/use-study-task";
 import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
 import { fetchSponsoredAd } from "@/lib/requestAd";
 import { getSessionToken } from "@/lib/session";
@@ -234,6 +236,7 @@ export default function PortalDesktop() {
   const sendMessage = useAction(api.ai.sendMessage);
   const sendStudyMessage = useAction(api.study.sendStudyMessage);
   const generateTitle = useAction(api.ai.generateConversationTitle);
+  const gradeStudyAnswerAction = useAction(api.study.gradeStudyAnswer);
 
   // Ad refresh cadence. Tab must be visible for ANY refresh (background
   // impressions are how publisher accounts get banned):
@@ -413,6 +416,33 @@ export default function PortalDesktop() {
   const studyBoard = typedUserForProfile?.studyBoard ?? null;
   const studyLanguage = typedUserForProfile?.studyLanguage ?? null;
 
+  // Active interactive study task — locks the chat until every question /
+  // flashcard / pathway step is done. Persisted server-side so it survives a
+  // refresh or opening on another device.
+  const studyTask = useStudyTask(activeMode === "study" ? token : null, activeConvId);
+  const studyLocked = activeMode === "study" && studyTask.locked;
+  const studyTaskProgress =
+    studyTask.task && studyTask.task.total > 0
+      ? `${studyTask.task.completed}/${studyTask.task.total}`
+      : "";
+
+  // Grade an in-chat answer inline (the widget shows the feedback + decision).
+  const handleGradeAnswer = async (question: string, answer: string, attempt: number) => {
+    if (!token || !activeConvId) {
+      throw new Error("Not in a study conversation");
+    }
+    return await gradeStudyAnswerAction({
+      token,
+      conversationId: activeConvId,
+      question,
+      answer,
+      studyGrade: studyGrade ?? undefined,
+      studyBoard: studyBoard ?? undefined,
+      studyLanguage: studyLanguage ?? undefined,
+      attempt,
+    });
+  };
+
   const handleSaveStudyProfile = async (grade: string, board: string, language: string) => {
     if (!token) return;
     try {
@@ -425,6 +455,12 @@ export default function PortalDesktop() {
   };
 
   const setActiveMode = (mode: Mode) => {
+    // While an interactive study task is in progress the chat is locked — the
+    // student must finish the questions/flashcards before switching mode.
+    if (studyLocked && mode !== "study") {
+      toast.error(`Complete your study task (${studyTaskProgress}) before switching modes.`);
+      return;
+    }
     setActiveConvId(null);
     setStreamingContent(null);
     setThinkingContent("");
@@ -442,6 +478,10 @@ export default function PortalDesktop() {
 
   const handleNewConversation = async () => {
     if (!token) return;
+    if (studyLocked) {
+      toast.error(`Finish your study task (${studyTaskProgress}) before starting a new chat.`);
+      return;
+    }
     adRequestedRef.current = false;
     setSponsoredAd(null);
     setRailAds([]);
@@ -678,8 +718,15 @@ export default function PortalDesktop() {
     setInFlightUserContent(null);
   };
 
-  // Composer submit — sends the typed input.
-  const handleSend = () => { void sendPrompt(input); };
+  // Composer submit — sends the typed input. Blocked while an interactive
+  // study task is incomplete (the student must finish it before a new prompt).
+  const handleSend = () => {
+    if (studyLocked) {
+      toast.error(`Finish your study task (${studyTaskProgress}) before sending a new message.`);
+      return;
+    }
+    void sendPrompt(input);
+  };
 
   // In-chat study answer — the student answered an ask/mcq widget in place, so
   // send their answer as a message so the AI grades it.
@@ -689,9 +736,13 @@ export default function PortalDesktop() {
   };
 
   // Study tool chips — send a short command to the tutor to build interactive
-  // content inline.
+  // content inline. Blocked while a task is locked.
   const handleSendWith = (text: string) => {
     if (!text.trim()) return;
+    if (studyLocked) {
+      toast.error(`Finish your study task (${studyTaskProgress}) first.`);
+      return;
+    }
     void sendPrompt(text);
   };
 
@@ -995,6 +1046,10 @@ export default function PortalDesktop() {
         )}
 
         {/* ── Main chat column ────────────────────────────────────────────── */}
+        <StudyTaskProvider value={{
+          completeItem: studyTask.completeItem,
+          gradeAnswer: activeMode === "study" ? handleGradeAnswer : undefined,
+        }}>
         <div className="flex-1 flex flex-col min-w-0 relative">
           {/* Study resource sub-header (compact) */}
           {activeMode === "study" && (
@@ -1111,9 +1166,20 @@ export default function PortalDesktop() {
           {/* ── Composer (the center stage) ───────────────────────────────── */}
           <div className="shrink-0 border-t border-border bg-gradient-to-t from-background via-background to-transparent">
             <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
+              {/* Lock banner while an interactive study task is in progress */}
+              {studyLocked && studyTask.task && (
+                <div className="mb-2.5 flex items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-300">
+                  <GraduationCap className="h-4 w-4 shrink-0" />
+                  <span>
+                    Study task in progress ({studyTask.task.completed}/{studyTask.task.total}) — finish the
+                    questions &amp; flashcards to continue. This stays saved even if you refresh or switch devices.
+                  </span>
+                </div>
+              )}
+
               {/* In-chat study tools — quick actions that ask the tutor to
                   build interactive content inline. */}
-              {activeMode === "study" && (
+              {activeMode === "study" && !studyLocked && (
                 <div className="mb-2.5 flex flex-wrap items-center gap-2">
                   <span className="text-[11px] text-muted-foreground/70">Study tools:</span>
                   <button
@@ -1144,13 +1210,15 @@ export default function PortalDesktop() {
                 onPaste={handlePaste}
                 onAttach={handleAttachFiles}
                 placeholder={
-                  activeMode === "study"
+                  studyLocked
+                    ? "Complete the study task above to continue…"
+                    : activeMode === "study"
                     ? "Tell your tutor what to cover…"
                     : activeMode === "research"
                     ? "Research a topic…"
                     : "Message Thalamus…"
                 }
-                disabled={false}
+                disabled={studyLocked}
                 attachedFiles={attachedFiles}
                 onRemoveFile={(i) => setAttachedFiles(prev => prev.filter((_, j) => j !== i))}
               />
@@ -1160,6 +1228,7 @@ export default function PortalDesktop() {
             </div>
           </div>
         </div>
+        </StudyTaskProvider>
 
         {/* ── Study Resources panel (right drawer) ───────────────────────── */}
         <AnimatePresence>

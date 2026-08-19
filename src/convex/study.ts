@@ -5,7 +5,7 @@ import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { callSiliconFlow } from "./lib/agentCore";
 import { buildStudySystemPrompt } from "./lib/studyPrompt";
-import { convertStudyJsonOps } from "./lib/studyJsonOps";
+import { convertStudyJsonOps, buildStudyTaskItems } from "./lib/studyJsonOps";
 
 
 // Gemini with Google Search Grounding
@@ -479,7 +479,24 @@ export const sendStudyMessage = action({
     // in ```json fences. Use a robust brace-matching extractor instead of
     // line-oriented regexes, so multi-line / fenced JSON ops are still turned
     // into interactive widgets.
+    // Capture the raw reply BEFORE conversion so we can build the persisted
+    // study task (the task item ids must match the widget ids the client sends).
+    const rawForTask = responseContent;
     responseContent = convertStudyJsonOps(responseContent);
+
+    // If this reply contains interactive study content (questions/flashcards/
+    // pathway), persist it as the active study task so the chat locks until the
+    // student completes it. Persisted server-side: refresh/another device resume
+    // the same task.
+    const task = buildStudyTaskItems(rawForTask);
+    if (task.items.length > 0) {
+      await ctx.runMutation(internal.studyTasks.upsertStudyTask, {
+        token: args.token,
+        conversationId: args.conversationId,
+        taskKey: task.taskKey,
+        items: task.items,
+      });
+    }
 
     const tokensUsed = inputTokens + outputTokens;
     const inputCostCents = (inputTokens / 1_000_000) * 60;
@@ -701,6 +718,113 @@ Output ONLY valid JSON array:
 });
 
 // Flashcards from the study conversation — StudentSuite's flashcard deck.
+// Grade an in-chat study answer and return structured feedback plus a
+// reattempt decision. The AI acts as a tutor: it grades the attempt, points
+// out the exact gap, and decides whether the student should retry the same
+// question, retry a fresh related question, or move on. Rendered inline in the
+// question widget so the feedback lives in the same box as the answer.
+export const gradeStudyAnswer = action({
+  args: {
+    token: v.string(),
+    conversationId: v.id("conversations"),
+    question: v.string(),
+    answer: v.string(),
+    studyGrade: v.optional(v.string()),
+    studyBoard: v.optional(v.string()),
+    studyLanguage: v.optional(v.string()),
+    // How many attempts so far (0 = first try) so the tutor can cap retries.
+    attempt: v.optional(v.number()),
+    // The student's uploaded material titles, for grounding.
+    resourceTitles: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args): Promise<{
+    correct: boolean;
+    feedback: string;
+    decision: "retry-same" | "retry-different" | "move-on";
+    followUpQuestion?: string;
+  }> => {
+    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+    if (!userId) throw new Error("Not authenticated");
+    const owns = await ctx.runQuery(internal.aiHelpers.isConversationOwner, {
+      conversationId: args.conversationId,
+      userId,
+    });
+    if (!owns) throw new Error("Conversation not found");
+
+    const attempt = args.attempt ?? 0;
+    const profileCtx = `${args.studyGrade ?? ""}${args.studyBoard ? `, ${args.studyBoard}` : ""}${args.studyLanguage ? `, prefers ${args.studyLanguage}` : ""}`.trim();
+    const resourceCtx = args.resourceTitles && args.resourceTitles.length > 0
+      ? `The student's uploaded material includes: ${args.resourceTitles.slice(0, 8).join(", ")}.`
+      : "";
+
+    const systemPrompt = `You are a patient one-on-one tutor grading a student's answer. Grade honestly and specifically: name what the student got right, then pinpoint the exact step or misconception where the answer went wrong.
+
+The question was: ${args.question}
+
+The student's answer was: ${args.answer}
+${profileCtx ? `Student level: ${profileCtx}.` : ""}
+${resourceCtx}
+
+Decide the next step:
+- "retry-same": the answer was off but a focused fix on the SAME question is the fastest route (give a clear hint, don't give away the full answer).
+- "retry-different": the student clearly needs another angle — a fresh related question on the same concept.
+- "move-on": the answer was correct (or close enough) — brief praise, then move on.
+
+Attempt number: ${attempt + 1}${attempt >= 2 ? " (the student has tried twice already — be decisive and lean toward moving on or giving a fresh angle)" : ""}.
+
+Output ONLY valid JSON, no markdown fences, no explanation:
+{"correct":true|false,"feedback":"1-3 sentences","decision":"retry-same"|"retry-different"|"move-on","followUpQuestion":"only for retry-different, a new question for the same concept"}`;
+
+    let raw = "";
+    try {
+      const result = await callSiliconFlow(
+        `Question: ${args.question}\n\nStudent answer: ${args.answer}`,
+        systemPrompt,
+      );
+      raw = result.text;
+    } catch {
+      const { vly } = await import("./lib/vlyIntegrations");
+      const result = await vly.ai.completion({
+        model: "claude-haiku-4-5",
+        messages: [{ role: "user", content: systemPrompt + "\n\nQuestion: " + args.question + "\n\nStudent answer: " + args.answer }],
+        maxTokens: 600,
+      });
+      raw = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "") : "";
+    }
+
+    // Best-effort parse of the JSON object the model returns.
+    const jsonStart = raw.indexOf("{");
+    const jsonEnd = raw.lastIndexOf("}");
+    if (jsonStart !== -1 && jsonEnd > jsonStart) {
+      try {
+        const parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1)) as {
+          correct?: boolean;
+          feedback?: string;
+          decision?: "retry-same" | "retry-different" | "move-on";
+          followUpQuestion?: string;
+        };
+        const decision: "retry-same" | "retry-different" | "move-on" =
+          parsed.decision === "retry-different" || parsed.decision === "move-on"
+            ? parsed.decision
+            : "retry-same";
+        return {
+          correct: parsed.correct === true,
+          feedback: String(parsed.feedback ?? "").slice(0, 600),
+          decision,
+          followUpQuestion: parsed.followUpQuestion ? String(parsed.followUpQuestion).slice(0, 400) : undefined,
+        };
+      } catch { /* fall through */ }
+    }
+
+    // Fallback: treat any non-empty answer as needing a retry hint.
+    return {
+      correct: false,
+      feedback: "I couldn't grade that automatically. Try again, and be more specific about your reasoning.",
+      decision: "retry-same",
+    };
+  },
+});
+
 export const generateFlashcards = action({
   args: {
     token: v.string(),

@@ -7,6 +7,7 @@ import { memo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, Flag, Lock, Trophy } from "lucide-react";
 import { sfx } from "@/lib/sfx";
+import { useStudyTaskContext } from "@/components/chat/StudyTaskContext";
 
 export interface PathwayStep {
   topic?: string;
@@ -20,10 +21,12 @@ export interface PathwayStep {
 interface LearningPathwayProps {
   title: string;
   steps: PathwayStep[];
+  stepItemIds?: string[];
   onAnswer?: (question: string, answer: string) => void;
 }
 
-const LearningPathway = memo(function LearningPathway({ title, steps, onAnswer }: LearningPathwayProps) {
+const LearningPathway = memo(function LearningPathway({ title, steps, stepItemIds, onAnswer }: LearningPathwayProps) {
+  const { completeItem } = useStudyTaskContext();
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number[]>([]);
   const [checked, setChecked] = useState(false);
@@ -48,6 +51,8 @@ const LearningPathway = memo(function LearningPathway({ title, steps, onAnswer }
     setChecked(true);
     if (ok) { sfx.correct(); setCorrectCount(c => c + 1); }
     else sfx.wrong();
+    // Mark this step done in the persisted task once answered.
+    if (stepItemIds && stepItemIds[index]) completeItem?.(stepItemIds[index], true);
     if (onAnswer && !ok) {
       onAnswer(step.question, selected.map(i => step.options[i]).join(", "));
     }

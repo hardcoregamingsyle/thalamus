@@ -5,7 +5,7 @@ import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
 import { callModel, calcAgentBucksForTier, FREE_UNLIMITED, MODE_ADHD, adhdToTemperature, MODE_SYSTEM_PROMPTS } from "./lib/agentCore";
 import { buildStudySystemPrompt } from "./lib/studyPrompt";
-import { convertStudyJsonOps } from "./lib/studyJsonOps";
+import { convertStudyJsonOps, buildStudyTaskItems } from "./lib/studyJsonOps";
 import {
   aoOptions,
   aoSearch,
@@ -488,7 +488,24 @@ http.route({
       // Process ASK-QUESTION / ASK-MCQ / flashcards / pathway JSON ops into
       // interactive HTML. Robust to pretty-printed / fenced JSON.
       if (mode === "study" && fullText) {
+        const rawForTask = fullText;
         fullText = convertStudyJsonOps(fullText);
+
+        // Persist any interactive content as the active study task so the chat
+        // locks until the student completes it (server-side, survives refresh).
+        const task = buildStudyTaskItems(rawForTask);
+        if (task.items.length > 0 && token && conversationId) {
+          try {
+            await ctx.runMutation(internal.studyTasks.upsertStudyTask, {
+              token,
+              conversationId: conversationId as Id<"conversations">,
+              taskKey: task.taskKey,
+              items: task.items,
+            });
+          } catch (taskErr) {
+            console.error("Failed to persist study task:", taskErr);
+          }
+        }
       }
 
       // Save the completed exchange to DB now that the stream has finished.
