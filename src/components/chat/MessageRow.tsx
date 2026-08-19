@@ -88,8 +88,11 @@ const MessageRow = memo(function MessageRow({ msg, accentColor, dayLabel, onStud
           </div>
           <div className="text-[15px] leading-relaxed text-foreground max-w-full">
             {onStudyAnswer ? (
+              // Study content is MARKDOWN (not HTML) — pass it raw so
+              // react-markdown formats it and the JSON-op extractor can parse
+              // fenced ops. Substituting \n for <br/> here would corrupt both.
               <StudyQuestionHydrator
-                html={msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")}
+                html={msg.content}
                 onAnswer={onStudyAnswer}
               />
             ) : (

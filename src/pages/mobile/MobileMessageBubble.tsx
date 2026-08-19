@@ -39,7 +39,7 @@ const MobileMessageBubble = memo(function MobileMessageBubble({
         {msg.role === "assistant" ? (
           onStudyAnswer ? (
             <StudyQuestionHydrator
-              html={msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")}
+              html={msg.content}
               onAnswer={onStudyAnswer}
             />
           ) : (
