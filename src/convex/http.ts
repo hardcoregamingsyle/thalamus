@@ -5,6 +5,7 @@ import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
 import { callModel, calcAgentBucksForTier, FREE_UNLIMITED, MODE_ADHD, adhdToTemperature, MODE_SYSTEM_PROMPTS } from "./lib/agentCore";
 import { buildStudySystemPrompt } from "./lib/studyPrompt";
+import { convertStudyJsonOps } from "./lib/studyJsonOps";
 import {
   aoOptions,
   aoSearch,
@@ -484,47 +485,10 @@ http.route({
         await write({ type: "answer", chunk: fullText });
       }
 
-      // Process ASK-QUESTION / ASK-MCQ and JSON-format ask ops into injectable HTML.
+      // Process ASK-QUESTION / ASK-MCQ / flashcards / pathway JSON ops into
+      // interactive HTML. Robust to pretty-printed / fenced JSON.
       if (mode === "study" && fullText) {
-        // Handle JSON ops format: {"op":"ask-question","question":"..."}
-        fullText = fullText.replace(/\{"op":"ask-question","question":"([^"]+)"\}/g, (_, question) =>
-          `<div class="thalamus-ask" data-ask='${JSON.stringify({type:"question",question})}'></div>`
-        );
-        // Handle JSON ops format:
-        //   {"op":"ask-mcq","question":"...","options":[...],"correct":N}            single-select
-        //   {"op":"ask-mcq","question":"...","options":[...],"correct":[0,2]}        multi-select (correct is an array)
-        //   {"op":"ask-mcq","question":"...","options":[...],"correct":N,"multiSelect":true}  multi-select flag
-        fullText = fullText.replace(/\{"op":"ask-mcq","question":"([^"]+)","options":(\[[^\]]+\]),"correct":(\d+|\[[^\]]*\])(,"multiSelect":(true|false))?\}/g, (_, question, optionsJson, correctJson, _flagKey, multiSelectRaw) => {
-          try {
-            const options = JSON.parse(optionsJson) as string[];
-            // correct is a bare number (single) or an array of indices (multi).
-            const isArray = correctJson.trim().startsWith("[");
-            const correct: number | number[] = isArray
-              ? (JSON.parse(correctJson) as number[])
-              : parseInt(correctJson, 10);
-            const multiSelect = isArray || multiSelectRaw === "true";
-            return `<div class="thalamus-mcq" data-mcq='${JSON.stringify({type:"mcq",question,options,correct,multiSelect})}'></div>`;
-          } catch { return `<p>[MCQ: ${question}]</p>`; }
-        })
-        // Flashcards op: {"op":"flashcards","cards":[{"front":"...","back":"..."},...]}
-        .replace(/\{"op":"flashcards","cards":(\[[\s\S]*?\])\}/g, (_, cardsJson) => {
-          try {
-            const cards = JSON.parse(cardsJson) as Array<{ front: string; back: string }>;
-            if (!Array.isArray(cards) || cards.length === 0) return "";
-            return `<div class="thalamus-flashcards" data-flashcards='${JSON.stringify({type:"flashcards",cards})}'></div>`;
-          } catch { return ""; }
-        })
-        // Pathway op: {"op":"pathway","title":"...","steps":[{"topic":"...","question":"...","options":[...],"correct":N|[...],"multiSelect":bool,"explain":"..."}]}
-        .replace(/\{"op":"pathway","title":"([^"]*)","steps":(\[[\s\S]*?\])\}/g, (_, title, stepsJson) => {
-          try {
-            const steps = JSON.parse(stepsJson) as Array<{
-              topic?: string; question: string; options: string[];
-              correct: number | number[]; multiSelect?: boolean; explain?: string;
-            }>;
-            if (!Array.isArray(steps) || steps.length === 0) return "";
-            return `<div class="thalamus-pathway" data-pathway='${JSON.stringify({type:"pathway",title,steps})}'></div>`;
-          } catch { return ""; }
-        });
+        fullText = convertStudyJsonOps(fullText);
       }
 
       // Save the completed exchange to DB now that the stream has finished.

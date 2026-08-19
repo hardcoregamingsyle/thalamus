@@ -5,6 +5,7 @@ import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { callSiliconFlow } from "./lib/agentCore";
 import { buildStudySystemPrompt } from "./lib/studyPrompt";
+import { convertStudyJsonOps } from "./lib/studyJsonOps";
 
 
 // Gemini with Google Search Grounding
@@ -473,41 +474,12 @@ export const sendStudyMessage = action({
       }
     }
 
-    // Process JSON-format ask ops into interactive HTML elements
-    responseContent = responseContent
-      .replace(/\{"op":"ask-question","question":"([^"]+)"\}/g, (_, question) =>
-        `<div class="thalamus-ask" data-ask='${JSON.stringify({type:"question",question})}'></div>`
-      )
-      .replace(/\{"op":"ask-mcq","question":"([^"]+)","options":(\[[^\]]+\]),"correct":(\d+|\[[^\]]*\])(,"multiSelect":(true|false))?\}/g, (_, question, optionsJson, correctJson, _flagKey, multiSelectRaw) => {
-        try {
-          const opts = JSON.parse(optionsJson) as string[];
-          const isArray = correctJson.trim().startsWith("[");
-          const correct: number | number[] = isArray
-            ? (JSON.parse(correctJson) as number[])
-            : parseInt(correctJson, 10);
-          const multiSelect = isArray || multiSelectRaw === "true";
-          return `<div class="thalamus-mcq" data-mcq='${JSON.stringify({type:"mcq",question,options:opts,correct,multiSelect})}'></div>`;
-        } catch { return `<p>[MCQ: ${question}]</p>`; }
-      })
-      // Flashcards op: {"op":"flashcards","cards":[{"front":"...","back":"..."},...]}
-      .replace(/\{"op":"flashcards","cards":(\[[\s\S]*?\])\}/g, (_, cardsJson) => {
-        try {
-          const cards = JSON.parse(cardsJson) as Array<{ front: string; back: string }>;
-          if (!Array.isArray(cards) || cards.length === 0) return "";
-          return `<div class="thalamus-flashcards" data-flashcards='${JSON.stringify({type:"flashcards",cards})}'></div>`;
-        } catch { return ""; }
-      })
-      // Pathway op: {"op":"pathway","title":"...","steps":[{"topic":"...","question":"...","options":[...],"correct":N|[...],"multiSelect":bool,"explain":"..."}]}
-      .replace(/\{"op":"pathway","title":"([^"]*)","steps":(\[[\s\S]*?\])\}/g, (_, title, stepsJson) => {
-        try {
-          const steps = JSON.parse(stepsJson) as Array<{
-            topic?: string; question: string; options: string[];
-            correct: number | number[]; multiSelect?: boolean; explain?: string;
-          }>;
-          if (!Array.isArray(steps) || steps.length === 0) return "";
-          return `<div class="thalamus-pathway" data-pathway='${JSON.stringify({type:"pathway",title,steps})}'></div>`;
-        } catch { return ""; }
-      });
+    // Process JSON-format ask ops into interactive HTML elements. The model
+    // emits these as {"op":"..."} JSON objects, often pretty-printed and wrapped
+    // in ```json fences. Use a robust brace-matching extractor instead of
+    // line-oriented regexes, so multi-line / fenced JSON ops are still turned
+    // into interactive widgets.
+    responseContent = convertStudyJsonOps(responseContent);
 
     const tokensUsed = inputTokens + outputTokens;
     const inputCostCents = (inputTokens / 1_000_000) * 60;
