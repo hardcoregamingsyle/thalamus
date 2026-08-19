@@ -15,6 +15,21 @@ export interface StudyTaskContextValue {
     decision: "retry-same" | "retry-different" | "move-on";
     followUpQuestion?: string;
   }>;
+  // ── Gamification (session-local, resets on reload) ──────────────────────
+  // Every correct answer adds XP, nudges the streak up and collects a star;
+  // a wrong answer breaks the streak. The widgets call `report(correct)` when
+  // a kid answers, so the score bar + celebrations stay in sync.
+  xp?: number;
+  level?: number;
+  levelProgress?: number; // 0..1 within the current level
+  streak?: number;
+  bestStreak?: number;
+  stars?: number;
+  correctCount?: number;
+  wrongCount?: number;
+  report?: (correct: boolean) => void;
+  // Reset the whole session tally (e.g. "play again").
+  resetProgress?: () => void;
 }
 
 const StudyTaskContext = createContext<StudyTaskContextValue>({});

@@ -3,10 +3,12 @@
 // sound on flip and on mark. Progress bar tracks how far through the deck the
 // student is.
 
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Check, RefreshCw, X } from "lucide-react";
+import FloatingReward from "@/components/chat/FloatingReward";
 import { sfx } from "@/lib/sfx";
+import { bigCelebrateAt, celebrateAt } from "@/lib/vfx";
 import { useStudyTaskContext } from "@/components/chat/StudyTaskContext";
 
 interface Flashcard {
@@ -21,10 +23,12 @@ const FlashcardDeck = memo(function FlashcardDeck({
   cards: Flashcard[];
   deckItemIds?: string[];
 }) {
-  const { completeItem } = useStudyTaskContext();
+  const { completeItem, report } = useStudyTaskContext();
+  const wrapRef = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [known, setKnown] = useState<Set<number>>(new Set());
+  const [reward, setReward] = useState<string | null>(null);
 
   const card = cards[index];
 
@@ -35,12 +39,23 @@ const FlashcardDeck = memo(function FlashcardDeck({
   };
 
   const mark = (k: boolean) => {
-    setKnown(s => {
-      const n = new Set(s);
-      if (k) n.add(index); else n.delete(index);
-      return n;
-    });
-    if (k) sfx.correct(); else sfx.wrong();
+    const nowKnown = new Set(known);
+    if (k) nowKnown.add(index); else nowKnown.delete(index);
+    setKnown(nowKnown);
+    if (k) {
+      sfx.correct();
+      report?.(true);
+      celebrateAt(wrapRef.current);
+      setReward("+10 XP");
+      // Bigger celebration when the whole deck is mastered.
+      if (nowKnown.size === cards.length) {
+        sfx.tada();
+        bigCelebrateAt(wrapRef.current);
+      }
+    } else {
+      sfx.wrong();
+      report?.(false);
+    }
     // Report completion for this card to the persisted study task.
     if (deckItemIds && deckItemIds[index]) completeItem?.(deckItemIds[index], k);
     setFlipped(false);
@@ -48,6 +63,8 @@ const FlashcardDeck = memo(function FlashcardDeck({
   };
 
   return (
+    <div ref={wrapRef} className="relative">
+      {reward && <FloatingReward label={reward} onDone={() => setReward(null)} />}
     <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-3">
       <div className="flex items-center justify-between text-[11px] text-muted-foreground">
         <span className="font-semibold text-indigo-400 uppercase tracking-wider">Flashcards</span>
@@ -134,6 +151,7 @@ const FlashcardDeck = memo(function FlashcardDeck({
           </button>
         </motion.div>
       )}
+    </div>
     </div>
   );
 });

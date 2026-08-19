@@ -357,3 +357,70 @@
   box-shadow: 0 0 6px currentColor;
   animation: streamingCaretPulse 0.9s ease-in-out infinite;
 }
+
+/* ── Study-mode game feel ─────────────────────────────────────────────────── */
+
+/* Horizontal shake for a wrong answer (MCQ / typed answer). */
+@keyframes studyShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-7px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+.study-shake {
+  animation: studyShake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+/* Soft "pop" scale for a correct selection. */
+@keyframes studyPop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.035); }
+  100% { transform: scale(1); }
+}
+.study-pop {
+  animation: studyPop 0.28s ease-out both;
+}
+
+/* Gentle bounce used for the celebration trophy / reward badge. */
+@keyframes studyFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* Pulsing glow ring around a widget that just got something right. */
+@keyframes studyCorrectGlow {
+  0% { box-shadow: 0 0 0 0 oklch(0.72 0.19 150 / 0.45); }
+  100% { box-shadow: 0 0 0 10px transparent; }
+}
+.study-correct-glow {
+  animation: studyCorrectGlow 0.7s ease-out 1;
+}
+
+/* Gold shimmering gradient used for level-up / completion headlines. */
+.study-gold-text {
+  background: linear-gradient(90deg, #fbbf24, #f59e0b, #fbbf24, #fde68a);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: studyGoldSheen 2.2s linear infinite;
+}
+@keyframes studyGoldSheen {
+  to { background-position: 200% center; }
+}
+
+/* MCQ option letter badge. */
+.study-opt-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid currentColor;
+  background: oklch(0 0 0 / 0.18);
+}

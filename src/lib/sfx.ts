@@ -67,4 +67,29 @@ export const sfx = {
   click(): void {
     tone(320, 0, 0.04, "square", 0.05);
   },
+  pop(): void {
+    // Little rising "blip" for awarding points.
+    tone(620, 0, 0.06, "triangle", 0.1);
+    tone(880, 0.05, 0.07, "triangle", 0.08);
+  },
+  streak(): void {
+    // Punchy two-note "ding" for a streak going up.
+    tone(740, 0, 0.08, "triangle", 0.13);
+    tone(1110, 0.07, 0.1, "triangle", 0.11);
+  },
+  levelup(): void {
+    // Triplet ascending arpeggio.
+    tone(523, 0, 0.1, "triangle", 0.13);
+    tone(659, 0.09, 0.1, "triangle", 0.13);
+    tone(784, 0.18, 0.14, "triangle", 0.13);
+    tone(1046, 0.3, 0.2, "sine", 0.13);
+  },
+  tada(): void {
+    // Bright closing fanfare for finishing a whole task.
+    tone(523, 0, 0.12, "sine", 0.13);
+    tone(659, 0.1, 0.12, "sine", 0.13);
+    tone(784, 0.2, 0.12, "sine", 0.13);
+    tone(1046, 0.3, 0.22, "sine", 0.15);
+    tone(1318, 0.42, 0.28, "sine", 0.14);
+  },
 };

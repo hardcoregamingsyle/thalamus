@@ -27,6 +27,10 @@ import { ALL_MODES, type Mode } from "@/pages/portal/modes";
 import type { Conversation, Message } from "@/pages/portal/types";
 import MobileMessageBubble from "./MobileMessageBubble";
 import { useStudyTask } from "@/hooks/use-study-task";
+import { useGamification } from "@/hooks/use-gamification";
+import { StudyTaskProvider } from "@/components/chat/StudyTaskContext";
+import StudyScoreBar from "@/components/chat/StudyScoreBar";
+import StudyCelebration from "@/components/chat/StudyCelebration";
 
 // Mobile-specific system prompts. Deliberately terser than the desktop set
 // (see src/content/systemPrompts.ts) because mobile screens can't fit the
@@ -104,9 +108,41 @@ export default function MobileChatView({
   const deleteConversation = useMutation(api.conversations.remove);
   const sendMessage = useAction(api.ai.sendMessage);
   const sendStudyMessage = useAction(api.study.sendStudyMessage);
+  const gradeStudyAnswerAction = useAction(api.study.gradeStudyAnswer);
   const generateTitle = useAction(api.ai.generateConversationTitle);
   const processFileResource = useAction(api.study.processFileResource);
   const saveUserMessage = useMutation(api.conversations.saveUserMessage);
+
+  const typedUserForProfile = user as { studyGrade?: string; studyBoard?: string; studyLanguage?: string } | null;
+  const studyGrade = typedUserForProfile?.studyGrade ?? null;
+  const studyBoard = typedUserForProfile?.studyBoard ?? null;
+  const studyLanguage = typedUserForProfile?.studyLanguage ?? null;
+
+  const handleGradeAnswer = async (question: string, answer: string, attempt: number) => {
+    if (!token || !activeConvId) throw new Error("Not in a study conversation");
+    return await gradeStudyAnswerAction({
+      token,
+      conversationId: activeConvId,
+      question,
+      answer,
+      studyGrade: studyGrade ?? undefined,
+      studyBoard: studyBoard ?? undefined,
+      studyLanguage: studyLanguage ?? undefined,
+      attempt,
+    });
+  };
+
+  // Session-local gamification + full-screen celebration on task completion.
+  const gamification = useGamification();
+  const [celebration, setCelebration] = useState(false);
+  const prevTaskCompleteRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    const complete = studyTask.task?.complete === true;
+    if (studyTask.task && complete && prevTaskCompleteRef.current === false) {
+      setCelebration(true);
+    }
+    if (studyTask.task) prevTaskCompleteRef.current = complete;
+  }, [studyTask.task]);
 
   const filteredConvs = conversations?.filter((c: Conversation) => c.mode === mode) || [];
 
@@ -291,6 +327,20 @@ export default function MobileChatView({
   const showMessages = activeConvId && allMessages.length > 0;
 
   return (
+    <StudyTaskProvider value={{
+      completeItem: studyTask.completeItem,
+      gradeAnswer: mode === "study" ? handleGradeAnswer : undefined,
+      xp: gamification.xp,
+      level: gamification.level,
+      levelProgress: gamification.levelProgress,
+      streak: gamification.streak,
+      bestStreak: gamification.bestStreak,
+      stars: gamification.stars,
+      correctCount: gamification.correctCount,
+      wrongCount: gamification.wrongCount,
+      report: gamification.report,
+      resetProgress: gamification.reset,
+    }}>
     <div className="flex flex-col h-full bg-background">
       {/* Top bar */}
       <div className="shrink-0 flex items-center gap-2 px-3 border-b border-border/50 bg-card/80 backdrop-blur-sm" style={{ paddingTop: "max(12px, env(safe-area-inset-top))", paddingBottom: "10px" }}>
@@ -455,6 +505,19 @@ export default function MobileChatView({
 
       {/* Input bar */}
       <div className="shrink-0 px-3 py-2 bg-card/80 backdrop-blur-sm border-t border-border/50" style={{ paddingBottom: "max(10px, env(safe-area-inset-bottom))" }}>
+        {mode === "study" && (gamification.xp > 0 || !!studyTask.task) && (
+          <div className="mb-2">
+            <StudyScoreBar
+              xp={gamification.xp}
+              level={gamification.level}
+              levelProgress={gamification.levelProgress}
+              streak={gamification.streak}
+              stars={gamification.stars}
+              bestStreak={gamification.bestStreak}
+              task={studyTask.task ? { completed: studyTask.task.completed, total: studyTask.task.total } : null}
+            />
+          </div>
+        )}
         {mode === "study" && (
           <div className="flex items-center gap-2 mb-2">
             <button onClick={() => fileInputRef.current?.click()}
@@ -555,6 +618,22 @@ export default function MobileChatView({
       </AnimatePresence>
 
       {creditModalOpen && <CreditModal open={creditModalOpen} onClose={() => setCreditModalOpen(false)} token={token} totalAB={totalAB} dailyAB={dailyAB} purchasedAB={purchasedAB} />}
+
+      {/* Gamified study-task celebration */}
+      <StudyCelebration
+        open={celebration}
+        xp={gamification.xp}
+        stars={gamification.stars}
+        streak={gamification.streak}
+        bestStreak={gamification.bestStreak}
+        onClose={() => setCelebration(false)}
+        onPlayAgain={() => {
+          setCelebration(false);
+          gamification.reset();
+          void handleNewConversation();
+        }}
+      />
     </div>
+    </StudyTaskProvider>
   );
 }

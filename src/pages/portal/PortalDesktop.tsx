@@ -30,7 +30,10 @@ import Composer from "@/components/chat/Composer";
 import EmptyState from "@/components/chat/EmptyState";
 import ConversationSidebar from "@/components/chat/ConversationSidebar";
 import { StudyTaskProvider } from "@/components/chat/StudyTaskContext";
+import StudyScoreBar from "@/components/chat/StudyScoreBar";
+import StudyCelebration from "@/components/chat/StudyCelebration";
 import { useStudyTask } from "@/hooks/use-study-task";
+import { useGamification } from "@/hooks/use-gamification";
 import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
 import { fetchSponsoredAd } from "@/lib/requestAd";
 import { getSessionToken } from "@/lib/session";
@@ -425,6 +428,19 @@ export default function PortalDesktop() {
     studyTask.task && studyTask.task.total > 0
       ? `${studyTask.task.completed}/${studyTask.task.total}`
       : "";
+
+  // Session-local gamification (XP / level / streak / stars) for study mode.
+  const gamification = useGamification();
+  // Full-screen celebration fired once when a study task transitions to done.
+  const [celebration, setCelebration] = useState(false);
+  const prevTaskCompleteRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    const complete = studyTask.task?.complete === true;
+    if (studyTask.task && complete && prevTaskCompleteRef.current === false) {
+      setCelebration(true);
+    }
+    if (studyTask.task) prevTaskCompleteRef.current = complete;
+  }, [studyTask.task]);
 
   // Grade an in-chat answer inline (the widget shows the feedback + decision).
   const handleGradeAnswer = async (question: string, answer: string, attempt: number) => {
@@ -1049,6 +1065,16 @@ export default function PortalDesktop() {
         <StudyTaskProvider value={{
           completeItem: studyTask.completeItem,
           gradeAnswer: activeMode === "study" ? handleGradeAnswer : undefined,
+          xp: gamification.xp,
+          level: gamification.level,
+          levelProgress: gamification.levelProgress,
+          streak: gamification.streak,
+          bestStreak: gamification.bestStreak,
+          stars: gamification.stars,
+          correctCount: gamification.correctCount,
+          wrongCount: gamification.wrongCount,
+          report: gamification.report,
+          resetProgress: gamification.reset,
         }}>
         <div className="flex-1 flex flex-col min-w-0 relative">
           {/* Study resource sub-header (compact) */}
@@ -1166,6 +1192,19 @@ export default function PortalDesktop() {
           {/* ── Composer (the center stage) ───────────────────────────────── */}
           <div className="shrink-0 border-t border-border bg-gradient-to-t from-background via-background to-transparent">
             <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
+              {/* Gamified score bar — the kid's level, XP, streak and stars */}
+              {activeMode === "study" && (gamification.xp > 0 || !!studyTask.task) && (
+                <StudyScoreBar
+                  xp={gamification.xp}
+                  level={gamification.level}
+                  levelProgress={gamification.levelProgress}
+                  streak={gamification.streak}
+                  stars={gamification.stars}
+                  bestStreak={gamification.bestStreak}
+                  task={studyTask.task ? { completed: studyTask.task.completed, total: studyTask.task.total } : null}
+                />
+              )}
+
               {/* Lock banner while an interactive study task is in progress */}
               {studyLocked && studyTask.task && (
                 <div className="mb-2.5 flex items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-300">
@@ -1398,6 +1437,21 @@ export default function PortalDesktop() {
           </motion.div>
         </div>
       )}
+
+      {/* Gamified study-task celebration */}
+      <StudyCelebration
+        open={celebration}
+        xp={gamification.xp}
+        stars={gamification.stars}
+        streak={gamification.streak}
+        bestStreak={gamification.bestStreak}
+        onClose={() => setCelebration(false)}
+        onPlayAgain={() => {
+          setCelebration(false);
+          gamification.reset();
+          void handleNewConversation();
+        }}
+      />
     </div>
   );
 }

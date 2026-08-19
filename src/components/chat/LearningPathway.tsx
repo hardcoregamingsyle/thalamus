@@ -3,10 +3,12 @@
 // student advances through waypoints with animated progress, instant feedback,
 // and sounds. Reaching the end shows a completion state.
 
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, Flag, Lock, Trophy } from "lucide-react";
+import FloatingReward from "@/components/chat/FloatingReward";
 import { sfx } from "@/lib/sfx";
+import { bigCelebrateAt, celebrateAt } from "@/lib/vfx";
 import { useStudyTaskContext } from "@/components/chat/StudyTaskContext";
 
 export interface PathwayStep {
@@ -26,12 +28,15 @@ interface LearningPathwayProps {
 }
 
 const LearningPathway = memo(function LearningPathway({ title, steps, stepItemIds, onAnswer }: LearningPathwayProps) {
-  const { completeItem } = useStudyTaskContext();
+  const { completeItem, report } = useStudyTaskContext();
+  const wrapRef = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number[]>([]);
   const [checked, setChecked] = useState(false);
   const [correctCount, setCorrectCount] = useState(0);
   const [finished, setFinished] = useState(false);
+  const [shakeKey, setShakeKey] = useState(0);
+  const [reward, setReward] = useState<string | null>(null);
 
   const step = steps[index];
   if (!step) return null;
@@ -40,6 +45,7 @@ const LearningPathway = memo(function LearningPathway({ title, steps, stepItemId
 
   const toggle = (i: number) => {
     if (checked) return;
+    sfx.click();
     setSelected(prev => multi ? (prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]) : [i]);
   };
 
@@ -49,8 +55,17 @@ const LearningPathway = memo(function LearningPathway({ title, steps, stepItemId
       ? selected.length === correctArr.length && selected.every(s => correctArr.includes(s))
       : selected[0] === correctArr[0];
     setChecked(true);
-    if (ok) { sfx.correct(); setCorrectCount(c => c + 1); }
-    else sfx.wrong();
+    if (ok) {
+      sfx.correct();
+      setCorrectCount(c => c + 1);
+      report?.(true);
+      celebrateAt(wrapRef.current);
+      setReward("+10 XP");
+    } else {
+      sfx.wrong();
+      report?.(false);
+      setShakeKey(k => k + 1);
+    }
     // Mark this step done in the persisted task once answered.
     if (stepItemIds && stepItemIds[index]) completeItem?.(stepItemIds[index], true);
     if (onAnswer && !ok) {
@@ -62,6 +77,7 @@ const LearningPathway = memo(function LearningPathway({ title, steps, stepItemId
     sfx.advance();
     if (index >= steps.length - 1) {
       sfx.complete();
+      bigCelebrateAt(wrapRef.current);
       setFinished(true);
     } else {
       setIndex(i => i + 1);
@@ -72,29 +88,35 @@ const LearningPathway = memo(function LearningPathway({ title, steps, stepItemId
 
   if (finished) {
     return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-6 text-center space-y-3"
-      >
+      <div ref={wrapRef} className="relative">
+        {reward && <FloatingReward label={reward} onDone={() => setReward(null)} />}
         <motion.div
-          animate={{ y: [0, -8, 0] }}
-          transition={{ duration: 1.2, repeat: Infinity }}
-          className="mx-auto w-12 h-12 rounded-full bg-emerald-400/15 border border-emerald-400/30 flex items-center justify-center"
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-6 text-center space-y-3"
         >
-          <Trophy className="h-6 w-6 text-emerald-400" />
+          <motion.div
+            animate={{ y: [0, -8, 0] }}
+            transition={{ duration: 1.2, repeat: Infinity }}
+            className="mx-auto w-12 h-12 rounded-full bg-emerald-400/15 border border-emerald-400/30 flex items-center justify-center"
+            style={{ boxShadow: "0 0 20px oklch(0.72 0.19 150 / 0.4)" }}
+          >
+            <Trophy className="h-6 w-6 text-emerald-400" />
+          </motion.div>
+          <p className="text-lg font-extrabold study-gold-text">Path complete!</p>
+          <p className="text-xs text-muted-foreground">
+            You answered {correctCount} of {steps.length} correctly on "{title}".
+          </p>
+          <p className="text-xs text-emerald-400 font-medium">Your tutor will bring this back later for spaced review.</p>
         </motion.div>
-        <p className="text-base font-bold text-foreground">Path complete!</p>
-        <p className="text-xs text-muted-foreground">
-          You answered {correctCount} of {steps.length} correctly on "{title}".
-        </p>
-        <p className="text-xs text-emerald-400 font-medium">Your tutor will bring this back later for spaced review.</p>
-      </motion.div>
+      </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-3">
+    <div ref={wrapRef} className="relative">
+      {reward && <FloatingReward label={reward} onDone={() => setReward(null)} />}
+    <div key={shakeKey} className={`rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-3 ${shakeKey > 0 ? "study-shake" : ""}`}>
       {/* Title + waypoint map */}
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-bold text-emerald-500 uppercase tracking-wider truncate">{title}</p>
@@ -178,6 +200,7 @@ const LearningPathway = memo(function LearningPathway({ title, steps, stepItemId
           </button>
         )}
       </div>
+    </div>
     </div>
   );
 });
