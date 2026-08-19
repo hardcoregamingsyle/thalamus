@@ -5,7 +5,50 @@
 // and the raw JSON leaked into the visible reply. These tests pin the robust
 // brace-matching extraction that handles pretty-printed + fenced ops.
 import { describe, expect, test } from "bun:test";
-import { convertStudyJsonOps, extractStudyJsonOps, buildStudyTaskItems } from "../src/convex/lib/studyJsonOps";
+import { convertStudyJsonOps, extractStudyJsonOps, buildStudyTaskItems, stripOpFences } from "../src/convex/lib/studyJsonOps";
+
+describe("stripOpFences", () => {
+  test("strips the leftover closing fence before an op's prose", () => {
+    // Slice before the 2nd op carries the 1st op's closing ``` and the 2nd
+    // op's opening ```json — a lone ``` left behind would make react-markdown
+    // treat the prose as a fenced code block.
+    const slice = "\n```\n\n## **STEP 2: Check Your Foundation**\n\n```json\n";
+    expect(stripOpFences(slice)).toBe("\n\n## **STEP 2: Check Your Foundation**\n\n");
+  });
+
+  test("strips a trailing opening fence (op at the very end)", () => {
+    expect(stripOpFences("## **STEP 1**\n\n```json\n")).toBe("## **STEP 1**\n\n");
+  });
+
+  test("strips a leading closing fence from trailing prose", () => {
+    expect(stripOpFences("```\n\n### **Concept 1**\n\n**Example:** x")).toBe("\n\n### **Concept 1**\n\n**Example:** x");
+  });
+
+  test("leaves plain prose with no fences untouched", () => {
+    const prose = "Just **bold** and a ## heading\n\nsecond paragraph";
+    expect(stripOpFences(prose)).toBe(prose);
+  });
+
+  test("converts multiple fenced ops without leaving an orphaned fence in prose", () => {
+    const content = [
+      "## **STEP 1**",
+      "```json",
+      '{"op":"flashcards","cards":[{"front":"a","back":"b"}]}',
+      "```",
+      "## **STEP 2**",
+      "```json",
+      '{"op":"ask-mcq","question":"q","options":["1","2"],"correct":0}',
+      "```",
+      "### **STEP 3**",
+    ].join("\n");
+    const out = convertStudyJsonOps(content);
+    // No fence markers should survive in the prose.
+    expect(out).not.toContain("```");
+    // The prose headings survive as plain markdown (parsed client-side).
+    expect(out).toContain("## **STEP 2**");
+    expect(out).toContain("### **STEP 3**");
+  });
+});
 
 describe("studyJsonOps extraction", () => {
   test("extracts pretty-printed flashcards from a json fence", () => {

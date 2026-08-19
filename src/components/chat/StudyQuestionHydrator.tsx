@@ -16,6 +16,7 @@ import { Check, Loader2, Send, X } from "lucide-react";
 import FlashcardDeck from "@/components/chat/FlashcardDeck";
 import LearningPathway, { type PathwayStep } from "@/components/chat/LearningPathway";
 import FloatingReward from "@/components/chat/FloatingReward";
+import { stripOpFences } from "@/convex/lib/studyJsonOps";
 import { sfx } from "@/lib/sfx";
 import { celebrateAt } from "@/lib/vfx";
 import { useStudyTaskContext } from "@/components/chat/StudyTaskContext";
@@ -385,23 +386,20 @@ const StudyQuestionHydrator = memo(function StudyQuestionHydrator({
   const segments: Array<{ kind: "prose" | "widget"; text?: string; op?: string; data?: Record<string, unknown> }> = [];
   let cursor = 0;
   for (const op of ops) {
-    // Strip the ```json fence around the op from prose boundaries.
+    // The op is often wrapped in a ```json fence. That means this slice carries
+    // the closing ``` of the PREVIOUS op's fence at its start and the opening
+    // ```json of THIS op's fence at its end. If we leave either behind, the
+    // lone ``` makes react-markdown treat the rest of the prose as a fenced
+    // code block, so the markdown (##, **) renders as literal text. Strip a
+    // leading ``` / ```json AND a trailing ```json / ```.
     let proseBefore = content.slice(cursor, op.start);
-    // If the op sits inside a ```json fence, the fence opening is just before
-    // the op and the fence closing just after — trim them from prose.
-    proseBefore = proseBefore.replace(/```json\s*$/, "").replace(/```\s*$/, "");
+    proseBefore = stripOpFences(proseBefore);
     if (proseBefore.trim()) segments.push({ kind: "prose", text: proseBefore });
     segments.push({ kind: "widget", op: op.op, data: op.data });
-    let proseAfter = content.slice(op.end);
-    proseAfter = proseAfter.replace(/^\s*```/, "");
-    // keep cursor for next iteration
     cursor = op.end;
-    // store the "after" as next cursor's before by continuing; simpler: append trailing later.
-    if (segments.length) {
-      // remember trailing prose for after the loop
-    }
   }
-  const trailing = content.slice(cursor).replace(/^\s*```/, "");
+  // Trailing prose after the last op — again strip a leftover closing fence.
+  const trailing = stripOpFences(content.slice(cursor));
 
   return (
     <div>

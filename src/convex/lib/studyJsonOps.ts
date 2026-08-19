@@ -14,6 +14,23 @@ interface StudyJsonOp {
 }
 
 /**
+ * Strip leftover ```json / ``` code-fence markers from the edges of a prose
+ * slice. When an op is wrapped in a ```json fence, the slice before the op
+ * carries the previous block's closing ``` at its start and this block's
+ * opening ```json at its end. If a lone ``` is left behind, a markdown renderer
+ * treats the rest of the prose as a fenced code block and the markdown (##, **)
+ * shows as literal text. Shared by the backend converter and the frontend
+ * hydrator so both strip fences identically.
+ */
+export function stripOpFences(prose: string): string {
+  return prose
+    .replace(/^\s*```json/, "")
+    .replace(/^\s*```/, "")
+    .replace(/```json\s*$/, "")
+    .replace(/```\s*$/, "");
+}
+
+/**
  * Find all balanced {"op":"..."} JSON objects in content. Handles nested
  * braces/arrays, braces inside string values, AND pretty-printed JSON where
  * whitespace appears after the opening brace ({\n  "op": "flashcards"}).
@@ -140,7 +157,7 @@ export function convertStudyJsonOps(content: string): string {
     if (widget) {
       const at = out.indexOf(op.raw);
       if (at === -1) continue;
-      const before = out.slice(0, at).replace(/```json\s*$/, "").replace(/```\s*$/, "");
+      const before = stripOpFences(out.slice(0, at));
       const after = out.slice(at + op.raw.length).replace(/^\s*```/, "");
       out = before + "\n\n" + widget + "\n\n" + after;
     }
