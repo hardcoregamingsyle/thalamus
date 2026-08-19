@@ -358,9 +358,9 @@ export default function PortalDesktop() {
   useEffect(() => {
     const end = messagesEndRef.current;
     if (!end) return;
-    const container = end.closest(".overflow-auto") as HTMLElement | null;
+    const container = end.closest(".overflow-y-auto, .overflow-auto") as HTMLElement | null;
     const nearBottom = container
-      ? container.scrollHeight - container.scrollTop - container.clientHeight < 200
+      ? container.scrollHeight - container.scrollTop - container.clientHeight < 160
       : true;
     if (nearBottom) {
       end.scrollIntoView({ behavior: streamingContent !== null ? "auto" : "smooth", block: "end" });
