@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { useNavigate, useParams } from "react-router";
 import {
   ArrowLeft, ChevronRight, GraduationCap, Loader2, Moon, Paperclip,
-  Plus, Send, Settings, Sun, Trash2, Zap,
+  Plus, Send, Settings, Sun, Trash2,
 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -20,7 +20,6 @@ import { fileToBase64, MAX_UPLOAD_BYTES } from "@/lib/fileEncoding";
 import { errMsg } from "@/lib/errorMessage";
 import { convexSiteUrl } from "@/lib/convexUrls";
 import { streamChat } from "@/lib/streamChat";
-import CreditModal from "@/components/CreditModal";
 import ThinkingPanel from "@/components/ThinkingPanel";
 import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
 import { ALL_MODES, type Mode } from "@/pages/portal/modes";
@@ -46,7 +45,6 @@ export interface MobileChatViewProps {
   token: string;
   user: unknown;
   onBack: () => void;
-  totalAB: number;
 }
 
 export default function MobileChatView({
@@ -54,7 +52,6 @@ export default function MobileChatView({
   token,
   user,
   onBack,
-  totalAB,
 }: MobileChatViewProps) {
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
@@ -68,7 +65,6 @@ export default function MobileChatView({
   const [inFlightUserContent, setInFlightUserContent] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const [showConvList, setShowConvList] = useState(false);
-  const [creditModalOpen, setCreditModalOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -308,10 +304,6 @@ export default function MobileChatView({
     finally { if (fileInputRef.current) fileInputRef.current.value = ""; }
   };
 
-  const typedUser = user as { dailyAgentBucks?: number; purchasedAgentBucks?: number; agentBucksBalance?: number } | null;
-  const purchasedAB = typedUser?.purchasedAgentBucks ?? 0;
-  const dailyAB = (typedUser?.dailyAgentBucks ?? typedUser?.agentBucksBalance ?? 0) + purchasedAB;
-
   const activeConvTitle = activeConvId && conversations
     ? (conversations.find(c => c._id === activeConvId)?.title ?? modeInfo.mobileLabel)
     : modeInfo.mobileLabel;
@@ -358,10 +350,6 @@ export default function MobileChatView({
           <p className="text-[14px] font-semibold text-foreground leading-tight truncate">{activeConvTitle}</p>
           <p className={`text-[11px] ${modeInfo.mobileColor} leading-tight`}>{modeInfo.mobileLabel} · Thalamus AI</p>
         </div>
-        <button onClick={() => setCreditModalOpen(true)} className="flex items-center gap-1 bg-amber-400/10 border border-amber-400/20 text-amber-400 px-2.5 py-1 rounded-full text-[11px] font-semibold">
-          <Zap className="h-3 w-3" />
-          {(dailyAB / 1_000_000).toFixed(1)}M
-        </button>
         <button
           aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
           onClick={toggleTheme}
@@ -616,8 +604,6 @@ export default function MobileChatView({
           </>
         )}
       </AnimatePresence>
-
-      {creditModalOpen && <CreditModal open={creditModalOpen} onClose={() => setCreditModalOpen(false)} token={token} totalAB={totalAB} dailyAB={dailyAB} purchasedAB={purchasedAB} />}
 
       {/* Gamified study-task celebration */}
       <StudyCelebration

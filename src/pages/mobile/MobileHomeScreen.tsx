@@ -1,34 +1,26 @@
-// Mobile home screen — greeting, credit chip, mode picker, sign-out. Shown
-// when the URL is /portal with no mode segment; picking a card navigates to
-// /portal/<mode>, which flips MobilePortal into MobileChatView.
+// Mobile home screen — greeting, mode picker, sign-out. Shown when the URL is
+// /portal with no mode segment; picking a card navigates to /portal/<mode>,
+// which flips MobilePortal into MobileChatView.
 
-import { useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronRight, LogOut, Moon, Sun, Zap } from "lucide-react";
+import { ChevronRight, LogOut, Moon, Sun } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
-import CreditModal from "@/components/CreditModal";
 import { ALL_MODES, type Mode } from "@/pages/portal/modes";
 
 export interface MobileHomeScreenProps {
   token: string;
   user: unknown;
-  totalAB: number;
   onModeSelect: (mode: Mode) => void;
   onSignOut: () => void;
 }
 
 export default function MobileHomeScreen({
-  token,
   user,
-  totalAB,
   onModeSelect,
   onSignOut,
 }: MobileHomeScreenProps) {
-  const [creditModalOpen, setCreditModalOpen] = useState(false);
   const { theme, toggleTheme } = useTheme();
-  const typedUser = user as { email?: string; name?: string; dailyAgentBucks?: number; purchasedAgentBucks?: number; agentBucksBalance?: number } | null;
-  const dailyAB = typedUser?.dailyAgentBucks ?? typedUser?.agentBucksBalance ?? 0;
-  const purchasedAB = typedUser?.purchasedAgentBucks ?? 0;
+  const typedUser = user as { email?: string; name?: string } | null;
 
   const displayName = typedUser?.name ?? typedUser?.email?.split("@")[0] ?? "there";
 
@@ -39,11 +31,6 @@ export default function MobileHomeScreen({
         <div className="flex items-center justify-between mb-4">
           <img src="/thalamus-logo.png" alt="Thalamus AI" className="h-8 object-contain" />
           <div className="flex items-center gap-2">
-            <button onClick={() => setCreditModalOpen(true)}
-              className="flex items-center gap-1.5 bg-card border border-border px-3 py-2 rounded-xl text-sm text-foreground">
-              <Zap className="h-4 w-4 text-amber-400" />
-              <span className="font-medium">{(totalAB / 1_000_000).toFixed(1)}M</span>
-            </button>
             <button
               aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
               onClick={toggleTheme}
@@ -105,7 +92,6 @@ export default function MobileHomeScreen({
         )}
       </div>
 
-      {creditModalOpen && <CreditModal open={creditModalOpen} onClose={() => setCreditModalOpen(false)} token={token} totalAB={totalAB} dailyAB={dailyAB} purchasedAB={purchasedAB} />}
     </div>
   );
 }

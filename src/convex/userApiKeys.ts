@@ -41,24 +41,12 @@ export const createApiKey = action({
   args: {
     token: v.string(),
     name: v.string(),
-    creditsAllocated: v.number(),
     expiresInDays: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<{ keyId: string; fullKey: string; keyPrefix: string }> => {
     // Actions have no ctx.db — resolve the session through a query.
     const userId = await ctx.runQuery(internal.userApiKeys.getSessionUserId, { token: args.token });
     if (!userId) throw new Error("Unauthorized");
-
-    const user = await ctx.runQuery(internal.userApiKeys.getUserBalance, { userId });
-    if (!user) throw new Error("User not found");
-
-    if (args.creditsAllocated > (user.agentBucksBalance ?? 0)) {
-      throw new Error("Insufficient AgentBucks balance");
-    }
-
-    if (args.creditsAllocated < 100) {
-      throw new Error("Minimum allocation is 100 AgentBucks");
-    }
 
     const fullKey = generateApiKey();
     const keyHash = await hashKey(fullKey);
@@ -75,14 +63,7 @@ export const createApiKey = action({
       keyHash,
       keyPrefix,
       name: args.name,
-      creditsAllocated: args.creditsAllocated,
       expiresAt,
-    });
-
-    // Deduct allocated credits from user balance
-    await ctx.runMutation(internal.userApiKeys.deductCredits, {
-      userId,
-      amount: args.creditsAllocated,
     });
 
     return { keyId, fullKey, keyPrefix };
@@ -96,7 +77,6 @@ export const insertApiKey = internalMutation({
     keyHash: v.string(),
     keyPrefix: v.string(),
     name: v.string(),
-    creditsAllocated: v.number(),
     expiresAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -106,33 +86,10 @@ export const insertApiKey = internalMutation({
       keyHash: args.keyHash,
       keyPrefix: args.keyPrefix,
       name: args.name,
-      creditsAllocated: args.creditsAllocated,
-      creditsUsed: 0,
       isActive: true,
       createdAt: Date.now(),
       expiresAt: args.expiresAt,
     });
-  },
-});
-
-export const deductCredits = internalMutation({
-  args: { userId: v.id("users"), amount: v.number() },
-  handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-    if (!user) return;
-    const current = user.agentBucksBalance ?? 0;
-    await ctx.db.patch(args.userId, {
-      agentBucksBalance: Math.max(0, current - args.amount),
-    });
-  },
-});
-
-export const getUserBalance = internalQuery({
-  args: { userId: v.id("users") },
-  handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-    if (!user) return null;
-    return { agentBucksBalance: user.agentBucksBalance ?? 0 };
   },
 });
 
@@ -152,8 +109,6 @@ export const listApiKeys = query({
       keyId: k.keyId,
       keyPrefix: k.keyPrefix,
       name: k.name,
-      creditsAllocated: k.creditsAllocated,
-      creditsUsed: k.creditsUsed,
       isActive: k.isActive,
       lastUsedAt: k.lastUsedAt,
       createdAt: k.createdAt,
@@ -172,17 +127,6 @@ export const revokeApiKey = mutation({
       .withIndex("by_key_id", (q) => q.eq("keyId", args.keyId))
       .first();
     if (!key || key.userId !== userId) throw new Error("Key not found");
-
-    // Refund unused credits
-    const unused = key.creditsAllocated - key.creditsUsed;
-    if (unused > 0) {
-      const user = await ctx.db.get(userId);
-      if (user) {
-        await ctx.db.patch(userId, {
-          agentBucksBalance: (user.agentBucksBalance ?? 0) + unused,
-        });
-      }
-    }
 
     await ctx.db.patch(key._id, { isActive: false });
   },
@@ -211,20 +155,17 @@ export const getKeyByHash = internalQuery({
       _id: key._id,
       keyId: key.keyId,
       userId: key.userId,
-      creditsRemaining: key.creditsAllocated - key.creditsUsed,
     };
   },
 });
 
-// Meter usage against the key's own allocation (pre-paid from the user's balance
-// at creation time — see createApiKey).
+// Touch the key's lastUsedAt so the API page can show recent activity.
 export const recordKeyUsage = internalMutation({
-  args: { id: v.id("userApiKeys"), credits: v.number() },
+  args: { id: v.id("userApiKeys") },
   handler: async (ctx, args) => {
     const key = await ctx.db.get(args.id);
     if (!key) return;
     await ctx.db.patch(args.id, {
-      creditsUsed: key.creditsUsed + args.credits,
       lastUsedAt: Date.now(),
     });
   },

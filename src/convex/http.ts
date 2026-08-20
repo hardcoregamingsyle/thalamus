@@ -3,7 +3,7 @@ import { httpAction } from "./_generated/server";
 import { internal, api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
-import { callModel, calcAgentBucksForTier, FREE_UNLIMITED, MODE_ADHD, adhdToTemperature, MODE_SYSTEM_PROMPTS } from "./lib/agentCore";
+import { callModel, MODE_ADHD, adhdToTemperature, MODE_SYSTEM_PROMPTS } from "./lib/agentCore";
 import { buildStudySystemPrompt } from "./lib/studyPrompt";
 import { convertStudyJsonOps, buildStudyTaskItems } from "./lib/studyJsonOps";
 import {
@@ -835,69 +835,6 @@ http.route({
   }),
 });
 
-// ── Buy Me a Coffee payment webhook ──────────────────────────────────────────
-// The payment rail: BMAC takes UPI, GPay, and cards with no buyer account.
-// Webhooks are authenticated: X-Signature-Sha256 is an HMAC-SHA256 of the raw
-// body with the webhook secret. We verify it before
-// touching anything. Buyer→account matching is by email only (BMAC can't
-// thread a user id through checkout) — hence the loud "use your account
-// email" warnings in the buy modal. Non-matching payments land as
-// "unclaimed" in the ledger rather than vanishing.
-http.route({
-  path: "/bmac/webhook",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    // Secret comes from the admin-managed config (DB), env var as fallback.
-    // The webhook keeps processing even while purchases are disabled in the
-    // admin panel — the switch gates the buy UI, but money that already moved
-    // must always be recorded and credited.
-    const config = await ctx.runQuery(internal.payments.getPaymentsConfigInternal, {});
-    const secret = config?.webhookSecret || process.env.BMAC_WEBHOOK_SECRET;
-    if (!secret) return new Response("BMAC webhook secret not configured", { status: 500 });
-
-    const rawBody = await request.text();
-    const signatureHeader = (request.headers.get("X-Signature-Sha256") ?? request.headers.get("x-signature-sha256") ?? "").toLowerCase();
-
-    const key = await crypto.subtle.importKey(
-      "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
-    );
-    const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
-    const expected = Array.from(new Uint8Array(mac)).map((b) => b.toString(16).padStart(2, "0")).join("");
-    if (!signatureHeader || signatureHeader !== expected) {
-      return new Response("invalid signature", { status: 401 });
-    }
-
-    let payload: {
-      type?: string;
-      live_mode?: boolean;
-      data?: { id?: number | string; amount?: number; currency?: string; supporter_email?: string };
-    };
-    try {
-      payload = JSON.parse(rawBody);
-    } catch {
-      return new Response("bad payload", { status: 400 });
-    }
-
-    const d = payload.data;
-    if (!d?.id || typeof d.amount !== "number" || !d.supporter_email) {
-      return new Response("ignored", { status: 200 });
-    }
-
-    // Convert the paid amount to USD cents, the ledger's unit. The platform
-    // pegs $1 = ₹100 (see CreditModal packs), so 1 rupee == 1 cent.
-    const currency = (d.currency ?? "USD").toUpperCase();
-    const priceCents = Math.round(currency === "INR" ? d.amount : d.amount * 100);
-
-    await ctx.runMutation(internal.payments.recordPayment, {
-      saleId: `bmac_${d.id}`,
-      email: d.supporter_email.toLowerCase().trim(),
-      priceCents,
-      provider: "buymeacoffee",
-    });
-    return new Response("ok", { status: 200 });
-  }),
-});
-
 // ── /api/v1/chat/completions — OpenAI-compatible endpoint for thal_ API keys ──
 // Advertised on the /api-keys page. Bearer auth against the SHA-256 key hash;
 // usage is metered against the key's own pre-paid allocation (see userApiKeys).
@@ -955,9 +892,6 @@ http.route({
     const keyHash = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
     const key = await ctx.runQuery(internal.userApiKeys.getKeyByHash, { keyHash });
     if (!key) return apiError(401, "Invalid, revoked, or expired API key.", "invalid_request_error");
-    if (!FREE_UNLIMITED && key.creditsRemaining <= 0) {
-      return apiError(402, "This API key has exhausted its AgentBucks allocation.", "insufficient_quota");
-    }
 
     // 2. Parse the OpenAI-format request
     let body: {
@@ -995,9 +929,8 @@ http.route({
       return apiError(502, msg, "api_error");
     }
 
-    // 4. Meter actual usage against the key's allocation
-    const cost = calcAgentBucksForTier(tier, result.inputTokens, result.outputTokens);
-    await ctx.runMutation(internal.userApiKeys.recordKeyUsage, { id: key._id, credits: cost });
+    // 4. Touch the key so the API page can show recent activity.
+    await ctx.runMutation(internal.userApiKeys.recordKeyUsage, { id: key._id });
 
     // 5. Respond in OpenAI format
     const completionId = `chatcmpl-${key.keyId.slice(5)}${Date.now().toString(36)}`;

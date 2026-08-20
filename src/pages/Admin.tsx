@@ -4,15 +4,15 @@ import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import {
-  Shield, Users, Tag, Lightbulb, DollarSign, LogOut, ChevronRight,
+  Shield, Users, Lightbulb, LogOut, ChevronRight,
   Eye, EyeOff, Loader2,
-  Coins, BookOpen,
+  BookOpen,
   TrendingUp, Activity, Cpu, Search, Server, Wrench, Database, Globe, Zap, Radio,
   type LucideIcon,
 } from "lucide-react";
 import { useAdminMeta, type ProviderMeta, type ProviderSlug } from "./admin/shared";
 
-type AdminTab = "credits" | "promo-codes" | "users" | "suggestion" | "study-materials" | "dau" | "providerD" | "providerE" | "providerB" | "providerC" | "provider-log" | "gravity-ads" | "payments" | "vm-isos" | "corpus" | "maintenance";
+type AdminTab = "users" | "suggestion" | "study-materials" | "dau" | "providerD" | "providerE" | "providerB" | "providerC" | "provider-log" | "gravity-ads" | "vm-isos" | "corpus" | "maintenance";
 
 const ADMIN_SESSION_KEY = "thalamus_admin_v2";
 
@@ -21,8 +21,6 @@ const ADMIN_SESSION_KEY = "thalamus_admin_v2";
 // `default` for React.lazy.
 const UsersTab = lazy(() => import("./admin/UsersTab").then(m => ({ default: m.UsersTab })));
 const DauTab = lazy(() => import("./admin/DauTab").then(m => ({ default: m.DauTab })));
-const CreditsTab = lazy(() => import("./admin/CreditsTab").then(m => ({ default: m.CreditsTab })));
-const PromoCodesTab = lazy(() => import("./admin/PromoCodesTab").then(m => ({ default: m.PromoCodesTab })));
 const SuggestionsTab = lazy(() => import("./admin/SuggestionsTab").then(m => ({ default: m.SuggestionsTab })));
 const StudyMaterialsTab = lazy(() => import("./admin/StudyMaterialsTab").then(m => ({ default: m.StudyMaterialsTab })));
 const ProviderDCredentialsTab = lazy(() => import("./admin/ProviderDCredentialsTab").then(m => ({ default: m.ProviderDCredentialsTab })));
@@ -31,7 +29,6 @@ const ProviderBKeysTab = lazy(() => import("./admin/ProviderBKeysTab").then(m =>
 const ProviderCEndpointsTab = lazy(() => import("./admin/ProviderCEndpointsTab").then(m => ({ default: m.ProviderCEndpointsTab })));
 const MaintenanceTab = lazy(() => import("./admin/MaintenanceTab").then(m => ({ default: m.MaintenanceTab })));
 const AdsTab = lazy(() => import("./admin/AdsTab").then(m => ({ default: m.AdsTab })));
-const PaymentsTab = lazy(() => import("./admin/PaymentsTab").then(m => ({ default: m.PaymentsTab })));
 const VmIsoCatalogTab = lazy(() => import("./admin/VmIsoCatalogTab").then(m => ({ default: m.VmIsoCatalogTab })));
 const AgentOverflowTab = lazy(() => import("./admin/AgentOverflowTab").then(m => ({ default: m.AgentOverflowTab })));
 const ProviderLogTab = lazy(() => import("./admin/ProviderLogTab").then(m => ({ default: m.ProviderLogTab })));
@@ -54,7 +51,6 @@ export default function AdminPage() {
   const adminLoginAction = useAction(api.admin.adminLogin);
 
   // Verify stored session by testing against a known admin query.
-  // We attempt to list promo codes — success means the token is valid.
   const storedTokenValid = useQuery(
     api.admin.verifyAdminToken,
     adminToken ? { token: adminToken } : "skip"
@@ -198,8 +194,6 @@ export default function AdminPage() {
           {([
             { id: "users", label: "Users", icon: Users },
             { id: "dau", label: "DAU", icon: TrendingUp },
-            { id: "credits", label: "Credits", icon: DollarSign },
-            { id: "promo-codes", label: "Promo Codes", icon: Tag },
             { id: "suggestion", label: "Suggestions", icon: Lightbulb },
             { id: "study-materials", label: "Study Materials", icon: BookOpen },
             { id: "providerB", label: providerLabel("providerB"), icon: Cpu },
@@ -208,7 +202,6 @@ export default function AdminPage() {
             { id: "providerE", label: providerLabel("providerE"), icon: Activity },
             { id: "provider-log", label: "Provider Log", icon: Radio },
             { id: "gravity-ads", label: "Ads (Gravity)", icon: Globe },
-            { id: "payments", label: "Payments", icon: Coins },
             { id: "vm-isos", label: "VM ISOs", icon: Database },
             { id: "corpus", label: "Corpus", icon: Search },
             { id: "maintenance", label: "Maintenance", icon: Wrench },
@@ -243,8 +236,6 @@ export default function AdminPage() {
               >
                 {tab === "users" && <UsersTab adminToken={adminToken} />}
                 {tab === "dau" && <DauTab adminToken={adminToken} />}
-                {tab === "credits" && <CreditsTab adminToken={adminToken} />}
-                {tab === "promo-codes" && <PromoCodesTab adminToken={adminToken} />}
                 {tab === "suggestion" && <SuggestionsTab adminToken={adminToken} />}
                 {tab === "study-materials" && <StudyMaterialsTab adminToken={adminToken} />}
                 {tab === "providerD" && <ProviderDCredentialsTab adminToken={adminToken} />}
@@ -254,7 +245,6 @@ export default function AdminPage() {
                 {tab === "provider-log" && <ProviderLogTab adminToken={adminToken} />}
                 {tab === "maintenance" && <MaintenanceTab adminToken={adminToken} />}
                 {tab === "gravity-ads" && <AdsTab adminToken={adminToken} />}
-                {tab === "payments" && <PaymentsTab adminToken={adminToken} />}
                 {tab === "vm-isos" && <VmIsoCatalogTab adminToken={adminToken} />}
                 {tab === "corpus" && <AgentOverflowTab adminToken={adminToken} />}
               </motion.div>

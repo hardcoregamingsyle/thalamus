@@ -3,12 +3,10 @@
 // before this component runs, but a defensive redirect stays here for the
 // mounted-directly case.
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate, useParams } from "react-router";
-import { useMutation } from "convex/react";
 import { Cpu } from "lucide-react";
-import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
 import { VALID_MODES, type Mode } from "./portal/modes";
 import MobileHomeScreen from "./mobile/MobileHomeScreen";
@@ -24,20 +22,6 @@ export default function MobilePortal() {
   useEffect(() => {
     if (!isLoading && !isAuthenticated) navigate("/auth");
   }, [isLoading, isAuthenticated, navigate]);
-
-  const ensureDailyBalance = useMutation(api.customAuthHelpers.ensureDailyBalance);
-  const hasInitializedRef = useRef(false);
-  useEffect(() => {
-    if (token && user !== undefined && user !== null && !hasInitializedRef.current) {
-      hasInitializedRef.current = true;
-      ensureDailyBalance({ token }).catch(() => {});
-    }
-  }, [token, user, ensureDailyBalance]);
-
-  const typedUser = user as { dailyAgentBucks?: number; purchasedAgentBucks?: number; agentBucksBalance?: number } | null;
-  const dailyAB = typedUser?.dailyAgentBucks ?? typedUser?.agentBucksBalance ?? 0;
-  const purchasedAB = typedUser?.purchasedAgentBucks ?? 0;
-  const totalAB = dailyAB + purchasedAB;
 
   if (isLoading) {
     return (
@@ -60,11 +44,11 @@ export default function MobilePortal() {
       <AnimatePresence mode="wait">
         {!activeMode ? (
           <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, x: -20 }} className="flex-1 overflow-hidden h-full">
-            <MobileHomeScreen token={token ?? ""} user={user} totalAB={totalAB} onModeSelect={handleModeSelect} onSignOut={signOut} />
+            <MobileHomeScreen token={token ?? ""} user={user} onModeSelect={handleModeSelect} onSignOut={signOut} />
           </motion.div>
         ) : (
           <motion.div key={activeMode} initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="flex-1 h-full">
-            <MobileChatView mode={activeMode} token={token ?? ""} user={user} onBack={handleBack} totalAB={totalAB} />
+            <MobileChatView mode={activeMode} token={token ?? ""} user={user} onBack={handleBack} />
           </motion.div>
         )}
       </AnimatePresence>

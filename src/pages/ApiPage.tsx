@@ -28,7 +28,6 @@ export default function ApiPage() {
 
   const [showCreate, setShowCreate] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
-  const [newKeyCredits, setNewKeyCredits] = useState(1000);
   const [creating, setCreating] = useState(false);
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -47,7 +46,7 @@ export default function ApiPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <title>Thalamus API — OpenAI-compatible API keys</title>
-        <meta name="description" content="Create Thalamus API keys and use them in Cursor, Claude Code, or any OpenAI-compatible client. Pay-as-you-go with AgentBucks credits." />
+        <meta name="description" content="Create Thalamus API keys and use them in Cursor, Claude Code, or any OpenAI-compatible client." />
         <link rel="canonical" href="https://thalamus.aphantic.skinticals.com/api-keys" />
         <div className="text-center max-w-sm">
           <div className="w-16 h-16 rounded-2xl bg-primary/15 border border-primary/30 flex items-center justify-center mx-auto mb-4">
@@ -73,7 +72,6 @@ export default function ApiPage() {
       const result = await createKey({
         token,
         name: newKeyName.trim(),
-        creditsAllocated: newKeyCredits,
       });
       setCreatedKey(result.fullKey);
       setShowCreate(false);
@@ -88,10 +86,10 @@ export default function ApiPage() {
 
   const handleRevoke = async (keyId: string, keyName: string) => {
     if (!token) return;
-    if (!confirm(`Revoke "${keyName}"? Unused credits will be refunded.`)) return;
+    if (!confirm(`Revoke "${keyName}"?`)) return;
     try {
       await revokeKey({ token, keyId });
-      toast.success("Key revoked — credits refunded");
+      toast.success("Key revoked");
     } catch {
       toast.error("Failed to revoke key");
     }
@@ -107,7 +105,7 @@ export default function ApiPage() {
   return (
     <div className="min-h-screen bg-background overflow-x-hidden">
       <title>Thalamus API — OpenAI-compatible API keys</title>
-      <meta name="description" content="Create Thalamus API keys and use them in Cursor, Claude Code, or any OpenAI-compatible client. Pay-as-you-go with AgentBucks credits." />
+      <meta name="description" content="Create Thalamus API keys and use them in Cursor, Claude Code, or any OpenAI-compatible client." />
       <link rel="canonical" href="https://thalamus.aphantic.skinticals.com/api-keys" />
       {/* Header */}
       <div className="border-b border-border bg-card/60 backdrop-blur-sm sticky top-0 z-10">
@@ -138,7 +136,6 @@ export default function ApiPage() {
           <h1 className="text-2xl font-bold text-foreground mb-2">Thalamus API</h1>
           <p className="text-sm text-muted-foreground max-w-2xl">
             Use your API keys to connect Thalamus to Cursor, Claude Code, GitHub Copilot, and other AI coding tools.
-            Keys run on your AgentBucks balance.
           </p>
         </div>
 
@@ -259,14 +256,6 @@ export default function ApiPage() {
                     </div>
                     <code className="text-xs text-muted-foreground font-mono">{key.keyPrefix}</code>
                   </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-xs text-foreground font-medium">
-                      {(key.creditsAllocated - key.creditsUsed).toLocaleString()} AB left
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">
-                      {key.creditsUsed.toLocaleString()} used
-                    </div>
-                  </div>
                   {key.isActive && (
                     <button
                       onClick={() => handleRevoke(key.keyId, key.name)}
@@ -327,21 +316,6 @@ export default function ApiPage() {
                     className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors"
                   />
                 </div>
-                <div>
-                  <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">
-                    AGENTBUCKS TO ALLOCATE
-                    <span className="ml-2 font-normal text-muted-foreground/60">(min 100)</span>
-                  </label>
-                  <input
-                    type="number"
-                    min={100}
-                    step={100}
-                    value={newKeyCredits}
-                    onChange={(e) => setNewKeyCredits(Number(e.target.value))}
-                    className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary/60 transition-colors"
-                  />
-                  <p className="text-[10px] text-muted-foreground mt-1">Credits are deducted from your balance and allocated to this key.</p>
-                </div>
               </div>
               <div className="flex gap-2 mt-5">
                 <button
@@ -352,7 +326,7 @@ export default function ApiPage() {
                 </button>
                 <button
                   onClick={handleCreate}
-                  disabled={creating || !newKeyName.trim() || newKeyCredits < 100}
+                  disabled={creating || !newKeyName.trim()}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                 >
                   {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}

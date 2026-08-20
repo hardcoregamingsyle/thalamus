@@ -1,6 +1,6 @@
-// OnboardingModal — first-run five-step tour (welcome → modes → code pipeline
-// → AgentBucks → ready). Purely presentational: no Convex calls, no auth
-// reads; the parent decides when to show it and what onComplete does.
+// OnboardingModal — first-run four-step tour (welcome → modes → code pipeline
+// → ready). Purely presentational: no Convex calls, no auth reads; the parent
+// decides when to show it and what onComplete does.
 // CODE_AGENTS below must stay in step with ALL_TASK_AGENTS in
 // convex/codePipeline.ts.
 
@@ -34,12 +34,6 @@ const STEPS = [
     id: "code",
     title: "Code Mode — Dynamic Agent Pipeline",
     subtitle: "A dispatcher picks the right agents for your task — up to nine of them",
-    content: null,
-  },
-  {
-    id: "economy",
-    title: "Agent Bucks",
-    subtitle: "Free credits, refreshed every day",
     content: null,
   },
   {
@@ -311,60 +305,8 @@ export default function OnboardingModal({ onComplete, userName }: OnboardingModa
                 </div>
               )}
 
-              {/* Step 3: Agent Bucks */}
+              {/* Step 3: Ready */}
               {step === 3 && (
-                <div className="flex flex-col gap-4 py-2">
-                  <div className="text-center mb-1">
-                    <h2 className="text-xl font-bold text-foreground mb-1">{STEPS[3].title}</h2>
-                    <p className="text-xs text-muted-foreground">{STEPS[3].subtitle}</p>
-                  </div>
-                  <div className="grid grid-cols-1 gap-3">
-                    {[
-                      {
-                        icon: "",
-                        title: "Daily Free Allocation",
-                        desc: "Every day you get a fresh allocation of Agent Bucks — no credit card needed.",
-                        color: "border-amber-400/30 bg-amber-400/5",
-                      },
-                      {
-                        icon: "",
-                        title: "Pay Per Use",
-                        desc: "Agent Bucks are deducted as you use the platform. Short, simple tasks cost less; long or complex ones cost more.",
-                        color: "border-blue-400/30 bg-blue-400/5",
-                      },
-                      {
-                        icon: "",
-                        title: "Earn More",
-                        desc: "Refer friends to earn bonus spins. Each spin can award extra Agent Bucks.",
-                        color: "border-emerald-400/30 bg-emerald-400/5",
-                      },
-                      {
-                        icon: "",
-                        title: "Purchase Credits",
-                        desc: "Need more? Purchase additional Agent Bucks anytime from the Credits panel.",
-                        color: "border-primary/30 bg-primary/5",
-                      },
-                    ].map((item, i) => (
-                      <motion.div
-                        key={i}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: i * 0.08 }}
-                        className={`flex items-start gap-3 p-3 rounded-xl border ${item.color}`}
-                      >
-                        <span className="text-lg shrink-0">{item.icon}</span>
-                        <div>
-                          <p className="text-xs font-bold text-foreground mb-0.5">{item.title}</p>
-                          <p className="text-[10px] text-muted-foreground leading-relaxed">{item.desc}</p>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Step 4: Ready */}
-              {step === 4 && (
                 <div className="flex flex-col items-center text-center gap-5 py-4">
                   <motion.div
                     initial={{ scale: 0.5, opacity: 0 }}

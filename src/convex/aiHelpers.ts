@@ -1,10 +1,8 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
-import { FREE_UNLIMITED } from "./lib/agentCore";
 
 // Guest free-prompt daily cap (unauthenticated users). Mirrors GUEST_LIMIT in
 // the frontend (src/pages/Portal.tsx) — the server side is authoritative.
-// Ignored while FREE_UNLIMITED is on (guests are uncapped too).
 export const GUEST_DAILY_LIMIT = 3;
 
 // UTC day key, e.g. "2026-07-12". Computed server-side so the client can't spoof
@@ -90,7 +88,7 @@ export const saveAssistantMessage = internalMutation({
     content: v.string(),
     tokensUsed: v.number(),
     costCents: v.number(),
-    // Optional: per-token breakdown for precise AB calculation
+    // Optional per-token breakdown for platform cost accounting.
     inputTokens: v.optional(v.number()),
     outputTokens: v.optional(v.number()),
     inputCostPerMillion: v.optional(v.number()),   // USD per million input tokens
@@ -107,42 +105,6 @@ export const saveAssistantMessage = internalMutation({
       createdAt: Date.now(),
     });
     await ctx.db.patch(args.conversationId, { lastMessageAt: Date.now() });
-
-    const user = await ctx.db.get(args.userId);
-    if (user && !FREE_UNLIMITED) {
-      const current = (user as { totalUsageCents?: number }).totalUsageCents || 0;
-
-      // Formula: z = 1.5 * x * y
-      // where x = tokens, y = costPerMillionTokens (USD), z = AB to deduct
-      // Applied separately for input and output tokens
-      let agentBucksToDeduct: number;
-      if (
-        args.inputTokens !== undefined &&
-        args.outputTokens !== undefined &&
-        args.inputCostPerMillion !== undefined &&
-        args.outputCostPerMillion !== undefined
-      ) {
-        const inputAB = 1.5 * args.inputTokens * args.inputCostPerMillion;
-        const outputAB = 1.5 * args.outputTokens * args.outputCostPerMillion;
-        agentBucksToDeduct = Math.ceil(inputAB + outputAB);
-      } else {
-        // Fallback: derive from costCents (costCents * 15,000 = costDollars * 1,500,000)
-        agentBucksToDeduct = Math.ceil(args.costCents * 15_000);
-      }
-
-      const daily = (user as { dailyAgentBucks?: number }).dailyAgentBucks ?? 0;
-      const purchased = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
-      // Purchased credits deducted first, then daily
-      let remainingDeduct = agentBucksToDeduct;
-      const newPurchased = Math.max(0, purchased - remainingDeduct);
-      remainingDeduct = Math.max(0, remainingDeduct - purchased);
-      const newDaily = Math.max(0, daily - remainingDeduct);
-      await ctx.db.patch(args.userId, {
-        totalUsageCents: current + args.costCents,
-        dailyAgentBucks: newDaily,
-        purchasedAgentBucks: newPurchased,
-      });
-    }
   },
 });
 
@@ -207,35 +169,5 @@ export const saveStreamedMessage = internalMutation({
     });
 
     await ctx.db.patch(args.conversationId, { lastMessageAt: Date.now() });
-
-    // Deduct AB — skip entirely while the platform is free, and for isStudyFree
-    // users in study mode.
-    const user = await ctx.db.get(userId);
-    if (user && !FREE_UNLIMITED) {
-      const typedUser = user as { totalUsageCents?: number; dailyAgentBucks?: number; purchasedAgentBucks?: number; isStudyFree?: boolean };
-      const isStudyFree = typedUser.isStudyFree === true;
-      const isStudyMode = args.mode === "study";
-
-      // Skip credit deduction for school accounts in study mode
-      if (isStudyFree && isStudyMode) {
-        return;
-      }
-
-      const current = typedUser.totalUsageCents || 0;
-      const inputAB = 1.5 * inputTokens * args.inputCostPerMillion;
-      const outputAB = 1.5 * outputTokens * args.outputCostPerMillion;
-      const agentBucksToDeduct = Math.ceil(inputAB + outputAB);
-      const daily = typedUser.dailyAgentBucks ?? 0;
-      const purchased = typedUser.purchasedAgentBucks ?? 0;
-      let remainingDeduct = agentBucksToDeduct;
-      const newPurchased = Math.max(0, purchased - remainingDeduct);
-      remainingDeduct = Math.max(0, remainingDeduct - purchased);
-      const newDaily = Math.max(0, daily - remainingDeduct);
-      await ctx.db.patch(userId, {
-        totalUsageCents: current + costCents,
-        dailyAgentBucks: newDaily,
-        purchasedAgentBucks: newPurchased,
-      });
-    }
   },
 });

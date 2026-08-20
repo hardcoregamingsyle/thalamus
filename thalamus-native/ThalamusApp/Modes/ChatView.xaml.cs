@@ -43,10 +43,10 @@ namespace ThalamusApp.Modes
             _historyLoaded = false;
             if (string.IsNullOrEmpty(token))
             {
-                ChatCreditsLabel.Text = "Signed out";
+                ChatStatusLabel.Text = "Signed out";
                 return;
             }
-            ChatCreditsLabel.Text = "Signed in";
+            ChatStatusLabel.Text = "Signed in";
             _ = LoadHistoryAsync(token);
         }
 
@@ -247,9 +247,9 @@ namespace ThalamusApp.Modes
             if (!string.IsNullOrEmpty(fullText))
                 _ = MaybeRequestAdAsync();
 
-            // Every exchange spends AgentBucks and may have created a thread —
-            // poke the sidebar so balance + RECENT stay honest. First exchange
-            // also gets a proper AI title, like the website.
+            // Every exchange may have created a thread — poke the sidebar so
+            // the RECENT list stays honest. First exchange also gets a proper
+            // AI title, like the website.
             if (!string.IsNullOrEmpty(fullText) && !string.IsNullOrEmpty(_token))
             {
                 var main = Window.GetWindow(this) as MainWindow;   // capture on the UI thread

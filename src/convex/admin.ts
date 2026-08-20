@@ -67,50 +67,6 @@ export const verifyAdminToken = query({
   },
 });
 
-// Promo Codes
-export const listPromoCodes = query({
-  args: { adminToken: v.string() },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx, args.adminToken);
-    return await ctx.db.query("promoCodes").order("desc").take(200);
-  },
-});
-
-export const createPromoCode = mutation({
-  args: {
-    adminToken: v.string(),
-    code: v.string(),
-    purchasedCredits: v.optional(v.number()),
-    spins: v.optional(v.number()),
-    expiresAt: v.number(),
-    maxUses: v.optional(v.number()),
-    createdBy: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx, args.adminToken);
-    const existing = await ctx.db.query("promoCodes").withIndex("by_code", q => q.eq("code", args.code)).take(1);
-    if (existing.length > 0) throw new Error("Promo code already exists");
-    await ctx.db.insert("promoCodes", {
-      code: args.code.toUpperCase().trim(),
-      purchasedCredits: args.purchasedCredits,
-      spins: args.spins,
-      expiresAt: args.expiresAt,
-      maxUses: args.maxUses,
-      usedCount: 0,
-      createdAt: Date.now(),
-      createdBy: args.createdBy,
-    });
-  },
-});
-
-export const deletePromoCode = mutation({
-  args: { adminToken: v.string(), id: v.id("promoCodes") },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx, args.adminToken);
-    await ctx.db.delete(args.id);
-  },
-});
-
 // Users
 export const listUsers = query({
   args: { adminToken: v.string() },
@@ -121,39 +77,10 @@ export const listUsers = query({
       _id: u._id,
       email: u.email,
       name: u.name,
-      dailyAgentBucks: (u as { dailyAgentBucks?: number }).dailyAgentBucks ?? 0,
-      purchasedAgentBucks: (u as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0,
       isBanned: (u as { isBanned?: boolean }).isBanned ?? false,
       warningCount: (u as { warningCount?: number }).warningCount ?? 0,
       _creationTime: u._creationTime,
     }));
-  },
-});
-
-export const setDailyAllowance = mutation({
-  args: { adminToken: v.string(), userId: v.id("users"), dailyAgentBucks: v.number() },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx, args.adminToken);
-    await ctx.db.patch(args.userId, { dailyAgentBucks: args.dailyAgentBucks } as never);
-  },
-});
-
-export const addPurchasedCredits = mutation({
-  args: { adminToken: v.string(), userId: v.id("users"), amount: v.number(), note: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx, args.adminToken);
-    const user = await ctx.db.get(args.userId);
-    if (!user) throw new Error("User not found");
-    const current = (user as { purchasedAgentBucks?: number }).purchasedAgentBucks ?? 0;
-    await ctx.db.patch(args.userId, { purchasedAgentBucks: current + args.amount } as never);
-    await ctx.db.insert("creditBatches", {
-      userId: args.userId,
-      amount: args.amount,
-      remaining: args.amount,
-      expiresAt: Date.now() + 90 * 24 * 60 * 60 * 1000,
-      source: args.note ?? "admin",
-      createdAt: Date.now(),
-    });
   },
 });
 

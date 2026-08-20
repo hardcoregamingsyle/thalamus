@@ -95,7 +95,7 @@ ThalamusApp/
 │                              OS catalog, ISO downloads, QEMU boot, and an
 │                              RFB 3.8 VNC client painting the framebuffer
 └── Controls/                  HtmlToWpf (renders AI HTML into WPF inlines —
-                            no WebView2), SponsoredAdCard, BuyCreditsWindow
+                            no WebView2), SponsoredAdCard
 ```
 
 The app talks to the Convex backend over HTTP/SSE. The VM Sandbox drives QEMU through `QemuBridgeManager` (native C# — it replaced the old Node bridge) and paints the framebuffer with an embedded RFB 3.8 VNC client. No external VNC viewer required.

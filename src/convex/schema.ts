@@ -21,8 +21,7 @@ export type Role = Infer<typeof roleValidator>;
 // - NEW code system: codeProjects/codeBranches/codeMessages/codeFiles/
 //   codeCommands/codeApiKeys/codeApiKeyRequests (+githubConfigs) — driven by
 //   codePipeline.ts, served at /portal/code
-// - Platform economy & admin: creditBatches, promoCodes,
-//   platformBudget, awsCredentials, geminiKeys, userApiKeys
+// - Platform & admin: platformBudget, awsCredentials, geminiKeys, userApiKeys
 // - Study mode / RAG: studyResources, adminStudyMaterials, ragChunks,
 //   graphNodes, graphEdges, graphHealthChecks
 const schema = defineSchema(
@@ -36,13 +35,6 @@ const schema = defineSchema(
       emailVerificationTime: v.optional(v.number()),
       isAnonymous: v.optional(v.boolean()),
       role: v.optional(roleValidator),
-      totalUsageCents: v.optional(v.number()),
-      agentBucksBalance: v.optional(v.number()),
-      dailyAgentBucks: v.optional(v.number()),
-      purchasedAgentBucks: v.optional(v.number()),
-      referralCode: v.optional(v.string()),
-      referralSpins: v.optional(v.number()),
-      referredBy: v.optional(v.string()),
       isBanned: v.optional(v.boolean()),
       banReason: v.optional(v.string()),
       hasAppeal: v.optional(v.boolean()),
@@ -65,7 +57,7 @@ const schema = defineSchema(
       studyBoard: v.optional(v.string()),
       studyLanguage: v.optional(v.string()),
       // School/institution accounts
-      isStudyFree: v.optional(v.boolean()),   // true = unlimited study mode (no credits charged)
+      isStudyFree: v.optional(v.boolean()),   // true = unlimited study mode
       isTeacher: v.optional(v.boolean()),      // true = teacher account (first char is letter, @stkabir.co.in)
       // AgentOverflow credits — separate economy from AgentBucks. Daily refill,
       // earned above it by submitting learnings that score well (see agentoverflow.ts).
@@ -80,8 +72,7 @@ const schema = defineSchema(
       aoCustomRefill: v.optional(v.number()),
       aoCustomRateLimit: v.optional(v.number()),
       aoCustomSearchQuota: v.optional(v.number()),
-    }).index("email", ["email"])
-      .index("by_referral_code", ["referralCode"]),
+    }).index("email", ["email"]),
 
     otpCodes: defineTable({
       email: v.string(),
@@ -413,34 +404,12 @@ const schema = defineSchema(
       .index("by_user", ["userId"])
       .index("by_user_and_conversation", ["userId", "conversationId"]),
 
-    creditBatches: defineTable({
-      userId: v.id("users"),
-      amount: v.number(),
-      remaining: v.number(),
-      expiresAt: v.number(),
-      source: v.string(),
-      createdAt: v.number(),
-    })
-      .index("by_user", ["userId"])
-      .index("by_user_and_expiry", ["userId", "expiresAt"]),
-
     domainBlacklist: defineTable({
       domain: v.string(),
       reason: v.string(),
       blacklistedAt: v.number(),
       userCount: v.optional(v.number()),
     }).index("by_domain", ["domain"]),
-
-    promoCodes: defineTable({
-      code: v.string(),
-      purchasedCredits: v.optional(v.number()),
-      spins: v.optional(v.number()),
-      expiresAt: v.number(),
-      usedCount: v.number(),
-      maxUses: v.optional(v.number()),
-      createdAt: v.number(),
-      createdBy: v.optional(v.string()),
-    }).index("by_code", ["code"]),
 
     suggestions: defineTable({
       userId: v.optional(v.id("users")),
@@ -656,8 +625,6 @@ const schema = defineSchema(
       keyHash: v.string(),      // SHA-256 hash of the full key (never stored in plaintext after creation)
       keyPrefix: v.string(),    // First 8 chars of key for display (e.g. "thal_abc")
       name: v.string(),         // User-given name
-      creditsAllocated: v.number(), // AgentBucks allocated to this key
-      creditsUsed: v.number(),
       isActive: v.boolean(),
       lastUsedAt: v.optional(v.number()),
       createdAt: v.number(),
@@ -666,34 +633,6 @@ const schema = defineSchema(
       .index("by_user", ["userId"])
       .index("by_key_id", ["keyId"])
       .index("by_key_hash", ["keyHash"]),
-
-    // Agent model config — per-agent model overrides (admin-managed)
-    payments: defineTable({
-      provider: v.string(),            // "buymeacoffee"
-      saleId: v.string(),              // provider sale/support id — unique per purchase
-      email: v.string(),               // buyer email as reported by provider
-      userId: v.optional(v.id("users")),
-      priceCents: v.number(),
-      bucksCredited: v.number(),
-      status: v.string(),              // "credited" | "unclaimed"
-      createdAt: v.number(),
-      claimedAt: v.optional(v.number()),
-    })
-      .index("by_sale_id", ["saleId"])
-      .index("by_user", ["userId"])
-      .index("by_email", ["email"]),
-
-    // Payments configuration (admin-managed, singleton). Payments ship DISABLED
-    // until the admin flips the switch. The BMAC webhook secret lives here
-    // (same precedent as geminiKeys/awsCredentials: DB beats env vars).
-    paymentsConfig: defineTable({
-      isEnabled: v.boolean(),
-      bmacPageUrl: v.string(),
-      webhookSecret: v.optional(v.string()),
-      abPerCent: v.optional(v.number()), // AgentBucks per ₹1 (= per USD cent); default 15,000
-      updatedAt: v.number(),
-      updatedBy: v.optional(v.string()),
-    }),
 
     // Short-lived OAuth login states (CSRF protection + redirect binding for
     // Google/GitHub sign-in). Rows are deleted on consumption; stale rows are

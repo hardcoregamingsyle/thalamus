@@ -372,49 +372,6 @@
                              docked as one Top block regardless of DockPanel defaults. -->
                         <StackPanel DockPanel.Dock="Top">
 
-                        <!-- AgentBucks balance (visible when authenticated). Mirrors the
-                             website's readout: daily allowance + purchased, formatted N0. -->
-                        <Border x:Name="CreditsRow" Height="44" Margin="6,1,6,1"
-                                Padding="16,0,16,0" CornerRadius="8"
-                                Visibility="Collapsed"
-                                ToolTip="AgentBucks — daily allowance + purchased credits">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <Border Width="22" Height="22" CornerRadius="6"
-                                        Background="{DynamicResource TintAmberBgBrush}" Margin="0,0,12,0"
-                                        BorderBrush="{DynamicResource BorderBrush}"
-                                        BorderThickness="1">
-                                    <Path Data="M13 10V3L4 14h7v7l9-11h-7z"
-                                          Fill="{DynamicResource AmberBrush}"
-                                          Width="11" Height="11" Stretch="Uniform"
-                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                                <TextBlock x:Name="CreditsLabel" Text="—"
-                                           VerticalAlignment="Center" FontSize="11.5"
-                                           FontFamily="{StaticResource MonoFontFamily}"
-                                           Foreground="{DynamicResource TextPrimaryBrush}"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Buy Credits button (visible when authenticated) -->
-                        <Button x:Name="BtnBuyCredits"
-                                Click="BuyCredits_Click" Style="{StaticResource SidebarBtn}"
-                                Visibility="Collapsed">
-                            <StackPanel Orientation="Horizontal">
-                                <Border Width="22" Height="22" CornerRadius="6"
-                                        Background="{DynamicResource TintAmberBgBrush}" Margin="0,0,12,0"
-                                        BorderBrush="{DynamicResource BorderBrush}"
-                                        BorderThickness="1">
-                                    <!-- Lightning bolt — echoes the AgentBucks/credits accent -->
-                                    <Path Data="M13 10V3L4 14h7v7l9-11h-7z"
-                                          Fill="{DynamicResource AmberBrush}"
-                                          Width="11" Height="11" Stretch="Uniform"
-                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                                <TextBlock Text="Buy Credits" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource AmberBrush}"/>
-                            </StackPanel>
-                        </Button>
-
                         <!-- Sign out button (visible when authenticated) -->
                         <Button x:Name="BtnSignOut" Tag="Logout"
                                 Click="Nav_Click" Style="{StaticResource SidebarBtn}"

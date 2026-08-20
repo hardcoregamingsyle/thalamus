@@ -31,7 +31,6 @@ import {
   performScrape,
   findJsonOpsInternal,
   AGENT_SYSTEM_PROMPTS,
-  calcAgentBucksForTier,
   type ModelTier,
 } from "./lib/agentCore";
 import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./lib/mcpClient";
@@ -606,14 +605,9 @@ export const runPipelineAction = internalAction({
         ].join("\n");
       }
 
-      // Charge the owner's AgentBucks + record platform spend for one model call.
-      // Centralized so no call site runs for free — the old pipeline never billed
-      // at all (a full billing bypass and a blind spot for the budget guard).
+      // Record platform spend for one model call. The per-call charge was
+      // removed — the platform is free (FREE_UNLIMITED).
       const bill = async (label: string, r: { tier: ModelTier; inputTokens: number; outputTokens: number }) => {
-        if (ownerUserId) {
-          const ab = calcAgentBucksForTier(r.tier, r.inputTokens, r.outputTokens);
-          await ctx.runMutation(internal.credits.deductAgentBucks, { userId: ownerUserId, agentBucksToDeduct: ab });
-        }
         await ctx.runMutation(internal.admin.deductPlatformCost, {
           // The tier as returned, unprefixed — pricing looks this up, and
           // `${label}-${tier}` could never match a key in the table.

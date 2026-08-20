@@ -18,7 +18,6 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
-import CreditModal from "@/components/CreditModal";
 import OnboardingModal from "@/components/OnboardingModal";
 import StudyProfileModal from "@/components/StudyProfileModal";
 import StudentSuite from "@/components/StudentSuite";
@@ -85,8 +84,6 @@ export default function PortalDesktop() {
   // have, resizes stop overriding their choice.
   const userToggledSidebarRef = useRef(false);
   const [moreModesOpen, setMoreModesOpen] = useState(false);
-  const [creditModalOpen, setCreditModalOpen] = useState(false);
-  const [spinNotifOpen, setSpinNotifOpen] = useState(false);
   const [studyResourcesOpen, setStudyResourcesOpen] = useState(false);
   const [studyAddMode, setStudyAddMode] = useState<"text" | "search" | null>(null);
   const [studyTextTitle, setStudyTextTitle] = useState("");
@@ -116,30 +113,19 @@ export default function PortalDesktop() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const ensureDailyBalance = useMutation(api.customAuthHelpers.ensureDailyBalance);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
   const hasInitializedRef = useRef(false);
 
   useEffect(() => {
     if (token && user !== undefined && user !== null && !hasInitializedRef.current) {
       hasInitializedRef.current = true;
-      ensureDailyBalance({ token }).catch(() => {});
-      // One honest cast for the extra fields useAuth's user carries here —
-      // this used to be two shadowed `typedUser` declarations in nested scopes.
-      const typedUser = user as { referralSpins?: number; referredBy?: string; hasOnboarded?: boolean };
-      const notifKey = `spin_notif_shown_${token.slice(0, 8)}`;
-      if (!localStorage.getItem(notifKey)) {
-        if (typedUser.referralSpins && typedUser.referralSpins > 0 && typedUser.referredBy) {
-          localStorage.setItem(notifKey, "1");
-          setTimeout(() => setSpinNotifOpen(true), 1500);
-        }
-      }
       // Show onboarding if user hasn't completed it
+      const typedUser = user as { hasOnboarded?: boolean };
       if (!typedUser.hasOnboarded) {
         setTimeout(() => setShowOnboarding(true), 600);
       }
     }
-  }, [token, user, ensureDailyBalance]);
+  }, [token, user]);
 
   // Keep the sidebar in step with viewport changes: it was pinned to the
   // width measured at mount, so a window opened narrow (sidebar closed) and
@@ -855,11 +841,6 @@ export default function PortalDesktop() {
     finally { setIsAddingResource(false); setUploadStatus(null); if (fileInputRef.current) fileInputRef.current.value = ""; }
   };
 
-  const typedUser = user as { dailyAgentBucks?: number; purchasedAgentBucks?: number; agentBucksBalance?: number } | null;
-  const dailyAB = typedUser?.dailyAgentBucks ?? typedUser?.agentBucksBalance ?? 0;
-  const purchasedAB = typedUser?.purchasedAgentBucks ?? 0;
-  const totalAB = dailyAB + purchasedAB;
-
   const filteredConvs = conversations?.filter((c: Conversation) => c.mode === activeMode) || [];
   const currentMode = [...MODES, ...MORE_MODES].find(m => m.id === activeMode)!;
   const visibleMessages = (() => {
@@ -978,14 +959,6 @@ export default function PortalDesktop() {
                 Resources {studyResources ? `(${studyResources.length})` : ""}
               </button>
             )}
-            <button
-              onClick={() => setCreditModalOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] border border-amber-500/30 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 transition-colors"
-              title="Credits"
-            >
-              <Zap className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{totalAB.toLocaleString()}</span>
-            </button>
             <button
               aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
               onClick={toggleTheme}
@@ -1423,20 +1396,6 @@ export default function PortalDesktop() {
           />
         )}
       </AnimatePresence>
-
-      {/* Credit Modal */}
-      {creditModalOpen && <CreditModal open={creditModalOpen} onClose={() => setCreditModalOpen(false)} token={token ?? ""} totalAB={totalAB} dailyAB={dailyAB} purchasedAB={purchasedAB} />}
-      {spinNotifOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setSpinNotifOpen(false)} />
-          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="relative z-10 bg-card border border-border rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">
-            <div className="text-4xl mb-3">🎰</div>
-            <h3 className="text-lg font-bold text-foreground mb-2">You have a free spin!</h3>
-            <p className="text-xs text-muted-foreground mb-4">You signed up via a referral link. Claim your free spin in the Credits section.</p>
-            <button onClick={() => { setSpinNotifOpen(false); setCreditModalOpen(true); }} className="w-full bg-primary text-primary-foreground py-2 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all">Claim Spin</button>
-          </motion.div>
-        </div>
-      )}
 
       {/* Gamified study-task celebration */}
       <StudyCelebration

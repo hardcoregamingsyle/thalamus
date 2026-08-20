@@ -100,9 +100,6 @@ const MessageRow = memo(function MessageRow({ msg, accentColor, dayLabel, onStud
                 html={msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")}
               />
             )}
-            {msg.costCents !== undefined && msg.costCents > 0 && (
-              <p className="text-[11px] opacity-40 mt-2 text-right">{Math.ceil(msg.costCents * 15000).toLocaleString()} AB</p>
-            )}
           </div>
         </div>
       </div>

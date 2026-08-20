@@ -194,13 +194,10 @@ export const requestAd = action({
       if (!user) {
         // Invalid/expired token — treat as guest
         if (!config.showToGuests) { console.warn("[ads] gated: guests off (bad token)"); return null; }
-      } else {
-        // "Paid" signal: user has purchased AgentBucks at least once
-        const isPaid = (user.purchasedAgentBucks ?? 0) > 0;
-        if (isPaid ? !config.showToPaidUsers : !config.showToFreeUsers) {
-          console.warn(`[ads] gated: ${isPaid ? "paid" : "free"} users off`);
-          return null;
-        }
+      } else if (!config.showToFreeUsers) {
+        // All accounts are free now (the AgentBucks paid tier was removed).
+        console.warn("[ads] gated: free users off");
+        return null;
       }
     }
 

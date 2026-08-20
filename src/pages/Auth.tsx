@@ -20,8 +20,6 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const { isLoading: authLoading, isAuthenticated, signIn } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const refCode = searchParams.get("ref") ?? undefined;
-
   const [step, setStep] = useState<"signIn" | { email: string }>("signIn");
   const [otp, setOtp] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -83,8 +81,6 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       const formData = new FormData();
       formData.set("email", email);
       formData.set("code", otp);
-      // Pass referral code if present in URL
-      if (refCode) formData.set("referralCode", refCode.toUpperCase());
       await signIn("email-otp", formData);
       navigate(redirectAfterAuth || "/portal");
     } catch {

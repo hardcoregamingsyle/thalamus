@@ -17,7 +17,7 @@ export const FAQ_ITEMS: FaqItem[] = [
   },
   {
     q: "Is Thalamus free to use?",
-    a: "Yes — every account gets free daily AgentBucks credits, refreshed every day. Partner schools get unlimited free study mode for their students.",
+    a: "Yes — Thalamus is completely free to use. Partner schools get unlimited study mode for their students.",
   },
   {
     q: "Which boards and grades does study mode support?",
@@ -41,7 +41,7 @@ export const FAQ_ITEMS: FaqItem[] = [
   },
   {
     q: "How much does Thalamus cost compared to other AI coding tools?",
-    a: "The big AI coding tools charge $20 to $200 a month for a single agent. Thalamus runs the whole ten-agent team on free daily credits — you only pay if you want more than the daily allowance, and study mode is free for partner schools.",
+    a: "The big AI coding tools charge $20 to $200 a month for a single agent. Thalamus is free to use and runs the whole multi-agent team — and study mode is free for partner schools.",
   },
   {
     q: "Is there a Windows desktop app?",

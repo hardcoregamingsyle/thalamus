@@ -169,17 +169,4 @@ export async function callModal(
   throw lastError ?? new Error("Modal request failed — endpoints exhausted or time budget spent");
 }
 
-/**
- * AgentBucks for a Modal call. Self-hosted rows carry no parameter-count
- * metadata (unlike NIM's catalog), so cost is a flat rate rather than an
- * invented per-model table. 1 USD provider cost = 1,500,000 AB.
- */
-const MODAL_USD_PER_M_INPUT = 0.20;
-const MODAL_USD_PER_M_OUTPUT = 0.60;
 
-export function calcModalAgentBucks(inputTokens: number, outputTokens: number): number {
-  const usd =
-    (inputTokens / 1_000_000) * MODAL_USD_PER_M_INPUT +
-    (outputTokens / 1_000_000) * MODAL_USD_PER_M_OUTPUT;
-  return Math.ceil(usd * 1_500_000);
-}

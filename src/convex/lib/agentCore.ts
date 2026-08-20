@@ -7,9 +7,8 @@
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 
-// Platform-wide free+unlimited switch for Thalamus AgentBucks. While true, no
-// user is charged and no usage cap blocks them. AgentOverflow's aoCredits are
-// a separate economy with their own switch.
+// Platform-wide free+unlimited switch. While true, no usage cap blocks users.
+// AgentOverflow's aoCredits are a separate economy with their own switch.
 export const FREE_UNLIMITED = true;
 
 // Output-token ceiling for pipeline agents. Raised from 8192 to 32768 by
@@ -23,9 +22,9 @@ export const PIPELINE_MAX_TOKENS = 32768;
 // Re-exported so study.ts can keep calling it directly from agentCore.
 export { callSiliconFlow } from "./ollamaClient";
 
-import { callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL, calcAgentBucksForModel } from "./ollamaClient";
+import { callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL } from "./ollamaClient";
 import { agentToTaskType, type TaskType } from "./taskTypes";
-import { callModal, calcModalAgentBucks } from "./modalClient";
+import { callModal } from "./modalClient";
 import { callZen, findZenModel, ZEN_DISPATCHER_MODEL, ZEN_DEFAULT_MODEL } from "./zenClient";
 import { callOpenRouter, findOpenRouterModel, OPENROUTER_DISPATCHER_MODEL, OPENROUTER_DEFAULT_MODEL } from "./openrouterClient";
 import { callDeadlySignals, findDeadlySignalsModel, DEADLYSIGNALS_DISPATCHER_MODEL, DEADLYSIGNALS_DEFAULT_MODEL } from "./deadlySignalsClient";
@@ -367,36 +366,6 @@ function mapModelIdToOllama(modelId: string): string {
   if (l.includes("tester") || l.includes("hacker") || l.includes("security")) return "minimax-m3";
   return DEFAULT_CHAT_MODEL;
 }
-
-/**
- * Calculate AgentBucks — branch on provider prefix, free tiers cost 0.
- */
-export function calcAgentBucksForTier(
-  tier: string,
-  inputTokens: number,
-  outputTokens: number,
-): number {
-  if (tier.startsWith("modal:")) {
-    return calcModalAgentBucks(inputTokens, outputTokens);
-  }
-  if (tier.startsWith("zen:")) {
-    return 0; // OpenCode Zen free anonymous tier — no cost
-  }
-  if (tier.startsWith("openrouter:")) {
-    return 0; // OpenRouter free-model tier — $0 prompt and completion
-  }
-  if (tier.startsWith("deadlysignals:")) {
-    return 0; // DeadlySignal keyed gateway — community/free tier, no cost
-  }
-  if (tier.startsWith("modelscope:")) {
-    return 0; // ModelScope official free API-Inference tier — no cost
-  }
-  if (tier.startsWith("pollinations:")) {
-    return 0; // Pollinations free tier — metered in their own "pollen", not AgentBucks
-  }
-  return calcAgentBucksForModel(tier.replace("ollama:", ""), inputTokens, outputTokens);
-}
-
 
 // How many top results to deep-read for the default `performSearch` path, and
 // how much page text to keep per result. Deep-read means the agent sees the

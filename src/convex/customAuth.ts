@@ -310,8 +310,8 @@ export const sendOtp = action({
 
 // Verify OTP and create session
 export const verifyOtp = action({
-  args: { email: v.string(), code: v.string(), referralCode: v.optional(v.string()) },
-  handler: async (ctx, args): Promise<{ token: string; userId: string; isNewUser: boolean; referralSpins: number }> => {
+  args: { email: v.string(), code: v.string() },
+  handler: async (ctx, args): Promise<{ token: string; userId: string; isNewUser: boolean }> => {
     const rawEmail = args.email.toLowerCase().trim();
     const email = normalizeEmail(rawEmail);
     const domain = email.split("@")[1] ?? "";
@@ -330,7 +330,6 @@ export const verifyOtp = action({
     const result = await ctx.runMutation(internal.customAuthHelpers.verifyAndCreateSession, {
       email,
       code: args.code.trim(),
-      referralCode: args.referralCode,
     });
 
     // If new user, check domain abuse in background

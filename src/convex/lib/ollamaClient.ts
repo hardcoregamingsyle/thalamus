@@ -2,10 +2,10 @@
 // Auth: Bearer token via ollamaKeys DB table or OLLAMA_API_KEY env var.
 // Docs: https://docs.ollama.com/api/chat
 //
-// The exported names (callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL,
-// calcAgentBucksForModel) intentionally keep their historical "SiliconFlow"
-// spelling from an earlier provider iteration; renaming them would ripple
-// through every caller. The file itself is called what it does — Ollama.
+// The exported names (callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL)
+// intentionally keep their historical "SiliconFlow" spelling from an earlier
+// provider iteration; renaming them would ripple through every caller. The
+// file itself is called what it does — Ollama.
 
 import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
@@ -340,27 +340,4 @@ export async function callSiliconFlowStreaming(
   }
 
   return result;
-}
-
-// ── Agent Buck support (kept for backward compat) ─────────────────────────────
-
-export function calcAgentBucksForModel(
-  modelId: string,
-  inputTokens: number,
-  outputTokens: number,
-): number {
-  const model = findModel(modelId);
-  if (!model) return 0;
-
-  // Rough pricing tiers based on model type
-  const sizeFactor = model.isMoE
-    ? (model.activeParams ? parseInt(model.activeParams) / 10 : 5)
-    : parseInt(model.parameterCount.replace(/[^0-9]/g, "")) / 10;
-
-  const inputCostPerM = model.isReasoning ? sizeFactor * 0.5 : Math.max(0.5, sizeFactor * 0.15);
-  const outputCostPerM = model.isReasoning ? sizeFactor * 2.0 : Math.max(2.0, sizeFactor * 0.5);
-
-  const inputAB = (inputTokens / 1_000_000) * inputCostPerM * 1_500_000;
-  const outputAB = (outputTokens / 1_000_000) * outputCostPerM * 1_500_000;
-  return Math.ceil(inputAB + outputAB);
 }

@@ -1,10 +1,9 @@
 import { Link } from "react-router";
 
-// Real, indexable legal + contact pages. A paid product (Buy Me a Coffee
-// credit packs) needs Privacy, Terms, Refund, and Contact to satisfy payment
-// processors, Indian consumer-disclosure norms, and basic E-E-A-T trust —
-// and each is a genuine crawlable URL for the internal link graph. One
-// component renders all four; the route picks which via `doc`.
+// Real, indexable legal + contact pages. Privacy, Terms, Refund, and Contact
+// are each a genuine crawlable URL for the internal link graph and to satisfy
+// consumer-disclosure norms and basic E-E-A-T trust. One component renders all
+// four; the route picks which via `doc`.
 
 const SUPPORT_EMAIL = "hardcorgamingstyle@gmail.com";
 const SITE = "https://thalamus.aphantic.skinticals.com";
@@ -28,10 +27,10 @@ const DOCS: Record<Doc, { title: string; metaTitle: string; description: string;
       { h: "What we collect", p: [
         "Account data: your email address (for sign-in via one-time code) and, if you connect GitHub, your GitHub username and an access token used only to sync your repositories.",
         "Content you provide: chat messages, research queries, study questions, uploaded notes and files, and build instructions. Study materials you upload are stored so study mode can ground answers in them.",
-        "Usage data: credits consumed, model usage, and basic diagnostics needed to run the service and prevent abuse.",
+        "Usage data: model usage and basic diagnostics needed to run the service and prevent abuse.",
       ] },
       { h: "How we use it", p: [
-        "To provide the service: routing your requests to AI models, storing your conversations and projects, and metering credits.",
+        "To provide the service: routing your requests to AI models, storing your conversations and projects, and keeping the service reliable.",
         "To improve reliability and prevent abuse. We do not sell your personal data.",
         "AI model calls are processed by third-party model providers solely to generate your response. The set of providers we use changes over time; a current list is available on request.",
       ] },
@@ -68,9 +67,8 @@ const DOCS: Record<Doc, { title: string; metaTitle: string; description: string;
       { h: "Acceptable use", p: [
         "Use Thalamus lawfully. Do not use it to generate illegal content, to attack or overload the service, to infringe others' rights, or to cheat in a way your institution prohibits. Study mode is a learning tool intended to help you understand and prepare — use it honestly.",
       ] },
-      { h: "Credits and payments", p: [
-        "Thalamus includes free daily credits (AgentBucks). You may optionally buy additional credit packs. Credits are a prepaid, in-app balance used to access AI features; they have no cash value and are not transferable.",
-        "Prices are shown before purchase. See the Refund & Cancellation Policy for details on refunds.",
+      { h: "Cost", p: [
+        "Thalamus is free to use. We do not charge for access to chat, research, study, or build features.",
       ] },
       { h: "AI output", p: [
         "AI-generated answers and code may be inaccurate or incomplete. Verify important information and review generated code before relying on it. You are responsible for how you use the output.",
@@ -84,20 +82,16 @@ const DOCS: Record<Doc, { title: string; metaTitle: string; description: string;
     ],
   },
   refund: {
-    title: "Refund & Cancellation Policy",
-    metaTitle: "Refund & Cancellation Policy — Thalamus AI",
-    description: "How refunds and cancellations work for Thalamus AI credit purchases.",
-    intro: "This policy covers optional credit-pack purchases. The core service, including free daily credits, is free to use.",
+    title: "Refund Policy",
+    metaTitle: "Refund Policy — Thalamus AI",
+    description: "Thalamus AI is free to use, so this page explains what happens if you believe a payment error occurred.",
+    intro: "Thalamus is free to use. We do not sell credit packs or subscriptions.",
     sections: [
-      { h: "Cancellation", p: [
-        "Thalamus credit packs are one-time purchases, not a recurring subscription, so there is nothing to cancel for future billing. You can simply stop buying credits at any time.",
+      { h: "What this policy covers", p: [
+        "Because the core service is free, there are no recurring subscriptions or prepaid credit balances to cancel or refund. If you believe you were charged in error, contact us and we will investigate.",
       ] },
-      { h: "Refunds", p: [
-        `If a purchase failed, was charged twice, or credits were not delivered, email ${SUPPORT_EMAIL} within 7 days with your payment reference and we will investigate and refund verified issues to the original payment method.`,
-        "Because credits unlock immediate access to paid AI compute, credits already consumed are generally non-refundable. Unused credits from a mischarge are refundable.",
-      ] },
-      { h: "How to request a refund", p: [
-        `Email ${SUPPORT_EMAIL} with the email on your account, the approximate date and amount, and the payment reference. We respond within a few business days.`,
+      { h: "How to report an issue", p: [
+        `Email ${SUPPORT_EMAIL} with the email on your account and details of what happened. We respond within a few business days.`,
       ] },
     ],
   },
@@ -109,7 +103,7 @@ const DOCS: Record<Doc, { title: string; metaTitle: string; description: string;
     sections: [
       { h: "Support & general enquiries", p: [
         `Email: ${SUPPORT_EMAIL}`,
-        "For account or billing issues, include the email on your account and, for payments, your payment reference.",
+        "For account issues, include the email on your account.",
       ] },
       { h: "Schools & partnerships", p: [
         "If you run a school and want free unlimited study mode for your students, email us and we'll set your institution up.",

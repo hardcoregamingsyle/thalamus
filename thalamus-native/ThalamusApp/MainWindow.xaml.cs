@@ -3,14 +3,12 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Threading;
 using ThalamusApp.Auth;
 using ThalamusApp.Controls;
 using ThalamusApp.Services;
@@ -24,13 +22,11 @@ namespace ThalamusApp
         private readonly ConvexClient _convex = new();
         private bool _isAuthenticated;
         private string _activeMode = "Code";
-        private DispatcherTimer? _creditsTimer;
 
         // Modes whose transcripts live in the conversations/messages tables and
         // therefore get the sidebar RECENT list. Build has projects, Sandbox VMs.
         private static readonly HashSet<string> ConversationModes = new() { "Chat", "Research", "Study" };
 
-        // Kept so the Buy Credits dialog can be handed the live session identity.
         private string _sessionToken = "";
         private string _sessionEmail = "";
 
@@ -73,11 +69,8 @@ namespace ThalamusApp
             AuthDot.SetResourceReference(System.Windows.Controls.Border.BackgroundProperty, "GreenBrush");
             AuthDot.ToolTip = email;
 
-            // Signed in — show sign out + balance. Buy Credits only appears if
-            // the platform actually sells credits right now (see below).
+            // Signed in — show sign out + account email.
             BtnSignOut.Visibility = Visibility.Visible;
-            CreditsRow.Visibility = Visibility.Visible;
-            _ = RefreshBuyCreditsVisibilityAsync();
             SectionLabel.Text = email.Length > 18 ? email[..16] + "..." : email;
 
             // Pass token to mode views
@@ -86,78 +79,19 @@ namespace ThalamusApp
             ResearchPanel.SetToken(token);
             StudyPanel.SetToken(token);
 
-            // Balance readout: ensure the daily allowance on first load (same as
-            // the website), then keep it fresh on a slow timer — sends also poke
-            // it via NotifyExchangeCompleted so it updates right after spending.
-            _ = RefreshCreditsAsync(ensureDaily: true);
-            if (_creditsTimer == null)
-            {
-                _creditsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
-                _creditsTimer.Tick += (_, _) => _ = RefreshCreditsAsync(ensureDaily: false);
-            }
-            _creditsTimer.Start();
-
             StatusText.Text = "Ready — Signed in";
             NavigateTo("Code");
         }
 
-        // ── Credits + recents (called by mode views after each exchange) ──────
+        // ── Recents (called by mode views after each exchange) ────────────────
 
         /// <summary>
-        /// Refresh the sidebar balance and the RECENT list. Safe from any thread;
-        /// both refreshes are best-effort and never throw into the UI.
+        /// Refresh the RECENT list. Safe from any thread; best-effort and never
+        /// throws into the UI.
         /// </summary>
         public void NotifyExchangeCompleted()
         {
-            _ = RefreshCreditsAsync(ensureDaily: false);
             _ = RefreshRecentAsync();
-        }
-
-        // Same flag the website's buy modal reads — when payments are switched
-        // off platform-side, the desktop hides the button instead of opening a
-        // dialog that can only apologize.
-        private async Task RefreshBuyCreditsVisibilityAsync()
-        {
-            try
-            {
-                var cfg = await _convex.CallQueryAsync("payments:getPublicPaymentsConfig", new { });
-                var enabled = (cfg as JsonObject)?["isEnabled"]?.GetValue<bool>() ?? false;
-                Dispatcher.Invoke(() =>
-                    BtnBuyCredits.Visibility = _isAuthenticated && enabled
-                        ? Visibility.Visible : Visibility.Collapsed);
-            }
-            catch { /* unreachable backend — leave the button hidden */ }
-        }
-
-        private async Task RefreshCreditsAsync(bool ensureDaily)
-        {
-            if (!_isAuthenticated || string.IsNullOrEmpty(_sessionToken)) return;
-            var token = _sessionToken;
-            try
-            {
-                if (ensureDaily)
-                {
-                    try
-                    {
-                        await _convex.CallMutationAsync("customAuthHelpers:ensureDailyBalance",
-                            new { token }, token);
-                    }
-                    catch { /* the balance query below still shows whatever is there */ }
-                }
-
-                var user = await _convex.CallQueryAsync("customAuthHelpers:getUserByToken",
-                    new { token }, token);
-                if (user is not JsonObject u) return;
-
-                // Spendable = daily allowance (legacy field as fallback) + purchased.
-                // Same formula the website renders (Portal.tsx).
-                double daily = u["dailyAgentBucks"]?.GetValue<double>()
-                    ?? u["agentBucksBalance"]?.GetValue<double>() ?? 0;
-                double purchased = u["purchasedAgentBucks"]?.GetValue<double>() ?? 0;
-                long total = (long)(daily + purchased);
-                Dispatcher.Invoke(() => CreditsLabel.Text = $"{total:N0} AB");
-            }
-            catch { /* transient network failure — keep the last known value */ }
         }
 
         // ── Navigation ────────────────────────────────────────────────────────
@@ -320,9 +254,6 @@ namespace ThalamusApp
             _isAuthenticated = false;
             _sessionToken = "";
             _sessionEmail = "";
-            _creditsTimer?.Stop();
-            CreditsRow.Visibility = Visibility.Collapsed;
-            CreditsLabel.Text = "—";
             RecentSection.Visibility = Visibility.Collapsed;
             RecentListPanel.Children.Clear();
 
@@ -342,16 +273,6 @@ namespace ThalamusApp
             {
                 Application.Current.Shutdown();
             }
-        }
-
-        /// <summary>
-        /// Open the Buy AgentBucks dialog. Only meaningful while signed in — it
-        /// needs the session token to look up the account email a payment must use.
-        /// </summary>
-        private void BuyCredits_Click(object sender, RoutedEventArgs e)
-        {
-            if (!_isAuthenticated || string.IsNullOrEmpty(_sessionToken)) return;
-            new BuyCreditsWindow(_sessionToken, _sessionEmail) { Owner = this }.ShowDialog();
         }
 
         // ── Update check ──────────────────────────────────────────────────────
