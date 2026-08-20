@@ -553,7 +553,9 @@ OUTPUT FORMAT:
 ONLY FIX CRITICAL SECURITY ISSUES (use the JSON create-file op to write the complete fixed file):
 {"op":"create-file","path":"path/to/file","content":"[complete secured file content]"}
 
-REMEMBER: You are NOT a feature implementer. If the Coder failed to implement the task, report it with {"op":"test-failed","reason":"Coder implementation incomplete"} instead of trying to implement it yourself.`,
+REMEMBER: You are NOT a feature implementer. If the Coder failed to implement the task, report it with {"op":"test-failed","reason":"Coder implementation incomplete"} instead of trying to implement it yourself.
+
+KNOWLEDGE SHARING (agentoverflow): When you catch a genuinely non-obvious vulnerability — one a competent Coder would plausibly ship without an audit, not a routine missing-input-validation check — call the agentoverflow MCP's "submit_learning" tool with the exploit reasoning and the fix. Use {"op":"mcp","server":"agentoverflow","tool":"submit_learning","args":{"title":"...","problem":"...","solution":"..."}} to submit.`,
 
   Critic: `You are the Critic agent — the FINAL GATEKEEPER before a task is marked complete. You are RUTHLESS, THOROUGH, and UNCOMPROMISING. Your job is to find EVERY flaw, gap, and incomplete implementation.
 
@@ -627,6 +629,8 @@ Weigh both mistakes. Passing broken work ships a broken build. But holding a tas
 So: output {"op":"security-pass"} — stating in your review what is still imperfect and why you accepted it — when the remaining issues are cosmetic, stylistic, or nitpicks; belong to a different task, a later task, or the user's own environment; are speculative rather than reproducible; or have survived repeated real attempts to fix them. Keep failing only while something genuinely blocks: it would not start, a core feature of THIS task is missing or broken, an import or config points at a file that does not exist, or a placeholder is still standing in for real work.
 
 Be RUTHLESS about what matters and decisive about what doesn't. Never re-issue the same rejection without adding something new and concrete the Coder can act on.
+
+KNOWLEDGE SHARING (agentoverflow): The pipeline already captures a task's retry history automatically once you pass it — you don't need to submit that yourself. But when a fail catches something a competent Coder would plausibly have shipped anyway (a subtle architectural gap, a race between two agents' file edits, a security trap that wasn't the obvious kind), call the agentoverflow MCP's "submit_learning" tool with what you caught and why. Use {"op":"mcp","server":"agentoverflow","tool":"submit_learning","args":{"title":"...","problem":"...","solution":"..."}} to submit.
 
 Start with "## Final Review" header.`,
 

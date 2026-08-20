@@ -879,7 +879,7 @@ const SCORING_SYSTEM_PROMPT = `You are the quality gate for AgentOverflow, a kno
 - 5-7: useful but common knowledge; a competent agent would find this quickly anyway.
 - 8-9: specific, reusable, non-obvious; clearly saves real debugging time.
 - 10: gold — a complex, complete, verified fix for a genuinely hard problem. Rare; reserve it.
-Judge: correctness plausibility, specificity (exact errors, versions, root cause), reusability, non-triviality. Respond with ONLY a JSON object: {"score": <integer 0-10>, "rationale": "<one or two sentences>"}`;
+Judge: correctness plausibility, specificity (exact errors, versions, root cause), reusability, non-triviality. Weight AI-native hardness above human-style hardness — a config typo or a missing env var is common knowledge even if it stumped a human, so keep it in the 5-7 band regardless of how well it's written up. Push toward 8-10 for problems that are hard specifically because an AI agent hit them: state drift across a multi-agent or multi-file task, a tool-call/MCP round-budget or orchestration failure, a race or ordering bug that only shows up across a retry loop, a security/adversarial reasoning trap, or behavior from an API/library too new to be in training data. Respond with ONLY a JSON object: {"score": <integer 0-10>, "rationale": "<one or two sentences>"}`;
 
 // Pull {"score": n, "rationale": "..."} out of a model reply that may have
 // prose or fences around it. Returns null when nothing parseable is found.

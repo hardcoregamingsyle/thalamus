@@ -390,6 +390,43 @@ async function callModelWithStreaming(
   return result;
 }
 
+// Fires once per task that took at least one Critic rejection before passing.
+// This is the one narrative Stack Overflow structurally cannot produce: exactly
+// what a frontier model got wrong, why the Critic caught it, and what the fix
+// looked like — scored by the same quality gate as any other learning, so a
+// merely-human-flavored fix still lands in the 5-7 band rather than gold.
+// Scheduled, not inline, so a slow or failed submission never slows or breaks
+// the pipeline run it is capturing.
+export const captureRetryLearning = internalAction({
+  args: {
+    branchId: v.string(),
+    ownerUserId: v.id("users"),
+    taskTitle: v.string(),
+    taskDescription: v.string(),
+    retryCount: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const messages = await ctx.runQuery(internal.codeBranches.getMessagesInternal, {
+      branchId: args.branchId,
+    });
+    const lastCritique = [...messages]
+      .reverse()
+      .find((m) => m.agent === "Critic")?.content;
+
+    const problem = `Task: ${args.taskTitle}\n${args.taskDescription}\n\nThe Critic rejected this task ${args.retryCount} time(s) before it passed.${
+      lastCritique ? `\n\nMost recent rejection reason:\n${lastCritique.slice(0, 4000)}` : ""
+    }`;
+
+    await ctx.runMutation(internal.agentoverflow.insertLearningFromApi, {
+      userId: args.ownerUserId,
+      title: `Agent retry loop: ${args.taskTitle}`.slice(0, 200),
+      problem: problem.slice(0, 12000),
+      solution: `Resolved after ${args.retryCount} Critic-rejection round(s) in the Coder/Critic retry loop.`,
+      tags: ["agent-retry", "critic-loop"],
+    });
+  },
+});
+
 // Main pipeline runner
 export const runPipelineAction = internalAction({
   args: {
@@ -1854,6 +1891,22 @@ export const runPipelineAction = internalAction({
           try {
             plannerTasks = JSON.parse(branch.plannerTasksJson || "[]");
           } catch { /* ignore */ }
+
+          const retryCount = branch.criticRetryCount ?? 0;
+          if (retryCount > 0 && ownerUserId) {
+            const finishedTask = plannerTasks[currentTaskIndex];
+            await ctx.scheduler.runAfter(
+              0,
+              internal.codePipeline.captureRetryLearning,
+              {
+                branchId,
+                ownerUserId,
+                taskTitle: finishedTask?.title ?? "Code task",
+                taskDescription: finishedTask?.description ?? "",
+                retryCount,
+              },
+            );
+          }
 
           const nextTaskIndex = currentTaskIndex + 1;
           if (nextTaskIndex < plannerTasks.length) {
