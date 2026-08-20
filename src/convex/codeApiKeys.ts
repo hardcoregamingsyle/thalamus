@@ -145,6 +145,58 @@ export const fulfillApiKeyRequest = mutation({
   },
 });
 
+// Add (or overwrite) a provider API key for a project manually. The key value
+// is encrypted at rest like keys supplied through the request flow. Project
+// owners can use this from the Keys tab to store a key directly instead of
+// waiting on a pipeline-generated request.
+export const addApiKey = mutation({
+  args: {
+    token: v.string(),
+    projectId: v.string(),
+    variableName: v.string(),
+    value: v.string(),
+    description: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const session = await requireSession(ctx, args.token);
+    await assertProjectOwner(ctx, session.userId, args.projectId);
+
+    const name = args.variableName.trim();
+    if (!name) throw new Error("Variable name is required");
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+      throw new Error("Variable name must be a valid environment variable name (letters, numbers, underscores)");
+    }
+    const value = args.value.trim();
+    if (!value) throw new Error("Key value is required");
+
+    const encryptedValue = await encryptSecret(value);
+    const existing = await ctx.db
+      .query("codeApiKeys")
+      .withIndex("by_project_and_name", (q) =>
+        q.eq("projectId", args.projectId).eq("variableName", name)
+      )
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        value: encryptedValue,
+        description: args.description?.trim() || existing.description,
+      });
+      return { id: existing._id, created: false };
+    }
+
+    const id = await ctx.db.insert("codeApiKeys", {
+      projectId: args.projectId,
+      variableName: name,
+      value: encryptedValue,
+      description: args.description?.trim(),
+      howToGet: "Added manually",
+      createdAt: Date.now(),
+    });
+    return { id, created: true };
+  },
+});
+
 // List API keys for project
 export const listApiKeys = query({
   args: { token: v.string(), projectId: v.string() },

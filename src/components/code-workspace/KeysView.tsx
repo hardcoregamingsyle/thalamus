@@ -1,4 +1,4 @@
-﻿// KeysView — project-scoped API keys and MCP servers for a branch.
+// KeysView — project-scoped API keys and MCP servers for a branch.
 //
 // Reads codeApiKeys.listApiKeys (project-wide) and codeApiKeys
 // .watchApiKeyRequests (branch-scoped pending requests), plus mcpServers
@@ -51,6 +51,7 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
   const keys = useQuery(api.codeApiKeys.listApiKeys, { token, projectId });
   const pendingRequests = useQuery(api.codeApiKeys.watchApiKeyRequests, { branchId });
   const fulfillRequest = useMutation(api.codeApiKeys.fulfillApiKeyRequest);
+  const addApiKey = useMutation(api.codeApiKeys.addApiKey);
   const mcpServers = useQuery(api.mcpServers.listServers, token ? { token } : "skip");
   const addMcpServer = useMutation(api.mcpServers.addServer);
   const removeMcpServer = useMutation(api.mcpServers.removeServer);
@@ -81,7 +82,7 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyValue, setNewKeyValue] = useState("");
-  const [isAdding] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
 
   const [isMcpAddOpen, setIsMcpAddOpen] = useState(false);
   const [mcpName, setMcpName] = useState("");
@@ -90,8 +91,24 @@ export function KeysView({ projectId, branchId }: KeysViewProps) {
   const [mcpAdding, setMcpAdding] = useState(false);
 
   const handleAddKey = async () => {
-    toast.info("Manual API key addition coming soon. Use pending requests for now.");
-    setIsAddOpen(false);
+    const name = newKeyName.trim();
+    const value = newKeyValue.trim();
+    if (!name || !value) {
+      toast.error("Key name and value are required");
+      return;
+    }
+    setIsAdding(true);
+    try {
+      const res = await addApiKey({ token, projectId, variableName: name, value });
+      toast.success(res.created ? `Key "${name}" added.` : `Key "${name}" updated.`);
+      setNewKeyName("");
+      setNewKeyValue("");
+      setIsAddOpen(false);
+    } catch (err) {
+      toast.error(errMsg(err, "Failed to add key"));
+    } finally {
+      setIsAdding(false);
+    }
   };
 
   const handleAddMcpServer = async () => {

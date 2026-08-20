@@ -49,33 +49,34 @@
   --terminal-font: 'Inter', 'JetBrains Mono', system-ui, sans-serif;
 
   /* Neutral near-black surfaces (Claude Code dark) — chroma 0, no blue tint.
-     Only the primary/accent carry color. */
+     Only the primary/accent carry color. Slightly raised surfaces and a
+     brighter muted-foreground so secondary text stays legible. */
   --background: oklch(0.10 0 0);
   --foreground: oklch(0.95 0 0);
 
-  --card: oklch(0.13 0 0);
+  --card: oklch(0.14 0 0);
   --card-foreground: oklch(0.95 0 0);
-  --popover: oklch(0.13 0 0);
+  --popover: oklch(0.15 0 0);
   --popover-foreground: oklch(0.95 0 0);
 
   /* Primary — Electric Blue (kept; it's the brand accent) */
   --primary: oklch(0.62 0.20 250);
   --primary-foreground: oklch(0.99 0 0);
 
-  --secondary: oklch(0.17 0 0);
-  --secondary-foreground: oklch(0.82 0 0);
+  --secondary: oklch(0.18 0 0);
+  --secondary-foreground: oklch(0.85 0 0);
 
-  --muted: oklch(0.16 0 0);
-  --muted-foreground: oklch(0.58 0 0);
+  --muted: oklch(0.165 0 0);
+  --muted-foreground: oklch(0.64 0 0);
 
   /* Accent — Warm amber/gold */
-  --accent: oklch(0.72 0.16 65);
+  --accent: oklch(0.74 0.15 65);
   --accent-foreground: oklch(0.08 0 0);
 
-  --destructive: oklch(0.58 0.22 15);
+  --destructive: oklch(0.60 0.22 15);
 
   --border: oklch(0.26 0 0);
-  --input: oklch(0.15 0 0);
+  --input: oklch(0.16 0 0);
   --ring: oklch(0.62 0.20 250);
 
   --chart-1: oklch(0.62 0.20 250);
@@ -84,51 +85,55 @@
   --chart-4: oklch(0.68 0.16 300);
   --chart-5: oklch(0.60 0.18 120);
 
-  --sidebar: oklch(0.11 0 0);
-  --sidebar-foreground: oklch(0.82 0 0);
+  --sidebar: oklch(0.115 0 0);
+  --sidebar-foreground: oklch(0.85 0 0);
   --sidebar-primary: oklch(0.62 0.20 250);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.17 0 0);
-  --sidebar-accent-foreground: oklch(0.82 0 0);
-  --sidebar-border: oklch(0.22 0 0);
+  --sidebar-accent: oklch(0.18 0 0);
+  --sidebar-accent-foreground: oklch(0.85 0 0);
+  --sidebar-border: oklch(0.23 0 0);
   --sidebar-ring: oklch(0.62 0.20 250);
 }
 
 /* ── LIGHT THEME ──────────────────────────────────────────────────────────── */
+/* Cohesive light mode: soft cool-neutral background, pure-white cards, and
+   dark high-contrast foregrounds. Accents are darkened for the palette so
+   colored text stays readable on white (the old 400-level shades were too
+   light). */
 .light {
-  --background: oklch(0.97 0.005 240);
-  --foreground: oklch(0.12 0.020 240);
-  --card: oklch(1.0 0 0);
-  --card-foreground: oklch(0.12 0.020 240);
-  --popover: oklch(1.0 0 0);
-  --popover-foreground: oklch(0.12 0.020 240);
-  --primary: oklch(0.52 0.22 250);
+  --background: oklch(0.965 0.004 250);
+  --foreground: oklch(0.16 0.02 255);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.16 0.02 255);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.16 0.02 255);
+  --primary: oklch(0.50 0.22 255);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.94 0.008 240);
-  --secondary-foreground: oklch(0.25 0.015 240);
-  --muted: oklch(0.95 0.005 240);
-  --muted-foreground: oklch(0.48 0.018 240);
-  --accent: oklch(0.65 0.16 65);
-  --accent-foreground: oklch(0.99 0 0);
-  --destructive: oklch(0.52 0.22 15);
-  --border: oklch(0.88 0.008 240);
-  --input: oklch(0.92 0.005 240);
-  --ring: oklch(0.52 0.22 250);
+  --secondary: oklch(0.93 0.01 255);
+  --secondary-foreground: oklch(0.28 0.02 255);
+  --muted: oklch(0.94 0.008 255);
+  --muted-foreground: oklch(0.46 0.02 255);
+  --accent: oklch(0.68 0.14 70);
+  --accent-foreground: oklch(0.16 0.02 255);
+  --destructive: oklch(0.55 0.22 20);
+  --border: oklch(0.90 0.006 255);
+  --input: oklch(0.94 0.005 255);
+  --ring: oklch(0.50 0.22 255);
 
-  --chart-1: oklch(0.52 0.22 250);
-  --chart-2: oklch(0.65 0.16 65);
-  --chart-3: oklch(0.55 0.18 160);
+  --chart-1: oklch(0.50 0.22 255);
+  --chart-2: oklch(0.66 0.14 70);
+  --chart-3: oklch(0.54 0.18 160);
   --chart-4: oklch(0.58 0.16 300);
   --chart-5: oklch(0.50 0.18 120);
 
-  --sidebar: oklch(0.96 0.005 240);
-  --sidebar-foreground: oklch(0.20 0.015 240);
-  --sidebar-primary: oklch(0.52 0.22 250);
+  --sidebar: oklch(0.975 0.004 250);
+  --sidebar-foreground: oklch(0.20 0.02 255);
+  --sidebar-primary: oklch(0.50 0.22 255);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.92 0.008 240);
-  --sidebar-accent-foreground: oklch(0.25 0.015 240);
-  --sidebar-border: oklch(0.88 0.008 240);
-  --sidebar-ring: oklch(0.52 0.22 250);
+  --sidebar-accent: oklch(0.92 0.01 255);
+  --sidebar-accent-foreground: oklch(0.28 0.02 255);
+  --sidebar-border: oklch(0.90 0.006 255);
+  --sidebar-ring: oklch(0.50 0.22 255);
 }
 
 @layer base {
@@ -260,6 +265,33 @@
 .prose-html audio { width: 100%; margin: 0.5em 0; border-radius: 8px; accent-color: oklch(0.62 0.20 250); }
 .prose-html video { width: 100%; max-width: 100%; border-radius: 8px; margin: 0.5em 0; background: #000; }
 .prose-html img { max-width: 100%; border-radius: 8px; margin: 0.5em 0; display: block; }
+
+/* Light-mode overrides for rendered markdown. The base rules above use
+   near-white text (designed for the dark theme); on a light background that
+   would be white-on-white. Code blocks (pre) intentionally stay dark in both
+   themes, like an editor. */
+.light .prose-html h1, .light .prose-html h2, .light .prose-html h3, .light .prose-html h4 {
+  color: oklch(0.18 0.02 255);
+}
+.light .prose-html strong { color: oklch(0.14 0.02 255); }
+.light .prose-html :not(pre) > code {
+  background: oklch(0.93 0.015 255);
+  color: oklch(0.35 0.09 255);
+  border: 1px solid oklch(0.87 0.02 255);
+}
+.light .prose-html th {
+  background: oklch(0.90 0.01 255);
+  color: oklch(0.20 0.02 255);
+  border: 1px solid oklch(0.85 0.01 255);
+}
+.light .prose-html td {
+  border: 1px solid oklch(0.90 0.006 255);
+  color: oklch(0.28 0.02 255);
+}
+.light .prose-html tr:nth-child(even) td { background: oklch(0.955 0.005 255); }
+.light .prose-html tr:hover td { background: oklch(0.88 0.01 250 / 0.5); }
+.light .prose-html a { color: oklch(0.44 0.20 255); }
+.light .prose-html blockquote { border-left-color: oklch(0.80 0.02 255); }
 
 /* Math / equation rendering */
 .math-frac {
@@ -424,3 +456,44 @@
   border: 1px solid currentColor;
   background: oklch(0 0 0 / 0.18);
 }
+
+/* ── Light-mode accent legibility ────────────────────────────────────────── */
+/* Study-mode widgets (and other spots) use 300/400-level accent text that pops
+   on near-black but reads as faint purple/amber on white. In light mode those
+   accents drop to their darker 600/700-level shades for proper contrast. */
+.light .text-indigo-300 { color: #4338ca; }  /* indigo-700 */
+.light .text-indigo-400 { color: #4f46e5; }  /* indigo-600 */
+.light .text-emerald-300 { color: #047857; } /* emerald-700 */
+.light .text-emerald-400 { color: #059669; } /* emerald-600 */
+.light .text-emerald-500 { color: #047857; } /* emerald-700 */
+.light .text-amber-300 { color: #b45309; }   /* amber-700 */
+.light .text-amber-400 { color: #b45309; }
+.light .text-orange-300 { color: #c2410c; }  /* orange-700 */
+.light .text-orange-400 { color: #c2410c; }
+.light .text-red-400 { color: #dc2626; }     /* red-600 */
+.light .text-red-300 { color: #dc2626; }
+
+/* Selection highlight: pick a tint that works on both themes. */
+::selection { background: oklch(0.62 0.20 250 / 0.25); color: oklch(0.96 0.008 240); }
+.light ::selection { background: oklch(0.50 0.22 255 / 0.28); color: oklch(0.12 0.02 255); }
+
+/* ── Remap model-emitted inline colors in light mode ────────────────────── */
+/* Some older client prompts (and thus already-saved replies) instruct the model
+   to bake light-on-dark hex colors into inline styles (#e5e7eb, #d1d5db,
+   #f9fafb, #c4b5fd, #fcd34d) — those read as white/purple text on a white
+   background. Inline styles beat normal CSS, so we need `!important` to force
+   them to dark, readable shades in light mode. Code blocks (#111827 bg) stay
+   dark deliberately — only the text + table border colors are remapped. */
+.light [style*="#e5e7eb"] { color: #1f2937 !important; }
+.light [style*="#d1d5db"] { color: #374151 !important; }
+.light [style*="#f9fafb"] { color: #111827 !important; }
+.light [style*="#f3f4f6"] { color: #111827 !important; }
+.light [style*="#c4b5fd"] { color: #6d28d9 !important; }
+.light [style*="#a78bfa"] { color: #6d28d9 !important; }
+.light [style*="#fcd34d"] { color: #b45309 !important; }
+.light [style*="#fbbf24"] { color: #b45309 !important; }
+.light [style*="#fca5a5"] { color: #dc2626 !important; }
+.light [style*="rgba(255,255,255,0.08)"] { border-color: rgba(0, 0, 0, 0.15) !important; }
+.light [style*="rgba(255,255,255,0.03)"] { background-color: rgba(0, 0, 0, 0.02) !important; }
+/* Thin white borders on code cells that are invisible on a light table. */
+.light [style*="rgba(255,255,255,0.15)"] { border-color: rgba(0, 0, 0, 0.18) !important; }
