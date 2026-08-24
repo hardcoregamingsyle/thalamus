@@ -1,28 +1,31 @@
 // GitSyncView — the branch's GitHub surface: the account connection itself plus
-// the manual clone/push/pull controls for its repo.
+// the repo the branch syncs to.
 //
 // This tab owns connecting and disconnecting GitHub. There is no separate /sync
 // page any more: connecting is only ever meaningful in the context of a branch
-// (it is that branch's repo, that branch's cloud commands), and a standalone
-// page meant the error messages pointing at it sent people somewhere with no
-// idea which branch was broken.
+// (it is that branch's repo), and a standalone page meant the error messages
+// pointing at it sent people somewhere with no idea which branch was broken.
 //
-// Drives githubSync.cloneRepository / pushToGithub / pullFromGithub, plus
-// github.getAuthorizationUrl and githubHelpers.disconnectGithub, and reads
-// githubHelpers.getGithubStatus for the connection state AND the scopes GitHub
-// actually granted — a token without `workflow` cannot run cloud commands, and
-// saying so here is the only way the user finds out before a build stalls.
+// The layout is the product spec, verbatim: not connected → a Connect button;
+// connected → Repo name, Repo Status (Private/Public), and a "Sync with
+// github" button. The repo lives on the USER's own GitHub account and holds
+// ONLY the project's code — no conversation transcript, no workflow files, no
+// Thalamus system files (those are filtered server-side in githubSync.ts;
+// cloud builds run against the platform-managed build mirror instead, which
+// is also why this tab no longer nags about the OAuth `workflow` scope: the
+// user's token never writes a workflow file).
 
 import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
-import { GitBranch, Github, Download, Upload, Loader2, ExternalLink, CheckCircle2, LogIn, LogOut, RefreshCw, AlertTriangle } from "lucide-react";
+import { GitBranch, Github, Download, Upload, Loader2, ExternalLink, CheckCircle2, LogIn, LogOut, RefreshCw, Globe, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { errMsg } from "@/lib/errorMessage";
 
@@ -37,24 +40,26 @@ interface GitSyncViewProps {
 // happens in this app. A manual token box on this one tab would be the exact
 // pattern removed from the New Project/Branch import dialog, just reintroduced
 // here — and it would also let this tab silently bypass whichever account
-// actually owns the branch's platform repo.
+// actually owns the branch's repo.
 export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
   const { token } = useAuth();
   const githubStatus = useQuery(api.githubHelpers.getGithubStatus, token ? { token } : "skip");
   const getAuthorizationUrl = useAction(api.github.getAuthorizationUrl);
   const disconnectGithub = useMutation(api.githubHelpers.disconnectGithub);
 
-  // Null means the branch has no repository yet — the tab swaps the
-  // clone/push/pull cards for a single create box that makes one on the
-  // user's own account and syncs the project into it.
+  // Null means the branch has no repository yet — the tab shows the create
+  // form (Repo name + Repo Status + Sync with github), which makes the repo
+  // on the user's own account and syncs the project into it in one click.
   const gitConfig = useQuery(api.githubQueries.getGithubConfig, token ? { token, projectId, branchId } : "skip");
   const branch = useQuery(api.codeBranches.getBranch, token ? { token, branchId } : "skip");
   const createRepoWithName = useAction(api.githubAutoCreate.createRepoWithName);
+  const setRepoVisibility = useAction(api.githubAutoCreate.setRepoVisibility);
 
   const [repoName, setRepoName] = useState("");
+  const [repoStatus, setRepoStatus] = useState<"public" | "private">("public");
   const [isCreating, setIsCreating] = useState(false);
+  const [isVisibilitySaving, setIsVisibilitySaving] = useState(false);
   const [repoUrl, setRepoUrl] = useState("");
-  const [commitMessage, setCommitMessage] = useState("");
   const [isCloning, setIsCloning] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
   const [isPulling, setIsPulling] = useState(false);
@@ -64,22 +69,6 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
   const cloneRepo = useAction(api.githubSync.cloneRepository);
   const pushToGithub = useAction(api.githubSync.pushToGithub);
   const pullFromGithub = useAction(api.githubSync.pullFromGithub);
-
-  // Explicitly false, not falsy: null means "we don't know" (a token saved
-  // before scopes were recorded, or a token type GitHub doesn't report scopes
-  // for) and must not be shown as a problem.
-  const workflowScopeMissing = githubStatus?.hasWorkflowScope === false;
-
-  // The branch repo may live under the PLATFORM's GitHub account (branches
-  // created while the user had no GitHub connected). On those, the user's own
-  // token is never used at all — server-side resolution deliberately keeps the
-  // platform identity — so this tab's Reconnect button cannot heal that branch,
-  // and the banner must say so instead of looping the user through OAuth.
-  const repoIsPlatformHosted =
-    workflowScopeMissing &&
-    !!gitConfig?.owner &&
-    !!githubStatus?.username &&
-    gitConfig.owner.toLowerCase() !== githubStatus.username.toLowerCase();
 
   const handleConnectGithub = async () => {
     if (!token) return;
@@ -100,7 +89,7 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
     setDisconnecting(true);
     try {
       await disconnectGithub({ token });
-      toast.success("GitHub disconnected. Public clone/push/pull still work off the platform's own access.");
+      toast.success("GitHub disconnected.");
     } catch (err) {
       toast.error(errMsg(err, "Failed to disconnect GitHub"));
     } finally {
@@ -108,6 +97,9 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
     }
   };
 
+  // The spec's single button for the no-repo state: take Repo name + Repo
+  // Status, create the repo on the user's account, and sync the project code
+  // into it (createRepoWithName pushes immediately server-side).
   const handleCreateRepo = async () => {
     if (!token || !repoName.trim()) return;
     setIsCreating(true);
@@ -117,6 +109,7 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
         projectId,
         branchId,
         repoName: repoName.trim(),
+        isPrivate: repoStatus === "private",
       });
 
       toast.success(`Repository created — https://github.com/${result.owner}/${result.repo}`);
@@ -125,6 +118,21 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
       toast.error(errMsg(err, "Failed to create repository"));
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  // Repo Status on an existing repo: PATCHes the GitHub repo and mirrors the
+  // choice into the config row the query above reads back.
+  const handleVisibilityChange = async (value: "public" | "private") => {
+    if (!token || isVisibilitySaving) return;
+    setIsVisibilitySaving(true);
+    try {
+      await setRepoVisibility({ token, projectId, branchId, isPrivate: value === "private" });
+      toast.success(`Repository is now ${value === "private" ? "Private" : "Public"}`);
+    } catch (err) {
+      toast.error(errMsg(err, "Failed to update repository visibility"));
+    } finally {
+      setIsVisibilitySaving(false);
     }
   };
 
@@ -146,7 +154,7 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
       if (result.success) {
         toast.success(`Cloned ${result.filesCloned} files from ${result.source}`);
         if (result.pushWarning) {
-          toast.error(`Imported, but couldn't push to the platform repo yet: ${result.pushWarning}`);
+          toast.error(`Imported, but couldn't push to the repo yet: ${result.pushWarning}`);
         }
         setRepoUrl("");
       }
@@ -157,27 +165,24 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
     }
   };
 
+  // The spec's "Sync with github" button: push the branch's project code —
+  // nothing else — to the repo's default branch.
   const handlePush = async () => {
-    if (!commitMessage.trim() || !token) {
-      toast.error("Please enter a commit message");
-      return;
-    }
-
+    if (!token) return;
     setIsPushing(true);
     try {
       const result = await pushToGithub({
         token,
         projectId,
         branchId,
-        commitMessage: commitMessage.trim(),
+        commitMessage: "Sync from Thalamus",
       });
 
       if (result.success) {
-        toast.success(`Pushed ${result.filesUpdated} files to GitHub`);
-        setCommitMessage("");
+        toast.success(`Synced ${result.filesUpdated} files to GitHub`);
       }
     } catch (err) {
-      toast.error(errMsg(err, "Failed to push to GitHub"));
+      toast.error(errMsg(err, "Failed to sync with GitHub"));
     } finally {
       setIsPushing(false);
     }
@@ -212,7 +217,7 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
             GitHub Sync
           </h2>
           <p className="text-muted-foreground mt-1">
-            Clone, push, and pull code from GitHub repositories
+            Your project code, synced to a repository on your own GitHub account
           </p>
         </div>
         {githubStatus?.connected ? (
@@ -238,63 +243,27 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
         )}
       </div>
 
-      {/* The scope that decides whether cloud commands can run at all. GitHub
-          reports what it granted; requesting `workflow` is not the same as
-          getting it, and an org policy can refuse it outright — in which case
-          reconnecting forever accomplishes nothing and the user needs to hear
-          that rather than keep pressing the button. */}
-      {workflowScopeMissing && (
-        <Card className="border-amber-500/50 bg-amber-500/5">
-          <CardContent className="pt-6 space-y-3 text-sm">
-            <p className="flex items-center gap-2 font-medium text-amber-500">
-              <AlertTriangle className="h-4 w-4" />
-              This GitHub token has no <code className="text-xs">workflow</code> scope
-            </p>
-            {repoIsPlatformHosted ? (
-              <p className="text-muted-foreground">
-                This branch's repo ({gitConfig?.owner}/{gitConfig?.repo}) is hosted under the
-                platform's GitHub account, not yours — so reconnecting your own GitHub cannot
-                restore cloud commands on it, no matter how many times you approve the request.
-                The platform's token is missing the scope and updating it is an admin fix on the
-                server. Until then, the desktop app is the working path: it runs commands on your
-                own machine instead of in the cloud.
-              </p>
-            ) : (
-              <p className="text-muted-foreground">
-              Files still sync, but agents cannot run commands in the cloud: writing the runner
-              workflow into the branch repo needs that scope. Press <strong>Reconnect</strong> above
-              and approve the request — it now asks for <code className="text-xs">workflow</code> and
-              it is a one-time upgrade, not a per-branch ritual: once granted, every branch on your
-              account picks it up. If GitHub keeps withholding it, an organisation policy on the
-              repo owner is refusing it; build from the desktop app instead, which runs commands on
-              your own machine.
-              </p>
-            )}
-            {githubStatus?.scopes && githubStatus.scopes.length > 0 && (
-              <p className="text-xs text-muted-foreground/70">
-                Granted: {githubStatus.scopes.join(", ")}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
+      {/* Spec: not connected → the tab is a Connect button and nothing else. */}
       {!githubStatus?.connected && (
-        <Card className="border-blue-500/50 bg-blue-500/5">
-          <CardContent className="pt-6 text-sm text-muted-foreground">
-            Connecting isn't required — clone/push/pull for public repos already work off the platform's
-            own access. Connect your account when you want private repos, pushes attributed to you
-            instead of the platform, or cloud command execution on this branch.
+        <Card>
+          <CardContent className="pt-6 text-sm text-muted-foreground space-y-3">
+            <p>
+              Connect your GitHub account to create this branch's repository on it and sync your
+              project code there.
+            </p>
+            <Button onClick={handleConnectGithub} disabled={connecting} className="gap-2">
+              {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+              Connect GitHub
+            </Button>
           </CardContent>
         </Card>
       )}
 
-      {/* No repository yet — one create box instead of clone/push/pull, which
-          have nothing to act on. The repo is made on the user's own GitHub
-          account with the exact name typed (the branch's Thalamus name for a
-          prefilled suggestion), and the project code plus the full chat log
-          are pushed into it immediately. */}
-      {gitConfig === null ? (
+      {/* Connected, no repository yet — the spec's three fields: Repo name,
+          Repo Status (Private/Public), and a "Sync with github" button that
+          creates the repo on the user's account and pushes the project code.
+          Code only: no chat transcript, no workflow files. */}
+      {githubStatus?.connected && gitConfig === null && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -302,13 +271,13 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
               Create Repository
             </CardTitle>
             <CardDescription>
-              This branch has no GitHub repository yet. Creating one makes a public repo on your
-              GitHub account and immediately syncs the project code and the full chat history to it.
+              This branch has no GitHub repository yet. Syncing creates one on your GitHub account
+              and pushes the project code into it — only the code, nothing else.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="repo-name">Repository name</Label>
+              <Label htmlFor="repo-name">Repo name</Label>
               <Input
                 id="repo-name"
                 placeholder={branch?.name ?? "my-thalamus-project"}
@@ -318,6 +287,32 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
                 maxLength={100}
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="repo-status">Repo Status</Label>
+              <Select
+                value={repoStatus}
+                onValueChange={(v) => setRepoStatus(v as "public" | "private")}
+                disabled={isCreating}
+              >
+                <SelectTrigger id="repo-status" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="public">
+                    <span className="flex items-center gap-2">
+                      <Globe className="h-3.5 w-3.5" />
+                      Public — anyone can see this repository
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="private">
+                    <span className="flex items-center gap-2">
+                      <Lock className="h-3.5 w-3.5" />
+                      Private — only you can see this repository
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <Button
               className="w-full gap-2"
               onClick={handleCreateRepo}
@@ -326,171 +321,198 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
               {isCreating ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Creating...
+                  Syncing...
                 </>
               ) : (
                 <>
                   <Github className="h-4 w-4" />
-                  Create Repository &amp; Sync Code
+                  Sync with github
                 </>
               )}
             </Button>
-            {!githubStatus?.connected && (
-              <p className="text-xs text-muted-foreground">
-                The repo is created on <strong>your</strong> GitHub account — connect GitHub above
-                first if this fails with "No GitHub account connected".
-              </p>
-            )}
+            <p className="text-xs text-muted-foreground">
+              Only your project code is synced. Cloud builds run in a separate public build
+              workspace that Thalamus manages — your repository stays clean.
+            </p>
           </CardContent>
         </Card>
-      ) : (
-        gitConfig && (
-          <>
-            {/* Clone Repository */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Download className="h-5 w-5" />
-            Clone Repository
-          </CardTitle>
-          <CardDescription>
-            Import code from a GitHub repository into this branch
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="repo-url">Repository URL</Label>
-            <Input
-              id="repo-url"
-              placeholder="https://github.com/username/repository"
-              value={repoUrl}
-              onChange={(e) => setRepoUrl(e.target.value)}
-              disabled={isCloning}
-            />
-          </div>
-          <Button
-            className="w-full gap-2"
-            onClick={handleClone}
-            disabled={isCloning || !repoUrl.trim()}
-          >
-            {isCloning ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Cloning...
-              </>
-            ) : (
-              <>
-                <Download className="h-4 w-4" />
-                Clone Repository
-              </>
-            )}
-          </Button>
-        </CardContent>
-      </Card>
+      )}
 
-      {/* Push Changes */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Upload className="h-5 w-5" />
-            Push to GitHub
-          </CardTitle>
-          <CardDescription>
-            Push all files in this branch to the connected GitHub repository
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="commit-message">Commit Message</Label>
-            <Input
-              id="commit-message"
-              placeholder="Update from Thalamus AI"
-              value={commitMessage}
-              onChange={(e) => setCommitMessage(e.target.value)}
-              disabled={isPushing}
-            />
-          </div>
-          <Button
-            className="w-full gap-2"
-            onClick={handlePush}
-            disabled={isPushing || !commitMessage.trim()}
-          >
-            {isPushing ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Pushing...
-              </>
-            ) : (
-              <>
-                <Upload className="h-4 w-4" />
-                Push to GitHub
-              </>
-            )}
-          </Button>
-        </CardContent>
-      </Card>
+      {/* Connected with a repository — the spec's fields against the existing
+          repo: Repo name (link), Repo Status toggle, "Sync with github". */}
+      {githubStatus?.connected && gitConfig && (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Github className="h-5 w-5" />
+                Repository
+              </CardTitle>
+              <CardDescription>
+                This branch syncs to the repository below on your GitHub account.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Repo name</Label>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={gitConfig.repoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center gap-1.5 font-medium"
+                  >
+                    {gitConfig.owner}/{gitConfig.repo}
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                  <Badge variant="outline" className="gap-1">
+                    {gitConfig.isPrivate ? <Lock className="h-3 w-3" /> : <Globe className="h-3 w-3" />}
+                    {gitConfig.isPrivate ? "Private" : "Public"}
+                  </Badge>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="repo-status-existing">Repo Status</Label>
+                <Select
+                  value={gitConfig.isPrivate ? "private" : "public"}
+                  onValueChange={(v) => void handleVisibilityChange(v as "public" | "private")}
+                  disabled={isVisibilitySaving}
+                >
+                  <SelectTrigger id="repo-status-existing" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">
+                      <span className="flex items-center gap-2">
+                        <Globe className="h-3.5 w-3.5" />
+                        Public — anyone can see this repository
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="private">
+                      <span className="flex items-center gap-2">
+                        <Lock className="h-3.5 w-3.5" />
+                        Private — only you can see this repository
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                {isVisibilitySaving && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Updating on GitHub...
+                  </p>
+                )}
+              </div>
+              <Button
+                className="w-full gap-2"
+                onClick={handlePush}
+                disabled={isPushing}
+              >
+                {isPushing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4" />
+                    Sync with github
+                  </>
+                )}
+              </Button>
+              <Button
+                className="w-full gap-2"
+                variant="outline"
+                onClick={handlePull}
+                disabled={isPulling}
+              >
+                {isPulling ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Pulling...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4" />
+                    Pull latest changes from GitHub
+                  </>
+                )}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Only your project code is synced — no chat history, no system files. Cloud builds
+                run in a separate public build workspace that Thalamus manages.
+              </p>
+            </CardContent>
+          </Card>
 
-      {/* Pull Changes */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <GitBranch className="h-5 w-5" />
-            Pull from GitHub
-          </CardTitle>
-          <CardDescription>
-            Pull latest changes from the connected GitHub repository
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button
-            className="w-full gap-2"
-            variant="outline"
-            onClick={handlePull}
-            disabled={isPulling}
-          >
-            {isPulling ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Pulling...
-              </>
-            ) : (
-              <>
-                <Download className="h-4 w-4" />
-                Pull Latest Changes
-              </>
-            )}
-          </Button>
-        </CardContent>
-      </Card>
+          {/* Import — bring an existing repository's code into this branch. */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Download className="h-5 w-5" />
+                Import from GitHub
+              </CardTitle>
+              <CardDescription>
+                Import code from another GitHub repository into this branch (public or private)
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="repo-url">Repository URL</Label>
+                <Input
+                  id="repo-url"
+                  placeholder="https://github.com/username/repository"
+                  value={repoUrl}
+                  onChange={(e) => setRepoUrl(e.target.value)}
+                  disabled={isCloning}
+                />
+              </div>
+              <Button
+                className="w-full gap-2"
+                variant="outline"
+                onClick={handleClone}
+                disabled={isCloning || !repoUrl.trim()}
+              >
+                {isCloning ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Importing...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4" />
+                    Import into this branch
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
 
-      {/* Info Card */}
-      <Card className="border-blue-500/50 bg-blue-500/5">
-        <CardHeader>
-          <CardTitle className="text-sm">How it works</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          <p>1. <strong>Clone</strong>: Import existing code from any GitHub repository (public or private)</p>
-          <p>2. <strong>Edit</strong>: AI agents modify and create files in this branch</p>
-          <p>3. <strong>Push</strong>: Send all changes back to GitHub with a commit</p>
-          <p>4. <strong>Pull</strong>: Get latest changes from GitHub into this branch</p>
-          <p className="pt-1">
-            {/* Authorized OAuth Apps, not personal access tokens — this app has
-                never used a PAT, and sending people to /settings/tokens sent
-                them somewhere that could not explain or revoke this grant. */}
-            <a
-              href="https://github.com/settings/applications"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline inline-flex items-center gap-1"
-            >
-              <ExternalLink className="h-3 w-3" />
-              Review this authorization on GitHub
-            </a>
-          </p>
-        </CardContent>
-      </Card>
-          </>
-        )
+          <Card className="border-blue-500/50 bg-blue-500/5">
+            <CardHeader>
+              <CardTitle className="text-sm">How it works</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm text-muted-foreground">
+              <p>1. <strong>Sync</strong>: the branch's project code lands on your repository's default branch</p>
+              <p>2. <strong>Edit</strong>: AI agents modify and create files here; every change syncs automatically too</p>
+              <p>3. <strong>Pull</strong>: bring edits made on GitHub back into this branch</p>
+              <p className="pt-1">
+                {/* Authorized OAuth Apps, not personal access tokens — this app has
+                    never used a PAT, and sending people to /settings/tokens sent
+                    them somewhere that could not explain or revoke this grant. */}
+                <a
+                  href="https://github.com/settings/applications"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline inline-flex items-center gap-1"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  Review this authorization on GitHub
+                </a>
+              </p>
+            </CardContent>
+          </Card>
+        </>
       )}
     </div>
   );
