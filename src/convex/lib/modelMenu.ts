@@ -13,8 +13,8 @@
 // mid-size workers, and LIGHT only to trivial roles. The ids are exact catalog
 // ids, so a chosen assignment always short-circuits to the right provider
 // (findZenModel / findOrcaRouterModel / findOpenRouterModel /
-// findDeadlySignalsModel / findModelScopeModel / findPollinationsModel all
-// recognise them).
+// findDeadlySignalsModel / findModelScopeModel / findHuggingFaceModel /
+// findPollinationsModel all recognise them).
 
 export interface MenuTier {
   label: string;
@@ -29,6 +29,10 @@ const FRONTIER = [
   "deepseek-ai/DeepSeek-V4-Pro",              // ModelScope — frontier DeepSeek
   "Qwen/Qwen3.5-397B-A17B",                   // ModelScope — 397B MoE
   "qwen/qwen3.8-27b-free",                    // OrcaRouter — Qwen 3.8 27B, reasoning-class coding seat
+  "Qwen/Qwen3.8-2.4T-A95B",                   // HuggingFace — Qwen 3.8 Max-class 2.4T
+  "zai-org/GLM-5.2",                          // HuggingFace — 1M-ctx frontier reasoning
+  "deepseek-ai/DeepSeek-V4-Flash",            // HuggingFace — frontier coding, cheapest strong meter
+  "moonshotai/Kimi-K2.7-Code",                // HuggingFace — agentic coding specialist
   "nvidia/nemotron-3-ultra-550b-a55b:free",   // OpenRouter — 550B reasoning
   "deepseek-v4-flash",                        // DeadlySignal — 285B reasoning
   "kimi-k2.5",                                // DeadlySignal — 256B reasoning
@@ -40,6 +44,8 @@ const FRONTIER = [
 // STANDARD — solid mid-size: Planner, Tester, Researcher, Optimiser, FactCheck.
 const STANDARD = [
   "openai/gpt-oss-120b:free",                 // OpenRouter — 120B
+  "openai/gpt-oss-120b",                      // HuggingFace — 120B, eleven live backends
+  "Qwen/Qwen3-Coder-480B-A35B-Instruct",      // HuggingFace — coder MoE
   "qwen/qwen3-coder:free",                    // OpenRouter — coder-specialised
   "meta-llama/llama-3.3-70b-instruct:free",   // OpenRouter — 70B
   "Qwen/Qwen3.5-122B-A10B",                   // ModelScope — 122B

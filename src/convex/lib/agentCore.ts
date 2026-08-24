@@ -27,6 +27,7 @@ import { agentToTaskType, type TaskType } from "./taskTypes";
 import { callModal } from "./modalClient";
 import { callZen, findZenModel, ZEN_DISPATCHER_MODEL, ZEN_DEFAULT_MODEL } from "./zenClient";
 import { callOrcaRouter, findOrcaRouterModel, ORCAROUTER_DISPATCHER_MODEL, ORCAROUTER_DEFAULT_MODEL } from "./orcaRouterClient";
+import { callHuggingFace, findHuggingFaceModel, HUGGINGFACE_DISPATCHER_MODEL, HUGGINGFACE_DEFAULT_MODEL } from "./huggingFaceClient";
 import { callOpenRouter, findOpenRouterModel, OPENROUTER_DISPATCHER_MODEL, OPENROUTER_DEFAULT_MODEL } from "./openrouterClient";
 import { callDeadlySignals, findDeadlySignalsModel, DEADLYSIGNALS_DISPATCHER_MODEL, DEADLYSIGNALS_DEFAULT_MODEL } from "./deadlySignalsClient";
 import { callModelScope, findModelScopeModel, MODELSCOPE_DISPATCHER_MODEL, MODELSCOPE_DEFAULT_MODEL } from "./modelscopeClient";
@@ -42,10 +43,10 @@ export type ModelTier = string;
 // bottom of the file — importers see it exactly where they used to.
 
 /**
- * Unified model caller — provider chain: Modal → Zen → OrcaRouter → OpenRouter → DeadlySignal → ModelScope → Pollinations → Ollama.
- * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/OrcaRouter/OpenRouter/Deadly/ModelScope/Ollama
- * (Zen is anonymous; OrcaRouter, OpenRouter, DeadlySignal and ModelScope are keyed). A
- * Dispatcher-chosen Zen, OrcaRouter, OpenRouter, DeadlySignal or ModelScope model id is honored directly. Only the Dispatcher's model
+ * Unified model caller — provider chain: Modal → Zen → OrcaRouter → OpenRouter → DeadlySignal → ModelScope → HuggingFace → Pollinations → Ollama.
+ * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/OrcaRouter/OpenRouter/Deadly/ModelScope/HuggingFace/Ollama
+ * (Zen is anonymous; OrcaRouter, OpenRouter, DeadlySignal, ModelScope and HuggingFace are keyed). A
+ * Dispatcher-chosen Zen, OrcaRouter, OpenRouter, DeadlySignal, ModelScope or HuggingFace model id is honored directly. Only the Dispatcher's model
  * is hardcoded (per provider); every other agent's model is decided by the
  * Dispatcher at runtime.
  */
@@ -205,6 +206,23 @@ export async function callModel(
     }
   }
 
+  // Dispatcher-chosen HuggingFace model: same as Zen — honor it directly.
+  if (assignedModel && findHuggingFaceModel(assignedModel)) {
+    try {
+      const result = await callHuggingFace(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
+      if (!isBlank(result.text)) {
+        await logAttempt({ provider: "huggingface", model: result.model, ok: true });
+        return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `huggingface:${result.model}` };
+      }
+      console.warn("HuggingFace returned empty output for an assigned model, falling back to the provider chain:", assignedModel);
+      await logAttempt({ provider: "huggingface", model: assignedModel, ok: false, error: "empty output" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn("HuggingFace call failed, falling back to the provider chain:", msg);
+      await logAttempt({ provider: "huggingface", model: assignedModel, ok: false, error: msg });
+    }
+  }
+
   // One full pass over every seat. Returns a result, or throws the LAST
   // seat's error after logging each miss.
   const runProviderChain = async (): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: string }> => {
@@ -212,8 +230,9 @@ export async function callModel(
       // Modal first when an admin has registered an endpoint. Which endpoint is
       // decided by data (the isPrimary row comes back first), not by this code —
       // so swapping the primary model is a click in /admin, not a deploy. Falls
-      // through to Zen → OpenRouter → DeadlySignal → ModelScope → Ollama when
-      // nothing is registered or every endpoint errors.
+      // through to Zen → OrcaRouter → OpenRouter → DeadlySignal → ModelScope →
+      // HuggingFace → Pollinations → Ollama when nothing is registered or every
+      // endpoint errors.
       try {
         const result = await callModal(ctx, prompt, systemPrompt, PIPELINE_MAX_TOKENS, 0.7, undefined, deadline);
         if (!isBlank(result.text)) {
@@ -329,12 +348,38 @@ export async function callModel(
         await logAttempt({ provider: "modelscope", model: result.model, ok: true });
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modelscope:${result.model}` };
       }
-      console.warn("ModelScope returned empty output, falling back to Pollinations:", scopeModel);
+      console.warn("ModelScope returned empty output, falling back to HuggingFace:", scopeModel);
       await logAttempt({ provider: "modelscope", model: scopeModel, ok: false, error: "empty output" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`ModelScope call failed, falling back to Pollinations:`, msg);
+      console.warn(`ModelScope call failed, falling back to HuggingFace:`, msg);
       await logAttempt({ provider: "modelscope", model: scopeModel, ok: false, error: msg });
+    }
+
+    // HuggingFace — the Inference Providers router (HF_TOKEN env var). Sixth
+    // fallback: one free HF token reaches 100+ open-weight models through a
+    // single OpenAI-compatible endpoint, including the Qwen 3.8 Max-class
+    // 2.4T checkpoint no other seat in this chain serves. Seated low because
+    // the included free monthly credit is thin — strong but thin is a
+    // backstop, and when the credit is spent the router 402s and the chain
+    // falls through to the anonymous tail. Skipped fast when unconfigured.
+    const hfModel = assignedModel && findHuggingFaceModel(assignedModel)
+      ? assignedModel
+      : (taskType === "dispatcher" ? HUGGINGFACE_DISPATCHER_MODEL : HUGGINGFACE_DEFAULT_MODEL);
+    if (process.env.HF_TOKEN) {
+      try {
+        const result = await callHuggingFace(prompt, systemPrompt, hfModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
+        if (!isBlank(result.text)) {
+          await logAttempt({ provider: "huggingface", model: result.model, ok: true });
+          return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `huggingface:${result.model}` };
+        }
+        console.warn("HuggingFace returned empty output, falling back to Pollinations:", hfModel);
+        await logAttempt({ provider: "huggingface", model: hfModel, ok: false, error: "empty output" });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`HuggingFace call failed, falling back to Pollinations:`, msg);
+        await logAttempt({ provider: "huggingface", model: hfModel, ok: false, error: msg });
+      }
     }
 
     // Pollinations — free OpenAI-compatible tier (POLLINATIONS_API_KEY). Skipped

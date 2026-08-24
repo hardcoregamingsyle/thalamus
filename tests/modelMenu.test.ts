@@ -17,6 +17,7 @@ import { OPENROUTER_MODEL_CATALOG } from "../src/convex/lib/openrouterClient";
 import { ORCAROUTER_MODEL_CATALOG } from "../src/convex/lib/orcaRouterClient";
 import { DEADLYSIGNALS_MODEL_CATALOG } from "../src/convex/lib/deadlySignalsClient";
 import { MODELSCOPE_MODEL_CATALOG } from "../src/convex/lib/modelscopeClient";
+import { HUGGINGFACE_MODEL_CATALOG } from "../src/convex/lib/huggingFaceClient";
 import { POLLINATIONS_MODEL_CATALOG } from "../src/convex/lib/pollinationsClient";
 
 function allCatalogIds(): Set<string> {
@@ -26,6 +27,7 @@ function allCatalogIds(): Set<string> {
     ...OPENROUTER_MODEL_CATALOG.map((m) => m.id),
     ...DEADLYSIGNALS_MODEL_CATALOG.map((m) => m.id),
     ...MODELSCOPE_MODEL_CATALOG.map((m) => m.id),
+    ...HUGGINGFACE_MODEL_CATALOG.map((m) => m.id),
     ...POLLINATIONS_MODEL_CATALOG.map((m) => m.id),
   ]);
 }
