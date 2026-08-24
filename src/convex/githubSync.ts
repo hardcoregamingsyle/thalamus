@@ -7,28 +7,13 @@ import { Octokit } from "@octokit/rest";
 import crypto from "crypto";
 
 import { resolveTokenForBranch } from "./githubActionsRunner";
+import { isSystemPath, pushFilesToRef, LEGACY_SYSTEM_PATHS } from "./githubPushUtils";
 
 // Row shape used by every internal.githubSyncHelpers.getGithubConfigInternal
 // call in this file — kept as a narrow local alias so the self-referential
 // api-object chain doesn't hit TS2589.
 type GithubConfig = Doc<"githubConfigs">;
 type CodeFile = { filepath: string; content: string };
-
-// GitHub's git/trees API rejects any tree path that starts with a slash
-// ("tree.path cannot start with a slash"), and an absolute /home/<user>/...
-// path is meaningless against the repo root. The output parser already
-// normalizes agent-emitted paths, but this is the last line of defense: a
-// path that somehow reaches the push still gets made repo-relative so a
-// single bad path can't fail the whole push and leave the VM working on an
-// empty clone.
-function normalizeGitPath(raw: string): string {
-  let p = (raw ?? "").trim();
-  p = p.replace(/\\/g, "/").replace(/^\.\//, "");
-  p = p.replace(/^\/home\/[^/]+\//, "");
-  if (p.startsWith("/")) p = p.slice(1);
-  p = p.split("/").filter(Boolean).join("/");
-  return p;
-}
 
 // The user's own OAuth-connected token beats an explicitly-passed one (there's
 // no PAT-entry UI left to pass one anyway) beats the platform's fallback token.
@@ -41,26 +26,53 @@ async function resolveGithubToken(
   return account?.accessToken || explicit || process.env.GITHUB_TOKEN;
 }
 
-// The branch's whole conversation, one line per message — the durable record
-// of the Code-mode chat. Every push carries it, so the chat history lives on
-// GitHub and Convex only keeps the working window the pipeline reads. An
-// empty transcript yields no file (nothing to record yet).
-async function buildConversationLog(
-  ctx: ActionCtx,
-  branchId: string,
-): Promise<{ filepath: string; content: string }> {
-  const messages = await ctx.runQuery(internal.codeBranches.getConversationLogInternal, { branchId });
-  if (messages.length === 0) return { filepath: ".thalamus/conversation.jsonl", content: "" };
-  const lines = messages.map((m) =>
-    JSON.stringify({
-      agent: m.agent,
-      content: m.content,
-      round: m.round ?? null,
-      messageIndex: m.messageIndex ?? null,
-      createdAt: m.createdAt,
-    })
-  );
-  return { filepath: ".thalamus/conversation.jsonl", content: lines.join("\n") + "\n" };
+// The user's repo is code-only by product decision: no .thalamus/ transcript,
+// no workflow files, nothing Thalamus-made. The transcript lives in Convex
+// (codeMessages) and nowhere else; the workflows live on the platform's build
+// mirror. Anything already sitting in the file store under a system path
+// (pulled in from a legacy repo, say) is dropped from every push here.
+function projectFilesOnly(files: CodeFile[]): CodeFile[] {
+  return files.filter((f) => !isSystemPath(f.filepath));
+}
+
+// Keep the execution-side copy of the code pointing at what the user repo
+// just got. The VM worker and the sandbox clone the WORKING branch
+// (config.branch) of the build mirror — the main push above targets the user
+// repo's default branch, so without this second push every command runs on a
+// stale (or, on a fresh mirror, empty) clone.
+//
+// Two mirror shapes (see ensureVmMirror): a DISTINCT mirror is platform-owned
+// and only the platform token may write it; a SELF-mirror is a legacy
+// platform-hosted repo whose own working branch simply needs the same update
+// (that stale working branch was the original empty/old-clone bug). A
+// failure is reported, not swallowed — a half-synced branch (user repo fresh,
+// mirror stale) is exactly the "terminal runs old code" bug this mechanism
+// exists to kill.
+async function pushMirrorCopy(
+  selfMirrorOctokit: Octokit,
+  config: GithubConfig,
+  files: CodeFile[],
+  message: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const vmOwner = config.vmOwner;
+  const vmRepo = config.vmRepo;
+  if (!vmOwner || !vmRepo) return { ok: true }; // mirror not set up yet — ensureVmMirror seeds it on first boot
+  try {
+    if (vmOwner === config.owner && vmRepo === config.repo) {
+      await pushFilesToRef(selfMirrorOctokit, vmOwner, vmRepo, config.branch, files, message);
+    } else {
+      const platformToken = process.env.GITHUB_TOKEN;
+      if (!platformToken) {
+        return { ok: false, error: "platform GITHUB_TOKEN is not configured, so the build mirror cannot be synced" };
+      }
+      await pushFilesToRef(new Octokit({ auth: platformToken }), vmOwner, vmRepo, config.branch, files, message);
+    }
+    return { ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`pushMirrorCopy to ${vmOwner}/${vmRepo}@${config.branch} failed:`, err);
+    return { ok: false, error: msg };
+  }
 }
 
 // SHA-256 over sorted file paths, ignoring build artifacts.
@@ -279,100 +291,53 @@ export const pushToGithub = action({
 
       if (!config) throw new Error("No GitHub repository connected");
 
-      const files: CodeFile[] = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
+      // Code-only: the conversation transcript and workflow/system files
+      // never leave Convex for the user's repo (see projectFilesOnly).
+      const files: CodeFile[] = projectFilesOnly(await ctx.runQuery(internal.codeBranches.getFilesInternal, {
         branchId: args.branchId,
-      });
+      }));
 
-      const log = await buildConversationLog(ctx, args.branchId);
-      if (log.content) files.push(log);
-
+      // Ownership-aware, same as autoPush: the connected account's live token
+      // when it owns the repo, else the creation snapshot, else the platform
+      // fallback. (resolveGithubToken would blindly prefer the user token and
+      // 404 against a repo the platform owns — e.g. one auto-created while
+      // the user had no GitHub connected.)
       const octokit = new Octokit({
-        auth: await resolveGithubToken(ctx, userId, args.githubToken),
+        auth: (await resolveTokenForBranch(ctx, args.projectId, {
+          owner: config.owner,
+          repo: config.repo,
+          branch: config.branch,
+          githubToken: config.githubToken ?? undefined,
+        })).token ?? await resolveGithubToken(ctx, userId, args.githubToken),
       });
 
       const defaultBranch = await resolveDefaultBranch(octokit, config.owner, config.repo, config.branch);
 
-      const { data: refData } = await octokit.git.getRef({
-        owner: config.owner,
-        repo: config.repo,
-        ref: `heads/${defaultBranch}`,
-      });
+      const commitMessage = args.commitMessage || "Update from Thalamus AI";
+      const commitSha = await pushFilesToRef(
+        octokit, config.owner, config.repo, defaultBranch, files, commitMessage,
+        LEGACY_SYSTEM_PATHS,
+      );
 
-      const latestCommitSha = refData.object.sha;
-
-      const { data: commitData } = await octokit.git.getCommit({
-        owner: config.owner,
-        repo: config.repo,
-        commit_sha: latestCommitSha,
-      });
-
-const baseTreeSha = commitData.tree.sha;
-
-      // Sequential blob creation with spacing + retry on 403 rate limits.
-      const tree: Array<{ path: string; mode: "100644"; type: "blob"; sha: string }> = [];
-      // Dedup by normalized path: the store can briefly hold a legacy "/src/x"
-      // row next to a corrected "src/x" row, and both normalize to "src/x" — a
-      // duplicate tree path that GitHub rejects. Keep only the first.
-      const seenTreePaths = new Set<string>();
-      for (const file of files) {
-        const normPath = normalizeGitPath(file.filepath);
-        if (seenTreePaths.has(normPath)) continue;
-        seenTreePaths.add(normPath);
-        let lastErr: unknown;
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try {
-            const { data: blob } = await octokit.git.createBlob({
-              owner: config.owner,
-              repo: config.repo,
-              content: Buffer.from(file.content).toString("base64"),
-              encoding: "base64",
-            });
-            tree.push({ path: normPath, mode: "100644" as const, type: "blob" as const, sha: blob.sha });
-            lastErr = undefined;
-            break;
-          } catch (err: unknown) {
-            lastErr = err;
-            const resp = (err as { response?: { status?: number; headers?: Record<string, string> } })?.response;
-            if (resp?.status === 403) {
-              const retryAfter = parseInt(String(resp?.headers?.["retry-after"] ?? "5"), 10);
-              await new Promise((r) => setTimeout(r, Math.min(retryAfter * 1000, 15000)));
-            } else {
-              break;
-            }
-          }
-        }
-        if (lastErr) throw lastErr;
-        await new Promise((r) => setTimeout(r, 200));
+      // The execution-side copy (build mirror's working branch, or the legacy
+      // self-mirror's) must follow, or the next command runs on stale code.
+      // The user's repo — what they pressed the button for — is already
+      // updated, so a mirror failure is reported as its own message, not as
+      // "push failed".
+      const mirror = await pushMirrorCopy(octokit, config, files, commitMessage);
+      if (!mirror.ok) {
+        throw new Error(
+          `Your repository was updated, but syncing the build workspace failed (${mirror.error ?? "unknown error"}). `
+          + "Commands would run on stale code — sync again to retry.",
+        );
       }
-
-      const { data: newTree } = await octokit.git.createTree({
-        owner: config.owner,
-        repo: config.repo,
-        tree,
-        base_tree: baseTreeSha,
-      });
-
-      const { data: newCommit } = await octokit.git.createCommit({
-        owner: config.owner,
-        repo: config.repo,
-        message: args.commitMessage || "Update from Thalamus AI",
-        tree: newTree.sha,
-        parents: [latestCommitSha],
-      });
-
-      await octokit.git.updateRef({
-        owner: config.owner,
-        repo: config.repo,
-        ref: `heads/${defaultBranch}`,
-        sha: newCommit.sha,
-      });
 
       await ctx.runMutation(internal.githubSyncHelpers.updateLastSync, {
         projectId: args.projectId,
         branchId: args.branchId,
       });
 
-      return { success: true, commitSha: newCommit.sha, filesUpdated: files.length };
+      return { success: true, commitSha, filesUpdated: files.length };
     } catch (err) {
       console.error("Push error:", err);
       throw new Error(err instanceof Error ? err.message : "Failed to push to GitHub");
@@ -409,12 +374,11 @@ export const autoPushToGithub = internalAction({
 
       if (!config) return { success: true }; // No GitHub repo connected yet — nothing to push, not an error
 
-      const files: CodeFile[] = await ctx.runQuery(internal.codeBranches.getFilesInternal, {
+      // Code-only: transcript and workflow/system files never leave Convex
+      // for the user's repo (see projectFilesOnly).
+      const files: CodeFile[] = projectFilesOnly(await ctx.runQuery(internal.codeBranches.getFilesInternal, {
         branchId: args.branchId,
-      });
-
-      const log = await buildConversationLog(ctx, args.branchId);
-      if (log.content) files.push(log);
+      }));
 
       // Same identity the VM worker uses: the connected account's live token
       // when it owns the repo, else the snapshot, else the platform fallback.
@@ -432,88 +396,18 @@ export const autoPushToGithub = internalAction({
 
       const defaultBranch = await resolveDefaultBranch(octokit, config.owner, config.repo, config.branch);
 
-      const { data: refData } = await octokit.git.getRef({
-        owner: config.owner,
-        repo: config.repo,
-        ref: `heads/${defaultBranch}`,
-      });
+      const commitMessage = args.commitMessage || "Update from Thalamus AI";
+      await pushFilesToRef(octokit, config.owner, config.repo, defaultBranch, files, commitMessage, LEGACY_SYSTEM_PATHS);
 
-      const latestCommitSha = refData.object.sha;
-
-      const { data: commitData } = await octokit.git.getCommit({
-        owner: config.owner,
-        repo: config.repo,
-        commit_sha: latestCommitSha,
-      });
-
-      const baseTreeSha = commitData.tree.sha;
-
-      // Sequential blob creation with spacing to avoid GitHub secondary rate limits.
-      // Retries individual blobs on 403 with Retry-After backoff (up to 3 tries).
-      const tree: Array<{ path: string; mode: "100644"; type: "blob"; sha: string }> = [];
-      // Dedup by normalized path: the store can briefly hold a legacy "/src/x"
-      // row next to a corrected "src/x" row, and both normalize to "src/x" — a
-      // duplicate tree path that GitHub rejects. Keep only the first.
-      const seenTreePaths = new Set<string>();
-      for (const file of files) {
-        const normPath = normalizeGitPath(file.filepath);
-        if (seenTreePaths.has(normPath)) continue;
-        seenTreePaths.add(normPath);
-        let lastErr: unknown;
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try {
-            const { data: blob } = await octokit.git.createBlob({
-              owner: config.owner,
-              repo: config.repo,
-              content: Buffer.from(file.content).toString("base64"),
-              encoding: "base64",
-            });
-            tree.push({ path: normPath, mode: "100644" as const, type: "blob" as const, sha: blob.sha });
-            lastErr = undefined;
-            break;
-          } catch (err: unknown) {
-            lastErr = err;
-            const resp = (err as { response?: { status?: number; headers?: Record<string, string> } })?.response;
-            if (resp?.status === 403) {
-              const retryAfter = parseInt(String(resp?.headers?.["retry-after"] ?? "5"), 10);
-              const waitMs = Math.min((retryAfter || 5) * 1000, 15000);
-              console.error(`GitHub secondary rate limit on blob, waiting ${waitMs}ms (attempt ${attempt + 1}/3)`);
-              await new Promise((r) => setTimeout(r, waitMs));
-            } else {
-              // Non-rate-limit error — no point retrying.
-              break;
-            }
-          }
-        }
-        if (lastErr) {
-          console.error(`Failed to create blob for ${file.filepath} after retries:`, lastErr);
-          throw lastErr;
-        }
-        // 200ms gap between blobs keeps burst well under secondary rate limits.
-        await new Promise((r) => setTimeout(r, 200));
+      // The build mirror's working branch is what the VM worker/sandbox
+      // actually clones — a user-repo-only push leaves execution running
+      // stale code, which reads exactly like the "agents ignore my edits"
+      // reports. Failing here fails the push (callers that care, like
+      // startSandbox, already read this result).
+      const mirror = await pushMirrorCopy(octokit, config, files, commitMessage);
+      if (!mirror.ok) {
+        return { success: false, error: `build mirror sync failed: ${mirror.error ?? "unknown error"}` };
       }
-
-      const { data: newTree } = await octokit.git.createTree({
-        owner: config.owner,
-        repo: config.repo,
-        tree,
-        base_tree: baseTreeSha,
-      });
-
-      const { data: newCommit } = await octokit.git.createCommit({
-        owner: config.owner,
-        repo: config.repo,
-        message: args.commitMessage || "Update from Thalamus AI",
-        tree: newTree.sha,
-        parents: [latestCommitSha],
-      });
-
-      await octokit.git.updateRef({
-        owner: config.owner,
-        repo: config.repo,
-        ref: `heads/${defaultBranch}`,
-        sha: newCommit.sha,
-      });
 
       await ctx.runMutation(internal.githubSyncHelpers.updateLastSync, {
         projectId: branch.projectId,
@@ -592,7 +486,11 @@ async function doPull(
     let filesPulled = 0;
 
     for (const item of tree.tree) {
-      if (item.type === "blob" && item.path && item.sha) {
+      // System files stay out of the file store even when the remote still
+      // has them (a repo created before the code-only decision): pulled in,
+      // they would sit in the Files view as fake project files and agents
+      // would read them as code they own.
+      if (item.type === "blob" && item.path && item.sha && !isSystemPath(item.path)) {
         try {
           const { data: blob } = await octokit.git.getBlob({
             owner: config.owner,

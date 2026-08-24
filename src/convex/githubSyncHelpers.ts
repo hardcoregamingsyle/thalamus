@@ -49,6 +49,7 @@ export const saveGithubConfigWithToken = internalMutation({
     branch: v.string(),
     lastSync: v.number(),
     githubToken: v.string(),
+    isPrivate: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -64,6 +65,7 @@ export const saveGithubConfigWithToken = internalMutation({
         branch: args.branch,
         lastSync: args.lastSync,
         githubToken: args.githubToken,
+        ...(args.isPrivate === undefined ? {} : { isPrivate: args.isPrivate }),
       });
     } else {
       await ctx.db.insert("githubConfigs", {
@@ -75,7 +77,50 @@ export const saveGithubConfigWithToken = internalMutation({
         branch: args.branch,
         lastSync: args.lastSync,
         githubToken: args.githubToken,
+        ...(args.isPrivate === undefined ? {} : { isPrivate: args.isPrivate }),
       });
+    }
+  },
+});
+
+// The build mirror for a branch (see schema comment on githubConfigs): the
+// platform-owned repo cloud command execution actually runs against. Written
+// once by ensureVmMirror and read on every boot/sandbox path thereafter.
+export const saveVmMirror = internalMutation({
+  args: {
+    branchId: v.string(),
+    vmOwner: v.string(),
+    vmRepo: v.string(),
+    vmRepoUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("githubConfigs")
+      .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        vmOwner: args.vmOwner,
+        vmRepo: args.vmRepo,
+        vmRepoUrl: args.vmRepoUrl,
+      });
+    }
+  },
+});
+
+// The user repo's visibility, toggled from the Git Sync tab after creation.
+export const setConfigPrivacy = internalMutation({
+  args: {
+    branchId: v.string(),
+    isPrivate: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("githubConfigs")
+      .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, { isPrivate: args.isPrivate });
     }
   },
 });

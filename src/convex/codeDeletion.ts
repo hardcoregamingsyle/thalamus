@@ -80,6 +80,8 @@ export const deleteBranchDeep = internalAction({
         owner?: string;
         repo?: string;
         githubToken?: string | null;
+        vmOwner?: string;
+        vmRepo?: string;
       } | null = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
         projectId: args.projectId,
         branchId: args.branchId,
@@ -89,6 +91,14 @@ export const deleteBranchDeep = internalAction({
         // real user id when passed — cast rather than widen the arg validator.
         const warning = await deleteGithubRepo(ctx, config.owner, config.repo, config.githubToken ?? undefined, args.userId as Id<"users"> | undefined);
         if (warning) console.error(`[deleteBranchDeep] branch ${args.branchId}: ${warning}`);
+        // The build mirror is real infrastructure too — a DISTINCT mirror is
+        // platform-owned, so only the platform token can delete it (the
+        // user's token has no access, by design). A self-mirror IS the repo
+        // just deleted above; skip it.
+        if (config.vmOwner && config.vmRepo && (config.vmOwner !== config.owner || config.vmRepo !== config.repo)) {
+          const mirrorWarning = await deleteGithubRepo(ctx, config.vmOwner, config.vmRepo, undefined, undefined);
+          if (mirrorWarning) console.error(`[deleteBranchDeep] branch ${args.branchId} mirror: ${mirrorWarning}`);
+        }
         await ctx.runMutation(internal.githubSyncHelpers.deleteGithubConfigByBranch, { branchId: args.branchId });
       }
     } catch (err) {

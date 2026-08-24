@@ -348,6 +348,19 @@ const schema = defineSchema(
       githubToken: v.optional(v.string()),
       sourceRepoUrl: v.optional(v.string()),
       sourceBranch: v.optional(v.string()),
+      // The user repo's visibility, chosen at creation in the Git Sync tab.
+      // The mirror below is always public regardless (free unlimited Actions
+      // minutes) — a consciously accepted tradeoff; the sync UI says so.
+      isPrivate: v.optional(v.boolean()),
+      // The build mirror: a platform-owned repo that carries the SAME project
+      // code plus the Thalamus VM/sandbox workflows, and is what cloud command
+      // execution runs against. The user's own repo stays code-only (no
+      // system files, no transcripts), and the user's token never needs the
+      // workflow scope. For legacy platform-hosted branches the mirror IS the
+      // repo itself (vmOwner/vmRepo then equal owner/repo).
+      vmOwner: v.optional(v.string()),
+      vmRepo: v.optional(v.string()),
+      vmRepoUrl: v.optional(v.string()),
     })
       .index("by_project", ["projectId"])
       .index("by_branch", ["branchId"]),

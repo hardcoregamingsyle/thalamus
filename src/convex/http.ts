@@ -659,10 +659,12 @@ http.route({
         headers: { "Authorization": `Bearer ${data.access_token}`, "Accept": "application/vnd.github.v3+json" },
       });
       const ghUser = await userRes.json() as { login: string };
-      // GitHub reports what it ACTUALLY granted on every authenticated response.
-      // Asking for `workflow` in the authorize URL does not guarantee getting it
-      // — record the truth so the Git Sync tab can say "reconnecting won't help,
-      // your org denies this scope" instead of looping the user through OAuth.
+      // GitHub reports what it ACTUALLY granted on every authenticated
+      // response — record the truth rather than the request. (Historically
+      // this mattered for `workflow`, which orgs can withhold; user tokens no
+      // longer need that scope — the build mirror owns workflow files — but
+      // the record stays because it's the only reliable account of what a
+      // token can do.)
       const grantedScopes = userRes.headers.get("x-oauth-scopes") ?? undefined;
 
       await ctx.runMutation(internal.githubHelpers.saveGithubToken, {
@@ -820,12 +822,12 @@ http.route({
     // login_ state prefix — see the sign-in branch in that handler. Scope
     // includes `repo` so signing in with GitHub also connects repo access —
     // no separate "connect GitHub" step and no PAT needed to import a repo.
-    // `workflow` scope is required to create/update .github/workflows/thalamus-vm.yml
-    // in the branch's auto-created repo, which is how cloud commands execute;
-    // without it GitHub rejects the write with a bare 404 (not a clear 403).
+    // No `workflow` scope: workflow files live exclusively on the platform's
+    // build mirror and are written with the platform token (see
+    // ensureVmMirror) — a user token never touches .github/workflows/.
     const params = new URLSearchParams({
       client_id: clientId,
-      scope: "user:email repo workflow",
+      scope: "user:email repo",
       state: `login_${state}`,
     });
     return new Response(null, {

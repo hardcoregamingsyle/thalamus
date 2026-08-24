@@ -45,10 +45,12 @@ export const getAuthorizationUrl = action({
     // fails GitHub's redirect_uri check every time. Omitting it makes GitHub
     // fall back to the app's one registered callback URL, which is correct.
     //
-    // `workflow` scope is required to create/update .github/workflows/thalamus-vm.yml
-    // in the branch's auto-created repo, which is how cloud commands execute;
-    // without it GitHub rejects the write with a bare 404 (not a clear 403).
-    const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo+workflow+user&state=${state}`;
+    // No `workflow` scope: the user's repo is code-only and workflow files
+    // are written exclusively to the platform's build mirror with the
+    // platform token, so a user token never writes under .github/workflows/.
+    // (Old tokens that already have the scope keep it — GitHub just ignores
+    // the surplus.) Plain `repo` covers every sync this app asks of it.
+    const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo+user&state=${state}`;
     return url;
   },
 });

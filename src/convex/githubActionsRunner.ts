@@ -25,6 +25,8 @@ import { ConvexError, v } from "convex/values";
 import { Octokit } from "@octokit/rest";
 import crypto from "crypto";
 import type { Id } from "./_generated/dataModel";
+import { sanitizeRepoName } from "./githubAutoCreate";
+import { isSystemPath, pushFilesToRef } from "./githubPushUtils";
 
 const VM_WORKFLOW_PATH = ".github/workflows/thalamus-vm.yml";
 const VM_WORKFLOW_FILE = "thalamus-vm.yml";
@@ -221,23 +223,17 @@ const RUNNERS: Record<string, string> = {
   macos: "macos-latest",
 };
 
-// Distinct error class so callers can recognize the "OAuth token lacks the
-// `workflow` scope" case and surface the reconnect instruction — GitHub
-// returns a bare 404 (not a helpful 403) when a token without `workflow`
-// tries to write under .github/workflows/, so we can't rely on the status
-// text alone to explain it to the user.
+// Distinct error class for the "token lacks the `workflow` scope" case —
+// GitHub returns a bare 404 (not a helpful 403) when a token without
+// `workflow` tries to write under .github/workflows/, so we can't rely on the
+// status text alone. Since workflows are only ever written to the platform's
+// build mirror, this can only mean the platform token itself is under-scoped.
 class WorkflowScopeMissingError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "WorkflowScopeMissingError";
   }
 }
-
-const WORKFLOW_SCOPE_MSG =
-  "GitHub refused to write the VM worker workflow under .github/workflows/, and the connected "
-  + "token reports no `workflow` scope. Open the branch's Git Sync tab and press Reconnect — "
-  + "that re-runs the authorization with the workflow scope and this branch picks the new token "
-  + "up on the next prompt.";
 
 // The platform-owned variant of the same failure — and the one that produced
 // the "I keep reconnecting and nothing changes" reports. Here the repo lives
@@ -323,7 +319,7 @@ async function classifyWorkflowWriteError(octokit: Octokit, err: unknown): Promi
   const status = (err as { status?: number } | undefined)?.status;
   if (status === 403 || status === 404) {
     const granted = await tokenGrantsWorkflowScope(octokit);
-    if (granted === false) return new WorkflowScopeMissingError(WORKFLOW_SCOPE_MSG);
+    if (granted === false) return new WorkflowScopeMissingError(PLATFORM_WORKFLOW_SCOPE_MSG);
   }
   return err instanceof Error ? err : new Error(String(err));
 }
@@ -414,6 +410,169 @@ async function ensureVmWorkflowWithBranch(octokit: Octokit, cfg: GhConfig): Prom
   await ensureWorkflowOnRepo(octokit, cfg, VM_WORKFLOW_PATH, VM_WORKFLOW_YAML, "thalamus vm worker");
 }
 
+// ── Build mirror ─────────────────────────────────────────────────────────────
+// The user's repo holds ONLY project code — no conversation transcript, no
+// workflow files, nothing Thalamus-made (that is the product decision from
+// the Git Sync redesign). Cloud command execution therefore cannot run there:
+// GitHub needs a workflow file in a repo that contains the code. The answer is
+// the build mirror, a platform-owned repo carrying the same project code plus
+// the managed VM/sandbox workflows. Two consequences worth the indirection:
+// the user's OAuth token never writes under .github/workflows/ (plain `repo`
+// scope forever — the reconnect-for-workflow dance is gone for good), and the
+// only token that still needs the workflow scope is the platform's own
+// GITHUB_TOKEN, an admin-managed secret in one place. Mirrors are PUBLIC by
+// deliberate product choice (unlimited free Actions minutes) — the tradeoff
+// is recorded in schema.ts and told to the user in the Git Sync tab.
+//
+// Legacy platform-hosted branches predate the mirror: their repo already
+// holds the system files, so the mirror fields simply point back at the repo
+// itself and nothing changes for them.
+export const ensureVmMirror = internalAction({
+  args: { branchId: v.string() },
+  handler: async (ctx, args): Promise<{ owner: string; repo: string; distinctFromUserRepo: boolean } | null> => {
+    const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
+    if (!branch) return null;
+    const cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+      projectId: branch.projectId, branchId: args.branchId,
+    }) as (GhConfig & { repoUrl?: string; vmOwner?: string; vmRepo?: string }) | null;
+    if (!cfg) return null;
+    if (cfg.vmOwner && cfg.vmRepo) {
+      const distinct = cfg.vmRepo !== cfg.repo || cfg.vmOwner !== cfg.owner;
+      return { owner: cfg.vmOwner, repo: cfg.vmRepo, distinctFromUserRepo: distinct };
+    }
+
+    // A repo on the user's own account must stay code-only, so its mirror
+    // lives on the platform account. Anything else (platform-hosted legacy,
+    // snapshot-owned) already contains the system files — mirror = itself.
+    const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: branch.projectId }) as { userId?: Id<"users"> } | null;
+    let userOwnsRepo = false;
+    if (project?.userId) {
+      const account = await ctx.runQuery(internal.githubHelpers.getGithubToken, { userId: project.userId }) as { username?: string } | null;
+      userOwnsRepo = !!account?.username && account.username.toLowerCase() === cfg.owner.toLowerCase();
+    }
+    if (!userOwnsRepo) {
+      await ctx.runMutation(internal.githubSyncHelpers.saveVmMirror, {
+        branchId: args.branchId,
+        vmOwner: cfg.owner,
+        vmRepo: cfg.repo,
+        vmRepoUrl: cfg.repoUrl ?? `https://github.com/${cfg.owner}/${cfg.repo}`,
+      });
+      return { owner: cfg.owner, repo: cfg.repo, distinctFromUserRepo: false };
+    }
+
+    const platformToken = process.env.GITHUB_TOKEN;
+    if (!platformToken) {
+      await ctx.runMutation(internal.codeBranches.setExecutorBlocked, {
+        branchId: args.branchId,
+        reason:
+          "Cloud commands cannot start on this branch: the platform's GITHUB_TOKEN is not configured on the "
+          + "server, so the build workspace (the public mirror your code is built in) cannot be created. "
+          + "This is a server-side configuration issue for the site admin, not your GitHub connection. "
+          + "The Thalamus desktop app still runs commands on your own machine.",
+      }).catch(() => {});
+      return null;
+    }
+
+    try {
+      const octokit = new Octokit({ auth: platformToken });
+      const { data: me } = await octokit.users.getAuthenticated();
+      const base = sanitizeRepoName(`${cfg.repo}-vm`) || "thalamus-vm";
+      let vmRepo = base;
+      let htmlUrl = "";
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          const { data } = await octokit.repos.createForAuthenticatedUser({
+            name: vmRepo,
+            description: `Thalamus build workspace - managed mirror of ${cfg.owner}/${cfg.repo}`,
+            private: false,
+            auto_init: false,
+            has_issues: false,
+            has_projects: false,
+            has_wiki: false,
+          });
+          htmlUrl = data.html_url;
+          break;
+        } catch (err) {
+          const status = (err as { status?: number })?.status;
+          if (status === 422) { vmRepo = `${base}-${attempt + 2}`; continue; }
+          throw err;
+        }
+      }
+      if (!htmlUrl) throw new Error("Failed to create the build workspace repository");
+
+      // Seed the default branch so workflow_dispatch registration has a home
+      // (see ensureWorkflowOnRepo), then fork the working branch the worker
+      // tracks from it.
+      await octokit.repos.createOrUpdateFileContents({
+        owner: me.login, repo: vmRepo, path: "README.md",
+        message: "chore: init build workspace",
+        content: Buffer.from(
+          `# Thalamus build workspace\n\nManaged mirror of ${cfg.owner}/${cfg.repo}. Workflows under .github/workflows/ run this branch's commands here.${"\n"}`,
+        ).toString("base64"),
+        branch: "main",
+      });
+      const { data: mainRef } = await octokit.git.getRef({ owner: me.login, repo: vmRepo, ref: "heads/main" });
+      await octokit.git.createRef({ owner: me.login, repo: vmRepo, ref: `refs/heads/${cfg.branch}`, sha: mainRef.object.sha });
+
+      // Land the branch's CURRENT code on the mirror's working branch BEFORE
+      // the mirror is trusted (saveVmMirror below is the trust marker). The
+      // pipeline's autoPush only updates a mirror it can see in the config,
+      // so everything written before this moment exists solely in Convex and
+      // the user repo — a mirror saved without this push leaves the very
+      // first worker cloning README-only code, the empty-clone bug all over
+      // again. A seed failure therefore returns BEFORE saveVmMirror: the next
+      // boot re-creates from scratch (name suffix absorbs the orphaned repo)
+      // rather than locking a known-stale mirror into the config.
+      const files = (await ctx.runQuery(internal.codeBranches.getFilesInternal, {
+        branchId: args.branchId,
+      })).filter((f) => !isSystemPath(f.filepath));
+      await pushFilesToRef(
+        octokit, me.login, vmRepo, cfg.branch, files, "chore: seed build workspace",
+      );
+
+      await ctx.runMutation(internal.githubSyncHelpers.saveVmMirror, {
+        branchId: args.branchId, vmOwner: me.login, vmRepo, vmRepoUrl: htmlUrl,
+      });
+      return { owner: me.login, repo: vmRepo, distinctFromUserRepo: true };
+    } catch (err) {
+      console.error("ensureVmMirror create failed:", err);
+      await ctx.runMutation(internal.codeBranches.setExecutorBlocked, {
+        branchId: args.branchId,
+        reason:
+          "Cloud commands cannot start on this branch: creating the platform build workspace failed ("
+          + (err instanceof Error ? err.message.slice(0, 200) : "unknown error")
+          + "). This is a platform-side issue — the desktop app still runs commands on your own machine.",
+      }).catch(() => {});
+      return null;
+    }
+  },
+});
+
+// Where cloud commands actually run for this branch: the build mirror's
+// coordinates + a token that can act on it — never the user's repo directly.
+// A distinct mirror always authenticates as the platform (any user token is
+// the wrong account there); a self-mirror (legacy platform-hosted) keeps the
+// snapshot/platform resolution it always had.
+async function resolveVmTarget(
+  ctx: ActionCtx,
+  branchId: string,
+): Promise<{ cfg: GhConfig; owner: string; repo: string; token: string | undefined } | null> {
+  const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
+  if (!branch) return null;
+  const cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+    projectId: branch.projectId, branchId,
+  }) as GhConfig | null;
+  if (!cfg) return null;
+  const mirror = await ctx.runAction(internal.githubActionsRunner.ensureVmMirror, { branchId });
+  if (!mirror) return null;
+  const token = mirror.distinctFromUserRepo
+    ? process.env.GITHUB_TOKEN
+    : (await resolveTokenForBranch(ctx, branch.projectId, {
+        owner: mirror.owner, repo: mirror.repo, branch: cfg.branch, githubToken: cfg.githubToken,
+      })).token;
+  return { cfg, owner: mirror.owner, repo: mirror.repo, token };
+}
+
 // Boots the branch's VM worker unless one is already alive. Idempotent: the
 // pipeline calls this on every prompt (startPipeline) and on every stop in the
 // paused path (executeBranchCommandsViaActions), so a busy worker is a no-op.
@@ -455,21 +614,30 @@ export const bootVmForBranch = internalAction({
       return "no-repo"; // repo not set up yet — the pipeline must fail commands with the explainer
     }
 
-    const resolved = await resolveTokenForBranch(ctx, branch.projectId, cfg);
-    const token = resolved.token;
+    const target = await resolveVmTarget(ctx, args.branchId);
+    if (!target) {
+      // ensureVmMirror already stamped the precise blocked reason (platform
+      // token missing, workspace creation failed) — nothing here can proceed.
+      return "dispatch-error";
+    }
+    const token = target.token;
     if (!token) {
       await ctx.runMutation(internal.codeBranches.setExecutorBlocked, {
         branchId: args.branchId,
         reason:
-          "No GitHub token is available for this branch — cloud commands cannot be dispatched. "
-          + "Connect GitHub from this branch's Git Sync tab.",
+          "Cloud commands cannot be dispatched: no token can act on this branch's build workspace. "
+          + "The platform's GITHUB_TOKEN is the identity used there — an admin must verify it.",
       });
       return "no-token";
     }
 
+    // Commands run against the build mirror, not the user's repo — the same
+    // working-branch name exists on both, and autoPush keeps the mirror's
+    // copy current before anything queues.
+    const vmCfg: GhConfig = { owner: target.owner, repo: target.repo, branch: cfg.branch, githubToken: cfg.githubToken };
     try {
       const octokit = new Octokit({ auth: token });
-      await ensureVmWorkflowWithBranch(octokit, cfg);
+      await ensureVmWorkflowWithBranch(octokit, vmCfg);
 
       // The nonce is the worker's only credential to the (unauthenticated) poll
       // endpoint — a public-repo Actions job has nothing else to prove identity.
@@ -479,8 +647,8 @@ export const bootVmForBranch = internalAction({
       });
 
       await octokit.actions.createWorkflowDispatch({
-        owner: cfg.owner,
-        repo: cfg.repo,
+        owner: vmCfg.owner,
+        repo: vmCfg.repo,
         workflow_id: VM_WORKFLOW_FILE,
         ref: cfg.branch,
         inputs: {
@@ -509,12 +677,12 @@ export const bootVmForBranch = internalAction({
       // command-result surface can tell the user to reconnect GitHub instead
       // of showing a generic "could not start" message that hides the fix.
       if (err instanceof WorkflowScopeMissingError) {
-        // Which token actually failed decides what the user is told. Only the
-        // "user" case may print reconnect instructions; the "platform" case
-        // prints the admin-facing truth instead of looping the user.
+        // In the mirror era the only identity that can hit this is the
+        // platform's own token — the admin-facing truth, never a user
+        // reconnect instruction the architecture cannot honour.
         await ctx.runMutation(internal.codeBranches.setExecutorBlocked, {
           branchId: args.branchId,
-          reason: resolved.source === "platform" ? PLATFORM_WORKFLOW_SCOPE_MSG : WORKFLOW_SCOPE_MSG,
+          reason: PLATFORM_WORKFLOW_SCOPE_MSG,
         }).catch(() => {});
         return "workflow-scope-missing";
       }
@@ -561,7 +729,7 @@ export const executeBranchCommandsViaActions = internalAction({
             : status === "no-token"
               ? "No GitHub token available to dispatch the VM worker."
               : status === "workflow-scope-missing"
-                ? (stampedReason ?? WORKFLOW_SCOPE_MSG)
+                ? (stampedReason ?? PLATFORM_WORKFLOW_SCOPE_MSG)
                 : "Could not start the VM worker for this branch — the flow recovered and you can try running the command again.",
         });
       }
@@ -600,14 +768,21 @@ export const startSandbox = internalAction({
         + "GitHub from the Git Sync tab and retry.",
       );
     }
-    const resolved = await resolveTokenForBranch(ctx, args.projectId, cfg);
-    const token = resolved.token;
-    if (!token) {
+    const target = await resolveVmTarget(ctx, args.branchId);
+    if (!target) {
       throw new ConvexError(
-        `No GitHub token can act on ${cfg.owner}/${cfg.repo}. Connect GitHub from this `
-        + "branch's Git Sync tab, or ask an admin to set GITHUB_TOKEN.",
+        "The build workspace for this branch could not be prepared, so the sandbox has nowhere to run. "
+        + "The reason is on this branch's activity feed; the desktop app runs on your own machine instead.",
       );
     }
+    const token = target.token;
+    if (!token) {
+      throw new ConvexError(
+        `No token can act on this branch's build workspace (${target.owner}/${target.repo}). `
+        + "Ask an admin to verify the platform's GITHUB_TOKEN.",
+      );
+    }
+    const vmCfg: GhConfig = { owner: target.owner, repo: target.repo, branch: cfg.branch, githubToken: cfg.githubToken };
 
     const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
     // A repeat click while one dispatch is already in flight would fire a
@@ -637,7 +812,7 @@ export const startSandbox = internalAction({
       }
       console.error("autoPushToGithub failed, continuing:", msg);
     }
-    await ensureSandboxWorkflowWithBranch(octokit, cfg);
+    await ensureSandboxWorkflowWithBranch(octokit, vmCfg);
 
     // The nonce is the only thing standing between this endpoint and a forged
     // callback — the run POSTs from a public-repo Actions job with no other
@@ -650,8 +825,8 @@ export const startSandbox = internalAction({
     const runnerOs = (branch as Record<string,unknown>)?.runnerOs ?? "ubuntu";
 
     await octokit.actions.createWorkflowDispatch({
-      owner: cfg.owner,
-      repo: cfg.repo,
+      owner: vmCfg.owner,
+      repo: vmCfg.repo,
       workflow_id: SANDBOX_WORKFLOW_FILE,
       ref: cfg.branch,
       inputs: {
@@ -673,7 +848,7 @@ export const startSandbox = internalAction({
       await new Promise(r => setTimeout(r, 1000));
       try {
         const { data: runs } = await octokit.actions.listWorkflowRuns({
-          owner: cfg.owner, repo: cfg.repo, workflow_id: SANDBOX_WORKFLOW_FILE,
+          owner: vmCfg.owner, repo: vmCfg.repo, workflow_id: SANDBOX_WORKFLOW_FILE,
           branch: cfg.branch, per_page: 1,
         });
         if (runs.total_count && runs.workflow_runs?.[0]) {
@@ -703,7 +878,9 @@ export const stopSandbox = internalAction({
     }) as GhConfig | null;
 
     if (cfg) {
-      const token = (await resolveTokenForBranch(ctx, args.projectId, cfg)).token;
+      const target = await resolveVmTarget(ctx, args.branchId);
+      const token = target?.token;
+      if (target) Object.assign(cfg, { owner: target.owner, repo: target.repo });
       if (token) {
         const octokit = new Octokit({ auth: token });
         // If we don't have a stored run ID, try to find the active run.

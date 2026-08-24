@@ -187,27 +187,6 @@ export const getMessagesInternal = internalQuery({
   },
 });
 
-// Internal: the branch's ENTIRE conversation in index order — the durable
-// source for the .thalamus/conversation.jsonl that ships with every push.
-// getMessagesInternal only returns the latest 100, which is all the pipeline
-// needs for context; the transcript needs everything. NOT paginated: Convex
-// allows a single paginated query per function execution, so the old
-// do/while paginate() loop threw "ran multiple paginated queries" on any
-// branch with more than one page of messages — and because the push action
-// autoPushToGithub calls this via ctx.runQuery, the crash silently killed
-// every file push, leaving the Actions clone permanently empty. A branch's
-// message log is tightly bounded, so .collect() is the right tool here.
-export const getConversationLogInternal = internalQuery({
-  args: { branchId: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("codeMessages")
-      .withIndex("by_branch_and_index", (q) => q.eq("branchId", args.branchId))
-      .order("asc")
-      .collect();
-  },
-});
-
 // Internal: Get files
 export const getFilesInternal = internalQuery({
   args: { branchId: v.string() },

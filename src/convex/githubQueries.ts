@@ -32,6 +32,10 @@ export const getGithubConfig = query({
       repo: config.repo,
       branch: config.branch,
       lastSync: config.lastSync,
+      // The Git Sync tab's Repo Status control. Rows from before the field
+      // existed are public repos (creation hardcoded it), so false is the
+      // honest default — never undefined, so the toggle can't render blank.
+      isPrivate: config.isPrivate ?? false,
       sourceRepoUrl: config.sourceRepoUrl ?? null,
       sourceBranch: config.sourceBranch ?? null,
     };

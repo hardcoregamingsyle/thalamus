@@ -26,7 +26,7 @@ type GithubConfigRow = {
 // GitHub repo names: lowercase letters, digits, hyphens, underscores; no
 // leading/trailing hyphen, max 100 chars. The Thalamus branch name is the
 // default, so anything a user types gets normalized instead of rejected.
-function sanitizeRepoName(name: string): string {
+export function sanitizeRepoName(name: string): string {
   const cleaned = name
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, "-")
@@ -56,6 +56,9 @@ export const createObscureRepo = internalAction({
     projectName: v.string(),
     githubToken: v.string(),
     requestedName: v.optional(v.string()),
+    // The Git Sync tab's Repo Status choice. Defaults public (free unlimited
+    // Actions minutes); a private repo is created when the user asks for one.
+    isPrivate: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<CreatedRepo> => {
     try {
@@ -77,7 +80,7 @@ export const createObscureRepo = internalAction({
           const { data } = await octokit.repos.createForAuthenticatedUser({
             name: repoName,
             description: "Thalamus Code Project",
-            private: false,
+            private: args.isPrivate ?? false,
             auto_init: false,
             has_issues: false,
             has_projects: false,
@@ -160,6 +163,7 @@ export const createObscureRepo = internalAction({
         branch: branchName,
         lastSync: Date.now(),
         githubToken: args.githubToken,
+        ...(args.isPrivate === undefined ? {} : { isPrivate: args.isPrivate }),
       });
 
       return { success: true, owner: username, repoName, branchName, repoUrl: repo.html_url };
@@ -188,6 +192,7 @@ export const ensureRepoForBranch = internalAction({
     branchId: v.string(),
     projectName: v.string(),
     requestedName: v.optional(v.string()),
+    isPrivate: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<{ owner: string; repo: string; branch: string } | null> => {
     const existing: GithubConfigRow = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
@@ -226,6 +231,7 @@ export const ensureRepoForBranch = internalAction({
         projectName: args.projectName,
         githubToken,
         requestedName,
+        ...(args.isPrivate === undefined ? {} : { isPrivate: args.isPrivate }),
       });
       await ctx.runMutation(internal.codeBranches.setRepoSetupError, { branchId: args.branchId, error: null });
       return { owner: created.owner, repo: created.repoName, branch: created.branchName };
@@ -277,6 +283,8 @@ export const createRepoWithName = action({
     projectId: v.string(),
     branchId: v.string(),
     repoName: v.string(),
+    // Repo Status from the Git Sync tab: true = Private, false = Public.
+    isPrivate: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<{ owner: string; repo: string; branch: string; repoUrl: string }> => {
     const userId: Id<"users"> | null = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
@@ -289,14 +297,17 @@ export const createRepoWithName = action({
       branchId: args.branchId,
       projectName: project?.name ?? "",
       requestedName: args.repoName,
+      ...(args.isPrivate === undefined ? {} : { isPrivate: args.isPrivate }),
     });
     if (!result) {
       const branch: { repoSetupError?: string } | null = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId });
       throw new Error(branch?.repoSetupError ?? "Failed to create the repository");
     }
 
-    // The repo exists now — land the code and the chat log immediately instead
-    // of leaving an empty shell waiting for the first pipeline push.
+    // The repo exists now — land the code immediately instead of leaving an
+    // empty shell waiting for the first pipeline push. Code only: the chat
+    // transcript and workflow files are system data and never go to the
+    // user's repo (they live in Convex and on the platform's build mirror).
     await ctx.runAction(internal.githubSync.autoPushToGithub, {
       branchId: args.branchId,
       commitMessage: "chore: initial sync after repository creation",
@@ -308,6 +319,45 @@ export const createRepoWithName = action({
       branch: result.branch,
       repoUrl: `https://github.com/${result.owner}/${result.repo}`,
     };
+  },
+});
+
+
+// Flip an existing repo between Private and Public — the Git Sync tab's Repo
+// Status control after the repo exists. Uses the connected account's token
+// (the repo is on their account), validates the session, then mirrors the
+// choice into githubConfigs so the UI reflects it on the next read.
+export const setRepoVisibility = action({
+  args: {
+    token: v.string(),
+    projectId: v.string(),
+    branchId: v.string(),
+    isPrivate: v.boolean(),
+  },
+  handler: async (ctx, args): Promise<{ isPrivate: boolean }> => {
+    const userId: Id<"users"> | null = await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token });
+    if (!userId) throw new Error("Not authenticated");
+
+    const cfg: { owner?: string; repo?: string } | null = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+      projectId: args.projectId,
+      branchId: args.branchId,
+    });
+    if (!cfg?.owner || !cfg.repo) throw new Error("This branch has no repository yet");
+
+    const account: { accessToken?: string } | null = await ctx.runQuery(internal.githubHelpers.getGithubToken, { userId });
+    if (!account?.accessToken) throw new Error("Connect GitHub to change repository visibility");
+
+    const octokit = new Octokit({ auth: account.accessToken });
+    try {
+      await octokit.repos.update({ owner: cfg.owner, repo: cfg.repo, private: args.isPrivate });
+    } catch (err) {
+      throw new Error(err instanceof Error ? err.message : "Failed to update repository visibility");
+    }
+    await ctx.runMutation(internal.githubSyncHelpers.setConfigPrivacy, {
+      branchId: args.branchId,
+      isPrivate: args.isPrivate,
+    });
+    return { isPrivate: args.isPrivate };
   },
 });
 
