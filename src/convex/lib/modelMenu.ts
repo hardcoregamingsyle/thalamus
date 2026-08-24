@@ -12,8 +12,9 @@
 // give FRONTIER seats to the critical writers/reviewers, STANDARD to the
 // mid-size workers, and LIGHT only to trivial roles. The ids are exact catalog
 // ids, so a chosen assignment always short-circuits to the right provider
-// (findZenModel / findOpenRouterModel / findDeadlySignalsModel /
-// findModelScopeModel / findPollinationsModel all recognise them).
+// (findZenModel / findOrcaRouterModel / findOpenRouterModel /
+// findDeadlySignalsModel / findModelScopeModel / findPollinationsModel all
+// recognise them).
 
 export interface MenuTier {
   label: string;
@@ -27,6 +28,7 @@ export interface MenuTier {
 const FRONTIER = [
   "deepseek-ai/DeepSeek-V4-Pro",              // ModelScope — frontier DeepSeek
   "Qwen/Qwen3.5-397B-A17B",                   // ModelScope — 397B MoE
+  "qwen/qwen3.8-27b-free",                    // OrcaRouter — Qwen 3.8 27B, reasoning-class coding seat
   "nvidia/nemotron-3-ultra-550b-a55b:free",   // OpenRouter — 550B reasoning
   "deepseek-v4-flash",                        // DeadlySignal — 285B reasoning
   "kimi-k2.5",                                // DeadlySignal — 256B reasoning

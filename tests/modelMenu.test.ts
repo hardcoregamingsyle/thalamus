@@ -14,6 +14,7 @@ import {
 } from "../src/convex/lib/modelMenu";
 import { ZEN_MODEL_CATALOG } from "../src/convex/lib/zenClient";
 import { OPENROUTER_MODEL_CATALOG } from "../src/convex/lib/openrouterClient";
+import { ORCAROUTER_MODEL_CATALOG } from "../src/convex/lib/orcaRouterClient";
 import { DEADLYSIGNALS_MODEL_CATALOG } from "../src/convex/lib/deadlySignalsClient";
 import { MODELSCOPE_MODEL_CATALOG } from "../src/convex/lib/modelscopeClient";
 import { POLLINATIONS_MODEL_CATALOG } from "../src/convex/lib/pollinationsClient";
@@ -21,6 +22,7 @@ import { POLLINATIONS_MODEL_CATALOG } from "../src/convex/lib/pollinationsClient
 function allCatalogIds(): Set<string> {
   return new Set([
     ...ZEN_MODEL_CATALOG.map((m) => m.id),
+    ...ORCAROUTER_MODEL_CATALOG.map((m) => m.id),
     ...OPENROUTER_MODEL_CATALOG.map((m) => m.id),
     ...DEADLYSIGNALS_MODEL_CATALOG.map((m) => m.id),
     ...MODELSCOPE_MODEL_CATALOG.map((m) => m.id),

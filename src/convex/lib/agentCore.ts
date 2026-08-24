@@ -26,6 +26,7 @@ import { callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL } from "./ollamaC
 import { agentToTaskType, type TaskType } from "./taskTypes";
 import { callModal } from "./modalClient";
 import { callZen, findZenModel, ZEN_DISPATCHER_MODEL, ZEN_DEFAULT_MODEL } from "./zenClient";
+import { callOrcaRouter, findOrcaRouterModel, ORCAROUTER_DISPATCHER_MODEL, ORCAROUTER_DEFAULT_MODEL } from "./orcaRouterClient";
 import { callOpenRouter, findOpenRouterModel, OPENROUTER_DISPATCHER_MODEL, OPENROUTER_DEFAULT_MODEL } from "./openrouterClient";
 import { callDeadlySignals, findDeadlySignalsModel, DEADLYSIGNALS_DISPATCHER_MODEL, DEADLYSIGNALS_DEFAULT_MODEL } from "./deadlySignalsClient";
 import { callModelScope, findModelScopeModel, MODELSCOPE_DISPATCHER_MODEL, MODELSCOPE_DEFAULT_MODEL } from "./modelscopeClient";
@@ -41,10 +42,10 @@ export type ModelTier = string;
 // bottom of the file — importers see it exactly where they used to.
 
 /**
- * Unified model caller — provider chain: Modal → Zen → OpenRouter → DeadlySignal → ModelScope → Pollinations → Ollama.
- * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/OpenRouter/Deadly/ModelScope/Ollama
- * (Zen is anonymous; OpenRouter, DeadlySignal and ModelScope are keyed). A
- * Dispatcher-chosen Zen, OpenRouter, DeadlySignal or ModelScope model id is honored directly. Only the Dispatcher's model
+ * Unified model caller — provider chain: Modal → Zen → OrcaRouter → OpenRouter → DeadlySignal → ModelScope → Pollinations → Ollama.
+ * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/OrcaRouter/OpenRouter/Deadly/ModelScope/Ollama
+ * (Zen is anonymous; OrcaRouter, OpenRouter, DeadlySignal and ModelScope are keyed). A
+ * Dispatcher-chosen Zen, OrcaRouter, OpenRouter, DeadlySignal or ModelScope model id is honored directly. Only the Dispatcher's model
  * is hardcoded (per provider); every other agent's model is decided by the
  * Dispatcher at runtime.
  */
@@ -136,6 +137,23 @@ export async function callModel(
     }
   }
 
+  // Dispatcher-chosen OrcaRouter model: same as Zen — honor it directly.
+  if (assignedModel && findOrcaRouterModel(assignedModel)) {
+    try {
+      const result = await callOrcaRouter(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
+      if (!isBlank(result.text)) {
+        await logAttempt({ provider: "orcarouter", model: result.model, ok: true });
+        return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `orcarouter:${result.model}` };
+      }
+      console.warn("OrcaRouter returned empty output for an assigned model, falling back to the provider chain:", assignedModel);
+      await logAttempt({ provider: "orcarouter", model: assignedModel, ok: false, error: "empty output" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn("OrcaRouter call failed, falling back to the provider chain:", msg);
+      await logAttempt({ provider: "orcarouter", model: assignedModel, ok: false, error: msg });
+    }
+  }
+
   // Dispatcher-chosen OpenRouter model: same as Zen — honor it directly.
   if (assignedModel && findOpenRouterModel(assignedModel)) {
     try {
@@ -224,16 +242,39 @@ export async function callModel(
         await logAttempt({ provider: "zen", model: result.model, ok: true });
         return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `zen:${result.model}` };
       }
-      console.warn("Zen returned empty output, falling back to OpenRouter:", zenModel);
+      console.warn("Zen returned empty output, falling back to OrcaRouter:", zenModel);
       await logAttempt({ provider: "zen", model: zenModel, ok: false, error: "empty output" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`Zen call failed, falling back to OpenRouter:`, msg);
+      console.warn(`Zen call failed, falling back to OrcaRouter:`, msg);
       await logAttempt({ provider: "zen", model: zenModel, ok: false, error: msg });
     }
 
+    // OrcaRouter — keyed OpenAI-compatible gateway (ORCAROUTER_API_KEY env
+    // var). Second fallback after Zen: qwen3.8-27b-free is a strong
+    // reasoning-class coding seat that is free at this gateway — the profile
+    // the chain wants high up. Skipped fast when unconfigured.
+    const orcaModel = assignedModel && findOrcaRouterModel(assignedModel)
+      ? assignedModel
+      : (taskType === "dispatcher" ? ORCAROUTER_DISPATCHER_MODEL : ORCAROUTER_DEFAULT_MODEL);
+    if (process.env.ORCAROUTER_API_KEY) {
+      try {
+        const result = await callOrcaRouter(prompt, systemPrompt, orcaModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
+        if (!isBlank(result.text)) {
+          await logAttempt({ provider: "orcarouter", model: result.model, ok: true });
+          return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `orcarouter:${result.model}` };
+        }
+        console.warn("OrcaRouter returned empty output, falling back to OpenRouter:", orcaModel);
+        await logAttempt({ provider: "orcarouter", model: orcaModel, ok: false, error: "empty output" });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`OrcaRouter call failed, falling back to OpenRouter:`, msg);
+        await logAttempt({ provider: "orcarouter", model: orcaModel, ok: false, error: msg });
+      }
+    }
+
     // OpenRouter — keyed free-model gateway (OPENROUTER_API_KEY env var).
-    // Second fallback after Zen: the `openrouter/free` auto-router serves
+    // Third fallback after OrcaRouter: the `openrouter/free` auto-router serves
     // whatever free model fits the request, so the leg survives the roster
     // rotation. 20 req/min per free model — burst traffic falls through.
     // Streams via SSE — deltas are piped to `streaming` (if the caller passed
@@ -257,7 +298,7 @@ export async function callModel(
     }
 
     // DeadlySignal — keyed New API gateway (DEADLYSIGNALS_API_KEY env var).
-    // Third fallback after OpenRouter: serves frontier models (kimi-k2.5, gpt-5.x,
+    // Fourth fallback after OpenRouter: serves frontier models (kimi-k2.5, gpt-5.x,
     // glm-5.2) when the free seats are down or too slow.
     const deadlyModel = assignedModel && findDeadlySignalsModel(assignedModel)
       ? assignedModel
@@ -277,7 +318,7 @@ export async function callModel(
     }
 
     // ModelScope — Alibaba's official free API-Inference tier (MODELSCOPE_API_KEY
-    // env var, .ai host). Fourth fallback when Zen, OpenRouter and Deadly are down:
+    // env var, .ai host). Fifth fallback when Zen, OrcaRouter, OpenRouter and Deadly are down:
     // serves DeepSeek-V4-Pro — the frontier seat every other provider in the chain fails.
     const scopeModel = assignedModel && findModelScopeModel(assignedModel)
       ? assignedModel
