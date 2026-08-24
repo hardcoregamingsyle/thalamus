@@ -8,9 +8,9 @@
 import { describe, expect, test } from "bun:test";
 import { agentToTaskType } from "../src/convex/lib/taskTypes";
 
-// The pipeline roster (codePipeline.ts ALL_PLANNING_AGENTS + task agents) plus
-// the Dispatcher. If an agent is added or renamed there, update this table —
-// the test exists to force that conversation.
+// The pipeline cast (lib/pipelineAgents.ts TEAM_AGENTS + RESEARCH_TEAM) plus
+// the background Dispatcher. If an agent is added or renamed there, update
+// this table — the test exists to force that conversation.
 const EXPECTED: Record<string, ReturnType<typeof agentToTaskType>> = {
   Dispatcher: "dispatcher",
   // "planner" matches the reasoning branch before "research" is tested —

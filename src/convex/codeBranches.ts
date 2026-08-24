@@ -361,6 +361,9 @@ export const updateBranchStatus = internalMutation({
     currentTaskIndex: v.optional(v.number()),
     currentTaskDifficulty: v.optional(v.string()),
     criticRetryCount: v.optional(v.number()),
+    // Research Team progress (see the schema comment). Explicit null clears
+    // the field for the routing paths that leave the team.
+    researchTeamIndex: v.optional(v.union(v.number(), v.null())),
     mcpRoundCount: v.optional(v.number()),
     continueCount: v.optional(v.number()),
     stopRequested: v.optional(v.boolean()),
@@ -400,6 +403,12 @@ export const updateBranchStatus = internalMutation({
     if (args.currentTaskIndex !== undefined) updates.currentTaskIndex = args.currentTaskIndex;
     if (args.currentTaskDifficulty !== undefined) updates.currentTaskDifficulty = args.currentTaskDifficulty;
     if (args.criticRetryCount !== undefined) updates.criticRetryCount = args.criticRetryCount;
+    if (args.researchTeamIndex !== undefined) {
+      // null means "the run is no longer inside the Research Team" — patching
+      // a field to undefined removes it, which keeps "not in the team" and
+      // "team member 0" distinct (a missing field and a 0 are both falsy).
+      updates.researchTeamIndex = args.researchTeamIndex === null ? undefined : args.researchTeamIndex;
+    }
     if (args.mcpRoundCount !== undefined) updates.mcpRoundCount = args.mcpRoundCount;
     if (args.continueCount !== undefined) {
       updates.continueCount = args.continueCount;

@@ -139,6 +139,12 @@ const schema = defineSchema(
       // task the Critic keeps failing can't loop (and bill) forever. Reset to 0
       // when the pipeline advances to a new task.
       criticRetryCount: v.optional(v.number()),
+      // Research Team progress: index into RESEARCH_TEAM (pipelineAgents.ts)
+      // while the team is mid-run, absent otherwise. An over-to that names the
+      // team (or any single member, which is upgraded to the team) sets this
+      // to 0 and the pipeline drives the four members in fixed order; the
+      // last member's own over-to decides where the findings go next.
+      researchTeamIndex: v.optional(v.number()),
       // Set by stopPipeline; runPipelineAction halts (without rescheduling) and
       // clears it. Distinguishes a user Stop from the transient "idle" the
       // pipeline writes between every step.

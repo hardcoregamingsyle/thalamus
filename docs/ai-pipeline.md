@@ -2,74 +2,42 @@
 
 The dynamic multi-agent pipeline that drives Code mode. Implementation: `src/convex/codePipeline.ts`. Agent prompts: `src/convex/lib/agentPrompts.ts`. Provider chain: `src/convex/lib/agentCore.ts`.
 
-## Dispatcher
+## Dispatcher (background model-picker)
 
-The Dispatcher runs before EVERY pipeline — every fresh user prompt re-enters through it (a new prompt interrupts any in-flight run; see `userPromptGen` below), and it also re-runs between tasks. It classifies the message and returns the minimum agent set: that list is the TEAM ROSTER (anyone on it can be handed the ball mid-run; anyone off it can still be called on) and its FIRST entry is the agent the work starts with — per prompt, and re-decided per task. After the start, routing is the team's own: agents hand off with `{"op":"over-to"}` and the roster order is only the default flow when nobody names the next teammate. Its system prompt lists the available roster and the tier heuristics:
+The Dispatcher still runs before EVERY run — a fresh user prompt always re-enters through it (interrupting any in-flight run via `userPromptGen`) — but it now lives **in the background with exactly one job: choosing which MODEL each agent runs on**. It no longer classifies the message, picks the roster, or decides where work starts. Its output is a single optional `assignments` array (`{"assignments":[{"agentName":"Coder","modelId":"…"}]}`), parsed by `parseModelAssignments` in `codePipeline.ts` and persisted on `codeBranches.dispatchedModelsJson`. An unparsable reply simply keeps the default seats; a rate-limit stall resumes the run without re-picking (`skipDispatchOnResume`). One quiet transcript line records the picks for auditability and the run moves on.
 
-- **Model**: whatever the Dispatcher provider chain returns for the `dispatcher` task type.
-- **Output**: JSON `{ tier: "trivial" | "simple" | "medium" | "complex" | "full" | "question", reasoning: "...", agents: [...], assignments: [...], skipAgents: [...], customAgents: [...], startFrom: null | number | agent-name }`
-- **Rules** (enforced after parsing so a forgetful model cannot omit them):
-  - A QUESTION/INQUIRY is dispatched to `["KnowItAll"]` alone — no other agents.
-  - Coder is always guaranteed (enforced after parsing); the Critic is NOT forced — the Dispatcher decides whether verification is needed for the task.
-  - Hacker is only included if the user explicitly asks for a security audit / pen test / vuln scan.
-  - `startFrom`: null = fresh pipeline; a 1-based task number = skip planning and start execution at that task; an agent name = resume the run at that agent (for follow-ups on an ongoing task).
-  - `skipAgents`: continuation when a task stopped mid-run — agents to skip on the FIRST pass of this run only (honored while `skipActive`, cleared at the next task hand-off or fresh prompt).
-  - `customAgents`: bespoke agents (max 2, name ≤ 40 chars, own `systemPrompt`) created only when no standard agent fits; they run after the standard agents, in dispatch order.
-  - If no planning agents are selected (trivial/simple), planning is skipped entirely and a synthetic single-task plan is created so the Coder gets a well-defined prompt.
+- **Model**: whatever the Dispatcher provider chain returns for the `dispatcher` task type, against the same curated menu (`lib/modelMenu.ts`) the seats are assigned from.
+- **Output it can no longer emit**: roster/`startFrom`/`skipAgents`/`customAgents` — the roster era is over. Unknown fields in its JSON are ignored.
 
-The picked agent set is persisted on `codeBranches.dispatchedAgentsJson`; custom agents + the skip list live on `customAgentsJson` / `skipAgentsJson` (written together via `setDispatchedExtras`); the pipeline filters each phase's list against them.
+Every run then enters as the **Analyser** with a single synthetic task (the whole user goal) saved to `plannerTasksJson` — task lists survive only as prompt context; nothing derives ORDER from them. From there the run is agent-routed: each agent ends its turn naming the next teammate with `{"op":"over-to"}`, the Analyser re-routes whenever an agent names nobody, and the run ends when the Critic passes, the Analyser names nobody, or KnowItAll finishes a plain answer.
 
-### Interrupts and generations
+## Agent cast
 
-`codeBranches.userPromptGen` is bumped once per user prompt by `startPipeline`. Every phase transition in `runPipelineAction` goes through the `advance()` helper, which re-reads the branch and refuses when the generation moved — so a mid-run chain can never clobber the routing of a newer prompt. The newest prompt's dispatch owns the branch uncontested; superseded invocations yield.
+The cast is FIXED — code no longer builds a per-prompt roster. Directly targetable teammates (`lib/pipelineAgents.ts` `TEAM_AGENTS`): Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic, KnowItAll. The four research agents — ResearchPlanner, Researcher, ReportMaker, FactCheck — run ONLY as the Research Team (`RESEARCH_TEAM`, pinned order).
 
-### KnowItAll handoff
-
-KnowItAll answers the question directly and is the only agent with the power to re-activate the Dispatcher: it ends its reply with `{"op":"dispatch","reason":"..."}` when answering exposes a problem that needs the build pipeline. The pipeline saves the message with a `[DISPATCH REQUESTED]` marker, routes back through the Dispatcher phase, and the re-dispatch prompt carries the reason (read out of the marker in the transcript) so the Dispatcher does not re-route the original question back to KnowItAll and loop.
-
-### Complexity tiers (guidance from the Dispatcher prompt)
-
-| Tier | Typical task | Agents selected |
+| Agent | task-type | Role in the hand-off model |
 |---|---|---|
-| question | Doubt, how-to, explanation | KnowItAll |
-| trivial | Rename, typo, one-liner | Coder |
-| simple | Add a UI component, fix a bug | Coder, Critic |
-| medium | Multi-file feature, new endpoint, refactor | FactCheck, Planner, Coder, Tester, Critic |
-| complex | New module, full integration, architecture change | FactCheck, Analyser, Planner, Coder, Optimiser, Tester, Critic |
-| full | Greenfield app or security audit requested | All agents |
-
-Research is not a tier — it is a team (ResearchPlanner + Researcher + ReportMaker + FactCheck) added to any tier when the task needs current docs, third-party APIs, or external context.
-
-## Agent roster
-
-Order of appearance in the pipeline. Task type is what `agentToTaskType()` in `src/convex/lib/taskTypes.ts` returns for the agent's name (matched by lowercase substring, so decorated names like "Researcher (deep)" still route correctly).
-
-| Agent | Task type | Role |
-|---|---|---|
-| Dispatcher | `dispatcher` | Classifies the task; picks the crew. Runs on every prompt. |
-| KnowItAll | `chat` | Answers any question directly; can hand back to the Dispatcher with `{"op":"dispatch"}`. |
-| ResearchPlanner | `research` | Breaks the research topic into search keywords and scrape targets. |
-| Researcher | `research` | Executes the plan; collects raw data as JSON. |
-| ReportMaker | `research` | Synthesises the raw JSON into a structured report. |
-| FactCheck | `factcheck` | Verifies every claim against web sources. |
-| Analyser | `reasoning` | Architectural analysis and dependency mapping. |
-| Planner | `reasoning` | Decomposes the task into atomic tasks with difficulty ratings. |
-| Coder (always) | `code` | Writes the implementation. |
-| Optimiser | `code` | Performance and code-quality pass. |
-| Organizer | `dispatcher` | Structure, docs, README. Both spellings (`organiser`, `organizer`) match `dispatcher`. |
+| Dispatcher | `dispatcher` | Background model-seat picker. Runs on every prompt; routes nothing. |
+| Analyser | `reasoning` | The lead. Opens every run, analyses, and directs the team with over-to. Re-routes whenever an agent names nobody. Naming nobody itself = run complete. |
+| KnowItAll | `chat` | Answers any question directly; escalates to a fresh build run with `{"op":"dispatch"}`. Finishing a plain answer ends the run. |
+| Planner | `reasoning` | Task decomposition to `plannerTasksJson` — context for whoever follows, never an ordering source. |
+| Coder | `code` | Writes/edits the project files. |
+| Optimiser | `code` | Performance and quality passes. |
+| Organizer | `dispatcher` | Docs, README, structure cleanup. |
 | Tester | `agent` | Writes and runs tests. |
-| Hacker | `agent` | Adversarial security pass (only if requested). |
-| Critic | `reasoning` | Final gate. Rejects substandard work with `{"op":"critic-fail"}` and specific feedback. Included only when the Dispatcher says the task needs verification. |
+| Hacker | `agent` | Security/penetration testing. |
+| Critic | `reasoning` | The exit gate: `security-pass` closes the run; `security-fail` plus an over-to names the fixer (default Coder). No retry caps — its judgement is the gate. |
+| Research Team | — | Summoned whole by over-to "ResearchTeam": ResearchPlanner → Researcher → ReportMaker → FactCheck, always in that order. Members cannot be named individually (a lone member is upgraded to the whole team, with a transcript note); only FactCheck's over-to routes the findings onward. `codeBranches.researchTeamIndex` tracks the member in progress. |
 
-Custom agents (Dispatcher-defined) are appended after the standard set, in dispatch order, and run with their own system prompt from `customAgentsJson`.
+## Team hand-offs (`over to`)
 
-### Team hand-offs (`over-to`)
+Hand-offs are the ONLY routing mechanism — there is no roster order to fall through to. After an agent's turn (continue-loop and MCP rounds exhausted), `runPipelineAction` routes in this order:
 
-Any agent can end its reply with `{"op":"over-to","agent":"Name","why":"…"}` to name the teammate who runs next, overriding the roster order for that step (see the op contract below). The Dispatcher picks the roster and the FIRST agent (per prompt, re-decided per task); the `over-to` op is how the team routes the work in real time after that. Rules the pipeline enforces:
-
-1. The target is validated by `resolveHandoffTarget` (case/punctuation-insensitive, leading "the" tolerated): any standard or run-custom agent is valid, on OR off the roster; Dispatcher/User/System are not teammates; an unknown name or naming yourself falls back to the normal roster order.
-2. An agent reached ONLY via hand-off (not on the roster) still runs — it becomes a one-agent pipeline for that turn. When it finishes without naming the next teammate, the team's Critic (when the roster has one) reviews next rather than the task closing unseen.
-3. A passing Critic never hand-offs — `security-pass` is terminal for its turn; only a rejecting Critic directs the next step.
+1. **Research Team progression** — mid-team (`researchTeamIndex` 0–2) goes straight to the next member; the last member falls through to normal routing.
+2. **Critic pass** — completes the run (retry learnings still captured when the task survived rejections).
+3. **over-to to the team** — enters the team at ResearchPlanner (`researchTeamIndex: 0`).
+4. **over-to to a teammate** — that agent runs next.
+5. **No/invalid/self hand-off** — falls back to the Analyser… except the Analyser (nothing left to delegate) and KnowItAll (answer finished) naming nobody, which complete the run.
 
 ### Critic gate
 
@@ -219,7 +187,7 @@ Every pipeline run has the built-in AgentOverflow (`AO_MCP_URL` or `${CONVEX_SIT
 {"op":"over-to","agent":"Tester","why":"unit tests for the parser next"}
 ```
 
-The named agent runs next instead of the roster order — the mechanism that makes the run a team (see "Team hand-offs" above). `to` is accepted as an alias of `agent`, `reason` as an alias of `why`, and the op-name variants models write (`over_to`, `handover`, `hand-off`, `handoff`) all parse the same way. The pipeline validates the name; an invalid or self target no-ops into the normal advance.
+The named agent runs next — the only routing mechanism the run has (see "Team hand-offs" above). `to` is accepted as an alias of `agent`, `reason` as an alias of `why`, and the op-name variants models write (`over_to`, `handover`, `hand-off`, `handoff`) all parse the same way. `"ResearchTeam"` (or any single research member, upgraded to the whole team) starts the four-member Research Team in its fixed order. The pipeline validates the name; an invalid or self target falls back to the Analyser.
 
 ### Continue
 
@@ -242,16 +210,14 @@ Dispatching → Planning → Executing → Completed
 Branch status fields (`codeBranches` in `schema.ts`):
 
 - `phase`: current agent name (e.g. "Coder", "Tester").
-- `executionPhase`: `dispatching` | `planning` | `executing` | `completed`.
+- `executionPhase`: `dispatching` | `executing` | `completed` (the old `planning` phase is retired).
 - `status`: `running` | `paused` | `completed` | `idle`.
-- `currentTaskIndex`: which task in the plan is currently running.
-- `dispatchedAgentsJson`: JSON array of agent names the Dispatcher selected.
-- `dispatchedModelsJson`: per-agent model assignments the Dispatcher selected.
-- `customAgentsJson`: JSON array of Dispatcher-defined custom agents (`{name, systemPrompt}`).
-- `skipAgentsJson`: JSON array of agents to skip on the first pass of this run (continuation after a mid-run stop).
-- `skipActive`: whether the skip list still applies — set by the dispatch, cleared on the next task hand-off or fresh prompt.
+- `currentTaskIndex`: legacy cursor into `plannerTasksJson` (a single synthetic task carries the goal; order is never derived from it).
+- `researchTeamIndex`: Research Team member in progress (`RESEARCH_TEAM` index 0–3) while the team runs; absent otherwise.
+- `dispatchedModelsJson`: per-agent model assignments — the Dispatcher's only remaining output.
+- `dispatchedAgentsJson` / `customAgentsJson` / `skipAgentsJson` / `skipActive`: roster-era columns the pipeline no longer writes or reads (kept in the schema so old branches still load). 
 - `userPromptGen`: monotonic counter bumped once per user prompt by `startPipeline`; phase transitions refuse to advance when it moved, so a newer prompt always interrupts an in-flight run and the newest dispatch wins.
-- `criticRetryCount`: persisted retry counter for the current task.
+- `criticRetryCount`: persisted rejection counter the Critic reads when deciding to hold or release a task.
 - `streamingContent` / `streamingAgent` / `streamingAt`: live agent output. Streaming seats (OpenRouter) write true SSE deltas as they arrive; other seats drip-feed the finished response in ~300-char chunks. Either way the reply grows instead of landing in one block.
 - `executor`: `cloud` | `local` — chosen at `startPipeline` and never changed after; a local branch is never scheduled server-side, a cloud branch is never polled by the desktop app.
 

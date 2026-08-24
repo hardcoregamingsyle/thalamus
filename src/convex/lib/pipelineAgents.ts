@@ -1,85 +1,62 @@
-// Pure agent-list logic for the code pipeline — which agents run, in what
-// order, for a given Dispatcher decision. No Convex framework imports, so it
-// is unit-testable (see tests/pipelineAgents.test.ts) and shared by
-// codePipeline.ts.
+// Pure agent-team logic for the code pipeline — the fixed cast, the
+// four-agent Research Team, and the `over to` hand-off resolver. No Convex
+// framework imports, so it is unit-testable (see tests/pipelineAgents.test.ts)
+// and shared by codePipeline.ts.
+//
+// The execution model this module encodes:
+//   - The cast is FIXED. There is no Dispatcher-chosen roster anymore — the
+//     Dispatcher lives in the background and its only job is picking which
+//     MODEL each teammate runs on (see codePipeline.ts).
+//   - The Analyser opens every run; from there each agent ends its turn by
+//     naming the next teammate with {"op":"over-to","agent":"...", ...}.
+//   - The four research agents run ONLY as the Research Team: an over-to that
+//     names the team (or, as a convenience, any single member, which is
+//     upgraded to the whole team) starts ResearchPlanner, and the members run
+//     strictly in RESEARCH_TEAM order. No over-to may ever land on just one of
+//     them — research is gathered, written and fact-checked as one job.
 
-// All known agents in their natural order.
-// Researcher is a three-agent team: ResearchPlanner → Researcher (data gatherer) → ReportMaker.
-// KnowItAll answers questions directly and can hand back to the Dispatcher via
-// {"op":"dispatch"} — it is a task-phase agent (a question dispatch runs the
-// task pipeline with just KnowItAll in it).
-export const ALL_PLANNING_AGENTS = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Planner"] as const;
-export const ALL_TASK_AGENTS     = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic", "KnowItAll"] as const;
+// Directly hand-offable teammates, in their natural order. The four research
+// agents are deliberately NOT here — see RESEARCH_TEAM.
+export const TEAM_AGENTS = [
+  "Analyser", "Planner", "Coder", "Optimiser", "Organizer",
+  "Tester", "Hacker", "Critic", "KnowItAll",
+] as const;
 
-// The full fallback pipelines (used when no Dispatcher output exists)
-export const DEFAULT_PLANNING_PIPELINE = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Planner"];
-export const DEFAULT_TASK_PIPELINE     = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck", "Analyser", "Coder", "Optimiser", "Organizer", "Tester", "Hacker", "Critic"];
+// The Research Team — always summoned as a unit (over to "ResearchTeam") and
+// always run top-to-bottom in this exact order: plan the searches, gather the
+// data, write the report, verify the claims.
+export const RESEARCH_TEAM = ["ResearchPlanner", "Researcher", "ReportMaker", "FactCheck"] as const;
 
-/** Ensure the research team is always included as a group. */
-export function expandResearchTeam(agents: string[]): string[] {
-  const hasAny = agents.some(a => a === "ResearchPlanner" || a === "Researcher" || a === "ReportMaker");
-  if (!hasAny) return agents;
-  const set = new Set(agents);
-  set.add("ResearchPlanner");
-  set.add("Researcher");
-  set.add("ReportMaker");
-  return [...set];
-}
+// The canonical name an over-to uses to summon the whole team. The resolver
+// returns this sentinel; the pipeline recognises it and starts the team at
+// index 0 of RESEARCH_TEAM.
+export const RESEARCH_TEAM_TARGET = "ResearchTeam";
 
-// Dispatcher-defined agents: anything in the dispatched list that is not a
-// standard agent is a custom agent (declared in customAgentsJson with its own
-// system prompt). They run after the standard agents, in dispatch order.
-export function customAgentNames(dispatched: string[]): string[] {
-  const standard = new Set<string>([...ALL_PLANNING_AGENTS, ...ALL_TASK_AGENTS]);
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const a of dispatched) {
-    if (!standard.has(a) && a && !seen.has(a)) {
-      seen.add(a);
-      out.push(a);
-    }
-  }
-  return out;
-}
-
-/** Build the actual planning pipeline from the Dispatcher's chosen agent list.
- *  `skip` (the Dispatcher's first-iteration skip list, honored while
- *  skipActive) drops those agents for this pass — a continuation run that
- *  picks up where a stopped run got to. */
-export function buildPlanningPipeline(dispatched: string[], skip: string[] = []): string[] {
-  if (!dispatched || dispatched.length === 0) return DEFAULT_PLANNING_PIPELINE;
-  const skipSet = new Set(skip);
-  return [
-    ...ALL_PLANNING_AGENTS.filter(a => expandResearchTeam(dispatched).includes(a) && !skipSet.has(a)),
-    ...customAgentNames(dispatched).filter(a => !skipSet.has(a)),
-  ];
-}
-
-/** Build the actual task pipeline from the Dispatcher's chosen agent list.
- *  Coder is always guaranteed to appear (enforced at dispatch time); the
- *  Critic is NOT forced — the Dispatcher decides whether verification is
- *  needed for this task. Custom agents are appended in dispatch order.
- *  `skip` (the Dispatcher's first-iteration skip list, honored while
- *  skipActive) drops those agents for this pass. */
-export function buildTaskPipeline(dispatched: string[], skip: string[] = []): string[] {
-  if (!dispatched || dispatched.length === 0) return DEFAULT_TASK_PIPELINE;
-  const skipSet = new Set(skip);
-  return [
-    ...ALL_TASK_AGENTS.filter(a => expandResearchTeam(dispatched).includes(a) && !skipSet.has(a)),
-    ...customAgentNames(dispatched).filter(a => !skipSet.has(a)),
-  ];
-}
-
-// Names an agent may never hand off to: the Dispatcher is a phase, not a
-// teammate, and User/System are transcript roles, not runnable agents.
+// Names an agent may never hand off to: the Dispatcher is a background
+// model-picker, not a teammate, and User/System are transcript roles, not
+// runnable agents.
 const UNHANDOFFABLE = new Set(["dispatcher", "user", "system"]);
 
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+// What callers write for the team (after the leading "the "/"agent " strip):
+// "research team", "research team agents", "researchers", plain "research".
+const TEAM_ALIASES = new Set(["researchteam", "researchteamagents", "researchers", "research"]);
+
 /**
- * Validate an {"op":"over-to"} target into a runnable agent name.
+ * Validate an {"op":"over-to"} target into the next thing the pipeline runs.
  *
  * The parser records the raw string the model wrote; this decides whether it
- * names a real teammate and returns that agent's CANONICAL casing, or
- * undefined (the pipeline then simply advances by the roster order).
+ * names a real teammate (returns its CANONICAL casing), the Research Team
+ * (returns RESEARCH_TEAM_TARGET), or nothing runnable (undefined — the
+ * pipeline then falls back to the Analyser, the team's lead router).
+ *
+ * Research-team handling is the special case, and it is strict on purpose:
+ * naming ANY single member ("over to the researcher") returns the TEAM
+ * sentinel, never the member — a member can only run as part of the team, in
+ * order. The pipeline tells the two spellings apart (a direct team name vs an
+ * upgraded member name) by checking RESEARCH_TEAM membership itself when it
+ * wants to note the upgrade in the transcript.
  *
  * Matching is deliberately conservative: case- and punctuation-insensitive,
  * with a leading "the "/"agent " tolerated ("over to the critic" lands on
@@ -88,38 +65,46 @@ const UNHANDOFFABLE = new Set(["dispatcher", "user", "system"]);
  * worth more than convenience here.
  *
  * A target equal to the agent itself returns undefined: handing off to
- * yourself is a no-op the normal advance already covers, and honouring it
+ * yourself is a no-op the normal fallback already covers, and honouring it
  * would let a model loop its own seat forever.
  */
 export function resolveHandoffTarget(
   rawTarget: string | undefined,
   selfName: string,
-  customNames: string[] = [],
 ): string | undefined {
   if (!rawTarget) return undefined;
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
   let want = norm(rawTarget);
   if (!want) return undefined;
   if (want.startsWith("the") && want.length > 3) want = want.slice(3);
   if (want.startsWith("agent") && want.length > 5) want = want.slice(5);
-  if (UNHANDOFFABLE.has(want)) return undefined; // Dispatcher/User/System are not teammates
-  // Planning AND task agents are valid hand-off targets: "this needs
-  // re-planning" is a legitimate mid-execution hand-off, just as "the Coder
-  // must fix this" is a legitimate mid-planning one. Deduped — the two lists
-  // share the research team.
-  const candidates = [...new Set([...ALL_PLANNING_AGENTS, ...ALL_TASK_AGENTS, ...customNames])];
-  const hit = candidates.find((a) => norm(a) === want);
+  if (UNHANDOFFABLE.has(want)) return undefined;
+  // The team by name.
+  if (TEAM_ALIASES.has(want)) return RESEARCH_TEAM_TARGET;
+  // A single research agent — upgraded to the whole team. Members never run
+  // alone: the planner's keywords feed the gatherer, the gatherer's JSON feeds
+  // the report, the report feeds the fact-check; landing mid-team would hand
+  // downstream members context they never got.
+  if (RESEARCH_TEAM.some((m) => norm(m) === want)) return RESEARCH_TEAM_TARGET;
+  const hit = TEAM_AGENTS.find((a) => norm(a) === want);
   if (!hit) return undefined;
   if (norm(hit) === norm(selfName)) return undefined;
   return hit;
 }
 
-/** True when `name` is a runnable agent (standard or custom) — used by the
- *  pipeline to decide whether an out-of-roster phase is a deliberate handoff
- *  destination (run it) or a dead end (park the run). */
-export function isRunnableAgent(name: string, customNames: string[] = []): boolean {
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+/** True when `name` is a runnable agent phase — one of the directly
+ *  hand-offable teammates, or a Research Team member MID-TEAM-RUN (the
+ *  pipeline drives members itself while the team is in progress; members are
+ *  runnable phases even though no over-to may name them individually). */
+export function isRunnableAgent(name: string): boolean {
   const want = norm(name);
   if (!want || UNHANDOFFABLE.has(want)) return false;
-  return [...ALL_PLANNING_AGENTS, ...ALL_TASK_AGENTS, ...customNames].some((a) => norm(a) === want);
+  return (
+    TEAM_AGENTS.some((a) => norm(a) === want) ||
+    RESEARCH_TEAM.some((m) => norm(m) === want)
+  );
+}
+
+/** The display name for transcript/UI lines when a target is the team. */
+export function handoffDisplayName(target: string): string {
+  return target === RESEARCH_TEAM_TARGET ? "the Research Team" : target;
 }
