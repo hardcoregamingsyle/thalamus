@@ -4,7 +4,7 @@
 
 | Executor | Where commands run | Trigger |
 |---|---|---|
-| `cloud` (default) | GitHub Actions worker inside the branch's own auto-created public repo | Server-scheduled via `bootVmForBranch` on `startPipeline` and every subsequent resume |
+| `cloud` (default) | GitHub Actions worker inside the branch's build mirror (see below) | Server-scheduled via `bootVmForBranch` on `startPipeline` and every subsequent resume |
 | `local` | The user's own machine, under `%LOCALAPPDATA%\Thalamus\...` per branch | Desktop app polls `codeCommands:listPendingForBranch` and executes locally |
 
 ## Command lifecycle (both executors)
@@ -27,9 +27,9 @@ The branch "parks as paused, self-resumes" behaviour is symmetric across the two
 
 ## Cloud executor — GitHub Actions worker
 
-Source: `src/convex/githubActionsRunner.ts`. Each branch already has its own public repo from `githubAutoCreate.ts` (public repos get unlimited Actions minutes on standard runners, so the repo is also the VM). A persistent worker workflow (`.github/workflows/thalamus-vm.yml`, provisioned by `ensureVmWorkflow`) polls Convex every ~10s.
+Source: `src/convex/githubActionsRunner.ts`. Commands run on the branch's **build mirror**, not on the user's repo: the user's repo is code-only by product decision (no workflow files, no `.thalamus/` transcript — pushes filter system paths and pulls refuse to read them back), and GitHub will only run a workflow that sits beside the code, so execution lives on a platform-owned mirror repo (`<repo>-vm`, public for unlimited Actions minutes) carrying the same code plus the managed workflows. `ensureVmMirror` creates it once — seeding the working branch with the branch's current code BEFORE the mirror is recorded in the config, so a worker can never clone an empty scaffold — and `resolveVmTarget` is the single helper boot/sandbox/stop use for its coordinates and token (distinct mirror → the platform `GITHUB_TOKEN`; legacy self-mirror → `resolveTokenForBranch`, where the "mirror" is the repo itself). A persistent worker workflow (`.github/workflows/thalamus-vm.yml`, provisioned by `ensureVmWorkflow` onto the mirror's default AND working branches) polls Convex every ~10s.
 
-The worker is stateless across polls: before every batch it re-syncs its working tree from the branch ref it tracks (`git fetch origin` + `git checkout -B $BRANCH_REF origin/$BRANCH_REF`), so a command only ever sees what has actually been pushed to GitHub. The pipeline must therefore push files to the branch before their commands run. `codePipeline` does this synchronously on every round that both writes files and queues commands — the push is awaited before the queue is dispatched, and if it fails the batch is failed fast with the reason (a command that cannot see the files it depends on would otherwise produce a baffling "No such file" that agents answer by re-creating identical content forever). The push and the boot resolve the same live token, so a reconnected account cannot leave pushes behind the worker.
+The worker is stateless across polls: before every batch it re-syncs its working tree from the branch ref it tracks (`git fetch origin` + `git checkout -B $BRANCH_REF origin/$BRANCH_REF`), so a command only ever sees what has actually been pushed to the mirror's working branch. The pipeline must therefore push files before their commands run. `codePipeline` does this synchronously on every round that both writes files and queues commands — the push is awaited before the queue is dispatched, and if it fails the batch is failed fast with the reason (a command that cannot see the files it depends on would otherwise produce a baffling "No such file" that agents answer by re-creating identical content forever). Every push (`autoPushToGithub`, and the manual "Sync with github" button) is two-legged: the user repo's default branch first, then the mirror's working branch via `pushMirrorCopy`, with a mirror-leg failure failing the push loudly. The push and the boot resolve the same identities, so a reconnected account cannot leave pushes behind the worker.
 
 ### Boot
 
@@ -89,5 +89,5 @@ When the WPF app calls `startPipeline`, it passes `executor: "local"`. That valu
 
 Check `codeCommands` and `codeApiKeyRequests` for rows with `status: "pending"`. Nine times out of ten a branch sitting in `paused` has a row nobody picked up:
 
-- Cloud executor: check the branch repo's Actions history. If the `thalamus-vm.yml` workflow errored on boot, `vmLastSeenAt` will be stale and the next `startPipeline` / message will attempt to re-boot; if the failure is `no-repo` / `no-token` / `dispatch-error`, the pipeline already failed the backlog with an explainer and resumed.
+- Cloud executor: check the build mirror's Actions history (the mirror's owner/repo are on the branch's `githubConfigs` row as `vmOwner`/`vmRepo`). If the `thalamus-vm.yml` workflow errored on boot, `vmLastSeenAt` will be stale and the next `startPipeline` / message will attempt to re-boot; if the failure is `no-repo` / `no-token` / `dispatch-error`, the pipeline already failed the backlog with an explainer and resumed. Commands running old or missing files means the mirror leg of a push failed — re-sync from the Git Sync tab, whose sync button fails loudly in exactly that case.
 - Local executor: confirm the desktop app is still polling. If the app crashed, restarting it resumes the poll and picks up the pending row.

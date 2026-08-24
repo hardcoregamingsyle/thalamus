@@ -55,7 +55,7 @@ GitHub OAuth is used only for connecting user repositories to code projects. It 
 1. User clicks "Connect GitHub" on a branch's **Git Sync** tab, which also carries Reconnect and Disconnect. There is no separate `/sync` page.
 2. Frontend calls `github.getAuthorizationUrl` with the current branch path as `returnPath`, so the user lands back where they started.
 3. Server generates state parameter (`hex(userId).randomHex`) — encodes the user identity so no server-side state table is needed.
-4. User is redirected to `https://github.com/login/oauth/authorize?scope=repo+workflow+user&state=…`. The `workflow` scope is required: without it GitHub rejects writes to `.github/workflows/` in the branch's auto-created repo with a bare 404, so cloud commands never run. Tokens issued before this scope was added keep working for everything else and need a reconnect.
+4. User is redirected to `https://github.com/login/oauth/authorize?scope=repo+user&state=…`. The `workflow` scope is deliberately NOT requested any more: the user's repo is code-only, and workflow files are written exclusively to the platform's build mirror (see `ensureVmMirror`) with the platform token — so a user token never touches `.github/workflows/`, and the old "reconnect and approve `workflow`" dance is gone. Tokens issued while it was still requested keep working (the surplus scope is simply unused).
 5. GitHub redirects back to the callback route (registered in `http.ts`).
 6. Server decodes state to recover the `userId`.
 7. Exchanges code for an access token.
@@ -65,12 +65,11 @@ GitHub OAuth is used only for connecting user repositories to code projects. It 
 Scopes:
 
 - `repo` — full access to private/public repos (needed for push).
-- `workflow` — write `.github/workflows/` in the branch's repo (needed for cloud command execution).
 - `user` — read user profile info.
 
-Requesting a scope is not the same as being granted it — an organisation policy can withhold `workflow` — so what GitHub *reports* is recorded rather than assumed. `githubHelpers.getGithubStatus` returns `scopes` and `hasWorkflowScope` (`true` / `false` / `null` for "unknown", which covers tokens saved before scopes were recorded and token types that send no header). The Git Sync tab shows a warning only on a definite `false`. `githubActionsRunner` performs the same check server-side before it will attribute a 403/404 to a missing scope.
+What GitHub *reports* (via `x-oauth-scopes`) is recorded rather than assumed — `githubHelpers.getGithubStatus` returns `scopes` and `hasWorkflowScope` (`true` / `false` / `null` for "unknown"). `hasWorkflowScope` is now only a diagnostic for the PLATFORM token: server-side, `githubActionsRunner` performs the same check before it will attribute a 403/404 under `.github/workflows/` on the build mirror to a missing scope of the platform's `GITHUB_TOKEN`.
 
-**A missing `workflow` scope is not the common failure mode.** The far more common cause of a stuck VM/sandbox boot was that `workflow_dispatch` only resolves via the repo's *default* branch — writing the workflow file solely to the per-branch working repo's own branch made every dispatch 404 forever, regardless of token scope. `githubActionsRunner.ensureWorkflowOnRepo` now writes the file to both the default branch (registers the trigger) and the working branch (what actually runs). See `CLAUDE.md` §4.
+**A missing `workflow` scope was never the common failure mode.** The far more common cause of a stuck VM/sandbox boot was that `workflow_dispatch` only resolves via the repo's *default* branch — writing the workflow file solely to the working branch made every dispatch 404 forever, regardless of token scope. `githubActionsRunner.ensureWorkflowOnRepo` writes the file to both the mirror's default branch (registers the trigger) and its working branch (what actually runs). See `CLAUDE.md` §4.
 
 The connected token is read live from `users.githubAccessToken` on every runner dispatch. `githubConfigs.githubToken` is a snapshot taken at repo-creation time and is only a fallback — reading it as the source of truth is what made reconnecting unable to fix a stuck branch.
 
