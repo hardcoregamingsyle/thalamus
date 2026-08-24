@@ -422,12 +422,12 @@ export const autoPushToGithub = internalAction({
       // resolves live leaves a branch that was reconnected pushing with a
       // dead token — files silently never reach the clone commands run on.
       const octokit = new Octokit({
-        auth: await resolveTokenForBranch(ctx, branch.projectId, {
+        auth: (await resolveTokenForBranch(ctx, branch.projectId, {
           owner: config.owner,
           repo: config.repo,
           branch: config.branch,
           githubToken: config.githubToken ?? undefined,
-        }),
+        })).token,
       });
 
       const defaultBranch = await resolveDefaultBranch(octokit, config.owner, config.repo, config.branch);

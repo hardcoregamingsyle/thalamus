@@ -2294,10 +2294,17 @@ export const startPipeline = action({
         branchId: args.branchId,
       }) as Array<{ agent: string; content: string }>;
       const last = recent.length > 0 ? recent[recent.length - 1] : null;
+      // The stamped reason already carries the case-appropriate guidance
+      // (githubActionsRunner splits it by token provenance). Append the
+      // reconnect pointer for the user-token case only — on a platform-hosted
+      // repo that pointer is the loop the user can never break out of.
+      const isPlatformBlock = blockedReason.includes("platform's GitHub integration");
       const warning =
         `⚠️ Cloud command execution is disabled on this branch: ${blockedReason}\n\n`
         + `Agents will keep working on files, but any command they would have run will not execute. `
-        + `Open this branch's Git Sync tab to check the GitHub connection and reconnect.`;
+        + (isPlatformBlock
+          ? `This is a platform-side configuration issue, not something your GitHub connection controls — the desktop app runs commands on your own machine instead.`
+          : `Open this branch's Git Sync tab to check the GitHub connection and reconnect.`);
       const alreadyWarned =
         last?.agent === "System" &&
         last.content.startsWith("⚠️ Cloud command execution is disabled");

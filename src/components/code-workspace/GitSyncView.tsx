@@ -70,6 +70,17 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
   // for) and must not be shown as a problem.
   const workflowScopeMissing = githubStatus?.hasWorkflowScope === false;
 
+  // The branch repo may live under the PLATFORM's GitHub account (branches
+  // created while the user had no GitHub connected). On those, the user's own
+  // token is never used at all — server-side resolution deliberately keeps the
+  // platform identity — so this tab's Reconnect button cannot heal that branch,
+  // and the banner must say so instead of looping the user through OAuth.
+  const repoIsPlatformHosted =
+    workflowScopeMissing &&
+    !!gitConfig?.owner &&
+    !!githubStatus?.username &&
+    gitConfig.owner.toLowerCase() !== githubStatus.username.toLowerCase();
+
   const handleConnectGithub = async () => {
     if (!token) return;
     setConnecting(true);
@@ -239,13 +250,26 @@ export function GitSyncView({ projectId, branchId }: GitSyncViewProps) {
               <AlertTriangle className="h-4 w-4" />
               This GitHub token has no <code className="text-xs">workflow</code> scope
             </p>
-            <p className="text-muted-foreground">
+            {repoIsPlatformHosted ? (
+              <p className="text-muted-foreground">
+                This branch's repo ({gitConfig?.owner}/{gitConfig?.repo}) is hosted under the
+                platform's GitHub account, not yours — so reconnecting your own GitHub cannot
+                restore cloud commands on it, no matter how many times you approve the request.
+                The platform's token is missing the scope and updating it is an admin fix on the
+                server. Until then, the desktop app is the working path: it runs commands on your
+                own machine instead of in the cloud.
+              </p>
+            ) : (
+              <p className="text-muted-foreground">
               Files still sync, but agents cannot run commands in the cloud: writing the runner
               workflow into the branch repo needs that scope. Press <strong>Reconnect</strong> above
-              and approve the request — it now asks for <code className="text-xs">workflow</code>. If
-              GitHub keeps withholding it, an organisation policy on the repo owner is refusing it;
-              build from the desktop app instead, which runs commands on your own machine.
-            </p>
+              and approve the request — it now asks for <code className="text-xs">workflow</code> and
+              it is a one-time upgrade, not a per-branch ritual: once granted, every branch on your
+              account picks it up. If GitHub keeps withholding it, an organisation policy on the
+              repo owner is refusing it; build from the desktop app instead, which runs commands on
+              your own machine.
+              </p>
+            )}
             {githubStatus?.scopes && githubStatus.scopes.length > 0 && (
               <p className="text-xs text-muted-foreground/70">
                 Granted: {githubStatus.scopes.join(", ")}

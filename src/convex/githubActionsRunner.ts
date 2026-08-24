@@ -239,6 +239,21 @@ const WORKFLOW_SCOPE_MSG =
   + "that re-runs the authorization with the workflow scope and this branch picks the new token "
   + "up on the next prompt.";
 
+// The platform-owned variant of the same failure — and the one that produced
+// the "I keep reconnecting and nothing changes" reports. Here the repo lives
+// under the platform's integration account, so the user's GitHub connection is
+// never consulted for it at all (resolveTokenForBranch deliberately ignores a
+// token that cannot see the repo). Sending that user through OAuth again fixes
+// nothing, forever; the only cure is the platform token itself gaining the
+// workflow scope, which is an admin action on the server env, not a user one.
+// Until then the desktop app's local executor is the working path.
+const PLATFORM_WORKFLOW_SCOPE_MSG =
+  "This branch's repo is hosted under the platform's GitHub integration, whose token cannot write "
+  + "the VM worker workflow under .github/workflows/ (missing `workflow` permission). Reconnecting "
+  + "your own GitHub account cannot fix a platform-hosted repo — the platform's GITHUB_TOKEN must "
+  + "gain the workflow scope, which is an admin fix on the server, not something you can resolve. "
+  + "Until then cloud commands cannot run; the Thalamus desktop app still runs them on your own machine.";
+
 // Resolve the token that may act on a branch's repo.
 //
 // `githubConfigs.githubToken` is a SNAPSHOT taken when the branch's repo was
@@ -254,21 +269,29 @@ const WORKFLOW_SCOPE_MSG =
 // unconditionally 404s every push and dispatch on those branches. So: use the
 // connected account's live token only when it owns `cfg.owner`; otherwise keep
 // the snapshot, which is the identity that created the repo in the first place.
+// Where a resolved token came from. "user" = the branch owner's currently
+// connected GitHub account (it owns the repo — a reconnect heals it). "platform"
+// = the snapshot stored when the repo was created, or the platform's
+// GITHUB_TOKEN env — repos the platform owns, where the user's own token has
+// no access at all. Callers MUST consult this before telling a user to
+// reconnect: on "platform" the reconnection loop can never change anything.
+export type ResolvedTokenSource = "user" | "platform";
+
 export async function resolveTokenForBranch(
   ctx: ActionCtx,
   projectId: string,
   cfg: GhConfig,
-): Promise<string | undefined> {
+): Promise<{ token: string | undefined; source: ResolvedTokenSource }> {
   try {
     const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId }) as { userId?: Id<"users"> } | null;
     if (project?.userId) {
       const account = await ctx.runQuery(internal.githubHelpers.getGithubToken, { userId: project.userId }) as { accessToken?: string; username?: string } | null;
       const ownsRepo = !!account?.username
         && account.username.toLowerCase() === cfg.owner.toLowerCase();
-      if (account?.accessToken && ownsRepo) return account.accessToken;
+      if (account?.accessToken && ownsRepo) return { token: account.accessToken, source: "user" };
     }
   } catch { /* fall through to the snapshot */ }
-  return cfg.githubToken || process.env.GITHUB_TOKEN;
+  return { token: cfg.githubToken || process.env.GITHUB_TOKEN, source: "platform" };
 }
 
 // GitHub reports an OAuth token's granted scopes on EVERY authenticated REST
@@ -432,7 +455,8 @@ export const bootVmForBranch = internalAction({
       return "no-repo"; // repo not set up yet — the pipeline must fail commands with the explainer
     }
 
-    const token = await resolveTokenForBranch(ctx, branch.projectId, cfg);
+    const resolved = await resolveTokenForBranch(ctx, branch.projectId, cfg);
+    const token = resolved.token;
     if (!token) {
       await ctx.runMutation(internal.codeBranches.setExecutorBlocked, {
         branchId: args.branchId,
@@ -485,8 +509,12 @@ export const bootVmForBranch = internalAction({
       // command-result surface can tell the user to reconnect GitHub instead
       // of showing a generic "could not start" message that hides the fix.
       if (err instanceof WorkflowScopeMissingError) {
+        // Which token actually failed decides what the user is told. Only the
+        // "user" case may print reconnect instructions; the "platform" case
+        // prints the admin-facing truth instead of looping the user.
         await ctx.runMutation(internal.codeBranches.setExecutorBlocked, {
-          branchId: args.branchId, reason: WORKFLOW_SCOPE_MSG,
+          branchId: args.branchId,
+          reason: resolved.source === "platform" ? PLATFORM_WORKFLOW_SCOPE_MSG : WORKFLOW_SCOPE_MSG,
         }).catch(() => {});
         return "workflow-scope-missing";
       }
@@ -513,6 +541,14 @@ export const executeBranchCommandsViaActions = internalAction({
 
     const status = await ctx.runAction(internal.githubActionsRunner.bootVmForBranch, { branchId: args.branchId });
 
+    // bootVmForBranch stamps executorBlockedReason with the explanation that
+    // matches the token that actually failed (user vs platform) — failing the
+    // queued commands with the constant user-reconnect text here is what put
+    // a platform-hosted branch into a reconnect loop the user could never
+    // break out of.
+    const branchAfter = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId: args.branchId }) as { executorBlockedReason?: string } | null;
+    const stampedReason = branchAfter?.executorBlockedReason;
+
     const dead = status === "no-repo" || status === "no-token" || status === "dispatch-error" || status === "workflow-scope-missing";
     if (dead) {
       for (const cmd of backlog) {
@@ -525,7 +561,7 @@ export const executeBranchCommandsViaActions = internalAction({
             : status === "no-token"
               ? "No GitHub token available to dispatch the VM worker."
               : status === "workflow-scope-missing"
-                ? WORKFLOW_SCOPE_MSG
+                ? (stampedReason ?? WORKFLOW_SCOPE_MSG)
                 : "Could not start the VM worker for this branch — the flow recovered and you can try running the command again.",
         });
       }
@@ -564,7 +600,8 @@ export const startSandbox = internalAction({
         + "GitHub from the Git Sync tab and retry.",
       );
     }
-    const token = await resolveTokenForBranch(ctx, args.projectId, cfg);
+    const resolved = await resolveTokenForBranch(ctx, args.projectId, cfg);
+    const token = resolved.token;
     if (!token) {
       throw new ConvexError(
         `No GitHub token can act on ${cfg.owner}/${cfg.repo}. Connect GitHub from this `
@@ -666,7 +703,7 @@ export const stopSandbox = internalAction({
     }) as GhConfig | null;
 
     if (cfg) {
-      const token = await resolveTokenForBranch(ctx, args.projectId, cfg);
+      const token = (await resolveTokenForBranch(ctx, args.projectId, cfg)).token;
       if (token) {
         const octokit = new Octokit({ auth: token });
         // If we don't have a stored run ID, try to find the active run.
