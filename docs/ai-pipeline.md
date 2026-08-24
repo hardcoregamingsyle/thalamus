@@ -4,7 +4,7 @@ The dynamic multi-agent pipeline that drives Code mode. Implementation: `src/con
 
 ## Dispatcher
 
-The Dispatcher runs before EVERY pipeline — every fresh user prompt re-enters through it (a new prompt interrupts any in-flight run; see `userPromptGen` below), and it also re-runs between tasks. It classifies the message and returns the minimum agent set. Its system prompt lists the available roster and the tier heuristics:
+The Dispatcher runs before EVERY pipeline — every fresh user prompt re-enters through it (a new prompt interrupts any in-flight run; see `userPromptGen` below), and it also re-runs between tasks. It classifies the message and returns the minimum agent set: that list is the TEAM ROSTER (anyone on it can be handed the ball mid-run; anyone off it can still be called on) and its FIRST entry is the agent the work starts with — per prompt, and re-decided per task. After the start, routing is the team's own: agents hand off with `{"op":"over-to"}` and the roster order is only the default flow when nobody names the next teammate. Its system prompt lists the available roster and the tier heuristics:
 
 - **Model**: whatever the Dispatcher provider chain returns for the `dispatcher` task type.
 - **Output**: JSON `{ tier: "trivial" | "simple" | "medium" | "complex" | "full" | "question", reasoning: "...", agents: [...], assignments: [...], skipAgents: [...], customAgents: [...], startFrom: null | number | agent-name }`
@@ -63,11 +63,19 @@ Order of appearance in the pipeline. Task type is what `agentToTaskType()` in `s
 
 Custom agents (Dispatcher-defined) are appended after the standard set, in dispatch order, and run with their own system prompt from `customAgentsJson`.
 
-### Critic retry loop
+### Team hand-offs (`over-to`)
 
-There is no retry cap. On a Critic fail:
+Any agent can end its reply with `{"op":"over-to","agent":"Name","why":"…"}` to name the teammate who runs next, overriding the roster order for that step (see the op contract below). The Dispatcher picks the roster and the FIRST agent (per prompt, re-decided per task); the `over-to` op is how the team routes the work in real time after that. Rules the pipeline enforces:
 
-1. The pipeline loops back to Coder with the Critic's feedback appended.
+1. The target is validated by `resolveHandoffTarget` (case/punctuation-insensitive, leading "the" tolerated): any standard or run-custom agent is valid, on OR off the roster; Dispatcher/User/System are not teammates; an unknown name or naming yourself falls back to the normal roster order.
+2. An agent reached ONLY via hand-off (not on the roster) still runs — it becomes a one-agent pipeline for that turn. When it finishes without naming the next teammate, the team's Critic (when the roster has one) reviews next rather than the task closing unseen.
+3. A passing Critic never hand-offs — `security-pass` is terminal for its turn; only a rejecting Critic directs the next step.
+
+### Critic gate
+
+There is no retry cap, and the gate is pass-or-stay. On a Critic fail — or any Critic reply with NO verdict op at all (a prose rejection without the op used to advance the task as if nothing was wrong; that silent-complete class is closed):
+
+1. The pipeline hands the task to the teammate the Critic named with `over-to` (`Coder` when it named no one) with the feedback appended — never blindly back to the Coder.
 2. `criticRetryCount` is persisted on the branch and survives the separate `runPipelineAction` invocations each retry spans.
 3. The task advances only when the Critic emits `{"op":"security-pass"}`. Nothing overrides it and nothing counts it down.
 
@@ -75,19 +83,24 @@ There is no retry cap. On a Critic fail:
 
 The previous `MAX_CRITIC_RETRIES = 3` was removed because a fixed count fails in both directions: it cut off tasks that were one round from correct, and — more often — it rubber-stamped broken ones, printing "Critic retries exhausted after 3 attempts. Advancing to next task." and shipping the failure anyway. Same reasoning that removed the per-run message ceiling: a runaway loop costs real provider quota and stays user-stoppable via `stopPipeline`, so the natural break is the user's judgement, not an arbitrary number. Do not reintroduce one.
 
+### Team transcript (agent context)
+
+Every agent reads ONE shared transcript, built by `buildContext` in `codePipeline.ts` in two parts: "what each teammate last said" (the newest message from every agent that has spoken — a reviewer never loses the writer's intent just because chatter pushed it out of a recency window) plus the recent thread in order at fuller length. The old shape (last 6 messages, 2000 chars each, nothing else) is what let the Coder and Critic work on different understandings of the same task.
+
 ## Provider chain
 
 Single entry point: `callModel(prompt, systemPrompt, agentName, …extra)` in `src/convex/lib/agentCore.ts`. `extra` may carry a `ctx`, an `assignedModel` string (Dispatcher-chosen), a `deadlineMs` override, and a `streaming` callback (live SSE deltas for the OpenRouter leg). The whole chain runs inside a shared 7-minute wall-clock budget (Convex kills actions at 10 minutes); the Dispatcher call carries an extra 60-second fail-fast deadline so a dead provider surfaces in about a minute.
 
 ### Order
 
-1. **Dispatcher short-circuit** — if `assignedModel` matches `findZenModel()`, `findOpenRouterModel()`, `findDeadlySignalsModel()`, or `findModelScopeModel()`, that provider is tried first with that exact model id. Modal is skipped for that call because it does not know the free-tier providers' catalog ids.
+1. **Dispatcher short-circuit** — if `assignedModel` matches `findZenModel()`, `findOrcaRouterModel()`, `findOpenRouterModel()`, `findDeadlySignalsModel()`, or `findModelScopeModel()`, that provider is tried first with that exact model id. Modal is skipped for that call because it does not know the free-tier providers' catalog ids.
 2. **Modal** — admin-registered `modalEndpoints` (primary row first). Only tried when a `ctx` is passed. Falls through if `MODAL_NOT_CONFIGURED` or on error.
 3. **OpenCode Zen** — anonymous free tier, `ZEN_API_KEY` optional. `ZEN_DISPATCHER_MODEL` / `ZEN_DEFAULT_MODEL` for the two seats (`src/convex/lib/zenClient.ts`).
-4. **OpenRouter** — keyed free-model gateway (`OPENROUTER_API_KEY`, `openrouter.ai/api/v1`). Defaults to the `openrouter/free` auto-router because the `:free` roster rotates (DeepSeek/Gemini/Mistral free variants were pulled in 2026); 20 req/min per free model. Streams via SSE — timeouts are idle-based (60s to the first chunk, 60s between chunks) so a slow-but-alive model keeps the leg until the chain deadline instead of dying on a fixed per-attempt cap; deltas pipe live into `streamingContent`. `OPENROUTER_DISPATCHER_MODEL` / `OPENROUTER_DEFAULT_MODEL` (`src/convex/lib/openrouterClient.ts`).
-5. **DeadlySignal** — keyed New API gateway (`DEADLYSIGNALS_API_KEY`, `myapi.creitingameplays.com/v1`). `DEADLYSIGNALS_DISPATCHER_MODEL` / `DEADLYSIGNALS_DEFAULT_MODEL`.
-6. **ModelScope** — Alibaba's official free API-Inference tier (`MODELSCOPE_API_KEY` plus fallback pool `MODELSCOPE_API_KEY_2` … `_10`, tried in order on rate-limit/quota/revoked key; `api-inference.modelscope.ai/v1` — the `.cn` host rejects `ms-…` tokens). `MODELSCOPE_DISPATCHER_MODEL` / `MODELSCOPE_DEFAULT_MODEL`.
-7. **Ollama Cloud** — keyed pool (`OLLAMA_API_KEY`, `OLLAMA_API_KEY_2` … `_10`; the module builds the pool dynamically so a literal grep misses those). Task-type mapped by `mapModelIdToOllama()` in `agentCore.ts`.
+4. **OrcaRouter** — keyed OpenAI-compatible gateway (`ORCAROUTER_API_KEY`, `api.orcarouter.ai/v1`). `qwen/qwen3.8-27b-free` — strong reasoning-class coding seat, free at this gateway. Same SSE streaming/idle-timeout/salvage shape as the OpenRouter leg. Skipped fast when the key is unset. `ORCAROUTER_DISPATCHER_MODEL` / `ORCAROUTER_DEFAULT_MODEL` (`src/convex/lib/orcaRouterClient.ts`).
+5. **OpenRouter** — keyed free-model gateway (`OPENROUTER_API_KEY`, `openrouter.ai/api/v1`). Defaults to the `openrouter/free` auto-router because the `:free` roster rotates (DeepSeek/Gemini/Mistral free variants were pulled in 2026); 20 req/min per free model. Streams via SSE — timeouts are idle-based (60s to the first chunk, 60s between chunks) so a slow-but-alive model keeps the leg until the chain deadline instead of dying on a fixed per-attempt cap; deltas pipe live into `streamingContent`. `OPENROUTER_DISPATCHER_MODEL` / `OPENROUTER_DEFAULT_MODEL` (`src/convex/lib/openrouterClient.ts`).
+6. **DeadlySignal** — keyed New API gateway (`DEADLYSIGNALS_API_KEY`, `myapi.creitingameplays.com/v1`). `DEADLYSIGNALS_DISPATCHER_MODEL` / `DEADLYSIGNALS_DEFAULT_MODEL`.
+7. **ModelScope** — Alibaba's official free API-Inference tier (`MODELSCOPE_API_KEY` plus fallback pool `MODELSCOPE_API_KEY_2` … `_10`, tried in order on rate-limit/quota/revoked key; `api-inference.modelscope.ai/v1` — the `.cn` host rejects `ms-…` tokens). `MODELSCOPE_DISPATCHER_MODEL` / `MODELSCOPE_DEFAULT_MODEL`.
+8. **Ollama Cloud** — keyed pool (`OLLAMA_API_KEY`, `OLLAMA_API_KEY_2` … `_10`; the module builds the pool dynamically so a literal grep misses those). Task-type mapped by `mapModelIdToOllama()` in `agentCore.ts`.
 
 Without a `ctx`, Modal is skipped and the chain runs from Zen onward. Every leg wraps its call in try/catch and logs the failure before falling through.
 
@@ -129,6 +142,7 @@ Both `organizer` and `organiser` match — the Organizer routes to the dispatche
 | Provider | Dispatcher model | Default model |
 |---|---|---|
 | Zen | `ZEN_DISPATCHER_MODEL` in `lib/zenClient.ts` | `ZEN_DEFAULT_MODEL` |
+| OrcaRouter | `ORCAROUTER_DISPATCHER_MODEL` in `lib/orcaRouterClient.ts` | `ORCAROUTER_DEFAULT_MODEL` (both `qwen/qwen3.8-27b-free`) |
 | OpenRouter | `OPENROUTER_DISPATCHER_MODEL` in `lib/openrouterClient.ts` | `OPENROUTER_DEFAULT_MODEL` (both `openrouter/free` — the auto-router, rotation-proof) |
 | DeadlySignal | `DEADLYSIGNALS_DISPATCHER_MODEL` in `lib/deadlySignalsClient.ts` | `DEADLYSIGNALS_DEFAULT_MODEL` |
 | ModelScope | `MODELSCOPE_DISPATCHER_MODEL` in `lib/modelscopeClient.ts` | `MODELSCOPE_DEFAULT_MODEL` |
@@ -196,6 +210,14 @@ Every pipeline run has the built-in AgentOverflow (`AO_MCP_URL` or `${CONVEX_SIT
 {"op":"security-pass"}  {"op":"security-fail"}
 {"op":"critic-pass"}    {"op":"critic-fail","reason":"…"}
 ```
+
+### Team hand-off
+
+```
+{"op":"over-to","agent":"Tester","why":"unit tests for the parser next"}
+```
+
+The named agent runs next instead of the roster order — the mechanism that makes the run a team (see "Team hand-offs" above). `to` is accepted as an alias of `agent`, `reason` as an alias of `why`, and the op-name variants models write (`over_to`, `handover`, `hand-off`, `handoff`) all parse the same way. The pipeline validates the name; an invalid or self target no-ops into the normal advance.
 
 ### Continue
 
