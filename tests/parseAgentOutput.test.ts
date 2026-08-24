@@ -750,3 +750,87 @@ describe("parseAgentOutput — continue op", () => {
     expect(parsed.cmdOps.map((c) => c.command)).toEqual(["npm run dev -- --continue"]);
   });
 });
+
+describe("parseAgentOutput — canonical <<FILE>> blocks (the taught format)", () => {
+  it("writes a file byte-for-byte with zero escaping — quotes, backslashes, newlines", () => {
+    const body = '<!DOCTYPE html>\n<a href="https://x">hi & bye</a>\nconst re = /' + "\\" + 'd+/;\nline two';
+    const out = 'Here is the page.\n<<FILE "src/index.html">>\n' + body + '\n<<END>>\nDone.';
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toEqual([{ type: "create", filepath: "src/index.html", content: body }]);
+    expect(parsed.cleanContent).toContain("[FILE CREATED: src/index.html]");
+    expect(parsed.cleanContent).not.toContain("<<END>>");
+  });
+
+  it("accepts the lenient shapes models actually emit", () => {
+    const variants = [
+      '<<FILE=src/a.js>>const a = 1;<<END.FILE>>',
+      '<<WRITE "src/b.js">>const b = 2;<<END FILE>>',
+      '<<file "src/c.js">>const c = 3;<<end>>',
+      '<<FILE src/d.js>>const d = 4;<<END>>',
+    ];
+    for (const v of variants) {
+      const parsed = parseAgentOutput(v);
+      expect(parsed.fileOps).toHaveLength(1);
+      expect(parsed.fileOps[0].content.startsWith("const")).toBe(true);
+    }
+  });
+
+  it("parses several blocks in one reply into several files", () => {
+    const out = 'one\n<<FILE "src/a.ts">>\nexport const a = 1;\n<<END>>\ntwo\n<<FILE "src/b.ts">>\nexport const b = 2;\n<<END>>';
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toEqual([
+      { type: "create", filepath: "src/a.ts", content: "export const a = 1;" },
+      { type: "create", filepath: "src/b.ts", content: "export const b = 2;" },
+    ]);
+  });
+
+  it("does NOT invent a file from an unclosed (truncated) block", () => {
+    const out = '<<FILE "src/big.ts">>\nexport const partial = ';
+    expect(parseAgentOutput(out).fileOps).toEqual([]);
+  });
+
+  it("normalizes absolute and Windows-style paths in the opener", () => {
+    const parsed = parseAgentOutput('<<FILE "\\\\home\\\\runner\\\\src\\\\a.ts">>\nconst a = 1;\n<<END>>'.replace(/\\\\/g, "\\"));
+    expect(parsed.fileOps[0].filepath).toBe("src/a.ts");
+  });
+
+  it("keeps a file's own edge blank lines, stripping only the marker glue", () => {
+    const out = '<<FILE "x.txt">>\n\nfirst line\nlast line\n\n<<END>>';
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps[0].content).toBe("\nfirst line\nlast line\n");
+  });
+
+  it("still runs a real op written AFTER a file block", () => {
+    const out = '<<FILE "src/a.ts">>\nexport const a = 1;\n<<END>>\n{"op":"cmd","command":"npm test"}';
+    const parsed = parseAgentOutput(out);
+    expect(parsed.fileOps).toHaveLength(1);
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["npm test"]);
+  });
+});
+
+describe("parseAgentOutput — file block bodies are inert (never scanned for ops)", () => {
+  // The entire point of the raw-block grammar: no matter how op-shaped the
+  // file's text is (a doc file ABOUT the ops format, a game file with a
+  // command-string constant), it is file content, never a tool call.
+  it("an op-looking string inside a <<FILE>> body executes nothing", () => {
+    const out = '<<FILE "docs/ops.md">>\nRun {"op":"cmd","command":"rm -rf x"} to clean. Verdict: {"op":"security-pass"}\n<<END>>';
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps).toEqual([]);
+    expect(parsed.hackerResult).toBeUndefined();
+    expect(parsed.criticResult).toBeUndefined();
+    expect(parsed.fileOps).toHaveLength(1);
+    expect(parsed.fileOps[0].content).toContain('"op":"cmd"');
+  });
+
+  it("the legacy CREATEFILE body gets the same protection", () => {
+    const out = '<<CREATEFILE="docs/old.md">>\nExample: {"op":"cmd","command":"danger"}<<END.CREATEFILE>>';
+    const parsed = parseAgentOutput(out);
+    expect(parsed.cmdOps).toEqual([]);
+    expect(parsed.fileOps).toHaveLength(1);
+  });
+
+  it("an op-looking string in normal prose still runs (only blocks are inert)", () => {
+    const parsed = parseAgentOutput('Checking then running: {"op":"cmd","command":"npm test"}');
+    expect(parsed.cmdOps.map((c) => c.command)).toEqual(["npm test"]);
+  });
+});

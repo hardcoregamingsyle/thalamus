@@ -256,20 +256,27 @@ const MAX_OP_CONTINUATIONS = 2;
 // counter resets on every phase advance.
 const MAX_CONTINUE_ROUNDS = 10;
 
-// True when a <<CREATEFILE/EDITFILE>> block was opened but never closed — the
-// signature of output truncated mid-file. We strip every COMPLETE block first
-// (non-greedy to its own <<END.CREATEFILE>>, exactly how parseAgentOutput reads
-// them), then check whether an opener is left dangling in the remainder. Naively
+// True when a <<FILE>>/<<WRITE>> or legacy <<CREATEFILE/EDITFILE>> block was
+// opened but never closed — the signature of output truncated mid-file. We
+// strip every COMPLETE block first (non-greedy to its own closing marker,
+// exactly how parseAgentOutput reads them), then check whether an opener is
+// left dangling in the remainder. Naively
 // counting marker literals over the whole string false-positives on a file whose
 // CONTENT documents the marker syntax; stripping complete blocks first avoids
 // that (the inner mention sits inside a stripped block). Both new <<...>> and
 // legacy <<<<<...>>>>> delimiters count.
 function hasUnclosedFileBlock(content: string): boolean {
-  const withoutComplete = content.replace(
-    /(?:<<<<<|<<)(?:CREATEFILE|EDITFILE)(?:="[^"]+")?(?:>>>>>|>>)[\s\S]*?(?:<<<<<|<<)END\.CREATEFILE(?:>>>>>|>>)/g,
-    "",
-  );
+  const withoutComplete = content
+    .replace(
+      /(?:<<<<<|<<)(?:CREATEFILE|EDITFILE)(?:="[^"]+")?(?:>>>>>|>>)[\s\S]*?(?:<<<<<|<<)END\.CREATEFILE(?:>>>>>|>>)/g,
+      "",
+    )
+    .replace(
+      /(?:<<<<<|<<)(?:FILE|WRITE)[=\s]+(?:"[^"]+"|[^">]+?)(?:>>>>>|>>)[\s\S]*?(?:<<<<<|<<)END(?:[._ ]FILE)?(?:>>>>>|>>)/gi,
+      "",
+    );
   if (/(?:<<<<<|<<)(?:CREATEFILE|EDITFILE)(?:="[^"]+")?(?:>>>>>|>>)/.test(withoutComplete)) return true;
+  if (/(?:<<<<<|<<)(?:FILE|WRITE)[=\s]+(?:"[^"]+"|[^">]*)(?:>>>>>|>>)/i.test(withoutComplete)) return true;
   // JSON op variant: a create-file/edit-file op whose opening exists but whose
   // braces never balance (content cut off mid-JSON). Walk braces from the last
   // opener, skipping strings, so a complete op right before the cut doesn't
@@ -1228,8 +1235,46 @@ export const runPipelineAction = internalAction({
             // against the file store can still happen.
             const blockedReason = branch.executorBlockedReason;
             const toolUsageBlock = blockedReason
-              ? `## Command Execution UNAVAILABLE\n${blockedReason}\nDo NOT emit {"op":"cmd"} ops — they cannot run. Work from the file contents shown above; write files with JSON ops instead. The user must reconnect GitHub from this branch's Git Sync tab to enable commands.\n\n## Tool Usage\nEvery tool call belongs INSIDE your message's JSON document (see Output Format):\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nEnd your document with {"op":"continue"} when you need another turn to keep writing a large file.`
-              : `## Tool Usage\nEvery tool call belongs INSIDE your message's JSON document (see Output Format):\n{"op":"cmd","command":"npm install 2>&1"}\n{"op":"cmd","command":"cat package.json"}\n{"op":"cmd","command":"ls -la src/"}\n{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}\n{"op":"research","query":"React 19 concurrent rendering pitfalls","detail":"focus on server components"}\n\nRequest API keys:\n{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}\n\nFile writes are JSON ops inside your document — escape every " as \\" and every \\ as \\\\ inside "content":\n{"op":"create-file","path":"src/index.html","content":"<!DOCTYPE html>\\n<html>\\n...entire file verbatim...\\n</html>"}\n{"op":"edit-file","path":"src/index.ts","content":"[the COMPLETE new file content]"}\nWrite ONE file per reply — the pipeline runs your ops, then you get the next turn. Large files: create-file the first part, then edit-file the COMPLETE accumulated content on the following turns. Never cram several large files into one response — the token cap cuts it mid-file and the file lands truncated.\n\nNeed more room than one reply? End your document with:\n{"op":"continue"}\nThe pipeline runs you again immediately after applying this reply's ops — keep writing the same file across multiple turns (each turn shows the file's current content in File Contents above). Never emit a truncated file; emit {"op":"continue"} instead.\n\nWrong: {"op":"write_file",...} — there is no such op\nWrong: bare shell commands (cat, ls, npm install) written in plain text\nWrong: <tool_call>cmd<arg_key>command</arg_key><arg_value>...</arg_value></tool_call>, <<RUN-CMD="...">>, <<CREATEFILE="...">> or any XML/HTML angle-bracket tags — the pipeline reads pure JSON documents only`;
+              ? `## Command Execution UNAVAILABLE
+${blockedReason}
+Do NOT emit {"op":"cmd"} ops — they cannot run; the reason is visible to the user in the command results. Work from the file contents shown above.
+
+## Write files — <<FILE>> block, raw content, NO escaping:
+<<FILE "src/index.html">>
+<!DOCTYPE html>
+...the complete file, exactly as it should exist on disk...
+<<END>>
+
+Other ops (one-line JSON, short values only — NEVER put file content in JSON):
+{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}
+{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}
+
+Need another turn to keep writing a large file? End your reply with:
+{"op":"continue"}`
+              : `## Tool Usage
+
+Write or fully replace a file — a <<FILE>> block. The content goes in EXACTLY as it should exist on disk: quotes, backslashes, newlines all verbatim — there is NOTHING to escape, ever:
+<<FILE "src/index.html">>
+<!DOCTYPE html>
+...the whole file...
+<<END>>
+One block per file. Write ONE file per reply — the block is applied, then you get the next turn. Never cram several large files into one reply: the token cap cuts mid-file and the file lands truncated. If a file will not fit, stop mid-block WITHOUT writing <<END>> — the pipeline asks you to continue from the exact point you stopped.
+
+Everything else is a one-line JSON op (short values only — NEVER put file content in JSON):
+{"op":"cmd","command":"npm install 2>&1"}
+{"op":"cmd","command":"cat package.json"}
+{"op":"cmd","command":"ls -la src/"}
+{"op":"research","query":"React 19 concurrent rendering pitfalls","detail":"focus on server components"}
+{"op":"generate-image","prompt":"a futuristic cityscape","width":1024,"height":768,"model":"flux"}
+{"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}
+
+Need another turn for the NEXT file? End your reply with:
+{"op":"continue"}
+The pipeline applies this reply's blocks, then runs you again immediately.
+
+Wrong: file bodies inside a JSON "content" field — that was the old format, and it is why ops kept getting rejected. File bodies live ONLY in <<FILE>> blocks.
+Wrong: bare shell commands (cat, ls, npm install) written as plain prose.
+Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
 
             prompt = [
               `## Overall Project Goal\n${task}`,
@@ -1258,42 +1303,45 @@ export const runPipelineAction = internalAction({
         agentOutput = result.text;
         await bill(currentPhase.toLowerCase(), result);
 
-        // Stitch a write that got cut off at the token limit: if a JSON op is
-        // still open (unclosed string, no trailing }), ask the model to continue
-        // from the tail until it closes. Bounded so a model that never closes
-        // can't loop. Without this a file bigger than one response — or a final
-        // command op — is silently lost and the pipeline retries forever.
+        // Stitch a write that got cut off at the token limit: if a FILE block
+        // or JSON op is still open, ask the model to continue from the tail
+        // until it closes. Bounded so a model that never closes can't loop.
+        // Without this a file bigger than one response — or a final command
+        // op — is silently lost and the pipeline retries forever.
         let contRounds = 0;
         // Budget guard as well as a round cap: a continuation that cannot fit in
         // what's left of the action must not be started. Stopping the loop early
         // leaves the (still unclosed) output to the normal downstream handling
         // rather than risking the 600s kill mid-write.
         //
-        // Corruption guard: an op whose "content" carries raw unescaped quotes
-        // reads to the brace walker exactly like a cut-off op, but continuing it
-        // is guaranteed waste — the appended text still never parses, the
-        // transcript grows a second copy of the file, and the failure repeats.
-        // Signal for that case: the output's LAST line ends with a closing
-        // brace, i.e. the model BELIEVES it closed the op while the parse
-        // disagrees. A genuinely truncated op ends mid-content, never on a `}`.
-        // Legacy <<...>> blocks are untouched by this — they are not JSON ops,
-        // so with no JSON op in the output the brace-end test is not consulted.
+        // Corruption guard (JSON ops only): an op whose "content" carries raw
+        // unescaped quotes reads to the brace walker exactly like a cut-off
+        // op, but continuing it is guaranteed waste — the appended text still
+        // never parses, the transcript grows a second copy of the file, and
+        // the failure repeats. Signal for that case: the output's LAST line
+        // ends with a closing brace, i.e. the model BELIEVES it closed the op
+        // while the parse disagrees. A genuinely truncated op ends mid-content,
+        // never on a `}`.
+        // FILE blocks skip that test entirely: their grammar has no escaping,
+        // so an unclosed block is ALWAYS truncation (never corruption), and
+        // its tail is file text that can legitimately end on a `}`.
         while (
           hasUnclosedJsonOp(agentOutput) &&
-          (findJsonOpsInternal(agentOutput).ops.length > 0 ||
+          (hasUnclosedFileBlock(agentOutput) ||
+            findJsonOpsInternal(agentOutput).ops.length > 0 ||
             findJsonOpsInternal(agentOutput).malformed.length > 0) &&
-          !/\}\s*$/.test(agentOutput.trimEnd()) &&
+          (hasUnclosedFileBlock(agentOutput) || !/\}\s*$/.test(agentOutput.trimEnd())) &&
           contRounds < MAX_OP_CONTINUATIONS &&
           !outOfBudget()
         ) {
           contRounds++;
           const tail = agentOutput.slice(-6000);
           const contPrompt = [
-            `Your previous output was cut off at the token limit mid-document: your JSON document is still open (unclosed string, no trailing "]" and "}").`,
+            `Your previous reply was cut off at the token limit while a tool call was still open.`,
             `## The tail of what you wrote (continue from the exact end of this)`,
             tail,
             `## Continue`,
-            `Emit ONLY the remaining body, picking up at the exact character where the tail stops — do NOT repeat anything above, do NOT re-open the document from the start. Finish the open content string, then close the op with its brace, close the "ops" array with "] " and close the document with "}". If you still had more ops after it, continue with them inside the same array.`,
+            `Emit ONLY what comes next, starting at the exact character where the tail stops — do NOT repeat anything above, do NOT restart the file or the message. If the tail is inside a <<FILE "path">> block, keep writing the remaining file content, then close the block with <<END>>. If the tail is inside a JSON op, finish just that op. After closing, you may continue with your remaining blocks/ops.`,
           ].join("\n\n");
           const cont = await callModelWithStreaming(ctx, contPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments, callBudget());
           if (!cont.text.trim()) break;
@@ -1333,7 +1381,12 @@ export const runPipelineAction = internalAction({
         // quote in a 200-line file voids the entire document and the run writes
         // nothing, which then looks to the Tester like an empty repo. The raw
         // block below takes file content verbatim — no escaping at all.
-        parsed.cleanContent = `${parsed.cleanContent}\n\n[REJECTED OPS: ${parsed.malformedOps.length} JSON op(s) did not parse and executed nothing — no file was written.\nDo NOT retry with JSON for file content. Write files with the RAW block form, which needs NO escaping — put the code in exactly as it is, quotes, backslashes, newlines and all:\n<<CREATEFILE="src/game.js">>\n...file content exactly as it should appear on disk...\n<<END.CREATEFILE>>\nOne block per file, and keep {"op":"..."} JSON for non-file ops only (cmd, dispatch, request-api-key).]`;
+        parsed.cleanContent = `${parsed.cleanContent}
+
+[REJECTED OPS: ${parsed.malformedOps.length} JSON op(s) did not parse and executed nothing — no file was written. File content NEVER goes in a JSON string. Write the file with a <<FILE>> block instead — the content goes in verbatim, with NO escaping at all — then continue:
+<<FILE "src/game.js">>
+...the file content exactly as it should appear on disk, quotes, backslashes, newlines and all...
+<<END>>]`;
       }
       for (const op of parsed.fileOps) {
         if (op.type === "create" || op.type === "edit") {

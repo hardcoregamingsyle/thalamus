@@ -136,17 +136,27 @@ Both `organizer` and `organiser` match — the Organizer routes to the dispatche
 
 Constants are cited so drift is grep-able rather than copy-pasted. There is no separate model tiers table, no run-mode control, no `AGENT_MODEL_MAP`.
 
-## JSON-op contract
+## Agent-op contract
 
-Agents signal tool calls as single-line JSON ops. Ids and paths are plain strings. Interleaved plain text is preserved in the transcript with the op replaced by a short placeholder (e.g. `[CMD: …]`).
+The format taught to every agent is designed around one rule: an agent should never have to escape anything.
 
 ### File operations
 
+File writes are raw `<<FILE>>` blocks — everything between the two markers is written to disk byte-for-byte, quotes, backslashes and newlines exactly as typed. There is no escaping in this grammar, which is the point: the previous "whole file inside one JSON string" format is what produced the `[REJECTED OPS]`/`[MALFORMED OP]` failures (one stray quote voided the entire reply).
+
 ```
-{"op":"create-file","path":"src/components/Button.tsx","content":"…full file content…"}
-{"op":"edit-file","path":"src/App.tsx","content":"…full updated file content…"}
+<<FILE "src/components/Button.tsx">>
+…full file content, verbatim…
+<<END>>
+```
+
+`<<FILE>>` and `create`/`edit` share semantics — a write is create-or-replace (`upsertFile` both ways). Deletes and everything else stay single-line JSON ops (short values, so JSON escaping is never under load). Ids and paths are plain strings. Interleaved plain text is preserved in the transcript with ops replaced by short placeholders (e.g. `[CMD: …]`, `[FILE CREATED: …]`).
+
+```
 {"op":"delete-file","path":"src/old.ts"}
 ```
+
+Leniency the parser accepts for blocks: `<<FILE=path>>` or a bare path, `<<WRITE>>` as a synonym, and `<<END>>` / `<<END FILE>>` / `<<END.FILE>>` closers, case-insensitively. File-block bodies are inert: op-shaped text inside one is content, never a tool call (the JSON-op scan runs over a copy with every block body masked out).
 
 ### Web
 
@@ -195,7 +205,7 @@ Every pipeline run has the built-in AgentOverflow (`AO_MCP_URL` or `${CONVEX_SIT
 
 Ending a reply with this op re-runs the SAME agent instead of advancing the pipeline, after this round's file ops are applied — the mechanism that writes one large file across several outputs. Bounded by `MAX_CONTINUE_ROUNDS` (10) per agent turn; the counter lives on `codeBranches.continueCount` and resets on every phase advance. Works alongside the token-limit continuation (unclosed-document stitching), which is independent.
 
-Legacy `<<TAG>>` markers (`<<CREATEFILE>>`, `<<RUN-CMD>>`, `<<pass>>`, …) are still parsed as a fallback so old stored messages keep working, but no current prompt teaches them.
+Compatibility inputs the parser still accepts (never taught anywhere): inline single-line JSON ops including escaped `"content"` file ops (`create-file`/`edit-file`), the single JSON document envelope (`{"message":…,"ops":[…]}`), and the legacy `<<TAG>>` markers (`<<CREATEFILE>>`, `<<RUN-CMD>>`, `<<pass>>`, …) — all so old stored messages and off-script models keep working.
 
 ## Pipeline state machine
 

@@ -93,9 +93,34 @@ export interface ParsedOutput {
   dispatchReason?: string;
 }
 
-// ── JSON ops parser ───────────────────────────────────────────────────────────
-// Every tool call is a single-line JSON object with an "op" field. No <<>>
-// markers, no angle-bracket syntax, no Unicode bracket variants.
+// ── Agent ops: the format taught to every pipeline agent ─────────────────────
+// The CANONICAL format is the one a language model cannot get wrong:
+//
+//   File writes — a raw FILE block. The content is byte-for-byte what lands on
+//   disk: quotes, backslashes, newlines are written EXACTLY as-is, with NO
+//   escaping of any kind. One block per file:
+//
+//     <<FILE "src/index.html">>
+//     <!DOCTYPE html>
+//     <html>...</html>
+//     <<END>>
+//
+//   Everything else — single-line JSON ops (short values only, so JSON
+//   escaping is never under load): {"op":"cmd","command":"npm i"} etc.
+//
+// Prior to this format agents were told to embed whole source files in one
+// JSON string ("content":"…\"…\\…\n…") inside a single-document reply. Real
+// runs rejected that output constantly ([REJECTED OPS]/[MALFORMED OP]) — one
+// unescaped quote in a 300-line file voided the entire document — and the
+// rejection feedback contradicted the system prompt about which format to
+// retry, so models looped. The FILE block removes the failure class entirely:
+// there is nothing to escape, so there is nothing to get wrong.
+//
+// Accepted for backward compatibility (old transcripts, models that ignore
+// the taught format): the JSON document ({"message":…,"ops":[…]}), inline
+// single-line JSON ops including escaped "content" file ops, and the legacy
+// <<CREATEFILE="…">>/<<END.CREATEFILE>> family. None of those are taught
+// anywhere any more.
 //
 // Format for every operation:
 //   {"op":"cmd","command":"npm install"}
@@ -573,6 +598,29 @@ function extractDocMessage(content: string): string {
   return m[1].replace(/\\(["\\n])/g, (_ch, c: string) => (c === "n" ? "\n" : c));
 }
 
+// Ops must never be read out of a file block's body. The body is file text BY
+// DEFINITION — most critically, a project file that documents the ops format
+// itself (or a Critic quoting example ops in a review that writes files) would
+// otherwise have its doc_examples EXECUTED. Legacy CREATEFILE-family blocks had
+// this hole their whole life; the canonical <<FILE>> grammar closes it for good
+// by masking every complete block (opener, body and closer) out of the text the
+// JSON-op scanner sees. Masking is scan-only: cleanContent and the block
+// parsers keep working from the unmasked text.
+const FILE_BLOCK_FULL_RE = new RegExp(
+  `(?:<<<<<|${O})(?:FILE|WRITE)[=\\s]+(?:"[^"]+"|[^">]+?)(?:>>>>>|${C})[\\s\\S]*?(?:<<<<<|${O})END(?:[._ ]FILE)?(?:>>>>>|${C})`,
+  "gi",
+);
+const LEGACY_FILE_BLOCK_FULL_RE = new RegExp(
+  `(?:<<<<<|${O})(?:CREATEFILE|EDITFILE)(?:="[^"]+")?(?:>>>>>|${C})[\\s\\S]*?(?:<<<<<|${O})END\\.CREATEFILE(?:>>>>>|${C})`,
+  "g",
+);
+function maskFileBlocks(text: string): string {
+  const MASK = "\n[file block]\n";
+  return text
+    .replace(FILE_BLOCK_FULL_RE, () => MASK)
+    .replace(LEGACY_FILE_BLOCK_FULL_RE, () => MASK);
+}
+
 export function parseAgentOutput(content: string): ParsedOutput {
   const fileOps: FileOp[] = [];
   const searchOps: SearchOp[] = [];
@@ -615,6 +663,10 @@ export function parseAgentOutput(content: string): ParsedOutput {
   // do not still carry the wrapper characters. In document mode the ops come
   // pre-parsed from the doc — re-scanning the raw text would find the same ops
   // nested inside the doc and double-apply them.
+  // Everything below that SCANS for ops reads the block-masked copy, so file
+  // bodies are inert; everything that WRITES (blocks, markers, cleanContent)
+  // keeps the real text.
+  const scanSource = maskFileBlocks(stripped);
   let jsonOps: Array<Record<string, unknown>> = [];
   let malformedRaws: MalformedOpExcerpt[] = [];
   if (!docMode) {
@@ -622,19 +674,19 @@ export function parseAgentOutput(content: string): ParsedOutput {
     // key, but JSON.parse failed — most commonly an unescaped quote. An
     // ops-LESS {"message":"..."} reply is a legitimate no-tool-call message
     // and stays on the inline fallback path.
-    if (LOOKS_LIKE_DOC_RE.test(stripped) && /"ops"\s*:/.test(stripped)) {
+    if (LOOKS_LIKE_DOC_RE.test(scanSource) && /"ops"\s*:/.test(scanSource)) {
       // CRITICAL: never run the inline op scanner over a broken document.
       // Op examples the agent quoted inside its own message text would
       // execute — a Critic that reviewed "use {"op":"security-fail"} here"
       // got its run rejected by its own example. Keep the message text if
       // extractable and report the raw blob as malformed.
-      const msg = extractDocMessage(stripped);
+      const msg = extractDocMessage(scanSource);
       // Verdict recovery is confined to the OPS TAIL (from the first "ops"
       // key onward): real ops the model got there still execute, and marker
       // texts it echoed back ([SECURITY: FAILED], [CMD: ...], [FILE CREATED:
       // ...]) map back to their real ops. The message prose — where the model
       // quotes op examples — is excluded.
-      const tail = opsArrayTail(stripped);
+      const tail = opsArrayTail(scanSource);
       const tailScan = findJsonOpsInternal(tail);
       jsonOps = tailScan.ops;
       malformedRaws = tailScan.malformed;
@@ -663,12 +715,12 @@ export function parseAgentOutput(content: string): ParsedOutput {
       });
       if (!hasActionable) {
         cleanContent = msg ? `${msg}\n\n${MALFORMED_MARKER}` : MALFORMED_MARKER;
-        malformedRaws = [{ raw: stripped.slice(0, 200), unterminated: false }, ...malformedRaws];
+        malformedRaws = [{ raw: scanSource.slice(0, 200), unterminated: false }, ...malformedRaws];
       } else {
         cleanContent = msg || "";
       }
     } else {
-      const found = findJsonOpsInternal(stripped);
+      const found = findJsonOpsInternal(scanSource);
       jsonOps = found.ops;
       malformedRaws = found.malformed;
     }
@@ -892,6 +944,32 @@ export function parseAgentOutput(content: string): ParsedOutput {
         }
         break;
     }
+  }
+
+  // ── Canonical: <<FILE "path">> … <<END>> raw blocks ───────────────────────
+  // THE taught format for writing files (see the header comment). The body is
+  // whatever sits between the markers, VERBATIM — no escaping exists in this
+  // grammar, so nothing in it can break on a quote or a backslash. Only ONE
+  // newline glued to each marker is stripped; models naturally write the body
+  // on its own lines, and the file's own edge blank lines are preserved.
+  //
+  // Leniency, earned from production output: models write <<FILE=path>> as
+  // often as <<FILE "path">>, spell the op <<WRITE …>>, and close with
+  // <<END>> / <<END FILE>> / <<END.FILE>> interchangeably. Same intent, same
+  // file. An UNCLOSED block matches nothing here — the pipeline's truncation
+  // continuation stitches it, the same way unclosed <<CREATEFILE>> blocks
+  // always worked.
+  const fileBlockRe = new RegExp(
+    `(?:<<<<<|${O})(?:FILE|WRITE)[=\\s]+(?:"([^"]+)"|([^">]+?))(?:>>>>>|${C})([\\s\\S]*?)(?:<<<<<|${O})END(?:[._ ]FILE)?(?:>>>>>|${C})`,
+    "gi",
+  );
+  let fileBlockMatch: RegExpExecArray | null;
+  while ((fileBlockMatch = fileBlockRe.exec(content)) !== null) {
+    const filepath = normalizeFilePath(fileBlockMatch[1] ?? fileBlockMatch[2] ?? "");
+    if (!filepath) continue;
+    const body = (fileBlockMatch[3] ?? "").replace(/^\r?\n/, "").replace(/\r?\n$/, "");
+    fileOps.push({ type: "create", filepath, content: body });
+    cleanContent = cleanContent.replace(fileBlockMatch[0], `[FILE CREATED: ${filepath}]`);
   }
 
   // ── Fallback: legacy <<TAG>> markers for backward compat ──────────────────
