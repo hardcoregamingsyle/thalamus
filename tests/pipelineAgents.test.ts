@@ -7,6 +7,8 @@ import {
   buildPlanningPipeline,
   expandResearchTeam,
   customAgentNames,
+  resolveHandoffTarget,
+  isRunnableAgent,
   DEFAULT_TASK_PIPELINE,
 } from "../src/convex/lib/pipelineAgents";
 
@@ -73,5 +75,57 @@ describe("customAgentNames", () => {
 
   it("returns nothing when every agent is standard", () => {
     expect(customAgentNames(["Coder", "Tester", "Critic"])).toEqual([]);
+  });
+});
+
+describe("resolveHandoffTarget", () => {
+  it("resolves standard agents case- and punctuation-insensitively", () => {
+    expect(resolveHandoffTarget("critic", "Coder")).toBe("Critic");
+    expect(resolveHandoffTarget(" Hacker ", "Coder")).toBe("Hacker");
+    expect(resolveHandoffTarget("the tester", "Coder")).toBe("Tester");
+    expect(resolveHandoffTarget("the Critic", "Coder")).toBe("Critic");
+  });
+
+  it("returns the canonical casing from the roster, not the model's spelling", () => {
+    expect(resolveHandoffTarget("researchplanner", "Coder")).toBe("ResearchPlanner");
+    expect(resolveHandoffTarget("REPORTMAKER", "Coder")).toBe("ReportMaker");
+  });
+
+  it("never resolves to the agent itself (self hand-off is not a hand-off)", () => {
+    expect(resolveHandoffTarget("Coder", "Coder")).toBeUndefined();
+    expect(resolveHandoffTarget("coder", "Coder")).toBeUndefined();
+  });
+
+  it("rejects non-teammates and unknown names", () => {
+    expect(resolveHandoffTarget("Dispatcher", "Coder")).toBeUndefined();
+    expect(resolveHandoffTarget("User", "Coder")).toBeUndefined();
+    expect(resolveHandoffTarget("System", "Coder")).toBeUndefined();
+    expect(resolveHandoffTarget("SuperAgent", "Coder")).toBeUndefined();
+    expect(resolveHandoffTarget("", "Coder")).toBeUndefined();
+    expect(resolveHandoffTarget(undefined, "Coder")).toBeUndefined();
+  });
+
+  it("resolves custom agents dispatched for this run", () => {
+    expect(resolveHandoffTarget("Migrator", "Coder", ["Migrator", "Auditor"])).toBe("Migrator");
+    expect(resolveHandoffTarget("migrator", "Coder", ["Migrator"])).toBe("Migrator");
+  });
+
+  it("does not suffix-match: ResearchPlanner never collapses into Planner", () => {
+    expect(resolveHandoffTarget("Planner", "Coder")).toBe("Planner");
+    expect(resolveHandoffTarget("ResearchPlanner", "Coder")).toBe("ResearchPlanner");
+  });
+});
+
+describe("isRunnableAgent", () => {
+  it("accepts standard agents and dispatched customs", () => {
+    expect(isRunnableAgent("Critic")).toBe(true);
+    expect(isRunnableAgent("Migrator", ["Migrator"])).toBe(true);
+  });
+
+  it("rejects phases and transcript roles, case-insensitively", () => {
+    expect(isRunnableAgent("Dispatcher")).toBe(false);
+    expect(isRunnableAgent("user")).toBe(false);
+    expect(isRunnableAgent("SYSTEM")).toBe(false);
+    expect(isRunnableAgent("Nope")).toBe(false);
   });
 });

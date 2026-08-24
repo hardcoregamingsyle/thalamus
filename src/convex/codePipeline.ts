@@ -34,7 +34,7 @@ import {
   type ModelTier,
 } from "./lib/agentCore";
 import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./lib/mcpClient";
-import { buildPlanningPipeline, buildTaskPipeline } from "./lib/pipelineAgents";
+import { buildPlanningPipeline, buildTaskPipeline, resolveHandoffTarget, isRunnableAgent } from "./lib/pipelineAgents";
 import { buildDispatcherModelMenu } from "./lib/modelMenu";
 import { parseMcpCalls, stripMcpBlocks, type ParsedMcpCall } from "./lib/mcpParse";
 
@@ -138,15 +138,52 @@ function parseDispatcherOutput(
   }
 }
 
-function buildContext(messages: Array<{ agent: string; content: string }>, maxChars = 6000): string {
-  const recent = messages.slice(-6);
-  let ctx = "";
-  for (const m of recent) {
-    const line = `[${m.agent}]: ${m.content.slice(0, 2000)}\n\n`;
-    if (ctx.length + line.length > maxChars) break;
-    ctx += line;
+// The team reads ONE shared transcript — this is what makes the agents a team
+// instead of six individuals who never met. Two parts:
+//
+// (a) "What each teammate last said" — the newest message from every agent
+//     that has spoken, one line each. A reviewer must NEVER lose the writer's
+//     intent just because a few chatty turns pushed it out of the recency
+//     window: the Critic reading the Coder's actual rationale (and vice versa)
+//     is the difference between a review of the work and a review of a guess.
+//     That desync — Coder doing one thing while Critic reviews something else
+//     — was the exact failure of the old "last 6 messages or nothing" window.
+//
+// (b) The recent thread in order, at fuller length — the live group chat.
+//
+// "System" rows are excluded from the digest (they are rate-limit/timing
+// notices, not teamwork) but kept in the thread, where they always were.
+function buildContext(messages: Array<{ agent: string; content: string }>, maxChars = 10000): string {
+  const digestBudget = Math.min(2600, Math.floor(maxChars * 0.3));
+  const threadBudget = maxChars - digestBudget;
+
+  let digest = "";
+  if (messages.length > 2) {
+    const lastByAgent = new Map<string, string>();
+    for (const m of messages) {
+      if (m.agent === "System") continue;
+      lastByAgent.set(m.agent, m.content);
+    }
+    const lines: string[] = [];
+    for (const [agent, content] of lastByAgent) {
+      const oneLine = content.replace(/\s+/g, " ").trim();
+      const shown = oneLine.slice(0, 280);
+      lines.push(`- ${agent}: ${shown}${oneLine.length > 280 ? "…" : ""}`);
+    }
+    digest = `### What each teammate last said\n${lines.join("\n")}`;
+    if (digest.length > digestBudget) {
+      digest = `${digest.slice(0, digestBudget)}\n- …`;
+    }
   }
-  return ctx;
+
+  let thread = "";
+  for (const m of messages.slice(-8)) {
+    const line = `[${m.agent}]: ${m.content.slice(0, 2600)}\n\n`;
+    if (thread.length + line.length > threadBudget) break;
+    thread += line;
+  }
+
+  return [digest, thread && `### Recent thread\n${thread.trimEnd()}`].filter(Boolean).join("\n\n");
 }
 
 function buildFileContext(files: Array<{ filepath: string; content: string }>, maxChars = 4000): string {
@@ -1094,10 +1131,25 @@ export const runPipelineAction = internalAction({
       // ── Normal pipeline phases ────────────────────────────────────────────
       // Determine which pipeline list applies for the current phase.
       const isPlanning = executionPhase === "planning";
-      const currentPipeline = isPlanning
+      let currentPipeline = isPlanning
         ? buildPlanningPipeline(dispatchedAgents, skipActive ? skipAgents : undefined)
         : buildTaskPipeline(dispatchedAgents, skipActive ? skipAgents : undefined);
-      const phaseIndex = currentPipeline.indexOf(currentPhase);
+      let phaseIndex = currentPipeline.indexOf(currentPhase);
+
+      // Team hand-offs ({"op":"over-to"}) can name any teammate, not just ones
+      // on the Dispatcher's roster — that's the point of them. When the agent
+      // we were routed to isn't on the roster, it still runs: treat this turn
+      // as a one-agent pipeline, and when IT finishes the completion handling
+      // routes to the team's Critic for review (see below) rather than closing
+      // the task unseen. This check must come before the phaseIndex === -1
+      // "treat as done" path, or every out-of-roster hand-off would end the
+      // run where it stood.
+      let soloHandoffPhase = false;
+      if (phaseIndex === -1 && isRunnableAgent(currentPhase, Object.keys(customAgentPrompts))) {
+        soloHandoffPhase = true;
+        currentPipeline = [currentPhase];
+        phaseIndex = 0;
+      }
 
       // Phase not in the dispatched pipeline (e.g. Dispatcher dropped it, or a
       // stale phase from a previous run) — treat as done rather than erroring.
@@ -1187,7 +1239,19 @@ export const runPipelineAction = internalAction({
                 `Do not repeat a rejection the Coder has already tried and failed to satisfy without adding something new and concrete it can act on.`,
               ].join("\n")
             : "";
-        let prompt = [`## Project Goal\n${task}`, currentDateLine, buildFailureBlock, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, criticJudgementBlock, buildGateBlock, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
+        // The hand-off op, taught to every agent right beside the other ops.
+        // "Your part is done and a SPECIFIC teammate should act next (out of
+        // the usual order — the usual order runs anyway when you say nothing)"
+        // is the trigger: deliberate routing, not a sign-off on every reply.
+        // Hoisted above both prompt builds so planning-phase agents learn it
+        // too — a Researcher that found what the Coder needs should be able
+        // to say so instead of hoping the roster gets there.
+        const handoffBlock = `## Handing over to a teammate
+You are one team sharing this transcript. When your part is done and a SPECIFIC teammate should act next (out of the usual order — the usual order runs anyway when you say nothing), end your reply with:
+{"op":"over-to","agent":"AgentName","why":"what they should do"}
+Teammates you can name: Researcher, ReportMaker, FactCheck, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic${Object.keys(customAgentPrompts).length > 0 ? `, plus this run's custom agents: ${Object.keys(customAgentPrompts).join(", ")}` : ""}. That agent runs next, reading this same transcript.`;
+
+        let prompt = [`## Project Goal\n${task}`, currentDateLine, buildFailureBlock, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, criticJudgementBlock, buildGateBlock, handoffBlock, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
 
         if (executionPhase === "executing") {
           let plannerTasks: Array<{ title: string; description: string; dependencies?: string[] }> = [];
@@ -1215,7 +1279,7 @@ export const runPipelineAction = internalAction({
                   /\[(?:REJECTED OPS[^\]]*|MALFORMED OP[^\]]*)\][\s\S]*?(\n\n|$)/g,
                   "[MALFORMED OP — not executed]",
                 );
-                return `[${m.agent}]: ${content.slice(0, 500)}`;
+                return `[${m.agent}]: ${content.slice(0, 800)}`;
               })
               .join("\n\n");
 
@@ -1288,6 +1352,7 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
               commandContext,
               `## Pipeline Context\n${context}`,
               toolUsageBlock,
+              handoffBlock,
               mcpToolSection,
               // Rebuilt from scratch here, so the Critic's standing block has to
               // be re-appended or it only ever reached the planning phase — where
@@ -1830,24 +1895,32 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
         });
       }
 
-      // ── Critic retry loop ────────────────────────────────────────────────────
-      // If the Critic says fail, loop back to Coder rather than blindly
-      // advancing. There is deliberately NO retry cap: a fixed count either cuts
-      // off a task that was one round from correct, or rubber-stamps a broken
-      // one the moment the counter runs out — and the old cap did the second,
-      // printing "retries exhausted, advancing to next task" and shipping the
-      // failure anyway. The Critic decides instead: it is told how many times it
-      // has already rejected this task and instructed to pass when what is left
-      // is minor, out of scope, or has resisted repeated fixes (see the Critic
-      // system prompt and the escalation block in the prompt builder above).
-      // Same rationale as the removed per-run message ceiling: a runaway loop
-      // costs real provider quota and stays user-stoppable via stopPipeline, so
-      // the natural break is the user's judgement, not an arbitrary number.
-      if (currentPhase === "Critic" && parsed.criticResult === "fail") {
+      // ── Critic gate ──────────────────────────────────────────────────────────
+      // The task moves on ONLY when the Critic emits {"op":"security-pass"}.
+      // Every other Critic outcome — an explicit security-fail, or a reply
+      // with no verdict op at all — keeps the task open. That second clause
+      // matters as much as the first: a Critic that wrote a prose rejection
+      // without the op used to read as "no verdict" and the run happily
+      // advanced to the next task, which is exactly the "the critic failed it
+      // but the system said the task was complete" bug report. There is
+      // deliberately NO retry cap either way: a fixed count either cuts off a
+      // task that was one round from correct, or rubber-stamps a broken one
+      // the moment the counter runs out. The Critic decides instead: it is
+      // told how many times it has already rejected this task and instructed
+      // to pass when what is left is minor, out of scope, or has resisted
+      // repeated fixes.
+      //
+      // Where the fix goes is the Critic's call, not a hardcoded one: it ends
+      // a rejection with {"op":"over-to","agent":"..."} naming the teammate
+      // who should act (Tester for missing tests, Optimiser for quality,
+      // Coder for implementation). An unnamed or invalid target defaults to
+      // the Coder, which is the honest answer almost all of the time anyway.
+      if (currentPhase === "Critic" && parsed.criticResult !== "pass") {
         // Persisted per-task counter — it survives the separate
         // runPipelineAction invocations each retry spans, and it is what the
         // Critic reads to know how long it has been holding this task.
         const retryCount = branch.criticRetryCount ?? 0;
+        const fixTarget = resolveHandoffTarget(parsed.handoffTarget, "Critic", Object.keys(customAgentPrompts)) ?? "Coder";
         round++;
         // The skip list only ever applies to the FIRST pass of a continuation
         // run. Leaving it active here is what dead-ended runs: the Critic sends
@@ -1858,8 +1931,8 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
         // guarantees the Coder is present to receive the fix request.
         if (!(await advance({
           status: "idle",
-          currentAgent: "Coder",
-          phase: "Coder",
+          currentAgent: fixTarget,
+          phase: fixTarget,
           executionPhase,
           round,
           totalMessages,
@@ -1868,11 +1941,12 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
           skipActive: false,
         }))) return;
         skipActive = false;
-        // Append a system prompt to context so Coder knows exactly what failed
+        // Append a system prompt to context so the named agent knows exactly
+        // what failed and that the fix request is addressed to it.
         await ctx.runMutation(internal.codeBranches.saveMessage, {
           branchId,
           agent: "Critic",
-          content: `[RETRY ${retryCount + 1}] Critic rejected this task. Coder must fix the issues above. Review the Critic's feedback and fix ALL issues before this task can pass.`,
+          content: `[RETRY ${retryCount + 1}] Critic rejected this task and handed the fix to ${fixTarget} — review the feedback above and resolve ALL issues before this task can pass.`,
           round,
           messageIndex: totalMessages + 1,
         });
@@ -1901,6 +1975,36 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
         }))) return;
         await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
         return;
+      }
+
+      // ── Team hand-off ({"op":"over-to"}) ────────────────────────────────────
+      // The agent named the teammate who should act next. That wins over the
+      // roster order — the run is a team in one shared transcript, not six
+      // individuals marched through a fixed queue, and who works next is best
+      // decided by the agent that just saw the work. The target may be ANY
+      // runnable agent, on or off the Dispatcher's roster: an out-of-roster
+      // arrival is caught above (soloHandoffPhase) and runs as a one-agent
+      // pipeline. A Critic that PASSED is exempt — its pass is terminal for
+      // its turn (the task closes/advance runs normally); only a rejecting
+      // Critic directs the next step, handled by the gate above.
+      if (!(currentPhase === "Critic" && parsed.criticResult === "pass")) {
+        const handoffTarget = resolveHandoffTarget(parsed.handoffTarget, currentPhase, Object.keys(customAgentPrompts));
+        if (handoffTarget) {
+          round++;
+          if (!(await advance({
+            status: "idle",
+            currentAgent: handoffTarget,
+            phase: handoffTarget,
+            executionPhase,
+            round,
+            totalMessages,
+            mcpRoundCount: 0,
+            skipActive: false,
+          }))) return;
+          skipActive = false;
+          await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+          return;
+        }
       }
 
       // Advance pipeline
@@ -1937,6 +2041,31 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
             totalMessages,
           }))) return;
         }
+      } else if (
+        !isPlanning
+        && soloHandoffPhase
+        && nextPhaseIndex >= currentPipeline.length
+        && currentPhase !== "Critic"
+        && buildTaskPipeline(dispatchedAgents).includes("Critic")
+      ) {
+        // A handoff-chain agent (out-of-roster) finished WITHOUT naming the
+        // next teammate and the team HAS a Critic. The task must not close
+        // unseen — review is next, exactly as if the roster order had arrived
+        // here. A solo Critic that just passed skips this branch: its pass is
+        // the verdict, and the generic completion path below advances the
+        // task on it.
+        round++;
+        if (!(await advance({
+          status: "idle",
+          currentAgent: "Critic",
+          phase: "Critic",
+          executionPhase,
+          round,
+          totalMessages,
+          mcpRoundCount: 0,
+        }))) return;
+        await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+        return;
       } else if (nextPhaseIndex >= currentPipeline.length) {
         // Pipeline complete for this task
         if (!isPlanning) {

@@ -91,6 +91,17 @@ export interface ParsedOutput {
   // up the fix instead of completing the run.
   dispatchRequested: boolean;
   dispatchReason?: string;
+  // The team hand-off op: {"op":"over-to","agent":"Tester","why":"needs unit
+  // tests for the parser"} — the agent names WHO should act next instead of
+  // the pipeline advancing by its fixed roster order. This is the mechanism
+  // that makes the run a team: the Dispatcher picks the entry point and the
+  // roster, and the agents pass the work between themselves in real time.
+  // The pipeline validates the name (unknown/self targets fall back to the
+  // normal order); the op is also how the Critic directs a failure — a
+  // rejected task goes to the agent the Critic names here, not blindly back
+  // to the Coder.
+  handoffTarget?: string;
+  handoffWhy?: string;
 }
 
 // ── Agent ops: the format taught to every pipeline agent ─────────────────────
@@ -133,6 +144,7 @@ export interface ParsedOutput {
 //   {"op":"test-failed","reason":"reason here"}
 //   {"op":"security-pass"}
 //   {"op":"security-fail"}
+//   {"op":"over-to","agent":"Tester","why":"unit tests for the parser next"}
 //   {"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}
 //   {"op":"continue"}   — ask the pipeline for another turn of the SAME agent
 //   {"op":"dispatch","reason":"..."} — KnowItAll found a problem/bug; re-run the
@@ -741,6 +753,8 @@ export function parseAgentOutput(content: string): ParsedOutput {
   let continueRequested = false;
   let dispatchRequested = false;
   let dispatchReason: string | undefined;
+  let handoffTarget: string | undefined;
+  let handoffWhy: string | undefined;
   const processedPaths = new Set<string>();
 
   // Substitute malformed op excerpts BEFORE the successful-op loop rewrites
@@ -943,6 +957,30 @@ export function parseAgentOutput(content: string): ParsedOutput {
           mark("[DISPATCH REQUESTED]");
         }
         break;
+      case "over-to":
+      case "over_to":
+      case "handover":
+      case "hand-off":
+      case "handoff": {
+        // Team hand-off: run the named agent next, overriding the roster
+        // order. "to" is accepted as an alias of "agent" (models write both),
+        // "reason" as an alias of "why". The name is validated by the
+        // pipeline (resolveHandoffTarget) — here we only record the intent.
+        const target = typeof op.agent === "string" && op.agent.trim()
+          ? op.agent.trim()
+          : (typeof op.to === "string" ? op.to.trim() : "");
+        if (target) {
+          handoffTarget = target.slice(0, 60);
+          const why = typeof op.why === "string" && op.why.trim()
+            ? op.why.trim()
+            : (typeof op.reason === "string" ? op.reason.trim() : "");
+          handoffWhy = why ? why.slice(0, 500) : undefined;
+          mark(`[OVER TO: ${handoffTarget}${handoffWhy ? ` — ${handoffWhy.slice(0, 120)}` : ""}]`);
+        } else {
+          mark("[OVER TO: invalid — no agent named]");
+        }
+        break;
+      }
     }
   }
 
@@ -1105,7 +1143,7 @@ export function parseAgentOutput(content: string): ParsedOutput {
   // Final sweep: neutralise orphaned <<...>> markers
   cleanContent = cleanContent.replace(/<<([^<>]{0,200}?)>>/g, "‹‹$1››");
 
-  return { fileOps, searchOps, scrapeOps, cmdOps, mcpOps, researchOps, cleanContent, malformedOps, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode, requestApiKey, continueRequested, dispatchRequested, dispatchReason };
+  return { fileOps, searchOps, scrapeOps, cmdOps, mcpOps, researchOps, cleanContent, malformedOps, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode, requestApiKey, continueRequested, dispatchRequested, dispatchReason, handoffTarget, handoffWhy };
 }
 
 export interface PlannerTask {

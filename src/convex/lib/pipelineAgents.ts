@@ -69,3 +69,57 @@ export function buildTaskPipeline(dispatched: string[], skip: string[] = []): st
     ...customAgentNames(dispatched).filter(a => !skipSet.has(a)),
   ];
 }
+
+// Names an agent may never hand off to: the Dispatcher is a phase, not a
+// teammate, and User/System are transcript roles, not runnable agents.
+const UNHANDOFFABLE = new Set(["dispatcher", "user", "system"]);
+
+/**
+ * Validate an {"op":"over-to"} target into a runnable agent name.
+ *
+ * The parser records the raw string the model wrote; this decides whether it
+ * names a real teammate and returns that agent's CANONICAL casing, or
+ * undefined (the pipeline then simply advances by the roster order).
+ *
+ * Matching is deliberately conservative: case- and punctuation-insensitive,
+ * with a leading "the "/"agent " tolerated ("over to the critic" lands on
+ * Critic). No suffix/fuzzy matching beyond that — "ResearchPlanner" must NOT
+ * resolve to "Planner", so anything looser than an exact normalized match is
+ * worth more than convenience here.
+ *
+ * A target equal to the agent itself returns undefined: handing off to
+ * yourself is a no-op the normal advance already covers, and honouring it
+ * would let a model loop its own seat forever.
+ */
+export function resolveHandoffTarget(
+  rawTarget: string | undefined,
+  selfName: string,
+  customNames: string[] = [],
+): string | undefined {
+  if (!rawTarget) return undefined;
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  let want = norm(rawTarget);
+  if (!want) return undefined;
+  if (want.startsWith("the") && want.length > 3) want = want.slice(3);
+  if (want.startsWith("agent") && want.length > 5) want = want.slice(5);
+  if (UNHANDOFFABLE.has(want)) return undefined; // Dispatcher/User/System are not teammates
+  // Planning AND task agents are valid hand-off targets: "this needs
+  // re-planning" is a legitimate mid-execution hand-off, just as "the Coder
+  // must fix this" is a legitimate mid-planning one. Deduped — the two lists
+  // share the research team.
+  const candidates = [...new Set([...ALL_PLANNING_AGENTS, ...ALL_TASK_AGENTS, ...customNames])];
+  const hit = candidates.find((a) => norm(a) === want);
+  if (!hit) return undefined;
+  if (norm(hit) === norm(selfName)) return undefined;
+  return hit;
+}
+
+/** True when `name` is a runnable agent (standard or custom) — used by the
+ *  pipeline to decide whether an out-of-roster phase is a deliberate handoff
+ *  destination (run it) or a dead end (park the run). */
+export function isRunnableAgent(name: string, customNames: string[] = []): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const want = norm(name);
+  if (!want || UNHANDOFFABLE.has(want)) return false;
+  return [...ALL_PLANNING_AGENTS, ...ALL_TASK_AGENTS, ...customNames].some((a) => norm(a) === want);
+}

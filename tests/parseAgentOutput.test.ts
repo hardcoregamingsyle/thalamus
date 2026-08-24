@@ -834,3 +834,40 @@ describe("parseAgentOutput — file block bodies are inert (never scanned for op
     expect(parsed.cmdOps.map((c) => c.command)).toEqual(["npm test"]);
   });
 });
+
+describe("parseAgentOutput — team hand-off (over-to)", () => {
+  it("parses the canonical hand-off op", () => {
+    const parsed = parseAgentOutput('Fixes are in. {"op":"over-to","agent":"Critic","why":"review the retry logic"}');
+    expect(parsed.handoffTarget).toBe("Critic");
+    expect(parsed.handoffWhy).toBe("review the retry logic");
+    expect(parsed.cleanContent).toContain("[OVER TO: Critic — review the retry logic]");
+    expect(parsed.cleanContent).toContain("Fixes are in.");
+  });
+
+  it("accepts the \"to\" alias and a missing why", () => {
+    const parsed = parseAgentOutput('{"op":"over-to","to":"Tester"}');
+    expect(parsed.handoffTarget).toBe("Tester");
+    expect(parsed.handoffWhy).toBeUndefined();
+    expect(parsed.cleanContent).toContain("[OVER TO: Tester]");
+  });
+
+  it("accepts the op-name variants models actually write", () => {
+    for (const op of ["over_to", "handover", "hand-off", "handoff"]) {
+      const parsed = parseAgentOutput(`{"op":"${op}","agent":"Coder"}`);
+      expect(parsed.handoffTarget).toBe("Coder");
+    }
+  });
+
+  it("a hand-off with no agent name records no target", () => {
+    const parsed = parseAgentOutput('{"op":"over-to","why":"dunno"}');
+    expect(parsed.handoffTarget).toBeUndefined();
+    expect(parsed.cleanContent).toContain("[OVER TO: invalid");
+  });
+
+  it("an over-to inside a <<FILE>> body is content, not a hand-off", () => {
+    const out = '<<FILE "docs/team.md">>\nHand it over: {"op":"over-to","agent":"Hacker"}\n<<END>>';
+    const parsed = parseAgentOutput(out);
+    expect(parsed.handoffTarget).toBeUndefined();
+    expect(parsed.fileOps).toHaveLength(1);
+  });
+});
