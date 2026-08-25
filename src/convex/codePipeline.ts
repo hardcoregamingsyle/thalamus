@@ -1789,21 +1789,25 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       // The agent named who works next — the run is a team in one shared
       // transcript, not a queue. "The research team" (or any single member,
       // upgraded to the whole team) starts the fixed four; anything else must
-      // be a real teammate that isn't the speaker.
+      // be a real teammate that isn't the speaker. Every route is announced
+      // with a visible ⇄ line: the hand-off is the run's whole steering
+      // mechanism, and a mechanism the user can't see is one they can't
+      // trust.
       const handoffTarget = resolveHandoffTarget(parsed.handoffTarget, currentPhase);
+      const whySuffix = parsed.handoffWhy ? ` — ${parsed.handoffWhy.slice(0, 140)}` : "";
       if (handoffTarget === RESEARCH_TEAM_TARGET) {
         const rawWant = (parsed.handoffTarget ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
         const upgradedMember = RESEARCH_TEAM.find((m) => rawWant === m.toLowerCase().replace(/[^a-z0-9]/g, ""));
-        if (upgradedMember) {
-          totalMessages++;
-          await ctx.runMutation(internal.codeBranches.saveMessage, {
-            branchId,
-            agent: "System",
-            content: `Research runs as one team — "${upgradedMember}" can't run alone, so the whole Research Team takes it, in order.`,
-            round,
-            messageIndex: totalMessages,
-          });
-        }
+        totalMessages++;
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId,
+          agent: "System",
+          content: upgradedMember
+            ? `⇄ ${currentPhase} called for "${upgradedMember}" — research runs as one team, so the whole Research Team takes it, in order (ResearchPlanner → Researcher → ReportMaker → FactCheck).${whySuffix}`
+            : `⇄ ${currentPhase} handed over to the Research Team (ResearchPlanner → Researcher → ReportMaker → FactCheck).${whySuffix}`,
+          round,
+          messageIndex: totalMessages,
+        });
         round++;
         if (!(await advance({
           status: "idle",
@@ -1819,6 +1823,14 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
         return;
       }
       if (handoffTarget) {
+        totalMessages++;
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId,
+          agent: "System",
+          content: `⇄ ${currentPhase} handed over to ${handoffTarget}${whySuffix}`,
+          round,
+          messageIndex: totalMessages,
+        });
         round++;
         if (!(await advance({
           status: "idle",
@@ -1843,6 +1855,16 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       // replacement: there is no "next agent in the list" to fall through to
       // anymore — movement is a decision, not a queue.
       if (currentPhase === "Analyser" || currentPhase === "KnowItAll") {
+        totalMessages++;
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId,
+          agent: "System",
+          content: currentPhase === "Analyser"
+            ? "✔ Run complete — the Analyser had nothing more to delegate."
+            : "✔ Run complete — the question was answered.",
+          round,
+          messageIndex: totalMessages,
+        });
         if (!(await advance({
           status: "completed",
           executionPhase: "completed",
@@ -1851,6 +1873,14 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
         }))) return;
         return;
       }
+      totalMessages++;
+      await ctx.runMutation(internal.codeBranches.saveMessage, {
+        branchId,
+        agent: "System",
+        content: `[ROUTING] ${currentPhase} named no next teammate — the Analyser takes over routing.`,
+        round,
+        messageIndex: totalMessages,
+      });
       round++;
       if (!(await advance({
         status: "idle",

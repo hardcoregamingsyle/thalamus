@@ -39,6 +39,8 @@ Hand-offs are the ONLY routing mechanism — there is no roster order to fall th
 4. **over-to to a teammate** — that agent runs next.
 5. **No/invalid/self hand-off** — falls back to the Analyser… except the Analyser (nothing left to delegate) and KnowItAll (answer finished) naming nobody, which complete the run.
 
+Every route is announced in the transcript — hand-offs are never silent: a `⇄ From → To — why` System line for normal hand-offs (the upgrade note is folded in when a lone research member was named), a `[ROUTING] … Analyser takes over routing` line for fallbacks, and a `✔ Run complete — …` line for the two natural exits. The `[OVER TO: target — why]` marker from the parser also remains inline in the agent's own message.
+
 ### Critic gate
 
 There is no retry cap, and the gate is pass-or-stay. On a Critic fail — or any Critic reply with NO verdict op at all (a prose rejection without the op used to advance the task as if nothing was wrong; that silent-complete class is closed):
