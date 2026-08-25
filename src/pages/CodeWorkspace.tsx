@@ -24,6 +24,13 @@ import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
 import { fetchSponsoredAd } from "@/lib/requestAd";
 import { useAuth } from "@/hooks/use-auth";
 import { errMsg } from "@/lib/errorMessage";
+import StreamingBubble from "@/components/StreamingBubble";
+import {
+  SystemLineContent,
+  TRANSCRIPT_MD_CLASSES,
+  VerboseMessageContent,
+} from "@/components/code-workspace/VerboseBlocks";
+import { streamVisibleText } from "@/lib/verboseTranscript";
 
 // ── Planner message rendering ──────────────────────────────────────────────────
 interface PlannerTask {
@@ -310,12 +317,14 @@ function MessageContent({ msg, currentTaskIndex }: { msg: { agent: string; conte
       return <ResearchPlanCard data={planData} />;
     }
   }
+  // Everything else renders through the Claude Code-style verbose view:
+  // markdown prose, with every activity marker ([CMD: …], [FILE CREATED: …],
+  // [OVER TO: …]) as a styled block instead of bracketed text. System lines
+  // (⇄ hand-offs, ✔ completion, [ROUTING]) render as banners. fromAgent lets
+  // a hand-off block name the sender — OVER TO markers carry only the target.
   const cleaned = cleanLegacyContent(msg.content);
-  return (
-    <div className="text-sm leading-relaxed space-y-2 [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-xs [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:space-y-0.5 [&_ol]:list-decimal [&_ol]:pl-4 [&_ol]:space-y-0.5 [&_li]:text-sm [&_p]:leading-relaxed [&_strong]:font-semibold [&_em]:italic [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono [&_pre]:bg-muted [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:overflow-x-auto [&_pre]:text-xs [&_pre]:font-mono [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_blockquote]:border-l-2 [&_blockquote]:border-muted-foreground [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_hr]:border-border">
-      <ReactMarkdown>{cleaned}</ReactMarkdown>
-    </div>
-  );
+  if (msg.agent === "System") return <SystemLineContent content={cleaned} />;
+  return <VerboseMessageContent content={cleaned} fromAgent={msg.agent} />;
 }
 
 // Strip raw agent action tags left over in messages stored before the parseAgentOutput fix.
@@ -632,9 +641,16 @@ export default function CodeWorkspace() {
                         generating…
                       </span>
                     </div>
-                    <div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap font-mono max-h-64 overflow-auto">
-                      {branch.streamingContent}
-                      <span className="inline-block w-0.5 h-3 bg-primary ml-0.5 animate-pulse" />
+                    {/* Claude Code-style live view: the raw stream is a
+                        growing JSON doc, so streamVisibleText extracts the
+                        message string and the bubble types it out as formatted
+                        markdown — never raw JSON, never half-written ops. */}
+                    <div className="max-h-96 overflow-auto">
+                      <StreamingBubble
+                        content={branch.streamingContent}
+                        preprocess={streamVisibleText}
+                        className={TRANSCRIPT_MD_CLASSES}
+                      />
                     </div>
                   </div>
                 </motion.div>
@@ -663,8 +679,11 @@ export default function CodeWorkspace() {
                       </span>
                       <span className="text-xs text-muted-foreground">{activeCommand.agent}</span>
                     </div>
-                    <div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap font-mono break-all">
-                      {activeCommand.command}
+                    {/* Live command in the same `$` block the verbose RUN rows
+                        use — one terminal language across the transcript. */}
+                    <div className="overflow-x-auto rounded-md border border-amber-500/20 bg-background/70 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-amber-100/90">
+                      <span className="mr-1.5 select-none text-amber-500">$</span>
+                      <span className="whitespace-pre-wrap break-all">{activeCommand.command}</span>
                     </div>
                   </div>
                 </motion.div>

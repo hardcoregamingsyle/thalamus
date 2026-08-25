@@ -41,6 +41,8 @@ Hand-offs are the ONLY routing mechanism — there is no roster order to fall th
 
 Every route is announced in the transcript — hand-offs are never silent: a `⇄ From → To — why` System line for normal hand-offs (the upgrade note is folded in when a lone research member was named), a `[ROUTING] … Analyser takes over routing` line for fallbacks, and a `✔ Run complete — …` line for the two natural exits. The `[OVER TO: target — why]` marker from the parser also remains inline in the agent's own message.
 
+**Nothing in that narration is ever hidden from the user — it renders.** In the code-workspace chat view every marker becomes a Claude Code-style verbose block instead of bracketed text (parsing in `src/lib/verboseTranscript.ts`, rendering in `src/components/code-workspace/VerboseBlocks.tsx`): the hand-off — both the inline `[OVER TO: target — why]` marker and the `⇄` System line — renders as a gradient hero banner naming sender AND target with the reason on a `⎿` line beneath; `[CMD: …]` becomes a terminal block (`$` prompt, monospace, scrollable); file ops ([FILE CREATED/EDITED/DELETED]) become icon rows with the path in mono; searches, scrapes, MCP calls, test/security verdicts, retries, dispatch requests, malformed-op stamps all get their own coloured blocks; `[ROUTING]`, `⚠️`, `⏳` and `✔ Run complete` render as banners. Prose between markers still flows through markdown. Do not collapse, summarise, or strip these blocks — the hand-off remaining visible is a hard product requirement.
+
 ### Critic gate
 
 There is no retry cap, and the gate is pass-or-stay. On a Critic fail — or any Critic reply with NO verdict op at all (a prose rejection without the op used to advance the task as if nothing was wrong; that silent-complete class is closed):
@@ -136,7 +138,7 @@ File writes are raw `<<FILE>>` blocks — everything between the two markers is 
 <<END>>
 ```
 
-`<<FILE>>` and `create`/`edit` share semantics — a write is create-or-replace (`upsertFile` both ways). Deletes and everything else stay single-line JSON ops (short values, so JSON escaping is never under load). Ids and paths are plain strings. Interleaved plain text is preserved in the transcript with ops replaced by short placeholders (e.g. `[CMD: …]`, `[FILE CREATED: …]`).
+`<<FILE>>` and `create`/`edit` share semantics — a write is create-or-replace (`upsertFile` both ways). Deletes and everything else stay single-line JSON ops (short values, so JSON escaping is never under load). Ids and paths are plain strings. Interleaved plain text is preserved in the transcript with ops replaced by short placeholders (e.g. `[CMD: …]`, `[FILE CREATED: …]` — which the workspace chat view renders as Claude Code-style verbose blocks, see "Team hand-offs" above).
 
 ```
 {"op":"delete-file","path":"src/old.ts"}
@@ -220,7 +222,7 @@ Branch status fields (`codeBranches` in `schema.ts`):
 - `dispatchedAgentsJson` / `customAgentsJson` / `skipAgentsJson` / `skipActive`: roster-era columns the pipeline no longer writes or reads (kept in the schema so old branches still load). 
 - `userPromptGen`: monotonic counter bumped once per user prompt by `startPipeline`; phase transitions refuse to advance when it moved, so a newer prompt always interrupts an in-flight run and the newest dispatch wins.
 - `criticRetryCount`: persisted rejection counter the Critic reads when deciding to hold or release a task.
-- `streamingContent` / `streamingAgent` / `streamingAt`: live agent output. Streaming seats (OpenRouter) write true SSE deltas as they arrive; other seats drip-feed the finished response in ~300-char chunks. Either way the reply grows instead of landing in one block.
+- `streamingContent` / `streamingAgent` / `streamingAt`: live agent output. Streaming seats (OpenRouter) write true SSE deltas as they arrive; other seats drip-feed the finished response in ~300-char chunks. Either way the reply grows instead of landing in one block. The workspace chat view consumes it through `streamVisibleText()` (`src/lib/verboseTranscript.ts`) — the raw stream is a growing `{message, ops}` JSON doc, so the growing `message` string is extracted (escapes decoded incrementally, ops cut off) and typed out word-by-word as formatted markdown (`StreamingBubble`); raw JSON never flashes in the live view.
 - `executor`: `cloud` | `local` — chosen at `startPipeline` and never changed after; a local branch is never scheduled server-side, a cloud branch is never polled by the desktop app.
 
 `stopPipeline` sets `stopRequested`; the runner halts without rescheduling and clears the flag.

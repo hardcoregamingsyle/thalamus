@@ -40,7 +40,7 @@ All route components are lazy-loaded via `React.lazy()`.
 | `/portal`, `/portal/:mode`, `/portal/:mode/:sessionId` | `Portal` | Dispatches to `GuestPortal` / `PortalDesktop` / `MobilePortal` |
 | `/portal/code` | `CodeProjects` | List of user's coding projects (auth-gated) |
 | `/portal/code/:projectId` | `CodeBranches` | Branches within a project (auth-gated) |
-| `/portal/code/:projectId/:branchId(/…)` | `CodeWorkspace` | Full build workspace with live agent output (auth-gated) |
+| `/portal/code/:projectId/:branchId(/…)` | `CodeWorkspace` | Full build workspace with live agent output — Claude Code-style verbose activity blocks + word-by-word typewriter live view (auth-gated) |
 | `/blog`, `/blog/:slug` | `Blog`, `BlogPost` | Static posts from `src/content/blog.ts` |
 | `/privacy`, `/terms`, `/refund`, `/contact` | `Legal` | One component, four routes, selected by a `doc` prop |
 | `/admin` | `Admin` | Provider keys, credits, budgets, ads, ISOs (admin only, hidden in desktop builds) |
@@ -102,6 +102,19 @@ Provider tabs use neutral slugs (`providerB` … `providerE`) and ask the server
 | `UsageView` | Credit / token usage stats |
 | `KeysView` | API key management |
 | `VersionView` | Version control |
+| `VerboseBlocks.tsx` | Claude Code-style verbose rendering of every committed transcript message: activity markers (`[CMD: …]`, `[FILE CREATED: …]`, test/security verdicts, …) become icon + verb + mono-argument blocks, hand-offs (`[OVER TO: …]`, `⇄ …`) become gradient hero banners naming both ends with the reason on a `⎿` line, commands become terminal `$` blocks. `VerboseMessageContent` (agent messages) + `SystemLineContent` (System routing lines) |
+
+The chat view's own rendering follows the same verbose language end to end:
+committed messages go through `VerboseMessageContent` (Agent/Terminal) or
+`SystemLineContent` (System) — raw `[…]` bracket markers never print as plain
+text; the in-flight command gets the same `$` terminal block as committed RUN
+rows; and the live stream renders through `StreamingBubble` with the code-mode
+`preprocess` (`streamVisibleText` — extracts the growing `message` string from
+the partial `{message, ops}` doc), so the reply types out word-by-word as
+formatted markdown, never as raw JSON. `TRANSCRIPT_MD_CLASSES` (exported from
+`VerboseBlocks.tsx`) is the one typography constant both bubbles share. All
+parsing is framework-free in `src/lib/verboseTranscript.ts` and guarded by
+`tests/verboseTranscript.test.ts`.
 
 Real-time updates: `useQuery(api.codeBranches.getBranch, { branchId })` subscribes to the branch document; when any mutation writes to it (streaming content, file changes, status updates), the workspace re-renders instantly.
 
@@ -117,6 +130,7 @@ Real-time updates: `useQuery(api.codeBranches.getBranch, { branchId })` subscrib
 | `dateFormat.ts` | Formatting helpers. |
 | `sanitizeHtml.ts` | `sanitizeAiHtml` (DOMPurify) — **mandatory** before any `dangerouslySetInnerHTML`. Session, admin, and GitHub tokens live in localStorage. |
 | `requestAd.ts` | Sponsored-ad request helper. |
+| `verboseTranscript.ts` | Verbose transcript parsing (framework-free, unit-tested): `segmentVerboseContent` splits messages into prose + typed activity markers, `classifySystemLine` parses `⇄`/`✔`/`[ROUTING]`/`⚠️`/`⏳` System lines, `extractStreamingMessage` pulls the growing message string out of the partial JSON doc agents stream, `streamVisibleText`/`stripOpsForStreaming` decide what the live bubble types out. Rendered by `components/code-workspace/VerboseBlocks.tsx` + `components/StreamingBubble.tsx`. |
 | `utils.ts` | `cn()` etc. |
 
 `src/content/systemPrompts.ts` holds `chatStreamSystemPrompts()` — client-side system prompts posted to `/stream-chat` by both `Portal.tsx` and `MobilePortal.tsx`. Study mode's prompt optionally folds in grade / board / language from a `StudyProfile`.

@@ -1,36 +1,42 @@
 import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { stripOpsForStreaming } from "@/lib/verboseTranscript";
 
-// Live-streaming assistant bubble for the desktop portal.
+// Live-streaming assistant bubble — chat portal by default, code mode via the
+// `preprocess`/`className` overrides.
 //
-// The model emits markdown (with fenced JSON ops). We want BOTH live formatted
-// markdown AND a word-by-word typewriter. Approach:
-//   - Render the accumulated markdown through react-markdown every chunk, so
-//     headings, bold, lists, tables format the moment their tokens finish.
-//   - Fenced JSON-op blocks are stripped from the streaming view so raw JSON
-//     never flashes.
+// The model emits markdown (with fenced JSON ops; in code mode a whole JSON
+// doc). We want BOTH live formatted markdown AND a word-by-word typewriter.
+// Approach:
+//   - `preprocess` turns the raw accumulation into display text each chunk —
+//     chat strips fenced JSON ops; code mode extracts the growing "message"
+//     string out of the partial JSON doc (streamVisibleText).
+//   - Render the result through react-markdown every chunk, so headings,
+//     bold, lists, tables format the moment their tokens finish.
 //   - A typewriter reveal is layered on top by walking the rendered DOM's text
 //     nodes once per content change, wrapping each word in a span, then
 //     toggling `visibility` as a reveal counter advances (throttled via rAF).
 //     Hidden words keep their space, so formatting stays stable.
 const WORDS_PER_FRAME = 8;
 
-// Strip ```json ... ``` op blocks (and bare {"op":...} objects) so interactive
-// ops don't appear as raw code while the answer types out.
-function stripOpsForStreaming(content: string): string {
-  let out = content.replace(/```json[\s\S]*?```/gi, "");
-  out = out.replace(/\{\s*"op"\s*:\s*"[^"]*"[\s\S]*?\}/g, "");
-  return out;
-}
-
-const StreamingBubble = memo(function StreamingBubble({ content }: { content: string }) {
+const StreamingBubble = memo(function StreamingBubble({
+  content,
+  preprocess = stripOpsForStreaming,
+  className = "prose-html text-[15px] leading-relaxed",
+}: {
+  content: string;
+  /** Raw accumulation → display text. Defaults to the chat op-stripper. */
+  preprocess?: (raw: string) => string;
+  /** Typography wrapper class — defaults to the chat portal's prose style. */
+  className?: string;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [revealed, setRevealed] = useState(0);
   const revealedRef = useRef(0);
   const lastContentRef = useRef<string | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  const markdown = content ? stripOpsForStreaming(content) : "";
+  const markdown = content ? preprocess(content) : "";
 
   // On content change, rebuild word spans in the rendered markdown DOM and
   // reset the reveal counter. Runs once per change (not per reveal tick).
@@ -112,7 +118,7 @@ const StreamingBubble = memo(function StreamingBubble({ content }: { content: st
   }
 
   return (
-    <div className="prose-html text-[15px] leading-relaxed">
+    <div className={className}>
       <div ref={containerRef}>
         <ReactMarkdown>{markdown}</ReactMarkdown>
       </div>

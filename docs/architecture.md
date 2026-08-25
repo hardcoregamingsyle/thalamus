@@ -150,7 +150,7 @@ User types a task in CodeWorkspace
   → status "completed" → files pushed to GitHub if configured
 ```
 
-Real-time UI updates: `useQuery(api.codeBranches.getBranch, { branchId })` in `CodeWorkspace.tsx` subscribes to the branch document; Convex pushes updates whenever any mutation touches it, including the ~300-char `streamingContent` drip-feed.
+Real-time UI updates: `useQuery(api.codeBranches.getBranch, { branchId })` in `CodeWorkspace.tsx` subscribes to the branch document; Convex pushes updates whenever any mutation touches it, including the ~300-char `streamingContent` drip-feed. The chat view renders that drip through `streamVisibleText()` + `StreamingBubble` (word-by-word typewriter over the extracted `message` string — the raw stream is a growing `{message, ops}` JSON doc) and renders every committed `[…]` activity marker / ⇄ routing line as a Claude Code-style verbose block (`src/lib/verboseTranscript.ts` + `components/code-workspace/VerboseBlocks.tsx`; hand-offs are hero banners and are never hidden).
 
 ### The two executors
 
