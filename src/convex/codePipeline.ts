@@ -12,7 +12,9 @@
 // - phase:          the agent currently (or next) running. The Dispatcher
 //                   phase is background-only (picks model seats); every run
 //                   then enters as the Analyser and moves by over-to hand-offs
-// - currentTaskIndex: legacy prompt-context cursor (single synthetic task)
+// - currentTaskIndex: the plan cursor. Each Critic pass advances it to the
+//                   next task and hands the lead to the Analyser; a pass on
+//                   the final task completes the run
 // - round:          monotonically increasing counter, bumped on every agent
 //                   hand-off (used for message grouping in the UI)
 // - researchTeamIndex: while the Research Team runs, which member is on
@@ -37,7 +39,7 @@ import {
   type ModelTier,
 } from "./lib/agentCore";
 import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./lib/mcpClient";
-import { TEAM_AGENTS, RESEARCH_TEAM, RESEARCH_TEAM_TARGET, resolveHandoffTarget, isRunnableAgent, handoffDisplayName } from "./lib/pipelineAgents";
+import { TEAM_AGENTS, RESEARCH_TEAM, RESEARCH_TEAM_TARGET, resolveHandoffTarget, isRunnableAgent, handoffDisplayName, nextTaskAfterPass } from "./lib/pipelineAgents";
 import { buildDispatcherModelMenu } from "./lib/modelMenu";
 import { parseMcpCalls, stripMcpBlocks, type ParsedMcpCall } from "./lib/mcpParse";
 
@@ -1014,7 +1016,7 @@ export const runPipelineAction = internalAction({
         const handoffBlock = `## Handing over to a teammate
 You are one team sharing this transcript, and there is no fixed order — whoever your work needs next, you name. When YOUR part is done, end your reply with:
 {"op":"over-to","agent":"AgentName","why":"what they should do"}
-Teammates you can name: Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic, KnowItAll — or "ResearchTeam" to summon the research team. The research team can only run whole (ResearchPlanner → Researcher → ReportMaker → FactCheck, always in that order); you can never name just one of its members. If you name nobody, the Analyser takes over routing — the run ends only when the Analyser names nobody (nothing left to delegate) or the Critic passes (work accepted). Whoever you name reads this same transcript.`;
+Teammates you can name: Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic, KnowItAll — or "ResearchTeam" to summon the research team. The research team can only run whole (ResearchPlanner → Researcher → ReportMaker → FactCheck, always in that order); you can never name just one of its members. If you name nobody, the Analyser takes over routing — the run ends only when the Analyser names nobody (nothing left to delegate) or the Critic passes the LAST task in the plan. When the Critic passes an earlier task, the plan moves on by itself: the next task becomes current and the Analyser takes the lead for it. Whoever you name reads this same transcript.`;
 
         let prompt = [`## Project Goal\n${task}`, currentDateLine, buildFailureBlock, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, criticJudgementBlock, buildGateBlock, handoffBlock, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
 
@@ -1756,11 +1758,15 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
         return;
       }
 
-      // ── Critic pass: the run's exit gate ─────────────────────────────────
-      // The only system-level completion left: a task passes review and the
-      // run closes. Everything else about movement is the agents' decision
-      // (the old roster advance is gone). Retry learnings are captured exactly
-      // as the roster era did — a task that needed rejections teaches the
+      // ── Critic pass: the plan advance / the run's exit gate ──────────────
+      // A pass accepts ONE task. When the plan holds more tasks, the pass
+      // moves the cursor and the Analyser retakes the lead for the next one —
+      // the run walking the whole plan is the pipeline's only remaining
+      // system-level movement, and completing after task one stranded every
+      // multi-task plan at 1/N. The pass on the FINAL task is the exit gate.
+      // Everything else about movement is the agents' decision (the old
+      // roster advance is gone). Retry learnings are captured exactly as the
+      // roster era did — a task that needed rejections teaches the
       // owner-profile something the one-shot pass cannot.
       if (currentPhase === "Critic" && parsed.criticResult === "pass") {
         const retryCount = branch.criticRetryCount ?? 0;
@@ -1776,6 +1782,38 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
             retryCount,
           });
         }
+
+        const nextTask = nextTaskAfterPass(branch.plannerTasksJson, currentTaskIndex);
+        if (nextTask) {
+          // Announce the carry exactly like every other route — a [ROUTING]
+          // line renders as its own banner, never hidden.
+          totalMessages++;
+          await ctx.runMutation(internal.codeBranches.saveMessage, {
+            branchId,
+            agent: "System",
+            content: `[ROUTING] Task ${nextTask.nextIndex} of ${nextTask.total} passed — on to Task ${nextTask.nextIndex + 1} of ${nextTask.total}: "${nextTask.title}". The Analyser takes the lead for it.`,
+            round,
+            messageIndex: totalMessages,
+          });
+          round++;
+          if (!(await advance({
+            status: "idle",
+            currentAgent: "Analyser",
+            phase: "Analyser",
+            executionPhase,
+            round,
+            totalMessages,
+            currentTaskIndex: nextTask.nextIndex,
+            // A new task opens with a clean gate — the previous task's
+            // rejections must not poison the next Critic block.
+            criticRetryCount: 0,
+            researchTeamIndex: null,
+            mcpRoundCount: 0,
+          }))) return;
+          await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+          return;
+        }
+
         if (!(await advance({
           status: "completed",
           executionPhase: "completed",

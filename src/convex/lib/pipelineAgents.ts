@@ -108,3 +108,25 @@ export function isRunnableAgent(name: string): boolean {
 export function handoffDisplayName(target: string): string {
   return target === RESEARCH_TEAM_TARGET ? "the Research Team" : target;
 }
+
+/** The plan's next task after a Critic pass, or null when the pass was on the
+ *  FINAL task (the run's exit gate). The pass is the ONLY thing that moves
+ *  the plan cursor — the plan is a checklist the pipeline carries forward,
+ *  never a routing decision (movement stays with the agents' over-to
+ *  hand-offs; the carry just keeps one run walking the whole plan instead of
+ *  completing after task one). */
+export function nextTaskAfterPass(
+  plannerTasksJson: string | undefined,
+  currentTaskIndex: number,
+): { nextIndex: number; title: string; total: number } | null {
+  let tasks: Array<{ title?: unknown }>;
+  try {
+    tasks = JSON.parse(plannerTasksJson || "[]");
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(tasks)) return null;
+  const next = tasks[currentTaskIndex + 1];
+  if (!next || typeof next.title !== "string" || next.title.length === 0) return null;
+  return { nextIndex: currentTaskIndex + 1, title: next.title, total: tasks.length };
+}

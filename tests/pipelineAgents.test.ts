@@ -16,6 +16,7 @@ import {
   resolveHandoffTarget,
   isRunnableAgent,
   handoffDisplayName,
+  nextTaskAfterPass,
 } from "../src/convex/lib/pipelineAgents";
 
 describe("the fixed cast", () => {
@@ -101,5 +102,37 @@ describe("handoffDisplayName", () => {
   it("the team reads as prose; agents stay canonically cased", () => {
     expect(handoffDisplayName(RESEARCH_TEAM_TARGET)).toBe("the Research Team");
     expect(handoffDisplayName("Coder")).toBe("Coder");
+  });
+});
+
+// The plan carry: a Critic pass mid-plan must move the cursor to the next
+// task (the run walks the whole plan); a pass on the final task is the run's
+// exit gate. If this helper breaks, multi-task plans silently complete at 1/N
+// again — the regression this suite exists to refuse.
+describe("nextTaskAfterPass", () => {
+  const plan = JSON.stringify([
+    { title: "Scaffold", description: "vite app" },
+    { title: "Auth", description: "login form" },
+    { title: "Deploy", description: "docker" },
+  ]);
+
+  it("hands back the next task mid-plan, with its cursor and the total", () => {
+    expect(nextTaskAfterPass(plan, 0)).toEqual({ nextIndex: 1, title: "Auth", total: 3 });
+    expect(nextTaskAfterPass(plan, 1)).toEqual({ nextIndex: 2, title: "Deploy", total: 3 });
+  });
+
+  it("returns null on the final task — the run's exit gate takes it", () => {
+    expect(nextTaskAfterPass(plan, 2)).toBeNull();
+  });
+
+  it("a single (synthetic) task completes on the first pass", () => {
+    expect(nextTaskAfterPass(JSON.stringify([{ title: "Only task" }]), 0)).toBeNull();
+  });
+
+  it("broken or missing plan state falls back to completion, never crashes", () => {
+    expect(nextTaskAfterPass(undefined, 0)).toBeNull();
+    expect(nextTaskAfterPass("not json", 0)).toBeNull();
+    expect(nextTaskAfterPass("[]", 0)).toBeNull();
+    expect(nextTaskAfterPass(JSON.stringify([{ title: "A" }, { description: "no title" }]), 0)).toBeNull();
   });
 });

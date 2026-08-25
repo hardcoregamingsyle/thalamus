@@ -34,7 +34,7 @@ The cast is FIXED — code no longer builds a per-prompt roster. Directly target
 Hand-offs are the ONLY routing mechanism — there is no roster order to fall through to. After an agent's turn (continue-loop and MCP rounds exhausted), `runPipelineAction` routes in this order:
 
 1. **Research Team progression** — mid-team (`researchTeamIndex` 0–2) goes straight to the next member; the last member falls through to normal routing.
-2. **Critic pass** — completes the run (retry learnings still captured when the task survived rejections).
+2. **Critic pass** — accepts the current task. Mid-plan, the advance is automatic: `currentTaskIndex` moves to the next task (`nextTaskAfterPass`), `criticRetryCount` resets, a `[ROUTING] Task N of M passed — on to Task N+1 of M …` line lands in the transcript, and the **Analyser retakes the lead** for the new task (movement stays the team's decision — the pipeline only carries the plan forward). A pass on the FINAL task completes the run (retry learnings still captured when the task survived rejections).
 3. **over-to to the team** — enters the team at ResearchPlanner (`researchTeamIndex: 0`).
 4. **over-to to a teammate** — that agent runs next.
 5. **No/invalid/self hand-off** — falls back to the Analyser… except the Analyser (nothing left to delegate) and KnowItAll (answer finished) naming nobody, which complete the run.
@@ -49,7 +49,7 @@ There is no retry cap, and the gate is pass-or-stay. On a Critic fail — or any
 
 1. The pipeline hands the task to the teammate the Critic named with `over-to` (`Coder` when it named no one) with the feedback appended — never blindly back to the Coder.
 2. `criticRetryCount` is persisted on the branch and survives the separate `runPipelineAction` invocations each retry spans.
-3. The task advances only when the Critic emits `{"op":"security-pass"}`. Nothing overrides it and nothing counts it down.
+3. The task advances only when the Critic emits `{"op":"security-pass"}`. Nothing overrides it and nothing counts it down — and a pass on any but the final plan task immediately opens the next task (the run does not stop at task one of a plan; the Analyser leads the fresh one).
 
 `criticRetryCount` is no longer a gate — it is input to the Critic's own prompt. On every retry the Critic is told how many times it has already rejected this task and instructed to pass, noting what remains and why, when the outstanding issues are cosmetic, out of scope, speculative, or have survived repeated genuine fix attempts; and to keep failing only while something genuinely blocks (won't start, core feature of this task missing or broken, import/config pointing at a file that doesn't exist, placeholder standing in for real work). The standing rule lives in `AGENT_SYSTEM_PROMPTS.Critic`; the per-attempt block is built in `codePipeline.ts` as `criticJudgementBlock` and appended to both the planning-phase and executing-phase prompt shapes.
 
