@@ -40,6 +40,7 @@ import {
 } from "./lib/agentCore";
 import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./lib/mcpClient";
 import { RESEARCH_TEAM, RESEARCH_TEAM_TARGET, resolveHandoffTarget, isRunnableAgent, nextTaskAfterPass } from "./lib/pipelineAgents";
+import { classifyTurnEnding } from "./lib/turnContract";
 // The Dispatcher is gone entirely: no roster, no model-seat picks, no
 // dispatch phase. Runs enter as the Analyser with the chain's default seats
 // (lib/modelMenu.ts was deleted with it).
@@ -799,7 +800,15 @@ export const runPipelineAction = internalAction({
 
       if (currentPhase === "Planner") {
         if (outOfBudget()) { await rescheduleForBudget("Planner"); return; }
-        const prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
+        // The Planner is a teammate too — its turn ends with the SAME routing
+        // contract every other seat follows. Its system prompt used to
+        // mandate "output ONLY valid JSON", so it ended silent on routing by
+        // DESIGN and the ending-contract coaching then re-ran it nine times
+        // in one round, re-rendering a slightly different plan each time and
+        // flapping plannerTasksJson with every re-call. Teach the ending
+        // right where the plan is asked for; parsePlannerOutput's backwards
+        // brace-walk ignores the trailing op line.
+        const prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}\n\n## When the plan is written\nThe JSON plan is your output, but the routing is still yours — nobody picks the next seat for you. AFTER the plan, end your reply with the hand-off op on its own line:\n{"op":"over-to","agent":"Analyser","why":"plan is ready — brief the team on the first task"}\nName the Analyser (the lead) for a normal build, or whoever the first task belongs to. End with no over-to and YOU simply run again with a coaching stamp — plan, then route, in the SAME reply.`;
         const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, "Planner", geminiKeys, dbCreds, callBudget());
         agentOutput = result.text;
         await bill("planner", result);
@@ -834,7 +843,7 @@ You are one team sharing this transcript, and there is no fixed order — whoeve
 Teammates you can name: Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic, KnowItAll — or "ResearchTeam" to summon the research team. The research team can only run whole (ResearchPlanner → Researcher → ReportMaker → FactCheck, always in that order); you can never name just one of its members. If you name nobody — or a name that is not a teammate — nothing routes for you: YOU are run again with a coaching reminder in your own transcript line, so end every reply deliberately. The run ends only when the Analyser names nobody (nothing left to delegate) or the Critic passes the LAST task in the plan. When the Critic passes an earlier task, the plan moves on by itself: the next task becomes current and the Analyser takes the lead for it. Whoever you name reads this same transcript.
 NEVER name yourself — a hand-off to yourself is not a route. If your next step is still yours, end with {"op":"continue"} and the pipeline re-runs you immediately.
 NEVER bounce the task you were just handed back as an over-to: the moment it was handed to you it became YOUR job to DO, not to route again.
-Keep the why to ONE plain sentence — it lands verbatim in the shared transcript as the receiver's briefing.\nHow your reply must END — exactly one of these, every single time:\n- work remains in YOUR step → {"op":"continue"}\n- your step is done → {"op":"over-to","agent":"<teammate>","why":"one sentence"}\nEnd silent and you simply run again with a coaching stamp — the pipeline NEVER picks the next teammate for you.\nThe square-bracket stamps you see in this transcript — [OVER TO: …], [CONTINUING: …], [CONTINUE], [CMD: …] — are the pipeline's receipts for ops that already ran. Typing a stamp is not the command. Always emit the JSON op.`;
+Keep the why to ONE plain sentence — it lands verbatim in the shared transcript as the receiver's briefing.\nHow your reply must END — exactly one of these, every single time:\n- work remains in YOUR step → {"op":"continue"}\n- your step is done → {"op":"over-to","agent":"<teammate>","why":"one sentence"}\nEnd silent and you simply run again with a coaching stamp — the pipeline NEVER picks the next teammate for you. Holding the floor through 10 turns in a row is the limit; then the Analyser takes a checkpoint and re-directs, so spend each turn on purpose.\nThe square-bracket stamps you see in this transcript — [OVER TO: …], [CONTINUING: …], [CONTINUE], [CMD: …] — are the pipeline's receipts for ops that already ran. Typing a stamp is not the command. Always emit the JSON op.`;
 
         let prompt = [`## Project Goal\n${task}`, currentDateLine, buildFailureBlock, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, buildGateBlock, handoffBlock, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
 
@@ -1468,57 +1477,43 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       // Parsed and applied at the top of this block — every path shares it now.
       //
       // The turn contract's routing half, checked while the reply is still in
-      // hand. A non-terminal seat outside the research relay owes every reply
-      // ONE ending — {"op":"continue"} or a real over-to. Two breach shapes:
-      // UNDIRECTED (no routing intent at all — the reply just ends) and
-      // BADTARGET (an over-to naming something that is not a teammate). Both
-      // used to collapse to "the Analyser takes over routing", which put the
-      // SYSTEM back in the chair the dispatcher was deleted from: routing is
-      // the agents' one and only mechanism, so silence deciding it is not a
-      // fallback, it is the lie that the agents are driving. Instead the
-      // speaker keeps the floor — the same bounded re-run as a
-      // {"op":"continue"} — with the breach stamped into its own message
-      // below. The stamp lives in an AGENT message on purpose: buildContext's
-      // per-agent digest ("what each teammate last said") drops System rows,
-      // so a coaching System line falls out of long transcripts while the
-      // offending message itself — with its correction attached — always
-      // survives. Terminal seats stay terminal: the Analyser or KnowItAll
-      // naming nobody is a designed exit, silence there is not a breach —
-      // but naming GARBAGE is a spoken intent they got wrong, so badTarget
-      // coaches even the lead.
+      // hand. lib/turnContract.ts owns the decision as ONE pure function the
+      // unit tests pin end to end; the precedence below merely executes it.
+      // The short version: every reply by a non-terminal seat outside the
+      // research relay owes ONE ending — {"op":"continue"} or a real over-to.
+      // A reply that ends silent on routing (undirected), or aims at a name
+      // that is not a teammate (badTarget), never falls over to the Analyser:
+      // the breach is stamped into the speaker's own message below and the
+      // speaker re-runs. The system never picks the next seat for an agent —
+      // that rescue was the dispatcher sneaking back. The stamp lives in an
+      // AGENT message on purpose: buildContext's per-agent digest drops
+      // System rows, so a coaching System row falls out of long transcripts.
+      // Terminal seats keep their designed exits (the Analyser or KnowItAll
+      // naming nobody ENDS the run), a Critic pass IS the decision, and the
+      // relay owns its members' order. Naming GARBAGE is the one breach that
+      // coaches even the lead — silence ends the run, a wrong name doesn't.
       const continueCount = branch.continueCount ?? 0;
       const resolvedHandoff = resolveHandoffTarget(parsed.handoffTarget, currentPhase);
-      const passIsTheDecision = currentPhase === "Critic" && parsed.criticResult === "pass";
-      const undirected =
-        !parsed.continueRequested &&
-        parsed.handoffTarget === undefined &&
-        parsed.selfHandoffWhy === undefined &&
-        !passIsTheDecision &&
-        researchTeamIndex === null &&
-        currentPhase !== "Analyser" &&
-        currentPhase !== "KnowItAll";
-      const badTarget =
-        parsed.handoffTarget !== undefined &&
-        resolvedHandoff === undefined && // resolveHandoffTarget returns string | undefined
-        !passIsTheDecision &&
-        researchTeamIndex === null;
-      // Under the cap the breach re-runs the speaker (the end-of-turn loop
-      // below); at the cap the no-hand-off block announces the escape to the
-      // lead with which refusal it was — the only "system routes" moment
-      // left, and it is loud, terminal for that seat, and earned ten turns.
-      const coachedBreach = (undirected || badTarget) && continueCount < MAX_CONTINUE_ROUNDS;
+      const ending = classifyTurnEnding({
+        currentPhase,
+        inRelay: researchTeamIndex !== null,
+        relayAdvances: researchTeamIndex !== null && researchTeamIndex + 1 < RESEARCH_TEAM.length,
+        continueCount,
+        maxContinueRounds: MAX_CONTINUE_ROUNDS,
+        continueRequested: parsed.continueRequested,
+        selfHandoffWhy: parsed.selfHandoffWhy,
+        handoffTarget: parsed.handoffTarget,
+        resolvedHandoff,
+        criticPass: parsed.criticResult === "pass",
+      });
 
       // Save message
       totalMessages++;
       await ctx.runMutation(internal.codeBranches.saveMessage, {
         branchId,
         agent: agentName,
-        content: coachedBreach
-          ? `${parsed.cleanContent}\n\n[CONTINUING: ${
-              badTarget
-                ? `"${(parsed.handoffTarget ?? "").slice(0, 40)}" is not a teammate — name a real one, or continue`
-                : "no hand-off named — keep working or name the next teammate"
-            }]`
+        content: ending.kind === "coach"
+          ? `${parsed.cleanContent}\n\n${ending.marker}`
           : parsed.cleanContent,
         round,
         messageIndex: totalMessages,
@@ -1551,21 +1546,14 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       // model stuck emitting continue can't re-bill forever; the counter resets
       // on every phase advance (updateBranchStatus clears it alongside
       // mcpRoundCount).
-      // A SELF over-to ("over to Coder" FROM the Coder) is the agent saying
-      // "the next step is still mine" — honour it as the implicit continue it
-      // is. Logging builds used to bounce this to the Analyser instead, so a
-      // Coder writing one file per turn ping-ponged Coder → Analyser → Coder
-      // and two rounds produced one file. NOT inside the research team: its
-      // four-hand relay owns the turn order, and a member lingering on its
-      // own seat must not stall the hand-off to the next member.
-      const selfWork = parsed.selfHandoffWhy !== undefined && researchTeamIndex === null;
-      // The two contract breaches (computed at the save point) join this same
-      // loop: a reply that ends silent on routing, or aiming at a name that
-      // is not a teammate, is coached in the speaker's own transcript line
-      // and the speaker runs again. The system never picks the next seat in
-      // their place — an "Analyser takes over" rescue was the dispatcher
-      // sneaking back under another name.
-      if ((parsed.continueRequested || selfWork || undirected || badTarget) && continueCount < MAX_CONTINUE_ROUNDS) {
+      // A SELF over-to ("over to Coder" FROM the Coder) shares this leg as the
+      // implicit continue it is — as do the two coached breach shapes, whose
+      // stamp is already in the saved message. The classifier owns which of
+      // the three this reply is, including the cap gate and every exclusion
+      // (relay members, passes, terminal seats); this block only executes the
+      // decision. Which agent runs next here is ALWAYS the speaker — never a
+      // substitute seat chosen by the system.
+      if (ending.kind === "continue" || ending.kind === "selfwork" || ending.kind === "coach") {
         if (!(await advance({
           status: "idle",
           currentAgent: agentName,
@@ -1713,25 +1701,20 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       }
 
       // ── No hand-off named ─────────────────────────────────────────────────
-      // A reply that reached this point has no route AND was not coachable
-      // further — the contract breaches (undirected / badTarget) already
-      // re-ran the speaker up to the continue cap in the end-of-turn loop
-      // above. What remains: the two TERMINAL seats, whose silence ends the
-      // run — the Analyser (every teammate had the floor and the lead saw
-      // nothing more to delegate) and KnowItAll (its job is answering — a
-      // finished answer IS the end of a question run); the research relay's
-      // last member, whose silence hands the findings to the lead by design;
-      // and the cap-exhausted refusals, announced below with their exact
-      // shape. There is no "next agent in the list" to fall through to and
-      // no silent re-route — movement is a decision, not a queue.
-      if (currentPhase === "Analyser" || currentPhase === "KnowItAll") {
+      // The classifier already sent every structurally-owned reply to its leg
+      // above (relay advance, Critic pass, valid hand-off). What reaches this
+      // point is either TERMINAL — the Analyser or KnowItAll chose silence,
+      // the designed run exit — or ESCALATE: a seat consumed its whole solo
+      // budget refusing the ending contract, and the classifier's line names
+      // exactly which refusal it was. The takeover is loud, terminal for that
+      // seat, and earned — never a silent re-route: movement is a decision,
+      // not a queue.
+      if (ending.kind === "terminal") {
         totalMessages++;
         await ctx.runMutation(internal.codeBranches.saveMessage, {
           branchId,
           agent: "System",
-          content: currentPhase === "Analyser"
-            ? "✔ Run complete — the Analyser had nothing more to delegate."
-            : "✔ Run complete — the question was answered.",
+          content: ending.completeMessage,
           round,
           messageIndex: totalMessages,
         });
@@ -1747,23 +1730,11 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       await ctx.runMutation(internal.codeBranches.saveMessage, {
         branchId,
         agent: "System",
-        // Every arrival here spent the whole continue budget refusing the
-        // ending contract — say WHICH refusal it was, because each reads
-        // differently: handing to itself forever, naming a non-teammate
-        // forever, never naming anything, or asking to continue past the
-        // cap. The lead stepping in after ten coached turns is the last
-        // "system routes" moment left — loud, terminal for that seat, and
-        // earned. FactCheck (the relay's last member) is the one seat whose
-        // silence is a designed exit to the lead: it keeps the classic line.
-        content: parsed.selfHandoffWhy !== undefined && researchTeamIndex === null
-          ? `[ROUTING] ${currentPhase} kept handing the next step to itself — after ${MAX_CONTINUE_ROUNDS} rounds of solo work the Analyser takes over routing.`
-          : badTarget
-            ? `[ROUTING] ${currentPhase} was still naming a non-teammate ("${(parsed.handoffTarget ?? "").slice(0, 40)}") after ${MAX_CONTINUE_ROUNDS} coached turns — the Analyser takes over routing.`
-            : undirected
-              ? `[ROUTING] ${currentPhase} still ended every reply without a hand-off after ${MAX_CONTINUE_ROUNDS} coached turns — the Analyser takes over routing.`
-              : parsed.continueRequested
-                ? `[ROUTING] ${currentPhase} asked to keep going past ${MAX_CONTINUE_ROUNDS} solo turns — the Analyser takes over routing.`
-                : `[ROUTING] ${currentPhase} named no next teammate — the Analyser takes over routing.`,
+        // "advance" cannot reach here (its legs above all return) — the
+        // fallback string exists only so the union narrows honestly.
+        content: ending.kind === "escalate"
+          ? ending.line
+          : `[ROUTING] ${currentPhase} named no next teammate — the Analyser takes over routing.`,
         round,
         messageIndex: totalMessages,
       });

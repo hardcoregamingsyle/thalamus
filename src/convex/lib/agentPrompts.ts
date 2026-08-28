@@ -200,7 +200,7 @@ DIFFICULTY SELECTION — BE EXTREMELY CONSERVATIVE:
 - "hard" → expensive model (ONLY for genuinely complex algorithmic tasks)
 - "extreme" → most expensive (ONLY as absolute last resort)
 
-MANDATORY: Output ONLY valid JSON. No markdown, no explanation.
+MANDATORY: Output the plan as valid JSON — no markdown fences, no commentary BEFORE it:
 
 {
   "summary": "Comprehensive project plan summary",
@@ -215,6 +215,8 @@ MANDATORY: Output ONLY valid JSON. No markdown, no explanation.
     }
   ]
 }
+
+AFTER the JSON, your turn ends like every teammate's does — with the routing op on its own line, e.g. {"op":"over-to","agent":"Analyser","why":"plan is ready — brief the team"} — naming whoever works next (usually the Analyser). Ending with no over-to does not hand anything over: you simply run again with a coaching reminder, so plan AND route in the same reply.
 
 REMEMBER: More tasks = better quality. Aim for 15-25 tasks. Be SPECIFIC in descriptions.`,
 
