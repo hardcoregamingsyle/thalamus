@@ -501,6 +501,19 @@ function normalizeFilePath(raw: string): string {
 const O = "(?:<<|‹‹|«|‹)";
 const C = "(?:>>|››|»|›)";
 
+// Closing-bracket leniency for the CANONICAL <<FILE>> grammar: a single >
+// closes the marker as well as the doubled form. Small models under token
+// pressure drop one bracket — <<FILE "src/engine/Engine.ts"> — and a strict
+// grammar rejected the whole block: the file never landed (one production
+// run rewrote the same engine file six times round after round), the raw
+// body rotted in the transcript as mangled markdown, and the block's body
+// escaped the op-scanner mask. The path is quoted or stops at the first >,
+// so >+ is unambiguous. The mask additionally tolerates a MISSING bracket
+// (${FILE_GT}?) so a broken block's body stays inert for the op scanner;
+// the parser proper requires the bracket — a bracket-less opener gets the
+// orphan feedback below instead.
+const FILE_GT = "(?:>+|››|›|»)";
+
 /** True when the stripped text is one pure-JSON agent document of the shape
  *  {"message"|"review": string, "ops": [op, ...]}. Document mode is the
  *  canonical output format — every agent reply is a single JSON object, so
@@ -631,7 +644,7 @@ function extractDocMessage(content: string): string {
 // JSON-op scanner sees. Masking is scan-only: cleanContent and the block
 // parsers keep working from the unmasked text.
 const FILE_BLOCK_FULL_RE = new RegExp(
-  `(?:<<<<<|${O})(?:FILE|WRITE)[=\\s]+(?:"[^"]+"|[^">]+?)(?:>>>>>|${C})[\\s\\S]*?(?:<<<<<|${O})END(?:[._ ]FILE)?(?:>>>>>|${C})`,
+  `(?:<<<<<|${O})(?:FILE|WRITE)[=\\s]+(?:"[^"]+"|[^">]+?)${FILE_GT}?[\\s\\S]*?(?:<<<<<|${O})END(?:[._ ]FILE)?${FILE_GT}`,
   "gi",
 );
 const LEGACY_FILE_BLOCK_FULL_RE = new RegExp(
@@ -1088,12 +1101,13 @@ export function parseAgentOutput(content: string, selfAgent?: string): ParsedOut
   //
   // Leniency, earned from production output: models write <<FILE=path>> as
   // often as <<FILE "path">>, spell the op <<WRITE …>>, and close with
-  // <<END>> / <<END FILE>> / <<END.FILE>> interchangeably. Same intent, same
-  // file. An UNCLOSED block matches nothing here — the pipeline's truncation
-  // continuation stitches it, the same way unclosed <<CREATEFILE>> blocks
-  // always worked.
+  // <<END>> / <<END FILE>> / <<END.FILE>> interchangeably, and drop one
+  // closing bracket off either marker (FILE_GT tolerates a single >). Same
+  // intent, same file. An UNCLOSED block matches nothing here — the
+  // pipeline's truncation continuation stitches it, the same way unclosed
+  // <<CREATEFILE>> blocks always worked.
   const fileBlockRe = new RegExp(
-    `(?:<<<<<|${O})(?:FILE|WRITE)[=\\s]+(?:"([^"]+)"|([^">]+?))(?:>>>>>|${C})([\\s\\S]*?)(?:<<<<<|${O})END(?:[._ ]FILE)?(?:>>>>>|${C})`,
+    `(?:<<<<<|${O})(?:FILE|WRITE)[=\\s]+(?:"([^"]+)"|([^">]+?))${FILE_GT}([\\s\\S]*?)(?:<<<<<|${O})END(?:[._ ]FILE)?${FILE_GT}`,
     "gi",
   );
   let fileBlockMatch: RegExpExecArray | null;
@@ -1233,6 +1247,30 @@ export function parseAgentOutput(content: string, selfAgent?: string): ParsedOut
   if (!instructions) {
     const ins = content.match(/(?:<<<<<|<<)INSTRUCTIONS(?:>>>>>|>>)([\s\S]*?)(?:<<<<<|<<)END\.INSTRUCTIONS(?:>>>>>|>>)/);
     if (ins) { try { const p = JSON.parse(ins[1].trim()); if (p.steps) instructions = p; } catch { /* skip */ } }
+  }
+
+  // ── Orphan FILE-opener feedback ──────────────────────────────────────────
+  // A line-start <<FILE/WRITE opener STILL sitting in cleanContent matched no
+  // grammar — the bracket-dropped case parses above, so what remains is the
+  // truly broken shape (<<FILE "a.ts" with NO closing bracket at all). Left
+  // as prose it does two kinds of damage: the file silently never lands (the
+  // agent re-reads its broken block and re-copies it — one production run
+  // rewrote the same engine file six rounds running), and the body renders
+  // as mangled markdown where a file should be. Cut the broken region —
+  // opener through its END marker — and stamp a marker that doubles as the
+  // coaching: the exact grammar to emit next turn. The (?!>) pin keeps
+  // bracketed openers out: those were consumed by the block parsers above
+  // (or legitimately quoted mid-review with their >> intact).
+  {
+    const orphanRe = new RegExp(
+      `(^|\\n)(?:<<<<<|${O})(?:FILE|WRITE)[=\\s]+(?:"[^"\\n]*"|[^">\\n]*)(?!>)[\\s\\S]*?(?:<<<<<|${O})END(?:[._ ]FILE)?${FILE_GT}`,
+      "gi",
+    );
+    cleanContent = cleanContent.replace(
+      orphanRe,
+      (_whole, nl: string) =>
+        `${nl}[MALFORMED OP — broken FILE block, nothing was written. Exact grammar: <<FILE "path">> on its own line, the raw file content below it, then <<END>> on its own line]`,
+    );
   }
 
   // Final sweep: neutralise orphaned <<...>> markers

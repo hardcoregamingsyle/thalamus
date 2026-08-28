@@ -229,7 +229,7 @@ WRITE/REPLACE FILES — the ONLY way, and it cannot break: a FILE block. Everyth
 ...the entire file, verbatim...
 </html>
 <<END>>
-The opening marker on its own line, the file content on the following lines, <<END>> on its own final line. One block per file.
+The opening marker on its own line (mind the TWO closing brackets: <<FILE "path">> — a single > breaks the whole block), the file content on the following lines, <<END>> on its own final line. One block per file.
 
 EVERY OTHER TOOL — a one-line JSON op (short values only; file content NEVER goes in JSON):
 {"op":"cmd","command":"npm install 2>&1"}

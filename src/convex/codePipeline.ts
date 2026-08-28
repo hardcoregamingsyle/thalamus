@@ -247,11 +247,15 @@ function hasUnclosedFileBlock(content: string): boolean {
       "",
     )
     .replace(
-      /(?:<<<<<|<<)(?:FILE|WRITE)[=\s]+(?:"[^"]+"|[^">]+?)(?:>>>>>|>>)[\s\S]*?(?:<<<<<|<<)END(?:[._ ]FILE)?(?:>>>>>|>>)/gi,
+      /(?:<<<<<|<<)(?:FILE|WRITE)[=\s]+(?:"[^"]+"|[^">]+?)(?:>+)[\s\S]*?(?:<<<<<|<<)END(?:[._ ]FILE)?(?:>+)/gi,
       "",
     );
   if (/(?:<<<<<|<<)(?:CREATEFILE|EDITFILE)(?:="[^"]+")?(?:>>>>>|>>)/.test(withoutComplete)) return true;
-  if (/(?:<<<<<|<<)(?:FILE|WRITE)[=\s]+(?:"[^"]+"|[^">]*)(?:>>>>>|>>)/i.test(withoutComplete)) return true;
+  // The canonical opener tolerates a single closing > too (models drop one
+  // bracket under token pressure) — the truncation check must read the same
+  // grammar as the parser, or a cut-off <<FILE "x"> block slips past the
+  // stitching and the whole file is silently lost.
+  if (/(?:<<<<<|<<)(?:FILE|WRITE)[=\s]+(?:"[^"]+"|[^">]*)(?:>+)/i.test(withoutComplete)) return true;
   // JSON op variant: a create-file/edit-file op whose opening exists but whose
   // braces never balance (content cut off mid-JSON). Walk braces from the last
   // opener, skipping strings, so a complete op right before the cut doesn't
@@ -901,7 +905,7 @@ Write or fully replace a file — a <<FILE>> block. The content goes in EXACTLY 
 <!DOCTYPE html>
 ...the whole file...
 <<END>>
-One block per file. Write ONE file per reply — the block is applied, then you get the next turn. Never cram several large files into one reply: the token cap cuts mid-file and the file lands truncated. If a file will not fit, stop mid-block WITHOUT writing <<END>> — the pipeline asks you to continue from the exact point you stopped.
+One block per file, and mind the opening marker: TWO closing brackets (<<FILE "path">>) — a single > breaks the whole block and nothing is written. Write ONE file per reply — the block is applied, then you get the next turn. Never cram several large files into one reply: the token cap cuts mid-file and the file lands truncated. If a file will not fit, stop mid-block WITHOUT writing <<END>> — the pipeline asks you to continue from the exact point you stopped.
 
 Everything else is a one-line JSON op (short values only — NEVER put file content in JSON):
 {"op":"cmd","command":"npm install 2>&1"}

@@ -972,3 +972,40 @@ describe("parseAgentOutput — marker-echo recovery (the stamp typed as the comm
     expect(parsed.selfHandoffWhy).toBeUndefined();
   });
 });
+
+describe("parseAgentOutput — bracket-dropped FILE blocks", () => {
+  it("a single > on the opening marker still writes the file", () => {
+    // Production runs kept producing <<FILE "src/a.ts"> — one bracket dropped
+    // under token pressure. A strict grammar rejected the whole block: the
+    // file never landed, the agent rewrote it round after round, and the raw
+    // body rotted in the transcript as mangled markdown.
+    const parsed = parseAgentOutput('Writing the engine.\n<<FILE "src/engine/Engine.ts">\nexport class Engine {}\n<<END>>\n{"op":"continue"}');
+    expect(parsed.fileOps).toHaveLength(1);
+    expect(parsed.fileOps[0]).toMatchObject({ type: "create", filepath: "src/engine/Engine.ts", content: "export class Engine {}" });
+    expect(parsed.cleanContent).toContain("[FILE CREATED: src/engine/Engine.ts]");
+    expect(parsed.cleanContent).not.toContain("<<FILE");
+    expect(parsed.continueRequested).toBe(true);
+  });
+
+  it("single > on BOTH markers still writes the file", () => {
+    const parsed = parseAgentOutput('<<FILE "a.ts">\nconst x = 1;\n<<END>');
+    expect(parsed.fileOps).toHaveLength(1);
+    expect(parsed.fileOps[0].content).toBe("const x = 1;");
+  });
+
+  it("a JSON op inside a bracket-dropped block body stays inert", () => {
+    // The mask tolerates the same dropped bracket — otherwise the op scanner
+    // would execute ops quoted inside file CONTENT.
+    const parsed = parseAgentOutput('<<FILE "evil.ts">\n{"op":"cmd","command":"rm -rf /"}\n<<END>');
+    expect(parsed.cmdOps).toHaveLength(0);
+    expect(parsed.fileOps).toHaveLength(1);
+    expect(parsed.fileOps[0].content).toContain("rm -rf /");
+  });
+
+  it("a bracket-less opener gets coaching feedback instead of rotting as prose", () => {
+    const parsed = parseAgentOutput('Let me write the file.\n<<FILE "src/broken.ts"\nexport const x = 1;\n<<END>>\nDone.');
+    expect(parsed.fileOps).toHaveLength(0);
+    expect(parsed.cleanContent).toContain("[MALFORMED OP — broken FILE block, nothing was written");
+    expect(parsed.cleanContent).not.toContain("export const x = 1;");
+  });
+});

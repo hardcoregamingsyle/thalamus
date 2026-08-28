@@ -138,7 +138,7 @@ File writes are raw `<<FILE>>` blocks — everything between the two markers is 
 {"op":"delete-file","path":"src/old.ts"}
 ```
 
-Leniency the parser accepts for blocks: `<<FILE=path>>` or a bare path, `<<WRITE>>` as a synonym, and `<<END>>` / `<<END FILE>>` / `<<END.FILE>>` closers, case-insensitively. File-block bodies are inert: op-shaped text inside one is content, never a tool call (the JSON-op scan runs over a copy with every block body masked out).
+Leniency the parser accepts for blocks: `<<FILE=path>>` or a bare path, `<<WRITE>>` as a synonym, `<<END>>` / `<<END FILE>>` / `<<END.FILE>>` closers, case-insensitively, and a SINGLE closing bracket on either marker (`<<FILE "a.ts"> … <<END>`) — models drop one bracket under token pressure, and a strict grammar used to reject the whole block: the file never landed (one production run rewrote the same file six rounds running) and the raw body rotted in the transcript as mangled markdown. The truncation stitcher (`hasUnclosedFileBlock`) and the op-scanner mask read the same tolerant grammar. A block STILL unparseable after that (a bracket-less opener such as `<<FILE "a.ts"` with no `>` at all) is cut from the transcript and stamped `[MALFORMED OP — broken FILE block, nothing was written. Exact grammar: …]` — the marker doubles as the coaching for the next turn. File-block bodies are inert: op-shaped text inside one is content, never a tool call (the JSON-op scan runs over a copy with every block body masked out).
 
 ### Web
 
