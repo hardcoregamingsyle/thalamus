@@ -20,6 +20,10 @@ export const getGithubConfig = query({
       .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
       .first();
     if (!config) return null;
+    // Workspace-only row (no user repo — see the schema note): the Git Sync
+    // tab must still show its create form, not a "repository" card built
+    // from empty strings.
+    if (!config.owner) return null;
 
     // Field-by-field on purpose: the row stores the OAuth token this repo was
     // created with, and returning the document wholesale handed it to the

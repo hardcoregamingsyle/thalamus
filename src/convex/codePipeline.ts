@@ -1958,7 +1958,11 @@ export const startPipeline = action({
       // (githubActionsRunner splits it by token provenance). Append the
       // reconnect pointer for the user-token case only — on a platform-hosted
       // repo that pointer is the loop the user can never break out of.
-      const isPlatformBlock = blockedReason.includes("platform's GitHub integration");
+      const isPlatformBlock =
+        blockedReason.includes("platform's GitHub integration") ||
+        blockedReason.includes("platform's GITHUB_TOKEN") ||
+        blockedReason.includes("platform build workspace") ||
+        blockedReason.includes("platform-side");
       const warning =
         `⚠️ Cloud command execution is disabled on this branch: ${blockedReason}\n\n`
         + `Agents will keep working on files, but any command they would have run will not execute. `

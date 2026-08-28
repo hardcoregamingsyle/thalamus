@@ -52,6 +52,8 @@ Routes gated via `useAuth`: `/portal/code*`, `/refer`. `Portal.tsx` checks auth 
 
 GitHub OAuth is used only for connecting user repositories to code projects. It is not used for login.
 
+**Connecting GitHub is strictly opt-in, and it only ever syncs code.** Cloud command execution never requires it: a branch whose user never connected GitHub runs on a standalone platform-owned build workspace (`thalamus-vm-*`) that `ensureVmMirror` provisions from the branch's own Convex file store (see `executors.md` and `CLAUDE.md` §4). The user is never told to connect GitHub to make commands run — any execution block they can see is a platform-side issue for the admin. Connecting exists so the user can keep a copy of the code in *their own* repository, and nothing else depends on it.
+
 1. User clicks "Connect GitHub" on a branch's **Git Sync** tab, which also carries Reconnect and Disconnect. There is no separate `/sync` page.
 2. Frontend calls `github.getAuthorizationUrl` with the current branch path as `returnPath`, so the user lands back where they started.
 3. Server generates state parameter (`hex(userId).randomHex`) — encodes the user identity so no server-side state table is needed.

@@ -435,7 +435,79 @@ export const ensureVmMirror = internalAction({
     const cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
       projectId: branch.projectId, branchId: args.branchId,
     }) as (GhConfig & { repoUrl?: string; vmOwner?: string; vmRepo?: string }) | null;
-    if (!cfg) return null;
+    if (!cfg) {
+      // No user repo — GitHub was never connected. Cloud execution must NOT
+      // depend on that: the workspace's whole content is seeded from the
+      // branch's Convex file store (pushFilesToRef below), so a user repo
+      // was only ever a naming anchor. Provision a standalone platform-owned
+      // build workspace and run commands there — the user never needs to
+      // know a GitHub account exists, let alone connect one.
+      const platformToken = process.env.GITHUB_TOKEN;
+      if (!platformToken) {
+        await ctx.runMutation(internal.codeBranches.setExecutorBlocked, {
+          branchId: args.branchId,
+          reason:
+            "Cloud commands cannot start on this branch: the platform's GITHUB_TOKEN is not configured on the "
+            + "server, so the build workspace cannot be created. "
+            + "This is a platform-side configuration issue for the site admin, not anything about your GitHub connection. "
+            + "The Thalamus desktop app still runs commands on your own machine.",
+        }).catch(() => {});
+        return null;
+      }
+      try {
+        const octokit = new Octokit({ auth: platformToken });
+        const { data: me } = await octokit.users.getAuthenticated();
+        const base = sanitizeRepoName(`thalamus-vm-${args.branchId.slice(-8)}`) || "thalamus-vm";
+        let vmRepo = base;
+        let htmlUrl = "";
+        for (let attempt = 0; attempt < 5; attempt++) {
+          try {
+            const { data } = await octokit.repos.createForAuthenticatedUser({
+              name: vmRepo,
+              description: "Thalamus build workspace (standalone)",
+              private: false, auto_init: false, has_issues: false, has_projects: false, has_wiki: false,
+            });
+            htmlUrl = data.html_url;
+            break;
+          } catch (err) {
+            const status = (err as { status?: number })?.status;
+            if (status === 422) { vmRepo = `${base}-${attempt + 2}`; continue; }
+            throw err;
+          }
+        }
+        if (!htmlUrl) throw new Error("Failed to create the build workspace repository");
+
+        // One branch, "main": the README creates the ref, then the branch's
+        // CURRENT code lands BEFORE the workspace is trusted (saveVmMirror
+        // is the trust marker — autoPush only syncs a workspace it can see).
+        await octokit.repos.createOrUpdateFileContents({
+          owner: me.login, repo: vmRepo, path: "README.md",
+          message: "chore: init build workspace",
+          content: Buffer.from("# Thalamus build workspace\n\nStandalone workspace — the branch's commands run here.\n").toString("base64"),
+          branch: "main",
+        });
+        const files = (await ctx.runQuery(internal.codeBranches.getFilesInternal, {
+          branchId: args.branchId,
+        })).filter((f) => !isSystemPath(f.filepath));
+        await pushFilesToRef(octokit, me.login, vmRepo, "main", files, "chore: seed build workspace");
+
+        await ctx.runMutation(internal.githubSyncHelpers.saveVmMirror, {
+          branchId: args.branchId, vmOwner: me.login, vmRepo, vmRepoUrl: htmlUrl,
+          projectId: branch.projectId, branch: "main",
+        });
+        return { owner: me.login, repo: vmRepo, distinctFromUserRepo: true };
+      } catch (err) {
+        console.error("ensureVmMirror standalone create failed:", err);
+        await ctx.runMutation(internal.codeBranches.setExecutorBlocked, {
+          branchId: args.branchId,
+          reason:
+            "Cloud commands cannot start on this branch: creating the platform build workspace failed ("
+            + (err instanceof Error ? err.message.slice(0, 200) : "unknown error")
+            + "). This is a platform-side issue — the desktop app still runs commands on your own machine.",
+        }).catch(() => {});
+        return null;
+      }
+    }
     if (cfg.vmOwner && cfg.vmRepo) {
       const distinct = cfg.vmRepo !== cfg.repo || cfg.vmOwner !== cfg.owner;
       return { owner: cfg.vmOwner, repo: cfg.vmRepo, distinctFromUserRepo: distinct };
@@ -599,19 +671,22 @@ export const bootVmForBranch = internalAction({
       return "alive";
     }
 
-    const cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+    let cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
       projectId: branch.projectId, branchId: args.branchId,
     }) as GhConfig | null;
     if (!cfg) {
-      // No repo yet is a "commands can't run" state as far as the pipeline
-      // prompt is concerned — flag it so the agent stops emitting cmd ops.
-      await ctx.runMutation(internal.codeBranches.setExecutorBlocked, {
-        branchId: args.branchId,
-        reason:
-          "This branch has no GitHub repo yet, so cloud commands have nowhere to run. "
-          + "Connect GitHub on the project (or use the desktop app to run on your own machine).",
-      });
-      return "no-repo"; // repo not set up yet — the pipeline must fail commands with the explainer
+      // No user repo — GitHub never connected. That must NOT block
+      // execution: the workspace content comes from the branch's own file
+      // store, so ensureVmMirror provisions a standalone platform-owned
+      // workspace and returns a row to run against. It only fails (stamping
+      // the precise reason itself) when the PLATFORM side is misconfigured —
+      // never because the user didn't connect GitHub, an account they don't
+      // even know exists.
+      await ctx.runAction(internal.githubActionsRunner.ensureVmMirror, { branchId: args.branchId });
+      cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+        projectId: branch.projectId, branchId: args.branchId,
+      }) as GhConfig | null;
+      if (!cfg) return "dispatch-error";
     }
 
     const target = await resolveVmTarget(ctx, args.branchId);
@@ -724,9 +799,10 @@ export const executeBranchCommandsViaActions = internalAction({
           commandId: cmd._id,
           status: "failed",
           exitCode: 1,
-          output: status === "no-repo"
-            ? "This branch has no GitHub repo, so there is nowhere to run commands. Connect GitHub on the project, or run the build from the desktop app, which uses your own machine."
-            : status === "no-token"
+          // "no-repo" is unreachable since the executor self-provisions a
+          // standalone workspace (kept in the union for old callers); the
+          // operational dead states are the platform-side ones below.
+          output: status === "no-token"
               ? "No GitHub token available to dispatch the VM worker."
               : status === "workflow-scope-missing"
                 ? (stampedReason ?? PLATFORM_WORKFLOW_SCOPE_MSG)
@@ -754,7 +830,7 @@ export const startSandbox = internalAction({
     port: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+    let cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
       projectId: args.projectId, branchId: args.branchId,
     }) as GhConfig | null;
     // ConvexError, not Error, for every throw on this path: production redacts a
@@ -762,11 +838,19 @@ export const startSandbox = internalAction({
     // anyone debugging from a bug report) got nothing at all — not "no repo yet",
     // not "already running", not "rate-limited". Same reasoning as admin.ts.
     if (!cfg) {
-      throw new ConvexError(
-        "This branch has no GitHub repo yet, so there is nothing to run a sandbox on. "
-        + "If the branch is still being prepared, wait for it to finish; otherwise connect "
-        + "GitHub from the Git Sync tab and retry.",
-      );
+      // No user repo (GitHub never connected) — the sandbox runs in the same
+      // standalone platform workspace the VM executor uses; provision it here
+      // rather than demanding the user connect anything.
+      await ctx.runAction(internal.githubActionsRunner.ensureVmMirror, { branchId: args.branchId });
+      cfg = await ctx.runQuery(internal.githubSyncHelpers.getGithubConfigInternal, {
+        projectId: args.projectId, branchId: args.branchId,
+      }) as GhConfig | null;
+      if (!cfg) {
+        throw new ConvexError(
+          "The build workspace could not be created yet (a platform-side issue is stamped on this branch). "
+          + "Wait a moment and retry — the desktop app runs sandboxes on your own machine in the meantime.",
+        );
+      }
     }
     const target = await resolveVmTarget(ctx, args.branchId);
     if (!target) {

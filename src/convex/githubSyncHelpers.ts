@@ -24,6 +24,13 @@ export const saveGithubConfig = internalMutation({
         repo: args.repo,
         branch: args.branch,
         lastSync: args.lastSync,
+        // A workspace-only row (owner was "") becoming a real user repo also
+        // changes the branch the worker checks out, so the standalone
+        // workspace's coordinates can no longer be trusted — clear them and
+        // let ensureVmMirror re-provision a proper <repo>-vm on next boot.
+        ...(existing.owner === ""
+          ? { vmOwner: undefined, vmRepo: undefined, vmRepoUrl: undefined }
+          : {}),
       });
     } else {
       await ctx.db.insert("githubConfigs", {
@@ -66,6 +73,11 @@ export const saveGithubConfigWithToken = internalMutation({
         lastSync: args.lastSync,
         githubToken: args.githubToken,
         ...(args.isPrivate === undefined ? {} : { isPrivate: args.isPrivate }),
+        // Same morph case as saveGithubConfig: a workspace-only row gaining a
+        // real user repo invalidates the standalone workspace's coordinates.
+        ...(existing.owner === ""
+          ? { vmOwner: undefined, vmRepo: undefined, vmRepoUrl: undefined }
+          : {}),
       });
     } else {
       await ctx.db.insert("githubConfigs", {
@@ -92,6 +104,12 @@ export const saveVmMirror = internalMutation({
     vmOwner: v.string(),
     vmRepo: v.string(),
     vmRepoUrl: v.string(),
+    // Only needed when the row has to be CREATED — a branch that never had a
+    // user repo (GitHub not connected) gets a workspace-only row whose whole
+    // purpose is carrying these mirror coordinates (see schema note on
+    // githubConfigs). Existing rows just get patched with the vm* fields.
+    projectId: v.optional(v.string()),
+    branch: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -104,7 +122,22 @@ export const saveVmMirror = internalMutation({
         vmRepo: args.vmRepo,
         vmRepoUrl: args.vmRepoUrl,
       });
+      return;
     }
+    if (!args.projectId || !args.branch) return; // nothing to anchor a new row on
+    await ctx.db.insert("githubConfigs", {
+      projectId: args.projectId,
+      branchId: args.branchId,
+      repoUrl: "",
+      owner: "",
+      repo: "",
+      branch: args.branch,
+      lastSync: Date.now(),
+      isPrivate: false,
+      vmOwner: args.vmOwner,
+      vmRepo: args.vmRepo,
+      vmRepoUrl: args.vmRepoUrl,
+    });
   },
 });
 

@@ -289,7 +289,7 @@ export const pushToGithub = action({
         branchId: args.branchId,
       });
 
-      if (!config) throw new Error("No GitHub repository connected");
+      if (!config || !config.owner) throw new Error("No GitHub repository connected");
 
       // Code-only: the conversation transcript and workflow/system files
       // never leave Convex for the user's repo (see projectFilesOnly).
@@ -380,6 +380,22 @@ export const autoPushToGithub = internalAction({
         branchId: args.branchId,
       }));
 
+      if (!config.owner) {
+        // Workspace-only row: the user never connected GitHub, so there is
+        // no user-repo leg — but the VM worker/sandbox CLONES the platform
+        // workspace, and a push that skips it leaves execution running stale
+        // code (the "agents ignore my edits" bug). Mirror-only push.
+        const mirror = await pushMirrorCopy(new Octokit({ auth: process.env.GITHUB_TOKEN }), config, files, args.commitMessage || "Update from Thalamus AI");
+        if (!mirror.ok) {
+          return { success: false, error: `build workspace sync failed: ${mirror.error ?? "unknown error"}` };
+        }
+        await ctx.runMutation(internal.githubSyncHelpers.updateLastSync, {
+          projectId: branch.projectId,
+          branchId: args.branchId,
+        });
+        return { success: true };
+      }
+
       // Same identity the VM worker uses: the connected account's live token
       // when it owns the repo, else the snapshot, else the platform fallback.
       // A push written with the snapshotted token while command execution
@@ -468,7 +484,7 @@ async function doPull(
       branchId,
     });
 
-    if (!config) throw new Error("No GitHub repository connected");
+    if (!config || !config.owner) throw new Error("No GitHub repository connected");
 
     const octokit = new Octokit({
       auth: authToken,

@@ -341,6 +341,12 @@ const schema = defineSchema(
     githubConfigs: defineTable({
       projectId: v.string(),
       branchId: v.string(),
+      // Empty owner/repo/repoUrl marks a WORKSPACE-ONLY row: the user never
+      // connected GitHub, so there is no user repo — the row exists solely to
+      // carry the platform build-workspace coordinates (vm* fields below).
+      // Cloud command execution never requires a user repo; every
+      // user-facing surface (Git Sync tab, push/pull) must treat an empty
+      // owner as "no repository connected".
       repoUrl: v.string(),
       owner: v.string(),
       repo: v.string(),
