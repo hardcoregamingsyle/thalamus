@@ -94,10 +94,10 @@ export interface ParsedOutput {
   // The team hand-off op: {"op":"over-to","agent":"Tester","why":"needs unit
   // tests for the parser"} — the agent names WHO should act next. This is
   // the mechanism that makes the run a team: there is no roster and no order,
-  // the agents pass the work between themselves in real time, and the
-  // Analyser takes routing back whenever an agent names nobody. The pipeline
-  // validates the name (an unknown target falls back to the Analyser; a SELF
-  // target is not a route at all — see selfHandoffWhy).
+  // the agents pass the work between themselves in real time. The pipeline
+  // validates the name (an unknown target is coached back to the speaker for
+  // a real one, never silently re-routed; a SELF target is not a route at
+  // all — see selfHandoffWhy).
   handoffTarget?: string;
   handoffWhy?: string;
   // A SELF hand-off — {"op":"over-to","agent":"<the speaker's own name>"} —

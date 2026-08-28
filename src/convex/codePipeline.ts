@@ -824,15 +824,17 @@ export const runPipelineAction = internalAction({
         // the same over-to hand-off every agent uses.
         // The hand-off op, taught to every agent right beside the other ops —
         // it is now the ONLY routing mechanism. Every agent ends its turn by
-        // naming the next teammate; when nobody is named the Analyser takes
-        // routing back, and when the ANALYSER names nobody the run ends.
+        // naming the next teammate; naming nobody (or a non-teammate) does
+        // NOT hand anything over — the speaker is coached in its own
+        // transcript line and re-run. When the ANALYSER names nobody the run
+        // ends.
         const handoffBlock = `## Handing over to a teammate
 You are one team sharing this transcript, and there is no fixed order — whoever your work needs next, you name. When YOUR part is done, end your reply with:
 {"op":"over-to","agent":"AgentName","why":"what they should do"}
-Teammates you can name: Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic, KnowItAll — or "ResearchTeam" to summon the research team. The research team can only run whole (ResearchPlanner → Researcher → ReportMaker → FactCheck, always in that order); you can never name just one of its members. If you name nobody, the Analyser takes over routing — the run ends only when the Analyser names nobody (nothing left to delegate) or the Critic passes the LAST task in the plan. When the Critic passes an earlier task, the plan moves on by itself: the next task becomes current and the Analyser takes the lead for it. Whoever you name reads this same transcript.
+Teammates you can name: Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic, KnowItAll — or "ResearchTeam" to summon the research team. The research team can only run whole (ResearchPlanner → Researcher → ReportMaker → FactCheck, always in that order); you can never name just one of its members. If you name nobody — or a name that is not a teammate — nothing routes for you: YOU are run again with a coaching reminder in your own transcript line, so end every reply deliberately. The run ends only when the Analyser names nobody (nothing left to delegate) or the Critic passes the LAST task in the plan. When the Critic passes an earlier task, the plan moves on by itself: the next task becomes current and the Analyser takes the lead for it. Whoever you name reads this same transcript.
 NEVER name yourself — a hand-off to yourself is not a route. If your next step is still yours, end with {"op":"continue"} and the pipeline re-runs you immediately.
 NEVER bounce the task you were just handed back as an over-to: the moment it was handed to you it became YOUR job to DO, not to route again.
-Keep the why to ONE plain sentence — it lands verbatim in the shared transcript as the receiver's briefing.\nHow your reply must END — exactly one of these, every single time:\n- work remains in YOUR step → {"op":"continue"} (the pipeline NEVER re-runs you on its own — no continue, no next turn of yours)\n- your step is done → {"op":"over-to","agent":"<teammate>","why":"one sentence"}\nThe square-bracket stamps you see in this transcript — [OVER TO: …], [CONTINUING: …], [CONTINUE], [CMD: …] — are the pipeline's receipts for ops that already ran. Typing a stamp is not the command. Always emit the JSON op.`;
+Keep the why to ONE plain sentence — it lands verbatim in the shared transcript as the receiver's briefing.\nHow your reply must END — exactly one of these, every single time:\n- work remains in YOUR step → {"op":"continue"}\n- your step is done → {"op":"over-to","agent":"<teammate>","why":"one sentence"}\nEnd silent and you simply run again with a coaching stamp — the pipeline NEVER picks the next teammate for you.\nThe square-bracket stamps you see in this transcript — [OVER TO: …], [CONTINUING: …], [CONTINUE], [CMD: …] — are the pipeline's receipts for ops that already ran. Typing a stamp is not the command. Always emit the JSON op.`;
 
         let prompt = [`## Project Goal\n${task}`, currentDateLine, buildFailureBlock, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, buildGateBlock, handoffBlock, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
 
@@ -1464,12 +1466,60 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       }
 
       // Parsed and applied at the top of this block — every path shares it now.
+      //
+      // The turn contract's routing half, checked while the reply is still in
+      // hand. A non-terminal seat outside the research relay owes every reply
+      // ONE ending — {"op":"continue"} or a real over-to. Two breach shapes:
+      // UNDIRECTED (no routing intent at all — the reply just ends) and
+      // BADTARGET (an over-to naming something that is not a teammate). Both
+      // used to collapse to "the Analyser takes over routing", which put the
+      // SYSTEM back in the chair the dispatcher was deleted from: routing is
+      // the agents' one and only mechanism, so silence deciding it is not a
+      // fallback, it is the lie that the agents are driving. Instead the
+      // speaker keeps the floor — the same bounded re-run as a
+      // {"op":"continue"} — with the breach stamped into its own message
+      // below. The stamp lives in an AGENT message on purpose: buildContext's
+      // per-agent digest ("what each teammate last said") drops System rows,
+      // so a coaching System line falls out of long transcripts while the
+      // offending message itself — with its correction attached — always
+      // survives. Terminal seats stay terminal: the Analyser or KnowItAll
+      // naming nobody is a designed exit, silence there is not a breach —
+      // but naming GARBAGE is a spoken intent they got wrong, so badTarget
+      // coaches even the lead.
+      const continueCount = branch.continueCount ?? 0;
+      const resolvedHandoff = resolveHandoffTarget(parsed.handoffTarget, currentPhase);
+      const passIsTheDecision = currentPhase === "Critic" && parsed.criticResult === "pass";
+      const undirected =
+        !parsed.continueRequested &&
+        parsed.handoffTarget === undefined &&
+        parsed.selfHandoffWhy === undefined &&
+        !passIsTheDecision &&
+        researchTeamIndex === null &&
+        currentPhase !== "Analyser" &&
+        currentPhase !== "KnowItAll";
+      const badTarget =
+        parsed.handoffTarget !== undefined &&
+        resolvedHandoff === undefined && // resolveHandoffTarget returns string | undefined
+        !passIsTheDecision &&
+        researchTeamIndex === null;
+      // Under the cap the breach re-runs the speaker (the end-of-turn loop
+      // below); at the cap the no-hand-off block announces the escape to the
+      // lead with which refusal it was — the only "system routes" moment
+      // left, and it is loud, terminal for that seat, and earned ten turns.
+      const coachedBreach = (undirected || badTarget) && continueCount < MAX_CONTINUE_ROUNDS;
+
       // Save message
       totalMessages++;
       await ctx.runMutation(internal.codeBranches.saveMessage, {
         branchId,
         agent: agentName,
-        content: parsed.cleanContent,
+        content: coachedBreach
+          ? `${parsed.cleanContent}\n\n[CONTINUING: ${
+              badTarget
+                ? `"${(parsed.handoffTarget ?? "").slice(0, 40)}" is not a teammate — name a real one, or continue`
+                : "no hand-off named — keep working or name the next teammate"
+            }]`
+          : parsed.cleanContent,
         round,
         messageIndex: totalMessages,
       });
@@ -1493,7 +1543,7 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       // names nobody falls through to the same routing as everyone else.
 
 
-      // ── Explicit continue loop ──────────────────────────────────────────────
+      // ── End-of-turn loop ────────────────────────────────────────────────────
       // {"op":"continue"} asks for another turn of the SAME agent. The file ops
       // from this round are already applied above and the message saved, so the
       // re-run sees the file in its inventory and keeps writing — one large file
@@ -1501,7 +1551,6 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       // model stuck emitting continue can't re-bill forever; the counter resets
       // on every phase advance (updateBranchStatus clears it alongside
       // mcpRoundCount).
-      const continueCount = branch.continueCount ?? 0;
       // A SELF over-to ("over to Coder" FROM the Coder) is the agent saying
       // "the next step is still mine" — honour it as the implicit continue it
       // is. Logging builds used to bounce this to the Analyser instead, so a
@@ -1510,7 +1559,13 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       // four-hand relay owns the turn order, and a member lingering on its
       // own seat must not stall the hand-off to the next member.
       const selfWork = parsed.selfHandoffWhy !== undefined && researchTeamIndex === null;
-      if ((parsed.continueRequested || selfWork) && continueCount < MAX_CONTINUE_ROUNDS) {
+      // The two contract breaches (computed at the save point) join this same
+      // loop: a reply that ends silent on routing, or aiming at a name that
+      // is not a teammate, is coached in the speaker's own transcript line
+      // and the speaker runs again. The system never picks the next seat in
+      // their place — an "Analyser takes over" rescue was the dispatcher
+      // sneaking back under another name.
+      if ((parsed.continueRequested || selfWork || undirected || badTarget) && continueCount < MAX_CONTINUE_ROUNDS) {
         if (!(await advance({
           status: "idle",
           currentAgent: agentName,
@@ -1600,7 +1655,7 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       // with a visible ⇄ line: the hand-off is the run's whole steering
       // mechanism, and a mechanism the user can't see is one they can't
       // trust.
-      const handoffTarget = resolveHandoffTarget(parsed.handoffTarget, currentPhase);
+      const handoffTarget = resolvedHandoff; // resolved once at the save point
       // The why is the receiver's whole briefing — show it in full (the
       // parser already caps the stored value at 500 chars). Cutting it at
       // 140 left routes announced as "…README.md, then" — half an
@@ -1658,13 +1713,17 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       }
 
       // ── No hand-off named ─────────────────────────────────────────────────
-      // Routing falls back to the Analyser — the team's lead decides where
-      // the work goes next. Two agents naming nobody END the run instead:
-      // the Analyser (every teammate had the floor and the lead saw nothing
-      // more to delegate) and KnowItAll (its job is answering — a finished
-      // answer IS the end of a question run). This is the roster advance's
-      // replacement: there is no "next agent in the list" to fall through to
-      // anymore — movement is a decision, not a queue.
+      // A reply that reached this point has no route AND was not coachable
+      // further — the contract breaches (undirected / badTarget) already
+      // re-ran the speaker up to the continue cap in the end-of-turn loop
+      // above. What remains: the two TERMINAL seats, whose silence ends the
+      // run — the Analyser (every teammate had the floor and the lead saw
+      // nothing more to delegate) and KnowItAll (its job is answering — a
+      // finished answer IS the end of a question run); the research relay's
+      // last member, whose silence hands the findings to the lead by design;
+      // and the cap-exhausted refusals, announced below with their exact
+      // shape. There is no "next agent in the list" to fall through to and
+      // no silent re-route — movement is a decision, not a queue.
       if (currentPhase === "Analyser" || currentPhase === "KnowItAll") {
         totalMessages++;
         await ctx.runMutation(internal.codeBranches.saveMessage, {
@@ -1688,14 +1747,23 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       await ctx.runMutation(internal.codeBranches.saveMessage, {
         branchId,
         agent: "System",
-        // The agent got here despite asking to keep working (self over-to) —
-        // that only happens when the continue cap refused it, so say THAT,
-        // not "named no next teammate": it named one, itself, ten rounds
-        // running. In-team members land here off the automatic relay with
-        // the generic line.
+        // Every arrival here spent the whole continue budget refusing the
+        // ending contract — say WHICH refusal it was, because each reads
+        // differently: handing to itself forever, naming a non-teammate
+        // forever, never naming anything, or asking to continue past the
+        // cap. The lead stepping in after ten coached turns is the last
+        // "system routes" moment left — loud, terminal for that seat, and
+        // earned. FactCheck (the relay's last member) is the one seat whose
+        // silence is a designed exit to the lead: it keeps the classic line.
         content: parsed.selfHandoffWhy !== undefined && researchTeamIndex === null
           ? `[ROUTING] ${currentPhase} kept handing the next step to itself — after ${MAX_CONTINUE_ROUNDS} rounds of solo work the Analyser takes over routing.`
-          : `[ROUTING] ${currentPhase} named no next teammate — the Analyser takes over routing.`,
+          : badTarget
+            ? `[ROUTING] ${currentPhase} was still naming a non-teammate ("${(parsed.handoffTarget ?? "").slice(0, 40)}") after ${MAX_CONTINUE_ROUNDS} coached turns — the Analyser takes over routing.`
+            : undirected
+              ? `[ROUTING] ${currentPhase} still ended every reply without a hand-off after ${MAX_CONTINUE_ROUNDS} coached turns — the Analyser takes over routing.`
+              : parsed.continueRequested
+                ? `[ROUTING] ${currentPhase} asked to keep going past ${MAX_CONTINUE_ROUNDS} solo turns — the Analyser takes over routing.`
+                : `[ROUTING] ${currentPhase} named no next teammate — the Analyser takes over routing.`,
         round,
         messageIndex: totalMessages,
       });
