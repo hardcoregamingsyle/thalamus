@@ -930,3 +930,45 @@ describe("parseAgentOutput — self hand-off (over-to naming the speaker)", () =
     expect(parsed.cleanContent).toContain("[OVER TO: Coder — more work]");
   });
 });
+
+describe("parseAgentOutput — marker-echo recovery (the stamp typed as the command)", () => {
+  it("an [OVER TO] stamp typed at the very end of the reply is honoured as the op", () => {
+    // Agents read the transcript's stamps and re-TYPE them instead of the
+    // JSON op. A stamp at the end of the reply is unmistakably the intent.
+    const parsed = parseAgentOutput("All three files are written and verified.\n\n[OVER TO: Tester — run the build and verify the game loop]");
+    expect(parsed.handoffTarget).toBe("Tester");
+    expect(parsed.handoffWhy).toBe("run the build and verify the game loop");
+  });
+
+  it("a stamp QUOTED mid-prose never fires", () => {
+    const parsed = parseAgentOutput('You could end with [OVER TO: Tester — verify] here, but I am not done — still writing the renderer.');
+    expect(parsed.handoffTarget).toBeUndefined();
+  });
+
+  it("an echoed self stamp keeps the agent working", () => {
+    const parsed = parseAgentOutput("[OVER TO: Coder — write the physics module next]", "Coder");
+    expect(parsed.handoffTarget).toBeUndefined();
+    expect(parsed.selfHandoffWhy).toBe("write the physics module next");
+  });
+
+  it("an echoed [CONTINUE] stamp requests another turn", () => {
+    const parsed = parseAgentOutput("Wrote package.json. More files remain.\n\n[CONTINUE]");
+    expect(parsed.continueRequested).toBe(true);
+  });
+
+  it("an echoed [CONTINUING: …] stamp is keep-working intent", () => {
+    const parsed = parseAgentOutput("Done with the config.\n\n[CONTINUING: the game loop file next]");
+    expect(parsed.selfHandoffWhy).toBe("the game loop file next");
+  });
+
+  it("a real op always wins over a trailing echo", () => {
+    const parsed = parseAgentOutput('{"op":"over-to","agent":"Tester","why":"verify"}\n\n[OVER TO: Critic — review instead]');
+    expect(parsed.handoffTarget).toBe("Tester");
+  });
+
+  it("our own [OVER TO: invalid] stamp recovers to nothing", () => {
+    const parsed = parseAgentOutput('{"op":"over-to","why":"dunno"}');
+    expect(parsed.handoffTarget).toBeUndefined();
+    expect(parsed.selfHandoffWhy).toBeUndefined();
+  });
+});

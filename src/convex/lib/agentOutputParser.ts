@@ -1036,6 +1036,49 @@ export function parseAgentOutput(content: string, selfAgent?: string): ParsedOut
     }
   }
 
+  // ── Marker-echo recovery: the stamp typed as the command ─────────────────
+  // Agents read this same transcript and sometimes re-TYPE the pipeline's
+  // square-bracket stamp ([OVER TO: …], [CONTINUE]) instead of the JSON op —
+  // the stamp/op distinction is genuinely confusing, and a run whose agents
+  // keep typing stamps reads as "the Coder refuses to name a teammate". A
+  // stamp sitting at the very END of the reply is unmistakably the intent
+  // (nothing but closers/whitespace after it), so honour it as the op it
+  // echoes. Mid-reply stamps are quoted examples and never fire, and a real
+  // op — which already set the same field — always wins.
+  if (handoffTarget === undefined && selfHandoffWhy === undefined) {
+    const echoRe = /\[(OVER TO|CONTINUING|CONTINUE)(?::\s?([^\]]+))?\]/g;
+    let lastEcho: RegExpExecArray | null = null;
+    let echoMatch: RegExpExecArray | null;
+    while ((echoMatch = echoRe.exec(cleanContent)) !== null) {
+      const after = cleanContent.slice(echoMatch.index + echoMatch[0].length);
+      if (/^[\s.*_`"'”)\]]*$/.test(after)) lastEcho = echoMatch;
+    }
+    if (lastEcho) {
+      const echoKind = lastEcho[1];
+      const echoBody = (lastEcho[2] ?? "").trim();
+      if (echoKind === "CONTINUE") {
+        continueRequested = true;
+      } else if (echoKind === "CONTINUING") {
+        selfHandoffWhy = echoBody;
+      } else {
+        // "[OVER TO: Coder — fix the form]" — target first, why after the
+        // em dash. Skip our own "[OVER TO: invalid — …]" stamp: recovering
+        // that would invent a hand-off out of an op that named nobody.
+        const [targetRaw, ...whyParts] = echoBody.split(/\s+—\s+/);
+        const echoTarget = targetRaw.trim();
+        if (echoTarget && !/^invalid\b/i.test(echoTarget)) {
+          const echoWhy = whyParts.join(" — ").trim();
+          if (selfAgent && targetNamesSelf(echoTarget, selfAgent)) {
+            selfHandoffWhy = echoWhy;
+          } else {
+            handoffTarget = echoTarget.slice(0, 60);
+            if (echoWhy) handoffWhy = echoWhy.slice(0, 500);
+          }
+        }
+      }
+    }
+  }
+
   // ── Canonical: <<FILE "path">> … <<END>> raw blocks ───────────────────────
   // THE taught format for writing files (see the header comment). The body is
   // whatever sits between the markers, VERBATIM — no escaping exists in this

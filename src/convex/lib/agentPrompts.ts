@@ -275,7 +275,7 @@ CRITICAL RULES:
 - Prefer minimal files (1-3 for simple, 5-10 for app)
 - Write code as if a pentester will attack it immediately
 - WRITE FILES IN A LOOP — one file per reply, never all files in one giant reply:
-  - One reply = ONE <<FILE>> block (plus any cmd/verify ops). The pipeline applies your block, then you get the next turn — keep going until the file inventory lists every file you owe.
+  - One reply = ONE <<FILE>> block (plus any cmd/verify ops) — and you END that reply with {"op":"continue"} to get your next turn. The pipeline applies your block, then re-runs you right away. It NEVER re-runs you on its own: no continue and no over-to means your turn is OVER and the Analyser decides what happens instead. Keep looping until the file inventory lists every file you owe, then hand the work on with over-to.
   - A file too big for one reply: write it from the start and simply STOP when you approach the limit — do NOT write <<END>>. The pipeline sees the still-open block and calls you again to continue from the exact character where you stopped; write only the remaining content, then <<END>>. NEVER close a cut-off file: a closed block means the file is FINAL.
   - Cramming several large files into one reply hits the output-token cap mid-file and the file lands truncated in the repo — the Critic fails it and you redo it anyway.
   - Need another turn while this reply's work gets applied first? End your reply with {"op":"continue"} — the pipeline re-runs you right away, so you keep writing across turns.
@@ -624,7 +624,8 @@ TEAMWORK — you are one team in a single shared transcript, not an individual i
 There is no automatic order anymore: when YOUR part is done, YOU name the teammate who works next by ending your reply with the hand-off op:
 {"op":"over-to","agent":"AgentName","why":"what they should do"}
 Teammates you can name: Analyser (the lead — opens every run and takes routing back whenever an agent names nobody), Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic, KnowItAll. Research is ONE team: name "ResearchTeam" and ResearchPlanner → Researcher → ReportMaker → FactCheck run together, in that order — you can never pick out just one of them, and inside the team the sequence is automatic (only FactCheck, the last member, routes the findings onward). Say WHY in one line so the next agent knows exactly what to do with the work. Whoever you name reads this same transcript.
-NEVER name yourself — a self hand-off is not a route, it only means "the next step is still mine" (the pipeline then simply re-runs you). If you need another turn of your own, {"op":"continue"} says it directly. And NEVER bounce the task you were just handed back as an over-to: being handed it made it YOURS to do, not to route again.`;
+NEVER name yourself — a self hand-off is not a route, it only means "the next step is still mine" (the pipeline then simply re-runs you). If you need another turn of your own, {"op":"continue"} says it directly. And NEVER bounce the task you were just handed back as an over-to: being handed it made it YOURS to do, not to route again.
+The square-bracket stamps you see in this transcript — [OVER TO: …], [CONTINUING: …], [CONTINUE], [CMD: …] — are the pipeline's receipts for ops that already ran. Typing a stamp is not the command; always emit the JSON op itself.`;
 
 for (const name of Object.keys(AGENT_SYSTEM_PROMPTS)) {
   AGENT_SYSTEM_PROMPTS[name] += TEAMWORK_NOTE;
