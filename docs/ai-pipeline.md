@@ -2,14 +2,11 @@
 
 The dynamic multi-agent pipeline that drives Code mode. Implementation: `src/convex/codePipeline.ts`. Agent prompts: `src/convex/lib/agentPrompts.ts`. Provider chain: `src/convex/lib/agentCore.ts`.
 
-## Dispatcher (background model-picker)
+## No Dispatcher
 
-The Dispatcher still runs before EVERY run — a fresh user prompt always re-enters through it (interrupting any in-flight run via `userPromptGen`) — but it now lives **in the background with exactly one job: choosing which MODEL each agent runs on**. It no longer classifies the message, picks the roster, or decides where work starts. Its output is a single optional `assignments` array (`{"assignments":[{"agentName":"Coder","modelId":"…"}]}`), parsed by `parseModelAssignments` in `codePipeline.ts` and persisted on `codeBranches.dispatchedModelsJson`. An unparsable reply simply keeps the default seats; a rate-limit stall resumes the run without re-picking (`skipDispatchOnResume`). One quiet transcript line records the picks for auditability and the run moves on.
+The Dispatcher is **gone entirely** — not backgrounded, removed. A fresh user prompt enters straight as the **Analyser** (interrupting any in-flight run via `userPromptGen`) with a single synthetic task (the whole user goal) saved to `plannerTasksJson`, and every seat runs on the provider chain's per-task-type default model (env-overridable per provider: `*_DEFAULT_MODEL`; the historical `*_DISPATCHER_MODEL` envs now configure only the `dispatcher` task-type *seat*, which manager-type agents like the Organizer ride). No roster, no model-seat picker, no dispatch phase, no `parseModelAssignments`, no `buildDispatcherModelMenu` (`lib/modelMenu.ts` deleted with it). Retired columns (`dispatchedModelsJson`, `dispatchedAgentsJson`, `customAgentsJson`, `skipAgentsJson`, `skipActive`, `skipDispatchOnResume`, `criticRetryCount`) stay in the schema unread so old branches keep loading; an old branch resuming at phase "Dispatcher" converts to the Analyser through the same run-entry step.
 
-- **Model**: whatever the Dispatcher provider chain returns for the `dispatcher` task type, against the same curated menu (`lib/modelMenu.ts`) the seats are assigned from.
-- **Output it can no longer emit**: roster/`startFrom`/`skipAgents`/`customAgents` — the roster era is over. Unknown fields in its JSON are ignored.
-
-Every run then enters as the **Analyser** with a single synthetic task (the whole user goal) saved to `plannerTasksJson` — task lists survive only as prompt context; nothing derives ORDER from them. From there the run is agent-routed: each agent ends its turn naming the next teammate with `{"op":"over-to"}`, the Analyser re-routes whenever an agent names nobody, and the run ends when the Critic passes, the Analyser names nobody, or KnowItAll finishes a plain answer.
+From there the run is agent-routed end to end: each agent ends its turn naming the next teammate with `{"op":"over-to"}`, the Analyser re-routes whenever an agent names nobody, and the run ends when the Critic accepts the final task, the Analyser names nobody, or KnowItAll finishes a plain answer. The agents control the pipeline — the system only carries the plan forward on acceptance and enforces nothing else.
 
 ## Agent cast
 
@@ -17,16 +14,15 @@ The cast is FIXED — code no longer builds a per-prompt roster. Directly target
 
 | Agent | task-type | Role in the hand-off model |
 |---|---|---|
-| Dispatcher | `dispatcher` | Background model-seat picker. Runs on every prompt; routes nothing. |
 | Analyser | `reasoning` | The lead. Opens every run, analyses, and directs the team with over-to. Re-routes whenever an agent names nobody. Naming nobody itself = run complete. |
 | KnowItAll | `chat` | Answers any question directly; escalates to a fresh build run with `{"op":"dispatch"}`. Finishing a plain answer ends the run. |
 | Planner | `reasoning` | Task decomposition to `plannerTasksJson` — context for whoever follows, never an ordering source. |
 | Coder | `code` | Writes/edits the project files. |
 | Optimiser | `code` | Performance and quality passes. |
-| Organizer | `dispatcher` | Docs, README, structure cleanup. |
-| Tester | `agent` | Writes and runs tests. |
-| Hacker | `agent` | Security/penetration testing. |
-| Critic | `reasoning` | The exit gate: `security-pass` closes the run; `security-fail` plus an over-to names the fixer (default Coder). No retry caps — its judgement is the gate. |
+| Organizer | `dispatcher` | Docs, README, structure cleanup. (Rides the `dispatcher` task-type seat.) |
+| Tester | `agent` | Writes and runs tests. Failures are feedback plus an over-to, not a system event. |
+| Hacker | `agent` | Security/penetration testing. Same: findings + over-to. |
+| Critic | `reasoning` | The sharpest reviewer — and its own router. Problems are exact feedback (what/where/how to fix) plus an over-to naming the fixer; `security-pass` is the ONLY verdict op it ever emits and means "this task is accepted" — the plan advances on it. There is no fail op, no retry counter, no forced target. |
 | Research Team | — | Summoned whole by over-to "ResearchTeam": ResearchPlanner → Researcher → ReportMaker → FactCheck, always in that order. Members cannot be named individually (a lone member is upgraded to the whole team, with a transcript note); only FactCheck's over-to routes the findings onward. `codeBranches.researchTeamIndex` tracks the member in progress. |
 
 ## Team hand-offs (`over to`)
@@ -34,7 +30,7 @@ The cast is FIXED — code no longer builds a per-prompt roster. Directly target
 Hand-offs are the ONLY routing mechanism — there is no roster order to fall through to. After an agent's turn (continue-loop and MCP rounds exhausted), `runPipelineAction` routes in this order:
 
 1. **Research Team progression** — mid-team (`researchTeamIndex` 0–2) goes straight to the next member; the last member falls through to normal routing.
-2. **Critic pass** — accepts the current task. Mid-plan, the advance is automatic: `currentTaskIndex` moves to the next task (`nextTaskAfterPass`), `criticRetryCount` resets, a `[ROUTING] Task N of M passed — on to Task N+1 of M …` line lands in the transcript, and the **Analyser retakes the lead** for the new task (movement stays the team's decision — the pipeline only carries the plan forward). A pass on the FINAL task completes the run (retry learnings still captured when the task survived rejections).
+2. **Critic pass** — accepts the current task. Mid-plan, the advance is automatic: `currentTaskIndex` moves to the next task (`nextTaskAfterPass`), a `[ROUTING] Task N of M passed — on to Task N+1 of M …` line lands in the transcript, and the **Analyser retakes the lead** for the new task (movement stays the team's decision — the pipeline only carries the plan forward). A pass on the FINAL task completes the run.
 3. **over-to to the team** — enters the team at ResearchPlanner (`researchTeamIndex: 0`).
 4. **over-to to a teammate** — that agent runs next.
 5. **No/invalid/self hand-off** — falls back to the Analyser… except the Analyser (nothing left to delegate) and KnowItAll (answer finished) naming nobody, which complete the run.
@@ -43,17 +39,14 @@ Every route is announced in the transcript — hand-offs are never silent: a `�
 
 **Nothing in that narration is ever hidden from the user — it renders.** In the code-workspace chat view every marker becomes a Claude Code-style verbose block instead of bracketed text (parsing in `src/lib/verboseTranscript.ts`, rendering in `src/components/code-workspace/VerboseBlocks.tsx`): the hand-off — both the inline `[OVER TO: target — why]` marker and the `⇄` System line — renders as a gradient hero banner naming sender AND target with the reason on a `⎿` line beneath; `[CMD: …]` becomes a terminal block (`$` prompt, monospace, scrollable); file ops ([FILE CREATED/EDITED/DELETED]) become icon rows with the path in mono; searches, scrapes, MCP calls, test/security verdicts, retries, dispatch requests, malformed-op stamps all get their own coloured blocks; `[ROUTING]`, `⚠️`, `⏳` and `✔ Run complete` render as banners. Prose between markers still flows through markdown. Do not collapse, summarise, or strip these blocks — the hand-off remaining visible is a hard product requirement.
 
-### Critic gate
+### No Critic gate — feedback routes by over-to
 
-There is no retry cap, and the gate is pass-or-stay. On a Critic fail — or any Critic reply with NO verdict op at all (a prose rejection without the op used to advance the task as if nothing was wrong; that silent-complete class is closed):
+The fail system is **removed**, in both directions:
 
-1. The pipeline hands the task to the teammate the Critic named with `over-to` (`Coder` when it named no one) with the feedback appended — never blindly back to the Coder.
-2. `criticRetryCount` is persisted on the branch and survives the separate `runPipelineAction` invocations each retry spans.
-3. The task advances only when the Critic emits `{"op":"security-pass"}`. Nothing overrides it and nothing counts it down — and a pass on any but the final plan task immediately opens the next task (the run does not stop at task one of a plan; the Analyser leads the fresh one).
+1. **No rejection machinery.** No `criticRetryCount`, no `[RETRY n]` stamps, no "no verdict counts as rejection" trap, no forced fix target, no `criticJudgementBlock` prompt-machinery, no auto-captured retry learnings. A Critic that finds problems does exactly what every other teammate does with work for someone else: it says precisely what is wrong and what must change, then ends with `{"op":"over-to","agent":"…","why":"…"}` naming the fixer (Tester for tests, Optimiser for quality, Coder for implementation, ResearchTeam for missing or wrong facts). Naming nobody falls back to the Analyser like any other turn. Test and security *agents* (Tester, Hacker) work the same way — findings are feedback plus a hand-off, never a system event.
+2. **Acceptance is the only op with pipeline meaning.** `{"op":"security-pass"}` from the Critic accepts the current task: mid-plan the carry fires (`nextTaskAfterPass` → next task, `[ROUTING]` banner, Analyser leads), on the final task the run completes. Everything else the Critic writes is review prose. The Critic's full bar (the 14-point checklist, game-specific checks, when to accept with nits noted) lives entirely in `AGENT_SYSTEM_PROMPTS.Critic` — the pipeline enforces nothing.
 
-`criticRetryCount` is no longer a gate — it is input to the Critic's own prompt. On every retry the Critic is told how many times it has already rejected this task and instructed to pass, noting what remains and why, when the outstanding issues are cosmetic, out of scope, speculative, or have survived repeated genuine fix attempts; and to keep failing only while something genuinely blocks (won't start, core feature of this task missing or broken, import/config pointing at a file that doesn't exist, placeholder standing in for real work). The standing rule lives in `AGENT_SYSTEM_PROMPTS.Critic`; the per-attempt block is built in `codePipeline.ts` as `criticJudgementBlock` and appended to both the planning-phase and executing-phase prompt shapes.
-
-The previous `MAX_CRITIC_RETRIES = 3` was removed because a fixed count fails in both directions: it cut off tasks that were one round from correct, and — more often — it rubber-stamped broken ones, printing "Critic retries exhausted after 3 attempts. Advancing to next task." and shipping the failure anyway. Same reasoning that removed the per-run message ceiling: a runaway loop costs real provider quota and stays user-stoppable via `stopPipeline`, so the natural break is the user's judgement, not an arbitrary number. Do not reintroduce one.
+History, for whoever reaches for a counter again: `MAX_CRITIC_RETRIES = 3` died first (it cut off tasks one round from correct AND rubber-stamped broken ones), then the counter-as-prompt-input variant died with the fail system itself. A runaway loop costs real provider quota and stays user-stoppable via `stopPipeline` — the natural break is the Critic's and the user's judgement, not machinery. Do not reintroduce one.
 
 ### Team transcript (agent context)
 
@@ -61,11 +54,11 @@ Every agent reads ONE shared transcript, built by `buildContext` in `codePipelin
 
 ## Provider chain
 
-Single entry point: `callModel(prompt, systemPrompt, agentName, …extra)` in `src/convex/lib/agentCore.ts`. `extra` may carry a `ctx`, an `assignedModel` string (Dispatcher-chosen), a `deadlineMs` override, and a `streaming` callback (live SSE deltas for the OpenRouter leg). The whole chain runs inside a shared 7-minute wall-clock budget (Convex kills actions at 10 minutes); the Dispatcher call carries an extra 60-second fail-fast deadline so a dead provider surfaces in about a minute.
+Single entry point: `callModel(prompt, systemPrompt, agentName, …extra)` in `src/convex/lib/agentCore.ts`. `extra` may carry a `ctx`, an `assignedModel` string (explicit per-call seat override), a `deadlineMs` override, and a `streaming` callback (live SSE deltas for the OpenRouter leg). The whole chain runs inside a shared 7-minute wall-clock budget (Convex kills actions at 10 minutes).
 
 ### Order
 
-1. **Dispatcher short-circuit** — if `assignedModel` matches `findZenModel()`, `findOrcaRouterModel()`, `findOpenRouterModel()`, `findDeadlySignalsModel()`, `findModelScopeModel()`, or `findHuggingFaceModel()`, that provider is tried first with that exact model id. Modal is skipped for that call because it does not know the free-tier providers' catalog ids.
+1. **Explicit-seat short-circuit** — if `assignedModel` matches `findZenModel()`, `findOrcaRouterModel()`, `findOpenRouterModel()`, `findDeadlySignalsModel()`, `findModelScopeModel()`, or `findHuggingFaceModel()`, that provider is tried first with that exact model id. Modal is skipped for that call because it does not know the free-tier providers' catalog ids. (The pipeline itself passes no `assignedModel` since the Dispatcher was removed — this path exists for explicit overrides.)
 2. **Modal** — admin-registered `modalEndpoints` (primary row first). Only tried when a `ctx` is passed. Falls through if `MODAL_NOT_CONFIGURED` or on error.
 3. **OpenCode Zen** — anonymous free tier, `ZEN_API_KEY` optional. `ZEN_DISPATCHER_MODEL` / `ZEN_DEFAULT_MODEL` for the two seats (`src/convex/lib/zenClient.ts`).
 4. **OrcaRouter** — keyed OpenAI-compatible gateway (`ORCAROUTER_API_KEY`, `api.orcarouter.ai/v1`). `qwen/qwen3.8-27b-free` — strong reasoning-class coding seat, free at this gateway. Same SSE streaming/idle-timeout/salvage shape as the OpenRouter leg. Skipped fast when the key is unset. `ORCAROUTER_DISPATCHER_MODEL` / `ORCAROUTER_DEFAULT_MODEL` (`src/convex/lib/orcaRouterClient.ts`).
@@ -112,7 +105,7 @@ Both `organizer` and `organiser` match — the Organizer routes to the dispatche
 
 ### Per-provider default constants
 
-| Provider | Dispatcher model | Default model |
+| Provider | Dispatcher-seat model | Default model |
 |---|---|---|
 | Zen | `ZEN_DISPATCHER_MODEL` in `lib/zenClient.ts` | `ZEN_DEFAULT_MODEL` |
 | OrcaRouter | `ORCAROUTER_DISPATCHER_MODEL` in `lib/orcaRouterClient.ts` | `ORCAROUTER_DEFAULT_MODEL` (both `qwen/qwen3.8-27b-free`) |
@@ -181,9 +174,11 @@ Every pipeline run has the built-in AgentOverflow (`AO_MCP_URL` or `${CONVEX_SIT
 
 ```
 {"op":"test-success"}   {"op":"test-failed","reason":"…"}
-{"op":"security-pass"}  {"op":"security-fail"}
+{"op":"security-pass"}
 {"op":"critic-pass"}    {"op":"critic-fail","reason":"…"}
 ```
+
+Only `security-pass` has pipeline meaning (Critic acceptance — the plan advance / exit gate, see above). The rest render in the transcript as status blocks for the reader; routing still happens by over-to — a `test-failed`/`critic-fail` carries its reasons as FEEDBACK the emitting agent (or the Analyser) routes like any other turn. `security-fail` still parses (never taught, never required): it also carries no pipeline meaning now — feedback plus an over-to is the whole rejection model.
 
 ### Team hand-off
 
@@ -214,14 +209,12 @@ Dispatching → Planning → Executing → Completed
 Branch status fields (`codeBranches` in `schema.ts`):
 
 - `phase`: current agent name (e.g. "Coder", "Tester").
-- `executionPhase`: `dispatching` | `executing` | `completed` (the old `planning` phase is retired).
+- `executionPhase`: `executing` | `completed` (`dispatching` survives one beat at run entry so the synthetic task can be written from the fresh prompt; the old `planning` phase is retired).
 - `status`: `running` | `paused` | `completed` | `idle`.
-- `currentTaskIndex`: legacy cursor into `plannerTasksJson` (a single synthetic task carries the goal; order is never derived from it).
+- `currentTaskIndex`: the plan cursor — each Critic acceptance advances it to the next task mid-plan; order is otherwise never derived from it.
 - `researchTeamIndex`: Research Team member in progress (`RESEARCH_TEAM` index 0–3) while the team runs; absent otherwise.
-- `dispatchedModelsJson`: per-agent model assignments — the Dispatcher's only remaining output.
-- `dispatchedAgentsJson` / `customAgentsJson` / `skipAgentsJson` / `skipActive`: roster-era columns the pipeline no longer writes or reads (kept in the schema so old branches still load). 
-- `userPromptGen`: monotonic counter bumped once per user prompt by `startPipeline`; phase transitions refuse to advance when it moved, so a newer prompt always interrupts an in-flight run and the newest dispatch wins.
-- `criticRetryCount`: persisted rejection counter the Critic reads when deciding to hold or release a task.
+- `dispatchedModelsJson` / `dispatchedAgentsJson` / `customAgentsJson` / `skipAgentsJson` / `skipActive` / `skipDispatchOnResume` / `criticRetryCount`: Dispatcher- and fail-system-era columns the pipeline no longer writes or reads (kept in the schema so old branches still load).
+- `userPromptGen`: monotonic counter bumped once per user prompt by `startPipeline`; phase transitions refuse to advance when it moved, so a newer prompt always interrupts an in-flight run and the newest run wins.
 - `streamingContent` / `streamingAgent` / `streamingAt`: live agent output. Streaming seats (OpenRouter) write true SSE deltas as they arrive; other seats drip-feed the finished response in ~300-char chunks. Either way the reply grows instead of landing in one block. The workspace chat view consumes it through `streamVisibleText()` (`src/lib/verboseTranscript.ts`) — the raw stream is a growing `{message, ops}` JSON doc, so the growing `message` string is extracted (escapes decoded incrementally, ops cut off) and typed out word-by-word as formatted markdown (`StreamingBubble`); raw JSON never flashes in the live view.
 - `executor`: `cloud` | `local` — chosen at `startPipeline` and never changed after; a local branch is never scheduled server-side, a cloud branch is never polled by the desktop app.
 

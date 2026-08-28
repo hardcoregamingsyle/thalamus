@@ -45,10 +45,10 @@ export type ModelTier = string;
 /**
  * Unified model caller — provider chain: Modal → Zen → OrcaRouter → OpenRouter → DeadlySignal → ModelScope → HuggingFace → Pollinations → Ollama.
  * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/OrcaRouter/OpenRouter/Deadly/ModelScope/HuggingFace/Ollama
- * (Zen is anonymous; OrcaRouter, OpenRouter, DeadlySignal, ModelScope and HuggingFace are keyed). A
- * Dispatcher-chosen Zen, OrcaRouter, OpenRouter, DeadlySignal, ModelScope or HuggingFace model id is honored directly. Only the Dispatcher's model
- * is hardcoded (per provider); every other agent's model is decided by the
- * Dispatcher at runtime.
+ * (Zen is anonymous; OrcaRouter, OpenRouter, DeadlySignal, ModelScope and HuggingFace are keyed). An explicitly
+ * assigned Zen, OrcaRouter, OpenRouter, DeadlySignal, ModelScope or HuggingFace model id is honored directly (an
+ * override path — nothing in the pipeline assigns seats since the Dispatcher
+ * was removed; every seat otherwise runs on its per-task-type default).
  */
 export async function callModel(
   prompt: string,
@@ -119,7 +119,7 @@ export async function callModel(
   // report.
   const deadline = Date.now() + (deadlineMs ?? 420_000);
 
-  // Dispatcher-chosen Zen model: honor it directly and skip Modal — a Zen
+  // Explicitly-assigned Zen seat model: honor it directly and skip Modal — a Zen
   // catalog id only exists on OpenCode Zen, so Modal would just burn retries
   // on a model name it does not serve.
   if (assignedModel && findZenModel(assignedModel)) {
@@ -138,7 +138,7 @@ export async function callModel(
     }
   }
 
-  // Dispatcher-chosen OrcaRouter model: same as Zen — honor it directly.
+  // Explicitly-assigned OrcaRouter seat model: same as Zen — honor it directly.
   if (assignedModel && findOrcaRouterModel(assignedModel)) {
     try {
       const result = await callOrcaRouter(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
@@ -155,7 +155,7 @@ export async function callModel(
     }
   }
 
-  // Dispatcher-chosen OpenRouter model: same as Zen — honor it directly.
+  // Explicitly-assigned OpenRouter seat model: same as Zen — honor it directly.
   if (assignedModel && findOpenRouterModel(assignedModel)) {
     try {
       const result = await callOpenRouter(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
@@ -172,7 +172,7 @@ export async function callModel(
     }
   }
 
-  // Dispatcher-chosen DeadlySignal model: same as Zen — honor it directly.
+  // Explicitly-assigned DeadlySignal seat model: same as Zen — honor it directly.
   if (assignedModel && findDeadlySignalsModel(assignedModel)) {
     try {
       const result = await callDeadlySignals(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline);
@@ -189,7 +189,7 @@ export async function callModel(
     }
   }
 
-  // Dispatcher-chosen ModelScope model: same as Zen — honor it directly.
+  // Explicitly-assigned ModelScope seat model: same as Zen — honor it directly.
   if (assignedModel && findModelScopeModel(assignedModel)) {
     try {
       const result = await callModelScope(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline);
@@ -206,7 +206,7 @@ export async function callModel(
     }
   }
 
-  // Dispatcher-chosen HuggingFace model: same as Zen — honor it directly.
+  // Explicitly-assigned HuggingFace seat model: same as Zen — honor it directly.
   if (assignedModel && findHuggingFaceModel(assignedModel)) {
     try {
       const result = await callHuggingFace(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);

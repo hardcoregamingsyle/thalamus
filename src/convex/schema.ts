@@ -135,9 +135,10 @@ const schema = defineSchema(
       round: v.optional(v.number()),
       plannerTasksJson: v.optional(v.string()),
       currentTaskDifficulty: v.optional(v.string()),
-      // Per-task Critic retry counter — bounds the Coder<->Critic fix loop so a
-      // task the Critic keeps failing can't loop (and bill) forever. Reset to 0
-      // when the pipeline advances to a new task.
+      // RETIRED — the fail-retry system was removed: the Critic reviews and
+      // routes fixes with over-to like every teammate, and acceptance
+      // (security-pass) is the only verdict the pipeline acts on. Column kept
+      // so old branch rows keep loading; never written or read anymore.
       criticRetryCount: v.optional(v.number()),
       // Research Team progress: index into RESEARCH_TEAM (pipelineAgents.ts)
       // while the team is mid-run, absent otherwise. An over-to that names the
@@ -153,13 +154,13 @@ const schema = defineSchema(
       vmRam: v.optional(v.number()),
       vmCores: v.optional(v.number()),
       vmOs: v.optional(v.string()),
-      // Dynamic pipeline — Dispatcher chooses which agents to run for this task.
-      // Stored as a JSON array of agent names, e.g. '["Coder","Tester","Critic"]'.
-      // Null/missing means "full pipeline" (first-time backwards compat).
+      // RETIRED — roster-era column from when a Dispatcher chose which agents
+      // to run. The pipeline is a fixed cast with over-to routing and no
+      // Dispatcher at all now; kept only so old branch rows keep loading.
       dispatchedAgentsJson: v.optional(v.string()),
-      // Model assignments per agent, set by the Dispatcher. Stored as a JSON
-      // object mapping agent names to NIM model IDs, e.g. '{"Coder":"meta/llama-3.1-8b-instruct"}'.
-      // Null/missing means the pipeline falls back to the hardcoded task-type map.
+      // RETIRED — Dispatcher-era per-agent model seats. There is no
+      // Dispatcher anymore: every seat runs on the provider chain's per-task
+      // default (env overridable). Kept only for old branch rows.
       dispatchedModelsJson: v.optional(v.string()),
       // MCP tool-call loop guard — how many times the current agent has been
       // re-run with MCP results this phase. Reset to 0 on every phase advance.
@@ -228,11 +229,9 @@ const schema = defineSchema(
       // discarded. Cleared when a step actually produces a message. See the
       // transient-error branch in codePipeline.runPipelineAction.
       providerBackoffCount: v.optional(v.number()),
-      // Set by the transient-error path when it parks the run; consumed and
-      // cleared by the very next invocation. Tells the resumed step that the
-      // Dispatcher phase it finds itself in is a rate-limit hold from a
-      // mid-dispatch stall, not a fresh user prompt — so it continues with the
-      // last dispatch instead of burning another model call on re-dispatching.
+      // RETIRED — told a stall resume "continue, don't re-dispatch". With no
+      // dispatch leg left there is nothing to re-run, so resumes just continue
+      // the phase they find. Kept only for old branch rows.
       skipDispatchOnResume: v.optional(v.boolean()),
       // Short human-readable reason the cloud executor cannot run commands at
       // all on this branch (e.g. connected GitHub token missing the `workflow`
@@ -241,16 +240,12 @@ const schema = defineSchema(
       // successful VM workflow install. Read by the pipeline's prompt builder
       // so agents stop emitting {"op":"cmd"} ops that can never execute.
       executorBlockedReason: v.optional(v.string()),
-      // Dispatcher-defined custom agents: JSON array of {"name","systemPrompt"}
-      // (max 2, name ≤ 40 chars). Custom agent names ride inside
-      // dispatchedAgentsJson too, and the pipeline runs them after the standard
-      // agents with their own system prompt.
+      // RETIRED — Dispatcher-era custom agents (JSON array of
+      // {"name","systemPrompt"}). The cast is fixed; kept only so old branch
+      // rows keep loading.
       customAgentsJson: v.optional(v.string()),
-      // Agents the Dispatcher wants skipped on the FIRST pass of this run —
-      // JSON array of agent names, for continuation when a task stopped
-      // mid-run and analysis/planning agents already did their job. Gated by
-      // skipActive; the next task hand-off clears the gate so later iterations
-      // run the full pipeline.
+      // RETIRED — roster-era first-pass skip lists. The cast is fixed and
+      // ordering is the agents' over-to; kept only for old branch rows.
       skipAgentsJson: v.optional(v.string()),
       skipActive: v.optional(v.boolean()),
       // Monotonic counter bumped by startPipeline on EVERY user prompt. The

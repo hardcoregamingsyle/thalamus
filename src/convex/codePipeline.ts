@@ -8,10 +8,10 @@
 // the single source of truth, never in-memory state.
 //
 // Branch fields that drive the state machine:
-// - executionPhase: "dispatching" → "executing" → "completed"
-// - phase:          the agent currently (or next) running. The Dispatcher
-//                   phase is background-only (picks model seats); every run
-//                   then enters as the Analyser and moves by over-to hand-offs
+// - executionPhase: "executing" → "completed"
+// - phase:          the agent currently (or next) running. There is NO
+//                   Dispatcher: every run enters straight as the Analyser and
+//                   moves by over-to hand-offs
 // - currentTaskIndex: the plan cursor. Each Critic pass advances it to the
 //                   next task and hands the lead to the Analyser; a pass on
 //                   the final task completes the run
@@ -39,8 +39,10 @@ import {
   type ModelTier,
 } from "./lib/agentCore";
 import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./lib/mcpClient";
-import { TEAM_AGENTS, RESEARCH_TEAM, RESEARCH_TEAM_TARGET, resolveHandoffTarget, isRunnableAgent, handoffDisplayName, nextTaskAfterPass } from "./lib/pipelineAgents";
-import { buildDispatcherModelMenu } from "./lib/modelMenu";
+import { RESEARCH_TEAM, RESEARCH_TEAM_TARGET, resolveHandoffTarget, isRunnableAgent, nextTaskAfterPass } from "./lib/pipelineAgents";
+// The Dispatcher is gone entirely: no roster, no model-seat picks, no
+// dispatch phase. Runs enter as the Analyser with the chain's default seats
+// (lib/modelMenu.ts was deleted with it).
 import { parseMcpCalls, stripMcpBlocks, type ParsedMcpCall } from "./lib/mcpParse";
 
 // MCP loop guard: how many times one agent may be re-run with tool results
@@ -73,38 +75,6 @@ function findMcpServer<T extends { name: string }>(servers: T[], requested: stri
 // codebase times that out, so without this a branch parks "paused" forever
 // with zero further messages the moment that happens.
 const STALE_COMMAND_MS = 15 * 60 * 1000;
-
-/** Parse the Dispatcher's JSON output. Returns null on failure.
- *
- * The Dispatcher is a BACKGROUND model-picker now: it no longer decides who
- * runs, in what order, or from where (the roster era of startFrom/skipAgents/
- * customAgents is over — the team is a fixed cast and the Analyser always
- * opens). Its whole contract is one optional "assignments" array mapping
- * teammate names to exact model ids from the live menu. An unparsable reply
- * is not an error worth surfacing: it just means "keep the default seats". */
-function parseModelAssignments(
-  text: string,
-): { models?: Record<string, string> } | null {
-  try {
-    // Strip markdown fences if the model wrapped them anyway
-    const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
-    const parsed = JSON.parse(cleaned);
-    const VALID = new Set<string>([...TEAM_AGENTS, ...RESEARCH_TEAM]);
-    let models: Record<string, string> | undefined;
-    if (Array.isArray(parsed.assignments)) {
-      models = {};
-      for (const a of parsed.assignments) {
-        if (a && typeof a.agentName === "string" && VALID.has(a.agentName) && typeof a.modelId === "string" && a.modelId) {
-          models[a.agentName] = a.modelId;
-        }
-      }
-      if (Object.keys(models).length === 0) models = undefined;
-    }
-    return { models };
-  } catch {
-    return null;
-  }
-}
 
 // The team reads ONE shared transcript — this is what makes the agents a team
 // instead of six individuals who never met. Two parts:
@@ -349,16 +319,12 @@ async function callModelWithStreaming(
   agentName: string,
   geminiKeys: string[],
   dbCreds: { accessKeyId: string; secretAccessKey: string; region: string } | null,
-  agentModelAssignments?: Record<string, string>,
   deadlineMs?: number,
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; tier: ModelTier }> {
-  // If the Dispatcher assigned a specific model for this agent, pass it as an
-  // override so callModel uses it directly instead of the hardcoded task-type map.
-  // deadlineMs overrides the chain-wide 7-minute budget — the Dispatcher uses
-  // this to fail fast: a 3B routing call that can't answer in a minute is a
-  // broken provider, not a slow model, and every extra minute is user waiting.
+  // deadlineMs overrides the chain-wide 7-minute budget for a single call —
+  // a short one fail-fasts a seat that only ever speaks slowly instead of
+  // burning the user's wait on it.
   const overrides: Record<string, unknown> = {};
-  if (agentModelAssignments?.[agentName]) overrides.assignedModel = agentModelAssignments[agentName];
   if (deadlineMs) overrides.deadlineMs = deadlineMs;
   let streamedChars = 0;
   let streamedAcc = "";
@@ -401,43 +367,6 @@ async function callModelWithStreaming(
   }
   return result;
 }
-
-// Fires once per task that took at least one Critic rejection before passing.
-// This is the one narrative Stack Overflow structurally cannot produce: exactly
-// what a frontier model got wrong, why the Critic caught it, and what the fix
-// looked like — scored by the same quality gate as any other learning, so a
-// merely-human-flavored fix still lands in the 5-7 band rather than gold.
-// Scheduled, not inline, so a slow or failed submission never slows or breaks
-// the pipeline run it is capturing.
-export const captureRetryLearning = internalAction({
-  args: {
-    branchId: v.string(),
-    ownerUserId: v.id("users"),
-    taskTitle: v.string(),
-    taskDescription: v.string(),
-    retryCount: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const messages = await ctx.runQuery(internal.codeBranches.getMessagesInternal, {
-      branchId: args.branchId,
-    });
-    const lastCritique = [...messages]
-      .reverse()
-      .find((m) => m.agent === "Critic")?.content;
-
-    const problem = `Task: ${args.taskTitle}\n${args.taskDescription}\n\nThe Critic rejected this task ${args.retryCount} time(s) before it passed.${
-      lastCritique ? `\n\nMost recent rejection reason:\n${lastCritique.slice(0, 4000)}` : ""
-    }`;
-
-    await ctx.runMutation(internal.agentoverflow.insertLearningFromApi, {
-      userId: args.ownerUserId,
-      title: `Agent retry loop: ${args.taskTitle}`.slice(0, 200),
-      problem: problem.slice(0, 12000),
-      solution: `Resolved after ${args.retryCount} Critic-rejection round(s) in the Coder/Critic retry loop.`,
-      tags: ["agent-retry", "critic-loop"],
-    });
-  },
-});
 
 // Main pipeline runner
 export const runPipelineAction = internalAction({
@@ -516,20 +445,6 @@ export const runPipelineAction = internalAction({
       // Load branch
       const branch = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
       if (!branch) return;
-
-      // A rate-limit hold parks the run and re-invokes this action after a
-      // backoff, setting skipDispatchOnResume so the resumed step knows it is
-      // a stall — not a fresh user prompt — and must not re-run the Dispatcher
-      // (re-dispatching would only burn another model call on rate-limited
-      // providers). Captured and cleared here so the one-shot flag can never
-      // leak into a later invocation.
-      const skipDispatchOnResume = !!branch.skipDispatchOnResume;
-      if (skipDispatchOnResume) {
-        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-          branchId,
-          skipDispatchOnResume: false,
-        });
-      }
 
       // User pressed Stop — halt this run WITHOUT rescheduling, and clear the flag
       // so a later start isn't immediately cancelled. (The pipeline writes "idle"
@@ -714,27 +629,18 @@ export const runPipelineAction = internalAction({
       const allMessages = await ctx.runQuery(internal.codeBranches.getMessagesInternal, { branchId }) as Doc<"codeMessages">[];
       const firstUserMessage = allMessages.find((m) => m.agent === "User");
       const task = args.userPrompt || firstUserMessage?.content || branch.description || "Continue working on the project";
-      const currentPhase = branch.phase ?? "Dispatcher";
+      const currentPhase = branch.phase ?? "Analyser";
       let round = branch.round ?? 0;
       let totalMessages = branch.totalMessages ?? 0;
 
       const executionPhase = branch.executionPhase ?? "dispatching";
       const currentTaskIndex = branch.currentTaskIndex ?? 0;
 
-      // Model assignments are the ONLY thing the Dispatcher still owns — it
-      // picks a model per teammate in the background and is otherwise silent.
-      // The agent roster era (dispatchedAgentsJson / customAgentsJson /
-      // skipAgentsJson) is gone: the cast is fixed, ordering is decided by
-      // over-to hand-offs between agents.
-      const agentModelAssignments: Record<string, string> = {};
-      try {
-        if (branch.dispatchedModelsJson) {
-          const parsed = JSON.parse(branch.dispatchedModelsJson);
-          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-            Object.assign(agentModelAssignments, parsed);
-          }
-        }
-      } catch { /* ignored */ }
+      // There is NO Dispatcher — no roster, no model-seat picks. Model seats
+      // come from the provider chain's per-task-type defaults (with env
+      // overrides). The Dispatcher and roster eras (dispatchedModelsJson /
+      // dispatchedAgentsJson / customAgentsJson / skipAgentsJson) survive only
+      // as unread schema columns for old branches.
       // Research Team progress: an index into RESEARCH_TEAM while the team is
       // mid-run, null otherwise. Created when an over-to summons the team and
       // cleared on the routing paths that leave it.
@@ -742,12 +648,11 @@ export const runPipelineAction = internalAction({
 
       // Every user prompt bumps this counter in startPipeline. An invocation
       // that loaded the branch BEFORE the bump must not advance the state
-      // machine past the newer prompt's dispatch — it would clobber the fresh
-      // routing (the "dispatcher only ran on the first prompt" bug: an
-      // in-flight chain's advance overwrote the new dispatch's phase). All
-      // phase transitions go through advance(), which re-reads the branch and
-      // refuses when the generation moved; the newest prompt's chain then owns
-      // the branch uncontested.
+      // machine past the newer prompt's entry — it would clobber the fresh
+      // routing (the classic "an in-flight chain's advance overwrote the new
+      // run's phase" bug). All phase transitions go through advance(), which
+      // re-reads the branch and refuses when the generation moved; the newest
+      // prompt's chain then owns the branch uncontested.
       const promptGen = branch.userPromptGen ?? 0;
       const advance = async (patch: Record<string, unknown>): Promise<boolean> => {
         const fresh = await ctx.runQuery(internal.codeBranches.getBranchInternal, { branchId });
@@ -759,9 +664,8 @@ export const runPipelineAction = internalAction({
 
       // Mark as running. Gen-guarded like every other write: a superseded
       // invocation (a newer prompt bumped userPromptGen mid-run) must not
-      // overwrite the fresh dispatch's round/totalMessages with the stale
-      // values it loaded — that would make subsequent messages collide on
-      // messageIndex.
+      // overwrite the fresh run's round/totalMessages with the stale values it
+      // loaded — that would make subsequent messages collide on messageIndex.
       if (!(await advance({
         status: "running",
         currentAgent: currentPhase,
@@ -827,93 +731,15 @@ export const runPipelineAction = internalAction({
       // and the prompt guidance tells agents to search the corpus on a failing
       // command themselves, so nothing here reaches out to an MCP on their behalf.
 
-      // ── Dispatcher phase: background model-picker ─────────────────────────
-      // The Dispatcher's only remaining job is choosing which MODEL each
-      // teammate runs on. It routes nothing: every run enters through the
-      // Analyser, and from there the agents hand work to each other with
-      // {"op":"over-to"} in the shared transcript.
-      if (executionPhase === "dispatching" || currentPhase === "Dispatcher") {
-        // Rate-limit resume mid-dispatch: the stall hit inside the Dispatcher's
-        // own model call, no new user prompt arrived since, so re-running it
-        // would just spend another turn on rate-limited providers. Skip the
-        // model-pick this time and resume at whatever agent is already next.
-        if (skipDispatchOnResume) {
-          const resumePhase = isRunnableAgent(currentPhase) ? currentPhase : "Analyser";
-          round++;
-          if (!(await advance({
-            status: "idle",
-            currentAgent: resumePhase,
-            phase: resumePhase,
-            executionPhase: "executing",
-            round,
-            totalMessages,
-            mcpRoundCount: 0,
-          }))) return;
-          await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
-          return;
-        }
-
-        await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
-          branchId,
-          status: "running",
-          currentAgent: "Dispatcher",
-          phase: "Dispatcher",
-        });
-
-        // Curated, strength-ranked model menu, built from the verified
-        // provider catalogs (see lib/modelMenu.ts) — this is the entire
-        // reason the Dispatcher still exists.
-        const modelMenu = buildDispatcherModelMenu();
-
-        // KnowItAll hands the conversation back by ending its reply with
-        // {"op":"dispatch","reason":...}; the marker lands in the transcript as
-        // the LAST message, so the re-dispatch reads the reason out of it here
-        // instead of re-routing the original question back to KnowItAll (which
-        // would loop forever). Anything else ending the transcript means the
-        // reason is stale and must not leak into this decision.
-        const marker = "[DISPATCH REQUESTED — handed off to the Dispatcher]: ";
-        const lastContent = allMessages.length > 0 ? allMessages[allMessages.length - 1]?.content ?? "" : "";
-        const handoffIdx = lastContent.indexOf(marker);
-        const handoffNote = handoffIdx >= 0
-          ? `\n\n## Handoff from KnowItAll\nA previous run ended by handing the conversation back for a build run. A problem was found that needs the team. The Analyser will start it — pick strong models for the agents that will write and gate it:\n${lastContent.slice(handoffIdx + marker.length)}`
-          : "";
-
-        const dispatchPrompt = `## Project Goal\n${task}\n\n## Existing project files\n${files.length > 0 ? files.map(f => `- ${f.filepath}`).join("\n") : "None (greenfield project)"}${handoffNote}${modelMenu}\n\n${currentDateLine}`;
-        const dispatchResult = await callModelWithStreaming(
-          ctx, dispatchPrompt, AGENT_SYSTEM_PROMPTS["Dispatcher"] ?? "",
-          branchId, "Dispatcher", geminiKeys, dbCreds, undefined, 60_000,
-        );
-        await bill("dispatcher", dispatchResult);
-        await ctx.runMutation(internal.codeBranches.clearStreamingContent, { branchId });
-
-        const dispatched = parseModelAssignments(dispatchResult.text);
-        if (dispatched?.models) {
-          await ctx.runMutation(internal.codeBranches.setDispatchedModels, {
-            branchId,
-            modelsJson: JSON.stringify(dispatched.models),
-          });
-          for (const [agent, model] of Object.entries(dispatched.models)) {
-            agentModelAssignments[agent] = model;
-          }
-        }
-
-        // One quiet line for the transcript — background work the user can
-        // audit, but no longer a routing decision being announced.
-        const seatsLine = dispatched?.models
-          ? `**Model seats picked (background):** ${Object.entries(dispatched.models).map(([a, m]) => `${a} → ${m}`).join("; ")}`
-          : "Keeping the default model seats (no assignments parsed).";
-        totalMessages++;
-        await ctx.runMutation(internal.codeBranches.saveMessage, {
-          branchId,
-          agent: "Dispatcher",
-          content: `${seatsLine}\n\nThe Analyser starts the work; agents pass it between themselves from here.`,
-          round,
-          messageIndex: totalMessages,
-        });
-
-        // A single synthetic task carries the whole goal. Nothing consumes
-        // the task list for ORDER anymore (the over-to hand-offs decide
-        // movement); it remains only as prompt context for the agents.
+      // ── Run entry ─────────────────────────────────────────────────────────
+      // No Dispatcher, no model call, no roster: a fresh run enters straight
+      // as the Analyser. A single synthetic task carries the whole goal until
+      // the Planner writes the real plan — nothing consumes the task list for
+      // ORDER (the over-to hand-offs decide movement); it is prompt context
+      // plus the Critic-pass advance cursor. Old branches still arrive here
+      // with executionPhase "dispatching" and phase "Dispatcher" — the entry
+      // converts them to the Analyser exactly like a fresh prompt does.
+      if (executionPhase === "dispatching") {
         const syntheticTask = JSON.stringify([{ title: task.slice(0, 120), description: task }]);
         await ctx.runMutation(internal.codeBranches.updatePlannerTasks, {
           branchId,
@@ -929,7 +755,6 @@ export const runPipelineAction = internalAction({
           round,
           totalMessages,
           currentTaskIndex: 0,
-          criticRetryCount: 0,
           mcpRoundCount: 0,
           researchTeamIndex: null,
         }))) return;
@@ -971,7 +796,7 @@ export const runPipelineAction = internalAction({
       if (currentPhase === "Planner") {
         if (outOfBudget()) { await rescheduleForBudget("Planner"); return; }
         const prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}`;
-        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, "Planner", geminiKeys, dbCreds, agentModelAssignments, callBudget());
+        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, "Planner", geminiKeys, dbCreds, callBudget());
         agentOutput = result.text;
         await bill("planner", result);
         await ctx.runMutation(internal.codeBranches.clearStreamingContent, { branchId });
@@ -990,25 +815,9 @@ export const runPipelineAction = internalAction({
         // phase. mcpToolSection is included here too — the planning-phase
         // Researcher is the natural "search AgentOverflow first" agent, and
         // without the section it never learns the tools exist.
-        // The Critic is the only agent that can hold a task open indefinitely,
-        // so it is the only one that needs to know how long it has been doing
-        // it. No cap is enforced anywhere — this block is the whole mechanism,
-        // and it deliberately states the count without stating a limit, because
-        // naming a limit is what turns "use your judgement" back into "wait for
-        // the counter". Escalates in tone but never in authority: passing or
-        // failing stays the Critic's call at every attempt.
-        const criticAttempts = branch.criticRetryCount ?? 0;
-        const criticJudgementBlock =
-          currentPhase === "Critic" && criticAttempts > 0
-            ? [
-                `## Your Standing on This Task`,
-                `You have already rejected this task ${criticAttempts} time${criticAttempts === 1 ? "" : "s"}, and the Coder has reworked it after each rejection.`,
-                `Nothing forces this task forward and nothing cuts you off — it advances only when you output {"op":"security-pass"}. That makes the call yours, and holding a task open has a real cost: every rejection re-runs the whole agent chain on the user's quota.`,
-                `Re-read what is actually left. Output {"op":"security-pass"} — and say plainly in your review what remains and why you accepted it — when the remaining issues are cosmetic, stylistic, or nitpicks; belong to a different task, a later task, or the user's own environment; are speculative rather than reproducible; or have survived repeated genuine attempts to fix them, which means further rounds are not going to land it.`,
-                `Keep outputting {"op":"security-fail"} only while something is genuinely blocking: the app would not start, a core feature of THIS task is missing or broken, an import or config points at a file that does not exist, or a placeholder/TODO/stub is still standing in for real work.`,
-                `Do not repeat a rejection the Coder has already tried and failed to satisfy without adding something new and concrete it can act on.`,
-              ].join("\n")
-            : "";
+        // No retry counters, no judgement blocks: the Critic's judgement rule
+        // lives entirely in its system prompt now, and feedback routes through
+        // the same over-to hand-off every agent uses.
         // The hand-off op, taught to every agent right beside the other ops —
         // it is now the ONLY routing mechanism. Every agent ends its turn by
         // naming the next teammate; when nobody is named the Analyser takes
@@ -1018,7 +827,7 @@ You are one team sharing this transcript, and there is no fixed order — whoeve
 {"op":"over-to","agent":"AgentName","why":"what they should do"}
 Teammates you can name: Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic, KnowItAll — or "ResearchTeam" to summon the research team. The research team can only run whole (ResearchPlanner → Researcher → ReportMaker → FactCheck, always in that order); you can never name just one of its members. If you name nobody, the Analyser takes over routing — the run ends only when the Analyser names nobody (nothing left to delegate) or the Critic passes the LAST task in the plan. When the Critic passes an earlier task, the plan moves on by itself: the next task becomes current and the Analyser takes the lead for it. Whoever you name reads this same transcript.`;
 
-        let prompt = [`## Project Goal\n${task}`, currentDateLine, buildFailureBlock, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, criticJudgementBlock, buildGateBlock, handoffBlock, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
+        let prompt = [`## Project Goal\n${task}`, currentDateLine, buildFailureBlock, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, buildGateBlock, handoffBlock, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
 
         if (executionPhase === "executing") {
           let plannerTasks: Array<{ title: string; description: string; dependencies?: string[] }> = [];
@@ -1121,17 +930,13 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
               toolUsageBlock,
               handoffBlock,
               mcpToolSection,
-              // Rebuilt from scratch here, so the Critic's standing block has to
-              // be re-appended or it only ever reached the planning phase — where
-              // the Critic never runs.
-              criticJudgementBlock,
               buildGateBlock,
             ].filter(Boolean).join("\n\n");
           }
         }
 
         if (outOfBudget()) { await rescheduleForBudget(currentPhase); return; }
-        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments, callBudget());
+        const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, callBudget());
         agentOutput = result.text;
         await bill(currentPhase.toLowerCase(), result);
 
@@ -1175,7 +980,7 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
             `## Continue`,
             `Emit ONLY what comes next, starting at the exact character where the tail stops — do NOT repeat anything above, do NOT restart the file or the message. If the tail is inside a <<FILE "path">> block, keep writing the remaining file content, then close the block with <<END>>. If the tail is inside a JSON op, finish just that op. After closing, you may continue with your remaining blocks/ops.`,
           ].join("\n\n");
-          const cont = await callModelWithStreaming(ctx, contPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments, callBudget());
+          const cont = await callModelWithStreaming(ctx, contPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, callBudget());
           if (!cont.text.trim()) break;
           agentOutput += cont.text;
           await bill(`${currentPhase.toLowerCase()}-cont`, cont);
@@ -1282,7 +1087,7 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
           const dataPrompt = `## Research query\n${query}\n\nGather RAW data on this — every search variation that could help, every page that could answer it. Do not synthesise or summarise.`;
           const dataResult = await callModelWithStreaming(
             ctx, dataPrompt, AGENT_SYSTEM_PROMPTS["Researcher"] ?? "", branchId, "Researcher",
-            geminiKeys, dbCreds, undefined, callBudget(),
+            geminiKeys, dbCreds, callBudget(),
           );
           await bill("researcher", dataResult);
           if (outOfBudget()) {
@@ -1292,7 +1097,7 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
           const reportPrompt = `## Research query\n${query}\n\n## Raw research data\n${dataResult.text.slice(0, 6000)}\n\nSynthesise a concise, sourced report the Coder can code from.`;
           const reportResult = await callModelWithStreaming(
             ctx, reportPrompt, AGENT_SYSTEM_PROMPTS["ReportMaker"] ?? "", branchId, "ReportMaker",
-            geminiKeys, dbCreds, undefined, callBudget(),
+            geminiKeys, dbCreds, callBudget(),
           );
           await bill("reportmaker", reportResult);
           researchReports.push({ query: r.query, report: reportResult.text.slice(0, 6000) });
@@ -1322,7 +1127,7 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
         // that the pipeline could not have produced), and every agent after it
         // treated those mangled links as real citations.
         const searchPrompt = `${agentOutput}\n\n---\n\nSEARCH RESULTS:\n${searchContext}\n\nNow continue your work using the above information. Do NOT emit any more search, scrape or research ops. Do NOT reproduce this result block in your reply — quote only the specific lines you rely on, copying any URL character-for-character, and never write a URL that does not appear above.`;
-        const searchCall = await callModelWithStreaming(ctx, searchPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, agentModelAssignments, callBudget());
+        const searchCall = await callModelWithStreaming(ctx, searchPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, callBudget());
         agentOutput = searchCall.text;
         await bill(`${currentPhase.toLowerCase()}-search`, searchCall);
         // Re-parse with search results incorporated
@@ -1356,7 +1161,7 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
         parsed.cmdOps.push(...reParsed.cmdOps);
         parsed.mcpOps.push(...reParsed.mcpOps);
         // Same class of gap: a KnowItAll that searched and THEN handed the run
-        // back to the Dispatcher had its dispatch op (which lives in the
+        // to the build team had its dispatch op (which lives in the
         // post-search output) dropped — without the merge the handoff vanished
         // and the run completed as if nothing was found.
         parsed.dispatchRequested = parsed.dispatchRequested || reParsed.dispatchRequested;
@@ -1611,29 +1416,36 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       // ── KnowItAll handoff ───────────────────────────────────────────────────
       // KnowItAll is the answering agent; when it ends its reply with
       // {"op":"dispatch","reason":"..."} it found a real problem that needs the
-      // build pipeline. Hand the run back to the Dispatcher like a fresh prompt
-      // would: save the message with a visible marker (the re-dispatch prompt
-      // reads the reason out of it), then route through the Dispatcher phase
-      // (background model-pick this run) so the Analyser starts the fix.
+      // build team. There is no Dispatcher anymore — a found problem goes
+      // exactly where every other route goes: to the Analyser, who reads the
+      // reason right here in the shared transcript and delegates the fix. The
+      // marker AND the ⇄ line both stay visible.
       if (currentPhase === "KnowItAll" && parsed.dispatchRequested) {
         const reason = parsed.dispatchReason?.trim() || "no reason given";
         totalMessages++;
         await ctx.runMutation(internal.codeBranches.saveMessage, {
           branchId,
           agent: agentName,
-          content: `${parsed.cleanContent}\n\n[DISPATCH REQUESTED — handed off to the Dispatcher]: ${reason}`,
+          content: `${parsed.cleanContent}\n\n[DISPATCH REQUESTED — handed to the Analyser]: ${reason}`,
+          round,
+          messageIndex: totalMessages,
+        });
+        totalMessages++;
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId,
+          agent: "System",
+          content: `⇄ KnowItAll handed over to the Analyser — found a problem that needs the build team: ${reason.slice(0, 120)}`,
           round,
           messageIndex: totalMessages,
         });
         round++;
         if (!(await advance({
           status: "idle",
-          currentAgent: "Dispatcher",
-          phase: "Dispatcher",
-          executionPhase: "dispatching",
+          currentAgent: "Analyser",
+          phase: "Analyser",
+          executionPhase: "executing",
           round,
           totalMessages,
-          criticRetryCount: 0,
           mcpRoundCount: 0,
           continueCount: 0,
         }))) return;
@@ -1660,58 +1472,16 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
         });
       }
 
-      // ── Critic gate ──────────────────────────────────────────────────────────
-      // The task moves on ONLY when the Critic emits {"op":"security-pass"}.
-      // Every other Critic outcome — an explicit security-fail, or a reply
-      // with no verdict op at all — keeps the task open. That second clause
-      // matters as much as the first: a Critic that wrote a prose rejection
-      // without the op used to read as "no verdict" and the run happily
-      // advanced to the next task, which is exactly the "the critic failed it
-      // but the system said the task was complete" bug report. There is
-      // deliberately NO retry cap either way: a fixed count either cuts off a
-      // task that was one round from correct, or rubber-stamps a broken one
-      // the moment the counter runs out. The Critic decides instead: it is
-      // told how many times it has already rejected this task and instructed
-      // to pass when what is left is minor, out of scope, or has resisted
-      // repeated fixes.
-      //
-      // Where the fix goes is the Critic's call, not a hardcoded one: it ends
-      // a rejection with {"op":"over-to","agent":"..."} naming the teammate
-      // who should act (Tester for missing tests, Optimiser for quality,
-      // Coder for implementation, ResearchTeam when the failure is missing or
-      // wrong external facts). An unnamed or invalid target defaults to the
-      // Coder, which is the honest answer almost all of the time anyway.
-      if (currentPhase === "Critic" && parsed.criticResult !== "pass") {
-        // Persisted per-task counter — it survives the separate
-        // runPipelineAction invocations each retry spans, and it is what the
-        // Critic reads to know how long it has been holding this task.
-        const retryCount = branch.criticRetryCount ?? 0;
-        const resolvedFix = resolveHandoffTarget(parsed.handoffTarget, "Critic") ?? "Coder";
-        const fixTarget = resolvedFix === RESEARCH_TEAM_TARGET ? RESEARCH_TEAM[0] : resolvedFix;
-        round++;
-        if (!(await advance({
-          status: "idle",
-          currentAgent: fixTarget,
-          phase: fixTarget,
-          executionPhase,
-          round,
-          totalMessages,
-          criticRetryCount: retryCount + 1,
-          mcpRoundCount: 0,
-          researchTeamIndex: resolvedFix === RESEARCH_TEAM_TARGET ? 0 : null,
-        }))) return;
-        // Append a system prompt to context so the named agent knows exactly
-        // what failed and that the fix request is addressed to it.
-        await ctx.runMutation(internal.codeBranches.saveMessage, {
-          branchId,
-          agent: "Critic",
-          content: `[RETRY ${retryCount + 1}] Critic rejected this task and handed the fix to ${handoffDisplayName(resolvedFix)} — review the feedback above and resolve ALL issues before this task can pass.`,
-          round,
-          messageIndex: totalMessages + 1,
-        });
-        await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
-        return;
-      }
+      // ── No Critic gate ─────────────────────────────────────────────────────
+      // The fail system is gone. The Critic reviews like every other
+      // teammate: problems are feedback in prose plus an over-to naming
+      // whoever should act (its prompt teaches the whole bar). The only op
+      // with pipeline meaning is acceptance — {"op":"security-pass"} — handled
+      // in the pass leg below, which carries the plan to its next task or
+      // completes the run on the final one. No counters, no forced fix
+      // targets, no "no verdict counts as rejection" trap: a Critic that
+      // names nobody falls through to the same routing as everyone else.
+
 
       // ── Explicit continue loop ──────────────────────────────────────────────
       // {"op":"continue"} asks for another turn of the SAME agent. The file ops
@@ -1759,30 +1529,14 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       }
 
       // ── Critic pass: the plan advance / the run's exit gate ──────────────
-      // A pass accepts ONE task. When the plan holds more tasks, the pass
-      // moves the cursor and the Analyser retakes the lead for the next one —
-      // the run walking the whole plan is the pipeline's only remaining
-      // system-level movement, and completing after task one stranded every
-      // multi-task plan at 1/N. The pass on the FINAL task is the exit gate.
-      // Everything else about movement is the agents' decision (the old
-      // roster advance is gone). Retry learnings are captured exactly as the
-      // roster era did — a task that needed rejections teaches the
-      // owner-profile something the one-shot pass cannot.
+      // Acceptance is the only verdict the system acts on. A pass accepts ONE
+      // task; when the plan holds more tasks it moves the cursor and the
+      // Analyser retakes the lead for the next one — the run walking the whole
+      // plan, with completing after task one having stranded every multi-task
+      // plan at 1/N. The pass on the FINAL task is the exit gate. Everything
+      // else about movement is the agents' over-to decision, the Critic's
+      // feedback included.
       if (currentPhase === "Critic" && parsed.criticResult === "pass") {
-        const retryCount = branch.criticRetryCount ?? 0;
-        if (retryCount > 0 && ownerUserId) {
-          let tasksForLearning: Array<{ title: string; description: string }> = [];
-          try { tasksForLearning = JSON.parse(branch.plannerTasksJson || "[]"); } catch { /* ignore */ }
-          const finishedTask = tasksForLearning[currentTaskIndex];
-          await ctx.scheduler.runAfter(0, internal.codePipeline.captureRetryLearning, {
-            branchId,
-            ownerUserId,
-            taskTitle: finishedTask?.title ?? "Code task",
-            taskDescription: finishedTask?.description ?? "",
-            retryCount,
-          });
-        }
-
         const nextTask = nextTaskAfterPass(branch.plannerTasksJson, currentTaskIndex);
         if (nextTask) {
           // Announce the carry exactly like every other route — a [ROUTING]
@@ -1804,9 +1558,6 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
             round,
             totalMessages,
             currentTaskIndex: nextTask.nextIndex,
-            // A new task opens with a clean gate — the previous task's
-            // rejections must not poison the next Critic block.
-            criticRetryCount: 0,
             researchTeamIndex: null,
             mcpRoundCount: 0,
           }))) return;
@@ -1987,10 +1738,9 @@ message.includes("socket hang up") ||
               branchId,
               status: "running",
               providerBackoffCount: attempt,
-              // One-shot marker: the NEXT invocation is a stall resume, not a
-              // new user prompt, so the Dispatcher phase it may find must not
-              // re-run. Consumed and cleared at the top of runPipelineAction.
-              skipDispatchOnResume: true,
+              // The re-invocation resumes whatever phase it finds — with no
+              // dispatch leg left, there is nothing a stall resume could
+              // accidentally re-run.
             });
             await ctx.scheduler.runAfter(delayMs, internal.codePipeline.runPipelineAction, { branchId });
             return;
@@ -2048,14 +1798,14 @@ export const startPipeline = action({
     const project = await ctx.runQuery(internal.codeProjects.getProjectInternal, { projectId: branch.projectId });
     if (!project || project.userId !== userId) throw new Error("Not authorized");
 
-    // Fresh run: clear any leftover Stop flag and reset the per-task Critic
-    // retry budget so a previously-exhausted branch starts clean.
+    // Fresh run: clear any leftover Stop flag so a previously-stopped branch
+    // starts clean.
     await ctx.runMutation(internal.codeBranches.updateBranchStatus, {
       // totalMessages resets too. Without it the ceiling is a per-branch
       // LIFETIME budget: nothing else in the codebase ever writes it back to 0
       // after creation, so the first run to trip it bricked that branch for
       // good and every later run just re-printed the ceiling message.
-      branchId: args.branchId, stopRequested: false, criticRetryCount: 0, mcpRoundCount: 0, totalMessages: 0,
+      branchId: args.branchId, stopRequested: false, mcpRoundCount: 0, totalMessages: 0,
       // Always set explicitly (defaulting to "cloud") rather than only when
       // passed — otherwise a branch previously run once from the desktop app
       // (executor: "local") stays stuck "local" forever, and every future
@@ -2063,18 +1813,20 @@ export const startPipeline = action({
       // with nothing able to ever run it (the desktop-only executor queue
       // has no other reader).
       executor: args.executor ?? "cloud",
-      // Every new prompt re-enters through the Dispatcher — the background
-      // model-picker, whose only output is per-agent model seats. From there
-      // the Analyser always opens the run.
-      phase: "Dispatcher",
-      currentAgent: "Dispatcher",
+      // Every new prompt enters as the Analyser — there is no Dispatcher and
+      // nothing between the user's message and the team. executionPhase stays
+      // "dispatching" for one beat: the run-entry step inside
+      // runPipelineAction consumes it (writes the synthetic task from the
+      // fresh prompt) and flips to "executing".
+      phase: "Analyser",
+      currentAgent: "Analyser",
       executionPhase: "dispatching",
       // userPromptGen: bumped once per user prompt. Any pipeline invocation
       // that loaded the branch BEFORE this bump must not advance past it —
       // its phase transitions go through the advance() helper, which
       // re-reads the branch and refuses when the generation moved, so the
-      // freshest prompt's dispatch always wins (a mid-run chain can no
-      // longer clobber the new dispatch's routing).
+      // freshest prompt's run always wins (a mid-run chain can no longer
+      // clobber the new run's routing).
       userPromptGen: (branch.userPromptGen ?? 0) + 1,
     });
 

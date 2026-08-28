@@ -49,10 +49,16 @@ describe("segmentVerboseContent — hand-offs", () => {
     expect(m.detail).toBe("invalid — no agent named");
   });
 
-  it("recognises DISPATCH REQUESTED in both stamped shapes", () => {
-    const [a] = markersOf("[DISPATCH REQUESTED — handed off to the Dispatcher]: the login form crashes on submit");
+  it("recognises DISPATCH REQUESTED in all stamped shapes", () => {
+    // Current shape — KnowItAll hands a found problem to the Analyser.
+    const [a] = markersOf("[DISPATCH REQUESTED — handed to the Analyser]: the login form crashes on submit");
     expect(a.kind).toBe("dispatch");
     expect(a.detail).toBe("the login form crashes on submit");
+    // Dispatcher-era transcripts keep rendering (the Dispatcher is gone from
+    // the pipeline, but old branch transcripts still carry its markers).
+    const [aOld] = markersOf("[DISPATCH REQUESTED — handed off to the Dispatcher]: legacy reason");
+    expect(aOld.kind).toBe("dispatch");
+    expect(aOld.detail).toBe("legacy reason");
     const [b] = markersOf("[DISPATCH REQUESTED: needs a build team]");
     expect(b.kind).toBe("dispatch");
     expect(b.detail).toBe("needs a build team");

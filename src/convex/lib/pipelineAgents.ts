@@ -4,9 +4,8 @@
 // and shared by codePipeline.ts.
 //
 // The execution model this module encodes:
-//   - The cast is FIXED. There is no Dispatcher-chosen roster anymore — the
-//     Dispatcher lives in the background and its only job is picking which
-//     MODEL each teammate runs on (see codePipeline.ts).
+//   - The cast is FIXED and there is NO Dispatcher — no roster, no model
+//     picks: runs open as the Analyser on the chain's default seats.
 //   - The Analyser opens every run; from there each agent ends its turn by
 //     naming the next teammate with {"op":"over-to","agent":"...", ...}.
 //   - The four research agents run ONLY as the Research Team: an over-to that
@@ -32,8 +31,9 @@ export const RESEARCH_TEAM = ["ResearchPlanner", "Researcher", "ReportMaker", "F
 // index 0 of RESEARCH_TEAM.
 export const RESEARCH_TEAM_TARGET = "ResearchTeam";
 
-// Names an agent may never hand off to: the Dispatcher is a background
-// model-picker, not a teammate, and User/System are transcript roles, not
+// Names an agent may never hand off to: "dispatcher" is kept here as a
+// legacy guard (the role no longer exists — an off-script model that names it
+// must not produce a live route), and User/System are transcript roles, not
 // runnable agents.
 const UNHANDOFFABLE = new Set(["dispatcher", "user", "system"]);
 

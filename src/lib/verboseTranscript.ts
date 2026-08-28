@@ -89,11 +89,14 @@ const MARKER_RULES: MarkerRule[] = [
     group: "overTo",
   },
   // KnowItAll handing a Q&A thread back to the build team. The pipeline
-  // appends the reason AFTER the closing bracket.
+  // appends the reason AFTER the closing bracket. Both historical shapes
+  // render: "handed to the Analyser" (current) and "handed off to the
+  // Dispatcher" (the Dispatcher era — it is gone from the pipeline but old
+  // transcripts still carry its markers).
   {
     kind: "dispatch",
     label: "DISPATCH",
-    source: "\\[DISPATCH REQUESTED — handed off to the Dispatcher\\]:?\\s*(?<dispatchHandoff>[^\\n]*)",
+    source: "\\[DISPATCH REQUESTED — handed (?:off )?to (?:the Analyser|the Dispatcher)\\]:?\\s*(?<dispatchHandoff>[^\\n]*)",
     group: "dispatchHandoff",
   },
   {

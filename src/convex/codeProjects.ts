@@ -68,7 +68,10 @@ export const createProject = mutation({
       createdAt: now,
       lastActivityAt: now,
       status: "idle",
-      phase: "Dispatcher",
+      // New branches open on the Analyser — there is no Dispatcher. The
+      // executionPhase "dispatching" survives one beat at run entry so the
+      // synthetic task can be written from the fresh prompt.
+      phase: "Analyser",
       executionPhase: "dispatching",
       currentTaskIndex: 0,
       totalMessages: 0,

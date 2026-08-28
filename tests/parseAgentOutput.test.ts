@@ -621,7 +621,8 @@ describe("parseAgentOutput — broken documents never execute quoted inline exam
 describe("parseAgentOutput — dispatch op (KnowItAll handoff)", () => {
   // KnowItAll ends its reply with {"op":"dispatch","reason":"..."} when
   // answering exposes a problem that needs the build pipeline. The pipeline
-  // routes the run back through the Dispatcher on this flag.
+  // hands the run to the Analyser (the team's lead) on this flag — there is
+  // no Dispatcher anymore.
   it("sets dispatchRequested with the reason when the op is present", () => {
     const out = `Your build is broken — the import in src/main.ts points at a file that does not exist. {"op":"dispatch","reason":"src/main.ts imports a missing module"}`;
     const parsed = parseAgentOutput(out);

@@ -61,7 +61,10 @@ export const createBranch = mutation({
       createdAt: now,
       lastActivityAt: now,
       status: "idle",
-      phase: "Dispatcher",
+      // New branches open on the Analyser — there is no Dispatcher. The
+      // executionPhase "dispatching" survives one beat at run entry so the
+      // synthetic task can be written from the fresh prompt.
+      phase: "Analyser",
       executionPhase: "dispatching",
       currentTaskIndex: 0,
       totalMessages: 0,
@@ -375,7 +378,7 @@ export const updateBranchStatus = internalMutation({
     // One-shot "this invocation is a rate-limit resume, don't re-dispatch"
     // marker — see the field's schema comment.
     skipDispatchOnResume: v.optional(v.boolean()),
-    // Whether the Dispatcher's skip-agents list still applies (first iteration
+    // RETIRED — whether the roster-era skip-agents list still applied (first iteration
     // only — cleared when the run advances past the first task).
     skipActive: v.optional(v.boolean()),
     // Prompt-generation counter, bumped by startPipeline per user prompt (see
@@ -582,12 +585,13 @@ export const setStreamingContent = internalMutation({
   },
 });
 
-// Store the Dispatcher's chosen agent list for this branch
+// RETIRED — roster-era writer from when a Dispatcher chose the agent list.
+// Nothing calls it now; kept only so old Convex history stays intact.
 export const setDispatchedAgents = internalMutation({
   args: {
     branchId: v.string(),
     agentsJson: v.string(),
-    // The Dispatcher's per-agent model tier map ({agent: tier}), if it assigned one.
+    // Roster-era per-agent model tier map ({agent: tier}), if one was assigned.
   },
   handler: async (ctx, args) => {
     const branch = await ctx.db
@@ -601,6 +605,7 @@ export const setDispatchedAgents = internalMutation({
   },
 });
 
+// RETIRED — Dispatcher-era model-seat writer. Nothing calls it now.
 export const setDispatchedModels = internalMutation({
   args: {
     branchId: v.string(),
@@ -618,9 +623,8 @@ export const setDispatchedModels = internalMutation({
   },
 });
 
-// Store the Dispatcher's custom agents and first-iteration skip list. Both are
-// always written together (as "[]" when absent) so a stale list from a previous
-// dispatch can never leak into the current run.
+// RETIRED — Dispatcher-era custom agents and skip list writers. Nothing calls
+// this now.
 export const setDispatchedExtras = internalMutation({
   args: {
     branchId: v.string(),

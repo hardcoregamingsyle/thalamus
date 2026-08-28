@@ -57,7 +57,7 @@ thalamus/
 │   └── convex/                     ALL backend logic — 312 exported functions
 │       ├── schema.ts               tables + indexes (10-literal conversations.mode
 │       │                           union; schemaValidation: false)
-│       ├── codePipeline.ts         dispatcher-driven agent pipeline runner
+│       ├── codePipeline.ts         fixed-cast agent pipeline runner (no Dispatcher — over-to routing)
 │       ├── codeBranches.ts         branch/file CRUD + state transitions
 │       ├── codeCommands.ts         command queue + executor endpoints
 │       ├── codeApiKeys.ts          encrypted user-supplied provider keys
@@ -99,7 +99,7 @@ Pure helper modules with no Convex framework imports — load fast, easy to test
 | Module | Responsibility |
 |---|---|
 | `agentCore.ts` | `FREE_UNLIMITED`, `callModel` (the router), `mapModelIdToOllama`, `calcAgentBucksForTier`, `performSearch`, `performScrape`. Re-exports the three modules below so old `from "./lib/agentCore"` imports keep working. |
-| `agentPrompts.ts` | `AGENT_SYSTEM_PROMPTS` — per-agent system prompts for the pipeline (Dispatcher, KnowItAll, ResearchPlanner, Researcher, ReportMaker, FactCheck, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic). Treat every edit like a schema migration. |
+| `agentPrompts.ts` | `AGENT_SYSTEM_PROMPTS` — per-agent system prompts for the pipeline (KnowItAll, ResearchPlanner, Researcher, ReportMaker, FactCheck, Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic — no Dispatcher; all routes are the agents' own over-to). Treat every edit like a schema migration. |
 | `modePrompts.ts` | `MODE_ADHD`, `MODE_SYSTEM_PROMPTS`, `adhdToTemperature` — per-conversation-mode prompts + temperature mapping. |
 | `agentOutputParser.ts` | JSON-op parser (single-line `{"op":…}`), legacy `<<TAG>>` marker fallback for old stored messages. |
 | `taskTypes.ts` | `TaskType` union + `agentToTaskType()` — the routing key for `callModel`. Only surviving export of the old `nimClient.ts`; every NIM-specific export was deleted with NIM itself. |
@@ -133,7 +133,7 @@ Browser
 User types a task in CodeWorkspace
   → codeProjects.createProject (if none)
   → codePipeline.startPipeline
-    → codeBranches insert (dispatchedAgentsJson populated after Dispatcher runs)
+    → codeBranches insert (phase: Analyser from the start — no Dispatcher stage)
     → scheduler.runAfter(0, internal.codePipeline.runPipelineAction)
     → bootVmForBranch (idempotent — only for executor: "cloud")
   → runPipelineAction (one agent step per invocation, self-reschedules)
