@@ -1,8 +1,9 @@
 // Guards the Claude Code-style verbose transcript. The invariants that
 // matter, in the order the user would notice them breaking:
-//   1. Hand-offs ([OVER TO: …], ⇄ …) parse into handoff markers with BOTH the
-//      target and the reason — the one line that must never render as plain
-//      text again.
+//   1. Hand-offs parse with BOTH the target and the reason, in their two
+//      distinct shapes: the agent's own [OVER TO: …] marker is an "overto"
+//      (compact row — the System ⇄ line already carries the hero), and the
+//      System ⇄ line is the "handoff" hero. One event, one banner.
 //   2. Every pipeline marker ([CMD: …], [FILE CREATED: …], verdicts, …)
 //      becomes its typed block; unknown [ … ] text stays prose.
 //   3. The live stream never shows raw JSON — the growing "message" string is
@@ -23,18 +24,29 @@ function markersOf(content: string): VerboseMarker[] {
 }
 
 describe("segmentVerboseContent — hand-offs", () => {
-  it("parses OVER TO with a reason into a handoff with target + reason", () => {
+  it("parses OVER TO with a reason into an overto row with target + reason", () => {
+    // Compact row, NOT the hero: the System ⇄ line written for the same
+    // event carries the hero banner — one hand-off, one banner.
     const [m] = markersOf("I'll hand this off now.\n\n[OVER TO: Coder — fix the login form validation]");
-    expect(m.kind).toBe("handoff");
+    expect(m.kind).toBe("overto");
     expect(m.detail).toBe("Coder");
     expect(m.secondary).toBe("fix the login form validation");
   });
 
   it("parses OVER TO without a reason", () => {
     const [m] = markersOf("[OVER TO: Tester]");
-    expect(m.kind).toBe("handoff");
+    expect(m.kind).toBe("overto");
     expect(m.detail).toBe("Tester");
     expect(m.secondary).toBeUndefined();
+  });
+
+  it("parses CONTINUING (a self hand-off) as a keep-working row", () => {
+    const [m] = markersOf("[CONTINUING: implement tsconfig.json next]");
+    expect(m.kind).toBe("continue");
+    expect(m.detail).toBe("implement tsconfig.json next");
+    const [bare] = markersOf("[CONTINUING]");
+    expect(bare.kind).toBe("continue");
+    expect(bare.detail).toBeUndefined();
   });
 
   it("keeps the reason's own em dashes after the first split", () => {
@@ -126,7 +138,7 @@ describe("segmentVerboseContent — activity markers", () => {
 
   it("parses several markers separated by prose", () => {
     const ms = markersOf("Plan made.\n\n[CMD: npm test]\n\n[TEST: PASSED ✓]\n\n[OVER TO: Critic — gate check]");
-    expect(ms.map((m) => m.kind)).toEqual(["cmd", "test-pass", "handoff"]);
+    expect(ms.map((m) => m.kind)).toEqual(["cmd", "test-pass", "overto"]);
   });
 });
 

@@ -825,7 +825,10 @@ export const runPipelineAction = internalAction({
         const handoffBlock = `## Handing over to a teammate
 You are one team sharing this transcript, and there is no fixed order — whoever your work needs next, you name. When YOUR part is done, end your reply with:
 {"op":"over-to","agent":"AgentName","why":"what they should do"}
-Teammates you can name: Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic, KnowItAll — or "ResearchTeam" to summon the research team. The research team can only run whole (ResearchPlanner → Researcher → ReportMaker → FactCheck, always in that order); you can never name just one of its members. If you name nobody, the Analyser takes over routing — the run ends only when the Analyser names nobody (nothing left to delegate) or the Critic passes the LAST task in the plan. When the Critic passes an earlier task, the plan moves on by itself: the next task becomes current and the Analyser takes the lead for it. Whoever you name reads this same transcript.`;
+Teammates you can name: Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic, KnowItAll — or "ResearchTeam" to summon the research team. The research team can only run whole (ResearchPlanner → Researcher → ReportMaker → FactCheck, always in that order); you can never name just one of its members. If you name nobody, the Analyser takes over routing — the run ends only when the Analyser names nobody (nothing left to delegate) or the Critic passes the LAST task in the plan. When the Critic passes an earlier task, the plan moves on by itself: the next task becomes current and the Analyser takes the lead for it. Whoever you name reads this same transcript.
+NEVER name yourself — a hand-off to yourself is not a route. If your next step is still yours, end with {"op":"continue"} and the pipeline re-runs you immediately.
+NEVER bounce the task you were just handed back as an over-to: the moment it was handed to you it became YOUR job to DO, not to route again.
+Keep the why to ONE plain sentence — it lands verbatim in the shared transcript as the receiver's briefing.`;
 
         let prompt = [`## Project Goal\n${task}`, currentDateLine, buildFailureBlock, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, buildGateBlock, handoffBlock, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
 
@@ -1001,7 +1004,9 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       // it had been truncated mid-file and wrote the same file again. Forever.
       // The old comment claimed "the re-run re-emits them"; the re-run had no
       // way to know it already had.
-      const parsed = parseAgentOutput(agentOutput);
+      // currentPhase goes in so a SELF over-to (an over-to naming the
+      // speaker) parses as keep-working intent instead of a doomed route.
+      const parsed = parseAgentOutput(agentOutput, currentPhase);
       // MCP blocks aren't known to parseAgentOutput — strip them ourselves so
       // ignored/over-cap calls don't litter the saved message.
       parsed.cleanContent = stripMcpBlocks(parsed.cleanContent);
@@ -1130,8 +1135,9 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
         const searchCall = await callModelWithStreaming(ctx, searchPrompt, systemPrompt, branchId, currentPhase, geminiKeys, dbCreds, callBudget());
         agentOutput = searchCall.text;
         await bill(`${currentPhase.toLowerCase()}-search`, searchCall);
-        // Re-parse with search results incorporated
-        const reParsed = parseAgentOutput(agentOutput);
+        // Re-parse with search results incorporated (same selfAgent as the
+        // primary parse, so a self over-to here marks consistently).
+        const reParsed = parseAgentOutput(agentOutput, currentPhase);
         reParsed.cleanContent = stripMcpBlocks(reParsed.cleanContent);
         // Apply any new file ops from the search-informed response
         for (const op of reParsed.fileOps) {
@@ -1492,7 +1498,15 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       // on every phase advance (updateBranchStatus clears it alongside
       // mcpRoundCount).
       const continueCount = branch.continueCount ?? 0;
-      if (parsed.continueRequested && continueCount < MAX_CONTINUE_ROUNDS) {
+      // A SELF over-to ("over to Coder" FROM the Coder) is the agent saying
+      // "the next step is still mine" — honour it as the implicit continue it
+      // is. Logging builds used to bounce this to the Analyser instead, so a
+      // Coder writing one file per turn ping-ponged Coder → Analyser → Coder
+      // and two rounds produced one file. NOT inside the research team: its
+      // four-hand relay owns the turn order, and a member lingering on its
+      // own seat must not stall the hand-off to the next member.
+      const selfWork = parsed.selfHandoffWhy !== undefined && researchTeamIndex === null;
+      if ((parsed.continueRequested || selfWork) && continueCount < MAX_CONTINUE_ROUNDS) {
         if (!(await advance({
           status: "idle",
           currentAgent: agentName,
@@ -1583,7 +1597,11 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       // mechanism, and a mechanism the user can't see is one they can't
       // trust.
       const handoffTarget = resolveHandoffTarget(parsed.handoffTarget, currentPhase);
-      const whySuffix = parsed.handoffWhy ? ` — ${parsed.handoffWhy.slice(0, 140)}` : "";
+      // The why is the receiver's whole briefing — show it in full (the
+      // parser already caps the stored value at 500 chars). Cutting it at
+      // 140 left routes announced as "…README.md, then" — half an
+      // instruction, which read as a broken pipeline.
+      const whySuffix = parsed.handoffWhy ? ` — ${parsed.handoffWhy}` : "";
       if (handoffTarget === RESEARCH_TEAM_TARGET) {
         const rawWant = (parsed.handoffTarget ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
         const upgradedMember = RESEARCH_TEAM.find((m) => rawWant === m.toLowerCase().replace(/[^a-z0-9]/g, ""));
@@ -1666,7 +1684,14 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       await ctx.runMutation(internal.codeBranches.saveMessage, {
         branchId,
         agent: "System",
-        content: `[ROUTING] ${currentPhase} named no next teammate — the Analyser takes over routing.`,
+        // The agent got here despite asking to keep working (self over-to) —
+        // that only happens when the continue cap refused it, so say THAT,
+        // not "named no next teammate": it named one, itself, ten rounds
+        // running. In-team members land here off the automatic relay with
+        // the generic line.
+        content: parsed.selfHandoffWhy !== undefined && researchTeamIndex === null
+          ? `[ROUTING] ${currentPhase} kept handing the next step to itself — after ${MAX_CONTINUE_ROUNDS} rounds of solo work the Analyser takes over routing.`
+          : `[ROUTING] ${currentPhase} named no next teammate — the Analyser takes over routing.`,
         round,
         messageIndex: totalMessages,
       });

@@ -102,7 +102,7 @@ Provider tabs use neutral slugs (`providerB` … `providerE`) and ask the server
 | `UsageView` | Credit / token usage stats |
 | `KeysView` | API key management |
 | `VersionView` | Version control |
-| `VerboseBlocks.tsx` | Claude Code-style verbose rendering of every committed transcript message: activity markers (`[CMD: …]`, `[FILE CREATED: …]`, test/security verdicts, …) become icon + verb + mono-argument blocks, hand-offs (`[OVER TO: …]`, `⇄ …`) become gradient hero banners naming both ends with the reason on a `⎿` line, commands become terminal `$` blocks. `VerboseMessageContent` (agent messages) + `SystemLineContent` (System routing lines) |
+| `VerboseBlocks.tsx` | Claude Code-style verbose rendering of every committed transcript message: activity markers (`[CMD: …]`, `[FILE CREATED: …]`, test/security verdicts, `[CONTINUING: …]`, …) become icon + verb + mono-argument blocks, hand-offs get exactly ONE hero per event — the System `⇄ …` line becomes the gradient banner naming both ends with the full reason on a `⎿` line, while the agent's own `[OVER TO: …]` marker renders as a compact violet row (a rejected self/unknown target can never paint a fake hero), commands become terminal `$` blocks. `VerboseMessageContent` (agent messages) + `SystemLineContent` (System routing lines) |
 
 The chat view's own rendering follows the same verbose language end to end:
 committed messages go through `VerboseMessageContent` (Agent/Terminal) or

@@ -18,7 +18,8 @@
 // ── Marker model ─────────────────────────────────────────────────────────────
 
 export type VerboseMarkerKind =
-  | "handoff" // [OVER TO: …] / ⇄ … — the steering event; never hidden
+  | "handoff" // ⇄ … System line — the steering event's hero banner; never hidden
+  | "overto" // [OVER TO: …] inside an agent message — the agent's own emission; a compact row, because the System ⇄ line that follows already carries the hero banner (two heroes for one event read as a glitch, and a rejected self/unknown target must never look like a real route)
   | "route" // [ROUTING] … — silent re-route announcement
   | "complete" // ✔ Run complete
   | "retry" // [RETRY n] — Critic sent a task back
@@ -38,7 +39,7 @@ export type VerboseMarkerKind =
   | "key-request" // [API KEY REQUIRED: …]
   | "info" // [INFO REQUESTED: …] / [INSTRUCTIONS PROVIDED: …]
   | "mode" // [CHANGE MODE: …]
-  | "continue" // [CONTINUE]
+  | "continue" // [CONTINUE] / [CONTINUING: …] — same agent takes another turn
   | "dispatch" // [DISPATCH REQUESTED …]
   | "malformed" // [MALFORMED OP …]
   | "warning" // ⚠️ … / Run stopped …
@@ -52,8 +53,9 @@ export interface VerboseMarker {
   detail?: string;
   /** Secondary line rendered under the block with a ⎿ leader. */
   secondary?: string;
-  /** Sender of a hand-off. System ⇄ lines name both ends; OVER TO markers
-   *  leave this empty and the UI fills it with the message's agent. */
+  /** Sender of a hand-off. Only System ⇄ lines (kind "handoff") carry it —
+   *  agent-message OVER TO rows sit inside the sender's own bubble, which
+   *  already names them. */
   fromAgent?: string;
   /** The exact source text the marker was parsed from. */
   raw: string;
@@ -81,12 +83,23 @@ interface MarkerRule {
 }
 
 const MARKER_RULES: MarkerRule[] = [
-  // Hand-offs first — the marker the user must ALWAYS see.
+  // Hand-offs first — the steering the user must ALWAYS see. Inside an agent
+  // message this renders as a compact row ("overto"): the System ⇄ line the
+  // pipeline writes for the same event already carries the hero banner, and
+  // two banners for one hand-off read as a glitch.
   {
-    kind: "handoff",
+    kind: "overto",
     label: "HAND OFF",
     source: "\\[OVER TO: (?<overTo>[^\\]]+)\\]",
     group: "overTo",
+  },
+  // A self hand-off rewritten by the parser as keep-working intent —
+  // "over to Coder" FROM the Coder means "the next step is still mine".
+  {
+    kind: "continue",
+    label: "CONTINUE",
+    source: "\\[CONTINUING(?::\\s?(?<continuing>[^\\]]+))?\\]",
+    group: "continuing",
   },
   // KnowItAll handing a Q&A thread back to the build team. The pipeline
   // appends the reason AFTER the closing bracket. Both historical shapes
@@ -244,10 +257,11 @@ function markerFromMatch(m: RegExpExecArray): VerboseMarker | null {
   let secondary: string | undefined;
 
   switch (kind) {
-    case "handoff": {
+    case "overto": {
       if (!detail) break;
       // "[OVER TO: Coder — fix the login form]" — target first, optional
-      // reason after the em dash.
+      // reason after the em dash. The reason shows in full: it is the
+      // receiver's briefing, and a wrap beats a mid-word cut.
       const [target, ...whyParts] = detail.split(/\s+—\s+/);
       detail = target.trim();
       secondary = whyParts.length > 0 ? whyParts.join(" — ").trim() : undefined;

@@ -871,4 +871,62 @@ describe("parseAgentOutput — team hand-off (over-to)", () => {
     expect(parsed.handoffTarget).toBeUndefined();
     expect(parsed.fileOps).toHaveLength(1);
   });
+
+  it("keeps a long why in full — the marker is the receiver's briefing", () => {
+    // The 120-char display cut used to slice a briefing mid-word
+    // ("…README.md, then") and hide the actual instruction from the
+    // transcript. The only bound is the 500-char store cap.
+    const why = "Begin implementing the foundational project structure: create tsconfig.json, vite.config.js, .gitignore, README.md, then implement the core game loop with the fixed-timestep accumulator and the canvas renderer";
+    const parsed = parseAgentOutput(`{"op":"over-to","agent":"Coder","why":"${why}"}`);
+    expect(parsed.handoffWhy).toBe(why);
+    expect(parsed.cleanContent).toContain(`[OVER TO: Coder — ${why}]`);
+  });
+});
+
+describe("parseAgentOutput — self hand-off (over-to naming the speaker)", () => {
+  it("a self over-to is keep-working intent, never a route", () => {
+    // Logging builds had the Coder echo its briefing back as
+    // {"op":"over-to","agent":"Coder",…} — which painted a nonsense
+    // "Coder → Coder" hand-off marker while the route silently collapsed to
+    // the Analyser. With the speaker's name passed in it becomes [CONTINUING].
+    const parsed = parseAgentOutput(
+      '{"op":"over-to","agent":"Coder","why":"implement tsconfig.json and the game loop next"}',
+      "Coder",
+    );
+    expect(parsed.handoffTarget).toBeUndefined();
+    expect(parsed.selfHandoffWhy).toBe("implement tsconfig.json and the game loop next");
+    expect(parsed.cleanContent).toContain("[CONTINUING: implement tsconfig.json and the game loop next]");
+    expect(parsed.cleanContent).not.toContain("[OVER TO:");
+  });
+
+  it("self-recognition tolerates case, punctuation and a leading \"the\"", () => {
+    for (const target of ["coder", "Coder", "the coder", "the Coder"]) {
+      const parsed = parseAgentOutput(`{"op":"over-to","agent":"${target}"}`, "Coder");
+      expect(parsed.selfHandoffWhy).toBeDefined();
+      expect(parsed.handoffTarget).toBeUndefined();
+    }
+  });
+
+  it("a self over-to without a why still marks continuing", () => {
+    const parsed = parseAgentOutput('{"op":"over-to","agent":"Analyser"}', "Analyser");
+    expect(parsed.selfHandoffWhy).toBe("");
+    expect(parsed.cleanContent).toContain("[CONTINUING]");
+  });
+
+  it("naming a TEAMMATE still routes normally when the speaker is known", () => {
+    const parsed = parseAgentOutput('{"op":"over-to","agent":"Tester","why":"verify the build"}', "Coder");
+    expect(parsed.handoffTarget).toBe("Tester");
+    expect(parsed.handoffWhy).toBe("verify the build");
+    expect(parsed.selfHandoffWhy).toBeUndefined();
+    expect(parsed.cleanContent).toContain("[OVER TO: Tester — verify the build]");
+  });
+
+  it("without the speaker's name the parser stays caller-agnostic", () => {
+    // Old callers pass no selfAgent — every named target keeps landing in
+    // handoffTarget exactly as before.
+    const parsed = parseAgentOutput('{"op":"over-to","agent":"Coder","why":"more work"}');
+    expect(parsed.handoffTarget).toBe("Coder");
+    expect(parsed.selfHandoffWhy).toBeUndefined();
+    expect(parsed.cleanContent).toContain("[OVER TO: Coder — more work]");
+  });
 });

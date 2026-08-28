@@ -7,7 +7,10 @@
 // proper verbose block in the Claude Code tradition: icon + bold verb +
 // mono argument, a ⎿ detail line underneath, and a terminal block for
 // commands. The hand-off (the run's steering event, which must never be
-// hidden) gets the hero treatment — a gradient banner naming both ends.
+// hidden) gets ONE hero treatment — a gradient banner naming both ends,
+// rendered from the System ⇄ line. The agent's own [OVER TO: …] marker is
+// that same event's emission, so it renders as a compact violet row: one
+// hand-off, one banner — and a rejected target can never paint a fake hero.
 //
 // All parsing lives in src/lib/verboseTranscript.ts (framework-free, unit
 // tested); this file is the visual skin only.
@@ -76,6 +79,7 @@ interface KindStyle {
 
 const KIND_STYLES: Record<VerboseMarkerKind, KindStyle> = {
   handoff: { icon: ArrowRightLeft, box: "border-violet-400/40 bg-violet-500/10", accent: "text-violet-300" },
+  overto: { icon: ArrowRightLeft, box: "border-violet-400/25 bg-violet-400/5", accent: "text-violet-300" },
   route: { icon: Route, box: "border-border/50 bg-muted/30", accent: "text-muted-foreground" },
   complete: { icon: CheckCircle2, box: "border-emerald-400/30 bg-emerald-400/10", accent: "text-emerald-300" },
   retry: { icon: RotateCcw, box: "border-amber-400/30 bg-amber-400/10", accent: "text-amber-400" },
@@ -208,8 +212,10 @@ export function VerboseBlock({
 }
 
 /** Committed agent message: prose through markdown, markers as verbose
- *  blocks, in source order. `fromAgent` lets hand-off blocks name the sender
- *  (the OVER TO marker itself only carries the target). */
+ *  blocks, in source order. `fromAgent` only matters should a System-style
+ *  "handoff" hero ever appear inside an agent message — the agent's own
+ *  [OVER TO: …] markers render as compact rows that already sit inside the
+ *  sender's bubble. */
 export function VerboseMessageContent({
   content,
   fromAgent,

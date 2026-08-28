@@ -87,21 +87,30 @@ export interface ParsedOutput {
   requestApiKey?: { name: string; description: string; howToGet: string };
   // KnowItAll's hand-off op: {"op":"dispatch","reason":"..."} — the answering
   // agent found a problem or bug that needs the real build pipeline, so the
-  // pipeline re-runs the Dispatcher (with the reason in the transcript) to set
-  // up the fix instead of completing the run.
+  // pipeline hands the reason to the Analyser (visible in the transcript),
+  // who delegates the fix instead of completing the run.
   dispatchRequested: boolean;
   dispatchReason?: string;
   // The team hand-off op: {"op":"over-to","agent":"Tester","why":"needs unit
-  // tests for the parser"} — the agent names WHO should act next instead of
-  // the pipeline advancing by its fixed roster order. This is the mechanism
-  // that makes the run a team: the Dispatcher picks the entry point and the
-  // roster, and the agents pass the work between themselves in real time.
-  // The pipeline validates the name (unknown/self targets fall back to the
-  // normal order); the op is also how the Critic directs a failure — a
-  // rejected task goes to the agent the Critic names here, not blindly back
-  // to the Coder.
+  // tests for the parser"} — the agent names WHO should act next. This is
+  // the mechanism that makes the run a team: there is no roster and no order,
+  // the agents pass the work between themselves in real time, and the
+  // Analyser takes routing back whenever an agent names nobody. The pipeline
+  // validates the name (an unknown target falls back to the Analyser; a SELF
+  // target is not a route at all — see selfHandoffWhy).
   handoffTarget?: string;
   handoffWhy?: string;
+  // A SELF hand-off — {"op":"over-to","agent":"<the speaker's own name>"} —
+  // is the agent saying "the next step is still mine", not asking for a
+  // route. Recognised only when the caller passes the speaker's name (the
+  // pipeline does; standalone parsing is caller-agnostic). handoffTarget is
+  // left unset, the why is recorded here, and the transcript gets a visible
+  // [CONTINUING: …] marker — previously the marker stayed [OVER TO: Coder …]
+  // inside the Coder's own message, which painted a nonsense "Coder → Coder"
+  // hand-off banner while the route silently collapsed to the Analyser. The
+  // pipeline treats this as an implicit {"op":"continue"} (outside the
+  // research team, whose four-hand relay owns its own turn order).
+  selfHandoffWhy?: string;
 }
 
 // ── Agent ops: the format taught to every pipeline agent ─────────────────────
@@ -145,10 +154,13 @@ export interface ParsedOutput {
 //   {"op":"security-pass"}
 //   {"op":"security-fail"}
 //   {"op":"over-to","agent":"Tester","why":"unit tests for the parser next"}
+//     — naming YOURSELF means "the next step is still mine": not a route, the
+//       pipeline treats it as an implicit {"op":"continue"} and re-runs you
 //   {"op":"request-api-key","name":"VAR","description":"...","howToGet":"..."}
 //   {"op":"continue"}   — ask the pipeline for another turn of the SAME agent
-//   {"op":"dispatch","reason":"..."} — KnowItAll found a problem/bug; re-run the
-//                                      Dispatcher to set up the build pipeline
+//   {"op":"dispatch","reason":"..."} — KnowItAll found a problem/bug; hands the
+//                                      reason to the Analyser, who delegates
+//                                      the fix to the build team
 //
 // The parser finds these by scanning for `{"op":"` (whitespace around `:` and
 // inside the braces tolerated — models add spaces freely) and reading the
@@ -633,7 +645,27 @@ function maskFileBlocks(text: string): string {
     .replace(LEGACY_FILE_BLOCK_FULL_RE, () => MASK);
 }
 
-export function parseAgentOutput(content: string): ParsedOutput {
+/** True when an over-to target names the speaker itself — "the next step is
+ *  still mine". Mirrors the normalisation of resolveHandoffTarget in
+ *  pipelineAgents.ts (lowercase, alnum-only, a leading "the "/"agent "
+ *  tolerated on the TARGET only), duplicated here deliberately: this module
+ *  stays import-free so unit tests exercise it without the Convex tree. The
+ *  resolver remains the authority on which names are ROUTABLE; this only
+ *  answers "is the target the same agent that's speaking". */
+function targetNamesSelf(rawTarget: string, selfAgent: string): boolean {
+  let want = rawTarget.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (want.startsWith("the") && want.length > 3) want = want.slice(3);
+  if (want.startsWith("agent") && want.length > 5) want = want.slice(5);
+  const self = selfAgent.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return want.length > 0 && self.length > 0 && want === self;
+}
+
+/** Parse one agent reply into ops, file writes, verdicts and hand-off intent.
+ *  `selfAgent` is the name of the agent being parsed (the pipeline's current
+ *  phase) — it only decides whether an over-to target is a SELF hand-off
+ *  (recorded as selfHandoffWhy, never a route). Omitting it keeps the old
+ *  caller-agnostic behaviour: every named target lands in handoffTarget. */
+export function parseAgentOutput(content: string, selfAgent?: string): ParsedOutput {
   const fileOps: FileOp[] = [];
   const searchOps: SearchOp[] = [];
   const scrapeOps: ScrapeOp[] = [];
@@ -755,6 +787,7 @@ export function parseAgentOutput(content: string): ParsedOutput {
   let dispatchReason: string | undefined;
   let handoffTarget: string | undefined;
   let handoffWhy: string | undefined;
+  let selfHandoffWhy: string | undefined;
   const processedPaths = new Set<string>();
 
   // Substitute malformed op excerpts BEFORE the successful-op loop rewrites
@@ -962,20 +995,39 @@ export function parseAgentOutput(content: string): ParsedOutput {
       case "handover":
       case "hand-off":
       case "handoff": {
-        // Team hand-off: run the named agent next, overriding the roster
-        // order. "to" is accepted as an alias of "agent" (models write both),
-        // "reason" as an alias of "why". The name is validated by the
-        // pipeline (resolveHandoffTarget) — here we only record the intent.
+        // Team hand-off: run the named agent next — the only routing
+        // mechanism there is. "to" is accepted as an alias of "agent" (models
+        // write both), "reason" as an alias of "why". The name is validated
+        // by the pipeline (resolveHandoffTarget) — here we only record the
+        // intent, plus the one case we can settle without the roster: a
+        // target naming the SPEAKER is not a route.
         const target = typeof op.agent === "string" && op.agent.trim()
           ? op.agent.trim()
           : (typeof op.to === "string" ? op.to.trim() : "");
         if (target) {
-          handoffTarget = target.slice(0, 60);
           const why = typeof op.why === "string" && op.why.trim()
             ? op.why.trim()
             : (typeof op.reason === "string" ? op.reason.trim() : "");
-          handoffWhy = why ? why.slice(0, 500) : undefined;
-          mark(`[OVER TO: ${handoffTarget}${handoffWhy ? ` — ${handoffWhy.slice(0, 120)}` : ""}]`);
+          if (selfAgent && targetNamesSelf(target, selfAgent)) {
+            // Self hand-off = "the next step is still mine". No handoffTarget
+            // (nothing to route); the why survives so the pipeline can keep
+            // the agent working, and the marker says plainly what happened —
+            // an [OVER TO: Coder …] marker inside the Coder's own message
+            // used to paint a "Coder → Coder" hand-off banner while the route
+            // silently collapsed to the Analyser, which read as broken.
+            selfHandoffWhy = why ? why.slice(0, 500) : "";
+            mark(selfHandoffWhy
+              ? `[CONTINUING: ${selfHandoffWhy}]`
+              : "[CONTINUING]");
+          } else {
+            handoffTarget = target.slice(0, 60);
+            handoffWhy = why ? why.slice(0, 500) : undefined;
+            // The why shows in FULL — it is the receiver's briefing, and a
+            // transcript that cuts a briefing mid-word ("…README.md, then")
+            // hides the actual instruction. The 500-char store cap above is
+            // the only bound; wrapping beats a lie (same rule as [CMD:]).
+            mark(`[OVER TO: ${handoffTarget}${handoffWhy ? ` — ${handoffWhy}` : ""}]`);
+          }
         } else {
           mark("[OVER TO: invalid — no agent named]");
         }
@@ -1143,7 +1195,7 @@ export function parseAgentOutput(content: string): ParsedOutput {
   // Final sweep: neutralise orphaned <<...>> markers
   cleanContent = cleanContent.replace(/<<([^<>]{0,200}?)>>/g, "‹‹$1››");
 
-  return { fileOps, searchOps, scrapeOps, cmdOps, mcpOps, researchOps, cleanContent, malformedOps, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode, requestApiKey, continueRequested, dispatchRequested, dispatchReason, handoffTarget, handoffWhy };
+  return { fileOps, searchOps, scrapeOps, cmdOps, mcpOps, researchOps, cleanContent, malformedOps, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode, requestApiKey, continueRequested, dispatchRequested, dispatchReason, handoffTarget, handoffWhy, selfHandoffWhy };
 }
 
 export interface PlannerTask {
