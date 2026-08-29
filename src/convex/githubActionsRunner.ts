@@ -19,7 +19,7 @@
 // the OS it actually ships to rather than on whatever the container happened
 // to be. That is not something a single Linux sandbox can do at any price.
 
-import { internalAction, type ActionCtx } from "./_generated/server";
+import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { Octokit } from "@octokit/rest";
@@ -1008,5 +1008,86 @@ export const stopSandbox = internalAction({
     await ctx.runMutation(internal.codeBranches.setSandboxInfo, {
       branchId: args.branchId, url: null, status: "stopped", runId: null, callbackNonce: null,
     });
+  },
+});
+
+// ── Admin: platform GitHub token health ──────────────────────────────────────
+// The platform's GITHUB_TOKEN owns every build workspace (the <repo>-vm
+// mirrors AND the standalone thalamus-vm-* ones), and every cloud command
+// dies with the same half-mystery when it goes bad — a 401 surfaces to the
+// BRANCH's owner as "platform-side configuration issue", which the admin then
+// cannot verify without reading Convex logs line by line. This check answers
+// the only three questions that matter, live: is the env var set, does GitHub
+// accept it, and do its scopes cover what the mirror needs (repo + workflow).
+// Same ADMIN_TOKEN gate as every other admin action. Reports verdicts only —
+// the token's value never leaves the server.
+export const adminCheckPlatformGithub = action({
+  args: { adminToken: v.string() },
+  handler: async (_ctx, args): Promise<{
+    tokenPresent: boolean;
+    authenticated: boolean;
+    login?: string;
+    scopes?: string[] | null; // null = fine-grained PAT / app token (no scope header)
+    hasRepoScope?: boolean | null;
+    hasWorkflowScope?: boolean | null;
+    verdict: string;
+    fix?: string;
+  }> => {
+    if (!process.env.ADMIN_TOKEN || args.adminToken !== process.env.ADMIN_TOKEN) {
+      throw new Error("Unauthorized");
+    }
+
+    const token = (process.env.GITHUB_TOKEN ?? "").trim();
+    const FIX_TOKEN =
+      "GitHub → platform account → Settings → Developer settings → Personal access tokens (classic) → "
+      + "generate a token with the `repo` and `workflow` scopes → Convex dashboard → Settings → "
+      + "Environment Variables → set GITHUB_TOKEN to the new value. Every blocked branch heals itself "
+      + "on its next prompt — no redeploy needed.";
+
+    if (!token) {
+      return {
+        tokenPresent: false,
+        authenticated: false,
+        verdict: "GITHUB_TOKEN is not set in this deployment's environment — cloud command execution is disabled platform-wide.",
+        fix: FIX_TOKEN,
+      };
+    }
+
+    const octokit = new Octokit({ auth: token });
+    try {
+      const res = await octokit.request("GET /user");
+      const login = (res.data as { login?: string }).login;
+      const raw = res.headers["x-oauth-scopes"];
+      const scopes = typeof raw === "string"
+        ? raw.split(",").map((s) => s.trim()).filter(Boolean)
+        : null; // fine-grained PATs and app tokens send no scope header
+      const hasRepoScope = scopes ? scopes.includes("repo") : null;
+      const hasWorkflowScope = scopes ? scopes.includes("workflow") : null;
+
+      if (hasWorkflowScope === false) {
+        return {
+          tokenPresent: true, authenticated: true, login, scopes, hasRepoScope, hasWorkflowScope,
+          verdict: `Token authenticates as "${login}" but LACKS the workflow scope — GitHub will refuse every workflow file write (bare 404), so cloud commands cannot start.`,
+          fix: FIX_TOKEN,
+        };
+      }
+      return {
+        tokenPresent: true, authenticated: true, login, scopes, hasRepoScope, hasWorkflowScope,
+        verdict: hasWorkflowScope
+          ? `Healthy: authenticates as "${login}" with repo + workflow scopes.`
+          : `Authenticates as "${login}". No scope header (fine-grained PAT or app token) — scopes cannot be read; if builds fail with 404s under .github/workflows/, the token needs Workflows: write.`,
+      };
+    } catch (err) {
+      const status = (err as { status?: number })?.status;
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        tokenPresent: true,
+        authenticated: false,
+        verdict: status === 401
+          ? `GitHub REJECTED the configured GITHUB_TOKEN (401 Bad credentials — the token is wrong, revoked, or an expired fine-grained PAT). Cloud command execution is down platform-wide until it is replaced.`
+          : `GitHub check failed (${status ?? "network"}): ${msg.slice(0, 200)}`,
+        fix: FIX_TOKEN,
+      };
+    }
   },
 });
