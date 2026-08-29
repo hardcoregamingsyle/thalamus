@@ -1,6 +1,7 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import { warnedStampAfterBlockChange } from "./lib/executorWarnings";
 
 function generateBranchId(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -708,8 +709,38 @@ export const setExecutorBlocked = internalMutation({
     const next = args.reason && args.reason.length > 0 ? args.reason : undefined;
     // Avoid a needless patch (and Convex write) when nothing actually changes —
     // this is called on every successful VM boot heartbeat's neighbourhood.
-    if (branch.executorBlockedReason === next) return;
-    await ctx.db.patch(branch._id, { executorBlockedReason: next });
+    // A reason CHANGE also re-arms the user-facing warning: the stamp that
+    // silenced the previous wording must not swallow a new situation, and a
+    // heal (null) clears it so the same failure returning later is announced
+    // again. An unchanged reason keeps its stamp — that is what stops the
+    // identical warning from re-printing on every prompt.
+    const warned = warnedStampAfterBlockChange(
+      branch.executorBlockedReason,
+      next,
+      branch.executorBlockWarnedReason,
+    );
+    if (!warned.changed) return;
+    await ctx.db.patch(branch._id, {
+      executorBlockedReason: next,
+      executorBlockWarnedReason: warned.warnedReason,
+    });
+  },
+});
+
+// Remembers that the current executorBlockedReason has been surfaced to the
+// user in the transcript, so startPipeline never re-prints the identical
+// warning on later prompts while the same block persists. The stamp is
+// cleared by setExecutorBlocked whenever the reason itself changes.
+export const markExecutorBlockWarned = internalMutation({
+  args: { branchId: v.string(), reason: v.string() },
+  handler: async (ctx, args) => {
+    const branch = await ctx.db
+      .query("codeBranches")
+      .withIndex("by_branch_id", (q) => q.eq("branchId", args.branchId))
+      .first();
+    if (!branch) return;
+    if (branch.executorBlockWarnedReason === args.reason) return;
+    await ctx.db.patch(branch._id, { executorBlockWarnedReason: args.reason });
   },
 });
 

@@ -41,6 +41,7 @@ import {
 import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./lib/mcpClient";
 import { RESEARCH_TEAM, RESEARCH_TEAM_TARGET, resolveHandoffTarget, isRunnableAgent, nextTaskAfterPass } from "./lib/pipelineAgents";
 import { classifyTurnEnding } from "./lib/turnContract";
+import { buildExecutorBlockedWarning, shouldWarnExecutorBlocked } from "./lib/executorWarnings";
 // The Dispatcher is gone entirely: no roster, no model-seat picks, no
 // dispatch phase. Runs enter as the Analyser with the chain's default seats
 // (lib/modelMenu.ts was deleted with it).
@@ -896,6 +897,7 @@ Keep the why to ONE plain sentence — it lands verbatim in the shared transcrip
               ? `## Command Execution UNAVAILABLE
 ${blockedReason}
 Do NOT emit {"op":"cmd"} ops — they cannot run; the reason is visible to the user in the command results. Work from the file contents shown above.
+The block is infrastructure-side — no credential the user can paste will clear it, so NEVER burn a request-api-key op on a GitHub token (GITHUB_TOKEN, GITHUB_PAT, or any personal access token).
 
 ## Write files — <<FILE>> block, raw content, NO escaping:
 <<FILE "src/index.html">>
@@ -1980,42 +1982,29 @@ export const startPipeline = action({
       });
     }
 
-    // If the executor is genuinely blocked (a connected GitHub token that GitHub
-    // itself reports has no `workflow` scope being the common case), tell the
-    // user up front on THIS prompt so they know why commands will not run and
-    // what to do about it — the agent prompt will also strip the cmd op
-    // advertisement so no rounds are burned on impossible executions.
-    // Guarded to once per user prompt (startPipeline runs once per prompt) and
-    // deduped against an identical trailing System warning so a Stop/Restart
-    // does not spam the transcript.
+    // If the executor is genuinely blocked (a platform GITHUB_TOKEN GitHub
+    // itself rejects being the common case), tell the user up front so they
+    // know why commands will not run and what to do about it — the agent
+    // prompt will also strip the cmd op advertisement so no rounds are burned
+    // on impossible executions.
+    // The warning prints ONCE per distinct blocked reason, not once per
+    // prompt: deduping against the last transcript message let the user's
+    // own "continue" (a User row) re-arm it, which spammed the identical
+    // warning after every single prompt while a platform token stayed dead.
+    // The branch's executorBlockWarnedReason stamp (set when the warning is
+    // posted, cleared by setExecutorBlocked whenever the reason itself
+    // changes — a heal included) is the real guard: a persistent block goes
+    // quiet after its first announcement, a new situation is announced once.
     if (blockedReason && isCloud) {
-      const recent = await ctx.runQuery(internal.codeBranches.getMessagesInternal, {
-        branchId: args.branchId,
-      }) as Array<{ agent: string; content: string }>;
-      const last = recent.length > 0 ? recent[recent.length - 1] : null;
-      // The stamped reason already carries the case-appropriate guidance
-      // (githubActionsRunner splits it by token provenance). Append the
-      // reconnect pointer for the user-token case only — on a platform-hosted
-      // repo that pointer is the loop the user can never break out of.
-      const isPlatformBlock =
-        blockedReason.includes("platform's GitHub integration") ||
-        blockedReason.includes("platform's GITHUB_TOKEN") ||
-        blockedReason.includes("platform build workspace") ||
-        blockedReason.includes("platform-side");
-      const warning =
-        `⚠️ Cloud command execution is disabled on this branch: ${blockedReason}\n\n`
-        + `Agents will keep working on files, but any command they would have run will not execute. `
-        + (isPlatformBlock
-          ? `This is a platform-side configuration issue, not something your GitHub connection controls — the desktop app runs commands on your own machine instead.`
-          : `Open this branch's Git Sync tab to check the GitHub connection and reconnect.`);
-      const alreadyWarned =
-        last?.agent === "System" &&
-        last.content.startsWith("⚠️ Cloud command execution is disabled");
-      if (!alreadyWarned) {
+      if (shouldWarnExecutorBlocked(blockedReason, branch.executorBlockWarnedReason)) {
         await ctx.runMutation(internal.codeBranches.saveMessage, {
           branchId: args.branchId,
           agent: "System",
-          content: warning,
+          content: buildExecutorBlockedWarning(blockedReason),
+        });
+        await ctx.runMutation(internal.codeBranches.markExecutorBlockWarned, {
+          branchId: args.branchId,
+          reason: blockedReason,
         });
       }
     }

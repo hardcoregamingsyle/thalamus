@@ -240,6 +240,15 @@ const schema = defineSchema(
       // successful VM workflow install. Read by the pipeline's prompt builder
       // so agents stop emitting {"op":"cmd"} ops that can never execute.
       executorBlockedReason: v.optional(v.string()),
+      // The blocked-reason wording already surfaced to the user in the
+      // transcript. startPipeline prints the "Cloud command execution is
+      // disabled" warning once per distinct reason and then stays silent
+      // while it persists — before this stamp the dedupe checked only the
+      // last transcript message, so every "continue" (a User row) re-armed
+      // the identical warning. setExecutorBlocked clears the stamp whenever
+      // the reason itself changes (a heal clears it too), so a genuinely new
+      // situation is still announced exactly once.
+      executorBlockWarnedReason: v.optional(v.string()),
       // RETIRED — Dispatcher-era custom agents (JSON array of
       // {"name","systemPrompt"}). The cast is fixed; kept only so old branch
       // rows keep loading.

@@ -112,7 +112,7 @@ Grouped by concern. Pure helper modules live under [`src/convex/lib/`](./archite
 | File | Responsibility |
 |---|---|
 | `codePipeline.ts` | The fixed-cast agent pipeline — no Dispatcher; runs enter as the Analyser and move by `over-to` hand-offs. One agent step per invocation of `runPipelineAction`, self-reschedules via `ctx.scheduler.runAfter(0, …)`. Streaming, JSON-op parsing, MCP rounds (resolved before the command pause), Critic-acceptance plan advance (`security-pass` only — no fail/retry machinery), `stopPipeline`, boot of the cloud VM worker, `checkBuiltInMcpServers`. |
-| `codeBranches.ts` | Branch CRUD, file upsert, `setDispatchedAgents`, state transitions, `getBranchInternal`, `setVmInfo`, `completeSandboxCallback`. |
+| `codeBranches.ts` | Branch CRUD, file upsert, `setDispatchedAgents`, state transitions, `getBranchInternal`, `setVmInfo`, `completeSandboxCallback`. `setExecutorBlocked` stamps/clears `executorBlockedReason` (and re-arms the warning stamp `executorBlockWarnedReason` on any change); `markExecutorBlockWarned` is the stamp's writer. |
 | `codeCommands.ts` | Command queue. Endpoints: `queueCommand`, `getPendingCommands`, `getRecentCommandResults`, `claimPendingCommandsForVm` (GH Actions worker), `completeFromRunner` (cloud callback), `completeCommand` (desktop local), `listPendingForBranch` (desktop poll). |
 | `codeApiKeys.ts` | Encrypted storage of user-supplied provider keys; resumes the pipeline when all requested keys arrive. |
 | `codeProjects.ts` / `codeDeletion.ts` | Project CRUD + cascade delete. |
