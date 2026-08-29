@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Octokit } from "@octokit/rest";
 import type { Id } from "./_generated/dataModel";
-import { generateReadableRepoName, generateObscureBranchName } from "./lib/obscureRepoGenerator";
+import { generateReadableRepoName, generateObscureBranchName, randomDigits } from "./lib/obscureRepoGenerator";
 
 // Shape of the value ensureRepoForBranch's caller (createObscureRepo) returns.
 // Duplicated locally so the self-referential internal.githubAutoCreate.*
@@ -71,11 +71,24 @@ export const createObscureRepo = internalAction({
       let repoName = requestedName || generateReadableRepoName();
 
       // A 422 from createForAuthenticatedUser is almost always "name already
-      // exists on this account" — suffix the requested name (-2, -3, ...)
-      // instead of failing the whole creation. The readable default is
-      // collision-safe by construction, so a 422 there is not retried.
+      // exists on this account". Honour the requested name first (plain, then
+      // -2 … -5); when even those are taken — the common case being many
+      // branches all named "main" fighting over the same five names — fall
+      // back to a random digit tag. A name collision is a cosmetic problem
+      // and must never be able to kill the branch's repository: the branch
+      // gets its repo as <name>-<tag> and the user sees the real URL in the
+      // Git Sync tab. The readable default is collision-safe by construction,
+      // so a 422 there is not retried.
       let repo: { html_url: string } | null = null;
-      for (let attempt = 0; attempt < 5 && !repo; attempt++) {
+      const tried: string[] = [];
+      for (let attempt = 0; attempt < 8 && !repo; attempt++) {
+        if (attempt > 0 && requestedName) {
+          repoName = attempt <= 4
+            ? `${requestedName}-${attempt + 1}`
+            // 93 + hyphen + 4 digits stays under GitHub's 100-char repo cap.
+            : `${requestedName.slice(0, 93)}-${randomDigits(4)}`;
+        }
+        tried.push(repoName);
         try {
           const { data } = await octokit.repos.createForAuthenticatedUser({
             name: repoName,
@@ -92,13 +105,17 @@ export const createObscureRepo = internalAction({
             (err as { status?: number; response?: { status?: number } })?.status ??
             (err as { response?: { status?: number } })?.response?.status;
           if (status === 422 && requestedName) {
-            repoName = `${requestedName}-${attempt + 2}`;
             continue;
           }
           throw err;
         }
       }
-      if (!repo) throw new Error("Failed to create repository after name collisions");
+      if (!repo) {
+        throw new Error(
+          `Could not create the repository on ${username}'s GitHub account — every name variant was taken (${tried.join(", ")}). `
+          + `Pick a different repo name in this branch's Git Sync tab and sync again.`,
+        );
+      }
 
       // No auto_init means main is unborn — create an initial commit so the
       // ref exists, then fork the feature branch from it.

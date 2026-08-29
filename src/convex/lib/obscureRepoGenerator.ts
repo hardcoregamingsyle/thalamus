@@ -100,7 +100,7 @@ function pick<T>(list: T[]): T {
   return list[idx % list.length];
 }
 
-function randomDigits(len: number): string {
+export function randomDigits(len: number): string {
   const bytes = crypto.randomBytes(len);
   let s = "";
   for (const b of bytes) {

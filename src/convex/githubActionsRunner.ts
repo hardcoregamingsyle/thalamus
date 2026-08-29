@@ -26,6 +26,7 @@ import { Octokit } from "@octokit/rest";
 import crypto from "crypto";
 import type { Id } from "./_generated/dataModel";
 import { sanitizeRepoName } from "./githubAutoCreate";
+import { randomDigits } from "./lib/obscureRepoGenerator";
 import { isSystemPath, pushFilesToRef } from "./githubPushUtils";
 
 const VM_WORKFLOW_PATH = ".github/workflows/thalamus-vm.yml";
@@ -460,7 +461,16 @@ export const ensureVmMirror = internalAction({
         const base = sanitizeRepoName(`thalamus-vm-${args.branchId.slice(-8)}`) || "thalamus-vm";
         let vmRepo = base;
         let htmlUrl = "";
-        for (let attempt = 0; attempt < 5; attempt++) {
+        // Same rule as user-repo creation: a name collision is cosmetic and
+        // must never kill the workspace — numbered suffixes, then a random
+        // tag (the base already carries the branch id, so this is belt and
+        // braces for re-created branches).
+        for (let attempt = 0; attempt < 8; attempt++) {
+          if (attempt > 0) {
+            vmRepo = attempt <= 4
+              ? `${base}-${attempt + 1}`
+              : `${base.slice(0, 93)}-${randomDigits(4)}`;
+          }
           try {
             const { data } = await octokit.repos.createForAuthenticatedUser({
               name: vmRepo,
@@ -471,11 +481,11 @@ export const ensureVmMirror = internalAction({
             break;
           } catch (err) {
             const status = (err as { status?: number })?.status;
-            if (status === 422) { vmRepo = `${base}-${attempt + 2}`; continue; }
+            if (status === 422) { continue; }
             throw err;
           }
         }
-        if (!htmlUrl) throw new Error("Failed to create the build workspace repository");
+        if (!htmlUrl) throw new Error("Failed to create the build workspace repository — every name variant was taken on the platform account");
 
         // One branch, "main": the README creates the ref, then the branch's
         // CURRENT code lands BEFORE the workspace is trusted (saveVmMirror
@@ -551,7 +561,15 @@ export const ensureVmMirror = internalAction({
       const base = sanitizeRepoName(`${cfg.repo}-vm`) || "thalamus-vm";
       let vmRepo = base;
       let htmlUrl = "";
-      for (let attempt = 0; attempt < 5; attempt++) {
+      // A name collision is cosmetic and must never kill the workspace:
+      // numbered suffixes, then a random tag (re-created branches whose old
+      // mirror still lingers are the usual 422 here).
+      for (let attempt = 0; attempt < 8; attempt++) {
+        if (attempt > 0) {
+          vmRepo = attempt <= 4
+            ? `${base}-${attempt + 1}`
+            : `${base.slice(0, 93)}-${randomDigits(4)}`;
+        }
         try {
           const { data } = await octokit.repos.createForAuthenticatedUser({
             name: vmRepo,
@@ -566,11 +584,11 @@ export const ensureVmMirror = internalAction({
           break;
         } catch (err) {
           const status = (err as { status?: number })?.status;
-          if (status === 422) { vmRepo = `${base}-${attempt + 2}`; continue; }
+          if (status === 422) { continue; }
           throw err;
         }
       }
-      if (!htmlUrl) throw new Error("Failed to create the build workspace repository");
+      if (!htmlUrl) throw new Error("Failed to create the build workspace repository — every name variant was taken on the platform account");
 
       // Seed the default branch so workflow_dispatch registration has a home
       // (see ensureWorkflowOnRepo), then fork the working branch the worker
