@@ -1,11 +1,14 @@
 // ── The turn-ending contract, as ONE pure decision ───────────────────────────
 // Every pipeline reply must END exactly one way: an explicit continue, a real
-// over-to, or one of the designed exits (terminal-seat silence, a Critic
-// pass, the research relay's fixed order). Replies that end silent on routing
-// — or aim at a name that is not a teammate — are contract BREACHES: the
-// speaker is coached in its own transcript line and re-runs, because the
-// system never picks the next seat for an agent (that rescue was the
-// dispatcher sneaking back).
+// over-to, or one of the designed exits (a terminal seat's EXPLICIT done op,
+// a Critic pass, the research relay's fixed order). Replies that end silent
+// on routing — or aim at a name that is not a teammate — are contract
+// BREACHES: the speaker is coached in its own transcript line and re-runs,
+// because the system never picks the next seat for an agent (that rescue was
+// the dispatcher sneaking back) — and never INVENTS an ending either: a bare
+// reply used to be read as "nothing to delegate" even when the text plainly
+// recommended next steps, so an ending is now valid only when the agent
+// STATED it (an explicit over-to, or {\"op\":\"done\"} from a closing seat).
 //
 // This module is import-free on purpose (same convention as
 // agentOutputParser.ts): the unit tests exercise the whole ending matrix
@@ -34,6 +37,10 @@ export interface TurnEndingInput {
   resolvedHandoff?: string;
   /** The Critic accepted the task this reply (pass IS the decision). */
   criticPass: boolean;
+  /** Set when the reply closed with {"op":"done","why":…}. Honoured ONLY
+   *  from the terminal seats (the Analyser, KnowItAll) — a build seat cannot
+   *  close runs; its done op is ignored and its normal contract applies. */
+  doneWhy?: string;
 }
 
 export type TurnEnding =
@@ -58,10 +65,14 @@ export type TurnEnding =
     };
 
 /** The coaching marker appended to the speaker's own message when its reply
- *  broke the ending contract and gets re-run. */
-function coachMarker(breach: "undirected" | "badTarget", handoffTarget?: string): string {
-  return breach === "badTarget"
-    ? `[CONTINUING: "${(handoffTarget ?? "").slice(0, 40)}" is not a teammate — name a real one, or continue]`
+ *  broke the ending contract and gets re-run. A closing seat hears the OTHER
+ *  legal ending too — "name nobody" is no longer its designed exit. */
+function coachMarker(breach: "undirected" | "badTarget", handoffTarget?: string, isTerminalSeat = false): string {
+  if (breach === "badTarget") {
+    return `[CONTINUING: "${(handoffTarget ?? "").slice(0, 40)}" is not a teammate — name a real one, or continue]`;
+  }
+  return isTerminalSeat
+    ? "[CONTINUING: no routing and no done op — name the next teammate with over-to, or close the run with {\"op\":\"done\",\"why\":\"…\"}]"
     : "[CONTINUING: no hand-off named — keep working or name the next teammate]";
 }
 
@@ -104,23 +115,31 @@ export function classifyTurnEnding(input: TurnEndingInput): TurnEnding {
   const {
     currentPhase, inRelay, relayAdvances, continueCount, maxContinueRounds,
     continueRequested, selfHandoffWhy, handoffTarget, resolvedHandoff, criticPass,
+    doneWhy,
   } = input;
 
   const passIsTheDecision = currentPhase === "Critic" && criticPass;
   const isTerminalSeat = currentPhase === "Analyser" || currentPhase === "KnowItAll";
+  // The run's only agent-stated ending. From any other seat the op is noise:
+  // a Coder cannot close runs, so its done changes nothing and its normal
+  // contract (hand off or continue) applies unchanged below.
+  const doneIsTheExit = isTerminalSeat && doneWhy !== undefined;
 
   // The two breach shapes. undirected: the reply ends with NO routing intent
-  // at all. badTarget: an over-to named something that is not a teammate —
-  // which must never fall over silently, and which coaches even the lead
-  // (the Analyser SILENTLY ending is the designed exit; the Analyser naming
-  // garbage is a spoken intent it got wrong).
+  // at all — a breach for EVERY seat now, the closing seats included: an
+  // ending the agent never stated is an accident, not a designed exit (the
+  // regression: the Analyser ended an architecture blueprint with a whole
+  // "NEXT STEPS & HANDOFF" section, no op, and the run silently completed
+  // with "nothing more to delegate"). An EXPLICIT done is never a breach.
+  // badTarget: an over-to named something that is not a teammate — which
+  // must never fall over silently, and which coaches even the lead.
   const undirected =
     !continueRequested &&
     handoffTarget === undefined &&
-    selfHandoffWhy === undefined &&
     !passIsTheDecision &&
     !inRelay &&
-    !isTerminalSeat;
+    !doneIsTheExit &&
+    selfHandoffWhy === undefined;
   const badTarget =
     handoffTarget !== undefined &&
     resolvedHandoff === undefined &&
@@ -132,7 +151,7 @@ export function classifyTurnEnding(input: TurnEndingInput): TurnEnding {
   if (underCap) {
     if (continueRequested) return { kind: "continue" };
     if (selfHandoffWhy !== undefined && !inRelay) return { kind: "selfwork" };
-    if (undirected) return { kind: "coach", breach: "undirected", marker: coachMarker("undirected") };
+    if (undirected) return { kind: "coach", breach: "undirected", marker: coachMarker("undirected", undefined, isTerminalSeat) };
     if (badTarget) return { kind: "coach", breach: "badTarget", marker: coachMarker("badTarget", handoffTarget) };
   }
 
@@ -141,17 +160,27 @@ export function classifyTurnEnding(input: TurnEndingInput): TurnEnding {
   if (passIsTheDecision) return { kind: "advance" };
   if (resolvedHandoff !== undefined) return { kind: "advance" };
 
-  // ── Terminal seats: silence is the designed exit ──────────────────────
-  // Seat-based like the pipeline's block: whatever got this far (nothing
-  // routed, nothing coached further) ends the run — including, on purpose,
-  // the over-cap stragglers, since re-running the LEAD past its cap would
-  // loop the checkpoint forever.
+  // ── Terminal seats: the run ends only on the agent's own statement ────
+  // An explicit done is the designed exit — the agent SAID the work is over
+  // and the transcript tells the user why, in the agent's words.
+  if (doneIsTheExit) {
+    return {
+      kind: "terminal",
+      completeMessage: doneWhy
+        ? `✔ Run complete — ${doneWhy}`
+        : `✔ Run complete — closed by the ${currentPhase}.`,
+    };
+  }
+
+  // What remains is a closing seat that STILL never stated an ending after
+  // the coached budget above ran out. The run stops rather than loop the
+  // lead forever — but the line says what actually happened, never the old
+  // lie ("nothing more to delegate" printed on a reply that plainly had
+  // next steps in it).
   if (isTerminalSeat) {
     return {
       kind: "terminal",
-      completeMessage: currentPhase === "Analyser"
-        ? "✔ Run complete — the Analyser had nothing more to delegate."
-        : "✔ Run complete — the question was answered.",
+      completeMessage: `✔ Run complete — the ${currentPhase} spent ${maxContinueRounds} coached turns without delegating or closing the run.`,
     };
   }
 

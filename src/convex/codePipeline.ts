@@ -836,15 +836,16 @@ export const runPipelineAction = internalAction({
         // it is now the ONLY routing mechanism. Every agent ends its turn by
         // naming the next teammate; naming nobody (or a non-teammate) does
         // NOT hand anything over — the speaker is coached in its own
-        // transcript line and re-run. When the ANALYSER names nobody the run
-        // ends.
+        // transcript line and re-run. Runs end only when a closing seat
+        // STATES it: {"op":"done"} from the Analyser or KnowItAll, or the
+        // Critic passing the last task. A bare ending is never an exit.
         const handoffBlock = `## Handing over to a teammate
 You are one team sharing this transcript, and there is no fixed order — whoever your work needs next, you name. When YOUR part is done, end your reply with:
 {"op":"over-to","agent":"AgentName","why":"what they should do"}
-Teammates you can name: Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic, KnowItAll — or "ResearchTeam" to summon the research team. The research team can only run whole (ResearchPlanner → Researcher → ReportMaker → FactCheck, always in that order); you can never name just one of its members. If you name nobody — or a name that is not a teammate — nothing routes for you: YOU are run again with a coaching reminder in your own transcript line, so end every reply deliberately. The run ends only when the Analyser names nobody (nothing left to delegate) or the Critic passes the LAST task in the plan. When the Critic passes an earlier task, the plan moves on by itself: the next task becomes current and the Analyser takes the lead for it. Whoever you name reads this same transcript.
+Teammates you can name: Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic, KnowItAll — or "ResearchTeam" to summon the research team. The research team can only run whole (ResearchPlanner → Researcher → ReportMaker → FactCheck, always in that order); you can never name just one of its members. If you name nobody — or a name that is not a teammate — nothing routes for you: YOU are run again with a coaching reminder in your own transcript line, so end every reply deliberately. The run ends only when the Analyser or KnowItAll closes it with {"op":"done","why":"…"} or the Critic passes the LAST task in the plan. When the Critic passes an earlier task, the plan moves on by itself: the next task becomes current and the Analyser takes the lead for it. Whoever you name reads this same transcript.
 NEVER name yourself — a hand-off to yourself is not a route. If your next step is still yours, end with {"op":"continue"} and the pipeline re-runs you immediately.
 NEVER bounce the task you were just handed back as an over-to: the moment it was handed to you it became YOUR job to DO, not to route again.
-Keep the why to ONE plain sentence — it lands verbatim in the shared transcript as the receiver's briefing.\nHow your reply must END — exactly one of these, every single time:\n- work remains in YOUR step → {"op":"continue"}\n- your step is done → {"op":"over-to","agent":"<teammate>","why":"one sentence"}\nEnd silent and you simply run again with a coaching stamp — the pipeline NEVER picks the next teammate for you. Holding the floor through 10 turns in a row is the limit; then the Analyser takes a checkpoint and re-directs, so spend each turn on purpose.\nThe square-bracket stamps you see in this transcript — [OVER TO: …], [CONTINUING: …], [CONTINUE], [CMD: …] — are the pipeline's receipts for ops that already ran. Typing a stamp is not the command. Always emit the JSON op.`;
+Keep the why to ONE plain sentence — it lands verbatim in the shared transcript as the receiver's briefing.\nHow your reply must END — exactly one of these, every single time:\n- work remains in YOUR step → {"op":"continue"}\n- your step is done → {"op":"over-to","agent":"<teammate>","why":"one sentence"}\n- ONLY the Analyser or KnowItAll, only when the run is genuinely complete → {"op":"done","why":"what the user got"}\nEnd silent and you simply run again with a coaching stamp — the pipeline NEVER picks the next teammate for you, and a bare ending is never a run exit. Holding the floor through 10 turns in a row is the limit; then the Analyser takes a checkpoint and re-directs, so spend each turn on purpose.\nThe square-bracket stamps you see in this transcript — [OVER TO: …], [CONTINUING: …], [CONTINUE], [DONE: …], [CMD: …] — are the pipeline's receipts for ops that already ran. Typing a stamp is not the command. Always emit the JSON op.`;
 
         let prompt = [`## Project Goal\n${task}`, currentDateLine, buildFailureBlock, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, buildGateBlock, handoffBlock, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
 
@@ -1490,10 +1491,14 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       // that rescue was the dispatcher sneaking back. The stamp lives in an
       // AGENT message on purpose: buildContext's per-agent digest drops
       // System rows, so a coaching System row falls out of long transcripts.
-      // Terminal seats keep their designed exits (the Analyser or KnowItAll
-      // naming nobody ENDS the run), a Critic pass IS the decision, and the
-      // relay owns its members' order. Naming GARBAGE is the one breach that
-      // coaches even the lead — silence ends the run, a wrong name doesn't.
+      // The closing seats end runs only by STATING it: an explicit
+      // {"op":"done"} from the Analyser or KnowItAll is the designed exit; a
+      // bare ending from them is a coached breach like everyone else's
+      // (the blueprint that ended with a "NEXT STEPS & HANDOFF" section and
+      // completed the run anyway, with the system claiming "nothing more to
+      // delegate", is what retired inferred exit-from-silence). A Critic
+      // pass IS the decision, the relay owns its members' order, and naming
+      // GARBAGE coaches even the lead — a wrong name never routes.
       const continueCount = branch.continueCount ?? 0;
       const resolvedHandoff = resolveHandoffTarget(parsed.handoffTarget, currentPhase);
       const ending = classifyTurnEnding({
@@ -1507,6 +1512,7 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
         handoffTarget: parsed.handoffTarget,
         resolvedHandoff,
         criticPass: parsed.criticResult === "pass",
+        doneWhy: parsed.doneWhy,
       });
 
       // Save message
@@ -1705,12 +1711,13 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       // ── No hand-off named ─────────────────────────────────────────────────
       // The classifier already sent every structurally-owned reply to its leg
       // above (relay advance, Critic pass, valid hand-off). What reaches this
-      // point is either TERMINAL — the Analyser or KnowItAll chose silence,
-      // the designed run exit — or ESCALATE: a seat consumed its whole solo
-      // budget refusing the ending contract, and the classifier's line names
-      // exactly which refusal it was. The takeover is loud, terminal for that
-      // seat, and earned — never a silent re-route: movement is a decision,
-      // not a queue.
+      // point is either TERMINAL — a closing seat stated {"op":"done"} (the
+      // designed exit), or stopped the run with the honest
+      // never-routed-or-closed line after spending its coached budget — or
+      // ESCALATE: a seat consumed its whole solo budget refusing the ending
+      // contract, and the classifier's line names exactly which refusal it
+      // was. The takeover is loud, terminal for that seat, and earned —
+      // never a silent re-route: movement is a decision, not a queue.
       if (ending.kind === "terminal") {
         totalMessages++;
         await ctx.runMutation(internal.codeBranches.saveMessage, {

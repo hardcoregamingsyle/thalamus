@@ -49,6 +49,15 @@ describe("segmentVerboseContent — hand-offs", () => {
     expect(bare.detail).toBeUndefined();
   });
 
+  it("parses DONE (a closing seat's explicit run end) as its own row", () => {
+    const [m] = markersOf("[DONE: answered — the drift tuning question]");
+    expect(m.kind).toBe("done");
+    expect(m.detail).toBe("answered — the drift tuning question");
+    const [bare] = markersOf("[DONE]");
+    expect(bare.kind).toBe("done");
+    expect(bare.detail).toBeUndefined();
+  });
+
   it("keeps the reason's own em dashes after the first split", () => {
     const [m] = markersOf("[OVER TO: Research Team — need sources — recent ones]");
     expect(m.detail).toBe("Research Team");

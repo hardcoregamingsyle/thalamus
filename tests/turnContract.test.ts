@@ -60,7 +60,7 @@ describe("classifyTurnEnding — breaches get coached, under the cap", () => {
     });
   });
 
-  it("badTarget coaches even the lead — garbage is a spoken intent, silence is the exit", () => {
+  it("badTarget coaches even the lead — garbage is a spoken intent it got wrong", () => {
     expect(classifyTurnEnding(T({ currentPhase: "Analyser", handoffTarget: "Nobody", resolvedHandoff: undefined })).kind).toBe("coach");
   });
 
@@ -69,20 +69,82 @@ describe("classifyTurnEnding — breaches get coached, under the cap", () => {
   });
 });
 
-describe("classifyTurnEnding — the designed exits are never breaches", () => {
-  it("the Analyser's silence ends the run — nothing more to delegate", () => {
-    expect(classifyTurnEnding(T({ currentPhase: "Analyser" }))).toEqual({
+describe("classifyTurnEnding — closing seats end runs only by STATING it (the blueprint regression)", () => {
+  it("the live-run regression: an Analyser that recommended next steps but never routed is COACHED, not completed", () => {
+    // Round 1 of the Godot report: the reply ended with "NEXT STEPS &
+    // HANDOFF — 1. Coder begins…" and no op at all, and the run completed
+    // with "had nothing more to delegate" — a lie told on the agent's
+    // behalf. Silence is now a coached breach for every seat, lead included.
+    const e = classifyTurnEnding(T({ currentPhase: "Analyser" }));
+    expect(e.kind).toBe("coach");
+    if (e.kind !== "coach") throw new Error("expected coach");
+    expect(e.breach).toBe("undirected");
+    expect(e.marker).toBe("[CONTINUING: no routing and no done op — name the next teammate with over-to, or close the run with {\"op\":\"done\",\"why\":\"…\"}]");
+  });
+
+  it("KnowItAll's bare answer gets the same coaching — its ending must be the done op too", () => {
+    const e = classifyTurnEnding(T({ currentPhase: "KnowItAll" }));
+    expect(e.kind).toBe("coach");
+    if (e.kind !== "coach") throw new Error("expected coach");
+    expect(e.breach).toBe("undirected");
+    expect(e.marker).toContain("done");
+  });
+
+  it("an explicit done from the Analyser ends the run with the agent's own why", () => {
+    expect(classifyTurnEnding(T({ currentPhase: "Analyser", doneWhy: "the goal is met — game plan delivered and team routed nothing further" }))).toEqual({
       kind: "terminal",
-      completeMessage: "✔ Run complete — the Analyser had nothing more to delegate.",
+      completeMessage: "✔ Run complete — the goal is met — game plan delivered and team routed nothing further",
     });
   });
 
-  it("KnowItAll's silence ends the run — the question was answered", () => {
-    expect(classifyTurnEnding(T({ currentPhase: "KnowItAll" }))).toEqual({
+  it("an explicit done from KnowItAll ends the run the same way", () => {
+    const e = classifyTurnEnding(T({ currentPhase: "KnowItAll", doneWhy: "answered: how VehicleBody3D suspension works" }));
+    expect(e).toEqual({
       kind: "terminal",
-      completeMessage: "✔ Run complete — the question was answered.",
+      completeMessage: "✔ Run complete — answered: how VehicleBody3D suspension works",
     });
   });
+
+  it("a done without a why still ends the run, with a generic close", () => {
+    expect(classifyTurnEnding(T({ currentPhase: "Analyser", doneWhy: "" }))).toEqual({
+      kind: "terminal",
+      completeMessage: "✔ Run complete — closed by the Analyser.",
+    });
+  });
+
+  it("done wins over a spent budget — the close is always honoured", () => {
+    expect(classifyTurnEnding(T({ currentPhase: "Analyser", continueCount: MAX, doneWhy: "satisfied" })).kind).toBe("terminal");
+  });
+
+  it("a valid hand-off outranks a done the same reply also carried — delegation is live work", () => {
+    expect(classifyTurnEnding(T({ currentPhase: "Analyser", handoffTarget: "Coder", resolvedHandoff: "Coder", doneWhy: "done?" })).kind).toBe("advance");
+  });
+
+  it("a garbage target STILL coaches even when a done rides along — the spoken wrong name comes first", () => {
+    expect(classifyTurnEnding(T({ currentPhase: "Analyser", handoffTarget: "Garb", resolvedHandoff: undefined, doneWhy: "done" })).kind).toBe("coach");
+  });
+
+  it("a closing seat that never stated an ending after the whole coached budget ends with the TRUTH, not the old lie", () => {
+    const e = classifyTurnEnding(T({ currentPhase: "Analyser", continueCount: MAX }));
+    if (e.kind !== "terminal") throw new Error("expected terminal");
+    expect(e.completeMessage).toBe("✔ Run complete — the Analyser spent 10 coached turns without delegating or closing the run.");
+    expect(e.completeMessage).not.toContain("nothing more to delegate");
+  });
+
+  it("a NON-terminal seat's done op is ignored — build seats cannot close runs", () => {
+    const e = classifyTurnEnding(T({ currentPhase: "Coder", doneWhy: "I am done" }));
+    expect(e.kind).toBe("coach");
+    if (e.kind !== "coach") throw new Error("expected coach");
+    expect(e.breach).toBe("undirected");
+    expect(e.marker).toBe("[CONTINUING: no hand-off named — keep working or name the next teammate]");
+  });
+
+  it("a non-terminal seat's done never blocks its valid hand-off either", () => {
+    expect(classifyTurnEnding(T({ currentPhase: "Coder", handoffTarget: "Tester", resolvedHandoff: "Tester", doneWhy: "x" })).kind).toBe("advance");
+  });
+});
+
+describe("classifyTurnEnding — the designed exits are never breaches", () => {
 
   it("a Critic pass IS the decision — a silent pass advances, never coached", () => {
     expect(classifyTurnEnding(T({ currentPhase: "Critic", criticPass: true })).kind).toBe("advance");

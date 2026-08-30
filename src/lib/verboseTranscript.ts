@@ -40,6 +40,7 @@ export type VerboseMarkerKind =
   | "info" // [INFO REQUESTED: …] / [INSTRUCTIONS PROVIDED: …]
   | "mode" // [CHANGE MODE: …]
   | "continue" // [CONTINUE] / [CONTINUING: …] — same agent takes another turn
+  | "done" // [DONE: …] / [DONE] — a closing seat's explicit run end; a compact row, because the System ✔ Run complete line carries the banner
   | "dispatch" // [DISPATCH REQUESTED …]
   | "malformed" // [MALFORMED OP …]
   | "warning" // ⚠️ … / Run stopped …
@@ -100,6 +101,14 @@ const MARKER_RULES: MarkerRule[] = [
     label: "CONTINUE",
     source: "\\[CONTINUING(?::\\s?(?<continuing>[^\\]]+))?\\]",
     group: "continuing",
+  },
+  // A closing seat's explicit run end ({"op":"done"} parsed to a stamp) —
+  // a compact row: the System ✔ line that follows carries the banner.
+  {
+    kind: "done",
+    label: "DONE",
+    source: "\\[DONE(?::\\s?(?<doneWhy>[^\\]]+))?\\]",
+    group: "doneWhy",
   },
   // KnowItAll handing a Q&A thread back to the build team. The pipeline
   // appends the reason AFTER the closing bracket. Both historical shapes

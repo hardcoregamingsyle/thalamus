@@ -100,6 +100,7 @@ const KIND_STYLES: Record<VerboseMarkerKind, KindStyle> = {
   info: { icon: Info, box: "border-sky-400/25 bg-sky-400/5", accent: "text-sky-400" },
   mode: { icon: Shuffle, box: "border-violet-400/25 bg-violet-400/5", accent: "text-violet-300" },
   continue: { icon: FastForward, box: "border-border/50 bg-muted/30", accent: "text-muted-foreground" },
+  done: { icon: CheckCircle2, box: "border-emerald-400/25 bg-emerald-400/5", accent: "text-emerald-400" },
   dispatch: { icon: Compass, box: "border-violet-400/25 bg-violet-400/5", accent: "text-violet-300" },
   malformed: { icon: AlertTriangle, box: "border-rose-400/25 bg-rose-400/5", accent: "text-rose-400" },
   warning: { icon: AlertTriangle, box: "border-amber-400/25 bg-amber-400/5", accent: "text-amber-400" },

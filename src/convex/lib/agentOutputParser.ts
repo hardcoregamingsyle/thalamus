@@ -111,6 +111,15 @@ export interface ParsedOutput {
   // pipeline treats this as an implicit {"op":"continue"} (outside the
   // research team, whose four-hand relay owns its own turn order).
   selfHandoffWhy?: string;
+  // The terminal seats' explicit close: {"op":"done","why":"the question was
+  // answered"} — the ONLY agent-stated way a run ends. A bare ending used to
+  // be read as "nothing to delegate" even when the reply plainly recommended
+  // next steps in prose (the Analyser ended an architecture blueprint with a
+  // "NEXT STEPS & HANDOFF" section and the run completed anyway). The turn
+  // contract (lib/turnContract.ts) honours this ONLY from the Analyser or
+  // KnowItAll; from any other seat a done op is ignored — those seats cannot
+  // close runs — and their normal ending contract applies.
+  doneWhy?: string;
 }
 
 // ── Agent ops: the format taught to every pipeline agent ─────────────────────
@@ -801,6 +810,7 @@ export function parseAgentOutput(content: string, selfAgent?: string): ParsedOut
   let handoffTarget: string | undefined;
   let handoffWhy: string | undefined;
   let selfHandoffWhy: string | undefined;
+  let doneWhy: string | undefined;
   const processedPaths = new Set<string>();
 
   // Substitute malformed op excerpts BEFORE the successful-op loop rewrites
@@ -991,6 +1001,20 @@ export function parseAgentOutput(content: string, selfAgent?: string): ParsedOut
         continueRequested = true;
         mark("[CONTINUE]");
         break;
+      case "done":
+      case "complete":
+      case "run-complete": {
+        // The terminal seats' explicit close: {"op":"done","why":"answered —
+        //…"}. Honoured by the turn contract ONLY from the Analyser or
+        // KnowItAll; parsed seat-agnostically here, the same way over-to is
+        // (validation lives in the pipeline).
+        const why = typeof op.why === "string" && op.why.trim()
+          ? op.why.trim()
+          : (typeof op.reason === "string" ? op.reason.trim() : "");
+        doneWhy = why ? why.slice(0, 300) : "";
+        mark(doneWhy ? `[DONE: ${doneWhy}]` : "[DONE]");
+        break;
+      }
       case "dispatch":
         // KnowItAll's escalation: the answering agent found a problem/bug that
         // needs the build pipeline. The reason lands in the transcript so the
@@ -1051,15 +1075,15 @@ export function parseAgentOutput(content: string, selfAgent?: string): ParsedOut
 
   // ── Marker-echo recovery: the stamp typed as the command ─────────────────
   // Agents read this same transcript and sometimes re-TYPE the pipeline's
-  // square-bracket stamp ([OVER TO: …], [CONTINUE]) instead of the JSON op —
-  // the stamp/op distinction is genuinely confusing, and a run whose agents
-  // keep typing stamps reads as "the Coder refuses to name a teammate". A
-  // stamp sitting at the very END of the reply is unmistakably the intent
-  // (nothing but closers/whitespace after it), so honour it as the op it
-  // echoes. Mid-reply stamps are quoted examples and never fire, and a real
-  // op — which already set the same field — always wins.
+  // square-bracket stamp ([OVER TO: …], [CONTINUE], [DONE: …]) instead of
+  // the JSON op — the stamp/op distinction is genuinely confusing, and a run
+  // whose agents keep typing stamps reads as "the Coder refuses to name a
+  // teammate". A stamp sitting at the very END of the reply is unmistakably
+  // the intent (nothing but closers/whitespace after it), so honour it as
+  // the op it echoes. Mid-reply stamps are quoted examples and never fire,
+  // and a real op — which already set the same field — always wins.
   if (handoffTarget === undefined && selfHandoffWhy === undefined) {
-    const echoRe = /\[(OVER TO|CONTINUING|CONTINUE)(?::\s?([^\]]+))?\]/g;
+    const echoRe = /\[(OVER TO|CONTINUING|CONTINUE|DONE)(?::\s?([^\]]+))?\]/g;
     let lastEcho: RegExpExecArray | null = null;
     let echoMatch: RegExpExecArray | null;
     while ((echoMatch = echoRe.exec(cleanContent)) !== null) {
@@ -1071,6 +1095,10 @@ export function parseAgentOutput(content: string, selfAgent?: string): ParsedOut
       const echoBody = (lastEcho[2] ?? "").trim();
       if (echoKind === "CONTINUE") {
         continueRequested = true;
+      } else if (echoKind === "DONE") {
+        // The echo loop only RUNS when no real routing op already fired, but
+        // a real done op can coexist with a typed stamp — the op always wins.
+        if (doneWhy === undefined) doneWhy = echoBody;
       } else if (echoKind === "CONTINUING") {
         selfHandoffWhy = echoBody;
       } else {
@@ -1276,7 +1304,7 @@ export function parseAgentOutput(content: string, selfAgent?: string): ParsedOut
   // Final sweep: neutralise orphaned <<...>> markers
   cleanContent = cleanContent.replace(/<<([^<>]{0,200}?)>>/g, "‹‹$1››");
 
-  return { fileOps, searchOps, scrapeOps, cmdOps, mcpOps, researchOps, cleanContent, malformedOps, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode, requestApiKey, continueRequested, dispatchRequested, dispatchReason, handoffTarget, handoffWhy, selfHandoffWhy };
+  return { fileOps, searchOps, scrapeOps, cmdOps, mcpOps, researchOps, cleanContent, malformedOps, testerResult, testerFailReason, hackerResult, criticResult, deployCommands, infoRequest, instructions, changeMode, requestApiKey, continueRequested, dispatchRequested, dispatchReason, handoffTarget, handoffWhy, selfHandoffWhy, doneWhy };
 }
 
 export interface PlannerTask {

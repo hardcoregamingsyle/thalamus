@@ -1009,3 +1009,46 @@ describe("parseAgentOutput — bracket-dropped FILE blocks", () => {
     expect(parsed.cleanContent).not.toContain("export const x = 1;");
   });
 });
+
+describe("parseAgentOutput — the done op (a closing seat's explicit run end)", () => {
+  it("a done op records its why and stamps [DONE: …]", () => {
+    const parsed = parseAgentOutput('{"op":"done","why":"answered: how VehicleBody3D suspension works"}', "KnowItAll");
+    expect(parsed.doneWhy).toBe("answered: how VehicleBody3D suspension works");
+    expect(parsed.cleanContent).toContain("[DONE: answered: how VehicleBody3D suspension works]");
+  });
+
+  it("the done op never counts as a routing breach input — no hand-off fields are set", () => {
+    const parsed = parseAgentOutput('{"op":"done","why":"goal met"}', "Analyser");
+    expect(parsed.doneWhy).toBe("goal met");
+    expect(parsed.handoffTarget).toBeUndefined();
+    expect(parsed.selfHandoffWhy).toBeUndefined();
+    expect(parsed.continueRequested).toBe(false);
+  });
+
+  it("aliases models actually emit land the same way", () => {
+    expect(parseAgentOutput('{"op":"complete","why":"wrapped up"}', "Analyser").doneWhy).toBe("wrapped up");
+    expect(parseAgentOutput('{"op":"run_complete","reason":"nothing left"}', "Analyser").doneWhy).toBe("nothing left");
+  });
+
+  it("a done without a why still closes — marker without body", () => {
+    const parsed = parseAgentOutput('{"op":"done"}', "Analyser");
+    expect(parsed.doneWhy).toBe("");
+    expect(parsed.cleanContent).toContain("[DONE]");
+  });
+
+  it("a [DONE: …] stamp typed at the very end is honoured as the echo of the op", () => {
+    const parsed = parseAgentOutput("That answers it fully.\n\n[DONE: answered — the drift tuning question]");
+    expect(parsed.doneWhy).toBe("answered — the drift tuning question");
+  });
+
+  it("a real done op always beats a typed [DONE] stamp that follows it", () => {
+    const parsed = parseAgentOutput('Closing. {"op":"done","why":"goal met"}\n[DONE: echo]', "Analyser");
+    expect(parsed.doneWhy).toBe("goal met");
+  });
+
+  it("a done op inside a <<FILE>> body is content, not a close", () => {
+    const parsed = parseAgentOutput('<<FILE "docs/notes.md">>\nEnd like this: {"op":"done","why":"x"}\n<<END>>');
+    expect(parsed.doneWhy).toBeUndefined();
+    expect(parsed.fileOps).toHaveLength(1);
+  });
+});
