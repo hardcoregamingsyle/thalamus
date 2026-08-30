@@ -394,6 +394,22 @@ const schema = defineSchema(
       agent: v.optional(v.string()),
     }).index("by_ts", ["ts"]),
 
+    // What the provider chain has LEARNED about a seat ("provider:model").
+    // providerLog.record folds every attempt into a row here: a failure
+    // classified by lib/providerCooldowns.ts stamps cooldownUntil (6h for
+    // auth/balance/model-unavailable, until next UTC midnight for a daily
+    // quota, 3 min for a burst 429, 90s for transient), and any success
+    // deletes the row. callModel consults providerHealth.liveInternal before
+    // each leg so a permanently-dead seat is skipped instead of re-attempted
+    // on every single turn (the in-isolate guards die at isolate boundaries).
+    providerHealth: defineTable({
+      seat: v.string(),
+      klass: v.string(),
+      reason: v.string(),
+      cooldownUntil: v.number(),
+      updatedAt: v.number(),
+    }).index("by_seat", ["seat"]),
+
     // Messages for `conversations` above (plain chat portal) — not related to
     // codeMessages.
     messages: defineTable({

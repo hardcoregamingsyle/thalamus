@@ -6,9 +6,18 @@
 // → Ollama. Each attempt is one row; a failed attempt carries the error message
 // so the admin can see exactly which provider rejected which request instead of
 // guessing from the last successful tier.
+//
+// `record` also folds every attempt into the providerHealth table: a failure
+// classified by lib/providerCooldowns.ts stamps a cooldown (permanent-ish
+// classes like a 403, a 402 balance or a dead model id skip the seat for
+// hours instead of being retried on every turn), and any success clears it.
+// `logOnly` exists for the chain's SKIP notes — writing a skip through
+// `record` would let the classifier read its own cooldown note and re-stamp
+// the very cooldown the note describes.
 
-import { internalMutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, query } from "./_generated/server";
 import { v } from "convex/values";
+import { classifyProviderFailure } from "./lib/providerCooldowns";
 
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";
 
@@ -44,6 +53,36 @@ export const record = internalMutation({
       agent: args.agent ? args.agent.slice(0, 60) : undefined,
     });
 
+    // Fold the outcome into providerHealth — the chain's memory of which
+    // seats are learned-dead. A success clears the seat (it's provably
+    // alive); a failure stamps a cooldown by class (permanent-ish failures
+    // stop the every-turn hammering, transient ones only slow it). An
+    // "unconfigured" verdict (cooldownMs 0) writes nothing: a missing key is
+    // local config, and no amount of waiting changes it.
+    const seat = `${args.provider}:${args.model}`;
+    const learned = await ctx.db
+      .query("providerHealth")
+      .withIndex("by_seat", (q) => q.eq("seat", seat))
+      .first();
+    if (args.ok) {
+      if (learned) await ctx.db.delete(learned._id);
+    } else {
+      const verdict = classifyProviderFailure(args.error);
+      if (verdict.cooldownMs > 0) {
+        const fields = {
+          seat,
+          klass: verdict.klass,
+          reason: (args.error ?? "unknown error").slice(0, 200),
+          cooldownUntil: ts + verdict.cooldownMs,
+          updatedAt: ts,
+        };
+        if (learned) await ctx.db.patch(learned._id, fields);
+        else await ctx.db.insert("providerHealth", fields);
+      } else if (learned) {
+        await ctx.db.delete(learned._id);
+      }
+    }
+
     // Age prune — usually an empty range, one cheap query.
     const cutoff = ts - RETENTION_MS;
     const stale = await ctx.db
@@ -70,6 +109,51 @@ export const record = internalMutation({
         await ctx.db.delete(row._id);
       }
     }
+  },
+});
+
+// Insert a log row WITHOUT the providerHealth fold — for the chain's own
+// skip notes ("SKIPPED — learned auth cooldown ..."). A skip note passing
+// through `record` would be classified by its embedded status code and
+// re-stamp the very cooldown it describes, extending it forever. Pruning is
+// left to `record` (the dominant writer) deliberately: this path stays one
+// cheap insert.
+export const logOnly = internalMutation({
+  args: {
+    provider: v.string(),
+    model: v.string(),
+    ok: v.boolean(),
+    error: v.optional(v.string()),
+    agent: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("providerCallLogs", {
+      ts: Date.now(),
+      provider: args.provider,
+      model: args.model,
+      ok: args.ok,
+      error: args.error ? args.error.slice(0, 500) : undefined,
+      agent: args.agent ? args.agent.slice(0, 60) : undefined,
+    });
+  },
+});
+
+// The chain's read side: every seat with a live (not yet expired) cooldown.
+// The table is tiny by construction — one row per "provider:model" that has
+// ever failed — so a bounded scan beats an index the writes don't need.
+export const liveInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const rows = await ctx.db.query("providerHealth").take(64);
+    return rows
+      .filter((r) => r.cooldownUntil > now)
+      .map((r) => ({
+        seat: r.seat,
+        klass: r.klass,
+        reason: r.reason,
+        cooldownUntil: r.cooldownUntil,
+      }));
   },
 });
 

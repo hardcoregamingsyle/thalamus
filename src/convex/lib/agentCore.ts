@@ -32,6 +32,7 @@ import { callOpenRouter, findOpenRouterModel, OPENROUTER_DISPATCHER_MODEL, OPENR
 import { callDeadlySignals, findDeadlySignalsModel, DEADLYSIGNALS_DISPATCHER_MODEL, DEADLYSIGNALS_DEFAULT_MODEL } from "./deadlySignalsClient";
 import { callModelScope, findModelScopeModel, MODELSCOPE_DISPATCHER_MODEL, MODELSCOPE_DEFAULT_MODEL } from "./modelscopeClient";
 import { callPollinations, findPollinationsModel, isPollinationsAvailable, POLLINATIONS_DISPATCHER_MODEL, POLLINATIONS_DEFAULT_MODEL } from "./pollinationsClient";
+import { buildSkipNote } from "./providerCooldowns";
 import { dokobotSearch, dokobotRead, hasDokobotKey, type DokobotSearchItem } from "./dokobotClient";
 
 // The only tier-ish type left: callModel returns a provider-tagged string
@@ -119,11 +120,77 @@ export async function callModel(
   // report.
   const deadline = Date.now() + (deadlineMs ?? 420_000);
 
+  // Learned seat health, platform-wide: providerLog.record folds every
+  // attempt's outcome into the providerHealth table, so a seat that provably
+  // cannot serve right now (a 403 against the account's model group, a 402
+  // empty balance, a model id the provider removed, a daily quota) is
+  // SKIPPED below instead of re-attempted on every single turn — the admin
+  // log showed three doomed round-trips per turn for 23+ hours before the
+  // one healthy seat answered. Fetched ONCE per callModel invocation, not
+  // per chain pass: the burst-retry pass must ride out the burst itself and
+  // never inherit cooldowns its own first pass stamped thirty seconds ago.
+  const learnedSeats = new Map<string, { klass: string; reason: string; cooldownUntil: number }>();
+  if (ctx?.runQuery) {
+    try {
+      const live = (await ctx.runQuery(internal.providerLog.liveInternal, {})) as Array<{
+        seat: string; klass: string; reason: string; cooldownUntil: number;
+      }>;
+      for (const row of live) learnedSeats.set(row.seat, row);
+    } catch { /* learned health is advisory — never let it break a call */ }
+  }
+
+  // A skipped seat logs one short note row so the admin log explains where
+  // the seat went. It MUST go through logOnly: routing it through record
+  // would let the health classifier read the note's embedded status code
+  // and re-stamp the very cooldown the note describes, extending it forever.
+  const logNote = async (provider: string, model: string, note: string): Promise<void> => {
+    if (!ctx?.runMutation) return;
+    try {
+      await ctx.runMutation(internal.providerLog.logOnly, { provider, model, ok: false, error: note, agent: modelId });
+    } catch { /* like logAttempt: best-effort */ }
+  };
+
+  const skipNoteFor = (provider: string, model: string): string | null => {
+    const row = learnedSeats.get(`${provider}:${model}`);
+    if (!row) return null;
+    return buildSkipNote({ klass: row.klass, reason: row.reason, cooldownUntil: row.cooldownUntil });
+  };
+
+  // The safety valve: a cooldown must never empty the chain. Sync seats only
+  // (Modal is an admin-owned DB endpoint, Ollama the always-attempted last
+  // resort) — if every one of them is currently cooled, the learnings are
+  // ignored for this invocation rather than dying without trying.
+  {
+    const syncSeats: string[] = [
+      `zen:${assignedModel && findZenModel(assignedModel) ? assignedModel : (taskType === "dispatcher" ? ZEN_DISPATCHER_MODEL : ZEN_DEFAULT_MODEL)}`,
+      `openrouter:${assignedModel && findOpenRouterModel(assignedModel) ? assignedModel : (taskType === "dispatcher" ? OPENROUTER_DISPATCHER_MODEL : OPENROUTER_DEFAULT_MODEL)}`,
+      `deadlysignals:${assignedModel && findDeadlySignalsModel(assignedModel) ? assignedModel : (taskType === "dispatcher" ? DEADLYSIGNALS_DISPATCHER_MODEL : DEADLYSIGNALS_DEFAULT_MODEL)}`,
+      `modelscope:${assignedModel && findModelScopeModel(assignedModel) ? assignedModel : (taskType === "dispatcher" ? MODELSCOPE_DISPATCHER_MODEL : MODELSCOPE_DEFAULT_MODEL)}`,
+    ];
+    if (process.env.ORCAROUTER_API_KEY) {
+      syncSeats.push(`orcarouter:${assignedModel && findOrcaRouterModel(assignedModel) ? assignedModel : (taskType === "dispatcher" ? ORCAROUTER_DISPATCHER_MODEL : ORCAROUTER_DEFAULT_MODEL)}`);
+    }
+    if (process.env.HF_TOKEN) {
+      syncSeats.push(`huggingface:${assignedModel && findHuggingFaceModel(assignedModel) ? assignedModel : (taskType === "dispatcher" ? HUGGINGFACE_DISPATCHER_MODEL : HUGGINGFACE_DEFAULT_MODEL)}`);
+    }
+    if (isPollinationsAvailable()) {
+      syncSeats.push(`pollinations:${assignedModel && findPollinationsModel(assignedModel) ? assignedModel : (taskType === "dispatcher" ? POLLINATIONS_DISPATCHER_MODEL : POLLINATIONS_DEFAULT_MODEL)}`);
+    }
+    if (syncSeats.length > 0 && syncSeats.every((seat) => learnedSeats.has(seat))) {
+      console.warn("Every sync provider seat is in a learned cooldown — ignoring cooldowns for this invocation");
+      learnedSeats.clear();
+      await logNote("chain", "-", "All sync seats are in a learned cooldown — cooldowns ignored for this invocation");
+    }
+  }
+
   // Explicitly-assigned Zen seat model: honor it directly and skip Modal — a Zen
   // catalog id only exists on OpenCode Zen, so Modal would just burn retries
   // on a model name it does not serve.
   if (assignedModel && findZenModel(assignedModel)) {
-    try {
+    const seatSkip = skipNoteFor("zen", assignedModel);
+    if (seatSkip) {
+      await logNote("zen", assignedModel, seatSkip);
+    } else try {
       const result = await callZen(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
         await logAttempt({ provider: "zen", model: result.model, ok: true });
@@ -140,7 +207,10 @@ export async function callModel(
 
   // Explicitly-assigned OrcaRouter seat model: same as Zen — honor it directly.
   if (assignedModel && findOrcaRouterModel(assignedModel)) {
-    try {
+    const seatSkip = skipNoteFor("orcarouter", assignedModel);
+    if (seatSkip) {
+      await logNote("orcarouter", assignedModel, seatSkip);
+    } else try {
       const result = await callOrcaRouter(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
       if (!isBlank(result.text)) {
         await logAttempt({ provider: "orcarouter", model: result.model, ok: true });
@@ -157,7 +227,10 @@ export async function callModel(
 
   // Explicitly-assigned OpenRouter seat model: same as Zen — honor it directly.
   if (assignedModel && findOpenRouterModel(assignedModel)) {
-    try {
+    const seatSkip = skipNoteFor("openrouter", assignedModel);
+    if (seatSkip) {
+      await logNote("openrouter", assignedModel, seatSkip);
+    } else try {
       const result = await callOpenRouter(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
       if (!isBlank(result.text)) {
         await logAttempt({ provider: "openrouter", model: result.model, ok: true });
@@ -174,7 +247,10 @@ export async function callModel(
 
   // Explicitly-assigned DeadlySignal seat model: same as Zen — honor it directly.
   if (assignedModel && findDeadlySignalsModel(assignedModel)) {
-    try {
+    const seatSkip = skipNoteFor("deadlysignals", assignedModel);
+    if (seatSkip) {
+      await logNote("deadlysignals", assignedModel, seatSkip);
+    } else try {
       const result = await callDeadlySignals(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
         await logAttempt({ provider: "deadlysignals", model: result.model, ok: true });
@@ -191,7 +267,10 @@ export async function callModel(
 
   // Explicitly-assigned ModelScope seat model: same as Zen — honor it directly.
   if (assignedModel && findModelScopeModel(assignedModel)) {
-    try {
+    const seatSkip = skipNoteFor("modelscope", assignedModel);
+    if (seatSkip) {
+      await logNote("modelscope", assignedModel, seatSkip);
+    } else try {
       const result = await callModelScope(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
         await logAttempt({ provider: "modelscope", model: result.model, ok: true });
@@ -208,7 +287,10 @@ export async function callModel(
 
   // Explicitly-assigned HuggingFace seat model: same as Zen — honor it directly.
   if (assignedModel && findHuggingFaceModel(assignedModel)) {
-    try {
+    const seatSkip = skipNoteFor("huggingface", assignedModel);
+    if (seatSkip) {
+      await logNote("huggingface", assignedModel, seatSkip);
+    } else try {
       const result = await callHuggingFace(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
       if (!isBlank(result.text)) {
         await logAttempt({ provider: "huggingface", model: result.model, ok: true });
@@ -255,7 +337,10 @@ export async function callModel(
     const zenModel = assignedModel && findZenModel(assignedModel)
       ? assignedModel
       : (taskType === "dispatcher" ? ZEN_DISPATCHER_MODEL : ZEN_DEFAULT_MODEL);
-    try {
+    const zenSkip = skipNoteFor("zen", zenModel);
+    if (zenSkip) {
+      await logNote("zen", zenModel, zenSkip);
+    } else try {
       const result = await callZen(prompt, systemPrompt, zenModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
         await logAttempt({ provider: "zen", model: result.model, ok: true });
@@ -277,7 +362,10 @@ export async function callModel(
       ? assignedModel
       : (taskType === "dispatcher" ? ORCAROUTER_DISPATCHER_MODEL : ORCAROUTER_DEFAULT_MODEL);
     if (process.env.ORCAROUTER_API_KEY) {
-      try {
+      const orcaSkip = skipNoteFor("orcarouter", orcaModel);
+      if (orcaSkip) {
+        await logNote("orcarouter", orcaModel, orcaSkip);
+      } else try {
         const result = await callOrcaRouter(prompt, systemPrompt, orcaModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
         if (!isBlank(result.text)) {
           await logAttempt({ provider: "orcarouter", model: result.model, ok: true });
@@ -302,7 +390,10 @@ export async function callModel(
     const openRouterModel = assignedModel && findOpenRouterModel(assignedModel)
       ? assignedModel
       : (taskType === "dispatcher" ? OPENROUTER_DISPATCHER_MODEL : OPENROUTER_DEFAULT_MODEL);
-    try {
+    const openRouterSkip = skipNoteFor("openrouter", openRouterModel);
+    if (openRouterSkip) {
+      await logNote("openrouter", openRouterModel, openRouterSkip);
+    } else try {
       const result = await callOpenRouter(prompt, systemPrompt, openRouterModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
       if (!isBlank(result.text)) {
         await logAttempt({ provider: "openrouter", model: result.model, ok: true });
@@ -322,7 +413,10 @@ export async function callModel(
     const deadlyModel = assignedModel && findDeadlySignalsModel(assignedModel)
       ? assignedModel
       : (taskType === "dispatcher" ? DEADLYSIGNALS_DISPATCHER_MODEL : DEADLYSIGNALS_DEFAULT_MODEL);
-    try {
+    const deadlySkip = skipNoteFor("deadlysignals", deadlyModel);
+    if (deadlySkip) {
+      await logNote("deadlysignals", deadlyModel, deadlySkip);
+    } else try {
       const result = await callDeadlySignals(prompt, systemPrompt, deadlyModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
         await logAttempt({ provider: "deadlysignals", model: result.model, ok: true });
@@ -342,7 +436,10 @@ export async function callModel(
     const scopeModel = assignedModel && findModelScopeModel(assignedModel)
       ? assignedModel
       : (taskType === "dispatcher" ? MODELSCOPE_DISPATCHER_MODEL : MODELSCOPE_DEFAULT_MODEL);
-    try {
+    const scopeSkip = skipNoteFor("modelscope", scopeModel);
+    if (scopeSkip) {
+      await logNote("modelscope", scopeModel, scopeSkip);
+    } else try {
       const result = await callModelScope(prompt, systemPrompt, scopeModel, PIPELINE_MAX_TOKENS, undefined, deadline);
       if (!isBlank(result.text)) {
         await logAttempt({ provider: "modelscope", model: result.model, ok: true });
@@ -367,7 +464,10 @@ export async function callModel(
       ? assignedModel
       : (taskType === "dispatcher" ? HUGGINGFACE_DISPATCHER_MODEL : HUGGINGFACE_DEFAULT_MODEL);
     if (process.env.HF_TOKEN) {
-      try {
+      const hfSkip = skipNoteFor("huggingface", hfModel);
+      if (hfSkip) {
+        await logNote("huggingface", hfModel, hfSkip);
+      } else try {
         const result = await callHuggingFace(prompt, systemPrompt, hfModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
         if (!isBlank(result.text)) {
           await logAttempt({ provider: "huggingface", model: result.model, ok: true });
@@ -389,7 +489,10 @@ export async function callModel(
       const pollenModel = assignedModel && findPollinationsModel(assignedModel)
         ? assignedModel
         : (taskType === "dispatcher" ? POLLINATIONS_DISPATCHER_MODEL : POLLINATIONS_DEFAULT_MODEL);
-      try {
+      const pollenSkip = skipNoteFor("pollinations", pollenModel);
+      if (pollenSkip) {
+        await logNote("pollinations", pollenModel, pollenSkip);
+      } else try {
         const result = await callPollinations(prompt, systemPrompt, pollenModel, PIPELINE_MAX_TOKENS, undefined, deadline);
         if (!isBlank(result.text)) {
           await logAttempt({ provider: "pollinations", model: result.model, ok: true });
