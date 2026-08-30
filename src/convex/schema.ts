@@ -170,6 +170,13 @@ const schema = defineSchema(
       // on every phase advance. Bounds the same-agent loop so a model stuck
       // emitting continue can't re-bill forever.
       continueCount: v.optional(v.number()),
+      // True between the Coder's floor-cap checkpoint being ISSUED (its build
+      // window spent) and its verdict reply being classified. The next-turn
+      // prompt reads it to lead with the "think out loud, then state done or
+      // keep going" directive. Cleared on any phase change (same reset as
+      // continueCount) and by the verdict legs themselves. Coder-only — the
+      // cheaper seats keep the old takeover checkpoint.
+      checkpointPending: v.optional(v.boolean()),
       // Real-time streaming state — updated frequently during agent generation
       streamingContent: v.optional(v.string()),
       streamingAgent: v.optional(v.string()),

@@ -21,6 +21,7 @@ export type VerboseMarkerKind =
   | "handoff" // ⇄ … System line — the steering event's hero banner; never hidden
   | "overto" // [OVER TO: …] inside an agent message — the agent's own emission; a compact row, because the System ⇄ line that follows already carries the hero banner (two heroes for one event read as a glitch, and a rejected self/unknown target must never look like a real route)
   | "route" // [ROUTING] … — silent re-route announcement
+  | "checkpoint" // [CHECKPOINT] … / [CHECKPOINT: …] — the Coder's floor-cap verdict question (System row) and its stamp inside the Coder's own message
   | "complete" // ✔ Run complete
   | "retry" // [RETRY n] — Critic sent a task back
   | "cmd" // [CMD: …]
@@ -109,6 +110,14 @@ const MARKER_RULES: MarkerRule[] = [
     label: "DONE",
     source: "\\[DONE(?::\\s?(?<doneWhy>[^\\]]+))?\\]",
     group: "doneWhy",
+  },
+  // The Coder's floor-cap checkpoint stamped INTO its own message (the
+  // verdict question must reach the model — the digest drops System rows).
+  {
+    kind: "checkpoint",
+    label: "CHECKPOINT",
+    source: "\\[CHECKPOINT(?::\\s?(?<checkpointBody>[^\\]]+))?\\]",
+    group: "checkpointBody",
   },
   // KnowItAll handing a Q&A thread back to the build team. The pipeline
   // appends the reason AFTER the closing bracket. Both historical shapes
@@ -384,6 +393,11 @@ export function classifySystemLine(content: string): VerboseMarker | null {
       detail: done.groups?.why?.trim() || undefined,
       raw,
     };
+  }
+
+  const checkpoint = text.match(/^\[CHECKPOINT\]\s*(?<what>[\s\S]*)$/);
+  if (checkpoint) {
+    return { kind: "checkpoint", label: "CHECKPOINT", detail: checkpoint.groups?.what?.trim(), raw };
   }
 
   const routing = text.match(/^\[ROUTING\]\s*(?<what>[\s\S]*)$/);

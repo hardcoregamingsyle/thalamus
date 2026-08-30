@@ -58,6 +58,12 @@ describe("segmentVerboseContent — hand-offs", () => {
     expect(bare.detail).toBeUndefined();
   });
 
+  it("parses CHECKPOINT (the Coder's floor-cap verdict question) as its own row", () => {
+    const [m] = markersOf("[CHECKPOINT: 75 turns on the floor — state the verdict]");
+    expect(m.kind).toBe("checkpoint");
+    expect(m.detail).toBe("75 turns on the floor — state the verdict");
+  });
+
   it("keeps the reason's own em dashes after the first split", () => {
     const [m] = markersOf("[OVER TO: Research Team — need sources — recent ones]");
     expect(m.detail).toBe("Research Team");

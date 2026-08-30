@@ -370,6 +370,9 @@ export const updateBranchStatus = internalMutation({
     researchTeamIndex: v.optional(v.union(v.number(), v.null())),
     mcpRoundCount: v.optional(v.number()),
     continueCount: v.optional(v.number()),
+    // Set when the Coder's floor-cap checkpoint is issued; cleared by the
+    // verdict legs, and automatically on any phase change (below).
+    checkpointPending: v.optional(v.boolean()),
     stopRequested: v.optional(v.boolean()),
     executor: v.optional(v.union(v.literal("cloud"), v.literal("local"))),
     // How many times this run has been parked waiting for model capacity.
@@ -422,6 +425,14 @@ export const updateBranchStatus = internalMutation({
       // makes sense within one agent's turn. Same-agent transitions (MCP round,
       // command pause/resume) leave phase untouched and keep the budget.
       updates.continueCount = 0;
+    }
+    if (args.checkpointPending !== undefined) {
+      // explicit verdict-leg writes; false patches the field away.
+      updates.checkpointPending = args.checkpointPending || undefined;
+    } else if (args.phase !== undefined && args.phase !== branch.phase) {
+      // Same reset rule as continueCount: a pending checkpoint belongs to
+      // the seat that was asked — a new seat never inherits the question.
+      updates.checkpointPending = undefined;
     }
     if (args.stopRequested !== undefined) updates.stopRequested = args.stopRequested;
     if (args.executor !== undefined) updates.executor = args.executor;

@@ -40,7 +40,7 @@ import {
 } from "./lib/agentCore";
 import { mcpCallTool, mcpListTools, decryptAuthHeader } from "./lib/mcpClient";
 import { RESEARCH_TEAM, RESEARCH_TEAM_TARGET, resolveHandoffTarget, isRunnableAgent, nextTaskAfterPass } from "./lib/pipelineAgents";
-import { classifyTurnEnding } from "./lib/turnContract";
+import { classifyTurnEnding, floorCapForSeat } from "./lib/turnContract";
 import { buildExecutorBlockedWarning, shouldWarnExecutorBlocked } from "./lib/executorWarnings";
 // The Dispatcher is gone entirely: no roster, no model-seat picks, no
 // dispatch phase. Runs enter as the Analyser with the chain's default seats
@@ -227,11 +227,11 @@ function parseApiKeyRequests(content: string): Array<{variableName: string; desc
 // loop can't blow the action's time budget.
 const MAX_OP_CONTINUATIONS = 2;
 
-// How many extra turns {"op":"continue"} can buy for one agent before the
-// pipeline forces the advance. Generous (a full file per turn at 32k tokens)
-// but bounded so a model stuck emitting continue can't re-bill forever; the
-// counter resets on every phase advance.
-const MAX_CONTINUE_ROUNDS = 10;
+// The solo-floor budget is per-seat now and lives in lib/turnContract.ts
+// (floorCapForSeat): the Coder builds across a 75-turn window closed by a
+// verdict checkpoint, everyone else gets 10 turns and then the Analyser's
+// checkpoint. Bounded so a model stuck emitting continue can't re-bill
+// forever; the counter resets on every phase advance.
 
 // True when a <<FILE>>/<<WRITE>> or legacy <<CREATEFILE/EDITFILE>> block was
 // opened but never closed — the signature of output truncated mid-file. We
@@ -839,13 +839,21 @@ export const runPipelineAction = internalAction({
         // transcript line and re-run. Runs end only when a closing seat
         // STATES it: {"op":"done"} from the Analyser or KnowItAll, or the
         // Critic passing the last task. A bare ending is never an exit.
+        // The floor rule differs per seat: the Coder's job is legitimately
+        // dozens of single-file turns, so it gets a 75-turn build window
+        // closed by a verdict checkpoint; everyone else gets 10 turns and
+        // then the Analyser's checkpoint. floorCapForSeat owns the numbers —
+        // keep this sentence and that helper in lockstep.
+        const floorRule = currentPhase === "Coder"
+          ? `You may hold the floor for up to ${floorCapForSeat(currentPhase)} turns in a row for the long builds: at the checkpoint you are asked to think out loud about what is done and what remains, then STATE the verdict — hand the finished work on with over-to, or {"op":"continue"} to keep building. Only a checkpoint that comes back with no verdict at all hands routing to the Analyser.`
+          : `Holding the floor through ${floorCapForSeat(currentPhase)} turns in a row is the limit; then the Analyser takes a checkpoint and re-directs, so spend each turn on purpose.`;
         const handoffBlock = `## Handing over to a teammate
 You are one team sharing this transcript, and there is no fixed order — whoever your work needs next, you name. When YOUR part is done, end your reply with:
 {"op":"over-to","agent":"AgentName","why":"what they should do"}
 Teammates you can name: Analyser, Planner, Coder, Optimiser, Organizer, Tester, Hacker, Critic, KnowItAll — or "ResearchTeam" to summon the research team. The research team can only run whole (ResearchPlanner → Researcher → ReportMaker → FactCheck, always in that order); you can never name just one of its members. If you name nobody — or a name that is not a teammate — nothing routes for you: YOU are run again with a coaching reminder in your own transcript line, so end every reply deliberately. The run ends only when the Analyser or KnowItAll closes it with {"op":"done","why":"…"} or the Critic passes the LAST task in the plan. When the Critic passes an earlier task, the plan moves on by itself: the next task becomes current and the Analyser takes the lead for it. Whoever you name reads this same transcript.
 NEVER name yourself — a hand-off to yourself is not a route. If your next step is still yours, end with {"op":"continue"} and the pipeline re-runs you immediately.
 NEVER bounce the task you were just handed back as an over-to: the moment it was handed to you it became YOUR job to DO, not to route again.
-Keep the why to ONE plain sentence — it lands verbatim in the shared transcript as the receiver's briefing.\nHow your reply must END — exactly one of these, every single time:\n- work remains in YOUR step → {"op":"continue"}\n- your step is done → {"op":"over-to","agent":"<teammate>","why":"one sentence"}\n- ONLY the Analyser or KnowItAll, only when the run is genuinely complete → {"op":"done","why":"what the user got"}\nEnd silent and you simply run again with a coaching stamp — the pipeline NEVER picks the next teammate for you, and a bare ending is never a run exit. Holding the floor through 10 turns in a row is the limit; then the Analyser takes a checkpoint and re-directs, so spend each turn on purpose.\nThe square-bracket stamps you see in this transcript — [OVER TO: …], [CONTINUING: …], [CONTINUE], [DONE: …], [CMD: …] — are the pipeline's receipts for ops that already ran. Typing a stamp is not the command. Always emit the JSON op.`;
+Keep the why to ONE plain sentence — it lands verbatim in the shared transcript as the receiver's briefing.\nHow your reply must END — exactly one of these, every single time:\n- work remains in YOUR step → {"op":"continue"}\n- your step is done → {"op":"over-to","agent":"<teammate>","why":"one sentence"}\n- ONLY the Analyser or KnowItAll, only when the run is genuinely complete → {"op":"done","why":"what the user got"}\nEnd silent and you simply run again with a coaching stamp — the pipeline NEVER picks the next teammate for you, and a bare ending is never a run exit. ${floorRule}\nThe square-bracket stamps you see in this transcript — [OVER TO: …], [CONTINUING: …], [CONTINUE], [DONE: …], [CHECKPOINT: …], [CMD: …] — are the pipeline's receipts for ops that already ran. Typing a stamp is not the command. Always emit the JSON op.`;
 
         let prompt = [`## Project Goal\n${task}`, currentDateLine, buildFailureBlock, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, buildGateBlock, handoffBlock, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
 
@@ -937,6 +945,19 @@ Wrong: file bodies inside a JSON "content" field — that was the old format, an
 Wrong: bare shell commands (cat, ls, npm install) written as plain prose.
 Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
 
+            // The checkpoint turn, when the Coder's build window just spent:
+            // the whole next prompt leads with the verdict question and
+            // demands the thinking be VISIBLE — the user asked for the CoT
+            // on this decision, not just the op. The marker in its own last
+            // message carries the digest copy; this block is the directive.
+            const checkpointBlock = branch.checkpointPending === true
+              ? `## CHECKPOINT — answer this before ANY more work
+You have held the floor for ${floorCapForSeat(currentPhase)} turns on this task. Before another file or command, THINK OUT LOUD in one short paragraph (the user reads it): what this task required, what is DONE — name the files that now exist — and what remains. Then END with EXACTLY ONE routing op:
+- the task is complete and ready for the next seat → {"op":"over-to","agent":"<Tester, Critic, or Analyser>","why":"what you built"}
+- work remains → {"op":"continue"}
+A reply with NEITHER is a checkpoint never answered — the Analyser takes over. State your verdict.`
+              : "";
+
             prompt = [
               `## Overall Project Goal\n${task}`,
               completedTasks ? `## Completed Tasks\n${completedTasks}` : "",
@@ -948,6 +969,7 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
               recentFeedback ? `## Previous Feedback (from Tester/Critic/Hacker)\n${recentFeedback}` : "",
               commandContext,
               `## Pipeline Context\n${context}`,
+              checkpointBlock,
               toolUsageBlock,
               handoffBlock,
               mcpToolSection,
@@ -1506,13 +1528,17 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
         inRelay: researchTeamIndex !== null,
         relayAdvances: researchTeamIndex !== null && researchTeamIndex + 1 < RESEARCH_TEAM.length,
         continueCount,
-        maxContinueRounds: MAX_CONTINUE_ROUNDS,
+        // Per-seat budget: the Coder builds across a 75-turn window before
+        // the contract asks for a verdict; everyone else gets 10 turns and
+        // then the Analyser's checkpoint. floorCapForSeat owns the numbers.
+        maxContinueRounds: floorCapForSeat(currentPhase),
         continueRequested: parsed.continueRequested,
         selfHandoffWhy: parsed.selfHandoffWhy,
         handoffTarget: parsed.handoffTarget,
         resolvedHandoff,
         criticPass: parsed.criticResult === "pass",
         doneWhy: parsed.doneWhy,
+        checkpointPending: branch.checkpointPending === true,
       });
 
       // Save message
@@ -1520,7 +1546,10 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       await ctx.runMutation(internal.codeBranches.saveMessage, {
         branchId,
         agent: agentName,
-        content: ending.kind === "coach"
+        // Breaches and checkpoints BOTH stamp the speaker's own message —
+        // the prompt digest drops System rows, so the verdict question only
+        // reaches the model it asks when it rides the agent's line.
+        content: (ending.kind === "coach" || ending.kind === "checkpoint")
           ? `${parsed.cleanContent}\n\n${ending.marker}`
           : parsed.cleanContent,
         round,
@@ -1550,10 +1579,10 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
       // {"op":"continue"} asks for another turn of the SAME agent. The file ops
       // from this round are already applied above and the message saved, so the
       // re-run sees the file in its inventory and keeps writing — one large file
-      // crosses several outputs this way. Bounded by MAX_CONTINUE_ROUNDS so a
-      // model stuck emitting continue can't re-bill forever; the counter resets
-      // on every phase advance (updateBranchStatus clears it alongside
-      // mcpRoundCount).
+      // crosses several outputs this way. Bounded by the per-seat floor budget
+      // (floorCapForSeat) so a model stuck emitting continue can't re-bill
+      // forever; the counter resets on every phase advance (updateBranchStatus
+      // clears it alongside mcpRoundCount).
       // A SELF over-to ("over to Coder" FROM the Coder) shares this leg as the
       // implicit continue it is — as do the two coached breach shapes, whose
       // stamp is already in the saved message. The classifier owns which of
@@ -1570,6 +1599,64 @@ Wrong: <tool_call>...</tool_call> or any XML/HTML wrapper around an op.`;
           round,
           totalMessages,
           continueCount: continueCount + 1,
+        }))) return;
+        await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+        return;
+      }
+
+      // ── The Coder's checkpoint ──────────────────────────────────────────
+      // The build window is spent but the Coder's job is legitimately long —
+      // instead of taking over, the contract ASKS: think out loud about what
+      // the task required, what exists, what remains, then state the
+      // verdict. The question reaches the model two ways at once: the marker
+      // already stamped into its own saved message above (the digest drops
+      // System rows), and the dedicated prompt block the next turn builds
+      // because checkpointPending is now set. The user sees the question as
+      // its own transcript row — a checkpoint is never a hidden pause.
+      if (ending.kind === "checkpoint") {
+        totalMessages++;
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId,
+          agent: "System",
+          content: `[CHECKPOINT] ${agentName} held the floor for ${floorCapForSeat(currentPhase)} turns — asked to think out loud about what is done and what remains, then state the verdict: hand the finished work on, or keep building.`,
+          round,
+          messageIndex: totalMessages,
+        });
+        if (!(await advance({
+          status: "idle",
+          currentAgent: agentName,
+          phase: currentPhase,
+          executionPhase,
+          round,
+          totalMessages,
+          checkpointPending: true,
+        }))) return;
+        await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
+        return;
+      }
+
+      // The verdict came back "work remains" — the seat's own call, made out
+      // loud. A fresh window opens (the counter resets like a phase change
+      // would reset it); the receipt is visible so the transcript shows the
+      // question was answered, not just passed over.
+      if (ending.kind === "checkpoint-continue") {
+        totalMessages++;
+        await ctx.runMutation(internal.codeBranches.saveMessage, {
+          branchId,
+          agent: "System",
+          content: `[CHECKPOINT] ${agentName} answered: work remains — a fresh ${floorCapForSeat(currentPhase)}-turn window opens.`,
+          round,
+          messageIndex: totalMessages,
+        });
+        if (!(await advance({
+          status: "idle",
+          currentAgent: agentName,
+          phase: currentPhase,
+          executionPhase,
+          round,
+          totalMessages,
+          continueCount: 0,
+          checkpointPending: false,
         }))) return;
         await ctx.scheduler.runAfter(0, internal.codePipeline.runPipelineAction, { branchId });
         return;

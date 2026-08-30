@@ -7,7 +7,7 @@
 // loop their speaker, which advance the run, which end it, and exactly what
 // each escalation line says when the budget runs out.
 import { describe, it, expect } from "bun:test";
-import { classifyTurnEnding, type TurnEndingInput } from "../src/convex/lib/turnContract";
+import { classifyTurnEnding, floorCapForSeat, type TurnEndingInput } from "../src/convex/lib/turnContract";
 
 const MAX = 10;
 
@@ -160,17 +160,20 @@ describe("classifyTurnEnding — the designed exits are never breaches", () => {
 });
 
 describe("classifyTurnEnding — the cap names which refusal earned the takeover", () => {
+  // Every seat below pins the takeover with currentPhase "Tester": the Coder
+  // no longer escalates a spent window at all — it gets the checkpoint
+  // instead (the dedicated describe further down owns that matrix).
   it("held-floor silence escalates with the neutral checkpoint line (not an accusation)", () => {
-    const e = classifyTurnEnding(T({ continueCount: MAX }));
+    const e = classifyTurnEnding(T({ currentPhase: "Tester", continueCount: MAX }));
     expect(e.kind).toBe("escalate");
     if (e.kind !== "escalate") throw new Error("unreachable");
     expect(e.reason).toBe("undirected");
-    expect(e.line).toBe("[ROUTING] Coder held the floor for 10 turns and never handed off — the Analyser takes over routing.");
+    expect(e.line).toBe("[ROUTING] Tester held the floor for 10 turns and never handed off — the Analyser takes over routing.");
     expect(e.line).not.toContain("still ended every reply");
   });
 
   it("ten turns of naming a non-teammate escalates naming the name", () => {
-    const e = classifyTurnEnding(T({ continueCount: MAX, handoffTarget: "Garb", resolvedHandoff: undefined }));
+    const e = classifyTurnEnding(T({ currentPhase: "Tester", continueCount: MAX, handoffTarget: "Garb", resolvedHandoff: undefined }));
     if (e.kind !== "escalate") throw new Error("expected escalate");
     expect(e.reason).toBe("badTarget");
     expect(e.line).toContain('"Garb"');
@@ -178,14 +181,14 @@ describe("classifyTurnEnding — the cap names which refusal earned the takeover
   });
 
   it("ten turns of self hand-offs escalate as solo work", () => {
-    const e = classifyTurnEnding(T({ continueCount: MAX, selfHandoffWhy: "more" }));
+    const e = classifyTurnEnding(T({ currentPhase: "Tester", continueCount: MAX, selfHandoffWhy: "more" }));
     if (e.kind !== "escalate") throw new Error("expected escalate");
     expect(e.reason).toBe("selfwork");
     expect(e.line).toContain("kept handing the next step to itself");
   });
 
   it("continue past the budget escalates as continue-cap", () => {
-    const e = classifyTurnEnding(T({ continueCount: MAX, continueRequested: true }));
+    const e = classifyTurnEnding(T({ currentPhase: "Tester", continueCount: MAX, continueRequested: true }));
     if (e.kind !== "escalate") throw new Error("expected escalate");
     expect(e.reason).toBe("continue-cap");
     expect(e.line).toContain("asked to keep going past");
@@ -217,5 +220,63 @@ describe("classifyTurnEnding — the Planner's ending (the live-run regression)"
 
   it("a plan reply ending with the taught over-to advances cleanly on turn one", () => {
     expect(classifyTurnEnding(T({ currentPhase: "Planner", handoffTarget: "Analyser", resolvedHandoff: "Analyser" })).kind).toBe("advance");
+  });
+});
+
+describe("classifyTurnEnding — the Coder's checkpoint (75-turn build window)", () => {
+  const CAP75 = 75;
+  const coderAtCap = (patch: Partial<TurnEndingInput> = {}) =>
+    T({ currentPhase: "Coder", continueCount: CAP75, maxContinueRounds: CAP75, ...patch });
+
+  it("per-seat budgets: the Coder gets 75, everyone else keeps 10", () => {
+    expect(floorCapForSeat("Coder")).toBe(75);
+    expect(floorCapForSeat("Tester")).toBe(10);
+    expect(floorCapForSeat("Analyser")).toBe(10);
+  });
+
+  it("a spent window issues the checkpoint — never a takeover (the user's bug report)", () => {
+    const e = classifyTurnEnding(coderAtCap());
+    if (e.kind !== "checkpoint") throw new Error(`expected checkpoint, got ${e.kind}`);
+    expect(e.marker).toContain("75 turns on the floor");
+    expect(e.marker).toContain("THINK OUT LOUD");
+    expect(e.marker).toContain('{"op":"continue"}');
+  });
+
+  it("a spent window issues the checkpoint even when the Coder asked for another continue", () => {
+    expect(classifyTurnEnding(coderAtCap({ continueRequested: true })).kind).toBe("checkpoint");
+  });
+
+  it("below the window the normal contract rules — turn 74 is just another coached turn", () => {
+    expect(classifyTurnEnding(T({ currentPhase: "Coder", continueCount: 74, maxContinueRounds: CAP75 })).kind).toBe("coach");
+  });
+
+  it("a valid hand-off at the window's edge routes over the checkpoint — routing always wins", () => {
+    expect(classifyTurnEnding(coderAtCap({ handoffTarget: "Tester", resolvedHandoff: "Tester" })).kind).toBe("advance");
+  });
+
+  it("verdict KEEP GOING via an explicit continue opens a fresh window", () => {
+    expect(classifyTurnEnding(coderAtCap({ checkpointPending: true, continueRequested: true })).kind).toBe("checkpoint-continue");
+  });
+
+  it("verdict KEEP GOING via an implicit self hand-off opens a fresh window too", () => {
+    expect(classifyTurnEnding(coderAtCap({ checkpointPending: true, selfHandoffWhy: "half the files remain" })).kind).toBe("checkpoint-continue");
+  });
+
+  it("a valid hand-off ANSWERING the checkpoint routes — the checkpoint never traps routing", () => {
+    expect(classifyTurnEnding(coderAtCap({ checkpointPending: true, handoffTarget: "Critic", resolvedHandoff: "Critic" })).kind).toBe("advance");
+  });
+
+  it("silence AFTER the dedicated checkpoint turn is the one floor refusal that still escalates", () => {
+    const e = classifyTurnEnding(coderAtCap({ checkpointPending: true }));
+    if (e.kind !== "escalate") throw new Error(`expected escalate, got ${e.kind}`);
+    expect(e.reason).toBe("checkpoint-ignored");
+    expect(e.line).toBe("[ROUTING] Coder was asked at the 75-turn checkpoint to state whether the task is done — it never answered, so the Analyser takes over.");
+  });
+
+  it("a bad target in the verdict answer keeps its own louder refusal line", () => {
+    const e = classifyTurnEnding(coderAtCap({ checkpointPending: true, handoffTarget: "Garb", resolvedHandoff: undefined }));
+    if (e.kind !== "escalate") throw new Error("expected escalate");
+    expect(e.reason).toBe("badTarget");
+    expect(e.line).toContain('"Garb"');
   });
 });

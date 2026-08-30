@@ -41,6 +41,23 @@ export interface TurnEndingInput {
    *  from the terminal seats (the Analyser, KnowItAll) — a build seat cannot
    *  close runs; its done op is ignored and its normal contract applies. */
   doneWhy?: string;
+  /** True when this reply ANSWERS the checkpoint issued at the Coder's floor
+   *  cap — see the checkpoint legs below. Only ever set for the Coder. */
+  checkpointPending?: boolean;
+}
+
+// ── Per-seat floor budgets ───────────────────────────────────────────────────
+// The solo-floor budget used to be one number for every seat, which mistook
+// the Coder for a chatterer: its job is legitimately dozens of single-file
+// turns, and a generic 10-turn cap interrupted real builds with a takeover
+// mid-task ("Coder held the floor for 10 turns and never handed off" fired
+// on a pipeline that was working exactly as designed). The Coder gets a full
+// build window; every other seat keeps the short conversational budget.
+export const DEFAULT_FLOOR_CAP = 10;
+export const CODER_FLOOR_CAP = 75;
+
+export function floorCapForSeat(phase: string): number {
+  return phase === "Coder" ? CODER_FLOOR_CAP : DEFAULT_FLOOR_CAP;
 }
 
 export type TurnEnding =
@@ -56,11 +73,21 @@ export type TurnEnding =
   | { kind: "advance" }
   // Designed exit: a terminal seat's silence ends the run.
   | { kind: "terminal"; completeMessage: string }
+  // The Coder spent its whole build window holding the floor. NOT a
+  // takeover — a QUESTION the seat must answer next turn with visible
+  // step-by-step thinking: hand the finished work on, or state that work
+  // remains. The marker rides the Coder's own message (the prompt digest
+  // drops System rows); the next-turn prompt carries the full directive.
+  | { kind: "checkpoint"; marker: string }
+  // The checkpoint was answered with a stated keep-going (continue op or an
+  // implicit self hand-off): the seat's own call, made out loud — a fresh
+  // floor window opens.
+  | { kind: "checkpoint-continue" }
   // The solo budget is spent: the lead takes over, loudly, naming WHICH
   // refusal earned the takeover. The last "system routes" moment left.
   | {
       kind: "escalate";
-      reason: "selfwork" | "badTarget" | "undirected" | "continue-cap" | "generic";
+      reason: "selfwork" | "badTarget" | "undirected" | "continue-cap" | "checkpoint-ignored" | "generic";
       line: string;
     };
 
@@ -76,16 +103,30 @@ function coachMarker(breach: "undirected" | "badTarget", handoffTarget?: string,
     : "[CONTINUING: no hand-off named — keep working or name the next teammate]";
 }
 
+/** The marker stamped into the Coder's own message when its build window is
+ *  spent and the checkpoint is issued — the question must reach the MODEL,
+ *  and the prompt digest drops System rows. The next-turn prompt block
+ *  carries the same directive in full. */
+function checkpointMarker(maxContinueRounds: number): string {
+  return `[CHECKPOINT: ${maxContinueRounds} turns on the floor — next turn, THINK OUT LOUD about what your task required, what exists (name the files), and what remains; then state the verdict: over-to the finished work on, or {"op":"continue"} to keep building]`;
+}
+
 /** The System [ROUTING] line stamped when a seat spent the whole budget
  *  refusing the ending contract — each refusal reads differently, so the
  *  line names which one it was. */
 function escalationLine(
-  reason: "selfwork" | "badTarget" | "undirected" | "continue-cap" | "generic",
+  reason: "selfwork" | "badTarget" | "undirected" | "continue-cap" | "checkpoint-ignored" | "generic",
   currentPhase: string,
   maxContinueRounds: number,
   handoffTarget?: string,
 ): string {
   switch (reason) {
+    case "checkpoint-ignored":
+      // The one refusal the checkpoint does not forgive: the seat was ASKED,
+      // with the whole next turn dedicated to answering, and still STATED
+      // nothing — no verdict, no route, no continue. Only then does the lead
+      // take over.
+      return `[ROUTING] ${currentPhase} was asked at the ${maxContinueRounds}-turn checkpoint to state whether the task is done — it never answered, so the Analyser takes over.`;
     case "selfwork":
       return `[ROUTING] ${currentPhase} kept handing the next step to itself — after ${maxContinueRounds} rounds of solo work the Analyser takes over routing.`;
     case "badTarget":
@@ -115,7 +156,7 @@ export function classifyTurnEnding(input: TurnEndingInput): TurnEnding {
   const {
     currentPhase, inRelay, relayAdvances, continueCount, maxContinueRounds,
     continueRequested, selfHandoffWhy, handoffTarget, resolvedHandoff, criticPass,
-    doneWhy,
+    doneWhy, checkpointPending,
   } = input;
 
   const passIsTheDecision = currentPhase === "Critic" && criticPass;
@@ -160,6 +201,32 @@ export function classifyTurnEnding(input: TurnEndingInput): TurnEnding {
   if (passIsTheDecision) return { kind: "advance" };
   if (resolvedHandoff !== undefined) return { kind: "advance" };
 
+  // ── The Coder's checkpoint VERDICT ─────────────────────────────────────
+  // This reply answers the checkpoint issued at the floor cap (it can never
+  // be under the cap — pending only exists once the budget is spent). A
+  // stated keep-going opens a fresh window — the seat's own call, made out
+  // loud. A valid hand-off already routed above. Everything else — more
+  // silence after a dedicated checkpoint turn — is the one answer the build
+  // cannot accept, and the ONLY floor refusal that still escalates. A bad
+  // target named in the verdict keeps its own louder refusal line.
+  if (checkpointPending) {
+    if (continueRequested || (selfHandoffWhy !== undefined && !inRelay)) {
+      return { kind: "checkpoint-continue" };
+    }
+    if (badTarget) {
+      return {
+        kind: "escalate",
+        reason: "badTarget",
+        line: escalationLine("badTarget", currentPhase, maxContinueRounds, handoffTarget),
+      };
+    }
+    return {
+      kind: "escalate",
+      reason: "checkpoint-ignored",
+      line: escalationLine("checkpoint-ignored", currentPhase, maxContinueRounds),
+    };
+  }
+
   // ── Terminal seats: the run ends only on the agent's own statement ────
   // An explicit done is the designed exit — the agent SAID the work is over
   // and the transcript tells the user why, in the agent's words.
@@ -184,7 +251,16 @@ export function classifyTurnEnding(input: TurnEndingInput): TurnEnding {
     };
   }
 
-  // ── Cap spent: name the refusal that earned the takeover ──────────────
+  // ── Cap spent holding the floor ───────────────────────────────────────
+  // The Coder: never a takeover on a spent window — its job is legitimately
+  // dozens of single-file turns. Issue the checkpoint; the verdict is
+  // classified on its NEXT reply (the checkpointPending legs above).
+  if (currentPhase === "Coder") {
+    return { kind: "checkpoint", marker: checkpointMarker(maxContinueRounds) };
+  }
+
+  // ── Cap spent (every other seat): name the refusal that earned the
+  //    takeover ──────────────────────────────────────────────────────────
   if (selfHandoffWhy !== undefined && !inRelay) {
     return { kind: "escalate", reason: "selfwork", line: escalationLine("selfwork", currentPhase, maxContinueRounds) };
   }
