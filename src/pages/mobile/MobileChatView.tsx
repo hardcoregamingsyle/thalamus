@@ -324,9 +324,48 @@ export default function MobileChatView({
       setCompletedStreamContent(null);
       setIsThinking(true);
       try {
-        const fallbackText = mode === "study"
-          ? await sendStudyMessage({ conversationId: convId, content: msg, token, userContext, skipUserSave: userMessageSaved })
-          : await sendMessage({ conversationId: convId, content: msg, mode: mode as "chat" | "research" | "code" | "designing" | "strategising" | "creative-writing" | "marketing" | "idea-generation" | "naming", token, userContext, skipUserSave: userMessageSaved });
+        let fallbackText: string;
+        if (mode === "study") {
+          try {
+            fallbackText = await sendStudyMessage({
+              conversationId: convId,
+              content: msg,
+              token,
+              userContext,
+              skipUserSave: userMessageSaved,
+            });
+            if (isGenericStreamFailure(fallbackText)) {
+              throw new Error("Dedicated study action returned no answer");
+            }
+          } catch {
+            fallbackText = await sendMessage({
+              conversationId: convId,
+              content: msg,
+              mode: "study",
+              token,
+              userContext,
+              skipUserSave: true,
+            });
+          }
+        } else {
+          fallbackText = await sendMessage({
+            conversationId: convId,
+            content: msg,
+            mode: mode as
+              | "chat"
+              | "research"
+              | "code"
+              | "designing"
+              | "strategising"
+              | "creative-writing"
+              | "marketing"
+              | "idea-generation"
+              | "naming",
+            token,
+            userContext,
+            skipUserSave: userMessageSaved,
+          });
+        }
         if (isGenericStreamFailure(fallbackText)) {
           throw new Error("Fallback providers returned no answer");
         }

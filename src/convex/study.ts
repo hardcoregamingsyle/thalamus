@@ -3,7 +3,7 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { callSiliconFlow } from "./lib/agentCore";
+import { callModel, callSiliconFlow } from "./lib/agentCore";
 import { buildStudySystemPrompt } from "./lib/studyPrompt";
 import { convertStudyJsonOps, buildStudyTaskItems } from "./lib/studyJsonOps";
 
@@ -435,13 +435,40 @@ export const sendStudyMessage = action({
     let inputTokens = 0;
     let outputTokens = 0;
 
-    if (geminiKeys.length > 0) {
-      try {
-        const result = await callGeminiWithSearch(systemPrompt, fullPrompt, geminiKeys[0], 2048);
-        responseContent = result.text;
-        inputTokens = result.inputTokens;
-        outputTokens = result.outputTokens;
-      } catch {
+    try {
+      if (geminiKeys.length > 0) {
+        try {
+          const result = await callGeminiWithSearch(
+            systemPrompt,
+            fullPrompt,
+            geminiKeys[0],
+            2048,
+          );
+          responseContent = result.text;
+          inputTokens = result.inputTokens;
+          outputTokens = result.outputTokens;
+        } catch {
+          try {
+            const result = await callSiliconFlow(fullPrompt, systemPrompt);
+            responseContent = result.text;
+            inputTokens = result.inputTokens;
+            outputTokens = result.outputTokens;
+          } catch {
+            const { vly } = await import("./lib/vlyIntegrations");
+            const result = await vly.ai.completion({
+              model: "claude-haiku-4-5",
+              messages: [
+                { role: "user", content: systemPrompt + "\n\n" + fullPrompt },
+              ],
+              maxTokens: 2048,
+            });
+            responseContent =
+              result.success && result.data
+                ? (result.data.choices[0]?.message?.content ?? "")
+                : "";
+          }
+        }
+      } else {
         try {
           const result = await callSiliconFlow(fullPrompt, systemPrompt);
           responseContent = result.text;
@@ -451,27 +478,43 @@ export const sendStudyMessage = action({
           const { vly } = await import("./lib/vlyIntegrations");
           const result = await vly.ai.completion({
             model: "claude-haiku-4-5",
-            messages: [{ role: "user", content: systemPrompt + "\n\n" + fullPrompt }],
+            messages: [
+              { role: "user", content: systemPrompt + "\n\n" + fullPrompt },
+            ],
             maxTokens: 2048,
           });
-          responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "") : "";
+          responseContent =
+            result.success && result.data
+              ? (result.data.choices[0]?.message?.content ?? "")
+              : "";
         }
       }
-    } else {
-      try {
-        const result = await callSiliconFlow(fullPrompt, systemPrompt);
-        responseContent = result.text;
-        inputTokens = result.inputTokens;
-        outputTokens = result.outputTokens;
-      } catch {
-        const { vly } = await import("./lib/vlyIntegrations");
-        const result = await vly.ai.completion({
-          model: "claude-haiku-4-5",
-          messages: [{ role: "user", content: systemPrompt + "\n\n" + fullPrompt }],
-          maxTokens: 2048,
-        });
-        responseContent = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "") : "";
+    } catch (legacyProviderError) {
+      console.warn(
+        "Study provider chain failed; trying the unified provider router:",
+        legacyProviderError instanceof Error
+          ? legacyProviderError.message
+          : String(legacyProviderError),
+      );
+    }
+
+    // The study action historically stopped after Gemini/SiliconFlow/VLY. Use
+    // the broader platform router as the final seat so one stale provider model
+    // or credential does not turn the whole mode into a server error.
+    if (!responseContent.trim()) {
+      const routed = await callModel(
+        fullPrompt,
+        systemPrompt,
+        "KnowItAll",
+        ctx,
+        { deadlineMs: 240_000 },
+      );
+      if (!routed.text.trim()) {
+        throw new Error("Unified provider router returned no answer");
       }
+      responseContent = routed.text;
+      inputTokens = routed.inputTokens;
+      outputTokens = routed.outputTokens;
     }
 
     // Process JSON-format ask ops into interactive HTML elements. The model

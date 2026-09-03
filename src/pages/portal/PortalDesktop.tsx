@@ -699,9 +699,52 @@ export default function PortalDesktop() {
       // Fallback to Convex action
       setIsThinking(true);
       try {
-        const fallbackText = activeMode === "study"
-          ? await sendStudyMessage({ conversationId: convId, content: msg, token, userContext, skipUserSave: userMessageSaved })
-          : await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code" | "designing" | "strategising" | "creative-writing" | "marketing" | "idea-generation" | "naming", token, userContext, skipUserSave: userMessageSaved });
+        let fallbackText: string;
+        if (activeMode === "study") {
+          try {
+            fallbackText = await sendStudyMessage({
+              conversationId: convId,
+              content: msg,
+              token,
+              userContext,
+              skipUserSave: userMessageSaved,
+            });
+            if (isGenericStreamFailure(fallbackText)) {
+              throw new Error("Dedicated study action returned no answer");
+            }
+          } catch (studyError) {
+            console.warn(
+              "Dedicated study action failed, trying the general model action:",
+              studyError,
+            );
+            fallbackText = await sendMessage({
+              conversationId: convId,
+              content: msg,
+              mode: "study",
+              token,
+              userContext,
+              skipUserSave: true,
+            });
+          }
+        } else {
+          fallbackText = await sendMessage({
+            conversationId: convId,
+            content: msg,
+            mode: activeMode as
+              | "chat"
+              | "research"
+              | "code"
+              | "designing"
+              | "strategising"
+              | "creative-writing"
+              | "marketing"
+              | "idea-generation"
+              | "naming",
+            token,
+            userContext,
+            skipUserSave: userMessageSaved,
+          });
+        }
         if (isGenericStreamFailure(fallbackText)) {
           throw new Error("Fallback providers returned no answer");
         }
