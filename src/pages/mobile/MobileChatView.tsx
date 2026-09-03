@@ -30,6 +30,8 @@ import { useGamification } from "@/hooks/use-gamification";
 import { StudyTaskProvider } from "@/components/chat/StudyTaskContext";
 import StudyScoreBar from "@/components/chat/StudyScoreBar";
 import StudyCelebration from "@/components/chat/StudyCelebration";
+import { StudyComposerQuestion } from "@/components/chat/StudyQuestionHydrator";
+import { findPendingStudyQuestion } from "@/lib/studyComposerQuestion";
 
 // Mobile-specific system prompts. Deliberately terser than the desktop set
 // (see src/content/systemPrompts.ts) because mobile screens can't fit the
@@ -173,13 +175,11 @@ export default function MobileChatView({
     } catch { toast.error("Failed to create conversation"); }
   };
 
-  const handleSend = async () => {
-    if (!input.trim() || isThinking || !token) return;
-    if (studyLocked) {
-      toast.error(`Finish your study task (${studyTaskProgress}) before sending a new message.`);
-      return;
-    }
-    const msg = input.trim();
+  // Explicit text lets the transformed study composer submit an answer without
+  // staging it through React state first (which previously sent a stale value).
+  const sendPrompt = async (rawText: string) => {
+    if (!rawText.trim() || isThinking || !token) return;
+    const msg = rawText.trim();
     setInput("");
     setInFlightUserContent(msg);
 
@@ -286,6 +286,19 @@ export default function MobileChatView({
     setInFlightUserContent(null);
   };
 
+  const handleSend = () => {
+    if (studyLocked) {
+      toast.error(`Finish your study task (${studyTaskProgress}) before sending a new message.`);
+      return;
+    }
+    void sendPrompt(input);
+  };
+
+  const handleStudyAnswer = (question: string, answer: string) => {
+    if (!answer.trim()) return;
+    void sendPrompt(`[Answer to: ${question}]\n${answer}`);
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!token) return;
     const file = e.target.files?.[0];
@@ -316,6 +329,9 @@ export default function MobileChatView({
     const userIndex = allMessages.length - 1 - currentTurnIndex;
     return allMessages.filter((m, index) => index <= userIndex || m.role !== "assistant");
   })();
+  const pendingStudyQuestion = mode === "study"
+    ? findPendingStudyQuestion(visibleMessages, studyTask.task, isThinking || streamingContent !== null)
+    : null;
   const showMessages = activeConvId && allMessages.length > 0;
 
   return (
@@ -426,12 +442,8 @@ export default function MobileChatView({
                 key={msg._id}
                 msg={msg}
                 modeInfo={modeInfo}
-                onStudyAnswer={mode === "study" ? (q, a) => {
-                  if (!a.trim()) return;
-                  setInput(`[Answer to: ${q}]\n${a}`);
-                  // Send on the next tick so the input state lands first.
-                  setTimeout(() => void handleSend(), 0);
-                } : undefined}
+                onStudyAnswer={mode === "study" ? handleStudyAnswer : undefined}
+                studyQuestionsInComposer={mode === "study"}
               />
             ))}
             {/* Streaming message */}
@@ -506,7 +518,7 @@ export default function MobileChatView({
             />
           </div>
         )}
-        {mode === "study" && (
+        {mode === "study" && !pendingStudyQuestion && (
           <div className="flex items-center gap-2 mb-2">
             <button onClick={() => fileInputRef.current?.click()}
               className="flex items-center gap-1.5 text-[11px] text-indigo-400 border border-indigo-400/30 bg-indigo-400/10 px-3 py-1.5 rounded-full active:bg-indigo-400/20 transition-colors">
@@ -521,34 +533,44 @@ export default function MobileChatView({
           </div>
         )}
         <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept="image/*,.pdf,.txt,.md,.docx" />
-        <div className="flex items-end gap-2">
-          <div className="flex-1 flex items-end bg-background border border-border/60 rounded-[22px] overflow-hidden min-h-[44px]">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-              placeholder={
-                mode === "study" ? "Ask a study question..." :
-                mode === "research" ? "Research a topic..." :
-                mode === "code" ? "Describe what to build..." :
-                "Message Thalamus AI..."
-              }
-              rows={1}
-              className="flex-1 bg-transparent px-4 py-3 text-[15px] text-foreground placeholder:text-muted-foreground/50 resize-none focus:outline-none leading-relaxed"
-              style={{ maxHeight: "120px" }}
-            />
+        {pendingStudyQuestion ? (
+          <StudyComposerQuestion
+            key={pendingStudyQuestion.key}
+            prompt={pendingStudyQuestion}
+            onAnswer={handleStudyAnswer}
+          />
+        ) : (
+          <div className="flex items-end gap-2">
+            <div className="flex-1 flex items-end bg-background border border-border/60 rounded-[22px] overflow-hidden min-h-[44px]">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                placeholder={
+                  studyLocked ? "Complete the activity above..." :
+                  mode === "study" ? "Ask a study question..." :
+                  mode === "research" ? "Research a topic..." :
+                  mode === "code" ? "Describe what to build..." :
+                  "Message Thalamus AI..."
+                }
+                rows={1}
+                className="flex-1 bg-transparent px-4 py-3 text-[15px] text-foreground placeholder:text-muted-foreground/50 resize-none focus:outline-none leading-relaxed disabled:opacity-60"
+                style={{ maxHeight: "120px" }}
+                disabled={studyLocked || isThinking}
+              />
+            </div>
+            <motion.button
+              aria-label="Send message"
+              onClick={handleSend}
+              disabled={!input.trim() || isThinking || studyLocked}
+              whileTap={{ scale: 0.92 }}
+              className="w-11 h-11 rounded-full bg-primary flex items-center justify-center shrink-0 disabled:opacity-40 transition-opacity shadow-sm shadow-primary/30"
+            >
+              {isThinking ? <Loader2 className="h-5 w-5 text-primary-foreground animate-spin" /> : <Send className="h-4.5 w-4.5 text-primary-foreground" />}
+            </motion.button>
           </div>
-          <motion.button
-            aria-label="Send message"
-            onClick={handleSend}
-            disabled={!input.trim() || isThinking}
-            whileTap={{ scale: 0.92 }}
-            className="w-11 h-11 rounded-full bg-primary flex items-center justify-center shrink-0 disabled:opacity-40 transition-opacity shadow-sm shadow-primary/30"
-          >
-            {isThinking ? <Loader2 className="h-5 w-5 text-primary-foreground animate-spin" /> : <Send className="h-4.5 w-4.5 text-primary-foreground" />}
-          </motion.button>
-        </div>
+        )}
       </div>
 
       {/* Conversation list drawer */}

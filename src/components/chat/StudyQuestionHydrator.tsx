@@ -20,6 +20,7 @@ import { stripOpFences } from "@/convex/lib/studyJsonOps";
 import { sfx } from "@/lib/sfx";
 import { celebrateAt } from "@/lib/vfx";
 import { useStudyTaskContext } from "@/components/chat/StudyTaskContext";
+import type { StudyQuestionPrompt } from "@/lib/studyComposerQuestion";
 
 const OPTION_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"];
 
@@ -49,6 +50,9 @@ interface StudyQuestionHydratorProps {
   html: string;
   accentText?: string;
   onAnswer?: (question: string, answer: string) => void;
+  // Ask/MCQ controls move into the main composer when false. Flashcards and
+  // learning pathways remain in the transcript where their larger UI belongs.
+  renderQuestions?: boolean;
 }
 
 // ── Robust JSON-op extraction ───────────────────────────────────────────────
@@ -326,16 +330,23 @@ function McqWidget({
   );
 }
 
-function widgetFor(op: string, data: Record<string, unknown>, onAnswer?: (q: string, a: string) => void): React.ReactNode {
+function widgetFor(
+  op: string,
+  data: Record<string, unknown>,
+  onAnswer?: (q: string, a: string) => void,
+  renderQuestions = true,
+): React.ReactNode {
   const itemId = typeof data.id === "string" ? data.id : undefined;
   const ids = Array.isArray(data.ids) ? data.ids.map(String) : undefined;
   switch (op) {
     case "ask-question": {
+      if (!renderQuestions) return null;
       const question = String(data.question ?? "");
       if (!question) return null;
       return <AskWidget data={{ type: "question", question }} itemId={itemId} onAnswer={onAnswer} />;
     }
     case "ask-mcq": {
+      if (!renderQuestions) return null;
       const question = String(data.question ?? "");
       const options = Array.isArray(data.options) ? data.options.map(String) : [];
       const c = data.correct;
@@ -362,6 +373,21 @@ function widgetFor(op: string, data: Record<string, unknown>, onAnswer?: (q: str
   }
 }
 
+/** The active study question rendered in place of the normal prompt box. */
+export function StudyComposerQuestion({
+  prompt,
+  onAnswer,
+}: {
+  prompt: StudyQuestionPrompt;
+  onAnswer: (question: string, answer: string) => void;
+}) {
+  return (
+    <div className="composer-accent max-h-[48vh] overflow-y-auto rounded-2xl border border-border bg-card px-1.5 shadow-sm">
+      {widgetFor(prompt.op, prompt.data, onAnswer)}
+    </div>
+  );
+}
+
 // Prose styling for react-markdown output (headings, lists, tables, code).
 const PROSE_CLASS =
   "prose-html text-[15px] leading-relaxed";
@@ -369,6 +395,7 @@ const PROSE_CLASS =
 const StudyQuestionHydrator = memo(function StudyQuestionHydrator({
   html,
   onAnswer,
+  renderQuestions = true,
 }: StudyQuestionHydratorProps) {
   const content = html.startsWith("<") ? html : html.replace(/\n/g, "\n");
   const ops = extractOps(content);
@@ -411,9 +438,8 @@ const StudyQuestionHydrator = memo(function StudyQuestionHydrator({
             </div>
           );
         }
-        return (
-          <div key={`w${i}`}>{widgetFor(seg.op!, seg.data!, onAnswer)}</div>
-        );
+        const widget = widgetFor(seg.op!, seg.data!, onAnswer, renderQuestions);
+        return widget ? <div key={`w${i}`}>{widget}</div> : null;
       })}
       {trailing.trim() && (
         <div className={PROSE_CLASS}>

@@ -16,13 +16,13 @@ interface MessageRowProps {
   msg: Message;
   accentColor: string; // tailwind text color for the assistant avatar
   dayLabel?: string; // if set, render a "Today/Yesterday/date" divider above
-  // When provided (study mode), assistant messages hydrate any ask/mcq
-  // question markers into interactive in-chat widgets. onAnswer(question,
-  // answer) is called when the student submits an answer.
+  // Study-mode rich content still uses this callback for pathway answers.
   onStudyAnswer?: (question: string, answer: string) => void;
+  // The main portal moves ask/MCQ controls into the bottom composer.
+  studyQuestionsInComposer?: boolean;
 }
 
-const MessageRow = memo(function MessageRow({ msg, accentColor, dayLabel, onStudyAnswer }: MessageRowProps) {
+const MessageRow = memo(function MessageRow({ msg, accentColor, dayLabel, onStudyAnswer, studyQuestionsInComposer = false }: MessageRowProps) {
   const [copied, setCopied] = useState(false);
   const isUser = msg.role === "user";
   const time = formatMessageTime(msg.createdAt);
@@ -94,6 +94,7 @@ const MessageRow = memo(function MessageRow({ msg, accentColor, dayLabel, onStud
               <StudyQuestionHydrator
                 html={msg.content}
                 onAnswer={onStudyAnswer}
+                renderQuestions={!studyQuestionsInComposer}
               />
             ) : (
               <RichContent

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { useQuery, useAction } from "convex/react";
+import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Doc } from "@/convex/_generated/dataModel";
+import type { Doc } from "@/convex/_generated/dataModel";
 import { useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,6 +31,7 @@ import {
   VerboseMessageContent,
 } from "@/components/code-workspace/VerboseBlocks";
 import { streamVisibleText } from "@/lib/verboseTranscript";
+import { extractTrailingCodeQuestion } from "@/lib/codeComposerQuestion";
 
 // ── Planner message rendering ──────────────────────────────────────────────────
 interface PlannerTask {
@@ -395,11 +396,15 @@ export default function CodeWorkspace() {
   const messages = useQuery(api.codeBranches.watchMessages, branchId ? { branchId } : "skip");
   const files = useQuery(api.codeBranches.watchFiles, branchId ? { branchId } : "skip");
   const commands = useQuery(api.codeCommands.watchCommands, branchId ? { branchId } : "skip");
+  const apiKeyRequests = useQuery(api.codeApiKeys.watchApiKeyRequests, branchId ? { branchId } : "skip");
   const startPipeline = useAction(api.codePipeline.startPipeline);
   const stopPipeline = useAction(api.codePipeline.stopPipeline);
+  const fulfillApiKeyRequest = useMutation(api.codeApiKeys.fulfillApiKeyRequest);
 
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [apiKeyDraft, setApiKeyDraft] = useState({ requestId: "", value: "" });
+  const [isFulfillingApiKey, setIsFulfillingApiKey] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -417,6 +422,39 @@ export default function CodeWorkspace() {
     [...commands]
       .reverse()
       .find((c) => c.status === "pending" || c.status === "running");
+
+  const pendingApiKeyRequests = (apiKeyRequests ?? [])
+    .filter((request) => request.status === "pending")
+    .sort((a, b) => a.createdAt - b.createdAt);
+  const activeApiKeyRequest = pendingApiKeyRequests[0] ?? null;
+  const apiKeyValue = activeApiKeyRequest && apiKeyDraft.requestId === activeApiKeyRequest._id
+    ? apiKeyDraft.value
+    : "";
+
+  // A plain-language question does not have a database request row. When the
+  // latest agent turn directly asks one and the pipeline is waiting, surface it
+  // in the same composer so the input is visibly tied to that question.
+  const latestAgentMessage = messages
+    ? [...messages].reverse().find((message) =>
+        message.agent !== "User" && message.agent !== "System" && message.agent !== "Terminal")
+    : undefined;
+  const latestUserMessage = messages
+    ? [...messages].reverse().find((message) => message.agent === "User")
+    : undefined;
+  const latestUserMessageIndex = latestUserMessage
+    ? messages?.findIndex((message) => message._id === latestUserMessage._id) ?? -1
+    : -1;
+  const latestAgentMessageIndex = latestAgentMessage
+    ? messages?.findIndex((message) => message._id === latestAgentMessage._id) ?? -1
+    : -1;
+  const pendingCodeQuestion =
+    !activeApiKeyRequest &&
+    !activeCommand &&
+    branch?.status !== "running" &&
+    latestAgentMessage &&
+    latestAgentMessageIndex > latestUserMessageIndex
+      ? extractTrailingCodeQuestion(latestAgentMessage.content)
+      : null;
 
   // Keep the transcript pinned to the newest activity. Follows committed
   // messages plus the live agent stream and terminal output; only auto-scrolls
@@ -468,6 +506,24 @@ export default function CodeWorkspace() {
       setInput(userPrompt);
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const handleFulfillApiKey = async () => {
+    if (!activeApiKeyRequest || !apiKeyValue.trim() || isFulfillingApiKey) return;
+    setIsFulfillingApiKey(true);
+    try {
+      await fulfillApiKeyRequest({
+        token,
+        requestId: activeApiKeyRequest._id,
+        value: apiKeyValue.trim(),
+      });
+      setApiKeyDraft({ requestId: "", value: "" });
+      toast.success(`${activeApiKeyRequest.variableName} added — the pipeline can continue.`);
+    } catch (err) {
+      toast.error(errMsg(err, "Failed to save API key"));
+    } finally {
+      setIsFulfillingApiKey(false);
     }
   };
 
@@ -713,57 +769,143 @@ export default function CodeWorkspace() {
             {/* Input Area — center-stage composer */}
             <div className="shrink-0 border-t border-border bg-gradient-to-t from-background via-background to-transparent">
               <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
-                <div className="composer-accent rounded-2xl border border-border bg-card shadow-sm transition-all">
-                  <Textarea
-                    placeholder={
-                      branch?.status === "running"
-                        ? "Pipeline is running…"
-                        : "Tell the AI team what to build…"
-                    }
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSend();
-                      }
-                    }}
-                    className="min-h-[70px] max-h-[200px] resize-none border-0 bg-transparent px-4 pt-3.5 text-[15px] focus-visible:ring-0 focus-visible:outline-none"
-                    disabled={isSending || branch?.status === "running"}
-                  />
-                  <div className="flex items-center justify-between px-2 pb-2 pt-1">
-                    <span className="px-2 text-[11px] text-muted-foreground/70">
-                      Enter to send · Shift+Enter for newline
-                    </span>
-                    {branch?.status === "running" ? (
-                      <Button
-                        size="icon"
-                        onClick={handleStop}
-                        variant="destructive"
-                        className="h-10 w-10 rounded-xl"
-                        aria-label="Stop pipeline"
-                      >
-                        <Pause className="h-5 w-5" />
-                      </Button>
-                    ) : (
-                      <Button
-                        size="icon"
-                        onClick={handleSend}
-                        disabled={!input.trim() || isSending}
-                        className="h-10 w-10 rounded-xl"
-                        aria-label="Send message"
-                      >
-                        {isSending ? (
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                        ) : (
-                          <Send className="h-5 w-5" />
+                {activeApiKeyRequest ? (
+                  <div className="composer-accent rounded-2xl border border-amber-500/40 bg-card p-4 shadow-sm">
+                    <div className="mb-3 flex items-start gap-3">
+                      <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-500">
+                        <Key className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-[11px] font-bold uppercase tracking-widest text-amber-500">
+                            {activeApiKeyRequest.agent} needs an API key
+                          </p>
+                          {pendingApiKeyRequests.length > 1 && (
+                            <Badge variant="outline" className="text-[10px]">
+                              1 of {pendingApiKeyRequests.length}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="mt-1 font-mono text-sm font-semibold text-foreground">
+                          {activeApiKeyRequest.variableName}
+                        </p>
+                        {activeApiKeyRequest.description && (
+                          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                            {activeApiKeyRequest.description}
+                          </p>
                         )}
+                        {activeApiKeyRequest.howToGet && (
+                          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground/80">
+                            <span className="font-semibold text-foreground/80">How to get it:</span>{" "}
+                            {activeApiKeyRequest.howToGet}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label htmlFor="requested-api-key" className="sr-only">
+                        Value for {activeApiKeyRequest.variableName}
+                      </label>
+                      <input
+                        id="requested-api-key"
+                        type="password"
+                        autoComplete="off"
+                        spellCheck={false}
+                        value={apiKeyValue}
+                        onChange={(event) => setApiKeyDraft({
+                          requestId: activeApiKeyRequest._id,
+                          value: event.target.value,
+                        })}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void handleFulfillApiKey();
+                          }
+                        }}
+                        placeholder={`Paste ${activeApiKeyRequest.variableName} here…`}
+                        className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-background px-3 font-mono text-sm text-foreground placeholder:font-sans placeholder:text-muted-foreground focus:border-amber-500/60 focus:outline-none"
+                        disabled={isFulfillingApiKey}
+                        autoFocus
+                      />
+                      <Button
+                        onClick={() => void handleFulfillApiKey()}
+                        disabled={!apiKeyValue.trim() || isFulfillingApiKey}
+                        className="h-11 rounded-xl bg-amber-500 px-4 text-white hover:bg-amber-500/90"
+                      >
+                        {isFulfillingApiKey ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save & continue"}
                       </Button>
-                    )}
+                    </div>
+                    <p className="mt-2 text-[11px] text-muted-foreground/70">
+                      Stored encrypted and never shown in the transcript.
+                    </p>
                   </div>
-                </div>
+                ) : (
+                  <div className="composer-accent rounded-2xl border border-border bg-card shadow-sm transition-all">
+                    {pendingCodeQuestion && latestAgentMessage && (
+                      <div className="border-b border-border/70 px-4 py-3">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-violet-400">
+                          {latestAgentMessage.agent} needs your input
+                        </p>
+                        <p className="mt-1 text-sm leading-relaxed text-foreground">{pendingCodeQuestion}</p>
+                      </div>
+                    )}
+                    <Textarea
+                      placeholder={
+                        branch?.status === "running"
+                          ? "Pipeline is running…"
+                          : pendingCodeQuestion
+                          ? "Type your answer…"
+                          : "Tell the AI team what to build…"
+                      }
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSend();
+                        }
+                      }}
+                      className="min-h-[70px] max-h-[200px] resize-none border-0 bg-transparent px-4 pt-3.5 text-[15px] focus-visible:ring-0 focus-visible:outline-none"
+                      disabled={isSending || branch?.status === "running"}
+                    />
+                    <div className="flex items-center justify-between px-2 pb-2 pt-1">
+                      <span className="px-2 text-[11px] text-muted-foreground/70">
+                        {pendingCodeQuestion ? "Answer the question above" : "Enter to send · Shift+Enter for newline"}
+                      </span>
+                      {branch?.status === "running" ? (
+                        <Button
+                          size="icon"
+                          onClick={handleStop}
+                          variant="destructive"
+                          className="h-10 w-10 rounded-xl"
+                          aria-label="Stop pipeline"
+                        >
+                          <Pause className="h-5 w-5" />
+                        </Button>
+                      ) : (
+                        <Button
+                          size="icon"
+                          onClick={handleSend}
+                          disabled={!input.trim() || isSending}
+                          className="h-10 w-10 rounded-xl"
+                          aria-label={pendingCodeQuestion ? "Submit answer" : "Send message"}
+                        >
+                          {isSending ? (
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                          ) : (
+                            <Send className="h-5 w-5" />
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <p className="mt-2 text-center text-[11px] text-muted-foreground/60">
-                  The AI team will run commands in your VM and may request API keys
+                  {activeApiKeyRequest
+                    ? "The build resumes automatically after all requested keys are supplied."
+                    : pendingCodeQuestion
+                    ? "Your reply is sent back to the agent team with the project context."
+                    : "The AI team will run commands in your VM and ask for input here when needed."}
                 </p>
               </div>
             </div>

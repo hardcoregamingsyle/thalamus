@@ -14,10 +14,12 @@ const MobileMessageBubble = memo(function MobileMessageBubble({
   msg,
   modeInfo,
   onStudyAnswer,
+  studyQuestionsInComposer = false,
 }: {
   msg: Message;
   modeInfo: ModeMeta;
   onStudyAnswer?: (question: string, answer: string) => void;
+  studyQuestionsInComposer?: boolean;
 }) {
   return (
     <motion.div
@@ -41,6 +43,7 @@ const MobileMessageBubble = memo(function MobileMessageBubble({
             <StudyQuestionHydrator
               html={msg.content}
               onAnswer={onStudyAnswer}
+              renderQuestions={!studyQuestionsInComposer}
             />
           ) : (
             <div className="prose-html text-[13px]" dangerouslySetInnerHTML={{ __html: sanitizeAiHtml(msg.content.startsWith("<") ? msg.content : msg.content.replace(/\n/g, "<br/>")) }} />

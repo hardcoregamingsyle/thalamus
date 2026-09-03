@@ -26,6 +26,7 @@ import SuggestionFormModal, { type SuggestionFile } from "@/components/Suggestio
 import StreamingBubble from "@/components/StreamingBubble";
 import MessageRow from "@/components/chat/MessageRow";
 import Composer from "@/components/chat/Composer";
+import { StudyComposerQuestion } from "@/components/chat/StudyQuestionHydrator";
 import EmptyState from "@/components/chat/EmptyState";
 import ConversationSidebar from "@/components/chat/ConversationSidebar";
 import { StudyTaskProvider } from "@/components/chat/StudyTaskContext";
@@ -40,6 +41,7 @@ import { errMsg } from "@/lib/errorMessage";
 import { formatMessageDay } from "@/lib/dateFormat";
 import { convexSiteUrl } from "@/lib/convexUrls";
 import { isProbablyTextFile, fileToBase64, MAX_UPLOAD_BYTES } from "@/lib/fileEncoding";
+import { findPendingStudyQuestion } from "@/lib/studyComposerQuestion";
 import ModeSelection from "./ModeSelection";
 import { MODES, MORE_MODES, VALID_MODES, type Mode } from "./modes";
 import {
@@ -851,6 +853,9 @@ export default function PortalDesktop() {
     const userIndex = list.length - 1 - currentTurnIndex;
     return list.filter((m, index) => index <= userIndex || m.role !== "assistant");
   })();
+  const pendingStudyQuestion = activeMode === "study"
+    ? findPendingStudyQuestion(visibleMessages, studyTask.task, isThinking || streamingContent !== null)
+    : null;
 
   if (isLoading) {
     return (
@@ -1127,6 +1132,7 @@ export default function PortalDesktop() {
                       accentColor={currentMode.color}
                       dayLabel={dayLabel}
                       onStudyAnswer={activeMode === "study" ? handleStudyAnswer : undefined}
+                      studyQuestionsInComposer={activeMode === "study"}
                     />
                   );
                 })
@@ -1179,12 +1185,12 @@ export default function PortalDesktop() {
               )}
 
               {/* Lock banner while an interactive study task is in progress */}
-              {studyLocked && studyTask.task && (
+              {studyLocked && studyTask.task && !pendingStudyQuestion && (
                 <div className="mb-2.5 flex items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-300">
                   <GraduationCap className="h-4 w-4 shrink-0" />
                   <span>
                     Study task in progress ({studyTask.task.completed}/{studyTask.task.total}) — finish the
-                    questions &amp; flashcards to continue. This stays saved even if you refresh or switch devices.
+                    interactive activity above to continue. This stays saved if you refresh or switch devices.
                   </span>
                 </div>
               )}
@@ -1214,28 +1220,38 @@ export default function PortalDesktop() {
                   </button>
                 </div>
               )}
-              <Composer
-                value={input}
-                onChange={setInput}
-                onSend={handleSend}
-                onKeyDown={handleKeyDown}
-                onPaste={handlePaste}
-                onAttach={handleAttachFiles}
-                placeholder={
-                  studyLocked
-                    ? "Complete the study task above to continue…"
-                    : activeMode === "study"
-                    ? "Tell your tutor what to cover…"
-                    : activeMode === "research"
-                    ? "Research a topic…"
-                    : "Message Thalamus…"
-                }
-                disabled={studyLocked}
-                attachedFiles={attachedFiles}
-                onRemoveFile={(i) => setAttachedFiles(prev => prev.filter((_, j) => j !== i))}
-              />
+              {pendingStudyQuestion ? (
+                <StudyComposerQuestion
+                  key={pendingStudyQuestion.key}
+                  prompt={pendingStudyQuestion}
+                  onAnswer={handleStudyAnswer}
+                />
+              ) : (
+                <Composer
+                  value={input}
+                  onChange={setInput}
+                  onSend={handleSend}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                  onAttach={handleAttachFiles}
+                  placeholder={
+                    studyLocked
+                      ? "Complete the study activity above to continue…"
+                      : activeMode === "study"
+                      ? "Tell your tutor what to cover…"
+                      : activeMode === "research"
+                      ? "Research a topic…"
+                      : "Message Thalamus…"
+                  }
+                  disabled={studyLocked}
+                  attachedFiles={attachedFiles}
+                  onRemoveFile={(i) => setAttachedFiles(prev => prev.filter((_, j) => j !== i))}
+                />
+              )}
               <p className="mt-2 text-center text-[11px] text-muted-foreground/60">
-                Your tutor drives the lesson — answer its questions right in the chat.
+                {pendingStudyQuestion
+                  ? "Answer here to continue your lesson."
+                  : "Your tutor drives the lesson — questions appear here when it is your turn."}
               </p>
             </div>
           </div>
