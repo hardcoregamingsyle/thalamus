@@ -42,6 +42,7 @@ import { formatMessageDay } from "@/lib/dateFormat";
 import { convexSiteUrl } from "@/lib/convexUrls";
 import { isProbablyTextFile, fileToBase64, MAX_UPLOAD_BYTES } from "@/lib/fileEncoding";
 import { extractStudyQuestionPrompts, findPendingStudyQuestion } from "@/lib/studyComposerQuestion";
+import { isGenericStreamFailure } from "@/lib/streamResponse";
 import ModeSelection from "./ModeSelection";
 import { MODES, MORE_MODES, VALID_MODES, type Mode } from "./modes";
 import {
@@ -677,6 +678,12 @@ export default function PortalDesktop() {
       }
       console.log("Stream read complete. accumulated length:", accumulated.length);
       cancelFlush();
+      // The endpoint reports provider exhaustion as a normal 200 SSE response.
+      // Treat that sentinel as a failed stream so the existing action provider
+      // chain (which also includes SiliconFlow) gets a chance to answer.
+      if (isGenericStreamFailure(accumulated)) {
+        throw new Error("Streaming providers returned no answer");
+      }
       finalAssistantText = accumulated;
       if (accumulated) {
         // Retain the completed payload until the matching DB message appears.
@@ -692,11 +699,15 @@ export default function PortalDesktop() {
       // Fallback to Convex action
       setIsThinking(true);
       try {
-        if (activeMode === "study") {
-          await sendStudyMessage({ conversationId: convId, content: msg, token, userContext, skipUserSave: userMessageSaved });
-        } else {
-          await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code" | "designing" | "strategising" | "creative-writing" | "marketing" | "idea-generation" | "naming", token, userContext, skipUserSave: userMessageSaved });
+        const fallbackText = activeMode === "study"
+          ? await sendStudyMessage({ conversationId: convId, content: msg, token, userContext, skipUserSave: userMessageSaved })
+          : await sendMessage({ conversationId: convId, content: msg, mode: activeMode as "chat" | "research" | "code" | "designing" | "strategising" | "creative-writing" | "marketing" | "idea-generation" | "naming", token, userContext, skipUserSave: userMessageSaved });
+        if (isGenericStreamFailure(fallbackText)) {
+          throw new Error("Fallback providers returned no answer");
         }
+        finalAssistantText = fallbackText;
+        setStreamingContent(fallbackText);
+        setCompletedStreamContent(fallbackText);
       } catch (err) {
         console.error("Fallback action also failed:", err);
         toast.error(errMsg(err, "Failed to send message"));

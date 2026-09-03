@@ -20,6 +20,7 @@ import { fileToBase64, MAX_UPLOAD_BYTES } from "@/lib/fileEncoding";
 import { errMsg } from "@/lib/errorMessage";
 import { convexSiteUrl } from "@/lib/convexUrls";
 import { streamChat } from "@/lib/streamChat";
+import { isGenericStreamFailure } from "@/lib/streamResponse";
 import ThinkingPanel from "@/components/ThinkingPanel";
 import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
 import { ALL_MODES, type Mode } from "@/pages/portal/modes";
@@ -309,6 +310,9 @@ export default function MobileChatView({
         },
       });
       cancelFlush();
+      if (isGenericStreamFailure(accumulated)) {
+        throw new Error("Streaming providers returned no answer");
+      }
       finalAssistantText = accumulated;
       if (accumulated) {
         setStreamingContent(accumulated);
@@ -320,11 +324,15 @@ export default function MobileChatView({
       setCompletedStreamContent(null);
       setIsThinking(true);
       try {
-        if (mode === "study") {
-          await sendStudyMessage({ conversationId: convId, content: msg, token, userContext, skipUserSave: userMessageSaved });
-        } else {
-          await sendMessage({ conversationId: convId, content: msg, mode: mode as "chat" | "research" | "code" | "designing" | "strategising" | "creative-writing" | "marketing" | "idea-generation" | "naming", token, userContext, skipUserSave: userMessageSaved });
+        const fallbackText = mode === "study"
+          ? await sendStudyMessage({ conversationId: convId, content: msg, token, userContext, skipUserSave: userMessageSaved })
+          : await sendMessage({ conversationId: convId, content: msg, mode: mode as "chat" | "research" | "code" | "designing" | "strategising" | "creative-writing" | "marketing" | "idea-generation" | "naming", token, userContext, skipUserSave: userMessageSaved });
+        if (isGenericStreamFailure(fallbackText)) {
+          throw new Error("Fallback providers returned no answer");
         }
+        finalAssistantText = fallbackText;
+        setStreamingContent(fallbackText);
+        setCompletedStreamContent(fallbackText);
       } catch (err) {
         toast.error(errMsg(err, "Failed to send"));
       }
