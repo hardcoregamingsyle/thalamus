@@ -3,7 +3,14 @@ import { action, internalAction, type ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { performSearch, FREE_UNLIMITED, MODE_ADHD, adhdToTemperature, MODE_SYSTEM_PROMPTS } from "./lib/agentCore";
+import {
+  callModel,
+  performSearch,
+  FREE_UNLIMITED,
+  MODE_ADHD,
+  adhdToTemperature,
+  MODE_SYSTEM_PROMPTS,
+} from "./lib/agentCore";
 import { buildStudySystemPrompt } from "./lib/studyPrompt";
 
 // Gemini keys are loaded from the DB (admin-managed via Admin UI)
@@ -213,26 +220,63 @@ async function callGeminiChat(
   throw new Error("All Gemini API keys exhausted");
 }
 
-// Primary AI call: Bedrock first, Gemini fallback
+// Primary AI call: Bedrock, Gemini, then the unified multi-provider router.
 async function callAI(
-  ctx: { runQuery: ActionCtx["runQuery"] },
+  ctx: ActionCtx,
   systemPrompt: string,
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   maxTokens = 4096,
   modelName = "claude-haiku-4-5",
   temperature = 0.7,
-): Promise<{ text: string; inputTokens: number; outputTokens: number; provider: string }> {
+): Promise<{
+  text: string;
+  inputTokens: number;
+  outputTokens: number;
+  provider: string;
+}> {
   try {
-    const result = await callBedrockClaude(ctx, systemPrompt, messages, maxTokens, modelName, temperature);
+    const result = await callBedrockClaude(
+      ctx,
+      systemPrompt,
+      messages,
+      maxTokens,
+      modelName,
+      temperature,
+    );
     return { ...result, provider: "bedrock" };
   } catch (bedrockErr) {
-    console.warn("Bedrock failed, falling back to Gemini:", bedrockErr instanceof Error ? bedrockErr.message : String(bedrockErr));
+    console.warn(
+      "Bedrock failed, falling back to Gemini:",
+      bedrockErr instanceof Error ? bedrockErr.message : String(bedrockErr),
+    );
     try {
-      const result = await callGeminiChat(ctx, systemPrompt, messages, maxTokens, temperature);
+      const result = await callGeminiChat(
+        ctx,
+        systemPrompt,
+        messages,
+        maxTokens,
+        temperature,
+      );
       return { ...result, provider: "gemini" };
     } catch (geminiErr) {
-      console.warn("Gemini failed:", geminiErr instanceof Error ? geminiErr.message : String(geminiErr));
-      throw geminiErr;
+      console.warn(
+        "Gemini failed, falling back to the unified provider router:",
+        geminiErr instanceof Error ? geminiErr.message : String(geminiErr),
+      );
+
+      const prompt = messages
+        .map(
+          (message) =>
+            `${message.role === "assistant" ? "Assistant" : "Human"}: ${message.content}`,
+        )
+        .join("\n\n");
+      const routed = await callModel(prompt, systemPrompt, "KnowItAll", ctx, {
+        deadlineMs: 150_000,
+      });
+      if (!routed.text.trim()) {
+        throw new Error("Unified provider router returned no answer");
+      }
+      return { ...routed, provider: routed.tier };
     }
   }
 }
