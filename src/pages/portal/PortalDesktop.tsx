@@ -41,7 +41,7 @@ import { errMsg } from "@/lib/errorMessage";
 import { formatMessageDay } from "@/lib/dateFormat";
 import { convexSiteUrl } from "@/lib/convexUrls";
 import { isProbablyTextFile, fileToBase64, MAX_UPLOAD_BYTES } from "@/lib/fileEncoding";
-import { findPendingStudyQuestion } from "@/lib/studyComposerQuestion";
+import { extractStudyQuestionPrompts, findPendingStudyQuestion } from "@/lib/studyComposerQuestion";
 import ModeSelection from "./ModeSelection";
 import { MODES, MORE_MODES, VALID_MODES, type Mode } from "./modes";
 import {
@@ -95,6 +95,11 @@ export default function PortalDesktop() {
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [suiteOpen, setSuiteOpen] = useState(false);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
+  // Keep the completed SSE payload until its persisted assistant message is
+  // visible. Otherwise a question-only response disappears between the final
+  // stream frame and the reactive messages query.
+  const [completedStreamContent, setCompletedStreamContent] = useState<string | null>(null);
+  const streamBaseMessageCountRef = useRef(0);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -294,6 +299,7 @@ export default function PortalDesktop() {
         // the same way handleSelectConversation does, or a ghost streaming
         // bubble from the previous conversation lingers on the new one.
         setStreamingContent(null);
+        setCompletedStreamContent(null);
         setThinkingContent("");
         setIsThinking(false);
         setInFlightUserContent(null);
@@ -361,27 +367,22 @@ export default function PortalDesktop() {
     }
   }, [messages, isThinking, streamingContent]);
 
-  // Track how many messages existed before sending, so we only clear streaming
-  // content when a NEW assistant message arrives (not a pre-existing one)
-  const prevMessageCountRef = useRef<number>(0);
+  // The done frame can arrive before Convex's messages subscription catches up.
+  // Keep the completed response on screen until an assistant message appended
+  // during this send is observable; if persistence fails, keep the response
+  // rather than turning a successful stream into a blank conversation.
   useEffect(() => {
-    const count = messages?.length ?? 0;
-    // Only clear streamingContent when a NEW assistant message arrives from DB
-    // (count increased AND last message is assistant)
-    if (
-      streamingContent !== null &&
-      streamingContent !== "" &&
-      count > prevMessageCountRef.current &&
-      count > 0
-    ) {
-      const lastMsg = messages?.[messages.length - 1];
-      if (lastMsg?.role === "assistant") {
-        // Small delay to avoid flash — let the DB message render first
-        setTimeout(() => setStreamingContent(null), 50);
-      }
-    }
-    prevMessageCountRef.current = count;
-  }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (streamingContent === null || completedStreamContent === null) return;
+    const hasPersistedAssistant = (messages ?? [])
+      .slice(streamBaseMessageCountRef.current)
+      .some((message) => message.role === "assistant");
+    if (!hasPersistedAssistant) return;
+    const timeout = window.setTimeout(() => {
+      setStreamingContent(null);
+      setCompletedStreamContent(null);
+    }, 50);
+    return () => window.clearTimeout(timeout);
+  }, [messages, streamingContent, completedStreamContent]);
 
   const handleSubmitSuggestion = async (title: string, description: string, files: SuggestionFile[]) => {
     setIsSuggestionSubmitting(true);
@@ -467,9 +468,10 @@ export default function PortalDesktop() {
     }
     setActiveConvId(null);
     setStreamingContent(null);
+    setCompletedStreamContent(null);
     setThinkingContent("");
     setInFlightUserContent(null);
-    prevMessageCountRef.current = 0;
+    streamBaseMessageCountRef.current = 0;
     adRequestedRef.current = false;
     setSponsoredAd(null);
     setRailAds([]);
@@ -486,6 +488,10 @@ export default function PortalDesktop() {
       toast.error(`Finish your study task (${studyTaskProgress}) before starting a new chat.`);
       return;
     }
+    setStreamingContent(null);
+    setCompletedStreamContent(null);
+    setInFlightUserContent(null);
+    streamBaseMessageCountRef.current = 0;
     adRequestedRef.current = false;
     setSponsoredAd(null);
     setRailAds([]);
@@ -500,9 +506,10 @@ export default function PortalDesktop() {
 
   const handleSelectConversation = (conv: Conversation) => {
     setStreamingContent(null);
+    setCompletedStreamContent(null);
     setThinkingContent("");
     setInFlightUserContent(null);
-    prevMessageCountRef.current = 0;
+    streamBaseMessageCountRef.current = 0;
     adRequestedRef.current = false;
     setSponsoredAd(null);
     setRailAds([]);
@@ -531,6 +538,8 @@ export default function PortalDesktop() {
   // in-chat study widgets (which submit answers in place) can reuse it.
   const sendPrompt = async (rawText: string) => {
     if ((!rawText.trim() && attachedFiles.length === 0) || isThinking || !token) return;
+    streamBaseMessageCountRef.current = messages?.length ?? 0;
+    setCompletedStreamContent(null);
     const fileContext = attachedFiles.length > 0
       ? "\n\n[ATTACHED FILES]\n" + attachedFiles.map(f => `--- ${f.name} ---\n${f.content}`).join("\n\n")
       : "";
@@ -659,6 +668,7 @@ export default function PortalDesktop() {
               console.log("Stream done signal received. Final text length:", accumulated.length);
               if (thinkingAccumulated) setThinkingContent(thinkingAccumulated);
               setStreamingContent(accumulated);
+              setCompletedStreamContent(accumulated);
             }
           } catch (e) {
             console.error("Failed to parse SSE line:", jsonStr, e);
@@ -668,13 +678,17 @@ export default function PortalDesktop() {
       console.log("Stream read complete. accumulated length:", accumulated.length);
       cancelFlush();
       finalAssistantText = accumulated;
-      // The stream endpoint saves the assistant response before streaming it
-      // back for UX, so clear the temporary bubble after the stream finishes.
-      setStreamingContent(null);
+      if (accumulated) {
+        // Retain the completed payload until the matching DB message appears.
+        // This also gives the transformed composer the final JSON question now.
+        setStreamingContent(accumulated);
+        setCompletedStreamContent(accumulated);
+      }
     } catch (streamError) {
       console.error("Streaming failed, falling back to action:", streamError);
       cancelFlush();
       setStreamingContent(null);
+      setCompletedStreamContent(null);
       // Fallback to Convex action
       setIsThinking(true);
       try {
@@ -718,7 +732,10 @@ export default function PortalDesktop() {
     }
 
     setIsThinking(false);
-    setStreamingContent(null);
+    if (!finalAssistantText) {
+      setStreamingContent(null);
+      setCompletedStreamContent(null);
+    }
     setInFlightUserContent(null);
   };
 
@@ -853,8 +870,12 @@ export default function PortalDesktop() {
     const userIndex = list.length - 1 - currentTurnIndex;
     return list.filter((m, index) => index <= userIndex || m.role !== "assistant");
   })();
+  const completedStreamQuestion = activeMode === "study" && completedStreamContent
+    ? extractStudyQuestionPrompts(completedStreamContent, "completed-stream")[0] ?? null
+    : null;
   const pendingStudyQuestion = activeMode === "study"
-    ? findPendingStudyQuestion(visibleMessages, studyTask.task, isThinking || streamingContent !== null)
+    ? completedStreamQuestion ??
+      findPendingStudyQuestion(visibleMessages, studyTask.task, isThinking || streamingContent !== null)
     : null;
 
   if (isLoading) {
@@ -1222,7 +1243,7 @@ export default function PortalDesktop() {
               )}
               {pendingStudyQuestion ? (
                 <StudyComposerQuestion
-                  key={pendingStudyQuestion.key}
+                  key={`${pendingStudyQuestion.itemId ?? "question"}:${pendingStudyQuestion.question}`}
                   prompt={pendingStudyQuestion}
                   onAnswer={handleStudyAnswer}
                 />

@@ -27,6 +27,9 @@ const OPTION_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"];
 export interface AskData {
   type: "question";
   question: string;
+  // Plain/legacy questions have no persisted task item, so their answer must go
+  // back through the conversation instead of only using the inline grader.
+  submitDirectly?: boolean;
 }
 export interface McqData {
   type: "mcq";
@@ -115,6 +118,47 @@ function extractOps(content: string): ParsedOp[] {
     } catch { /* skip */ }
   }
 
+  // 3) Legacy tool tags are still emitted by some providers. A tool-only reply
+  // is often only ~50 characters, so failing to hydrate it looks exactly like a
+  // stream that completed and then vanished.
+  const legacyOpen = "(?:<<|‹‹|«|‹)";
+  const legacyClose = "(?:>>|››|»|›)";
+  const legacyQuestionRe = new RegExp(
+    legacyOpen + "ASK-QUESTION\\s+question=\"([^\"]+)\"\\s*/?" + legacyClose,
+    "g",
+  );
+  while ((m = legacyQuestionRe.exec(content)) !== null) {
+    out.push({
+      op: "ask-question",
+      data: { type: "question", question: m[1], submitDirectly: true },
+      start: m.index,
+      end: m.index + m[0].length,
+    });
+  }
+  const legacyMcqRe = new RegExp(
+    legacyOpen +
+      "ASK-MCQ\\s+question=\"([^\"]+)\"\\s+options='([^']+)'\\s+correct=\"([^\"]+)\"\\s*/?" +
+      legacyClose,
+    "g",
+  );
+  while ((m = legacyMcqRe.exec(content)) !== null) {
+    try {
+      const options = JSON.parse(m[2]) as unknown;
+      if (!Array.isArray(options)) continue;
+      out.push({
+        op: "ask-mcq",
+        data: {
+          type: "mcq",
+          question: m[1],
+          options: options.map(String),
+          correct: Number.parseInt(m[3], 10),
+        },
+        start: m.index,
+        end: m.index + m[0].length,
+      });
+    } catch { /* skip malformed legacy MCQ */ }
+  }
+
   out.sort((a, b) => a.start - b.start);
   return out;
 }
@@ -145,7 +189,7 @@ function AskWidget({
     const t = text.trim();
     if (!t) return;
     sfx.click();
-    if (gradeAnswer) {
+    if (gradeAnswer && !data.submitDirectly) {
       setGrading(true);
       try {
         const res = await gradeAnswer(data.question, t, attempt);
@@ -159,6 +203,9 @@ function AskWidget({
           celebrateAt(wrapRef.current);
           setReward("+10 XP");
           if (itemId) completeItem?.(itemId, true);
+          // The inline grader supplies instant feedback; the conversation still
+          // needs the answer so the tutor can continue to its next teaching turn.
+          onAnswer?.(data.question, t);
         } else {
           sfx.wrong();
           report?.(false);

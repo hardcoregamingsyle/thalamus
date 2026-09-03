@@ -31,7 +31,7 @@ import { StudyTaskProvider } from "@/components/chat/StudyTaskContext";
 import StudyScoreBar from "@/components/chat/StudyScoreBar";
 import StudyCelebration from "@/components/chat/StudyCelebration";
 import { StudyComposerQuestion } from "@/components/chat/StudyQuestionHydrator";
-import { findPendingStudyQuestion } from "@/lib/studyComposerQuestion";
+import { extractStudyQuestionPrompts, findPendingStudyQuestion } from "@/lib/studyComposerQuestion";
 
 // Mobile-specific system prompts. Deliberately terser than the desktop set
 // (see src/content/systemPrompts.ts) because mobile screens can't fit the
@@ -66,6 +66,8 @@ export default function MobileChatView({
   const [thinkingContent, setThinkingContent] = useState("");
   const [inFlightUserContent, setInFlightUserContent] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
+  const [completedStreamContent, setCompletedStreamContent] = useState<string | null>(null);
+  const streamBaseMessageCountRef = useRef(0);
   const [showConvList, setShowConvList] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -147,14 +149,36 @@ export default function MobileChatView({
   useEffect(() => {
     if (urlSessionId && conversations && mode !== "code") {
       const conv = conversations.find((c: Conversation) => c.customId === urlSessionId);
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs conversation selection from the URL param once data loads; safe refactor not obvious since activeConvId is also set by user actions
-      if (conv) setActiveConvId(conv._id);
+      if (conv) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs conversation selection from the URL param once data loads; safe refactor not obvious since activeConvId is also set by user actions
+        setActiveConvId(conv._id);
+        setStreamingContent(null);
+        setCompletedStreamContent(null);
+        setInFlightUserContent(null);
+        streamBaseMessageCountRef.current = 0;
+      }
     }
   }, [urlSessionId, conversations, mode]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking, streamingContent]);
+
+  // Do not discard a completed stream until its saved assistant message reaches
+  // the reactive query. If the save fails, leaving the received answer visible
+  // is safer than replacing it with an empty chat.
+  useEffect(() => {
+    if (streamingContent === null || completedStreamContent === null) return;
+    const hasPersistedAssistant = (messages ?? [])
+      .slice(streamBaseMessageCountRef.current)
+      .some((message) => message.role === "assistant");
+    if (!hasPersistedAssistant) return;
+    const timeout = window.setTimeout(() => {
+      setStreamingContent(null);
+      setCompletedStreamContent(null);
+    }, 50);
+    return () => window.clearTimeout(timeout);
+  }, [messages, streamingContent, completedStreamContent]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -165,6 +189,10 @@ export default function MobileChatView({
 
   const handleNewConversation = async () => {
     if (!token) return;
+    setStreamingContent(null);
+    setCompletedStreamContent(null);
+    setInFlightUserContent(null);
+    streamBaseMessageCountRef.current = 0;
     try {
       // create returns { id, customId } — storing the whole object made the very
       // next getMessages call fail argument validation and dumped the user on the
@@ -175,10 +203,22 @@ export default function MobileChatView({
     } catch { toast.error("Failed to create conversation"); }
   };
 
+  const handleSelectConversation = (conv: Conversation) => {
+    setStreamingContent(null);
+    setCompletedStreamContent(null);
+    setInFlightUserContent(null);
+    streamBaseMessageCountRef.current = 0;
+    setActiveConvId(conv._id);
+    setShowConvList(false);
+    if (conv.customId) navigate(`/portal/${mode}/${conv.customId}`);
+  };
+
   // Explicit text lets the transformed study composer submit an answer without
   // staging it through React state first (which previously sent a stale value).
   const sendPrompt = async (rawText: string) => {
     if (!rawText.trim() || isThinking || !token) return;
+    streamBaseMessageCountRef.current = messages?.length ?? 0;
+    setCompletedStreamContent(null);
     const msg = rawText.trim();
     setInput("");
     setInFlightUserContent(msg);
@@ -222,6 +262,7 @@ export default function MobileChatView({
 
     // Batch chunk-driven state updates to one per animation frame — a setState
     // per SSE chunk re-renders the whole conversation and causes visible lag.
+    let finalAssistantText = "";
     let streamAccumulated = "";
     let thinkingAccumulated = "";
     let rafId: number | null = null;
@@ -261,13 +302,22 @@ export default function MobileChatView({
           setIsThinking(false);
           setStreamingContent("");
         },
+        onDone: (fullText) => {
+          streamAccumulated = fullText;
+          setStreamingContent(fullText);
+          setCompletedStreamContent(fullText);
+        },
       });
       cancelFlush();
-      setStreamingContent(null);
-      void accumulated; // response saved by server
+      finalAssistantText = accumulated;
+      if (accumulated) {
+        setStreamingContent(accumulated);
+        setCompletedStreamContent(accumulated);
+      }
     } catch {
       cancelFlush();
       setStreamingContent(null);
+      setCompletedStreamContent(null);
       setIsThinking(true);
       try {
         if (mode === "study") {
@@ -282,7 +332,10 @@ export default function MobileChatView({
 
     generateTitle({ firstMessage: msg, conversationId: convId, token }).catch(() => {});
     setIsThinking(false);
-    setStreamingContent(null);
+    if (!finalAssistantText) {
+      setStreamingContent(null);
+      setCompletedStreamContent(null);
+    }
     setInFlightUserContent(null);
   };
 
@@ -329,8 +382,12 @@ export default function MobileChatView({
     const userIndex = allMessages.length - 1 - currentTurnIndex;
     return allMessages.filter((m, index) => index <= userIndex || m.role !== "assistant");
   })();
+  const completedStreamQuestion = mode === "study" && completedStreamContent
+    ? extractStudyQuestionPrompts(completedStreamContent, "completed-stream")[0] ?? null
+    : null;
   const pendingStudyQuestion = mode === "study"
-    ? findPendingStudyQuestion(visibleMessages, studyTask.task, isThinking || streamingContent !== null)
+    ? completedStreamQuestion ??
+      findPendingStudyQuestion(visibleMessages, studyTask.task, isThinking || streamingContent !== null)
     : null;
   const showMessages = activeConvId && allMessages.length > 0;
 
@@ -409,7 +466,7 @@ export default function MobileChatView({
                 <p className="text-[11px] text-muted-foreground font-semibold text-center tracking-widest">RECENT</p>
                 {filteredConvs.slice(0, 3).map((conv: Conversation) => (
                   <motion.button key={conv._id} whileTap={{ scale: 0.98 }}
-                    onClick={() => { setActiveConvId(conv._id); if (conv.customId) navigate(`/portal/${mode}/${conv.customId}`); }}
+                    onClick={() => handleSelectConversation(conv)}
                     className="w-full flex items-center gap-3 px-4 py-3 bg-card border border-border/60 rounded-2xl active:bg-muted/50 transition-colors text-left">
                     <div className={`w-9 h-9 rounded-full ${modeInfo.bg} flex items-center justify-center text-base shrink-0`}>{modeInfo.emoji}</div>
                     <div className="flex-1 min-w-0">
@@ -535,7 +592,7 @@ export default function MobileChatView({
         <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept="image/*,.pdf,.txt,.md,.docx" />
         {pendingStudyQuestion ? (
           <StudyComposerQuestion
-            key={pendingStudyQuestion.key}
+            key={`${pendingStudyQuestion.itemId ?? "question"}:${pendingStudyQuestion.question}`}
             prompt={pendingStudyQuestion}
             onAnswer={handleStudyAnswer}
           />
@@ -605,7 +662,7 @@ export default function MobileChatView({
                   </div>
                 ) : filteredConvs.map((conv: Conversation) => (
                   <motion.button key={conv._id} whileTap={{ scale: 0.98 }}
-                    onClick={() => { setActiveConvId(conv._id); setShowConvList(false); if (conv.customId) navigate(`/portal/${mode}/${conv.customId}`); }}
+                    onClick={() => handleSelectConversation(conv)}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-colors text-left ${activeConvId === conv._id ? `${modeInfo.bg} border border-border` : "hover:bg-muted/40 active:bg-muted/60"}`}
                   >
                     <div className={`w-9 h-9 rounded-full ${modeInfo.bg} flex items-center justify-center text-base shrink-0`}>{modeInfo.emoji}</div>

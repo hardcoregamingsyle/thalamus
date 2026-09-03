@@ -43,6 +43,46 @@ describe("study questions in the composer", () => {
     );
   });
 
+  test("extracts short legacy question and MCQ tool responses", () => {
+    const content = [
+      '<<ASK-QUESTION question="What is gravity?" />>',
+      '<<ASK-MCQ question="Pick one" options=\'["A","B"]\' correct="1" />>',
+    ].join("\n");
+    const prompts = extractStudyQuestionPrompts(content, "legacy");
+    expect(prompts.map((prompt) => prompt.question)).toEqual([
+      "What is gravity?",
+      "Pick one",
+    ]);
+    expect(prompts[1].data.options).toEqual(["A", "B"]);
+  });
+
+  test("turns a direct trailing prose question into a free-text prompt", () => {
+    const [prompt] = extractStudyQuestionPrompts(
+      "Let's check that idea.\n\nWhy do leaves look green?",
+      "plain",
+    );
+    expect(prompt.op).toBe("ask-question");
+    expect(prompt.question).toBe("Why do leaves look green?");
+  });
+
+  test("surfaces a new question while a completed prior task is still loaded", () => {
+    const messages = [
+      { _id: "user", role: "user" as const, content: "Teach me" },
+      {
+        _id: "legacy",
+        role: "assistant" as const,
+        content: '<<ASK-QUESTION question="What is gravity?" />>',
+      },
+    ];
+    const completedTask = {
+      complete: true,
+      items: [{ id: "q0", kind: "question", label: "Old", done: true }],
+    };
+    expect(
+      findPendingStudyQuestion(messages, completedTask, false)?.question,
+    ).toBe("What is gravity?");
+  });
+
   test("matches both task id and label so an older q0 cannot replace the current question", () => {
     const messages = [
       {
