@@ -443,7 +443,7 @@ export default function MobileChatView({
                 msg={msg}
                 modeInfo={modeInfo}
                 onStudyAnswer={mode === "study" ? handleStudyAnswer : undefined}
-                studyQuestionsInComposer={mode === "study"}
+                studyQuestionsInComposer={mode === "study" && pendingStudyQuestion !== null}
               />
             ))}
             {/* Streaming message */}

@@ -1132,7 +1132,7 @@ export default function PortalDesktop() {
                       accentColor={currentMode.color}
                       dayLabel={dayLabel}
                       onStudyAnswer={activeMode === "study" ? handleStudyAnswer : undefined}
-                      studyQuestionsInComposer={activeMode === "study"}
+                      studyQuestionsInComposer={activeMode === "study" && pendingStudyQuestion !== null}
                     />
                   );
                 })

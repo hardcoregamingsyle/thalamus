@@ -101,7 +101,9 @@ function extractOps(content: string): ParsedOp[] {
   }
 
   // 2) Placeholder divs: <div class="thalamus-*" data-*='{...}'></div>
-  const divRe = /<div\s+class="thalamus-(ask|mcq|flashcards|pathway)"\s+data-(?:ask|mcq|flashcards|pathway)='((?:[^'\\]|\\.)*)'><\/div>/g;
+  // Stop at the placeholder's full closing delimiter, not at an apostrophe in
+  // JSON text (for example, "What's next?").
+  const divRe = /<div\s+class="thalamus-(ask|mcq|flashcards|pathway)"\s+data-(?:ask|mcq|flashcards|pathway)='([\s\S]*?)'><\/div>/g;
   let m: RegExpExecArray | null;
   while ((m = divRe.exec(content)) !== null) {
     const type = m[1];

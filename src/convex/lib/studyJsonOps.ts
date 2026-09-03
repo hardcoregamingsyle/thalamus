@@ -71,6 +71,17 @@ export function extractStudyJsonOps(content: string): StudyJsonOp[] {
 // off the widget's data payload and reports it back to markStudyItemDone.
 type StudyItemId = { id: string };
 
+// JSON is embedded in a single-quoted HTML attribute. Escape characters that
+// can terminate that attribute or create markup; JSON.parse restores them when
+// the frontend hydrates the widget.
+function stringifyAttributeData(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/&/g, "\\u0026")
+    .replace(/'/g, "\\u0027")
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e");
+}
+
 // Assign sequential ids to every interactive element in a reply, in document
 // order. Both the task builder and the converter use this so ids line up.
 function assignStudyItemIds(content: string): Array<StudyItemId> {
@@ -120,7 +131,7 @@ export function convertStudyJsonOps(content: string): string {
       const myId = ids[idCursor]?.id;
       if (op.op === "ask-question") {
         const question = String(op.data.question ?? "");
-        if (question) widget = `<div class="thalamus-ask" data-ask='${JSON.stringify({type:"question",question,id:myId})}'></div>`;
+        if (question) widget = `<div class="thalamus-ask" data-ask='${stringifyAttributeData({type:"question",question,id:myId})}'></div>`;
         idCursor++;
       } else if (op.op === "ask-mcq") {
         const question = String(op.data.question ?? "");
@@ -128,7 +139,7 @@ export function convertStudyJsonOps(content: string): string {
         const c = op.data.correct;
         const correct = Array.isArray(c) ? c.map(Number) : Number(c);
         const multiSelect = Array.isArray(c) || op.data.multiSelect === true;
-        if (question && options.length > 0) widget = `<div class="thalamus-mcq" data-mcq='${JSON.stringify({type:"mcq",question,options,correct,multiSelect,id:myId})}'></div>`;
+        if (question && options.length > 0) widget = `<div class="thalamus-mcq" data-mcq='${stringifyAttributeData({type:"mcq",question,options,correct,multiSelect,id:myId})}'></div>`;
         idCursor++;
       } else if (op.op === "flashcards") {
         const cards = Array.isArray(op.data.cards)
@@ -140,7 +151,7 @@ export function convertStudyJsonOps(content: string): string {
           : 0;
         const deckIds = ids.slice(idCursor, idCursor + cardCount).map((x) => x.id);
         idCursor += cardCount;
-        if (cards.length > 0) widget = `<div class="thalamus-flashcards" data-flashcards='${JSON.stringify({type:"flashcards",cards,ids:deckIds})}'></div>`;
+        if (cards.length > 0) widget = `<div class="thalamus-flashcards" data-flashcards='${stringifyAttributeData({type:"flashcards",cards,ids:deckIds})}'></div>`;
       } else if (op.op === "pathway") {
         const title = String(op.data.title ?? "Learning path");
         const steps = Array.isArray(op.data.steps) ? op.data.steps : [];
@@ -150,7 +161,7 @@ export function convertStudyJsonOps(content: string): string {
           : 0;
         const stepIds = ids.slice(idCursor, idCursor + stepCount).map((x) => x.id);
         idCursor += stepCount;
-        if (steps.length > 0) widget = `<div class="thalamus-pathway" data-pathway='${JSON.stringify({type:"pathway",title,steps,ids:stepIds})}'></div>`;
+        if (steps.length > 0) widget = `<div class="thalamus-pathway" data-pathway='${stringifyAttributeData({type:"pathway",title,steps,ids:stepIds})}'></div>`;
       }
     } catch { widget = ""; }
 

@@ -19,8 +19,11 @@ interface StudyTaskLike {
   items: Array<{ id: string; kind: string; label: string; done: boolean }>;
 }
 
+// Match up to the placeholder's actual closing `'></div>` rather than stopping
+// at the first apostrophe. Questions such as "What's next?" are stored as raw
+// JSON inside a single-quoted attribute, so an apostrophe is valid payload here.
 const PLACEHOLDER_RE =
-  /<div\s+class="thalamus-(ask|mcq)"\s+data-(?:ask|mcq)='((?:[^'\\]|\\.)*)'><\/div>/g;
+  /<div\s+class="thalamus-(ask|mcq)"\s+data-(?:ask|mcq)='([\s\S]*?)'><\/div>/g;
 
 function promptFromData(
   op: "ask-question" | "ask-mcq",

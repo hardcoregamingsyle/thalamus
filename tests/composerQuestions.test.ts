@@ -4,6 +4,7 @@ import {
   findPendingStudyQuestion,
 } from "../src/lib/studyComposerQuestion";
 import { extractTrailingCodeQuestion } from "../src/lib/codeComposerQuestion";
+import { convertStudyJsonOps } from "../src/convex/lib/studyJsonOps";
 
 describe("study questions in the composer", () => {
   test("extracts raw open and multiple-choice questions with task-compatible ids", () => {
@@ -23,6 +24,23 @@ describe("study questions in the composer", () => {
     const [prompt] = extractStudyQuestionPrompts(content, "assistant-2");
     expect(prompt.itemId).toBe("q0");
     expect(prompt.key).toBe("assistant-2:q0");
+  });
+
+  test("extracts placeholder questions containing apostrophes", () => {
+    const content = `<div class="thalamus-ask" data-ask='{"type":"question","question":"What's gravity?","id":"q0"}'></div>`;
+    const [prompt] = extractStudyQuestionPrompts(content, "assistant-3");
+    expect(prompt.question).toBe("What's gravity?");
+    expect(prompt.itemId).toBe("q0");
+  });
+
+  test("round-trips apostrophes through generated placeholder attributes", () => {
+    const converted = convertStudyJsonOps(
+      `{"op":"ask-question","question":"What's gravity?"}`,
+    );
+    expect(converted).toContain("\\u0027");
+    expect(extractStudyQuestionPrompts(converted)[0].question).toBe(
+      "What's gravity?",
+    );
   });
 
   test("matches both task id and label so an older q0 cannot replace the current question", () => {
