@@ -32,7 +32,13 @@ export default defineConfig({
             '@radix-ui/react-select',
           ],
           'framer-motion': ['framer-motion'],
-          'three': ['three', '@react-three/fiber'],
+          // No 'three' chunk on purpose. Naming one made Rollup put `scheduler`
+          // — shared between react-dom/client and @react-three/fiber — inside it,
+          // so react-vendor depended on the three chunk and React could not boot
+          // until 879 kB of 3D library had downloaded. It was modulepreloaded on
+          // every route, on every device, including mobile where the scene never
+          // mounts. Left unnamed, Rollup splits three into the lazy route that
+          // actually renders it.
         },
         chunkFileNames: 'assets/[name]-[hash].js',
         entryFileNames: 'assets/[name]-[hash].js',
