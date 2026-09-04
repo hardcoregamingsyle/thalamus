@@ -485,6 +485,20 @@ const schema = defineSchema(
       updatedAt: v.number(),
     }),
 
+    // Original AI attachments live in Convex file storage. The database row
+    // binds each opaque storage id to its owner before any AI provider can read
+    // the URL, preventing cross-user attachment access.
+    aiAttachments: defineTable({
+      userId: v.id("users"),
+      storageId: v.id("_storage"),
+      name: v.string(),
+      mimeType: v.string(),
+      size: v.number(),
+      createdAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_storage", ["storageId"]),
+
     studyResources: defineTable({
       userId: v.id("users"),
       title: v.string(),

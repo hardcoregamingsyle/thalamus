@@ -32,6 +32,22 @@ async function getGeminiKeysFromDB(ctx: { runQuery: ActionCtx["runQuery"] }): Pr
 
 let keyIndex = 0;
 
+async function withInlineAttachmentBytes(
+  attachments: AiInputAttachment[],
+): Promise<AiInputAttachment[]> {
+  return await Promise.all(
+    attachments.map(async (attachment) => {
+      if (attachment.dataBase64 || !attachment.url) return attachment;
+      const response = await fetch(attachment.url);
+      if (!response.ok) throw new Error(`Could not read ${attachment.name}`);
+      return {
+        ...attachment,
+        dataBase64: Buffer.from(await response.arrayBuffer()).toString("base64"),
+      };
+    }),
+  );
+}
+
 interface GeminiResponse {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   usageMetadata?: {
@@ -245,7 +261,9 @@ async function callGeminiChat(
   throw new Error("All Gemini API keys exhausted");
 }
 
-// Primary AI call: Bedrock, Gemini, then the unified multi-provider router.
+// Primary AI call. URL-backed files go to OpenRouter first in their original
+// stored form; provider-specific inline adapters are created server-side only
+// if that direct file route fails.
 async function callAI(
   ctx: ActionCtx,
   systemPrompt: string,
@@ -254,12 +272,71 @@ async function callAI(
   modelName = "claude-haiku-4-5",
   temperature = 0.7,
   attachments?: AiInputAttachment[],
+  skipPrimaryProviders = false,
 ): Promise<{
   text: string;
   inputTokens: number;
   outputTokens: number;
   provider: string;
 }> {
+  const nativeAttachments = normalizeAiAttachments(attachments);
+  const prompt = messages
+    .map(
+      (message) =>
+        `${message.role === "assistant" ? "Assistant" : "Human"}: ${message.content}`,
+    )
+    .join("\n\n");
+
+  if (skipPrimaryProviders) {
+    if (nativeAttachments.length > 0) {
+      throw new Error(
+        "The preceding stream exhausted all attachment providers",
+      );
+    }
+    const routed = await callModel(prompt, systemPrompt, "KnowItAll", ctx, {
+      deadlineMs: 150_000,
+    });
+    if (!routed.text.trim()) {
+      throw new Error("Unified provider router returned no answer");
+    }
+    return { ...routed, provider: routed.tier };
+  }
+
+  const attemptedOriginalFileRoute = nativeAttachments.some(
+    (attachment) => attachment.url,
+  );
+
+  if (attemptedOriginalFileRoute) {
+    try {
+      const routed = await callOpenRouter(
+        prompt,
+        systemPrompt,
+        "openrouter/free",
+        maxTokens,
+        undefined,
+        Date.now() + 150_000,
+        undefined,
+        nativeAttachments,
+      );
+      if (!routed.text.trim()) {
+        throw new Error("Attachment-capable provider returned no answer");
+      }
+      return { ...routed, provider: `openrouter:${routed.model}` };
+    } catch (openRouterErr) {
+      console.warn(
+        "Original-file provider route failed, preparing server-side adapters:",
+        openRouterErr instanceof Error
+          ? openRouterErr.message
+          : String(openRouterErr),
+      );
+    }
+  }
+
+  let providerAttachments = nativeAttachments;
+  if (providerAttachments.some((attachment) => !attachment.dataBase64)) {
+    providerAttachments = await withInlineAttachmentBytes(providerAttachments);
+  }
+
   try {
     const result = await callBedrockClaude(
       ctx,
@@ -268,7 +345,7 @@ async function callAI(
       maxTokens,
       modelName,
       temperature,
-      attachments,
+      providerAttachments,
     );
     return { ...result, provider: "bedrock" };
   } catch (bedrockErr) {
@@ -283,7 +360,7 @@ async function callAI(
         messages,
         maxTokens,
         temperature,
-        attachments,
+        providerAttachments,
       );
       return { ...result, provider: "gemini" };
     } catch (geminiErr) {
@@ -292,14 +369,10 @@ async function callAI(
         geminiErr instanceof Error ? geminiErr.message : String(geminiErr),
       );
 
-      const prompt = messages
-        .map(
-          (message) =>
-            `${message.role === "assistant" ? "Assistant" : "Human"}: ${message.content}`,
-        )
-        .join("\n\n");
-      const nativeAttachments = normalizeAiAttachments(attachments);
       if (nativeAttachments.length > 0) {
+        if (attemptedOriginalFileRoute) {
+          throw new Error("All attachment-capable providers failed");
+        }
         const routed = await callOpenRouter(
           prompt,
           systemPrompt,
@@ -335,11 +408,8 @@ export const sendMessage = action({
     token: v.optional(v.string()),
     model: v.optional(v.string()),
     skipUserSave: v.optional(v.boolean()),
-    attachments: v.optional(v.array(v.object({
-      name: v.string(),
-      mimeType: v.string(),
-      dataBase64: v.string(),
-    }))),
+    skipPrimaryProviders: v.optional(v.boolean()),
+    attachmentIds: v.optional(v.array(v.id("aiAttachments"))),
     userContext: v.optional(v.object({
       datetime: v.string(),
       timezone: v.string(),
@@ -360,6 +430,13 @@ export const sendMessage = action({
       userId,
     });
     if (!owns) throw new Error("Conversation not found");
+
+    const attachments = args.attachmentIds?.length
+      ? await ctx.runQuery(internal.aiFiles.resolveForUser, {
+          attachmentIds: args.attachmentIds,
+          userId,
+        })
+      : [];
 
     if (!args.skipUserSave) {
       await ctx.runMutation(internal.aiHelpers.saveMessage, {
@@ -403,7 +480,8 @@ export const sendMessage = action({
       4096,
       modelName,
       temperature,
-      args.attachments,
+      attachments,
+      args.skipPrimaryProviders,
     );
 
     // --- Search tool loop: detect {"op":"search","query":"..."} JSON ops (and
@@ -448,6 +526,8 @@ export const sendMessage = action({
         4096,
         modelName,
         temperature,
+        undefined,
+        args.skipPrimaryProviders,
       );
 
       responseContent = followUp.text;
@@ -476,7 +556,16 @@ SEARCH TOOL: Use {"op":"search","query":"your query"} to search for claims you n
         { role: "user", content: "Fact-check the above research report. Verify EVERY factual claim against web sources. If you need to search, use {\"op\":\"search\",\"query\":\"...\"} ops. Then provide the corrected report in HTML." },
       ];
 
-      const factCheckResult = await callAI(ctx, factCheckSystemPrompt, factCheckMessages, 4096, modelName);
+      const factCheckResult = await callAI(
+        ctx,
+        factCheckSystemPrompt,
+        factCheckMessages,
+        4096,
+        modelName,
+        0.7,
+        undefined,
+        args.skipPrimaryProviders,
+      );
       let factCheckText = factCheckResult.text;
       inputTokens += factCheckResult.inputTokens;
       outputTokens += factCheckResult.outputTokens;
@@ -510,7 +599,16 @@ SEARCH TOOL: Use {"op":"search","query":"your query"} to search for claims you n
           { role: "user", content: `Here are the search results you requested:\n\n${fcSearchContext}\n\nNow provide your FINAL verified report with ALL corrections applied. Output the complete corrected HTML report.` },
         ];
 
-        const fcFinal = await callAI(ctx, factCheckSystemPrompt, factCheckMessages, 4096, modelName);
+        const fcFinal = await callAI(
+          ctx,
+          factCheckSystemPrompt,
+          factCheckMessages,
+          4096,
+          modelName,
+          0.7,
+          undefined,
+          args.skipPrimaryProviders,
+        );
         factCheckText = fcFinal.text;
         inputTokens += fcFinal.inputTokens;
         outputTokens += fcFinal.outputTokens;

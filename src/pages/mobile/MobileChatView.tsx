@@ -17,7 +17,6 @@ import { useTheme } from "@/hooks/use-theme";
 import { sanitizeAiHtml } from "@/lib/sanitizeHtml";
 import { fetchSponsoredAd } from "@/lib/requestAd";
 import {
-  fileToBase64,
   MAX_UPLOAD_BYTES,
   nativeAiFileMimeType,
 } from "@/lib/fileEncoding";
@@ -25,6 +24,7 @@ import { errMsg } from "@/lib/errorMessage";
 import { convexSiteUrl } from "@/lib/convexUrls";
 import { streamChat } from "@/lib/streamChat";
 import { isGenericStreamFailure } from "@/lib/streamResponse";
+import { attachmentIdRequest, uploadOriginalAiFile } from "@/lib/aiFileUpload";
 import ThinkingPanel from "@/components/ThinkingPanel";
 import { SponsoredAdCard, type GravityAd } from "@/components/SponsoredAdCard";
 import { ALL_MODES, type Mode } from "@/pages/portal/modes";
@@ -51,7 +51,7 @@ interface MobileAttachment {
   name: string;
   size: number;
   mimeType: string;
-  dataBase64: string;
+  attachmentId: Id<"aiAttachments">;
 }
 
 export interface MobileChatViewProps {
@@ -119,6 +119,8 @@ export default function MobileChatView({
 
   const createConversation = useMutation(api.conversations.create);
   const deleteConversation = useMutation(api.conversations.remove);
+  const generateAiFileUploadUrl = useMutation(api.aiFiles.generateUploadUrl);
+  const registerAiFile = useMutation(api.aiFiles.register);
   const sendMessage = useAction(api.ai.sendMessage);
   const sendStudyMessage = useAction(api.study.sendStudyMessage);
   const gradeStudyAnswerAction = useAction(api.study.gradeStudyAnswer);
@@ -233,13 +235,9 @@ export default function MobileChatView({
     if ((!rawText.trim() && !attachedFile) || isThinking || !token) return;
     streamBaseMessageCountRef.current = messages?.length ?? 0;
     setCompletedStreamContent(null);
-    const nativeAttachments = attachedFile
-      ? [{
-          name: attachedFile.name,
-          mimeType: attachedFile.mimeType,
-          dataBase64: attachedFile.dataBase64,
-        }]
-      : [];
+    const { attachmentIds } = attachmentIdRequest(
+      attachedFile ? [attachedFile] : [],
+    );
     const attachmentContext = attachedFile
       ? `\n\n[ATTACHED FILE]\n--- ${attachedFile.name} ---\n[Original ${attachedFile.mimeType} attached as a native multimodal file]`
       : "";
@@ -290,6 +288,7 @@ export default function MobileChatView({
     let finalAssistantText = "";
     let streamAccumulated = "";
     let thinkingAccumulated = "";
+    let streamProvidersExhausted = false;
     let rafId: number | null = null;
     const scheduleFlush = () => {
       if (rafId !== null) return;
@@ -306,7 +305,7 @@ export default function MobileChatView({
       const accumulated = await streamChat(siteUrl, {
         content: msg,
         mode,
-        attachments: nativeAttachments,
+        attachmentIds,
         history: historyMsgs,
         systemPrompt,
         userContext,
@@ -336,6 +335,7 @@ export default function MobileChatView({
       });
       cancelFlush();
       if (isGenericStreamFailure(accumulated)) {
+        streamProvidersExhausted = true;
         throw new Error("Streaming providers returned no answer");
       }
       finalAssistantText = accumulated;
@@ -349,6 +349,9 @@ export default function MobileChatView({
       setCompletedStreamContent(null);
       setIsThinking(true);
       try {
+        if (streamProvidersExhausted && attachmentIds.length > 0) {
+          throw new Error("All file-capable AI providers are currently unavailable");
+        }
         let fallbackText: string;
         if (mode === "study") {
           try {
@@ -357,20 +360,21 @@ export default function MobileChatView({
               content: msg,
               token,
               userContext,
-              attachments: nativeAttachments,
+              attachmentIds,
               skipUserSave: userMessageSaved,
             });
             if (isGenericStreamFailure(fallbackText)) {
               throw new Error("Dedicated study action returned no answer");
             }
-          } catch {
+          } catch (studyError) {
+            if (streamProvidersExhausted) throw studyError;
             fallbackText = await sendMessage({
               conversationId: convId,
               content: msg,
               mode: "study",
               token,
               userContext,
-              attachments: nativeAttachments,
+              attachmentIds,
               skipUserSave: true,
             });
           }
@@ -390,8 +394,9 @@ export default function MobileChatView({
               | "naming",
             token,
             userContext,
-            attachments: nativeAttachments,
+            attachmentIds,
             skipUserSave: userMessageSaved,
+            skipPrimaryProviders: streamProvidersExhausted,
           });
         }
         if (isGenericStreamFailure(fallbackText)) {
@@ -441,14 +446,17 @@ export default function MobileChatView({
       return;
     }
     try {
-      // Keep the original bytes. The file is sent as a native multimodal part
-      // with the next prompt instead of being decoded into mojibake text.
-      setAttachedFile({
-        name: file.name,
-        size: file.size,
-        mimeType,
-        dataBase64: await fileToBase64(file),
-      });
+      // Upload the browser File itself. Chat calls carry only the owner-bound
+      // attachment id; they never serialize file bytes/base64 into JSON.
+      setAttachedFile(
+        await uploadOriginalAiFile({
+          file,
+          mimeType,
+          token,
+          generateUploadUrl: generateAiFileUploadUrl,
+          register: registerAiFile,
+        }),
+      );
       toast.success(`Attached in original format: ${file.name}`);
     } catch (err) {
       toast.error(errMsg(err, "Failed to attach file"));

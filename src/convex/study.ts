@@ -199,87 +199,82 @@ async function extractPdfWithClaude(base64Data: string, fileName: string): Promi
 export const processFileResource = action({
   args: {
     token: v.string(),
-    fileName: v.string(),
-    fileType: v.string(),
-    fileDataBase64: v.string(),
+    attachmentId: v.id("aiAttachments"),
   },
-  handler: async (ctx, args): Promise<{ resourceId: string; summary: string }> => {
-    const userId = (await ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token })) as Id<"users"> | null;
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ resourceId: string; summary: string }> => {
+    const userId = (await ctx.runQuery(
+      internal.customAuthHelpers.getUserIdByToken,
+      { token: args.token },
+    )) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
 
-    const isImage = args.fileType.startsWith("image/");
-    const isPdf = args.fileType === "application/pdf" || args.fileName.toLowerCase().endsWith(".pdf");
-    const isPlainText = args.fileType === "text/plain" || /\.(txt|md|json|csv|log)$/.test(args.fileName.toLowerCase());
+    const [attachment] = await ctx.runQuery(internal.aiFiles.resolveForUser, {
+      userId,
+      attachmentIds: [args.attachmentId],
+    });
+    if (!attachment) throw new Error("Attachment not found");
+
+    const isImage = attachment.mimeType.startsWith("image/");
+    const isPdf = attachment.mimeType === "application/pdf";
+    const prompt = isPdf
+      ? `Read the complete original PDF "${attachment.name}". Create clear study notes while preserving headings, tables, equations, and the meaning and labels of every diagram.`
+      : `Inspect the original image "${attachment.name}". Explain all visible text, diagrams, labels, charts, equations, and spatial relationships for study.`;
+    const providerSystem = isPdf
+      ? "You read PDF files visually for study. Never output JSON, base64, raw binary, or replacement-character noise."
+      : "You are a visual study assistant. Analyze the original image itself; never treat its bytes as text.";
     let summary = "";
 
-    if (isPlainText) {
-      try { summary = Buffer.from(args.fileDataBase64, "base64").toString("utf-8"); }
-      catch { summary = `[Error decoding text file: ${args.fileName}]`; }
-    } else if (isPdf) {
+    // Give a file-capable provider the original storage URL first. Only if it
+    // is unavailable do we load bytes on the server for Bedrock's inline API.
+    try {
+      const result = await callOpenRouter(
+        prompt,
+        providerSystem,
+        "openrouter/free",
+        isPdf ? 4000 : 2000,
+        undefined,
+        Date.now() + 150_000,
+        undefined,
+        [attachment],
+      );
+      summary = result.text.trim();
+      if (!summary) throw new Error("Empty attachment analysis");
+    } catch {
       try {
-        summary = await extractPdfWithClaude(args.fileDataBase64, args.fileName);
-        if (!summary || summary.length < 50) throw new Error("Empty extraction");
+        const response = await fetch(attachment.url);
+        if (!response.ok) throw new Error("Could not read stored attachment");
+        const dataBase64 = Buffer.from(await response.arrayBuffer()).toString(
+          "base64",
+        );
+        summary = isPdf
+          ? await extractPdfWithClaude(dataBase64, attachment.name)
+          : await analyzeImageWithBedrock(
+              dataBase64,
+              attachment.mimeType,
+              attachment.name,
+            );
+        if (!summary.trim()) throw new Error("Empty attachment analysis");
       } catch {
-        try {
-          const result = await callOpenRouter(
-            `Read the complete original PDF "${args.fileName}". Create clear study notes while preserving headings, tables, equations, and the meaning and labels of every diagram.`,
-            "You read PDF files visually for study. Never output JSON, base64, raw binary, or replacement-character noise.",
-            "openrouter/free",
-            4000,
-            undefined,
-            Date.now() + 150_000,
-            undefined,
-            [{
-              name: args.fileName,
-              mimeType: "application/pdf",
-              dataBase64: args.fileDataBase64,
-            }],
-          );
-          summary = result.text;
-        } catch {
-          summary = `[PDF uploaded: ${args.fileName}. No attachment-capable AI provider was available to inspect it.]`;
-        }
+        summary = isPdf
+          ? `[PDF uploaded: ${attachment.name}. No attachment-capable AI provider was available to inspect it.]`
+          : `[Image uploaded: ${attachment.name}. No vision-capable AI provider was available to inspect it.]`;
       }
-    } else if (isImage) {
-      try {
-        summary = await analyzeImageWithBedrock(args.fileDataBase64, args.fileType, args.fileName);
-        if (!summary || summary.length < 20) throw new Error("Empty image analysis");
-      } catch {
-        try {
-          const result = await callOpenRouter(
-            `Inspect the original image "${args.fileName}". Explain all visible text, diagrams, labels, charts, equations, and spatial relationships for study.`,
-            "You are a visual study assistant. Analyze the original image itself; never treat its base64 bytes as text.",
-            "openrouter/free",
-            2000,
-            undefined,
-            Date.now() + 150_000,
-            undefined,
-            [{
-              name: args.fileName,
-              mimeType: args.fileType,
-              dataBase64: args.fileDataBase64,
-            }],
-          );
-          summary = result.text;
-        } catch {
-          summary = `[Image uploaded: ${args.fileName}. No vision-capable AI provider was available to inspect it.]`;
-        }
-      }
-    } else {
-      // Never guess that an opaque binary (DOCX/ZIP/etc.) is UTF-8 based on a
-      // "printable character" ratio. That heuristic produced megabytes of ZIP
-      // symbols. Require conversion to a natively supported visual format.
-      summary = `[Unsupported binary file: ${args.fileName}. Convert it to PDF or a supported image so the AI can inspect the original formatting.]`;
     }
 
-    const resourceId = await ctx.runMutation(internal.studyHelpers.insertResource, {
-      userId,
-      title: args.fileName,
-      content: summary,
-      sourceType: isImage ? "image" : isPdf ? "pdf" : "file",
-      fileName: args.fileName,
-      fileType: args.fileType,
-    });
+    const resourceId = await ctx.runMutation(
+      internal.studyHelpers.insertResource,
+      {
+        userId,
+        title: attachment.name,
+        content: summary,
+        sourceType: isImage ? "image" : "pdf",
+        fileName: attachment.name,
+        fileType: attachment.mimeType,
+      },
+    );
 
     if (summary.length > 100) {
       ctx.scheduler.runAfter(0, internal.rag.vectorizeResourceInternal, {
@@ -288,7 +283,10 @@ export const processFileResource = action({
       });
     }
 
-    return { resourceId: resourceId as string, summary: summary.slice(0, 200) };
+    return {
+      resourceId: resourceId as string,
+      summary: summary.slice(0, 200),
+    };
   },
 });
 
@@ -349,11 +347,7 @@ export const sendStudyMessage = action({
     content: v.string(),
     token: v.string(),
     skipUserSave: v.optional(v.boolean()),
-    attachments: v.optional(v.array(v.object({
-      name: v.string(),
-      mimeType: v.string(),
-      dataBase64: v.string(),
-    }))),
+    attachmentIds: v.optional(v.array(v.id("aiAttachments"))),
     userContext: v.optional(v.object({
       datetime: v.string(),
       timezone: v.string(),
@@ -373,6 +367,13 @@ export const sendStudyMessage = action({
       userId,
     });
     if (!owns) throw new Error("Conversation not found");
+
+    const resolvedAttachments = args.attachmentIds?.length
+      ? await ctx.runQuery(internal.aiFiles.resolveForUser, {
+          attachmentIds: args.attachmentIds,
+          userId,
+        })
+      : [];
 
     if (!args.skipUserSave) {
       await ctx.runMutation(internal.aiHelpers.saveMessage, {
@@ -439,7 +440,7 @@ export const sendStudyMessage = action({
     // PDF/image route rather than letting a text-only provider hallucinate about
     // a file it never received. Plain-text prompts use the full provider router.
     const attachments: AiInputAttachment[] = normalizeAiAttachments(
-      args.attachments,
+      resolvedAttachments,
     );
     const routed = attachments.length > 0
       ? await callOpenRouter(

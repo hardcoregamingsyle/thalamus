@@ -41,13 +41,13 @@ import { errMsg } from "@/lib/errorMessage";
 import { formatMessageDay } from "@/lib/dateFormat";
 import { convexSiteUrl } from "@/lib/convexUrls";
 import {
-  fileToBase64,
   isProbablyTextFile,
   MAX_UPLOAD_BYTES,
   nativeAiFileMimeType,
 } from "@/lib/fileEncoding";
 import { extractStudyQuestionPrompts, findPendingStudyQuestion } from "@/lib/studyComposerQuestion";
 import { isGenericStreamFailure } from "@/lib/streamResponse";
+import { attachmentIdRequest, uploadOriginalAiFile } from "@/lib/aiFileUpload";
 import ModeSelection from "./ModeSelection";
 import { MODES, MORE_MODES, VALID_MODES, type Mode } from "./modes";
 import {
@@ -71,7 +71,7 @@ interface AttachedFile {
   size: number;
   content?: string;
   mimeType?: string;
-  dataBase64?: string;
+  attachmentId?: Id<"aiAttachments">;
 }
 
 export default function PortalDesktop() {
@@ -237,6 +237,8 @@ export default function PortalDesktop() {
 
   const createConversation = useMutation(api.conversations.create);
   const deleteConversation = useMutation(api.conversations.remove);
+  const generateAiFileUploadUrl = useMutation(api.aiFiles.generateUploadUrl);
+  const registerAiFile = useMutation(api.aiFiles.register);
   const sendMessage = useAction(api.ai.sendMessage);
   const sendStudyMessage = useAction(api.study.sendStudyMessage);
   const generateTitle = useAction(api.ai.generateConversationTitle);
@@ -527,6 +529,20 @@ export default function PortalDesktop() {
     if (conv.customId) navigate(`/portal/${activeMode}/${conv.customId}`, { replace: false });
   };
 
+  const uploadNativeAiFile = async (
+    file: File,
+    mimeType: string,
+  ): Promise<AttachedFile> => {
+    if (!token) throw new Error("Not authenticated");
+    return await uploadOriginalAiFile({
+      file,
+      mimeType,
+      token,
+      generateUploadUrl: generateAiFileUploadUrl,
+      register: registerAiFile,
+    });
+  };
+
   const handleAttachFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
@@ -560,12 +576,7 @@ export default function PortalDesktop() {
             );
             continue;
           }
-          newFiles.push({
-            name: file.name,
-            size: file.size,
-            mimeType,
-            dataBase64: await fileToBase64(file),
-          });
+          newFiles.push(await uploadNativeAiFile(file, mimeType));
         }
         totalBytes += file.size;
       } catch {
@@ -585,15 +596,7 @@ export default function PortalDesktop() {
     if ((!rawText.trim() && attachedFiles.length === 0) || isThinking || !token) return;
     streamBaseMessageCountRef.current = messages?.length ?? 0;
     setCompletedStreamContent(null);
-    const nativeAttachments = attachedFiles.flatMap((file) =>
-      file.dataBase64 && file.mimeType
-        ? [{
-            name: file.name,
-            mimeType: file.mimeType,
-            dataBase64: file.dataBase64,
-          }]
-        : [],
-    );
+    const { attachmentIds } = attachmentIdRequest(attachedFiles);
     const fileContext = attachedFiles.length > 0
       ? "\n\n[ATTACHED FILES]\n" + attachedFiles.map((file) =>
           file.content
@@ -650,6 +653,7 @@ export default function PortalDesktop() {
     let finalAssistantText = "";
     let accumulated = "";
     let thinkingAccumulated = "";
+    let streamProvidersExhausted = false;
     // Batch chunk-driven state updates to one per animation frame — a setState
     // per SSE chunk re-renders the whole conversation and causes visible lag.
     let rafId: number | null = null;
@@ -671,7 +675,7 @@ export default function PortalDesktop() {
         body: JSON.stringify({
           content: msg,
           mode: activeMode,
-          attachments: nativeAttachments,
+          attachmentIds,
           history: historyMsgs,
           systemPrompt,
           userContext,
@@ -740,6 +744,7 @@ export default function PortalDesktop() {
       // Treat that sentinel as a failed stream so the independent action
       // provider router gets a chance to answer.
       if (isGenericStreamFailure(accumulated)) {
+        streamProvidersExhausted = true;
         throw new Error("Streaming providers returned no answer");
       }
       finalAssistantText = accumulated;
@@ -757,6 +762,9 @@ export default function PortalDesktop() {
       // Fallback to Convex action
       setIsThinking(true);
       try {
+        if (streamProvidersExhausted && attachmentIds.length > 0) {
+          throw new Error("All file-capable AI providers are currently unavailable");
+        }
         let fallbackText: string;
         if (activeMode === "study") {
           try {
@@ -765,13 +773,14 @@ export default function PortalDesktop() {
               content: msg,
               token,
               userContext,
-              attachments: nativeAttachments,
+              attachmentIds,
               skipUserSave: userMessageSaved,
             });
             if (isGenericStreamFailure(fallbackText)) {
               throw new Error("Dedicated study action returned no answer");
             }
           } catch (studyError) {
+            if (streamProvidersExhausted) throw studyError;
             console.warn(
               "Dedicated study action failed, trying the general model action:",
               studyError,
@@ -782,7 +791,7 @@ export default function PortalDesktop() {
               mode: "study",
               token,
               userContext,
-              attachments: nativeAttachments,
+              attachmentIds,
               skipUserSave: true,
             });
           }
@@ -802,8 +811,9 @@ export default function PortalDesktop() {
               | "naming",
             token,
             userContext,
-            attachments: nativeAttachments,
+            attachmentIds,
             skipUserSave: userMessageSaved,
+            skipPrimaryProviders: streamProvidersExhausted,
           });
         }
         if (isGenericStreamFailure(fallbackText)) {
@@ -926,12 +936,7 @@ export default function PortalDesktop() {
               toast.error(`${file.name || "Pasted file"} is not a supported PDF or image.`);
               continue;
             }
-            processedFiles.push({
-              name: file.name || "Pasted image",
-              size: file.size,
-              mimeType,
-              dataBase64: await fileToBase64(file),
-            });
+            processedFiles.push(await uploadNativeAiFile(file, mimeType));
           }
           totalBytes += file.size;
         } catch {
@@ -984,8 +989,20 @@ export default function PortalDesktop() {
       return;
     }
     try {
-      const base64 = await fileToBase64(file);
-      await processFileResource({ token, fileName: file.name, fileType: file.type, fileDataBase64: base64 });
+      const nativeMimeType = nativeAiFileMimeType(file);
+      if (nativeMimeType) {
+        const stored = await uploadNativeAiFile(file, nativeMimeType);
+        if (!stored.attachmentId) throw new Error("File upload failed");
+        await processFileResource({ token, attachmentId: stored.attachmentId });
+      } else if (isProbablyTextFile(file)) {
+        await addTextResource({
+          token,
+          title: file.name,
+          content: (await file.text()).slice(0, 200_000),
+        });
+      } else {
+        throw new Error("Convert this file to PDF, PNG, JPEG, GIF, WebP, or plain text first");
+      }
       if (isPdf) toast.success(`PDF processed: ${file.name}`);
       else if (isImage) toast.success(`Image analyzed: ${file.name}`);
       else toast.success(`Processed: ${file.name}`);

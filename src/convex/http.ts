@@ -163,6 +163,23 @@ interface ClaudeChatMessage {
   content: string | ClaudeContentPart[];
 }
 
+async function withInlineAttachmentBytes(
+  attachments: AiInputAttachment[],
+): Promise<AiInputAttachment[]> {
+  return await Promise.all(
+    attachments.map(async (attachment) => {
+      if (attachment.dataBase64 || !attachment.url) return attachment;
+      const response = await fetch(attachment.url);
+      if (!response.ok) throw new Error(`Could not read ${attachment.name}`);
+      const bytes = await response.arrayBuffer();
+      return {
+        ...attachment,
+        dataBase64: Buffer.from(bytes).toString("base64"),
+      };
+    }),
+  );
+}
+
 // Claude Bedrock streaming
 // Uses invoke-with-response-stream for real token-by-token streaming
 async function streamClaudeWithCreds(
@@ -294,7 +311,7 @@ http.route({
       conversationId?: string;
       preferHighTier?: boolean;
       skipUserSave?: boolean;
-      attachments?: AiInputAttachment[];
+      attachmentIds?: string[];
     };
 
     try {
@@ -314,7 +331,7 @@ http.route({
       preferHighTier,
       skipUserSave,
     } = body;
-    const attachments = normalizeAiAttachments(body.attachments);
+    let attachments: AiInputAttachment[] = [];
 
     // Auth gate: this endpoint drives paid models (Bedrock/Gemini) with the
     // platform's own credentials, so it must not be an open proxy. Every real
@@ -326,6 +343,33 @@ http.route({
       : null;
     if (!authedUserId) {
       return new Response("Unauthorized", { status: 401, headers: corsHeaders() });
+    }
+    if (
+      body.attachmentIds !== undefined &&
+      (!Array.isArray(body.attachmentIds) ||
+        body.attachmentIds.length > 3 ||
+        body.attachmentIds.some((id) => typeof id !== "string"))
+    ) {
+      return new Response("Invalid attachments", {
+        status: 400,
+        headers: corsHeaders(),
+      });
+    }
+    if (body.attachmentIds?.length) {
+      try {
+        const stored = await ctx.runQuery(internal.aiFiles.resolveForUser, {
+          userId: authedUserId,
+          attachmentIds: body.attachmentIds.map(
+            (id) => id as Id<"aiAttachments">,
+          ),
+        });
+        attachments = normalizeAiAttachments(stored);
+      } catch {
+        return new Response("Invalid attachments", {
+          status: 400,
+          headers: corsHeaders(),
+        });
+      }
     }
     // Stop serving once the shared platform budget is spent.
     if (await ctx.runQuery(internal.admin.isPlatformBudgetExhausted, {})) {
@@ -386,13 +430,15 @@ http.route({
       ...history.map(m => ({ role: m.role, content: m.content.slice(0, 2000) })),
       { role: "user" as const, content },
     ];
-    const claudeMessages: ClaudeChatMessage[] = [
+    const makeClaudeMessages = (
+      providerAttachments: AiInputAttachment[],
+    ): ClaudeChatMessage[] => [
       ...history.map(m => ({ role: m.role, content: m.content.slice(0, 2000) })),
       {
         role: "user",
         content:
-          attachments.length > 0
-            ? buildClaudeUserContent(content, attachments)
+          providerAttachments.length > 0
+            ? buildClaudeUserContent(content, providerAttachments)
             : content,
       },
     ];
@@ -438,33 +484,108 @@ http.route({
       }
       await write({ type: "answer_start" });
 
-      // 1) Bedrock Claude — true token streaming (deltas pushed as they arrive).
-      if (!streamSuccess && hasBedrock && bedrockCreds && preferHighTier !== false) {
+      // Stored attachments go to OpenRouter as their original HTTPS file URL.
+      // No base64/binary payload is inserted into the prompt or browser request.
+      if (attachments.length > 0) {
         try {
-          await streamClaudeWithCreds(bedrockCreds, fullSystem, claudeMessages, (delta) => {
-            fullText += delta;
-            void write({ type: "answer", chunk: delta });
-          }, temperature);
+          const attachmentPrompt = messages
+            .map(
+              (message) =>
+                `${message.role === "assistant" ? "Assistant" : "Human"}: ${message.content}`,
+            )
+            .join("\n\n");
+          const result = await callOpenRouter(
+            attachmentPrompt,
+            fullSystem,
+            "openrouter/free",
+            4096,
+            undefined,
+            Date.now() + 120_000,
+            async (delta) => {
+              fullText += delta;
+              await write({ type: "answer", chunk: delta });
+            },
+            attachments,
+          );
+          fullText = result.text;
+          streamSuccess = fullText.trim().length > 0;
+        } catch (openRouterErr) {
+          console.error(
+            "OpenRouter attachment request failed:",
+            openRouterErr instanceof Error
+              ? openRouterErr.message
+              : String(openRouterErr),
+          );
+          fullText = "";
+        }
+      }
+
+      // Bedrock/Gemini require inline provider adapters. Only materialize those
+      // bytes server-side if the direct original-file URL route did not answer.
+      let inlineAttachments = attachments;
+      if (!streamSuccess && attachments.some((attachment) => attachment.url)) {
+        try {
+          inlineAttachments = await withInlineAttachmentBytes(attachments);
+        } catch (attachmentErr) {
+          console.error(
+            "Could not prepare attachment provider fallback:",
+            attachmentErr instanceof Error
+              ? attachmentErr.message
+              : String(attachmentErr),
+          );
+          inlineAttachments = [];
+        }
+      }
+
+      // 1) Bedrock Claude — true token streaming (deltas pushed as they arrive).
+      if (
+        !streamSuccess &&
+        hasBedrock &&
+        bedrockCreds &&
+        preferHighTier !== false &&
+        (attachments.length === 0 ||
+          inlineAttachments.length === attachments.length)
+      ) {
+        try {
+          await streamClaudeWithCreds(
+            bedrockCreds,
+            fullSystem,
+            makeClaudeMessages(inlineAttachments),
+            (delta) => {
+              fullText += delta;
+              void write({ type: "answer", chunk: delta });
+            },
+            temperature,
+          );
           usedClaude = true;
           streamSuccess = fullText.length > 0;
         } catch (bedrockErr) {
-          console.error("Bedrock streaming failed:", bedrockErr instanceof Error ? bedrockErr.message : String(bedrockErr));
+          console.error(
+            "Bedrock streaming failed:",
+            bedrockErr instanceof Error
+              ? bedrockErr.message
+              : String(bedrockErr),
+          );
           fullText = "";
         }
       }
 
       // 2) Gemini — streamGenerateContent SSE, real deltas as they arrive.
-      if (!streamSuccess) {
+      if (
+        !streamSuccess &&
+        (attachments.length === 0 ||
+          inlineAttachments.length === attachments.length)
+      ) {
         const geminiContents = [
-          ...history.map(m => ({
+          ...history.map((m) => ({
             role: m.role === "assistant" ? "model" : "user",
             parts: [{ text: m.content.slice(0, 2000) }],
           })),
           {
             role: "user",
             parts:
-              attachments.length > 0
-                ? buildGeminiUserParts(content, attachments)
+              inlineAttachments.length > 0
+                ? buildGeminiUserParts(content, inlineAttachments)
                 : [{ text: content }],
           },
         ];
@@ -473,7 +594,11 @@ http.route({
           contents: geminiContents,
           generationConfig: { maxOutputTokens: 4096, temperature },
         });
-        for (let attempt = 0; attempt < geminiKeys.length && !streamSuccess; attempt++) {
+        for (
+          let attempt = 0;
+          attempt < geminiKeys.length && !streamSuccess;
+          attempt++
+        ) {
           try {
             const key = geminiKeys[attempt % geminiKeys.length];
             const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${key}`;
@@ -498,54 +623,30 @@ http.route({
                 const data = line.slice(6).trim();
                 if (!data || data === "[DONE]") continue;
                 try {
-                  const obj = JSON.parse(data) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-                  const text = obj.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-                  if (text) { fullText += text; await write({ type: "answer", chunk: text }); }
-                } catch { /* skip malformed frame */ }
+                  const obj = JSON.parse(data) as {
+                    candidates?: Array<{
+                      content?: { parts?: Array<{ text?: string }> };
+                    }>;
+                  };
+                  const text =
+                    obj.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+                  if (text) {
+                    fullText += text;
+                    await write({ type: "answer", chunk: text });
+                  }
+                } catch {
+                  /* skip malformed frame */
+                }
               }
             }
             streamSuccess = fullText.length > 0;
-          } catch { /* try next key */ }
+          } catch {
+            /* try next key */
+          }
         }
       }
 
-      // 3) OpenRouter multimodal fallback. Its auto-router filters for a model
-      // that can consume the original PDF/image content; PDFs use native file
-      // input so page layout, diagrams, tables, and typography are not flattened.
-      if (!streamSuccess && attachments.length > 0) {
-        try {
-          const attachmentPrompt = messages
-            .map((message) =>
-              `${message.role === "assistant" ? "Assistant" : "Human"}: ${message.content}`,
-            )
-            .join("\n\n");
-          const result = await callOpenRouter(
-            attachmentPrompt,
-            fullSystem,
-            "openrouter/free",
-            4096,
-            undefined,
-            Date.now() + 120_000,
-            async (delta) => {
-              fullText += delta;
-              await write({ type: "answer", chunk: delta });
-            },
-            attachments,
-          );
-          fullText = result.text;
-          streamSuccess = fullText.trim().length > 0;
-        } catch (openRouterErr) {
-          console.error(
-            "OpenRouter attachment fallback failed:",
-            openRouterErr instanceof Error
-              ? openRouterErr.message
-              : String(openRouterErr),
-          );
-          fullText = "";
-        }
-      }
-
-      // 4) VLY fallback — text-only, so never let it answer a file question
+      // 3) VLY fallback — text-only, so never let it answer a file question
       // without seeing the file and hallucinate about unseen content.
       if (!streamSuccess && attachments.length === 0) {
         try {

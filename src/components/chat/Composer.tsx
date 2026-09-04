@@ -6,13 +6,14 @@
 import { memo, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { ArrowUp, Paperclip, X } from "lucide-react";
+import type { Id } from "@/convex/_generated/dataModel";
 
 export interface AttachedFile {
   name: string;
   size: number;
   content?: string;
   mimeType?: string;
-  dataBase64?: string;
+  attachmentId?: Id<"aiAttachments">;
 }
 
 interface ComposerProps {

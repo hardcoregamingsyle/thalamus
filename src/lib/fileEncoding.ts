@@ -1,12 +1,6 @@
-/**
- * File-reading helpers shared by chat composers and the study-mode uploader.
- * PDFs/images stay base64-encoded so providers receive the original bytes.
- */
+/** File classification helpers shared by chat and study-mode uploaders. */
 
-/**
- * Hard cap for inline PDF/image uploads. Node actions accept at most 5 MiB of
- * arguments; 3 MiB leaves room for base64 expansion plus the prompt metadata.
- */
+/** Hard cap for original PDF/image uploads. */
 export const MAX_UPLOAD_BYTES = 3 * 1024 * 1024; // 3 MiB
 
 // Extensions we treat as text when the browser doesn't supply a MIME type
@@ -16,9 +10,8 @@ const TEXT_EXTENSIONS =
 
 /**
  * True when a file can be meaningfully attached as plain text. Binary files
- * (images, PDFs, archives) must NOT go through `file.text()` — it decodes the
- * bytes as UTF-8 and produces replacement-character garbage that used to be
- * silently sent to the model as an "attachment".
+ * (images, PDFs, archives) must NOT go through `file.text()` because that
+ * decodes arbitrary bytes as UTF-8 replacement-character garbage.
  */
 export function isProbablyTextFile(file: File): boolean {
   if (file.type.startsWith("text/")) return true;
@@ -41,7 +34,7 @@ const NATIVE_IMAGE_TYPES = new Set([
   "image/webp",
 ]);
 
-/** MIME type to use when sending the original file to a multimodal model. */
+/** MIME type to use when uploading the original file for a multimodal model. */
 export function nativeAiFileMimeType(file: File): string | null {
   if (
     file.type === "application/pdf" ||
@@ -50,25 +43,4 @@ export function nativeAiFileMimeType(file: File): string | null {
     return "application/pdf";
   }
   return NATIVE_IMAGE_TYPES.has(file.type) ? file.type : null;
-}
-
-/**
- * Base64-encode a file without building the string one byte at a time.
- * The old inline loop (`binary += String.fromCharCode(bytes[i])` per byte)
- * performed millions of string appends for a single PDF and stalled the main
- * thread for seconds on mobile. FileReader does the conversion in native code.
- */
-export function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      // Strip the "data:<mime>;base64," prefix — callers want the raw payload.
-      const comma = dataUrl.indexOf(",");
-      resolve(comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl);
-    };
-    reader.onerror = () =>
-      reject(reader.error ?? new Error("Failed to read file"));
-    reader.readAsDataURL(file);
-  });
 }
