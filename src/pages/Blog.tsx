@@ -1,11 +1,10 @@
 import { Link } from "react-router";
 import { BLOG_POSTS } from "@/content/blog";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 // Blog index. Posts live statically in src/content/blog.ts — no backend
 // call. public/sitemap.xml is hand-maintained, so a new post requires
 // editing both files or search engines will not discover it.
-
-const SITE = "https://thalamus.aphantic.skinticals.com";
 
 function formatDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
@@ -16,19 +15,16 @@ function formatDate(iso: string): string {
   return `${months[m - 1]} ${d}, ${y}`;
 }
 
+const BLOG_DESCRIPTION =
+  "Guides and deep dives on Thalamus AI: the multi-agent Build pipeline, building apps from a prompt, and studying from your own files — free.";
+
 export default function Blog() {
   // Newest first — posts share a launch date, so keep the authored order stable.
   const posts = BLOG_POSTS;
+  usePageMeta("Blog — Thalamus AI", BLOG_DESCRIPTION, "/blog");
 
   return (
     <div className="min-h-screen bg-background font-sans text-foreground">
-      <title>Blog — Thalamus AI</title>
-      <meta
-        name="description"
-        content="Guides and deep dives on Thalamus AI: the multi-agent Build pipeline, building apps from a prompt, and studying from your own files — free."
-      />
-      <link rel="canonical" href={`${SITE}/blog`} />
-
       <header className="border-b border-white/10">
         <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-3">

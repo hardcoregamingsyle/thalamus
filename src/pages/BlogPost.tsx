@@ -1,14 +1,17 @@
 import { type ComponentPropsWithoutRef } from "react";
 import { Link, useParams } from "react-router";
 import ReactMarkdown from "react-markdown";
-import { getPostBySlug } from "@/content/blog";
+import { BLOG_POSTS, getPostBySlug } from "@/content/blog";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 // Single blog post. Reads :slug, finds the static post in
 // src/content/blog.ts, and renders its Markdown body with react-markdown
-// (same renderer the code workspace uses). Head tags and BlogPosting
-// JSON-LD are rendered inline in JSX — React 19 hoists title/meta/link,
-// and Google reads JSON-LD from anywhere in the DOM. Adding a post also
-// requires updating public/sitemap.xml (hand-maintained).
+// (same renderer the code workspace uses). Head tags go through usePageMeta,
+// which rewrites the shell's existing tags instead of appending a second set;
+// JSON-LD is still rendered inline because Google reads it anywhere in the DOM
+// and the shell has no BlogPosting block to collide with. Crawlers get this
+// page fully rendered from functions/blog/[slug].js before any JS runs.
+// Adding a post also requires updating public/sitemap.xml (hand-maintained).
 
 const SITE = "https://thalamus.aphantic.skinticals.com";
 
@@ -72,11 +75,16 @@ export default function BlogPost() {
   const { slug } = useParams<{ slug: string }>();
   const post = slug ? getPostBySlug(slug) : undefined;
 
+  // One hook call for both branches — hooks can't sit behind the early return.
+  usePageMeta(
+    post ? `${post.title} — Thalamus AI` : "Post not found — Thalamus AI",
+    post ? post.metaDescription : "This blog post could not be found.",
+    post ? `/blog/${post.slug}` : "/blog",
+  );
+
   if (!post) {
     return (
       <Chrome>
-        <title>Post not found — Thalamus AI</title>
-        <meta name="description" content="This blog post could not be found." />
         <main className="mx-auto flex max-w-3xl flex-col items-center px-4 py-24 text-center sm:px-6">
           <h1 className="text-2xl font-semibold text-foreground">Post not found</h1>
           <p className="mt-3 text-sm text-muted-foreground">
@@ -94,6 +102,13 @@ export default function BlogPost() {
   }
 
   const canonical = `${SITE}/blog/${post.slug}`;
+  // Most tag overlap first, so "keep reading" stays topical rather than
+  // whatever happens to sit next in the array.
+  const related = BLOG_POSTS.filter((p) => p.slug !== post.slug)
+    .map((p) => ({ p, shared: p.tags.filter((t) => post.tags.includes(t)).length }))
+    .sort((a, b) => b.shared - a.shared)
+    .slice(0, 3)
+    .map(({ p }) => p);
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
@@ -114,9 +129,6 @@ export default function BlogPost() {
 
   return (
     <Chrome>
-      <title>{`${post.title} — Thalamus AI`}</title>
-      <meta name="description" content={post.metaDescription} />
-      <link rel="canonical" href={canonical} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <main className="mx-auto max-w-3xl px-4 py-14 sm:px-6">
@@ -172,6 +184,31 @@ export default function BlogPost() {
             Open Thalamus
           </Link>
         </div>
+
+        {/* Every post used to be an orphan: 18 of the blog's 20 internal links
+            pointed into /portal*, which robots.txt disallows, and none connected
+            one post to another. This is the graph — and it builds itself, so a
+            new post joins without anyone remembering to link it. */}
+        {related.length > 0 && (
+          <section className="mt-12 border-t border-white/10 pt-8">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Keep reading
+            </h2>
+            <ul className="mt-4 space-y-3">
+              {related.map((p) => (
+                <li key={p.slug}>
+                  <Link
+                    to={`/blog/${p.slug}`}
+                    className="text-sm font-medium text-foreground underline-offset-4 hover:underline"
+                  >
+                    {p.title}
+                  </Link>
+                  <p className="mt-1 text-xs leading-6 text-muted-foreground">{p.metaDescription}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <nav className="mt-12 flex flex-wrap gap-4 border-t border-white/10 pt-6 text-xs text-muted-foreground" aria-label="Footer">
           <Link to="/" className="transition-colors hover:text-foreground">Home</Link>

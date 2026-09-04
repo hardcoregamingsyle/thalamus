@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 // Real, indexable legal + contact pages. Privacy, Terms, Refund, and Contact
 // are each a genuine crawlable URL for the internal link graph and to satisfy
@@ -6,7 +7,6 @@ import { Link } from "react-router";
 // four; the route picks which via `doc`.
 
 const SUPPORT_EMAIL = "hardcorgamingstyle@gmail.com";
-const SITE = "https://thalamus.aphantic.skinticals.com";
 const COMPANY = "Aphantic Corporations";
 const EFFECTIVE = "18 July 2026";
 
@@ -117,12 +117,9 @@ const DOCS: Record<Doc, { title: string; metaTitle: string; description: string;
 
 export default function Legal({ doc }: { doc: Doc }) {
   const d = DOCS[doc];
+  usePageMeta(d.metaTitle, d.description, `/${doc}`);
   return (
     <div className="min-h-screen bg-background font-sans text-foreground">
-      <title>{d.metaTitle}</title>
-      <meta name="description" content={d.description} />
-      <link rel="canonical" href={`${SITE}/${doc}`} />
-
       <header className="border-b border-white/10">
         <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-3">
