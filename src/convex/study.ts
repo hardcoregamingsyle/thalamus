@@ -358,10 +358,10 @@ export const sendStudyMessage = action({
     })),
   },
   handler: async (ctx, args): Promise<string> => {
-    const [userId, geminiKeys] = await Promise.all([
-      ctx.runQuery(internal.customAuthHelpers.getUserIdByToken, { token: args.token }) as Promise<Id<"users"> | null>,
-      ctx.runQuery(internal.admin.getGeminiKeysInternal, {}) as Promise<string[]>,
-    ]);
+    const userId = (await ctx.runQuery(
+      internal.customAuthHelpers.getUserIdByToken,
+      { token: args.token },
+    )) as Id<"users"> | null;
     if (!userId) throw new Error("Not authenticated");
 
     // Ownership gate before reading/writing the conversation (IDOR guard).
@@ -431,91 +431,22 @@ export const sendStudyMessage = action({
         : `${conversationContext}\n\nHuman: ${args.content}`
       : args.content;
 
-    let responseContent = "";
-    let inputTokens = 0;
-    let outputTokens = 0;
-
-    try {
-      if (geminiKeys.length > 0) {
-        try {
-          const result = await callGeminiWithSearch(
-            systemPrompt,
-            fullPrompt,
-            geminiKeys[0],
-            2048,
-          );
-          responseContent = result.text;
-          inputTokens = result.inputTokens;
-          outputTokens = result.outputTokens;
-        } catch {
-          try {
-            const result = await callSiliconFlow(fullPrompt, systemPrompt);
-            responseContent = result.text;
-            inputTokens = result.inputTokens;
-            outputTokens = result.outputTokens;
-          } catch {
-            const { vly } = await import("./lib/vlyIntegrations");
-            const result = await vly.ai.completion({
-              model: "claude-haiku-4-5",
-              messages: [
-                { role: "user", content: systemPrompt + "\n\n" + fullPrompt },
-              ],
-              maxTokens: 2048,
-            });
-            responseContent =
-              result.success && result.data
-                ? (result.data.choices[0]?.message?.content ?? "")
-                : "";
-          }
-        }
-      } else {
-        try {
-          const result = await callSiliconFlow(fullPrompt, systemPrompt);
-          responseContent = result.text;
-          inputTokens = result.inputTokens;
-          outputTokens = result.outputTokens;
-        } catch {
-          const { vly } = await import("./lib/vlyIntegrations");
-          const result = await vly.ai.completion({
-            model: "claude-haiku-4-5",
-            messages: [
-              { role: "user", content: systemPrompt + "\n\n" + fullPrompt },
-            ],
-            maxTokens: 2048,
-          });
-          responseContent =
-            result.success && result.data
-              ? (result.data.choices[0]?.message?.content ?? "")
-              : "";
-        }
-      }
-    } catch (legacyProviderError) {
-      console.warn(
-        "Study provider chain failed; trying the unified provider router:",
-        legacyProviderError instanceof Error
-          ? legacyProviderError.message
-          : String(legacyProviderError),
-      );
+    // This action is only entered after the streaming Bedrock/Gemini/VLY chain
+    // has failed. Go straight to the independent multi-provider router instead
+    // of retrying the same unavailable providers and delaying the answer.
+    const routed = await callModel(
+      fullPrompt,
+      systemPrompt,
+      "KnowItAll",
+      ctx,
+      { deadlineMs: 150_000 },
+    );
+    if (!routed.text.trim()) {
+      throw new Error("Unified provider router returned no answer");
     }
-
-    // The study action historically stopped after Gemini/SiliconFlow/VLY. Use
-    // the broader platform router as the final seat so one stale provider model
-    // or credential does not turn the whole mode into a server error.
-    if (!responseContent.trim()) {
-      const routed = await callModel(
-        fullPrompt,
-        systemPrompt,
-        "KnowItAll",
-        ctx,
-        { deadlineMs: 240_000 },
-      );
-      if (!routed.text.trim()) {
-        throw new Error("Unified provider router returned no answer");
-      }
-      responseContent = routed.text;
-      inputTokens = routed.inputTokens;
-      outputTokens = routed.outputTokens;
-    }
+    let responseContent = routed.text;
+    const inputTokens = routed.inputTokens;
+    const outputTokens = routed.outputTokens;
 
     // Process JSON-format ask ops into interactive HTML elements. The model
     // emits these as {"op":"..."} JSON objects, often pretty-printed and wrapped
