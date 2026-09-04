@@ -19,6 +19,11 @@
 // Docs: https://openrouter.ai/docs
 
 import type { ActionCtx } from "../_generated/server";
+import {
+  buildOpenRouterUserContent,
+  normalizeAiAttachments,
+  type AiInputAttachment,
+} from "./aiAttachments";
 
 // ── Base URL ───────────────────────────────────────────────────────────────────
 const BASE_URL = "https://openrouter.ai/api/v1";
@@ -149,24 +154,44 @@ export async function callOpenRouter(
   _runQuery?: ActionCtx["runQuery"],
   deadlineMs?: number,
   onDelta?: (delta: string) => Promise<void>,
+  attachments?: AiInputAttachment[],
 ): Promise<OpenRouterChatResult> {
   const apiKey = (process.env.OPENROUTER_API_KEY ?? "").trim();
   if (!apiKey) {
     throw new Error("OPENROUTER_NOT_CONFIGURED: set OPENROUTER_API_KEY in the Convex dashboard");
   }
 
+  const nativeAttachments = normalizeAiAttachments(attachments);
+  // The auto-router filters for a model that accepts the requested modality.
+  // Keeping a text-only pinned model here would make a valid PDF/image request
+  // fail before OpenRouter could select a vision/document-capable provider.
+  const requestModel = nativeAttachments.length > 0 ? "openrouter/free" : model;
   const messages = [
     { role: "system" as const, content: systemPrompt.slice(0, 8000) },
-    { role: "user" as const, content: prompt.slice(0, 8000) },
+    {
+      role: "user" as const,
+      content:
+        nativeAttachments.length > 0
+          ? buildOpenRouterUserContent(prompt.slice(0, 8000), nativeAttachments)
+          : prompt.slice(0, 8000),
+    },
   ];
+  const hasPdf = nativeAttachments.some(
+    (attachment) => attachment.mimeType === "application/pdf",
+  );
 
   const body = JSON.stringify({
-    model,
+    model: requestModel,
     messages,
     max_tokens: maxTokens,
     temperature: 0.7,
     stream: true,
     stream_options: { include_usage: true },
+    // Native parsing keeps PDF page layout, images, diagrams, and tables in the
+    // model input instead of flattening the document to a wall of extracted text.
+    ...(hasPdf
+      ? { plugins: [{ id: "file-parser", pdf: { engine: "native" } }] }
+      : {}),
   });
 
   const remaining = deadlineMs === undefined ? 420_000 : deadlineMs - Date.now();
@@ -184,7 +209,7 @@ export async function callOpenRouter(
   let text = "";
   let promptTokens = 0;
   let completionTokens = 0;
-  let resolvedModel = model;
+  let resolvedModel = requestModel;
   let done = false;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
 

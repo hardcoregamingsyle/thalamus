@@ -1,7 +1,7 @@
 // The center-stage composer. A large, focused, ChatGPT/Claude-style prompt box
 // pinned at the bottom of the chat view. Auto-grows up to a max height, supports
-// Enter-to-send / Shift+Enter for newlines, text-file attachments (button +
-// paste), and shows an animated send affordance.
+// Enter-to-send / Shift+Enter for newlines, native PDF/image and text-file
+// attachments (button + paste), and shows an animated send affordance.
 
 import { memo, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
@@ -9,8 +9,10 @@ import { ArrowUp, Paperclip, X } from "lucide-react";
 
 export interface AttachedFile {
   name: string;
-  content: string;
   size: number;
+  content?: string;
+  mimeType?: string;
+  dataBase64?: string;
 }
 
 interface ComposerProps {
@@ -92,7 +94,7 @@ const Composer = memo(function Composer({
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => fileRef.current?.click()}
-              aria-label="Attach a text file"
+              aria-label="Attach a file"
               className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
             >
               <Paperclip className="h-[18px] w-[18px]" />
@@ -106,7 +108,7 @@ const Composer = memo(function Composer({
             type="file"
             multiple
             className="hidden"
-            accept=".txt,.md,.csv,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.pdf,.doc,.docx"
+            accept="image/png,image/jpeg,image/gif,image/webp,.pdf,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml"
             onChange={onAttach}
           />
 

@@ -16,7 +16,11 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useTheme } from "@/hooks/use-theme";
 import { sanitizeAiHtml } from "@/lib/sanitizeHtml";
 import { fetchSponsoredAd } from "@/lib/requestAd";
-import { fileToBase64, MAX_UPLOAD_BYTES } from "@/lib/fileEncoding";
+import {
+  fileToBase64,
+  MAX_UPLOAD_BYTES,
+  nativeAiFileMimeType,
+} from "@/lib/fileEncoding";
 import { errMsg } from "@/lib/errorMessage";
 import { convexSiteUrl } from "@/lib/convexUrls";
 import { streamChat } from "@/lib/streamChat";
@@ -43,6 +47,13 @@ const MOBILE_SYSTEM_PROMPTS: Record<string, string> = {
   study: `You are Thalamus AI Study Mode — a precision study assistant. Give dense, accurate, exam-ready information.\n\nCRITICAL: Respond in clean semantic HTML only. No markdown. Pure HTML.\nUse: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <blockquote>\nIMPORTANT: Do NOT hardcode text or background colors in inline styles — the app themes them automatically (light and dark themes). Use only layout styles.\nHeadings: style="font-size:1.15em;font-weight:bold;margin:0.8em 0 0.4em;border-left:4px solid #6366f1;padding-left:0.7em"\nParagraphs: style="margin:0.4em 0;line-height:1.7;font-size:0.95em"`,
 };
 
+interface MobileAttachment {
+  name: string;
+  size: number;
+  mimeType: string;
+  dataBase64: string;
+}
+
 export interface MobileChatViewProps {
   mode: Mode;
   token: string;
@@ -63,6 +74,7 @@ export default function MobileChatView({
 
   const [activeConvId, setActiveConvId] = useState<Id<"conversations"> | null>(null);
   const [input, setInput] = useState("");
+  const [attachedFile, setAttachedFile] = useState<MobileAttachment | null>(null);
   const [isThinking, setIsThinking] = useState(false);
   const [thinkingContent, setThinkingContent] = useState("");
   const [inFlightUserContent, setInFlightUserContent] = useState<string | null>(null);
@@ -111,7 +123,6 @@ export default function MobileChatView({
   const sendStudyMessage = useAction(api.study.sendStudyMessage);
   const gradeStudyAnswerAction = useAction(api.study.gradeStudyAnswer);
   const generateTitle = useAction(api.ai.generateConversationTitle);
-  const processFileResource = useAction(api.study.processFileResource);
   const saveUserMessage = useMutation(api.conversations.saveUserMessage);
 
   const typedUserForProfile = user as { studyGrade?: string; studyBoard?: string; studyLanguage?: string } | null;
@@ -193,6 +204,7 @@ export default function MobileChatView({
     setStreamingContent(null);
     setCompletedStreamContent(null);
     setInFlightUserContent(null);
+    setAttachedFile(null);
     streamBaseMessageCountRef.current = 0;
     try {
       // create returns { id, customId } — storing the whole object made the very
@@ -208,6 +220,7 @@ export default function MobileChatView({
     setStreamingContent(null);
     setCompletedStreamContent(null);
     setInFlightUserContent(null);
+    setAttachedFile(null);
     streamBaseMessageCountRef.current = 0;
     setActiveConvId(conv._id);
     setShowConvList(false);
@@ -217,11 +230,22 @@ export default function MobileChatView({
   // Explicit text lets the transformed study composer submit an answer without
   // staging it through React state first (which previously sent a stale value).
   const sendPrompt = async (rawText: string) => {
-    if (!rawText.trim() || isThinking || !token) return;
+    if ((!rawText.trim() && !attachedFile) || isThinking || !token) return;
     streamBaseMessageCountRef.current = messages?.length ?? 0;
     setCompletedStreamContent(null);
-    const msg = rawText.trim();
+    const nativeAttachments = attachedFile
+      ? [{
+          name: attachedFile.name,
+          mimeType: attachedFile.mimeType,
+          dataBase64: attachedFile.dataBase64,
+        }]
+      : [];
+    const attachmentContext = attachedFile
+      ? `\n\n[ATTACHED FILE]\n--- ${attachedFile.name} ---\n[Original ${attachedFile.mimeType} attached as a native multimodal file]`
+      : "";
+    const msg = (rawText.trim() || "Study the attached file") + attachmentContext;
     setInput("");
+    setAttachedFile(null);
     setInFlightUserContent(msg);
 
     const userContext = {
@@ -282,6 +306,7 @@ export default function MobileChatView({
       const accumulated = await streamChat(siteUrl, {
         content: msg,
         mode,
+        attachments: nativeAttachments,
         history: historyMsgs,
         systemPrompt,
         userContext,
@@ -332,6 +357,7 @@ export default function MobileChatView({
               content: msg,
               token,
               userContext,
+              attachments: nativeAttachments,
               skipUserSave: userMessageSaved,
             });
             if (isGenericStreamFailure(fallbackText)) {
@@ -344,6 +370,7 @@ export default function MobileChatView({
               mode: "study",
               token,
               userContext,
+              attachments: nativeAttachments,
               skipUserSave: true,
             });
           }
@@ -363,6 +390,7 @@ export default function MobileChatView({
               | "naming",
             token,
             userContext,
+            attachments: nativeAttachments,
             skipUserSave: userMessageSaved,
           });
         }
@@ -400,21 +428,33 @@ export default function MobileChatView({
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!token) return;
     const file = e.target.files?.[0];
     if (!file) return;
+    const mimeType = nativeAiFileMimeType(file);
+    if (!mimeType) {
+      toast.error("Attach a PDF, PNG, JPEG, GIF, or WebP file");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
     if (file.size > MAX_UPLOAD_BYTES) {
       toast.error(`${file.name} is too large — the limit is ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB.`);
       return;
     }
     try {
-      // FileReader converts in native code — the old per-byte string loop
-      // stalled low-end phones for seconds on a large PDF.
-      const base64 = await fileToBase64(file);
-      await processFileResource({ token, fileName: file.name, fileType: file.type, fileDataBase64: base64 });
-      toast.success(`Added: ${file.name}`);
-    } catch (err) { toast.error(errMsg(err, "Failed")); }
-    finally { if (fileInputRef.current) fileInputRef.current.value = ""; }
+      // Keep the original bytes. The file is sent as a native multimodal part
+      // with the next prompt instead of being decoded into mojibake text.
+      setAttachedFile({
+        name: file.name,
+        size: file.size,
+        mimeType,
+        dataBase64: await fileToBase64(file),
+      });
+      toast.success(`Attached in original format: ${file.name}`);
+    } catch (err) {
+      toast.error(errMsg(err, "Failed to attach file"));
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const activeConvTitle = activeConvId && conversations
@@ -636,7 +676,27 @@ export default function MobileChatView({
             </button>
           </div>
         )}
-        <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept="image/*,.pdf,.txt,.md,.docx" />
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={handleFileUpload}
+          accept="image/png,image/jpeg,image/gif,image/webp,.pdf"
+        />
+        {attachedFile && !pendingStudyQuestion && (
+          <div className="mb-2 flex items-center gap-2 rounded-lg border border-indigo-400/30 bg-indigo-400/10 px-3 py-2 text-xs">
+            <Paperclip className="h-3.5 w-3.5 text-indigo-400" />
+            <span className="flex-1 truncate text-foreground">{attachedFile.name}</span>
+            <button
+              type="button"
+              aria-label={`Remove ${attachedFile.name}`}
+              onClick={() => setAttachedFile(null)}
+              className="text-base leading-none text-muted-foreground"
+            >
+              ×
+            </button>
+          </div>
+        )}
         {pendingStudyQuestion ? (
           <StudyComposerQuestion
             key={`${pendingStudyQuestion.itemId ?? "question"}:${pendingStudyQuestion.question}`}
@@ -667,7 +727,7 @@ export default function MobileChatView({
             <motion.button
               aria-label="Send message"
               onClick={handleSend}
-              disabled={!input.trim() || isThinking || studyLocked}
+              disabled={(!input.trim() && !attachedFile) || isThinking || studyLocked}
               whileTap={{ scale: 0.92 }}
               className="w-11 h-11 rounded-full bg-primary flex items-center justify-center shrink-0 disabled:opacity-40 transition-opacity shadow-sm shadow-primary/30"
             >

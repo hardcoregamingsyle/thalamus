@@ -12,6 +12,14 @@ import {
   MODE_SYSTEM_PROMPTS,
 } from "./lib/agentCore";
 import { buildStudySystemPrompt } from "./lib/studyPrompt";
+import {
+  buildClaudeUserContent,
+  buildGeminiUserParts,
+  normalizeAiAttachments,
+  type AiInputAttachment,
+  type ClaudeContentPart,
+} from "./lib/aiAttachments";
+import { callOpenRouter } from "./lib/openrouterClient";
 
 // Gemini keys are loaded from the DB (admin-managed via Admin UI)
 async function getGeminiKeysFromDB(ctx: { runQuery: ActionCtx["runQuery"] }): Promise<string[]> {
@@ -130,6 +138,7 @@ async function callBedrockClaude(
   maxTokens = 4096,
   modelName = "claude-haiku-4-5",
   temperature = 0.7,
+  attachments?: AiInputAttachment[],
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const creds = await ctx.runQuery(internal.admin.getAwsCredentialsInternal, {}) as { accessKeyId: string; secretAccessKey: string; region: string } | null;
   if (!creds) throw new Error("No AWS credentials configured");
@@ -142,11 +151,22 @@ async function callBedrockClaude(
   const host = `bedrock-runtime.${region}.amazonaws.com`;
   const rawUrl = `https://${host}/model/${modelId}/invoke`;
   const canonicalPath = `/model/${encodeURIComponent(modelId)}/invoke`;
+  const nativeAttachments = normalizeAiAttachments(attachments);
+  const bedrockMessages: Array<{
+    role: "user" | "assistant";
+    content: string | ClaudeContentPart[];
+  }> = messages.map((message, index) => ({
+    role: message.role,
+    content:
+      nativeAttachments.length > 0 && index === messages.length - 1
+        ? buildClaudeUserContent(message.content, nativeAttachments)
+        : message.content,
+  }));
 
   const requestBody = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
     system: systemPrompt,
-    messages,
+    messages: bedrockMessages,
     max_tokens: effectiveMaxTokens,
     temperature,
   });
@@ -176,6 +196,7 @@ async function callGeminiChat(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   maxTokens = 4096,
   temperature = 0.7,
+  attachments?: AiInputAttachment[],
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const keys = await getGeminiKeysFromDB(ctx);
   if (keys.length === 0) throw new Error("No Gemini API keys configured. Add keys via Admin.");
@@ -184,9 +205,13 @@ async function callGeminiChat(
     const key = keys[keyIndex % keys.length];
     keyIndex++;
     try {
-      const contents = messages.map((m) => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }],
+      const nativeAttachments = normalizeAiAttachments(attachments);
+      const contents = messages.map((message, index) => ({
+        role: message.role === "assistant" ? "model" : "user",
+        parts:
+          nativeAttachments.length > 0 && index === messages.length - 1
+            ? buildGeminiUserParts(message.content, nativeAttachments)
+            : [{ text: message.content }],
       }));
 
       const response = await fetch(
@@ -228,6 +253,7 @@ async function callAI(
   maxTokens = 4096,
   modelName = "claude-haiku-4-5",
   temperature = 0.7,
+  attachments?: AiInputAttachment[],
 ): Promise<{
   text: string;
   inputTokens: number;
@@ -242,6 +268,7 @@ async function callAI(
       maxTokens,
       modelName,
       temperature,
+      attachments,
     );
     return { ...result, provider: "bedrock" };
   } catch (bedrockErr) {
@@ -256,6 +283,7 @@ async function callAI(
         messages,
         maxTokens,
         temperature,
+        attachments,
       );
       return { ...result, provider: "gemini" };
     } catch (geminiErr) {
@@ -270,6 +298,24 @@ async function callAI(
             `${message.role === "assistant" ? "Assistant" : "Human"}: ${message.content}`,
         )
         .join("\n\n");
+      const nativeAttachments = normalizeAiAttachments(attachments);
+      if (nativeAttachments.length > 0) {
+        const routed = await callOpenRouter(
+          prompt,
+          systemPrompt,
+          "openrouter/free",
+          maxTokens,
+          undefined,
+          Date.now() + 150_000,
+          undefined,
+          nativeAttachments,
+        );
+        if (!routed.text.trim()) {
+          throw new Error("Attachment-capable provider returned no answer");
+        }
+        return { ...routed, provider: `openrouter:${routed.model}` };
+      }
+
       const routed = await callModel(prompt, systemPrompt, "KnowItAll", ctx, {
         deadlineMs: 150_000,
       });
@@ -289,6 +335,11 @@ export const sendMessage = action({
     token: v.optional(v.string()),
     model: v.optional(v.string()),
     skipUserSave: v.optional(v.boolean()),
+    attachments: v.optional(v.array(v.object({
+      name: v.string(),
+      mimeType: v.string(),
+      dataBase64: v.string(),
+    }))),
     userContext: v.optional(v.object({
       datetime: v.string(),
       timezone: v.string(),
@@ -352,6 +403,7 @@ export const sendMessage = action({
       4096,
       modelName,
       temperature,
+      args.attachments,
     );
 
     // --- Search tool loop: detect {"op":"search","query":"..."} JSON ops (and

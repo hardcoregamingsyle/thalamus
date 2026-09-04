@@ -6,6 +6,11 @@ import { Id } from "./_generated/dataModel";
 import { callModel, callSiliconFlow } from "./lib/agentCore";
 import { buildStudySystemPrompt } from "./lib/studyPrompt";
 import { convertStudyJsonOps, buildStudyTaskItems } from "./lib/studyJsonOps";
+import {
+  normalizeAiAttachments,
+  type AiInputAttachment,
+} from "./lib/aiAttachments";
+import { callOpenRouter } from "./lib/openrouterClient";
 
 
 // Gemini with Google Search Grounding
@@ -164,12 +169,12 @@ async function extractPdfWithClaude(base64Data: string, fileName: string): Promi
   const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke`;
   const requestBody = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
-    system: "Extract ALL content from this PDF as structured JSON. Output ONLY valid JSON.",
+    system: "Read the original PDF visually. Produce clear study notes that preserve its hierarchy, tables, equations, and the meaning of every diagram. Do not output JSON or raw binary data.",
     messages: [{
       role: "user",
       content: [
         { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64Data } },
-        { type: "text", text: `Extract the COMPLETE content of "${fileName}" as structured JSON. Output ONLY the JSON.` },
+        { type: "text", text: `Read the complete original PDF "${fileName}". Preserve headings and table structure, transcribe equations accurately, and describe diagrams with their labels and relationships.` },
       ],
     }],
     max_tokens: 16000,
@@ -188,14 +193,7 @@ async function extractPdfWithClaude(base64Data: string, fileName: string): Promi
     throw new Error(`Bedrock PDF extraction error ${response.status}: ${err.slice(0, 200)}`);
   }
   const data = await response.json() as { content?: Array<{ type: string; text?: string }> };
-  const rawText = data.content?.[0]?.text ?? "";
-  try {
-    const cleaned = rawText.replace(/^```json\s*/i, "").replace(/\s*```\s*$/, "");
-    JSON.parse(cleaned);
-    return cleaned;
-  } catch {
-    return JSON.stringify({ title: fileName, sections: [{ type: "paragraph", content: rawText }] });
-  }
+  return data.content?.find((part) => part.type === "text")?.text?.trim() ?? "";
 }
 
 export const processFileResource = action({
@@ -223,15 +221,23 @@ export const processFileResource = action({
         if (!summary || summary.length < 50) throw new Error("Empty extraction");
       } catch {
         try {
-          const { vly } = await import("./lib/vlyIntegrations");
-          const result = await vly.ai.completion({
-            model: "gpt-4o",
-            messages: [{ role: "user", content: `Extract ALL text content from this PDF document "${args.fileName}".\n\nPDF base64 (first 100k chars): ${args.fileDataBase64.slice(0, 100000)}` }],
-            maxTokens: 4000,
-          });
-          summary = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "") : "";
+          const result = await callOpenRouter(
+            `Read the complete original PDF "${args.fileName}". Create clear study notes while preserving headings, tables, equations, and the meaning and labels of every diagram.`,
+            "You read PDF files visually for study. Never output JSON, base64, raw binary, or replacement-character noise.",
+            "openrouter/free",
+            4000,
+            undefined,
+            Date.now() + 150_000,
+            undefined,
+            [{
+              name: args.fileName,
+              mimeType: "application/pdf",
+              dataBase64: args.fileDataBase64,
+            }],
+          );
+          summary = result.text;
         } catch {
-          summary = `[PDF uploaded: ${args.fileName}. PDF text extraction requires Bedrock credentials.]`;
+          summary = `[PDF uploaded: ${args.fileName}. No attachment-capable AI provider was available to inspect it.]`;
         }
       }
     } else if (isImage) {
@@ -240,38 +246,30 @@ export const processFileResource = action({
         if (!summary || summary.length < 20) throw new Error("Empty image analysis");
       } catch {
         try {
-          const { vly } = await import("./lib/vlyIntegrations");
-          const result = await vly.ai.completion({
-            model: "gpt-4o-mini",
-            messages: [{ role: "user", content: `Analyze this image and provide a comprehensive summary.\n\nImage data (base64, ${args.fileType}): ${args.fileDataBase64.slice(0, 80000)}` }],
-            maxTokens: 2000,
-          });
-          summary = (result.success && result.data) ? (result.data.choices[0]?.message?.content ?? "Could not process image") : "Image uploaded (could not extract text)";
-        } catch {
-          summary = `[Image uploaded: ${args.fileName}. Image analysis requires Bedrock credentials.]`;
-        }
-      }
-    } else {
-      try {
-        const decoded = Buffer.from(args.fileDataBase64, "base64").toString("utf-8");
-        const printableRatio = decoded.split("").filter(c => c.charCodeAt(0) > 31 || c === "\n" || c === "\r" || c === "\t").length / decoded.length;
-        if (decoded.length > 50 && printableRatio > 0.75) {
-          summary = decoded;
-        } else {
-          throw new Error("Binary file");
-        }
-      } catch {
-        try {
-          const result = await callSiliconFlow(
-            `Please extract and summarize all content from this file for study purposes. File name: ${args.fileName}\n\nFile content (base64): ${args.fileDataBase64.slice(0, 50000)}`,
-            "You are a study assistant that extracts and summarizes content from files.",
-            "claude-haiku-4-5",
+          const result = await callOpenRouter(
+            `Inspect the original image "${args.fileName}". Explain all visible text, diagrams, labels, charts, equations, and spatial relationships for study.`,
+            "You are a visual study assistant. Analyze the original image itself; never treat its base64 bytes as text.",
+            "openrouter/free",
+            2000,
+            undefined,
+            Date.now() + 150_000,
+            undefined,
+            [{
+              name: args.fileName,
+              mimeType: args.fileType,
+              dataBase64: args.fileDataBase64,
+            }],
           );
           summary = result.text;
         } catch {
-          summary = `[File uploaded: ${args.fileName}. Could not extract text content automatically.]`;
+          summary = `[Image uploaded: ${args.fileName}. No vision-capable AI provider was available to inspect it.]`;
         }
       }
+    } else {
+      // Never guess that an opaque binary (DOCX/ZIP/etc.) is UTF-8 based on a
+      // "printable character" ratio. That heuristic produced megabytes of ZIP
+      // symbols. Require conversion to a natively supported visual format.
+      summary = `[Unsupported binary file: ${args.fileName}. Convert it to PDF or a supported image so the AI can inspect the original formatting.]`;
     }
 
     const resourceId = await ctx.runMutation(internal.studyHelpers.insertResource, {
@@ -351,6 +349,11 @@ export const sendStudyMessage = action({
     content: v.string(),
     token: v.string(),
     skipUserSave: v.optional(v.boolean()),
+    attachments: v.optional(v.array(v.object({
+      name: v.string(),
+      mimeType: v.string(),
+      dataBase64: v.string(),
+    }))),
     userContext: v.optional(v.object({
       datetime: v.string(),
       timezone: v.string(),
@@ -431,18 +434,33 @@ export const sendStudyMessage = action({
         : `${conversationContext}\n\nHuman: ${args.content}`
       : args.content;
 
-    // This action is only entered after the streaming Bedrock/Gemini/VLY chain
-    // has failed. Go straight to the independent multi-provider router instead
-    // of retrying the same unavailable providers and delaying the answer.
-    const routed = await callModel(
-      fullPrompt,
-      systemPrompt,
-      "KnowItAll",
-      ctx,
-      { deadlineMs: 150_000 },
+    // This action is only entered after the streaming provider chain failed.
+    // File prompts must stay multimodal: retry them through OpenRouter's native
+    // PDF/image route rather than letting a text-only provider hallucinate about
+    // a file it never received. Plain-text prompts use the full provider router.
+    const attachments: AiInputAttachment[] = normalizeAiAttachments(
+      args.attachments,
     );
+    const routed = attachments.length > 0
+      ? await callOpenRouter(
+          fullPrompt,
+          systemPrompt,
+          "openrouter/free",
+          4096,
+          undefined,
+          Date.now() + 150_000,
+          undefined,
+          attachments,
+        )
+      : await callModel(
+          fullPrompt,
+          systemPrompt,
+          "KnowItAll",
+          ctx,
+          { deadlineMs: 150_000 },
+        );
     if (!routed.text.trim()) {
-      throw new Error("Unified provider router returned no answer");
+      throw new Error("AI providers returned no answer");
     }
     let responseContent = routed.text;
     const inputTokens = routed.inputTokens;

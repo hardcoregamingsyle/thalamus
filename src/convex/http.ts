@@ -4,6 +4,14 @@ import { internal, api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { handlePushWebhook } from "./githubWebhooks";
 import { callModel, MODE_ADHD, adhdToTemperature, MODE_SYSTEM_PROMPTS } from "./lib/agentCore";
+import {
+  buildClaudeUserContent,
+  buildGeminiUserParts,
+  normalizeAiAttachments,
+  type AiInputAttachment,
+  type ClaudeContentPart,
+} from "./lib/aiAttachments";
+import { callOpenRouter } from "./lib/openrouterClient";
 import { buildStudySystemPrompt } from "./lib/studyPrompt";
 import { convertStudyJsonOps, buildStudyTaskItems } from "./lib/studyJsonOps";
 import {
@@ -150,12 +158,17 @@ function parseBedrockCredsFromEnv(): { accessKeyId: string; secretAccessKey: str
   return null;
 }
 
+interface ClaudeChatMessage {
+  role: "user" | "assistant";
+  content: string | ClaudeContentPart[];
+}
+
 // Claude Bedrock streaming
 // Uses invoke-with-response-stream for real token-by-token streaming
 async function streamClaudeWithCreds(
   creds: { accessKeyId: string; secretAccessKey: string; region: string },
   systemPrompt: string,
-  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  messages: ClaudeChatMessage[],
   onChunk: (text: string) => void,
   temperature = 0.7,
 ): Promise<{ fullText: string; inputTokens: number; outputTokens: number }> {
@@ -176,7 +189,13 @@ async function streamClaudeWithCreds(
   const requestBody = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
     system: systemPrompt.slice(0, 8000),
-    messages: messages.map(m => ({ role: m.role, content: m.content.slice(0, 4000) })),
+    messages: messages.map((message) => ({
+      role: message.role,
+      content:
+        typeof message.content === "string"
+          ? message.content.slice(0, 4000)
+          : message.content,
+    })),
     max_tokens: 8192,
     temperature,
   });
@@ -275,6 +294,7 @@ http.route({
       conversationId?: string;
       preferHighTier?: boolean;
       skipUserSave?: boolean;
+      attachments?: AiInputAttachment[];
     };
 
     try {
@@ -283,7 +303,18 @@ http.route({
       return new Response("Bad request", { status: 400, headers: corsHeaders() });
     }
 
-    const { content, mode, history, systemPrompt, userContext, token, conversationId, preferHighTier, skipUserSave } = body;
+    const {
+      content,
+      mode,
+      history,
+      systemPrompt,
+      userContext,
+      token,
+      conversationId,
+      preferHighTier,
+      skipUserSave,
+    } = body;
+    const attachments = normalizeAiAttachments(body.attachments);
 
     // Auth gate: this endpoint drives paid models (Bedrock/Gemini) with the
     // platform's own credentials, so it must not be an open proxy. Every real
@@ -355,6 +386,16 @@ http.route({
       ...history.map(m => ({ role: m.role, content: m.content.slice(0, 2000) })),
       { role: "user" as const, content },
     ];
+    const claudeMessages: ClaudeChatMessage[] = [
+      ...history.map(m => ({ role: m.role, content: m.content.slice(0, 2000) })),
+      {
+        role: "user",
+        content:
+          attachments.length > 0
+            ? buildClaudeUserContent(content, attachments)
+            : content,
+      },
+    ];
 
     const encoder = new TextEncoder();
     const sse = (payload: unknown) => encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
@@ -400,7 +441,7 @@ http.route({
       // 1) Bedrock Claude — true token streaming (deltas pushed as they arrive).
       if (!streamSuccess && hasBedrock && bedrockCreds && preferHighTier !== false) {
         try {
-          await streamClaudeWithCreds(bedrockCreds, fullSystem, messages, (delta) => {
+          await streamClaudeWithCreds(bedrockCreds, fullSystem, claudeMessages, (delta) => {
             fullText += delta;
             void write({ type: "answer", chunk: delta });
           }, temperature);
@@ -414,10 +455,19 @@ http.route({
 
       // 2) Gemini — streamGenerateContent SSE, real deltas as they arrive.
       if (!streamSuccess) {
-        const geminiContents = messages.map(m => ({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: m.content }],
-        }));
+        const geminiContents = [
+          ...history.map(m => ({
+            role: m.role === "assistant" ? "model" : "user",
+            parts: [{ text: m.content.slice(0, 2000) }],
+          })),
+          {
+            role: "user",
+            parts:
+              attachments.length > 0
+                ? buildGeminiUserParts(content, attachments)
+                : [{ text: content }],
+          },
+        ];
         const geminiBody = JSON.stringify({
           system_instruction: { parts: [{ text: fullSystem }] },
           contents: geminiContents,
@@ -459,8 +509,45 @@ http.route({
         }
       }
 
-      // 3) VLY fallback — non-streaming, drip-feed so the UI still animates.
-      if (!streamSuccess) {
+      // 3) OpenRouter multimodal fallback. Its auto-router filters for a model
+      // that can consume the original PDF/image content; PDFs use native file
+      // input so page layout, diagrams, tables, and typography are not flattened.
+      if (!streamSuccess && attachments.length > 0) {
+        try {
+          const attachmentPrompt = messages
+            .map((message) =>
+              `${message.role === "assistant" ? "Assistant" : "Human"}: ${message.content}`,
+            )
+            .join("\n\n");
+          const result = await callOpenRouter(
+            attachmentPrompt,
+            fullSystem,
+            "openrouter/free",
+            4096,
+            undefined,
+            Date.now() + 120_000,
+            async (delta) => {
+              fullText += delta;
+              await write({ type: "answer", chunk: delta });
+            },
+            attachments,
+          );
+          fullText = result.text;
+          streamSuccess = fullText.trim().length > 0;
+        } catch (openRouterErr) {
+          console.error(
+            "OpenRouter attachment fallback failed:",
+            openRouterErr instanceof Error
+              ? openRouterErr.message
+              : String(openRouterErr),
+          );
+          fullText = "";
+        }
+      }
+
+      // 4) VLY fallback — text-only, so never let it answer a file question
+      // without seeing the file and hallucinate about unseen content.
+      if (!streamSuccess && attachments.length === 0) {
         try {
           const vlyText = await ctx.runAction(internal.ai.vlyFallbackCompletion, {
             systemPrompt: fullSystem,

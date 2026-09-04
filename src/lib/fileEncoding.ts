@@ -1,14 +1,18 @@
 /**
- * File-reading helpers shared by the chat composer (text attachments) and the
- * study-mode uploader (base64 for PDFs/images).
+ * File-reading helpers shared by chat composers and the study-mode uploader.
+ * PDFs/images stay base64-encoded so providers receive the original bytes.
  */
 
-/** Hard cap for study-mode uploads (PDF/image extraction upstream). */
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
+/**
+ * Hard cap for inline PDF/image uploads. Node actions accept at most 5 MiB of
+ * arguments; 3 MiB leaves room for base64 expansion plus the prompt metadata.
+ */
+export const MAX_UPLOAD_BYTES = 3 * 1024 * 1024; // 3 MiB
 
 // Extensions we treat as text when the browser doesn't supply a MIME type
 // (common for code files dragged from disk).
-const TEXT_EXTENSIONS = /\.(txt|md|markdown|json|jsonc|yaml|yml|xml|html|htm|css|scss|less|js|jsx|ts|tsx|mjs|cjs|py|rb|go|rs|java|kt|c|h|cpp|hpp|cs|php|sh|bash|ps1|bat|sql|toml|ini|cfg|conf|env|csv|tsv|log|svg)$/i;
+const TEXT_EXTENSIONS =
+  /\.(txt|md|markdown|json|jsonc|yaml|yml|xml|html|htm|css|scss|less|js|jsx|ts|tsx|mjs|cjs|py|rb|go|rs|java|kt|c|h|cpp|hpp|cs|php|sh|bash|ps1|bat|sql|toml|ini|cfg|conf|env|csv|tsv|log|svg)$/i;
 
 /**
  * True when a file can be meaningfully attached as plain text. Binary files
@@ -30,6 +34,24 @@ export function isProbablyTextFile(file: File): boolean {
   return TEXT_EXTENSIONS.test(file.name);
 }
 
+const NATIVE_IMAGE_TYPES = new Set([
+  "image/gif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+/** MIME type to use when sending the original file to a multimodal model. */
+export function nativeAiFileMimeType(file: File): string | null {
+  if (
+    file.type === "application/pdf" ||
+    file.name.toLowerCase().endsWith(".pdf")
+  ) {
+    return "application/pdf";
+  }
+  return NATIVE_IMAGE_TYPES.has(file.type) ? file.type : null;
+}
+
 /**
  * Base64-encode a file without building the string one byte at a time.
  * The old inline loop (`binary += String.fromCharCode(bytes[i])` per byte)
@@ -45,7 +67,8 @@ export function fileToBase64(file: File): Promise<string> {
       const comma = dataUrl.indexOf(",");
       resolve(comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl);
     };
-    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("Failed to read file"));
     reader.readAsDataURL(file);
   });
 }

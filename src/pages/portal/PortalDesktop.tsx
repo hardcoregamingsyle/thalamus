@@ -40,7 +40,12 @@ import { getSessionToken } from "@/lib/session";
 import { errMsg } from "@/lib/errorMessage";
 import { formatMessageDay } from "@/lib/dateFormat";
 import { convexSiteUrl } from "@/lib/convexUrls";
-import { isProbablyTextFile, fileToBase64, MAX_UPLOAD_BYTES } from "@/lib/fileEncoding";
+import {
+  fileToBase64,
+  isProbablyTextFile,
+  MAX_UPLOAD_BYTES,
+  nativeAiFileMimeType,
+} from "@/lib/fileEncoding";
 import { extractStudyQuestionPrompts, findPendingStudyQuestion } from "@/lib/studyComposerQuestion";
 import { isGenericStreamFailure } from "@/lib/streamResponse";
 import ModeSelection from "./ModeSelection";
@@ -63,8 +68,10 @@ interface StudyResource {
 
 interface AttachedFile {
   name: string;
-  content: string;
   size: number;
+  content?: string;
+  mimeType?: string;
+  dataBase64?: string;
 }
 
 export default function PortalDesktop() {
@@ -492,6 +499,7 @@ export default function PortalDesktop() {
     setStreamingContent(null);
     setCompletedStreamContent(null);
     setInFlightUserContent(null);
+    setAttachedFiles([]);
     streamBaseMessageCountRef.current = 0;
     adRequestedRef.current = false;
     setSponsoredAd(null);
@@ -510,6 +518,7 @@ export default function PortalDesktop() {
     setCompletedStreamContent(null);
     setThinkingContent("");
     setInFlightUserContent(null);
+    setAttachedFiles([]);
     streamBaseMessageCountRef.current = 0;
     adRequestedRef.current = false;
     setSponsoredAd(null);
@@ -521,18 +530,53 @@ export default function PortalDesktop() {
   const handleAttachFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
-    const MAX_SIZE = 500 * 1024; // 500KB per file
     const newFiles: AttachedFile[] = [];
+    let totalBytes = attachedFiles.reduce((sum, file) => sum + file.size, 0);
+
     for (const file of files) {
-      if (file.size > MAX_SIZE) { toast.error(`${file.name} is too large (max 500KB)`); continue; }
+      if (attachedFiles.length + newFiles.length >= 3) {
+        toast.error("You can attach up to 3 files at once");
+        break;
+      }
+      if (totalBytes + file.size > MAX_UPLOAD_BYTES) {
+        toast.error(
+          `${file.name} exceeds the ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB attachment limit`,
+        );
+        continue;
+      }
       try {
-        const content = await file.text();
-        newFiles.push({ name: file.name, content: content.slice(0, 20000), size: file.size });
-      } catch { toast.error(`Failed to read ${file.name}`); }
+        if (isProbablyTextFile(file)) {
+          const content = await file.text();
+          newFiles.push({
+            name: file.name,
+            content: content.slice(0, 20_000),
+            size: file.size,
+          });
+        } else {
+          const mimeType = nativeAiFileMimeType(file);
+          if (!mimeType) {
+            toast.error(
+              `${file.name} cannot be read natively. Convert it to PDF, PNG, JPEG, GIF, or WebP first.`,
+            );
+            continue;
+          }
+          newFiles.push({
+            name: file.name,
+            size: file.size,
+            mimeType,
+            dataBase64: await fileToBase64(file),
+          });
+        }
+        totalBytes += file.size;
+      } catch {
+        toast.error(`Failed to read ${file.name}`);
+      }
     }
-    setAttachedFiles(prev => [...prev, ...newFiles]);
+    setAttachedFiles(prev => [...prev, ...newFiles].slice(0, 3));
     if (e.target) e.target.value = "";
-    toast.success(`${newFiles.length} file(s) attached`);
+    if (newFiles.length > 0) {
+      toast.success(`${newFiles.length} file(s) attached in original format`);
+    }
   };
 
   // Core send path — accepts an explicit message so both the composer and the
@@ -541,10 +585,23 @@ export default function PortalDesktop() {
     if ((!rawText.trim() && attachedFiles.length === 0) || isThinking || !token) return;
     streamBaseMessageCountRef.current = messages?.length ?? 0;
     setCompletedStreamContent(null);
+    const nativeAttachments = attachedFiles.flatMap((file) =>
+      file.dataBase64 && file.mimeType
+        ? [{
+            name: file.name,
+            mimeType: file.mimeType,
+            dataBase64: file.dataBase64,
+          }]
+        : [],
+    );
     const fileContext = attachedFiles.length > 0
-      ? "\n\n[ATTACHED FILES]\n" + attachedFiles.map(f => `--- ${f.name} ---\n${f.content}`).join("\n\n")
+      ? "\n\n[ATTACHED FILES]\n" + attachedFiles.map((file) =>
+          file.content
+            ? `--- ${file.name} ---\n${file.content}`
+            : `--- ${file.name} ---\n[Original ${file.mimeType} attached as a native multimodal file]`,
+        ).join("\n\n")
       : "";
-    const msg = (rawText.trim() || "(See attached files)") + fileContext;
+    const msg = (rawText.trim() || "Study the attached file") + fileContext;
     setInput("");
     setAttachedFiles([]);
     setInFlightUserContent(msg);
@@ -614,6 +671,7 @@ export default function PortalDesktop() {
         body: JSON.stringify({
           content: msg,
           mode: activeMode,
+          attachments: nativeAttachments,
           history: historyMsgs,
           systemPrompt,
           userContext,
@@ -679,8 +737,8 @@ export default function PortalDesktop() {
       console.log("Stream read complete. accumulated length:", accumulated.length);
       cancelFlush();
       // The endpoint reports provider exhaustion as a normal 200 SSE response.
-      // Treat that sentinel as a failed stream so the existing action provider
-      // chain (which also includes SiliconFlow) gets a chance to answer.
+      // Treat that sentinel as a failed stream so the independent action
+      // provider router gets a chance to answer.
       if (isGenericStreamFailure(accumulated)) {
         throw new Error("Streaming providers returned no answer");
       }
@@ -707,6 +765,7 @@ export default function PortalDesktop() {
               content: msg,
               token,
               userContext,
+              attachments: nativeAttachments,
               skipUserSave: userMessageSaved,
             });
             if (isGenericStreamFailure(fallbackText)) {
@@ -723,6 +782,7 @@ export default function PortalDesktop() {
               mode: "study",
               token,
               userContext,
+              attachments: nativeAttachments,
               skipUserSave: true,
             });
           }
@@ -742,6 +802,7 @@ export default function PortalDesktop() {
               | "naming",
             token,
             userContext,
+            attachments: nativeAttachments,
             skipUserSave: userMessageSaved,
           });
         }
@@ -839,22 +900,40 @@ export default function PortalDesktop() {
 
     if (files.length > 0) {
       e.preventDefault();
-      // Only text files can ride along as inline attachments. `file.text()` on
-      // an image/PDF decodes binary as UTF-8 mojibake and used to be sent to
-      // the model as if it were readable content.
+      // Preserve pasted PDFs/images as native multimodal parts. Never call
+      // file.text() on a binary file: that is what produced the giant wall of
+      // replacement characters reported by users.
       const processedFiles: AttachedFile[] = [];
+      let totalBytes = attachedFiles.reduce((sum, file) => sum + file.size, 0);
       for (const file of files) {
-        if (!isProbablyTextFile(file)) {
-          toast.error(`${file.name || "Pasted file"} isn't a text file — use Study mode's upload for PDFs and images.`);
-          continue;
+        if (attachedFiles.length + processedFiles.length >= 3) break;
+        if (totalBytes + file.size > MAX_UPLOAD_BYTES) {
+          toast.error(
+            `Pasted files exceed the ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB attachment limit`,
+          );
+          break;
         }
         try {
-          const text = await file.text();
-          processedFiles.push({
-            name: file.name,
-            content: text,
-            size: file.size
-          });
+          if (isProbablyTextFile(file)) {
+            processedFiles.push({
+              name: file.name || "Pasted text file",
+              content: (await file.text()).slice(0, 20_000),
+              size: file.size,
+            });
+          } else {
+            const mimeType = nativeAiFileMimeType(file);
+            if (!mimeType) {
+              toast.error(`${file.name || "Pasted file"} is not a supported PDF or image.`);
+              continue;
+            }
+            processedFiles.push({
+              name: file.name || "Pasted image",
+              size: file.size,
+              mimeType,
+              dataBase64: await fileToBase64(file),
+            });
+          }
+          totalBytes += file.size;
         } catch {
           toast.error(`Failed to read ${file.name}`);
         }
@@ -895,7 +974,7 @@ export default function PortalDesktop() {
     setIsAddingResource(true);
     const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
     const isImage = file.type.startsWith("image/");
-    if (isPdf) setUploadStatus("Reading your PDF — extracting text & images...");
+    if (isPdf) setUploadStatus("Reading the original PDF — preserving layout, diagrams, and tables...");
     else if (isImage) setUploadStatus("Analyzing your image...");
     else setUploadStatus(`Processing ${file.name}...`);
     if (file.size > MAX_UPLOAD_BYTES) {
