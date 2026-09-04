@@ -102,7 +102,7 @@ Build mode starts with plain English. You write what you want the way you would 
 - *"A script that scans a folder and reports duplicate files by hash."*
 - *"An API endpoint that validates a webhook signature before doing anything."*
 
-What happens next is the part that separates Thalamus from a chatbot that just prints code. Your request goes to a dispatcher that assembles a small team of specialist agents — a Planner to map the work, a Coder to write it, a Tester to run it, a Critic to judge it, and others only when the task needs them. You can read the full breakdown of that pipeline in [how the multi-agent system writes and tests code](https://thalamus.aphantic.skinticals.com/portal/code).
+What happens next is the part that separates Thalamus from a chatbot that just prints code. Your request goes to a dispatcher that assembles a small team of specialist agents — a Planner to map the work, a Coder to write it, a Tester to run it, a Critic to judge it, and others only when the task needs them. You can read the full breakdown of that pipeline in [how the multi-agent system writes and tests code](https://thalamus.aphantic.skinticals.com/blog/multi-agent-ai-writes-tests-code).
 
 ## What "from a prompt" actually includes
 

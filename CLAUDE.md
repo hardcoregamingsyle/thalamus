@@ -83,7 +83,7 @@ Notes:
 - **No hot reload.** `vite.config.ts` sets `server.hmr: false`.
 - **Dual lockfiles.** Both `bun.lock` and `package-lock.json` are committed. Cloudflare Pages deploys the frontend with `npm ci`; CI verifies `npm ci --dry-run` stays in sync.
 - **`src/convex/_generated/` is committed.** A fresh clone type-checks without running Convex; `npx convex dev` regenerates these files.
-- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 605 references against 312 exported functions (27 of them from the sibling repo).
+- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 605 references against 305 exported functions (27 of them from the sibling repo).
 - **Production deploys go through CI.** `.github/workflows/convex-deploy.yml` runs after CI passes on `main` and executes `npx convex deploy --yes` using the `CONVEX_DEPLOY_KEY` repo secret, then hits `POST /api/action` on `ai:guestSendMessage` as a smoke test. There is no local `convex login` on this machine.
 - **Desktop release CI** (`.github/workflows/release.yml`): a `v*` tag builds and attaches the bare `Thalamus.exe`. The installer (`ThalamusSetup.exe` / Inno-wrapped `Thalamus-Setup-*.exe`) is built locally via `thalamus-native/build.ps1` and uploaded by hand.
 
@@ -132,6 +132,29 @@ There is no `NVAPI_KEY` reader anywhere — NIM is fully removed from the pipeli
 
 One Convex backend, two frontends (web + native Windows), two products (Thalamus + AgentOverflow) on the same deployment.
 
+### Edge SEO (`functions/` — Cloudflare Pages Functions)
+
+The site is a client-rendered SPA, so the HTML a crawler gets before running JS
+is the shell. `functions/blog/[slug].js` prerenders `/blog/<slug>` at the edge:
+it overwrites the shell's singleton head tags **in place**, appends a robots meta
+and BlogPosting JSON-LD, removes the shell's homepage `@graph` and `<noscript>`
+block, and injects the post body plus links to the other posts. Post data is
+imported straight from `src/content/blog.ts`, so there is no second copy.
+
+Two rules this directory exists to enforce, both learned the hard way:
+
+- **Overwrite the shell's singletons; never append.** `index.html` ships exactly
+  one title, description, canonical and OG set. Rendering `<title>`/`<link
+  rel="canonical">` from JSX made React 19 hoist a *second* one, so every
+  non-home route served two canonicals — one pointing at the homepage. Google
+  discards conflicting canonicals, which is why the whole site drew 7 impressions
+  in a month. Route metadata now goes through `src/hooks/use-page-meta.ts`, which
+  mutates the existing tags. `tests/seoMetadata.test.ts` pins this.
+- **Do not prerender the homepage.** `index.html` is already correct for `/`.
+
+`wrangler.toml` pins `pages_build_output_dir = "dist"` so Pages finds both the
+build output and this directory regardless of the dashboard's root setting.
+
 ### Frontend (React 19 + Vite 7)
 
 - `src/main.tsx` — entry, lazy routes, chunk-error auto-reload boundary. Providers: `StrictMode` → `InstrumentationProvider` → `ConvexProvider` (pointed at `VITE_CONVEX_URL`) → `ThemeProvider` → `BrowserRouter`. `ConvexAuthProvider` was removed; auth runs on the custom-token path.
@@ -145,12 +168,12 @@ One Convex backend, two frontends (web + native Windows), two products (Thalamus
 - Shared client libs: `src/lib/session.ts` (`SESSION_KEY` + helpers), `convexUrls.ts` (`convexSiteUrl`), `errorMessage.ts` (`errMsg`), `fileEncoding.ts`, `streamChat.ts`, `dateFormat.ts`, `sanitizeHtml.ts` (DOMPurify — mandatory before any `dangerouslySetInnerHTML`; session/admin/GitHub tokens live in localStorage).
 - Client-side system prompts for `/stream-chat` live in `src/content/systemPrompts.ts`.
 - Guest mode is nominally 3 prompts/day (`GUEST_LIMIT` in `pages/portal/guestSession.ts`, `GUEST_DAILY_LIMIT` in `ai.ts`/`aiHelpers.ts`), currently uncapped — see the free/unlimited switches below.
-- Auth is custom, not `@convex-dev/auth`. The live flow is `src/hooks/use-auth.ts` → `api.customAuth.sendOtp/verifyOtp` + Google/GitHub OAuth via the Convex HTTP router. The session token sits in localStorage under `agentai_session_token` and is passed as an explicit `{token}` argument to nearly every Convex call. `/portal/code*` and `/refer` are auth-gated via `useAuth`. There is no `/sync` route: connecting and disconnecting GitHub lives on a branch's Git Sync tab (`components/code-workspace/GitSyncView.tsx`), because that is the only place the connection has a concrete meaning.
+- Auth is custom, not `@convex-dev/auth`. The live flow is `src/hooks/use-auth.ts` → `api.customAuth.sendOtp/verifyOtp` + Google/GitHub OAuth via the Convex HTTP router. The session token sits in localStorage under `agentai_session_token` and is passed as an explicit `{token}` argument to nearly every Convex call. `/portal/code*` is auth-gated via `useAuth`. There is no `/refer` route. There is no `/sync` route: connecting and disconnecting GitHub lives on a branch's Git Sync tab (`components/code-workspace/GitSyncView.tsx`), because that is the only place the connection has a concrete meaning.
 - Theme is a single `ThemeProvider` context (`src/hooks/use-theme.tsx`); no more instrumentation error-modal, no `RouteSyncer`, no vly telemetry — just a plain React error boundary in `main.tsx`.
 
 ### Backend (Convex — `src/convex/`)
 
-- 312 exported functions across ~50 modules plus `lib/`. `schema.ts` defines the tables (10-literal `conversations.mode` union among them); `schemaValidation: false` so legacy rows do not block deploys.
+- 305 exported functions across ~50 modules plus `lib/`. `schema.ts` defines the tables (10-literal `conversations.mode` union among them); `schemaValidation: false` so legacy rows do not block deploys.
 - **`src/convex/lib/`** holds pure helper modules (no Convex framework imports):
   - `agentCore.ts` — `FREE_UNLIMITED`, `callModel` (the router), `mapModelIdToOllama`, `calcAgentBucksForTier`, `performSearch`, `performScrape`. Re-exports `agentPrompts` (per-agent system prompts), `modePrompts` (`MODE_ADHD`, `MODE_SYSTEM_PROMPTS`, `adhdToTemperature`), `agentOutputParser`. The parser's canonical input is deliberately escape-free: files are raw `<<FILE "path">> … <<END>>` blocks (verbatim content; bodies are masked out of the op scan so op-shaped file text can never execute), everything else is a one-line JSON op (`{"op":"cmd",…}` and friends). The JSON document envelope, inline JSON file ops and legacy `<<TAG>>` markers still parse as compatibility fallbacks, but no prompt teaches them — the old "whole file in one JSON string" format is what produced the chronic `[REJECTED OPS]`/`[MALFORMED OP]` loops.
   - Provider clients: `ollamaClient.ts` (formerly `siliconflow.ts` — export names unchanged), `zenClient.ts`, `openrouterClient.ts`, `deadlySignalsClient.ts`, `modelscopeClient.ts`, `modalClient.ts`.
@@ -243,8 +266,8 @@ Second product on this same deployment: a Stack Overflow for AI agents. The sepa
 |---|---|---|
 | Types | `bun run type-check` | exit 0 |
 | Lint | `bun run lint` | 0 problems |
-| Convex refs | `bun run check-refs` | 605 refs / 312 functions resolve; exit 0 |
-| Tests | `bun test` | 5 suites green — `mcpParse`, `parseAgentOutput`, `studyPrompt`, `sanitizeHtml` (jsdom), `agentRouting` |
+| Convex refs | `bun run check-refs` | 605 refs / 305 functions resolve; exit 0 |
+| Tests | `bun test` | 12 suites green, 267 assertions — including `seoMetadata`, which pins the FAQ JSON-LD to `faq.ts`, the sitemap to real routes, and `index.html` to one of each head singleton |
 | Web build | `bun run build` | green — `tsc -b && vite build` (cross-platform) |
 | Desktop | `dotnet build` both csproj | 0 warnings / 0 errors |
 | TODO markers in source | grep | 0 |
