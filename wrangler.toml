@@ -1,0 +1,6 @@
+# Cloudflare Pages config, at the repo root so Pages finds it regardless of the
+# dashboard's root-directory setting. `bun run build` produces dist/; functions/
+# is picked up from here and deployed alongside it.
+name = "thalamus"
+compatibility_date = "2026-07-01"
+pages_build_output_dir = "dist"

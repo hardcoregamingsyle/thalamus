@@ -55,3 +55,6 @@ eval-results/
 core
 core.*
 *.core
+
+# wrangler pages dev local cache
+.wrangler
