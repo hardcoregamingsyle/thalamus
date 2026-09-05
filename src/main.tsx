@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes } from "react-router";
 import { DauTracker } from "@/components/DauTracker";
 import { GravityPixel } from "@/components/GravityPixel";
+import { Analytics } from "@/components/Analytics";
 import "./index.css";
 import "./types/global.d.ts";
 
@@ -107,6 +108,9 @@ createRoot(document.getElementById("root")!).render(
           <DauTracker />
           {/* Gravity measurement pixel — loads only when an admin sets a Pixel ID */}
           <GravityPixel />
+          {/* GA4 / GTM — loads only when an admin sets the IDs. Consent banner
+              appears for UK/EU visitors only; elsewhere the tags just load. */}
+          <Analytics />
           <RouteErrorBoundary>
             <Suspense fallback={<RouteLoading />}>
               <Routes>

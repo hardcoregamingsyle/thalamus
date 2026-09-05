@@ -711,6 +711,16 @@ const schema = defineSchema(
     }).index("by_state", ["state"]),
 
     // Gravity ads configuration (admin-managed)
+    // Google Analytics 4 / Tag Manager IDs, one row per product ("thalamus",
+    // "agentoverflow"). Not secret — kept server-side so changing a property
+    // does not mean rebuilding and redeploying two Cloudflare Pages projects.
+    analyticsConfig: defineTable({
+      site: v.string(),
+      ga4Id: v.optional(v.string()),
+      gtmId: v.optional(v.string()),
+      updatedAt: v.number(),
+    }).index("by_site", ["site"]),
+
     gravityAdsConfig: defineTable({
       apiKey: v.string(),           // Gravity publisher API key
       // Gravity placement ids in slot order: [0] is the in-chat card, the rest

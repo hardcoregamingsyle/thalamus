@@ -83,7 +83,7 @@ Notes:
 - **No hot reload.** `vite.config.ts` sets `server.hmr: false`.
 - **Dual lockfiles.** Both `bun.lock` and `package-lock.json` are committed. Cloudflare Pages deploys the frontend with `npm ci`; CI verifies `npm ci --dry-run` stays in sync.
 - **`src/convex/_generated/` is committed.** A fresh clone type-checks without running Convex; `npx convex dev` regenerates these files.
-- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 631 references against 314 exported functions (27 of them from the sibling repo).
+- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 637 references against 317 exported functions (27 of them from the sibling repo).
 - **Production deploys go through CI.** `.github/workflows/convex-deploy.yml` runs after CI passes on `main` and executes `npx convex deploy --yes` using the `CONVEX_DEPLOY_KEY` repo secret, then hits `POST /api/action` on `ai:guestSendMessage` as a smoke test. There is no local `convex login` on this machine.
 - **Desktop release CI** (`.github/workflows/release.yml`): a `v*` tag builds and attaches the bare `Thalamus.exe`. The installer (`ThalamusSetup.exe` / Inno-wrapped `Thalamus-Setup-*.exe`) is built locally via `thalamus-native/build.ps1` and uploaded by hand.
 
@@ -152,6 +152,11 @@ Two rules this directory exists to enforce, both learned the hard way:
   mutates the existing tags. `tests/seoMetadata.test.ts` pins this.
 - **Do not prerender the homepage.** `index.html` is already correct for `/`.
 
+`functions/geo.js` returns the visitor's country from Cloudflare's edge
+(`request.cf.country`) so the analytics consent banner can be shown to UK/EU/EEA
+visitors only — see the Analytics section below. It is `no-store` on purpose: a
+shared cache entry would hand one country's privacy regime to the next visitor.
+
 `wrangler.toml` pins `pages_build_output_dir = "dist"` so Pages finds both the
 build output and this directory regardless of the dashboard's root setting.
 
@@ -173,7 +178,7 @@ build output and this directory regardless of the dashboard's root setting.
 
 ### Backend (Convex — `src/convex/`)
 
-- 314 exported functions across ~50 modules plus `lib/`. `schema.ts` defines the tables (10-literal `conversations.mode` union among them); `schemaValidation: false` so legacy rows do not block deploys.
+- 317 exported functions across ~50 modules plus `lib/`. `schema.ts` defines the tables (10-literal `conversations.mode` union among them); `schemaValidation: false` so legacy rows do not block deploys.
 - **`src/convex/lib/`** holds pure helper modules (no Convex framework imports):
   - `agentCore.ts` — `FREE_UNLIMITED`, `callModel` (the router), `mapModelIdToOllama`, `calcAgentBucksForTier`, `performSearch`, `performScrape`. Re-exports `agentPrompts` (per-agent system prompts), `modePrompts` (`MODE_ADHD`, `MODE_SYSTEM_PROMPTS`, `adhdToTemperature`), `agentOutputParser`. The parser's canonical input is deliberately escape-free: files are raw `<<FILE "path">> … <<END>>` blocks (verbatim content; bodies are masked out of the op scan so op-shaped file text can never execute), everything else is a one-line JSON op (`{"op":"cmd",…}` and friends). The JSON document envelope, inline JSON file ops and legacy `<<TAG>>` markers still parse as compatibility fallbacks, but no prompt teaches them — the old "whole file in one JSON string" format is what produced the chronic `[REJECTED OPS]`/`[MALFORMED OP]` loops.
   - Provider clients: `ollamaClient.ts` (formerly `siliconflow.ts` — export names unchanged), `zenClient.ts`, `openrouterClient.ts`, `deadlySignalsClient.ts`, `modelscopeClient.ts`, `modalClient.ts`.
@@ -236,6 +241,33 @@ Behaviours to know:
 - **`SandboxView.tsx`** is a view onto the two executors — linked repo, runner OS picker, one-off commands, live output. The old browser-WASM v86 emulator was removed; nothing v86-related ships anywhere. `qemu-bridge/` was deleted from the repo along with `src/lib/vmLauncher.ts` and `VMSetupDialog`.
 - **QEMU is desktop-only.** The native app drives `qemu-system-x86_64.exe` directly through `QemuBridgeManager.cs` and renders the display with a hand-rolled RFB 3.8 VNC client (`VncIntegration.cs`).
 
+### Analytics (GA4 / GTM)
+
+IDs live in the `analyticsConfig` table (one row per product, `/admin` →
+Analytics), not in build-time env vars: both frontends read the same backend, so
+a property change would otherwise mean rebuilding and redeploying two Cloudflare
+Pages projects. `analytics.getAnalyticsConfig` is public and returns nulls when
+unset, which is what keeps the tags off until someone configures them.
+
+`components/Analytics.tsx` (mirrored in the AgentOverflow repo) decides by
+region, not by a global default:
+
+- **outside the UK/EU/EEA** — tags load on first paint, nothing suppressed.
+- **inside it** — nothing loads until the visitor accepts the banner.
+
+That is the reason there is no blanket IP-anonymisation call anywhere: in the
+consent regions no hit fires at all, which is stronger than anonymising one that
+already went out; outside them the product decision is untouched analytics. The
+region comes from `functions/geo.js` and fails closed — an unknown country is
+treated as needing consent. `tests/geoConsent.test.ts` pins the country set.
+
+GA4 and GTM are both supported because they are not alternatives. Configuring a
+GA4 tag *inside* GTM while also setting a GA4 ID counts every pageview twice —
+set one or the other.
+
+Web only. The WPF desktop app ships no web analytics and has no counterpart to
+add one to.
+
 ### Platform credits (AgentBucks)
 
 `calcAgentBucksForTier` in `lib/agentCore.ts` branches on the provider prefix. `modelPricing` table is admin-editable but no billing path reads it. Spendable balance = `users.dailyAgentBucks` + `users.purchasedAgentBucks` + `creditBatches` (90-day expiry, soonest-first) — `users.agentBucksBalance` is not the spendable balance. Daily reset at 18:30 UTC (midnight IST) via `crons.ts` → `dailyReset.resetDailyAgentBucks` (10M AB per user). Every deduction is currently a no-op under `FREE_UNLIMITED`; purchases are off under `PAYMENTS_DISABLED`. The inbound Buy Me a Coffee webhook (`/bmac/webhook`) stays live so anyone who paid still gets credited.
@@ -266,8 +298,8 @@ Second product on this same deployment: a Stack Overflow for AI agents. The sepa
 |---|---|---|
 | Types | `bun run type-check` | exit 0 |
 | Lint | `bun run lint` | 0 problems |
-| Convex refs | `bun run check-refs` | 631 refs / 314 functions resolve; exit 0 |
-| Tests | `bun test` | 18 suites green, 434 assertions — including `seoMetadata`, which pins the FAQ JSON-LD to `faq.ts`, the sitemap to real routes, and `index.html` to one of each head singleton |
+| Convex refs | `bun run check-refs` | 637 refs / 317 functions resolve; exit 0 |
+| Tests | `bun test` | 19 suites green, 461 assertions — including `seoMetadata` (FAQ JSON-LD pinned to `faq.ts`, sitemap paths pinned to real routes, one of each head singleton) and `geoConsent` (the UK/EU-only consent gate) |
 | Web build | `bun run build` | green — `tsc -b && vite build` (cross-platform) |
 | Desktop | `dotnet build` both csproj | 0 warnings / 0 errors |
 | TODO markers in source | grep | 0 |

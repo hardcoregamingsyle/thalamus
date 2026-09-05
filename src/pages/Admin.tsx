@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useAdminMeta, type ProviderMeta, type ProviderSlug } from "./admin/shared";
 
-type AdminTab = "users" | "suggestion" | "study-materials" | "dau" | "providerD" | "providerE" | "providerB" | "providerC" | "provider-log" | "gravity-ads" | "vm-isos" | "corpus" | "maintenance";
+type AdminTab = "users" | "suggestion" | "study-materials" | "dau" | "providerD" | "providerE" | "providerB" | "providerC" | "provider-log" | "gravity-ads" | "analytics" | "vm-isos" | "corpus" | "maintenance";
 
 const ADMIN_SESSION_KEY = "thalamus_admin_v2";
 
@@ -29,6 +29,7 @@ const ProviderBKeysTab = lazy(() => import("./admin/ProviderBKeysTab").then(m =>
 const ProviderCEndpointsTab = lazy(() => import("./admin/ProviderCEndpointsTab").then(m => ({ default: m.ProviderCEndpointsTab })));
 const MaintenanceTab = lazy(() => import("./admin/MaintenanceTab").then(m => ({ default: m.MaintenanceTab })));
 const AdsTab = lazy(() => import("./admin/AdsTab").then(m => ({ default: m.AdsTab })));
+const AnalyticsTab = lazy(() => import("./admin/AnalyticsTab").then(m => ({ default: m.AnalyticsTab })));
 const VmIsoCatalogTab = lazy(() => import("./admin/VmIsoCatalogTab").then(m => ({ default: m.VmIsoCatalogTab })));
 const AgentOverflowTab = lazy(() => import("./admin/AgentOverflowTab").then(m => ({ default: m.AgentOverflowTab })));
 const ProviderLogTab = lazy(() => import("./admin/ProviderLogTab").then(m => ({ default: m.ProviderLogTab })));
@@ -202,6 +203,7 @@ export default function AdminPage() {
             { id: "providerE", label: providerLabel("providerE"), icon: Activity },
             { id: "provider-log", label: "Provider Log", icon: Radio },
             { id: "gravity-ads", label: "Ads (Gravity)", icon: Globe },
+            { id: "analytics", label: "Analytics", icon: TrendingUp },
             { id: "vm-isos", label: "VM ISOs", icon: Database },
             { id: "corpus", label: "Corpus", icon: Search },
             { id: "maintenance", label: "Maintenance", icon: Wrench },
@@ -245,6 +247,7 @@ export default function AdminPage() {
                 {tab === "provider-log" && <ProviderLogTab adminToken={adminToken} />}
                 {tab === "maintenance" && <MaintenanceTab adminToken={adminToken} />}
                 {tab === "gravity-ads" && <AdsTab adminToken={adminToken} />}
+                {tab === "analytics" && <AnalyticsTab adminToken={adminToken} />}
                 {tab === "vm-isos" && <VmIsoCatalogTab adminToken={adminToken} />}
                 {tab === "corpus" && <AgentOverflowTab adminToken={adminToken} />}
               </motion.div>
