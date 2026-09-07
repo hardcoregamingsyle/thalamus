@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Component, useEffect, useState, type ReactNode } from "react";
 import { useLocation } from "react-router";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -21,7 +21,7 @@ import {
  * was the point of gating it — it is a conversion tax everywhere it is not
  * legally earned.
  */
-export function Analytics() {
+function AnalyticsInner() {
   const config = useQuery(api.analytics.getAnalyticsConfig, { site: "thalamus" });
   const [needsConsent, setNeedsConsent] = useState(false);
   const [ready, setReady] = useState(false);
@@ -103,5 +103,32 @@ export function Analytics() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Analytics must never be load-bearing. A Convex query that throws — the
+// function not deployed yet, a schema mismatch, a backend outage — surfaces as
+// a render-time throw from useQuery, and without this boundary it walked up past
+// the router and blanked both sites. That happened: the frontend shipped a call
+// to analytics:getAnalyticsConfig before the backend had the function. Here the
+// worst case is no analytics.
+class AnalyticsBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(err: unknown) {
+    console.warn("[analytics] disabled after error:", err);
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+export function Analytics() {
+  return (
+    <AnalyticsBoundary>
+      <AnalyticsInner />
+    </AnalyticsBoundary>
   );
 }
