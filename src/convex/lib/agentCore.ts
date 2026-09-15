@@ -25,6 +25,7 @@ export { callSiliconFlow } from "./ollamaClient";
 import { callSiliconFlow, DISPATCHER_MODEL, DEFAULT_CHAT_MODEL } from "./ollamaClient";
 import { agentToTaskType, type TaskType } from "./taskTypes";
 import { callModal } from "./modalClient";
+import { callKimi, findKimiModel, KIMI_DISPATCHER_MODEL, KIMI_DEFAULT_MODEL } from "./kimiClient";
 import { callZen, findZenModel, ZEN_DISPATCHER_MODEL, ZEN_DEFAULT_MODEL } from "./zenClient";
 import { callOrcaRouter, findOrcaRouterModel, ORCAROUTER_DISPATCHER_MODEL, ORCAROUTER_DEFAULT_MODEL } from "./orcaRouterClient";
 import { callHuggingFace, findHuggingFaceModel, HUGGINGFACE_DISPATCHER_MODEL, HUGGINGFACE_DEFAULT_MODEL } from "./huggingFaceClient";
@@ -44,10 +45,10 @@ export type ModelTier = string;
 // bottom of the file — importers see it exactly where they used to.
 
 /**
- * Unified model caller — provider chain: Modal → Zen → OrcaRouter → OpenRouter → DeadlySignal → ModelScope → HuggingFace → Pollinations → Ollama.
- * Pass ctx for Modal DB-key access; without ctx, falls back to Zen/OrcaRouter/OpenRouter/Deadly/ModelScope/HuggingFace/Ollama
- * (Zen is anonymous; OrcaRouter, OpenRouter, DeadlySignal, ModelScope and HuggingFace are keyed). An explicitly
- * assigned Zen, OrcaRouter, OpenRouter, DeadlySignal, ModelScope or HuggingFace model id is honored directly (an
+ * Unified model caller — provider chain: Modal → Kimi → Zen → OrcaRouter → OpenRouter → DeadlySignal → ModelScope → HuggingFace → Pollinations → Ollama.
+ * Pass ctx for Modal DB-key access; without ctx, falls back to Kimi/Zen/OrcaRouter/OpenRouter/Deadly/ModelScope/HuggingFace/Ollama
+ * (Zen is anonymous; Kimi, OrcaRouter, OpenRouter, DeadlySignal, ModelScope and HuggingFace are keyed). An explicitly
+ * assigned Kimi, Zen, OrcaRouter, OpenRouter, DeadlySignal, ModelScope or HuggingFace model id is honored directly (an
  * override path — nothing in the pipeline assigns seats since the Dispatcher
  * was removed; every seat otherwise runs on its per-task-type default).
  */
@@ -167,6 +168,9 @@ export async function callModel(
       `deadlysignals:${assignedModel && findDeadlySignalsModel(assignedModel) ? assignedModel : (taskType === "dispatcher" ? DEADLYSIGNALS_DISPATCHER_MODEL : DEADLYSIGNALS_DEFAULT_MODEL)}`,
       `modelscope:${assignedModel && findModelScopeModel(assignedModel) ? assignedModel : (taskType === "dispatcher" ? MODELSCOPE_DISPATCHER_MODEL : MODELSCOPE_DEFAULT_MODEL)}`,
     ];
+    if (process.env.KIMI_API_KEY) {
+      syncSeats.push(`kimi:${assignedModel && findKimiModel(assignedModel) ? assignedModel : (taskType === "dispatcher" ? KIMI_DISPATCHER_MODEL : KIMI_DEFAULT_MODEL)}`);
+    }
     if (process.env.ORCAROUTER_API_KEY) {
       syncSeats.push(`orcarouter:${assignedModel && findOrcaRouterModel(assignedModel) ? assignedModel : (taskType === "dispatcher" ? ORCAROUTER_DISPATCHER_MODEL : ORCAROUTER_DEFAULT_MODEL)}`);
     }
@@ -183,9 +187,29 @@ export async function callModel(
     }
   }
 
-  // Explicitly-assigned Zen seat model: honor it directly and skip Modal — a Zen
-  // catalog id only exists on OpenCode Zen, so Modal would just burn retries
-  // on a model name it does not serve.
+  // Explicitly-assigned Kimi seat model: honor it directly and skip Modal — a
+  // Kimi catalog id only exists on Kimi for Coding, so Modal would just burn
+  // retries on a model name it does not serve.
+  if (assignedModel && findKimiModel(assignedModel)) {
+    const seatSkip = skipNoteFor("kimi", assignedModel);
+    if (seatSkip) {
+      await logNote("kimi", assignedModel, seatSkip);
+    } else try {
+      const result = await callKimi(prompt, systemPrompt, assignedModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
+      if (!isBlank(result.text)) {
+        await logAttempt({ provider: "kimi", model: result.model, ok: true });
+        return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `kimi:${result.model}` };
+      }
+      console.warn("Kimi returned empty output for an assigned model, falling back to the provider chain:", assignedModel);
+      await logAttempt({ provider: "kimi", model: assignedModel, ok: false, error: "empty output" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn("Kimi call failed, falling back to the provider chain:", msg);
+      await logAttempt({ provider: "kimi", model: assignedModel, ok: false, error: msg });
+    }
+  }
+
+  // Explicitly-assigned Zen seat model: same as Kimi — honor it directly.
   if (assignedModel && findZenModel(assignedModel)) {
     const seatSkip = skipNoteFor("zen", assignedModel);
     if (seatSkip) {
@@ -312,28 +336,55 @@ export async function callModel(
       // Modal first when an admin has registered an endpoint. Which endpoint is
       // decided by data (the isPrimary row comes back first), not by this code —
       // so swapping the primary model is a click in /admin, not a deploy. Falls
-      // through to Zen → OrcaRouter → OpenRouter → DeadlySignal → ModelScope →
-      // HuggingFace → Pollinations → Ollama when nothing is registered or every
-      // endpoint errors.
+      // through to Kimi → Zen → OrcaRouter → OpenRouter → DeadlySignal →
+      // ModelScope → HuggingFace → Pollinations → Ollama when nothing is
+      // registered or every endpoint errors.
       try {
         const result = await callModal(ctx, prompt, systemPrompt, PIPELINE_MAX_TOKENS, 0.7, undefined, deadline);
         if (!isBlank(result.text)) {
           await logAttempt({ provider: "modal", model: result.model, ok: true });
           return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `modal:${result.model}` };
         }
-        console.warn("Modal returned empty output, falling back to Zen:", result.model);
+        console.warn("Modal returned empty output, falling back to Kimi:", result.model);
         await logAttempt({ provider: "modal", model: result.model, ok: false, error: "empty output" });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (!msg.includes("MODAL_NOT_CONFIGURED")) {
-          console.warn("Modal call failed, falling back to Zen:", msg);
+          console.warn("Modal call failed, falling back to Kimi:", msg);
           await logAttempt({ provider: "modal", model: "unknown", ok: false, error: msg });
         }
       }
     }
 
-    // OpenCode Zen — free anonymous tier, no API key needed. Primary fallback
-    // after Modal: DeepSeek V4 Flash free is a frontier coding seat.
+    // Kimi for Coding — Moonshot's keyed coding-plan endpoint (KIMI_API_KEY env
+    // var). Primary fallback after Modal, ahead of every free seat: this is a
+    // paid coding plan the owner already pays for and wants used for
+    // Coder-class seats, so the anonymous Zen tier must not preempt it.
+    // Skipped fast when unconfigured.
+    const kimiModel = assignedModel && findKimiModel(assignedModel)
+      ? assignedModel
+      : (taskType === "dispatcher" ? KIMI_DISPATCHER_MODEL : KIMI_DEFAULT_MODEL);
+    if (process.env.KIMI_API_KEY) {
+      const kimiSkip = skipNoteFor("kimi", kimiModel);
+      if (kimiSkip) {
+        await logNote("kimi", kimiModel, kimiSkip);
+      } else try {
+        const result = await callKimi(prompt, systemPrompt, kimiModel, PIPELINE_MAX_TOKENS, undefined, deadline, streaming);
+        if (!isBlank(result.text)) {
+          await logAttempt({ provider: "kimi", model: result.model, ok: true });
+          return { text: result.text, inputTokens: result.inputTokens, outputTokens: result.outputTokens, tier: `kimi:${result.model}` };
+        }
+        console.warn("Kimi returned empty output, falling back to Zen:", kimiModel);
+        await logAttempt({ provider: "kimi", model: kimiModel, ok: false, error: "empty output" });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`Kimi call failed, falling back to Zen:`, msg);
+        await logAttempt({ provider: "kimi", model: kimiModel, ok: false, error: msg });
+      }
+    }
+
+    // OpenCode Zen — free anonymous tier, no API key needed. Second fallback
+    // after Kimi: DeepSeek V4 Flash free is a frontier coding seat.
     const zenModel = assignedModel && findZenModel(assignedModel)
       ? assignedModel
       : (taskType === "dispatcher" ? ZEN_DISPATCHER_MODEL : ZEN_DEFAULT_MODEL);
@@ -355,7 +406,7 @@ export async function callModel(
     }
 
     // OrcaRouter — keyed OpenAI-compatible gateway (ORCAROUTER_API_KEY env
-    // var). Second fallback after Zen: qwen3.8-27b-free is a strong
+    // var). Third fallback after Zen: qwen3.8-27b-free is a strong
     // reasoning-class coding seat that is free at this gateway — the profile
     // the chain wants high up. Skipped fast when unconfigured.
     const orcaModel = assignedModel && findOrcaRouterModel(assignedModel)
@@ -381,7 +432,7 @@ export async function callModel(
     }
 
     // OpenRouter — keyed free-model gateway (OPENROUTER_API_KEY env var).
-    // Third fallback after OrcaRouter: the `openrouter/free` auto-router serves
+    // Fourth fallback after OrcaRouter: the `openrouter/free` auto-router serves
     // whatever free model fits the request, so the leg survives the roster
     // rotation. 20 req/min per free model — burst traffic falls through.
     // Streams via SSE — deltas are piped to `streaming` (if the caller passed
@@ -408,7 +459,7 @@ export async function callModel(
     }
 
     // DeadlySignal — keyed New API gateway (DEADLYSIGNALS_API_KEY env var).
-    // Fourth fallback after OpenRouter: serves frontier models (kimi-k2.5, gpt-5.x,
+    // Fifth fallback after OpenRouter: serves frontier models (kimi-k2.5, gpt-5.x,
     // glm-5.2) when the free seats are down or too slow.
     const deadlyModel = assignedModel && findDeadlySignalsModel(assignedModel)
       ? assignedModel
@@ -431,7 +482,7 @@ export async function callModel(
     }
 
     // ModelScope — Alibaba's official free API-Inference tier (MODELSCOPE_API_KEY
-    // env var, .ai host). Fifth fallback when Zen, OrcaRouter, OpenRouter and Deadly are down:
+    // env var, .ai host). Sixth fallback when Kimi, Zen, OrcaRouter, OpenRouter and Deadly are down:
     // serves DeepSeek-V4-Pro — the frontier seat every other provider in the chain fails.
     const scopeModel = assignedModel && findModelScopeModel(assignedModel)
       ? assignedModel
@@ -453,7 +504,7 @@ export async function callModel(
       await logAttempt({ provider: "modelscope", model: scopeModel, ok: false, error: msg });
     }
 
-    // HuggingFace — the Inference Providers router (HF_TOKEN env var). Sixth
+    // HuggingFace — the Inference Providers router (HF_TOKEN env var). Seventh
     // fallback: one free HF token reaches 100+ open-weight models through a
     // single OpenAI-compatible endpoint, including the Qwen 3.8 Max-class
     // 2.4T checkpoint no other seat in this chain serves. Seated low because
