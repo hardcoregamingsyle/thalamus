@@ -85,6 +85,8 @@ Managed in the Convex dashboard, not in `.env` files. This table is the single s
 | Variable | Purpose |
 |---|---|
 | `KIMI_API_KEY` | Kimi for Coding leg of the pipeline chain (`lib/kimiClient.ts`) — Moonshot's coding-plan endpoint at `api.kimi.com/coding/v1`, model alias `kimi-for-coding`. First keyed leg, ahead of Zen. Optional — the leg is skipped without a network call when unset. |
+| `ORCAROUTER_API_KEY` | OrcaRouter gateway (`lib/orcaRouterClient.ts`) — `qwen/qwen3.8-27b-free` coding seat, chain leg between Zen and OpenRouter |
+| `HF_TOKEN` | Hugging Face Inference Providers router (`lib/huggingFaceClient.ts`) — thin free monthly credit, chain leg between ModelScope and Pollinations |
 | `ZEN_API_KEY` | OpenCode Zen client (`lib/zenClient.ts`). Optional — the free tier works without a key, but keyed calls ride a dedicated rate bucket instead of Convex's throttled shared egress. Key format `sk-…` from opencode.ai/zen. |
 | `OPENROUTER_API_KEY` | OpenRouter leg of the pipeline chain (`lib/openrouterClient.ts`). Required — OpenRouter free models need a key even though they cost $0. Key format `sk-or-v1-…` from openrouter.ai/keys; a $0-balance account works. |
 | `DEADLYSIGNALS_API_KEY` | Required for the DeadlySignal leg of the pipeline chain (`lib/deadlySignalsClient.ts`). |

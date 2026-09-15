@@ -59,7 +59,7 @@ src/
     landing/                Landing sections (9) — Hero, ModeGrid, PipelineSection, StudySection, CapabilityBand, FaqSection, FinalCta, NavBar, Footer
     admin/                  15 lazy-loaded admin tabs (Users, DAU, Credits, PromoCodes, Suggestions, StudyMaterials, ProviderB/C/D/E, Ads, Payments, VmIsos, Corpus (AgentOverflow), Maintenance)
   convex/                   backend — 312 exported Convex functions
-    lib/                    pure helper modules — agentCore, agentPrompts, modePrompts, agentOutputParser, ollamaClient, zenClient, deadlySignalsClient, modelscopeClient, modalClient, mcpClient, mcpParse, taskTypes, codeAuth, obscureRepoGenerator, studyPrompt, vlyIntegrations
+    lib/                    pure helper modules — agentCore, agentPrompts, modePrompts, agentOutputParser, ollamaClient, zenClient, kimiClient, orcaRouterClient, deadlySignalsClient, modelscopeClient, modalClient, mcpClient, mcpParse, taskTypes, codeAuth, obscureRepoGenerator, studyPrompt, vlyIntegrations
   components/
     ui/                     shadcn (trimmed to 13 primitives) — do not customize
     student-suite/          Study-mode toolset shell over 8 view files

@@ -99,7 +99,7 @@ Both `organizer` and `organiser` match — the Organizer routes to the dispatche
 `callModel` returns `{ text, inputTokens, outputTokens, tier }` where `tier` is one of:
 
 - `modal:<model>`
-- `zen:<model>`
+- `kimi:<model>`, `zen:<model>`
 - `openrouter:<model>`
 - `deadlysignals:<model>`
 - `modelscope:<model>`
