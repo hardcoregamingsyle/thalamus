@@ -402,8 +402,10 @@ export default function CodeWorkspace() {
   }, [authLoading, isAuthenticated, navigate]);
 
   const branch = useQuery(api.codeBranches.watchBranch, branchId ? { branchId } : "skip");
-  const messages = useQuery(api.codeBranches.watchMessages, branchId ? { branchId } : "skip");
-  const files = useQuery(api.codeBranches.watchFiles, branchId ? { branchId } : "skip");
+  // Keep the always-mounted chat route lightweight. Full file bodies and the
+  // longer transcript are fetched by their dedicated views only.
+  const messages = useQuery(api.codeBranches.watchWorkspaceMessages, branchId ? { branchId } : "skip");
+  const files = useQuery(api.codeBranches.watchFileIndex, branchId ? { branchId } : "skip");
   const commands = useQuery(api.codeCommands.watchCommands, branchId ? { branchId } : "skip");
   const apiKeyRequests = useQuery(api.codeApiKeys.watchApiKeyRequests, branchId ? { branchId } : "skip");
   const startPipeline = useAction(api.codePipeline.startPipeline);

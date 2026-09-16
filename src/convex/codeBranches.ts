@@ -227,6 +227,42 @@ export const watchFiles = query({
   },
 });
 
+// The chat shell only needs a file count. Sending every file body on every
+// reactive update retained huge snapshots in the browser (and could grow into
+// gigabytes on generated projects); the editor keeps using watchFiles only
+// when the user explicitly opens it.
+export const watchFileIndex = query({
+  args: { branchId: v.string() },
+  handler: async (ctx, args) => {
+    const files = await ctx.db
+      .query("codeFiles")
+      .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
+      .take(1000);
+    return files.map(({ _id, filepath, lastModifiedAt, lastModifiedBy }) => ({ _id, filepath, lastModifiedAt, lastModifiedBy }));
+  },
+});
+
+// Bounded transcript for the always-mounted chat surface. Full history remains
+// in the database and the Logs view can request its existing larger feed.
+export const watchWorkspaceMessages = query({
+  args: { branchId: v.string() },
+  handler: async (ctx, args) => {
+    const messages = await ctx.db
+      .query("codeMessages")
+      .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
+      .order("desc")
+      .take(30);
+    return messages.reverse().map((message) => ({
+      ...message,
+      // Markdown rendering is expensive; retain enough detail for the live
+      // conversation while preventing a generated log from allocating a huge DOM.
+      content: message.content.length > 12_000
+        ? `${message.content.slice(0, 12_000)}\n\n[Message truncated — open Logs for the full output.]`
+        : message.content,
+    }));
+  },
+});
+
 // Update branch
 export const updateBranch = mutation({
   args: {
