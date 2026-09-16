@@ -46,6 +46,7 @@ import { buildExecutorBlockedWarning, shouldWarnExecutorBlocked } from "./lib/ex
 // dispatch phase. Runs enter as the Analyser with the chain's default seats
 // (lib/modelMenu.ts was deleted with it).
 import { parseMcpCalls, stripMcpBlocks, type ParsedMcpCall } from "./lib/mcpParse";
+import { completesAfterPlanning, workflowInstruction, type CodeWorkflow } from "./lib/codeWorkflow";
 
 // MCP loop guard: how many times one agent may be re-run with tool results
 // before the pipeline advances anyway (prevents infinite call loops).
@@ -641,6 +642,8 @@ export const runPipelineAction = internalAction({
 
       const executionPhase = branch.executionPhase ?? "dispatching";
       const currentTaskIndex = branch.currentTaskIndex ?? 0;
+      const workflow = branch.workflow as CodeWorkflow | undefined;
+      const workflowContext = `## Run Profile\n${workflowInstruction(workflow)}`;
 
       // There is NO Dispatcher — no roster, no model-seat picks. Model seats
       // come from the provider chain's per-task-type defaults (with env
@@ -755,8 +758,8 @@ export const runPipelineAction = internalAction({
         round++;
         if (!(await advance({
           status: "idle",
-          currentAgent: "Analyser",
-          phase: "Analyser",
+          currentAgent: workflow === "plan" ? "Planner" : "Analyser",
+          phase: workflow === "plan" ? "Planner" : "Analyser",
           executionPhase: "executing",
           round,
           totalMessages,
@@ -809,7 +812,7 @@ export const runPipelineAction = internalAction({
         // flapping plannerTasksJson with every re-call. Teach the ending
         // right where the plan is asked for; parsePlannerOutput's backwards
         // brace-walk ignores the trailing op line.
-        const prompt = `## Task\n${task}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}\n\n## When the plan is written\nThe JSON plan is your output, but the routing is still yours — nobody picks the next seat for you. AFTER the plan, end your reply with the hand-off op on its own line:\n{"op":"over-to","agent":"Analyser","why":"plan is ready — brief the team on the first task"}\nName the Analyser (the lead) for a normal build, or whoever the first task belongs to. End with no over-to and YOU simply run again with a coaching stamp — plan, then route, in the SAME reply.`;
+        const prompt = `## Task\n${task}\n\n${workflowContext}\n\n## Context\n${context}\n\n## Current Files\n${fileContext}\n\n## When the plan is written\nThe JSON plan is your output, but the routing is still yours — nobody picks the next seat for you. AFTER the plan, end your reply with the hand-off op on its own line:\n{"op":"over-to","agent":"Analyser","why":"plan is ready — brief the team on the first task"}\nName the Analyser (the lead) for a normal build, or whoever the first task belongs to. End with no over-to and YOU simply run again with a coaching stamp — plan, then route, in the SAME reply.`;
         const result = await callModelWithStreaming(ctx, prompt, systemPrompt, branchId, "Planner", geminiKeys, dbCreds, callBudget());
         agentOutput = result.text;
         await bill("planner", result);
@@ -823,6 +826,15 @@ export const runPipelineAction = internalAction({
             branchId,
             plannerTasksJson: JSON.stringify(plannerOutput.tasks),
           });
+        }
+        if (completesAfterPlanning(workflow)) {
+          totalMessages++;
+          await ctx.runMutation(internal.codeBranches.saveMessage, {
+            branchId, agent: "System", round, messageIndex: totalMessages,
+            content: "[PLAN READY] Review the plan above, then choose Build when you want the team to implement it.",
+          });
+          if (!(await advance({ status: "completed", executionPhase: "completed", totalMessages, currentAgent: undefined }))) return;
+          return;
         }
       } else {
         // Default prompt for planning phase and non-Coder agents in execution
@@ -855,7 +867,7 @@ NEVER name yourself — a hand-off to yourself is not a route. If your next step
 NEVER bounce the task you were just handed back as an over-to: the moment it was handed to you it became YOUR job to DO, not to route again.
 Keep the why to ONE plain sentence — it lands verbatim in the shared transcript as the receiver's briefing.\nHow your reply must END — exactly one of these, every single time:\n- work remains in YOUR step → {"op":"continue"}\n- your step is done → {"op":"over-to","agent":"<teammate>","why":"one sentence"}\n- ONLY the Analyser or KnowItAll, only when the run is genuinely complete → {"op":"done","why":"what the user got"}\nEnd silent and you simply run again with a coaching stamp — the pipeline NEVER picks the next teammate for you, and a bare ending is never a run exit. ${floorRule}\nThe square-bracket stamps you see in this transcript — [OVER TO: …], [CONTINUING: …], [CONTINUE], [DONE: …], [CHECKPOINT: …], [CMD: …] — are the pipeline's receipts for ops that already ran. Typing a stamp is not the command. Always emit the JSON op.`;
 
-        let prompt = [`## Project Goal\n${task}`, currentDateLine, buildFailureBlock, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, buildGateBlock, handoffBlock, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
+        let prompt = [`## Project Goal\n${task}`, workflowContext, currentDateLine, buildFailureBlock, `## Current Files\n${fileContext}`, commandContext, mcpToolSection, buildGateBlock, handoffBlock, `## Agent History\n${context}`].filter(Boolean).join("\n\n");
 
         if (executionPhase === "executing") {
           let plannerTasks: Array<{ title: string; description: string; dependencies?: string[] }> = [];
@@ -1951,6 +1963,9 @@ export const startPipeline = action({
     // The desktop app sends "local" to run commands on the user's own machine.
     // Omitted (every shipped build before this) means cloud.
     executor: v.optional(v.union(v.literal("cloud"), v.literal("local"))),
+    workflow: v.optional(v.union(
+      v.literal("build"), v.literal("plan"), v.literal("investigate"), v.literal("quick"),
+    )),
   },
   handler: async (ctx, args): Promise<void> => {
     // Verify authentication AND that the caller owns this branch — otherwise any
@@ -1977,14 +1992,16 @@ export const startPipeline = action({
       // with nothing able to ever run it (the desktop-only executor queue
       // has no other reader).
       executor: args.executor ?? "cloud",
-      // Every new prompt enters as the Analyser — there is no Dispatcher and
+      // Plan runs enter at the Planner; other profiles enter at the Analyser.
+      // There is no Dispatcher and
       // nothing between the user's message and the team. executionPhase stays
       // "dispatching" for one beat: the run-entry step inside
       // runPipelineAction consumes it (writes the synthetic task from the
       // fresh prompt) and flips to "executing".
-      phase: "Analyser",
-      currentAgent: "Analyser",
+      phase: args.workflow === "plan" ? "Planner" : "Analyser",
+      currentAgent: args.workflow === "plan" ? "Planner" : "Analyser",
       executionPhase: "dispatching",
+      workflow: args.workflow ?? "build",
       // userPromptGen: bumped once per user prompt. Any pipeline invocation
       // that loaded the branch BEFORE this bump must not advance past it —
       // its phase transitions go through the advance() helper, which

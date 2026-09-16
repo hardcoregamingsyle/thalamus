@@ -130,6 +130,10 @@ const schema = defineSchema(
       currentAgent: v.optional(v.string()),
       phase: v.optional(v.string()),
       executionPhase: v.optional(v.string()), // "planning" or "executing"
+      // User-selected run profile; absent rows retain the existing build flow.
+      workflow: v.optional(v.union(
+        v.literal("build"), v.literal("plan"), v.literal("investigate"), v.literal("quick"),
+      )),
       currentTaskIndex: v.optional(v.number()),
       totalMessages: v.optional(v.number()),
       round: v.optional(v.number()),
@@ -284,6 +288,44 @@ const schema = defineSchema(
     })
       .index("by_branch", ["branchId"])
       .index("by_branch_and_index", ["branchId", "messageIndex"]),
+
+    // Code OS v2: durable orchestration records. These intentionally sit next
+    // to (rather than mutate) legacy branch rows, so existing projects remain
+    // readable while runs move from a shared transcript to a task graph.
+    codeRuns: defineTable({
+      branchId: v.string(),
+      projectId: v.string(),
+      userId: v.id("users"),
+      prompt: v.string(),
+      status: v.union(v.literal("queued"), v.literal("running"), v.literal("waiting_approval"), v.literal("completed"), v.literal("cancelled"), v.literal("failed")),
+      permissionMode: v.union(v.literal("ask"), v.literal("auto"), v.literal("read_only")),
+      summary: v.optional(v.string()),
+      cancellationRequested: v.optional(v.boolean()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_branch", ["branchId"]).index("by_project", ["projectId"]).index("by_user", ["userId"]),
+
+    codeTasks: defineTable({
+      runId: v.id("codeRuns"),
+      parentTaskId: v.optional(v.id("codeTasks")),
+      title: v.string(),
+      agent: v.string(),
+      status: v.union(v.literal("queued"), v.literal("running"), v.literal("blocked"), v.literal("completed"), v.literal("failed"), v.literal("cancelled")),
+      dependencies: v.array(v.id("codeTasks")),
+      allowedTools: v.array(v.string()),
+      maxTurns: v.number(),
+      result: v.optional(v.string()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_run", ["runId"]).index("by_parent", ["parentTaskId"]),
+
+    codeRunEvents: defineTable({
+      runId: v.id("codeRuns"),
+      taskId: v.optional(v.id("codeTasks")),
+      type: v.string(),
+      content: v.string(),
+      createdAt: v.number(),
+    }).index("by_run", ["runId"]).index("by_task", ["taskId"]),
 
     codeFiles: defineTable({
       branchId: v.string(),
