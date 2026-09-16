@@ -33,6 +33,15 @@ import {
 import { streamVisibleText } from "@/lib/verboseTranscript";
 import { extractTrailingCodeQuestion } from "@/lib/codeComposerQuestion";
 
+const workflowOptions = [
+  { id: "build", label: "Build", hint: "Plan, implement, and verify" },
+  { id: "plan", label: "Plan", hint: "Explore without changing files" },
+  { id: "investigate", label: "Investigate", hint: "Research a problem first" },
+  { id: "quick", label: "Quick fix", hint: "Smallest safe change" },
+] as const;
+
+type Workflow = (typeof workflowOptions)[number]["id"];
+
 // ── Planner message rendering ──────────────────────────────────────────────────
 interface PlannerTask {
   id: string;
@@ -402,6 +411,7 @@ export default function CodeWorkspace() {
   const fulfillApiKeyRequest = useMutation(api.codeApiKeys.fulfillApiKeyRequest);
 
   const [input, setInput] = useState("");
+  const [workflow, setWorkflow] = useState<Workflow>("build");
   const [isSending, setIsSending] = useState(false);
   const [apiKeyDraft, setApiKeyDraft] = useState({ requestId: "", value: "" });
   const [isFulfillingApiKey, setIsFulfillingApiKey] = useState(false);
@@ -499,8 +509,8 @@ export default function CodeWorkspace() {
     setIsSending(true);
 
     try {
-      await startPipeline({ token, branchId, userPrompt });
-      toast.success("Pipeline started!");
+      await startPipeline({ token, branchId, userPrompt, workflow });
+      toast.success(branch?.status === "running" ? "Team redirected to your latest instruction" : "Pipeline started!");
     } catch (err) {
       toast.error(errMsg(err, "Failed to start pipeline"));
       setInput(userPrompt);
@@ -849,10 +859,29 @@ export default function CodeWorkspace() {
                         <p className="mt-1 text-sm leading-relaxed text-foreground">{pendingCodeQuestion}</p>
                       </div>
                     )}
+                    <div className="flex items-center gap-1 overflow-x-auto border-b border-border/60 px-3 py-2" aria-label="Run profile">
+                      {workflowOptions.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          title={option.hint}
+                          onClick={() => setWorkflow(option.id)}
+                          disabled={isSending}
+                          className={cn(
+                            "shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors",
+                            workflow === option.id
+                              ? "bg-violet-500/15 text-violet-300"
+                              : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                          )}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
                     <Textarea
                       placeholder={
                         branch?.status === "running"
-                          ? "Pipeline is running…"
+                          ? "Steer the team with a new instruction…"
                           : pendingCodeQuestion
                           ? "Type your answer…"
                           : "Tell the AI team what to build…"
@@ -866,13 +895,13 @@ export default function CodeWorkspace() {
                         }
                       }}
                       className="min-h-[70px] max-h-[200px] resize-none border-0 bg-transparent px-4 pt-3.5 text-[15px] focus-visible:ring-0 focus-visible:outline-none"
-                      disabled={isSending || branch?.status === "running"}
+                      disabled={isSending}
                     />
                     <div className="flex items-center justify-between px-2 pb-2 pt-1">
                       <span className="px-2 text-[11px] text-muted-foreground/70">
                         {pendingCodeQuestion ? "Answer the question above" : "Enter to send · Shift+Enter for newline"}
                       </span>
-                      {branch?.status === "running" ? (
+                      {branch?.status === "running" && !input.trim() ? (
                         <Button
                           size="icon"
                           onClick={handleStop}
@@ -888,7 +917,7 @@ export default function CodeWorkspace() {
                           onClick={handleSend}
                           disabled={!input.trim() || isSending}
                           className="h-10 w-10 rounded-xl"
-                          aria-label={pendingCodeQuestion ? "Submit answer" : "Send message"}
+                          aria-label={branch?.status === "running" ? "Send new instruction" : pendingCodeQuestion ? "Submit answer" : "Send message"}
                         >
                           {isSending ? (
                             <Loader2 className="h-5 w-5 animate-spin" />
@@ -905,6 +934,8 @@ export default function CodeWorkspace() {
                     ? "The build resumes automatically after all requested keys are supplied."
                     : pendingCodeQuestion
                     ? "Your reply is sent back to the agent team with the project context."
+                    : branch?.status === "running"
+                    ? "Send a new instruction at any time to redirect the team; the current turn is safely superseded."
                     : "The AI team will run commands in your VM and ask for input here when needed."}
                 </p>
               </div>
