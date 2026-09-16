@@ -47,6 +47,7 @@ import { buildExecutorBlockedWarning, shouldWarnExecutorBlocked } from "./lib/ex
 // (lib/modelMenu.ts was deleted with it).
 import { parseMcpCalls, stripMcpBlocks, type ParsedMcpCall } from "./lib/mcpParse";
 import { completesAfterPlanning, workflowInstruction, type CodeWorkflow } from "./lib/codeWorkflow";
+import { formatCommandContext, type RecentCommandResult } from "./lib/commandWindow";
 
 // MCP loop guard: how many times one agent may be re-run with tool results
 // before the pipeline advances anyway (prevents infinite call loops).
@@ -690,18 +691,23 @@ export const runPipelineAction = internalAction({
       const context = buildContext(messages);
       const fileContext = buildFileContext(files);
 
-      // Results of shell commands run since the last saved agent message — i.e.
-      // exactly the commands this resume is reacting to. Scoping by timestamp
-      // keeps later agents/rounds from acting on stale outputs (old test runs).
-      const lastMessageAt = messages.length > 0 ? Math.max(...messages.map((m) => m.createdAt)) : 0;
-      const commandResults = await ctx.runQuery(internal.codeCommands.getRecentCommandResults, { branchId, sinceMs: lastMessageAt }) as Array<{ command: string; output: string; exitCode: number; status: string }>;
-      const commandContext = commandResults.length > 0
-        ? "## Recent Command Results\n" + commandResults
-            // Fenced + sentinel-neutralized: raw output must read as data, not
-            // as pipeline markup the model might mistake for instructions.
-            .map((c) => `$ ${c.command}\n[${c.status}, exit ${c.exitCode}]\n\`\`\`\n${c.output.slice(0, 3000).split("<<").join("‹‹").split(">>").join("››")}\n\`\`\``)
-            .join("\n\n")
-        : "";
+      // Shell command results the agent still needs. `lastMessageAt` is NOT a
+      // filter any more: it used to drop every result older than the agent's
+      // own last message, which is all of them — the agent writes a message
+      // every turn — so a Coder could never tell that it had already run
+      // `cat export_presets.cfg`, and re-ran it until its floor budget was
+      // gone. It is now only the "NEW since your last message" dividing line
+      // over a bounded, recency-labelled window (lib/commandWindow.ts).
+      //
+      // The line is drawn from THIS SPEAKER's own last message, not from the
+      // newest row of any author: every finished command writes a "Terminal"
+      // transcript row at the same instant it stamps completedAt, so a
+      // newest-message cutoff marked every result in a multi-command batch
+      // except the last as "already seen" to an agent that had never seen it.
+      const speakerMessages = messages.filter((m) => m.agent === currentPhase);
+      const lastMessageAt = speakerMessages.length > 0 ? Math.max(...speakerMessages.map((m) => m.createdAt)) : 0;
+      const commandResults = await ctx.runQuery(internal.codeCommands.getRecentCommandResults, { branchId, sinceMs: lastMessageAt }) as RecentCommandResult[];
+      const commandContext = formatCommandContext(commandResults);
 
       // Agents never know what day it is — a model that guesses "2022" for a
       // test fixture written today is guessing from training data. Pin the

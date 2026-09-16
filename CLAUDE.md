@@ -83,7 +83,7 @@ Notes:
 - **No hot reload.** `vite.config.ts` sets `server.hmr: false`.
 - **Dual lockfiles.** Both `bun.lock` and `package-lock.json` are committed. Cloudflare Pages deploys the frontend with `npm ci`; CI verifies `npm ci --dry-run` stays in sync.
 - **`src/convex/_generated/` is committed.** A fresh clone type-checks without running Convex; `npx convex dev` regenerates these files.
-- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 637 references against 318 exported functions (27 of them from the sibling repo).
+- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 638 references against 324 exported functions (28 of them from the sibling repo).
 - **Production deploys go through CI.** `.github/workflows/convex-deploy.yml` runs after CI passes on `main` and executes `npx convex deploy --yes` using the `CONVEX_DEPLOY_KEY` repo secret, then hits `POST /api/action` on `ai:guestSendMessage` as a smoke test. There is no local `convex login` on this machine.
 - **Desktop release CI** (`.github/workflows/release.yml`): a `v*` tag builds and attaches the bare `Thalamus.exe`. The installer (`ThalamusSetup.exe` / Inno-wrapped `Thalamus-Setup-*.exe`) is built locally via `thalamus-native/build.ps1` and uploaded by hand.
 
@@ -179,7 +179,7 @@ build output and this directory regardless of the dashboard's root setting.
 
 ### Backend (Convex — `src/convex/`)
 
-- 318 exported functions across ~50 modules plus `lib/`. `schema.ts` defines the tables (10-literal `conversations.mode` union among them); `schemaValidation: false` so legacy rows do not block deploys.
+- 324 exported functions across ~50 modules plus `lib/`. `schema.ts` defines the tables (10-literal `conversations.mode` union among them); `schemaValidation: false` so legacy rows do not block deploys.
 - **`src/convex/lib/`** holds pure helper modules (no Convex framework imports):
   - `agentCore.ts` — `FREE_UNLIMITED`, `callModel` (the router), `mapModelIdToOllama`, `calcAgentBucksForTier`, `performSearch`, `performScrape`. Re-exports `agentPrompts` (per-agent system prompts), `modePrompts` (`MODE_ADHD`, `MODE_SYSTEM_PROMPTS`, `adhdToTemperature`), `agentOutputParser`. The parser's canonical input is deliberately escape-free: files are raw `<<FILE "path">> … <<END>>` blocks (verbatim content; bodies are masked out of the op scan so op-shaped file text can never execute), everything else is a one-line JSON op (`{"op":"cmd",…}` and friends). The JSON document envelope, inline JSON file ops and legacy `<<TAG>>` markers still parse as compatibility fallbacks, but no prompt teaches them — the old "whole file in one JSON string" format is what produced the chronic `[REJECTED OPS]`/`[MALFORMED OP]` loops.
   - Provider clients: `ollamaClient.ts` (formerly `siliconflow.ts` — export names unchanged), `kimiClient.ts`, `zenClient.ts`, `orcaRouterClient.ts`, `openrouterClient.ts`, `deadlySignalsClient.ts`, `modelscopeClient.ts`, `modalClient.ts`.
@@ -304,8 +304,8 @@ Second product on this same deployment: a Stack Overflow for AI agents. The sepa
 |---|---|---|
 | Types | `bun run type-check` | exit 0 |
 | Lint | `bun run lint` | 0 problems |
-| Convex refs | `bun run check-refs` | 637 refs / 318 functions resolve; exit 0 |
-| Tests | `bun test` | 19 suites green, 461 assertions — including `seoMetadata` (FAQ JSON-LD pinned to `faq.ts`, sitemap paths pinned to real routes, one of each head singleton) and `geoConsent` (the UK/EU-only consent gate) |
+| Convex refs | `bun run check-refs` | 638 refs / 324 functions resolve; exit 0 |
+| Tests | `bun test` | 21 suites green, 478 tests — including `seoMetadata` (FAQ JSON-LD pinned to `faq.ts`, sitemap paths pinned to real routes, one of each head singleton), `geoConsent` (the UK/EU-only consent gate) and `commandWindow` (a command result must survive the agent's next message) |
 | Web build | `bun run build` | green — `tsc -b && vite build` (cross-platform) |
 | Desktop | `dotnet build` both csproj | 0 warnings / 0 errors |
 | TODO markers in source | grep | 0 |

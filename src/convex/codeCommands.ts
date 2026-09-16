@@ -3,6 +3,7 @@ import type { MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { requireSession, assertBranchOwner } from "./lib/codeAuth";
+import { COMMAND_SCAN_DEPTH, selectRecentCommandResults } from "./lib/commandWindow";
 
 // Transcript ceiling for a single command result. A green build log can be
 // megabytes; Convex documents cannot. 4000 chars is enough to see what
@@ -110,9 +111,17 @@ export const getPendingCommands = internalQuery({
 
 // The most recent finished commands + their output, injected into the agent's
 // next prompt so it can actually react to what its shell commands produced.
-// `sinceMs` scopes results to the current resume (commands finished after the
-// agent's last saved message) — without it, later agents in later rounds would
-// see stale outputs (e.g. old test results) and act on them.
+//
+// `sinceMs` (the agent's last saved message) used to DROP everything older.
+// The intent was right — a stale test run must not read as this turn's result
+// — but the implementation was a closed amnesia loop: an agent writes a
+// message on every turn, so by the next build that cutoff was already newer
+// than the command it had just run, and its own output was filtered away. The
+// agent could only ever see its single most recent result, which is why a
+// Coder re-`cat`ed the same files until its whole floor budget was gone. The
+// window is now BOUNDED and RECENCY-LABELLED instead of filtered, and sinceMs
+// is only the "new since your last message" dividing line — see
+// lib/commandWindow.ts for the full write-up.
 export const getRecentCommandResults = internalQuery({
   args: { branchId: v.string(), sinceMs: v.optional(v.number()) },
   handler: async (ctx, args) => {
@@ -120,12 +129,8 @@ export const getRecentCommandResults = internalQuery({
       .query("codeCommands")
       .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
       .order("desc")
-      .take(8);
-    return rows
-      .filter((c) => (c.status === "completed" || c.status === "failed")
-        && (args.sinceMs === undefined || (c.completedAt ?? 0) >= args.sinceMs))
-      .reverse()
-      .map((c) => ({ command: c.command, output: c.output ?? "", exitCode: c.exitCode ?? 0, status: c.status }));
+      .take(COMMAND_SCAN_DEPTH);
+    return selectRecentCommandResults(rows, Date.now(), args.sinceMs);
   },
 });
 
