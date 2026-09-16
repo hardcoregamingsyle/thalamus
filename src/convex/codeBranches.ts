@@ -360,6 +360,9 @@ export const updateBranchStatus = internalMutation({
     currentAgent: v.optional(v.string()),
     phase: v.optional(v.string()),
     executionPhase: v.optional(v.string()),
+    workflow: v.optional(v.union(
+      v.literal("build"), v.literal("plan"), v.literal("investigate"), v.literal("quick"),
+    )),
     round: v.optional(v.number()),
     totalMessages: v.optional(v.number()),
     currentTaskIndex: v.optional(v.number()),
@@ -405,6 +408,7 @@ export const updateBranchStatus = internalMutation({
     if (args.currentAgent !== undefined) updates.currentAgent = args.currentAgent;
     if (args.phase !== undefined) updates.phase = args.phase;
     if (args.executionPhase !== undefined) updates.executionPhase = args.executionPhase;
+    if (args.workflow !== undefined) updates.workflow = args.workflow;
     if (args.round !== undefined) updates.round = args.round;
     if (args.totalMessages !== undefined) updates.totalMessages = args.totalMessages;
     if (args.currentTaskIndex !== undefined) updates.currentTaskIndex = args.currentTaskIndex;

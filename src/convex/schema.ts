@@ -130,6 +130,10 @@ const schema = defineSchema(
       currentAgent: v.optional(v.string()),
       phase: v.optional(v.string()),
       executionPhase: v.optional(v.string()), // "planning" or "executing"
+      // User-selected run profile; absent rows retain the existing build flow.
+      workflow: v.optional(v.union(
+        v.literal("build"), v.literal("plan"), v.literal("investigate"), v.literal("quick"),
+      )),
       currentTaskIndex: v.optional(v.number()),
       totalMessages: v.optional(v.number()),
       round: v.optional(v.number()),
