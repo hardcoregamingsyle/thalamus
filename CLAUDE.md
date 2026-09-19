@@ -83,7 +83,7 @@ Notes:
 - **No hot reload.** `vite.config.ts` sets `server.hmr: false`.
 - **Dual lockfiles.** Both `bun.lock` and `package-lock.json` are committed. Cloudflare Pages deploys the frontend with `npm ci`; CI verifies `npm ci --dry-run` stays in sync.
 - **`src/convex/_generated/` is committed.** A fresh clone type-checks without running Convex; `npx convex dev` regenerates these files.
-- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 639 references against 324 exported functions (28 of them from the sibling repo).
+- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 641 references against 328 exported functions (28 of them from the sibling repo).
 - **Production deploys go through CI.** `.github/workflows/convex-deploy.yml` runs after CI passes on `main` and executes `npx convex deploy --yes` using the `CONVEX_DEPLOY_KEY` repo secret, then hits `POST /api/action` on `ai:guestSendMessage` as a smoke test. There is no local `convex login` on this machine.
 - **Desktop release CI** (`.github/workflows/release.yml`): a `v*` tag builds and attaches the bare `Thalamus.exe`. The installer (`ThalamusSetup.exe` / Inno-wrapped `Thalamus-Setup-*.exe`) is built locally via `thalamus-native/build.ps1` and uploaded by hand.
 
@@ -179,7 +179,7 @@ build output and this directory regardless of the dashboard's root setting.
 
 ### Backend (Convex — `src/convex/`)
 
-- 324 exported functions across ~50 modules plus `lib/`. `schema.ts` defines the tables (10-literal `conversations.mode` union among them); `schemaValidation: false` so legacy rows do not block deploys.
+- 328 exported functions across ~50 modules plus `lib/`. `schema.ts` defines the tables (10-literal `conversations.mode` union among them); `schemaValidation: false` so legacy rows do not block deploys.
 - **`src/convex/lib/`** holds pure helper modules (no Convex framework imports):
   - `agentCore.ts` — `FREE_UNLIMITED`, `callModel` (the router), `mapModelIdToOllama`, `calcAgentBucksForTier`, `performSearch`, `performScrape`. Re-exports `agentPrompts` (per-agent system prompts), `modePrompts` (`MODE_ADHD`, `MODE_SYSTEM_PROMPTS`, `adhdToTemperature`), `agentOutputParser`. The parser's canonical input is deliberately escape-free: files are raw `<<FILE "path">> … <<END>>` blocks (verbatim content; bodies are masked out of the op scan so op-shaped file text can never execute), everything else is a one-line JSON op (`{"op":"cmd",…}` and friends). The JSON document envelope, inline JSON file ops and legacy `<<TAG>>` markers still parse as compatibility fallbacks, but no prompt teaches them — the old "whole file in one JSON string" format is what produced the chronic `[REJECTED OPS]`/`[MALFORMED OP]` loops.
   - Provider clients: `ollamaClient.ts` (formerly `siliconflow.ts` — export names unchanged), `kimiClient.ts`, `zenClient.ts`, `orcaRouterClient.ts`, `openrouterClient.ts`, `deadlySignalsClient.ts`, `modelscopeClient.ts`, `modalClient.ts`.
@@ -229,37 +229,66 @@ Behaviours to know:
 - Simulated streaming: the batch response is drip-fed to `streamingContent` in 300-char chunks for seats without a streaming path. Streaming seats (OpenRouter) deliver true SSE tokens through `callModel`'s `streaming` override and write deltas live to `streamingContent`, skipping the drip.
 - `cmd` op queues into `codeCommands`, parks the branch as `paused`, self-resumes when nothing is outstanding. `request-api-key` is the only op that genuinely blocks on the user.
 
-### The unreachable Code OS v2 orchestrator
+### Code OS v2: the parallel run engine
 
-`codeOrchestrator.ts` exports `startRun`, `listRuns`, `getRunBoard` and
-`cancelRun` against the `codeRuns` / `codeTasks` / `codeRunEvents` tables. **No
-caller exists** — not the web frontend, not the desktop app, not another Convex
-module. It deploys, it resolves in `check-refs`, and nothing can reach it. Its
-own header calls it "intentionally separate from the legacy pipeline so existing
-branches can migrate without data loss"; that migration never happened.
+`codeOrchestrator.ts` runs the `codeRuns` / `codeTasks` / `codeRunEvents`
+tables as a real per-task execution engine, separate from the legacy pipeline
+so existing branches migrate without data loss. **No UI reaches it yet** — no
+web frontend, no desktop app, no other Convex module calls `startRun`. The
+engine drives itself once started, but nothing starts it, so this is still not
+a live path.
 
-Do not delete the tables and do not build on the functions without reading this
-first. The tables are the right data model for the parallelism the live pipeline
-cannot do, and two facts explain why the live pipeline cannot do it:
+It is the answer to the constraint the legacy pipeline cannot escape:
+`codePipeline.ts` runs one agent at a time because state lives on the single
+shared `codeBranches` row. A `{"op":"cmd"}` sets `status: "paused"` on that
+one row, and that same row IS the state machine (`currentPhase`,
+`currentTaskIndex`, guarded by `userPromptGen` inside `advance()`), so two
+concurrent seats have nowhere to keep separate state. Here every task owns a
+row and a status, so several run at once.
 
-- A `{"op":"cmd"}` sets `status: "paused"` on the **branch**, which is one row
-  shared by every seat. Two concurrent agents both queueing a command would
-  fight over that single field.
-- The branch row IS the state machine (`currentPhase`, `currentTaskIndex`),
-  guarded by the `userPromptGen` check inside `advance()`. There is nowhere for a
-  second concurrent seat's state to live.
+The cycle is `startRun` → `dispatchReady` → `runTask` → `finishTask` →
+`dispatchReady`. Parallelism comes from scheduling one `runTask` action per
+ready task via `ctx.scheduler.runAfter(0, …)` — never `Promise.all` inside one
+action, which would put two slow model calls under one 10-minute action
+ceiling. `MAX_CONCURRENT_TASKS = 4`, because the provider chain's rate limits
+and learned cooldowns (`lib/providerCooldowns.ts`) are platform-wide, not
+per-run: an unbounded fan-out would trip cooldowns for every other run and the
+live pipeline sharing the same seats.
 
-`codeTasks` already carries `parentTaskId` (a task tree) and `codeRuns` already
-carries `permissionMode` (`ask` / `auto` / `read_only`), so per-task execution
-state and an unattended mode are modelled but unimplemented. Real fan-out means
-moving execution onto those per-task rows, not adding `Promise.all` to
-`codePipeline.ts` — `Promise.all` appears zero times there today, and adding it
-around seats that can pause the branch is the bug this section exists to prevent.
+Which tasks may start is one pure function, `scheduleRun` in
+`lib/runScheduler.ts`, pinned by `tests/runScheduler.test.ts`. Three rules it
+exists to hold, each of which broke in testing before it was pinned:
 
-The Planner's dependency graph is already honoured: `lib/taskGraph.ts` sorts the
-plan into dependency order at the Planner's write, and reports the dependency
-waves (the groups with no dependency on each other). Those waves are the natural
-unit of fan-out whenever the per-task model is wired up.
+- **A cancelled run dispatches nothing.** `ready` is empty on cancellation
+  rather than leaving "check `runStatus` first" as an implicit contract every
+  caller has to remember.
+- **`stuck` never coexists with a non-empty `block`.** `stuck` means a cycle —
+  give up. A fresh `block` entry is forward progress, so reporting both would
+  abandon a run that is correctly attributing a failure.
+- **A blocking cascade has to be driven.** Blocking resolves one dependency
+  level per call, and `finishTask` is the only other thing that re-enters
+  `dispatchReady` — a blocked task never finishes. So `dispatchReady`
+  re-schedules itself whenever it blocked something, or a failure's
+  grandchildren sit `queued` forever under a run still reading `running` with
+  nothing in flight.
+
+Self-references go through `makeFunctionReference("codeOrchestrator:…")`, not
+`internal.codeOrchestrator.*`: this module postdates the committed
+`_generated/api.d.ts`, so the typed path is a flat TS2339 rather than the usual
+`any` degradation. Same pattern as `mcpServers.ts`. Consequence worth knowing —
+**TypeScript checks nothing about these calls**; `check-refs` verifies them by
+name, kind and visibility and is the only gate that will catch a mistake.
+
+Not done on purpose, and v1 limitations to respect: `{"op":"cmd"}` execution
+and MCP tool calls stay branch-scoped in `codePipeline.ts` (giving a command
+its own home outside the single branch `paused` flag is separate work), and two
+tasks writing the same file is last-write-wins, exactly as in the live pipeline.
+
+`codeTasks.parentTaskId` (a task tree) and `codeRuns.permissionMode` (`ask` /
+`auto` / `read_only`) are modelled but still unimplemented. `lib/taskGraph.ts`
+sorts the Planner's plan into dependency order at write time and reports the
+dependency waves; those waves are the natural unit of fan-out for the legacy
+pipeline's plans whenever they are routed here.
 
 ### VM & sandbox executors
 
@@ -336,8 +365,8 @@ Second product on this same deployment: a Stack Overflow for AI agents. The sepa
 |---|---|---|
 | Types | `bun run type-check` | exit 0 |
 | Lint | `bun run lint` | 0 problems |
-| Convex refs | `bun run check-refs` | 639 refs / 324 functions resolve; exit 0 |
-| Tests | `bun test` | 22 suites green, 499 tests — including `seoMetadata` (FAQ JSON-LD pinned to `faq.ts`, sitemap paths pinned to real routes, one of each head singleton), `geoConsent` (the UK/EU-only consent gate), `commandWindow` (a command result must survive the agent's next message) and `taskGraph` (the Planner's `dependencies` graph sorts into array order — never loses/duplicates a task, cycle- and bad-id-safe) |
+| Convex refs | `bun run check-refs` | 641 refs / 328 functions resolve; exit 0 |
+| Tests | `bun test` | 23 suites green, 534 tests — including `seoMetadata` (FAQ JSON-LD pinned to `faq.ts`, sitemap paths pinned to real routes, one of each head singleton), `geoConsent` (the UK/EU-only consent gate), `commandWindow` (a command result must survive the agent's next message), `taskGraph` (the Planner's `dependencies` graph sorts into array order — never loses/duplicates a task, cycle- and bad-id-safe) and `runScheduler` (which tasks may start now; a cancelled run dispatches nothing, and `stuck` never coexists with a non-empty `block`) |
 | Web build | `bun run build` | green — `tsc -b && vite build` (cross-platform) |
 | Desktop | `dotnet build` both csproj | 0 warnings / 0 errors |
 | TODO markers in source | grep | 0 |
