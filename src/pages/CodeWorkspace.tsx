@@ -6,7 +6,7 @@ import { useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Send, Loader2, CheckCircle2, Pause, Play, FileCode, Database, Activity, Code2, Monitor, Key, BarChart3, GitBranch, Rocket, ChevronRight, Menu, X, LayoutDashboard, TerminalSquare } from "lucide-react";
+import { ArrowLeft, Send, Loader2, CheckCircle2, Pause, Play, FileCode, Database, Activity, Code2, Monitor, Key, BarChart3, GitBranch, Rocket, ChevronRight, Menu, X, LayoutDashboard, TerminalSquare, Users } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ import { DataView } from "@/components/code-workspace/DataView";
 import { LogsView } from "@/components/code-workspace/LogsView";
 import { EditorView } from "@/components/code-workspace/EditorView";
 import { SandboxView } from "@/components/code-workspace/SandboxView";
+import { RunsView } from "@/components/code-workspace/RunsView";
 import { KeysView } from "@/components/code-workspace/KeysView";
 import { UsageView } from "@/components/code-workspace/UsageView";
 import { VersionView } from "@/components/code-workspace/VersionView";
@@ -384,6 +385,7 @@ const sidebarSections = [
       { label: "Version", icon: GitBranch, path: "version-control", description: "Version control" },
       { label: "Git-Sync", icon: GitBranch, path: "github", description: "GitHub sync" },
       { label: "Deploy", icon: Rocket, path: "deploy", description: "Deployment guide" },
+      { label: "Runs", icon: Users, path: "runs", description: "Parallel agent runs" },
       { label: "Sandbox", icon: Monitor, path: "sandbox", description: "VM sandbox" },
       { label: "Keys", icon: Key, path: "keys", description: "API keys" },
     ],
@@ -604,6 +606,8 @@ export default function CodeWorkspace() {
         return <GitSyncView projectId={projectId} branchId={branchId} />;
       case "deploy":
         return <DeployView projectId={projectId} branchId={branchId} />;
+      case "runs":
+        return <RunsView branchId={branchId} />;
       case "sandbox":
         return <SandboxView projectId={projectId} branchId={branchId} />;
       case "keys":

@@ -83,7 +83,7 @@ Notes:
 - **No hot reload.** `vite.config.ts` sets `server.hmr: false`.
 - **Dual lockfiles.** Both `bun.lock` and `package-lock.json` are committed. Cloudflare Pages deploys the frontend with `npm ci`; CI verifies `npm ci --dry-run` stays in sync.
 - **`src/convex/_generated/` is committed.** A fresh clone type-checks without running Convex; `npx convex dev` regenerates these files.
-- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 645 references against 332 exported functions (28 of them from the sibling repo).
+- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 648 references against 332 exported functions (28 of them from the sibling repo).
 - **Production deploys go through CI.** `.github/workflows/convex-deploy.yml` runs after CI passes on `main` and executes `npx convex deploy --yes` using the `CONVEX_DEPLOY_KEY` repo secret, then hits `POST /api/action` on `ai:guestSendMessage` as a smoke test. There is no local `convex login` on this machine.
 - **Desktop release CI** (`.github/workflows/release.yml`): a `v*` tag builds and attaches the bare `Thalamus.exe`. The installer (`ThalamusSetup.exe` / Inno-wrapped `Thalamus-Setup-*.exe`) is built locally via `thalamus-native/build.ps1` and uploaded by hand.
 
@@ -232,11 +232,12 @@ Behaviours to know:
 ### Code OS v2: the parallel run engine
 
 `codeOrchestrator.ts` runs the `codeRuns` / `codeTasks` / `codeRunEvents`
-tables as a real per-task execution engine, separate from the legacy pipeline
-so existing branches migrate without data loss. **No UI reaches it yet** — no
-web frontend, no desktop app, no other Convex module calls `startRun`. The
-engine drives itself once started, but nothing starts it, so this is still not
-a live path.
+tables as a per-task execution engine, separate from the legacy pipeline so
+existing branches migrate without data loss. It is reachable: the **Runs** tab
+in the Code workspace (`components/code-workspace/RunsView.tsx`,
+`/portal/code/:projectId/:branchId/runs`) starts a run and shows its board.
+The Chat tab still drives `codePipeline.ts`; the two share one file store
+(`codeFiles`), so a branch is one project either way.
 
 It is the answer to the constraint the legacy pipeline cannot escape:
 `codePipeline.ts` runs one agent at a time because state lives on the single
@@ -246,14 +247,35 @@ one row, and that same row IS the state machine (`currentPhase`,
 concurrent seats have nowhere to keep separate state. Here every task owns a
 row and a status, so several run at once.
 
-The cycle is `startRun` → `dispatchReady` → `runTask` → `finishTask` →
-`dispatchReady`. Parallelism comes from scheduling one `runTask` action per
-ready task via `ctx.scheduler.runAfter(0, …)` — never `Promise.all` inside one
-action, which would put two slow model calls under one 10-minute action
-ceiling. `MAX_CONCURRENT_TASKS = 4`, because the provider chain's rate limits
-and learned cooldowns (`lib/providerCooldowns.ts`) are platform-wide, not
-per-run: an unbounded fan-out would trip cooldowns for every other run and the
-live pipeline sharing the same seats.
+`startRun` → `planRun` → `dispatchReady` → `runTask` → `finishTask` →
+`dispatchReady`. **Planning is the only sequential step**, which makes it the
+step that decides whether a run parallelises at all: a plan whose every task
+depends on the previous one is a turn-wise pipeline wearing a graph's clothes.
+Parallelism comes from scheduling one `runTask` action per ready task via
+`ctx.scheduler.runAfter(0, …)` — never `Promise.all` inside one action, which
+would put two slow model calls under one 10-minute ceiling.
+`MAX_CONCURRENT_TASKS = 4`, because the provider chain's rate limits and
+learned cooldowns (`lib/providerCooldowns.ts`) are platform-wide, not per-run.
+
+**`auto` is the only permission mode.** `ask` and `read_only` were modelled and
+never implemented, and a run that stops to ask is the human-in-the-loop this
+engine exists to remove. The schema union stays for old rows; nothing writes
+anything else.
+
+**`lib/parallelAgents.ts` is the cast, and it is NOT `lib/agentPrompts.ts`.**
+Every prompt in `agentPrompts.ts` ends by telling the model to name the next
+teammate, because that hand-off *is* the legacy pipeline's turn-taking. Here
+several agents work at the same moment on different tasks, so an agent that
+routed would be naming a seat already busy. These prompts teach the other
+contract — do the task, write the files, report for whoever depends on you,
+stop when the reply ends — and `tests/parallelAgents.test.ts` asserts no role
+prompt may teach a hand-off. What replaces the hand-off is the dependency
+graph: a task's prompt carries the finished reports of its dependencies.
+
+**File ownership is load-bearing, not tidiness.** Two tasks writing one file is
+last-write-wins and nothing at runtime can detect the loss, so the planner
+assigning each task a disjoint set of files and the prompts honouring it are
+the only defence there is.
 
 Which tasks may start is one pure function, `scheduleRun` in
 `lib/runScheduler.ts`, pinned by `tests/runScheduler.test.ts`. Three rules it
@@ -272,23 +294,19 @@ exists to hold, each of which broke in testing before it was pinned:
   grandchildren sit `queued` forever under a run still reading `running` with
   nothing in flight.
 
-Self-references go through `makeFunctionReference("codeOrchestrator:…")`, not
-`internal.codeOrchestrator.*`: this module postdates the committed
-`_generated/api.d.ts`, so the typed path is a flat TS2339 rather than the usual
-`any` degradation. Same pattern as `mcpServers.ts`. Consequence worth knowing —
+Self-references (and `RunsView`'s calls) go through
+`makeFunctionReference("codeOrchestrator:…")`, not `api`/`internal`: this
+module postdates the committed `_generated/api.d.ts`, so the typed path is a
+flat TS2339. Same pattern as `mcpServers.ts`. Consequence worth knowing —
 **TypeScript checks nothing about these calls**; `check-refs` verifies them by
 name, kind and visibility and is the only gate that will catch a mistake.
 
-Not done on purpose, and v1 limitations to respect: `{"op":"cmd"}` execution
-and MCP tool calls stay branch-scoped in `codePipeline.ts` (giving a command
-its own home outside the single branch `paused` flag is separate work), and two
-tasks writing the same file is last-write-wins, exactly as in the live pipeline.
-
-`codeTasks.parentTaskId` (a task tree) and `codeRuns.permissionMode` (`ask` /
-`auto` / `read_only`) are modelled but still unimplemented. `lib/taskGraph.ts`
-sorts the Planner's plan into dependency order at write time and reports the
-dependency waves; those waves are the natural unit of fan-out for the legacy
-pipeline's plans whenever they are routed here.
+Still missing, and honest about it: `{"op":"cmd"}` execution and MCP tool calls
+stay branch-scoped in `codePipeline.ts`, so a parallel run can write files but
+cannot run a build or a test command. Giving a command its own home outside the
+single branch `paused` flag is the next real step. `codeTasks.parentTaskId` (a
+task tree) is still unimplemented. **There is no desktop counterpart to the
+Runs tab yet** — the WPF app still drives the legacy pipeline only.
 
 ### VM & sandbox executors
 
@@ -365,7 +383,7 @@ Second product on this same deployment: a Stack Overflow for AI agents. The sepa
 |---|---|---|
 | Types | `bun run type-check` | exit 0 |
 | Lint | `bun run lint` | 0 problems |
-| Convex refs | `bun run check-refs` | 645 refs / 332 functions resolve; exit 0 |
+| Convex refs | `bun run check-refs` | 648 refs / 332 functions resolve; exit 0 |
 | Tests | `bun test` | 24 suites green, 555 tests — including `seoMetadata` (FAQ JSON-LD pinned to `faq.ts`, sitemap paths pinned to real routes, one of each head singleton), `geoConsent` (the UK/EU-only consent gate), `commandWindow` (a command result must survive the agent's next message), `taskGraph` (the Planner's `dependencies` graph sorts into array order — never loses/duplicates a task, cycle- and bad-id-safe) `runScheduler` (which tasks may start now; a cancelled run dispatches nothing, and `stuck` never coexists with a non-empty `block`) and `parallelAgents` (no role prompt may teach a hand-off — the contract that keeps the parallel engine parallel) |
 | Web build | `bun run build` | green — `tsc -b && vite build` (cross-platform) |
 | Desktop | `dotnet build` both csproj | 0 warnings / 0 errors |
