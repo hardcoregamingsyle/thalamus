@@ -229,6 +229,38 @@ Behaviours to know:
 - Simulated streaming: the batch response is drip-fed to `streamingContent` in 300-char chunks for seats without a streaming path. Streaming seats (OpenRouter) deliver true SSE tokens through `callModel`'s `streaming` override and write deltas live to `streamingContent`, skipping the drip.
 - `cmd` op queues into `codeCommands`, parks the branch as `paused`, self-resumes when nothing is outstanding. `request-api-key` is the only op that genuinely blocks on the user.
 
+### The unreachable Code OS v2 orchestrator
+
+`codeOrchestrator.ts` exports `startRun`, `listRuns`, `getRunBoard` and
+`cancelRun` against the `codeRuns` / `codeTasks` / `codeRunEvents` tables. **No
+caller exists** — not the web frontend, not the desktop app, not another Convex
+module. It deploys, it resolves in `check-refs`, and nothing can reach it. Its
+own header calls it "intentionally separate from the legacy pipeline so existing
+branches can migrate without data loss"; that migration never happened.
+
+Do not delete the tables and do not build on the functions without reading this
+first. The tables are the right data model for the parallelism the live pipeline
+cannot do, and two facts explain why the live pipeline cannot do it:
+
+- A `{"op":"cmd"}` sets `status: "paused"` on the **branch**, which is one row
+  shared by every seat. Two concurrent agents both queueing a command would
+  fight over that single field.
+- The branch row IS the state machine (`currentPhase`, `currentTaskIndex`),
+  guarded by the `userPromptGen` check inside `advance()`. There is nowhere for a
+  second concurrent seat's state to live.
+
+`codeTasks` already carries `parentTaskId` (a task tree) and `codeRuns` already
+carries `permissionMode` (`ask` / `auto` / `read_only`), so per-task execution
+state and an unattended mode are modelled but unimplemented. Real fan-out means
+moving execution onto those per-task rows, not adding `Promise.all` to
+`codePipeline.ts` — `Promise.all` appears zero times there today, and adding it
+around seats that can pause the branch is the bug this section exists to prevent.
+
+The Planner's dependency graph is already honoured: `lib/taskGraph.ts` sorts the
+plan into dependency order at the Planner's write, and reports the dependency
+waves (the groups with no dependency on each other). Those waves are the natural
+unit of fan-out whenever the per-task model is wired up.
+
 ### VM & sandbox executors
 
 - **The build mirror (`ensureVmMirror` / `resolveVmTarget`).** The user's repo is **code-only** by product decision — no `.thalamus/` transcript, no workflow files, nothing Thalamus-made (every push filters system paths via `projectFilesOnly`/`isSystemPath` in `githubPushUtils.ts`, and `doPull` refuses to pull them back in). Cloud execution therefore cannot run on the user's repo (GitHub needs the workflow file beside the code it runs): commands instead run on a platform-owned **build mirror** (`<repo>-vm`, public for free Actions minutes — the tradeoff is recorded in `schema.ts` and disclosed in the Git Sync tab) that carries the same code plus the managed VM/sandbox workflows. `githubConfigs.vmOwner/vmRepo/vmRepoUrl` record it; for legacy platform-hosted repos the mirror is the repo itself, which already held the system files. **Cloud execution never requires the user to connect GitHub.** When a branch has no config row at all (GitHub never connected), `ensureVmMirror` provisions a standalone platform-owned workspace (`thalamus-vm-<branchId suffix>`, README-created `main`) from the branch's own Convex file store and `saveVmMirror` upserts a **workspace-only row** — empty `owner`/`repo`/`repoUrl`, existing solely to carry the vm* coordinates. Every user-facing surface treats an empty owner as "no repository connected" (`getGithubConfig` returns null so the Git Sync tab still shows its create form; `pushToGithub`/`doPull` throw; `autoPushToGithub` runs a mirror-only leg so the workspace the worker clones never goes stale). If the user later creates a repo from the Git Sync tab, `saveGithubConfig`/`saveGithubConfigWithToken` morph the row and clear the stale vm* fields, so `<repo>-vm` re-provisions on next boot. `resolveVmTarget` is the single choke point boot/sandbox/stop use to learn where to act and with which token (distinct mirror → `GITHUB_TOKEN` only; self-mirror → `resolveTokenForBranch`). `ensureVmMirror` seeds the mirror's working branch with the branch's current code *before* saving the config — a mirror saved without code is the empty-clone bug reborn, so a seed failure leaves nothing configured and the next boot retries creation (name suffixes absorb the orphan). The push side keeps the mirror fresh: `autoPushToGithub`/`pushToGithub` push the user repo's default branch **and then** the mirror's working branch (`pushMirrorCopy`), failing loudly when the mirror leg fails — a fresh user repo with a stale mirror reads to the user exactly like "agents ignore my edits".
