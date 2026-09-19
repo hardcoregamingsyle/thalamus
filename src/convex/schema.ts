@@ -309,6 +309,9 @@ const schema = defineSchema(
       runId: v.id("codeRuns"),
       parentTaskId: v.optional(v.id("codeTasks")),
       title: v.string(),
+      // What to do, concretely, including which files this task owns. Written
+      // by the Planner; the title alone is too thin to execute from.
+      description: v.optional(v.string()),
       agent: v.string(),
       status: v.union(v.literal("queued"), v.literal("running"), v.literal("blocked"), v.literal("completed"), v.literal("failed"), v.literal("cancelled")),
       dependencies: v.array(v.id("codeTasks")),

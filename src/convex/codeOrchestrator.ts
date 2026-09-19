@@ -19,13 +19,23 @@
 //   arbitrated. Convex mutations are transactional, so individual writes
 //   still serialize, but two tasks racing on the same file is last-write-wins
 //   exactly as it is in the live pipeline today. Known v1 limitation.
-import { mutation, query, internalMutation, internalAction, internalQuery } from "./_generated/server";
+import { mutation, query, internalMutation, internalAction, internalQuery, type QueryCtx } from "./_generated/server";
 import { makeFunctionReference } from "convex/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertBranchOwner, requireSession } from "./lib/codeAuth";
 import { callModel } from "./lib/agentCore";
 import { scheduleRun, type SchedulableTask } from "./lib/runScheduler";
+import { parseAgentOutput, parsePlannerOutput } from "./lib/agentOutputParser";
+import { orderPlannerTasks } from "./lib/taskGraph";
+import {
+  PLANNER_SYSTEM_PROMPT,
+  buildPlannerPrompt,
+  buildTaskPrompt,
+  normalizeAgent,
+  systemPromptFor,
+} from "./lib/parallelAgents";
 
 // Self-references, made by string instead of through `internal.codeOrchestrator`
 // — same fix as mcpServers.ts's refreshServerToolsRef. There the typed path
@@ -48,8 +58,32 @@ const finishTaskRef = makeFunctionReference<
 const getTaskContextRef = makeFunctionReference<
   "query",
   { runId: Id<"codeRuns">; taskId: Id<"codeTasks"> },
-  { run: Doc<"codeRuns">; task: Doc<"codeTasks">; dependencies: Doc<"codeTasks">[] } | null
+  {
+    run: Doc<"codeRuns">;
+    task: Doc<"codeTasks">;
+    dependencies: Doc<"codeTasks">[];
+    files: { filepath: string; content: string }[];
+  } | null
 >("codeOrchestrator:getTaskContextInternal");
+const planRunRef = makeFunctionReference<"action", { runId: Id<"codeRuns"> }>(
+  "codeOrchestrator:planRun",
+);
+const getRunContextRef = makeFunctionReference<
+  "query",
+  { runId: Id<"codeRuns"> },
+  { run: Doc<"codeRuns">; files: { filepath: string; content: string }[] } | null
+>("codeOrchestrator:getRunContextInternal");
+const savePlanRef = makeFunctionReference<
+  "mutation",
+  {
+    runId: Id<"codeRuns">;
+    tasks: { id: string; title: string; description?: string; agent: string; dependencies: string[] }[];
+    summary: string;
+  }
+>("codeOrchestrator:savePlan");
+const failRunRef = makeFunctionReference<"mutation", { runId: Id<"codeRuns">; reason: string }>(
+  "codeOrchestrator:failRun",
+);
 
 // Cap on tasks dispatched at once per run. Every concurrent task is a live
 // model call, and the provider chain (lib/agentCore.ts) has shared rate
@@ -66,21 +100,31 @@ function toSchedulable(tasks: Doc<"codeTasks">[]): SchedulableTask[] {
   return tasks.map((t) => ({ id: t._id, status: t.status, dependencies: t.dependencies }));
 }
 
+// The branch's files, which are what every agent reads and writes. Same store
+// the legacy pipeline uses, so a run here and a run there see one project.
+async function branchFiles(ctx: QueryCtx, branchId: string) {
+  const rows = await ctx.db
+    .query("codeFiles")
+    .withIndex("by_branch", (q) => q.eq("branchId", branchId))
+    .take(1000);
+  return rows.map((r) => ({ filepath: r.filepath, content: r.content }));
+}
+
 export const startRun = mutation({
   args: {
     token: v.string(),
     branchId: v.string(),
     prompt: v.string(),
-    permissionMode: v.optional(v.union(v.literal("ask"), v.literal("auto"), v.literal("read_only"))),
-    // Optional model-authored plan. Ids are plain strings chosen by whatever
-    // produced the plan (e.g. a Planner-style JSON output); they exist only to
-    // express dependencies before real Convex ids exist and are translated
-    // below.
+    // Optional pre-built plan. Ids are plain strings chosen by whatever
+    // produced the plan; they exist only to express dependencies before real
+    // Convex ids exist and are translated below. Omitted on the normal path —
+    // the run plans itself (planRun) from the prompt.
     plan: v.optional(
       v.array(
         v.object({
           id: v.string(),
           title: v.string(),
+          description: v.optional(v.string()),
           agent: v.optional(v.string()),
           dependencies: v.optional(v.array(v.string())),
         }),
@@ -91,7 +135,11 @@ export const startRun = mutation({
     const session = await requireSession(ctx, args.token);
     const { branch } = await assertBranchOwner(ctx, session.userId, args.branchId);
     const now = Date.now();
-    const runId = await ctx.db.insert("codeRuns", { branchId: args.branchId, projectId: branch.projectId, userId: session.userId, prompt: args.prompt.trim(), status: "queued", permissionMode: args.permissionMode ?? "ask", createdAt: now, updatedAt: now });
+    // "auto" is the only mode. `ask` and `read_only` were modelled and never
+    // implemented, and a run that stops to ask is the human-in-the-loop this
+    // engine exists to remove — the column stays in the schema for old rows,
+    // but nothing writes anything else.
+    const runId = await ctx.db.insert("codeRuns", { branchId: args.branchId, projectId: branch.projectId, userId: session.userId, prompt: args.prompt.trim(), status: "queued", permissionMode: "auto", createdAt: now, updatedAt: now });
 
     if (args.plan && args.plan.length > 0) {
       // Pass 1: insert every task so a real Convex id exists for each plan
@@ -105,7 +153,8 @@ export const startRun = mutation({
         const taskId = await ctx.db.insert("codeTasks", {
           runId,
           title: entry.title,
-          agent: entry.agent ?? "Analyser",
+          description: entry.description,
+          agent: normalizeAgent(entry.agent ?? "Coder"),
           status: "queued",
           dependencies: [],
           allowedTools: ["filesystem", "terminal", "mcp"],
@@ -124,13 +173,16 @@ export const startRun = mutation({
       }
       await ctx.db.insert("codeRunEvents", { runId, type: "run.created", content: `Run created with a ${args.plan.length}-task plan.`, createdAt: now });
       await ctx.scheduler.runAfter(0, dispatchReadyRef, { runId });
-      return { runId, taskId: inserted[0].taskId, taskIds: inserted.map((i) => i.taskId) };
+      return { runId };
     }
 
-    const taskId = await ctx.db.insert("codeTasks", { runId, title: "Understand and plan", agent: "Lead", status: "queued", dependencies: [], allowedTools: ["filesystem", "terminal", "mcp"], maxTurns: 12, createdAt: now, updatedAt: now });
-    await ctx.db.insert("codeRunEvents", { runId, taskId, type: "run.created", content: "Run created and lead task queued.", createdAt: now });
-    await ctx.scheduler.runAfter(0, dispatchReadyRef, { runId });
-    return { runId, taskId };
+    // The normal path: no plan was handed in, so the run builds its own. That
+    // is a model call, which a mutation cannot make — planRun (an action) does
+    // it and writes the tasks back. Planning is the ONLY sequential step in a
+    // run; everything after it is decided by the dependency graph.
+    await ctx.db.insert("codeRunEvents", { runId, type: "run.created", content: "Run created — planning.", createdAt: now });
+    await ctx.scheduler.runAfter(0, planRunRef, { runId });
+    return { runId };
   },
 });
 
@@ -226,6 +278,141 @@ export const dispatchReady = internalMutation({
   },
 });
 
+export const getRunContextInternal = internalQuery({
+  args: { runId: v.id("codeRuns") },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId);
+    if (!run) return null;
+    return { run, files: await branchFiles(ctx, run.branchId) };
+  },
+});
+
+// Turns the Planner's JSON into task rows. Ids in the plan are the Planner's
+// own strings; they become real Convex ids here, in the same two passes
+// startRun uses and for the same reason — dependencies are typed
+// v.id("codeTasks") and no id exists until its row is inserted.
+export const savePlan = internalMutation({
+  args: {
+    runId: v.id("codeRuns"),
+    tasks: v.array(
+      v.object({
+        id: v.string(),
+        title: v.string(),
+        description: v.optional(v.string()),
+        agent: v.string(),
+        dependencies: v.array(v.string()),
+      }),
+    ),
+    summary: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId);
+    if (!run) return;
+    if (TERMINAL_RUN_STATUSES.has(run.status) || run.cancellationRequested) return;
+    const now = Date.now();
+
+    const idMap = new Map<string, Id<"codeTasks">>();
+    const inserted: { taskId: Id<"codeTasks">; dependsOn: string[] }[] = [];
+    for (const t of args.tasks) {
+      const taskId = await ctx.db.insert("codeTasks", {
+        runId: args.runId,
+        title: t.title,
+        description: t.description,
+        agent: t.agent,
+        status: "queued",
+        dependencies: [],
+        allowedTools: ["filesystem"],
+        maxTurns: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+      idMap.set(t.id, taskId);
+      inserted.push({ taskId, dependsOn: t.dependencies });
+    }
+    for (const { taskId, dependsOn } of inserted) {
+      const resolved = dependsOn
+        .map((d) => idMap.get(d))
+        .filter((id): id is Id<"codeTasks"> => id !== undefined && id !== taskId);
+      if (resolved.length > 0) await ctx.db.patch(taskId, { dependencies: resolved });
+    }
+
+    await ctx.db.patch(args.runId, { summary: args.summary, updatedAt: now });
+    await ctx.db.insert("codeRunEvents", {
+      runId: args.runId,
+      type: "run.planned",
+      content: `Plan ready — ${args.tasks.length} task(s). ${args.summary}`,
+      createdAt: now,
+    });
+    await ctx.scheduler.runAfter(0, dispatchReadyRef, { runId: args.runId });
+  },
+});
+
+// A run that cannot be planned has to end saying so. Silence here would leave
+// a run "queued" with no tasks and nothing scheduled — invisible forever.
+export const failRun = internalMutation({
+  args: { runId: v.id("codeRuns"), reason: v.string() },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId);
+    if (!run || TERMINAL_RUN_STATUSES.has(run.status)) return;
+    const now = Date.now();
+    await ctx.db.patch(args.runId, { status: "failed", updatedAt: now });
+    await ctx.db.insert("codeRunEvents", { runId: args.runId, type: "run.failed", content: args.reason, createdAt: now });
+  },
+});
+
+// Planning: the one sequential step. Everything after it is decided by the
+// dependency graph, so this is where a run's parallelism is won or lost — a
+// plan that chains every task is a turn-wise pipeline wearing a graph's
+// clothes, which is what lib/parallelAgents.ts's planner prompt pushes against.
+export const planRun = internalAction({
+  args: { runId: v.id("codeRuns") },
+  handler: async (ctx, args) => {
+    try {
+      const context = await ctx.runQuery(getRunContextRef, { runId: args.runId });
+      if (!context) return;
+      const { run, files } = context;
+      if (TERMINAL_RUN_STATUSES.has(run.status) || run.cancellationRequested) return;
+
+      const result = await callModel(
+        buildPlannerPrompt(run.prompt, files),
+        PLANNER_SYSTEM_PROMPT,
+        "Planner",
+        ctx,
+      );
+      const parsed = parsePlannerOutput(result.text);
+      if (!parsed || parsed.tasks.length === 0) {
+        await ctx.runMutation(failRunRef, {
+          runId: args.runId,
+          reason: "The planner did not return a usable plan.",
+        });
+        return;
+      }
+
+      // Sorting into dependency order is not required for correctness — the
+      // scheduler reads the graph, not the array — but it makes the board read
+      // top-to-bottom, and it is where a cycle or a dangling id gets caught
+      // before it becomes a stuck run.
+      const ordered = orderPlannerTasks(parsed.tasks);
+      await ctx.runMutation(savePlanRef, {
+        runId: args.runId,
+        summary: parsed.summary || "Plan ready.",
+        tasks: ordered.tasks.map((t, i) => ({
+          id: String(t.id ?? `t${i}`),
+          title: String(t.title ?? `Task ${i + 1}`).slice(0, 300),
+          description: t.description ? String(t.description) : undefined,
+          agent: normalizeAgent(String((t as { agent?: string }).agent ?? "Coder")),
+          dependencies: (t.dependencies ?? []).map(String),
+        })),
+      });
+    } catch (err) {
+      await ctx.runMutation(failRunRef, {
+        runId: args.runId,
+        reason: `Planning failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  },
+});
+
 // Read-only lookup an action needs to build a task's prompt: the run, the
 // task itself, and the completed dependency tasks whose results feed it.
 export const getTaskContextInternal = internalQuery({
@@ -237,7 +424,7 @@ export const getTaskContextInternal = internalQuery({
     const dependencies = (await Promise.all(task.dependencies.map((id) => ctx.db.get(id)))).filter(
       (d): d is Doc<"codeTasks"> => d !== null,
     );
-    return { run, task, dependencies };
+    return { run, task, dependencies, files: await branchFiles(ctx, run.branchId) };
   },
 });
 
@@ -250,20 +437,72 @@ export const runTask = internalAction({
     try {
       const context = await ctx.runQuery(getTaskContextRef, args);
       if (!context) return; // run or task vanished (e.g. deleted mid-flight) — nothing to execute
-      const { run, task, dependencies } = context;
+      const { run, task, dependencies, files } = context;
 
-      const upstream = dependencies.length > 0
-        ? dependencies.map((d) => `### Result from "${d.title}" (${d.agent})\n${d.result ?? "(no result recorded)"}`).join("\n\n")
-        : "(no dependencies — this is a starting task)";
-      const prompt = `Overall goal: ${run.prompt}\n\nYour task: ${task.title}\n\nResults from the tasks this depends on:\n${upstream}`;
-      const systemPrompt = `You are the ${task.agent} agent, executing one task inside a larger multi-agent run. Complete only the task described below and report your result in clear prose.`;
+      // Cancellation can land between dispatch and this action starting. The
+      // model call is the expensive part of a run, so check before spending it
+      // rather than discarding the answer afterwards.
+      if (TERMINAL_RUN_STATUSES.has(run.status) || run.cancellationRequested) return;
 
-      const result = await callModel(prompt, systemPrompt, task.agent, ctx);
+      const agent = normalizeAgent(task.agent);
+      const result = await callModel(
+        buildTaskPrompt({
+          goal: run.prompt,
+          title: task.title,
+          description: task.description,
+          // Only completed dependencies carry a usable report. A failed or
+          // blocked one has nothing to hand over, and the scheduler would not
+          // have started this task behind it anyway.
+          upstream: dependencies
+            .filter((d) => d.status === "completed")
+            .map((d) => ({ title: d.title, agent: d.agent, result: d.result })),
+          files,
+        }),
+        systemPromptFor(agent),
+        agent,
+        ctx,
+      );
+
+      // This is where a task stops being prose and becomes work. Everything
+      // that is not a file block stays as the report the dependent tasks read.
+      const parsed = parseAgentOutput(result.text, agent);
+      const wrote: string[] = [];
+      const removed: string[] = [];
+      for (const op of parsed.fileOps) {
+        if (op.type === "delete") {
+          await ctx.runMutation(internal.codeBranches.deleteFileByPath, {
+            branchId: run.branchId,
+            filepath: op.filepath,
+          });
+          removed.push(op.filepath);
+          continue;
+        }
+        // A file op the parser could not give content for is a malformed op,
+        // not a request for an empty file — writing "" would silently blank a
+        // real file the agent meant to edit.
+        if (typeof op.content !== "string") continue;
+        await ctx.runMutation(internal.codeBranches.upsertFile, {
+          branchId: run.branchId,
+          filepath: op.filepath,
+          content: op.content,
+          agent,
+        });
+        wrote.push(op.filepath);
+      }
+
+      const report = [
+        parsed.cleanContent.trim(),
+        wrote.length > 0 ? `Files written: ${wrote.join(", ")}` : "",
+        removed.length > 0 ? `Files deleted: ${removed.join(", ")}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
       await ctx.runMutation(finishTaskRef, {
         runId: args.runId,
         taskId: args.taskId,
         status: "completed",
-        result: result.text,
+        result: report || "(the agent produced no output)",
       });
     } catch (err) {
       // A task stuck in "running" forever would stall the whole run — any
