@@ -48,6 +48,7 @@ import { buildExecutorBlockedWarning, shouldWarnExecutorBlocked } from "./lib/ex
 import { parseMcpCalls, stripMcpBlocks, type ParsedMcpCall } from "./lib/mcpParse";
 import { completesAfterPlanning, workflowInstruction, type CodeWorkflow } from "./lib/codeWorkflow";
 import { formatCommandContext, type RecentCommandResult } from "./lib/commandWindow";
+import { orderPlannerTasks } from "./lib/taskGraph";
 
 // MCP loop guard: how many times one agent may be re-run with tool results
 // before the pipeline advances anyway (prevents infinite call loops).
@@ -826,12 +827,37 @@ export const runPipelineAction = internalAction({
 
         const plannerOutput = parsePlannerOutput(agentOutput);
         if (plannerOutput && plannerOutput.tasks.length > 0) {
-          // The task list is prompt context only — agents re-read it when
-          // routed in. ORDER is never derived from it anymore.
+          // Array position IS dependency order: nextTaskAfterPass,
+          // codePipeline's currentTask lookup and the completed-tasks slice
+          // below all read the stored array by index only, so the graph the
+          // Planner declared (`id`/`dependencies`) has to be resolved into
+          // that same array HERE, once, before it is stored — see
+          // taskGraph.ts for the sort and its defect-tolerance rules.
+          const orderResult = orderPlannerTasks(plannerOutput.tasks);
           await ctx.runMutation(internal.codeBranches.updatePlannerTasks, {
             branchId,
-            plannerTasksJson: JSON.stringify(plannerOutput.tasks),
+            plannerTasksJson: JSON.stringify(orderResult.tasks),
           });
+          // Silence is the good case: only tell the user when the sort found
+          // something to say. A clean, already-ordered plan gets no line —
+          // one on every run would be noise, not signal.
+          if (orderResult.changed || orderResult.cycleIds.length > 0 || orderResult.unknownDependencyIds.length > 0) {
+            const notes: string[] = [];
+            if (orderResult.changed) {
+              notes.push(`Reordered by declared dependency — ${orderResult.waves.length} dependency wave(s) across ${orderResult.tasks.length} tasks; tasks sharing a wave have no dependency on each other.`);
+            }
+            if (orderResult.cycleIds.length > 0) {
+              notes.push(`Dependency cycle found among ${orderResult.cycleIds.join(", ")} — left in the Planner's original order.`);
+            }
+            if (orderResult.unknownDependencyIds.length > 0) {
+              notes.push(`Ignored dependency reference(s) to unknown task id(s): ${orderResult.unknownDependencyIds.join(", ")}.`);
+            }
+            totalMessages++;
+            await ctx.runMutation(internal.codeBranches.saveMessage, {
+              branchId, agent: "System", round, messageIndex: totalMessages,
+              content: `[TASK ORDER] ${notes.join(" ")}`,
+            });
+          }
         }
         if (completesAfterPlanning(workflow)) {
           totalMessages++;
