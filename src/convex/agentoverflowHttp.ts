@@ -83,8 +83,19 @@ function chargeErrorResult(err: unknown): AoOpResult | null {
   return null;
 }
 
+// Thrown when the VM answers 503 because search is switched off there. Kept
+// separate from a real outage so the message tells the truth.
+const ERR_SEARCH_DISABLED = "AO_SEARCH_DISABLED";
+
 function backendDownResult(err: unknown): AoOpResult {
   const msg = err instanceof Error ? err.message : String(err);
+  if (msg === ERR_SEARCH_DISABLED) {
+    return opError(
+      503,
+      "search_disabled",
+      "Corpus search is turned off on this deployment. The solved-problem pages are unaffected. No credits were charged.",
+    );
+  }
   return opError(
     503,
     "backend_unavailable",
@@ -145,6 +156,11 @@ export async function runSearch(
       tags: normalizeTags(Array.isArray(args.tags) ? (args.tags as string[]) : []),
       expand: true,
     });
+    // A 503 here is a deliberate state, not an outage: the VM answers it when
+    // AO_SEARCH_DISABLED is set, which is how the corpus stays fully served
+    // while the vector index is switched off. Reporting it as "unreachable"
+    // would send someone hunting a VM that is healthy and doing its job.
+    if (res.status === 503) throw new Error(ERR_SEARCH_DISABLED);
     if (!res.ok) throw new Error(`VM search failed: ${res.status}`);
     const data = (await res.json()) as { results: CorpusHit[] };
     return {
@@ -203,6 +219,11 @@ export async function runAnonRetrieve(
       tags: normalizeTags(Array.isArray(args.tags) ? (args.tags as string[]) : []),
       expand: true,
     });
+    // A 503 here is a deliberate state, not an outage: the VM answers it when
+    // AO_SEARCH_DISABLED is set, which is how the corpus stays fully served
+    // while the vector index is switched off. Reporting it as "unreachable"
+    // would send someone hunting a VM that is healthy and doing its job.
+    if (res.status === 503) throw new Error(ERR_SEARCH_DISABLED);
     if (!res.ok) throw new Error(`VM search failed: ${res.status}`);
     const hits = stripGold(((await res.json()) as { results: CorpusHit[] }).results ?? []);
     const upsell =
@@ -267,6 +288,11 @@ export async function runAnswer(
       tags: normalizeTags(Array.isArray(args.tags) ? (args.tags as string[]) : []),
       expand: true,
     });
+    // A 503 here is a deliberate state, not an outage: the VM answers it when
+    // AO_SEARCH_DISABLED is set, which is how the corpus stays fully served
+    // while the vector index is switched off. Reporting it as "unreachable"
+    // would send someone hunting a VM that is healthy and doing its job.
+    if (res.status === 503) throw new Error(ERR_SEARCH_DISABLED);
     if (!res.ok) throw new Error(`VM search failed: ${res.status}`);
     hits = ((await res.json()) as { results: CorpusHit[] }).results ?? [];
   } catch (err) {
