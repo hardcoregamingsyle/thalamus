@@ -399,6 +399,26 @@ export const savePlan = internalMutation({
   },
 });
 
+// The answer exit: the request was a question, so the run completes with no
+// tasks at all. It is still a run row with an event, because someone who asked
+// a question should find the answer in the same place as every other result
+// rather than have it vanish.
+export const answerRun = internalMutation({
+  args: { runId: v.id("codeRuns"), answer: v.string() },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId);
+    if (!run || TERMINAL_RUN_STATUSES.has(run.status) || run.cancellationRequested) return;
+    const now = Date.now();
+    await ctx.db.patch(args.runId, { status: "completed", summary: args.answer, updatedAt: now });
+    await ctx.db.insert("codeRunEvents", {
+      runId: args.runId,
+      type: "run.answered",
+      content: args.answer,
+      createdAt: now,
+    });
+  },
+});
+
 // A run that cannot be planned has to end saying so. Silence here would leave
 // a run "queued" with no tasks and nothing scheduled — invisible forever.
 export const failRun = internalMutation({

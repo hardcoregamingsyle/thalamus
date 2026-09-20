@@ -83,7 +83,7 @@ Notes:
 - **No hot reload.** `vite.config.ts` sets `server.hmr: false`.
 - **Dual lockfiles.** Both `bun.lock` and `package-lock.json` are committed. Cloudflare Pages deploys the frontend with `npm ci`; CI verifies `npm ci --dry-run` stays in sync.
 - **`src/convex/_generated/` is committed.** A fresh clone type-checks without running Convex; `npx convex dev` regenerates these files.
-- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 652 references against 335 exported functions (28 of them from the sibling repo).
+- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 657 references against 335 exported functions (28 of them from the sibling repo).
 - **Production deploys go through CI.** `.github/workflows/convex-deploy.yml` runs after CI passes on `main` and executes `npx convex deploy --yes` using the `CONVEX_DEPLOY_KEY` repo secret, then hits `POST /api/action` on `ai:guestSendMessage` as a smoke test. There is no local `convex login` on this machine.
 - **Desktop release CI** (`.github/workflows/release.yml`): a `v*` tag builds and attaches the bare `Thalamus.exe`. The installer (`ThalamusSetup.exe` / Inno-wrapped `Thalamus-Setup-*.exe`) is built locally via `thalamus-native/build.ps1` and uploaded by hand.
 
@@ -307,6 +307,16 @@ flat TS2339. Same pattern as `mcpServers.ts`. Consequence worth knowing —
 **TypeScript checks nothing about these calls**; `check-refs` verifies them by
 name, kind and visibility and is the only gate that will catch a mistake.
 
+That gate was itself blind here until recently, which is worth remembering
+before trusting it: `check-refs` matched these calls with a non-greedy
+`<[\s\S]*?>` for the type arguments, so `makeFunctionReference<"mutation", {
+runId: Id<"codeRuns"> }>(…)` ended at the `>` inside `Id<"codeRuns">` and the
+reference was skipped in silence. Every reference in this module is shaped that
+way, so the only gate covering them was reporting "all references resolve"
+while reading none of them — a call to a function that did not exist passed
+clean. The scanner now tracks angle-bracket depth instead (`findMfrRefs` in
+`scripts/check-convex-refs.mjs`) and cannot be fooled by nesting.
+
 **A task is a loop, not one model call.** Write code, run the build, read the
 output, fix it, repeat — `{"op":"cmd"}` is how a task verifies its own work
 instead of claiming it. Commands are per-task here: `codeCommands.taskId` marks
@@ -401,7 +411,7 @@ Second product on this same deployment: a Stack Overflow for AI agents. The sepa
 |---|---|---|
 | Types | `bun run type-check` | exit 0 |
 | Lint | `bun run lint` | 0 problems |
-| Convex refs | `bun run check-refs` | 652 refs / 335 functions resolve; exit 0 |
+| Convex refs | `bun run check-refs` | 657 refs / 335 functions resolve; exit 0 |
 | Tests | `bun test` | 24 suites green, 566 tests — including `seoMetadata` (FAQ JSON-LD pinned to `faq.ts`, sitemap paths pinned to real routes, one of each head singleton), `geoConsent` (the UK/EU-only consent gate), `commandWindow` (a command result must survive the agent's next message), `taskGraph` (the Planner's `dependencies` graph sorts into array order — never loses/duplicates a task, cycle- and bad-id-safe) `runScheduler` (which tasks may start now; a cancelled run dispatches nothing, and `stuck` never coexists with a non-empty `block`) and `parallelAgents` (no role prompt may teach a hand-off — the contract that keeps the parallel engine parallel) |
 | Web build | `bun run build` | green — `tsc -b && vite build` (cross-platform) |
 | Desktop | `dotnet build` both csproj | 0 warnings / 0 errors |

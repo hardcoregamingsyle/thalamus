@@ -139,12 +139,43 @@ for (const file of walk(join(ROOT, "thalamus-native"), [".cs"])) {
 
 // 2c. makeFunctionReference("module:function") — in the AgentOverflow repo AND
 // in this one. Both reach Convex by string, so both need checking.
-const MFR_RE = /makeFunctionReference\s*<[\s\S]*?>\s*\(\s*"([^"]+)"\s*\)|makeFunctionReference\s*\(\s*"([^"]+)"\s*\)/g;
+// Hand-scanned rather than matched with a regex, and that is not fussiness.
+// The previous pattern used a non-greedy `<[\s\S]*?>` for the type arguments,
+// which stops at the FIRST `>` — so `makeFunctionReference<"mutation", { runId:
+// Id<"codeRuns"> }>("x:y")` ended at the `>` inside `Id<"codeRuns">`, failed to
+// match, and the reference was silently skipped. Every self-reference in
+// codeOrchestrator.ts and every call in RunsView.tsx is shaped exactly like
+// that, so this gate — the ONLY thing checking these names, since TypeScript
+// cannot see them — was reporting "all references resolve" while not looking at
+// any of them. A reference to a function that did not exist passed clean.
+// Depth-tracking cannot be fooled by nesting at any depth.
+function findMfrRefs(src) {
+  const out = [];
+  const token = "makeFunctionReference";
+  for (let i = src.indexOf(token); i !== -1; i = src.indexOf(token, i + 1)) {
+    let j = i + token.length;
+    let depth = 0;
+    // Walk to the call's `(`, counting angle brackets so nested generics are
+    // stepped over instead of ending the scan early.
+    for (; j < src.length; j++) {
+      const c = src[j];
+      if (c === "<") depth++;
+      else if (c === ">") depth--;
+      else if (c === "(" && depth <= 0) break;
+      else if (depth <= 0 && !/[\s,\w\[\]{}:;."'|?&=>-]/.test(c)) break;
+    }
+    if (src[j] !== "(") continue;
+    // First string literal inside the call is the "module:function" path.
+    const m = /^\s*"([^"]+)"/.exec(src.slice(j + 1));
+    if (m) out.push(m[1]);
+  }
+  return out;
+}
 for (const file of walk(join(ROOT, "src"), [".ts", ".tsx"])) {
   if (file.includes(`${sep}_generated${sep}`)) continue;
   const rel = relative(ROOT, file);
   const src = readFileSync(file, "utf8");
-  for (const m of src.matchAll(MFR_RE)) add(m[1] ?? m[2], rel, "in-repo-string");
+  for (const name of findMfrRefs(src)) add(name, rel, "in-repo-string");
 }
 
 const aoPresent = existsSync(AO_DIR);
@@ -153,7 +184,7 @@ if (aoPresent) {
   for (const file of walk(AO_DIR, [".ts", ".tsx"])) {
     const rel = `../agentoverflow/${relative(AO_DIR, file).split(sep).join("/")}`;
     const src = readFileSync(file, "utf8");
-    for (const m of src.matchAll(MFR_RE)) { add(m[1] ?? m[2], rel, "agentoverflow"); aoRefCount++; }
+    for (const name of findMfrRefs(src)) { add(name, rel, "agentoverflow"); aoRefCount++; }
   }
 }
 
