@@ -10,21 +10,21 @@
 // `primary` flags the four modes that appear as top-level tabs; the rest are
 // the "MORE MODES" set.
 
-import {
-  MessageSquare, Search, BookOpen, Users,
-  Palette, LineChart, Feather, Megaphone, Lightbulb, Tag,
-} from "lucide-react";
+import { BookOpen, MessageSquare } from "lucide-react";
 
 export type Mode =
   | "chat" | "research" | "code" | "study"
   | "designing" | "strategising" | "creative-writing"
   | "marketing" | "idea-generation" | "naming";
 
-export const VALID_MODES: Mode[] = [
-  "chat", "research", "study", "code",
-  "designing", "strategising", "creative-writing",
-  "marketing", "idea-generation", "naming",
-];
+// Study is the only selectable mode. Everything the other nine used to cover —
+// chat, research, code and the six writing/strategy variants — is the
+// orchestrator's job now: it reads a request and either answers it or plans it
+// into parallel tasks, so choosing a mode up front stopped being something the
+// user should have to do. The `Mode` TYPE above keeps all ten literals on
+// purpose: `conversations.mode` has rows written under every one of them, and
+// narrowing the type would make that legacy data unreadable.
+export const VALID_MODES: Mode[] = ["study"];
 
 export interface ModeMeta {
   id: Mode;
@@ -47,74 +47,11 @@ export interface ModeMeta {
 
 export const ALL_MODES: ModeMeta[] = [
   {
-    id: "chat", icon: MessageSquare, primary: true,
-    label: "CHAT", desc: "General", color: "text-primary",
-    accent: "bg-primary/15 border-primary/30", adhd: 3,
-    mobileLabel: "Chat", mobileDesc: "Ask anything, get instant answers",
-    mobileColor: "text-blue-400", bg: "bg-blue-500/15", emoji: "💬", accentColor: "#60a5fa",
-  },
-  {
-    id: "research", icon: Search, primary: true,
-    label: "RESEARCH", desc: "Deep", color: "text-accent",
-    accent: "bg-accent/15 border-accent/30", adhd: 2.5,
-    mobileLabel: "Research", mobileDesc: "Deep research with live web data",
-    mobileColor: "text-amber-400", bg: "bg-amber-500/15", emoji: "🔬", accentColor: "#fbbf24",
-  },
-  {
     id: "study", icon: BookOpen, primary: true,
     label: "STUDY", desc: "Study", color: "text-indigo-400",
     accent: "bg-indigo-400/15 border-indigo-400/30", adhd: 3,
     mobileLabel: "Study", mobileDesc: "Study with explanations and practice",
     mobileColor: "text-indigo-400", bg: "bg-indigo-500/15", emoji: "📚", accentColor: "#818cf8",
-  },
-  {
-    id: "code", icon: Users, primary: true,
-    label: "CODE", desc: "Multi-agent", color: "text-violet-400",
-    accent: "bg-violet-400/15 border-violet-400/30", adhd: 3,
-    mobileLabel: "Code", mobileDesc: "9-agent software development",
-    mobileColor: "text-violet-400", bg: "bg-violet-500/15", emoji: "⚡", accentColor: "#a78bfa",
-  },
-  {
-    id: "designing", icon: Palette, primary: false,
-    label: "DESIGNING", desc: "Product Design", color: "text-pink-400",
-    accent: "bg-pink-400/15 border-pink-400/30", adhd: 2,
-    mobileLabel: "Designing", mobileDesc: "Product design and UI/UX concepts",
-    mobileColor: "text-pink-400", bg: "bg-pink-500/15", emoji: "🎨", accentColor: "#f472b6",
-  },
-  {
-    id: "strategising", icon: LineChart, primary: false,
-    label: "STRATEGISING", desc: "Strategy", color: "text-cyan-400",
-    accent: "bg-cyan-400/15 border-cyan-400/30", adhd: 2,
-    mobileLabel: "Strategising", mobileDesc: "Structured strategies and roadmaps",
-    mobileColor: "text-cyan-400", bg: "bg-cyan-500/15", emoji: "📈", accentColor: "#22d3ee",
-  },
-  {
-    id: "creative-writing", icon: Feather, primary: false,
-    label: "CREATIVE WRITING", desc: "Writing", color: "text-rose-400",
-    accent: "bg-rose-400/15 border-rose-400/30", adhd: 2.5,
-    mobileLabel: "Creative Writing", mobileDesc: "Stories, poems, scripts and prose",
-    mobileColor: "text-rose-400", bg: "bg-rose-500/15", emoji: "✍️", accentColor: "#fb7185",
-  },
-  {
-    id: "marketing", icon: Megaphone, primary: false,
-    label: "MARKETING", desc: "Ads & Ideas", color: "text-orange-400",
-    accent: "bg-orange-400/15 border-orange-400/30", adhd: 2.5,
-    mobileLabel: "Marketing", mobileDesc: "Ad concepts and campaign ideas",
-    mobileColor: "text-orange-400", bg: "bg-orange-500/15", emoji: "📣", accentColor: "#fb923c",
-  },
-  {
-    id: "idea-generation", icon: Lightbulb, primary: false,
-    label: "IDEA GENERATION", desc: "Brainstorm", color: "text-yellow-400",
-    accent: "bg-yellow-400/15 border-yellow-400/30", adhd: 2.5,
-    mobileLabel: "Idea Generation", mobileDesc: "Brainstorm and connect ideas",
-    mobileColor: "text-yellow-400", bg: "bg-yellow-500/15", emoji: "💡", accentColor: "#facc15",
-  },
-  {
-    id: "naming", icon: Tag, primary: false,
-    label: "NAMING", desc: "Branding", color: "text-teal-400",
-    accent: "bg-teal-400/15 border-teal-400/30", adhd: 2.5,
-    mobileLabel: "Naming", mobileDesc: "Names, taglines and brand identities",
-    mobileColor: "text-teal-400", bg: "bg-teal-500/15", emoji: "🏷️", accentColor: "#2dd4bf",
   },
 ];
 

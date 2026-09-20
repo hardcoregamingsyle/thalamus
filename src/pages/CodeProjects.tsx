@@ -117,7 +117,7 @@ export default function CodeProjects() {
               <p className="text-muted-foreground mt-1">Build software with a multi-agent pipeline</p>
             </div>
             <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/portal/chat")}>
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/portal")}>
                 <LayoutDashboard className="h-4 w-4" />
                 Portal
               </Button>

@@ -4,10 +4,7 @@
 
 import { useNavigate } from "react-router";
 import { motion } from "framer-motion";
-import {
-  ArrowRight, BookOpen, LogOut, MessageSquare, Moon,
-  Search, Sun, Users,
-} from "lucide-react";
+import { ArrowRight, BookOpen, LogOut, Moon, Sun, Users } from "lucide-react";
 
 export interface ModeSelectionProps {
   user: unknown;
@@ -19,26 +16,21 @@ export interface ModeSelectionProps {
 export default function ModeSelection({ signOut, theme, toggleTheme }: ModeSelectionProps) {
   const navigate = useNavigate();
 
+  // Two entries, because there are only two things to choose between now. The
+  // old Chat, Research and Code cards all asked the user to classify their own
+  // request before making it; the orchestrator does that itself — it answers a
+  // question and plans a project — so offering the choice again would only be
+  // a way to get it wrong.
   const modeCards = [
     {
-      id: "chat",
-      title: "Chat",
-      description: "General conversation and quick questions",
-      icon: MessageSquare,
-      color: "from-blue-500/20 to-cyan-500/20",
-      borderColor: "border-blue-500/30",
-      textColor: "text-blue-400",
-      features: ["Fast responses", "General knowledge", "Helpful & concise"],
-    },
-    {
-      id: "research",
-      title: "Research",
-      description: "Deep analysis with web search capabilities",
-      icon: Search,
-      color: "from-violet-500/20 to-purple-500/20",
-      borderColor: "border-violet-500/30",
-      textColor: "text-violet-400",
-      features: ["Web search", "Citations", "In-depth analysis"],
+      id: "code",
+      title: "Agent",
+      description: "Ask anything, or describe something to build",
+      icon: Users,
+      color: "from-emerald-500/20 to-teal-500/20",
+      borderColor: "border-emerald-500/30",
+      textColor: "text-emerald-400",
+      features: ["Answers questions directly", "Plans projects into tasks", "Agents work in parallel"],
     },
     {
       id: "study",
@@ -49,16 +41,6 @@ export default function ModeSelection({ signOut, theme, toggleTheme }: ModeSelec
       borderColor: "border-indigo-500/30",
       textColor: "text-indigo-400",
       features: ["Upload files", "RAG-powered", "Answer auditor"],
-    },
-    {
-      id: "code",
-      title: "Code",
-      description: "Multi-agent system for software development",
-      icon: Users,
-      color: "from-emerald-500/20 to-teal-500/20",
-      borderColor: "border-emerald-500/30",
-      textColor: "text-emerald-400",
-      features: ["9 specialized agents", "Full stack dev", "GitHub sync"],
     },
   ];
 
@@ -73,7 +55,7 @@ export default function ModeSelection({ signOut, theme, toggleTheme }: ModeSelec
             </div>
             <div>
               <h1 className="text-base font-semibold text-foreground tracking-tight">Thalamus</h1>
-              <p className="text-[11px] text-muted-foreground">Choose your mode</p>
+              <p className="text-[11px] text-muted-foreground">Where to start</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -111,7 +93,7 @@ export default function ModeSelection({ signOut, theme, toggleTheme }: ModeSelec
             transition={{ delay: 0.1 }}
             className="text-muted-foreground max-w-2xl mx-auto"
           >
-            Select a mode to get started. Each mode is built for a different kind of task.
+            Ask the agent anything, or open Study to work through your own material.
           </motion.p>
         </div>
 

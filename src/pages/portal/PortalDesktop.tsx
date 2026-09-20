@@ -339,7 +339,7 @@ export default function PortalDesktop() {
     try { localStorage.removeItem(GUEST_STORAGE_KEY); } catch { /* ignore */ }
     if (!parsed || guestMsgs.length === 0) return;
 
-    const mode = (VALID_MODES.includes(parsed.mode as Mode) ? parsed.mode : "chat") as Mode;
+    const mode = (VALID_MODES.includes(parsed.mode as Mode) ? parsed.mode : "study") as Mode;
     importGuestConversation({
       token,
       mode,

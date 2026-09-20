@@ -1030,7 +1030,7 @@ export default function CodeWorkspace() {
         {/* Sidebar Footer */}
         <div className="p-3 border-t shrink-0 space-y-1">
           <button
-            onClick={() => navigate("/portal/chat")}
+            onClick={() => navigate("/portal")}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors hover:bg-muted text-muted-foreground hover:text-foreground"
           >
             <LayoutDashboard className="h-4 w-4 shrink-0" />

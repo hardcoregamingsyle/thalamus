@@ -115,7 +115,7 @@ createRoot(document.getElementById("root")!).render(
             <Suspense fallback={<RouteLoading />}>
               <Routes>
                 <Route path="/" element={<Landing />} />
-                <Route path="/auth" element={<AuthPage redirectAfterAuth="/portal/chat" />} />
+                <Route path="/auth" element={<AuthPage redirectAfterAuth="/portal" />} />
                 <Route path="/auth/desktop" element={<AuthDesktopPage />} />
                 {/* New Code Mode Routes */}
                 <Route path="/portal/code" element={<CodeProjects />} />
