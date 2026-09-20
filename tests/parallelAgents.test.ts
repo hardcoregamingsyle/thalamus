@@ -5,6 +5,8 @@ import {
   buildPlannerPrompt,
   buildTaskPrompt,
   normalizeAgent,
+  renderCommandResults,
+  renderCommandsUnavailable,
   systemPromptFor,
   type ParallelAgent,
 } from "../src/convex/lib/parallelAgents";
@@ -177,5 +179,75 @@ describe("every agent the planner may name is runnable", () => {
       expect(normalizeAgent(a)).toBe(a as ParallelAgent);
       expect(() => systemPromptFor(normalizeAgent(a))).not.toThrow();
     }
+  });
+});
+
+describe("command contract", () => {
+  it("teaches every role to run commands and verify its own work", () => {
+    for (const a of PARALLEL_AGENTS) {
+      const p = systemPromptFor(a).replace(/\s+/g, " ");
+      expect(p).toContain('{"op":"cmd"');
+      expect(p).toMatch(/output comes back to you in your next turn/i);
+    }
+  });
+});
+
+describe("renderCommandResults", () => {
+  it("is empty when nothing ran, so no empty section is pasted into a prompt", () => {
+    expect(renderCommandResults([])).toBe("");
+  });
+
+  it("reports a clean exit as success", () => {
+    const out = renderCommandResults([{ command: "npm test", status: "completed", exitCode: 0, output: "ok" }]);
+    expect(out).toContain("npm test");
+    expect(out).toContain("succeeded");
+    expect(out).toContain("ok");
+  });
+
+  it("names the exact exit code on failure, not just 'failed'", () => {
+    expect(renderCommandResults([{ command: "build", status: "completed", exitCode: 2, output: "boom" }]))
+      .toContain("exited 2");
+  });
+
+  // A command nobody picked up is not a passing command. Saying nothing would
+  // let the agent assume success and report work it never verified.
+  it("says plainly when a command never finished", () => {
+    const out = renderCommandResults([{ command: "npm test", status: "pending" }]);
+    expect(out).toMatch(/did not finish/i);
+    expect(out).toContain("pending");
+  });
+
+  it("survives a command with no output at all", () => {
+    expect(renderCommandResults([{ command: "true", status: "completed", exitCode: 0 }]))
+      .toContain("(no output)");
+  });
+
+  // The error is at the END of a failing build log. Head-clipping hands the
+  // agent the banner and hides the failure, which reads as complete.
+  it("keeps the tail of a huge log, not the head", () => {
+    const output = "START-MARKER\n" + "x".repeat(50_000) + "\nERROR-AT-THE-END";
+    const out = renderCommandResults([{ command: "build", status: "completed", exitCode: 1, output }]);
+    expect(out).toContain("ERROR-AT-THE-END");
+    expect(out).not.toContain("START-MARKER");
+    expect(out.length).toBeLessThan(10_000);
+  });
+
+  it("renders every command when several ran together", () => {
+    const out = renderCommandResults([
+      { command: "a", status: "completed", exitCode: 0 },
+      { command: "b", status: "failed", output: "nope" },
+    ]);
+    expect(out).toContain("$ a");
+    expect(out).toContain("$ b");
+    expect(out).toContain("nope");
+  });
+});
+
+describe("renderCommandsUnavailable", () => {
+  it("tells the agent to stop retrying and to admit what it could not verify", () => {
+    const out = renderCommandsUnavailable("The executor could not be started.");
+    expect(out).toContain("The executor could not be started.");
+    expect(out).toMatch(/do not retry/i);
+    expect(out).toMatch(/could not verify/i);
   });
 });

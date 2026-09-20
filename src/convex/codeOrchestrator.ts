@@ -10,15 +10,17 @@
 // 10-minute action ceiling the moment two slow model calls land in the same
 // invocation.
 //
-// Two things this engine does NOT do yet, on purpose:
-// - {"op":"cmd"} command execution and MCP tool calls stay branch-scoped in
-//   the live pipeline (codePipeline.ts). Porting them means giving a command
-//   its own place to live outside the single branch "paused" flag, which is
-//   future work, not this change.
-// - Conflicting concurrent writes to the same underlying file are not
-//   arbitrated. Convex mutations are transactional, so individual writes
-//   still serialize, but two tasks racing on the same file is last-write-wins
-//   exactly as it is in the live pipeline today. Known v1 limitation.
+// A task is a LOOP, not one model call: write code, run the build, read the
+// output, fix it, repeat. Commands are how a task verifies its own work, and
+// they are per-task here rather than branch-scoped — the legacy pipeline parks
+// the whole branch on "paused" for a command, which is precisely what stops it
+// running two agents at once. The executors needed no change: both claim
+// pending commands BY BRANCH, so a parallel run's commands are picked up as-is.
+//
+// Known limitation, unchanged: two tasks writing the same file is
+// last-write-wins. Convex serializes the individual writes, but nothing
+// arbitrates the intent, so the plan giving each task a disjoint set of files
+// is the only real defence. MCP tool calls are still legacy-pipeline only.
 import { mutation, query, internalMutation, internalAction, internalQuery, type QueryCtx } from "./_generated/server";
 import { makeFunctionReference } from "convex/server";
 import { internal } from "./_generated/api";
@@ -34,6 +36,8 @@ import {
   buildPlannerPrompt,
   buildTaskPrompt,
   normalizeAgent,
+  renderCommandResults,
+  renderCommandsUnavailable,
   systemPromptFor,
 } from "./lib/parallelAgents";
 
@@ -84,6 +88,16 @@ const savePlanRef = makeFunctionReference<
 const failRunRef = makeFunctionReference<"mutation", { runId: Id<"codeRuns">; reason: string }>(
   "codeOrchestrator:failRun",
 );
+const queueTaskCommandsRef = makeFunctionReference<
+  "mutation",
+  { branchId: string; taskId: Id<"codeTasks">; agent: string; commands: string[] },
+  Id<"codeCommands">[]
+>("codeOrchestrator:queueTaskCommands");
+const getTaskCommandsRef = makeFunctionReference<
+  "query",
+  { ids: Id<"codeCommands">[] },
+  { command: string; status: string; output?: string; exitCode?: number }[]
+>("codeOrchestrator:getTaskCommandsInternal");
 
 // Cap on tasks dispatched at once per run. Every concurrent task is a live
 // model call, and the provider chain (lib/agentCore.ts) has shared rate
@@ -93,6 +107,21 @@ const failRunRef = makeFunctionReference<"mutation", { runId: Id<"codeRuns">; re
 // trip cooldowns for everything else sharing the chain. 4 keeps a single
 // run's burst well inside what a free-tier seat tolerates.
 const MAX_CONCURRENT_TASKS = 4;
+
+// A task's whole loop lives inside ONE action, so Convex's 10-minute kill is
+// the real ceiling — not maxTurns. Every budget below is measured against the
+// action's own start so a task always finishes deliberately, writing down what
+// it did, instead of being killed mid-turn and leaving the row in "running"
+// until finishTask never comes.
+const TASK_WALL_CLOCK_MS = 8 * 60 * 1000;
+const TURN_MODEL_DEADLINE_MS = 3 * 60 * 1000;
+const COMMAND_WAIT_MS = 3 * 60 * 1000;
+// Below this there is not enough left for a model call worth making.
+const MIN_TURN_MS = 45 * 1000;
+const COMMAND_POLL_MS = 4000;
+// Plans are written by a model, so maxTurns is clamped rather than trusted.
+const DEFAULT_TASK_TURNS = 4;
+const MAX_TASK_TURNS = 8;
 
 const TERMINAL_RUN_STATUSES = new Set(["completed", "cancelled", "failed"]);
 
@@ -108,6 +137,26 @@ async function branchFiles(ctx: QueryCtx, branchId: string) {
     .withIndex("by_branch", (q) => q.eq("branchId", branchId))
     .take(1000);
   return rows.map((r) => ({ filepath: r.filepath, content: r.content }));
+}
+
+// Waits for a task's own commands, and answers "what happened" rather than
+// throwing. A command that never gets picked up is a real outcome the agent
+// has to be told about — silence would have it assume success.
+async function waitForCommands(
+  ctx: { runQuery: (ref: typeof getTaskCommandsRef, args: { ids: Id<"codeCommands">[] }) => Promise<{ command: string; status: string; output?: string; exitCode?: number }[]> },
+  ids: Id<"codeCommands">[],
+  budgetMs: number,
+) {
+  const until = Date.now() + budgetMs;
+  let last = await ctx.runQuery(getTaskCommandsRef, { ids });
+  while (Date.now() < until) {
+    if (last.every((r) => r.status === "completed" || r.status === "failed")) return last;
+    await new Promise((r) => setTimeout(r, COMMAND_POLL_MS));
+    last = await ctx.runQuery(getTaskCommandsRef, { ids });
+  }
+  // Out of time. Report what each command actually reached — a still-pending
+  // command is not a passing one, and the agent is told so in those words.
+  return last;
 }
 
 export const startRun = mutation({
@@ -413,6 +462,53 @@ export const planRun = internalAction({
   },
 });
 
+// Queues a task's commands and hands back their ids. The executors are not
+// touched: both the GitHub Actions worker (claimPendingCommandsForVm) and the
+// desktop local executor (listPendingForBranch) claim by BRANCH, so a parallel
+// run's commands are picked up with no change to either. The taskId exists for
+// the other direction — several tasks can have commands in flight on one branch
+// at once, and each needs to recognise its own results.
+export const queueTaskCommands = internalMutation({
+  args: {
+    branchId: v.string(),
+    taskId: v.id("codeTasks"),
+    agent: v.string(),
+    commands: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const ids: Id<"codeCommands">[] = [];
+    for (const command of args.commands) {
+      ids.push(
+        await ctx.db.insert("codeCommands", {
+          branchId: args.branchId,
+          taskId: args.taskId,
+          agent: args.agent,
+          command,
+          status: "pending",
+          createdAt: now,
+        }),
+      );
+    }
+    return ids;
+  },
+});
+
+export const getTaskCommandsInternal = internalQuery({
+  args: { ids: v.array(v.id("codeCommands")) },
+  handler: async (ctx, args) => {
+    const rows = await Promise.all(args.ids.map((id) => ctx.db.get(id)));
+    return rows
+      .filter((r): r is Doc<"codeCommands"> => r !== null)
+      .map((r) => ({
+        command: r.command,
+        status: r.status,
+        output: r.output,
+        exitCode: r.exitCode,
+      }));
+  },
+});
+
 // Read-only lookup an action needs to build a task's prompt: the run, the
 // task itself, and the completed dependency tasks whose results feed it.
 export const getTaskContextInternal = internalQuery({
@@ -434,6 +530,8 @@ export const getTaskContextInternal = internalQuery({
 export const runTask = internalAction({
   args: { runId: v.id("codeRuns"), taskId: v.id("codeTasks") },
   handler: async (ctx, args) => {
+    const startedAt = Date.now();
+    const remainingMs = () => TASK_WALL_CLOCK_MS - (Date.now() - startedAt);
     try {
       const context = await ctx.runQuery(getTaskContextRef, args);
       if (!context) return; // run or task vanished (e.g. deleted mid-flight) — nothing to execute
@@ -445,55 +543,106 @@ export const runTask = internalAction({
       if (TERMINAL_RUN_STATUSES.has(run.status) || run.cancellationRequested) return;
 
       const agent = normalizeAgent(task.agent);
-      const result = await callModel(
-        buildTaskPrompt({
-          goal: run.prompt,
-          title: task.title,
-          description: task.description,
-          // Only completed dependencies carry a usable report. A failed or
-          // blocked one has nothing to hand over, and the scheduler would not
-          // have started this task behind it anyway.
-          upstream: dependencies
-            .filter((d) => d.status === "completed")
-            .map((d) => ({ title: d.title, agent: d.agent, result: d.result })),
-          files,
-        }),
-        systemPromptFor(agent),
-        agent,
-        ctx,
-      );
+      const basePrompt = buildTaskPrompt({
+        goal: run.prompt,
+        title: task.title,
+        description: task.description,
+        // Only completed dependencies carry a usable report. A failed or
+        // blocked one has nothing to hand over, and the scheduler would not
+        // have started this task behind it anyway.
+        upstream: dependencies
+          .filter((d) => d.status === "completed")
+          .map((d) => ({ title: d.title, agent: d.agent, result: d.result })),
+        files,
+      });
 
-      // This is where a task stops being prose and becomes work. Everything
-      // that is not a file block stays as the report the dependent tasks read.
-      const parsed = parseAgentOutput(result.text, agent);
-      const wrote: string[] = [];
-      const removed: string[] = [];
-      for (const op of parsed.fileOps) {
-        if (op.type === "delete") {
-          await ctx.runMutation(internal.codeBranches.deleteFileByPath, {
+      // A task is a LOOP, not a single call: write code, run the build, read
+      // the output, fix it. That loop is the whole reason commands exist here —
+      // without it an agent can only claim its work is correct. maxTurns is the
+      // per-task bound; the wall clock is the real one, because this action
+      // dies at Convex's 10-minute ceiling regardless of turns remaining.
+      const maxTurns = Math.min(Math.max(task.maxTurns || DEFAULT_TASK_TURNS, 1), MAX_TASK_TURNS);
+      const wrote = new Set<string>();
+      const removed = new Set<string>();
+      const reports: string[] = [];
+      let feedback = "";
+      let executorReady: boolean | null = null;
+
+      for (let turn = 1; turn <= maxTurns; turn++) {
+        if (remainingMs() < MIN_TURN_MS) break;
+
+        const result = await callModel(
+          feedback ? `${basePrompt}\n\n${feedback}` : basePrompt,
+          systemPromptFor(agent),
+          agent,
+          ctx,
+          { deadlineMs: Math.min(TURN_MODEL_DEADLINE_MS, Math.max(remainingMs() - COMMAND_WAIT_MS, MIN_TURN_MS)) },
+        );
+
+        // This is where a task stops being prose and becomes work. Everything
+        // that is not a file block or an op stays as the report dependents read.
+        const parsed = parseAgentOutput(result.text, agent);
+        for (const op of parsed.fileOps) {
+          if (op.type === "delete") {
+            await ctx.runMutation(internal.codeBranches.deleteFileByPath, {
+              branchId: run.branchId,
+              filepath: op.filepath,
+            });
+            removed.add(op.filepath);
+            continue;
+          }
+          // A file op the parser could not give content for is a malformed op,
+          // not a request for an empty file — writing "" would silently blank a
+          // real file the agent meant to edit.
+          if (typeof op.content !== "string") continue;
+          await ctx.runMutation(internal.codeBranches.upsertFile, {
             branchId: run.branchId,
             filepath: op.filepath,
+            content: op.content,
+            agent,
           });
-          removed.push(op.filepath);
+          wrote.add(op.filepath);
+        }
+        if (parsed.cleanContent.trim()) reports.push(parsed.cleanContent.trim());
+
+        const commands = parsed.cmdOps.map((c) => c.command).filter((c) => c && c.trim());
+        if (commands.length === 0) break; // nothing left to verify — the task is done talking
+        if (turn === maxTurns || remainingMs() < COMMAND_WAIT_MS + MIN_TURN_MS) {
+          reports.push(`[${commands.length} command(s) were not run — this task ran out of turns or time.]`);
+          break;
+        }
+
+        // Boot the executor once per task, and only when a command is actually
+        // wanted. A task that never runs anything must not pay for a VM.
+        if (executorReady === null) {
+          try {
+            await ctx.runAction(internal.githubActionsRunner.bootVmForBranch, { branchId: run.branchId });
+            executorReady = true;
+          } catch {
+            executorReady = false;
+          }
+        }
+        if (executorReady === false) {
+          feedback = renderCommandsUnavailable("The command executor could not be started for this branch.");
           continue;
         }
-        // A file op the parser could not give content for is a malformed op,
-        // not a request for an empty file — writing "" would silently blank a
-        // real file the agent meant to edit.
-        if (typeof op.content !== "string") continue;
-        await ctx.runMutation(internal.codeBranches.upsertFile, {
+
+        const ids = await ctx.runMutation(queueTaskCommandsRef, {
           branchId: run.branchId,
-          filepath: op.filepath,
-          content: op.content,
+          taskId: args.taskId,
           agent,
+          commands,
         });
-        wrote.push(op.filepath);
+        const outcomes = await waitForCommands(ctx, ids, Math.min(COMMAND_WAIT_MS, Math.max(remainingMs() - MIN_TURN_MS, 0)));
+        feedback = outcomes.length > 0
+          ? renderCommandResults(outcomes)
+          : renderCommandsUnavailable("No executor picked the commands up in time.");
       }
 
       const report = [
-        parsed.cleanContent.trim(),
-        wrote.length > 0 ? `Files written: ${wrote.join(", ")}` : "",
-        removed.length > 0 ? `Files deleted: ${removed.join(", ")}` : "",
+        reports.join("\n\n"),
+        wrote.size > 0 ? `Files written: ${[...wrote].join(", ")}` : "",
+        removed.size > 0 ? `Files deleted: ${[...removed].join(", ")}` : "",
       ]
         .filter(Boolean)
         .join("\n\n");

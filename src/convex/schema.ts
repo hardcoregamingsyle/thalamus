@@ -352,6 +352,12 @@ const schema = defineSchema(
       // One-time token handed to a GitHub Actions run so its callback can prove
       // the result is really ours. Cleared the moment it is spent.
       callbackNonce: v.optional(v.string()),
+      // Set when a parallel run's task queued this command (codeOrchestrator).
+      // The executors do not read it — they claim by branch, which is exactly
+      // why a parallel run's commands need no executor change — but the task
+      // that queued them has to know which results are its own, since several
+      // tasks can have commands in flight on one branch at the same time.
+      taskId: v.optional(v.id("codeTasks")),
     })
       .index("by_branch", ["branchId"])
       .index("by_branch_and_status", ["branchId", "status"]),

@@ -99,6 +99,14 @@ Always write the COMPLETE file, never a fragment or a diff — the block replace
 whatever is there. To delete a file, emit {"op":"delete-file","path":"..."} on
 its own line.
 
+Run a shell command by emitting {"op":"cmd","command":"npm test"} on its own
+line. The command runs in a real checkout of this project and its output comes
+back to you in your next turn, so this is how you build, test and verify your
+own work instead of guessing. Emit every command you need in the same reply —
+they run together, and you get all the output at once. Use it: a task that
+claims something works without ever running it is the failure mode this exists
+to prevent.
+
 Anything that is not a file block is read as your report: prose explaining what
 you did, what you found, and anything the tasks depending on you need to know.
 Your report is handed to them verbatim, so write it for them, not for yourself.
@@ -198,6 +206,43 @@ function renderFiles(files: { filepath: string; content: string }[]): string {
     out += `\n\nThese files also exist but were too large to include here. Say so in your report if you need one of them:\n${omitted.map((p) => `- ${p}`).join("\n")}`;
   }
   return out;
+}
+
+export interface CommandResult {
+  command: string;
+  status: string;
+  output?: string;
+  exitCode?: number;
+}
+
+// Command output budget per turn. A failing build can emit megabytes, and the
+// tail is where the error is — a head-clipped log hands the agent the banner
+// and hides the failure, which is worse than useless because it reads as
+// complete.
+const OUTPUT_TAIL = 4000;
+
+/** Feed a turn's command results back to the agent that asked for them. */
+export function renderCommandResults(results: CommandResult[]): string {
+  if (results.length === 0) return "";
+  const blocks = results.map((r) => {
+    const verdict =
+      r.status === "completed"
+        ? r.exitCode === 0 || r.exitCode === undefined
+          ? "succeeded"
+          : `exited ${r.exitCode}`
+        : r.status === "failed"
+          ? "failed"
+          : `did not finish (${r.status})`;
+    const raw = (r.output ?? "").trim();
+    const body = raw.length > OUTPUT_TAIL ? `…(earlier output trimmed)\n${raw.slice(-OUTPUT_TAIL)}` : raw;
+    return `$ ${r.command}\n[${verdict}]\n${body || "(no output)"}`;
+  });
+  return `RESULTS OF THE COMMANDS YOU RAN\n\n${blocks.join("\n\n")}\n\nAct on these. If something failed, fix it and run it again. If everything passed, finish your task and report.`;
+}
+
+/** Told to the agent when its commands could not be run at all. */
+export function renderCommandsUnavailable(reason: string): string {
+  return `THE COMMANDS YOU ASKED FOR DID NOT RUN\n\n${reason}\n\nDo not retry them. Finish the task with what you can verify by reading the code, and say plainly in your report what you could not verify.`;
 }
 
 // ── Planning ────────────────────────────────────────────────────────────────
