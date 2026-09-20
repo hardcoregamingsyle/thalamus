@@ -245,17 +245,32 @@ export function renderCommandsUnavailable(reason: string): string {
   return `THE COMMANDS YOU ASKED FOR DID NOT RUN\n\n${reason}\n\nDo not retry them. Finish the task with what you can verify by reading the code, and say plainly in your report what you could not verify.`;
 }
 
-// ── Planning ────────────────────────────────────────────────────────────────
-// Planning happens ONCE per run, before any task row exists, and it is the
-// only step that is inherently sequential — everything downstream is parallel.
-// The plan's quality is therefore what decides whether the run parallelises at
-// all: a plan whose every task depends on the previous one is a turn-wise
-// pipeline wearing a graph's clothes, which is exactly what this engine exists
-// to stop being, so the prompt pushes hard on independence and ownership.
+// ── Triage and planning ─────────────────────────────────────────────────────
+// One call decides what a request IS and handles it. Not everything is a
+// project: "why is my build failing?" wants an answer, not a five-task plan
+// with a Tester on it. Splitting triage into its own model call would spend a
+// round-trip to learn something the same model can act on immediately, so the
+// prompt has two exits and the caller reads which one was taken — a JSON plan
+// means build it, prose means the question is already answered.
+//
+// Planning is the only sequential step in a run, which makes it the step that
+// decides whether a run parallelises at all: a plan whose every task depends on
+// the previous one is a turn-wise pipeline wearing a graph's clothes, which is
+// exactly what this engine exists to stop being. Hence the pressure on
+// independence and file ownership below.
 
-export const PLANNER_SYSTEM_PROMPT = `You are the Planner. You break a software goal into tasks that a team of agents will execute IN PARALLEL.
+export const ORCHESTRATOR_SYSTEM_PROMPT = `You are the Orchestrator. A request arrives and you do ONE of two things with it.
 
-Output ONLY a JSON object in a \`\`\`json fenced block, shaped exactly like this:
+**If you can answer it yourself, answer it.** Questions, explanations, advice,
+"how does X work", "what is wrong with this code", "should I use A or B" — you
+are the most knowledgeable engineer in the room and the project's files are in
+front of you. Write the answer in clear prose. Do not output JSON. Do not
+invent a project out of a question.
+
+**If it is a project, plan it.** Anything that means writing or changing real
+code across files, or that needs genuine research before it can be built, gets
+decomposed into tasks that a team of agents will execute IN PARALLEL. Output
+ONLY a JSON object in a \`\`\`json fenced block, shaped exactly like this:
 
 \`\`\`json
 {
@@ -272,7 +287,7 @@ Output ONLY a JSON object in a \`\`\`json fenced block, shaped exactly like this
 }
 \`\`\`
 
-RULES THAT DECIDE WHETHER THIS PLAN IS ANY GOOD:
+When you plan, these rules decide whether the plan is any good:
 
 1. Maximise independence. Tasks that do not need each other's output MUST have
    no dependency between them — they will run at the same time. A chain where
@@ -286,8 +301,13 @@ RULES THAT DECIDE WHETHER THIS PLAN IS ANY GOOD:
 6. Prefer few, substantial tasks over many trivial ones. Every task costs a
    model call.
 7. Review and test tasks depend on the work they examine — that is a real
-   dependency, so state it.`;
+   dependency, so state it.
 
-export function buildPlannerPrompt(goal: string, files: { filepath: string; content: string }[]): string {
-  return `THE GOAL\n${goal}\n\n${renderFiles(files)}\n\nProduce the plan now, as the JSON object described. Output nothing else.`;
+Answer or plan. Never both, and never neither.`;
+
+export function buildOrchestratorPrompt(
+  goal: string,
+  files: { filepath: string; content: string }[],
+): string {
+  return `THE REQUEST\n${goal}\n\n${renderFiles(files)}\n\nDecide now: answer it, or output the plan.`;
 }

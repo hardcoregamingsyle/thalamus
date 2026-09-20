@@ -1,10 +1,8 @@
-// RunsView — start and watch a parallel run (codeOrchestrator).
+// RunsView — ask the orchestrator something, or set it building.
 //
-// This is the surface for the per-task engine: a prompt becomes a plan, the
-// plan becomes tasks with dependencies, and every task with its dependencies
-// met runs at the same time as its siblings. That is the difference from the
-// Chat tab, which drives codePipeline.ts — one agent at a time, passing work
-// along with an over-to.
+// One box, two outcomes, decided by the orchestrator rather than by the user
+// picking a mode: a question comes back as an answer, and a project becomes a
+// plan whose tasks run in parallel. The board below shows whichever happened.
 //
 // Functions are reached by string, not through `api.codeOrchestrator.*`:
 // codeOrchestrator postdates the committed _generated/api.d.ts, so the typed
@@ -97,7 +95,7 @@ export function RunsView({ branchId }: RunsViewProps) {
       const result = await startRun({ token, branchId, prompt: prompt.trim() });
       setPrompt("");
       setSelectedRunId(result.runId);
-      toast.success("Run started — planning");
+      toast.success("Working on it");
     } catch (err) {
       toast.error(errMsg(err, "Failed to start run"));
     } finally {
@@ -122,24 +120,25 @@ export function RunsView({ branchId }: RunsViewProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
-            Parallel run
+            Ask or build
           </CardTitle>
           <CardDescription>
-            The team plans your goal into tasks, then works on every task whose dependencies are
-            met at the same time. No turn-taking, and nothing stops to ask.
+            Ask a question and it is answered. Describe a project and it is planned into tasks
+            that run in parallel — every task whose dependencies are met works at the same time,
+            with no turn-taking and nothing stopping to ask.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="What should the team build?"
+            placeholder="Ask a question, or describe what to build"
             rows={3}
             disabled={starting}
           />
           <Button onClick={handleStart} disabled={!prompt.trim() || starting}>
             {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            Start parallel run
+            Send
           </Button>
         </CardContent>
       </Card>
@@ -150,7 +149,7 @@ export function RunsView({ branchId }: RunsViewProps) {
         </div>
       ) : runs.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-8">
-          No runs yet. Describe a goal above to start one.
+          Nothing yet. Ask a question or describe a project above.
         </p>
       ) : (
         <div className="space-y-2">
@@ -195,6 +194,18 @@ export function RunsView({ branchId }: RunsViewProps) {
 
       {activeBoard && (
         <>
+          {activeBoard.tasks.length === 0 && activeBoard.run.status === "completed" && (
+            <Card>
+              <CardHeader className="py-3">
+                <CardTitle className="text-base">Answer</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="whitespace-pre-wrap text-sm">{activeBoard.run.summary}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {activeBoard.tasks.length > 0 && (
           <Card>
             <CardHeader className="py-3">
               <CardTitle className="text-base">
@@ -207,10 +218,7 @@ export function RunsView({ branchId }: RunsViewProps) {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {activeBoard.tasks.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Planning — no tasks yet.</p>
-              ) : (
-                activeBoard.tasks.map((task) => (
+              {activeBoard.tasks.map((task) => (
                   <div key={task._id} className="rounded-md border p-3">
                     <div className="flex items-center gap-2">
                       <StatusIcon status={task.status} />
@@ -228,10 +236,10 @@ export function RunsView({ branchId }: RunsViewProps) {
                       </pre>
                     )}
                   </div>
-                ))
-              )}
+                ))}
             </CardContent>
           </Card>
+          )}
 
           <Card>
             <CardHeader className="py-3">

@@ -32,8 +32,8 @@ import { scheduleRun, type SchedulableTask } from "./lib/runScheduler";
 import { parseAgentOutput, parsePlannerOutput } from "./lib/agentOutputParser";
 import { orderPlannerTasks } from "./lib/taskGraph";
 import {
-  PLANNER_SYSTEM_PROMPT,
-  buildPlannerPrompt,
+  ORCHESTRATOR_SYSTEM_PROMPT,
+  buildOrchestratorPrompt,
   buildTaskPrompt,
   normalizeAgent,
   renderCommandResults,
@@ -87,6 +87,9 @@ const savePlanRef = makeFunctionReference<
 >("codeOrchestrator:savePlan");
 const failRunRef = makeFunctionReference<"mutation", { runId: Id<"codeRuns">; reason: string }>(
   "codeOrchestrator:failRun",
+);
+const answerRunRef = makeFunctionReference<"mutation", { runId: Id<"codeRuns">; answer: string }>(
+  "codeOrchestrator:answerRun",
 );
 const queueTaskCommandsRef = makeFunctionReference<
   "mutation",
@@ -423,17 +426,27 @@ export const planRun = internalAction({
       if (TERMINAL_RUN_STATUSES.has(run.status) || run.cancellationRequested) return;
 
       const result = await callModel(
-        buildPlannerPrompt(run.prompt, files),
-        PLANNER_SYSTEM_PROMPT,
+        buildOrchestratorPrompt(run.prompt, files),
+        ORCHESTRATOR_SYSTEM_PROMPT,
         "Planner",
         ctx,
       );
+
+      // Two exits, and which one was taken is read off the output itself. A
+      // JSON plan means build it; prose means the request was a question and
+      // is already answered. Not every request is a project — "why is my build
+      // failing" wants an answer, not a five-task plan with a Tester on it.
       const parsed = parsePlannerOutput(result.text);
       if (!parsed || parsed.tasks.length === 0) {
-        await ctx.runMutation(failRunRef, {
-          runId: args.runId,
-          reason: "The planner did not return a usable plan.",
-        });
+        const answer = result.text.trim();
+        if (!answer) {
+          await ctx.runMutation(failRunRef, {
+            runId: args.runId,
+            reason: "The orchestrator returned nothing — no answer and no plan.",
+          });
+          return;
+        }
+        await ctx.runMutation(answerRunRef, { runId: args.runId, answer });
         return;
       }
 

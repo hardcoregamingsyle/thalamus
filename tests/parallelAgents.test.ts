@@ -1,8 +1,8 @@
 import { describe, it, expect } from "bun:test";
 import {
   PARALLEL_AGENTS,
-  PLANNER_SYSTEM_PROMPT,
-  buildPlannerPrompt,
+  ORCHESTRATOR_SYSTEM_PROMPT,
+  buildOrchestratorPrompt,
   buildTaskPrompt,
   normalizeAgent,
   renderCommandResults,
@@ -146,30 +146,44 @@ describe("buildTaskPrompt", () => {
   });
 });
 
-describe("planner prompt", () => {
+describe("orchestrator prompt — triage and planning", () => {
   it("offers exactly the real cast as agent choices", () => {
-    for (const a of PARALLEL_AGENTS) expect(PLANNER_SYSTEM_PROMPT).toContain(a);
+    for (const a of PARALLEL_AGENTS) expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain(a);
   });
 
   // A plan that chains every task is a turn-wise pipeline in disguise, which is
   // the thing this engine exists to stop being.
   it("pushes for independence and file ownership", () => {
-    expect(PLANNER_SYSTEM_PROMPT).toMatch(/parallel/i);
-    expect(PLANNER_SYSTEM_PROMPT).toMatch(/independence/i);
-    expect(PLANNER_SYSTEM_PROMPT).toMatch(/disjoint set of files/i);
-    expect(PLANNER_SYSTEM_PROMPT).toMatch(/cycle/i);
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/parallel/i);
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/independence/i);
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/disjoint set of files/i);
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/cycle/i);
   });
 
   it("asks for the dependency field the scheduler actually reads", () => {
-    expect(PLANNER_SYSTEM_PROMPT).toContain('"dependencies"');
-    expect(PLANNER_SYSTEM_PROMPT).toContain('"agent"');
-    expect(PLANNER_SYSTEM_PROMPT).toContain('"id"');
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain('"dependencies"');
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain('"agent"');
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain('"id"');
   });
 
-  it("puts the goal and the project state in front of the planner", () => {
-    const p = buildPlannerPrompt("ship a parser", [{ filepath: "a.ts", content: "1" }]);
+  it("puts the request and the project state in front of the orchestrator", () => {
+    const p = buildOrchestratorPrompt("ship a parser", [{ filepath: "a.ts", content: "1" }]);
     expect(p).toContain("ship a parser");
     expect(p).toContain("a.ts");
+  });
+
+  // Not every request is a project. A question that gets decomposed into a
+  // five-task plan with a Tester on it is the failure this branch prevents.
+  it("offers an answer exit as well as a plan exit", () => {
+    const p = ORCHESTRATOR_SYSTEM_PROMPT.replace(/\s+/g, " ");
+    expect(p).toMatch(/if you can answer it yourself, answer it/i);
+    expect(p).toMatch(/if it is a project, plan it/i);
+    expect(p).toMatch(/do not invent a project out of a question/i);
+    expect(p).toMatch(/answer or plan\. never both, and never neither/i);
+  });
+
+  it("tells the answer branch not to emit JSON, which is how the caller tells them apart", () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT.replace(/\s+/g, " ")).toMatch(/do not output json/i);
   });
 });
 
