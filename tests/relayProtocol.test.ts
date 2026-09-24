@@ -115,12 +115,12 @@ describe("validateSend", () => {
       subject: "s",
       body: "b",
       attachments: [
-        { storage_id: " kg1 ", name: " dream.mp4 " },
+        { storage_id: " kg1 ", name: " clip.mp4 " },
         { storageId: "kg2", name: "map.png" },
       ],
     });
     expect(r.ok && r.send.attachments).toEqual([
-      { storageId: "kg1", name: "dream.mp4" },
+      { storageId: "kg1", name: "clip.mp4" },
       { storageId: "kg2", name: "map.png" },
     ]);
   });

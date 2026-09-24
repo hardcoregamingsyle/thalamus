@@ -220,7 +220,7 @@ export const RELAY_TOOLS = [
               },
               name: {
                 type: "string",
-                description: "File name, e.g. dream-agent3-night2.mp4.",
+                description: "File name, e.g. village-orbit-01.mp4.",
               },
             },
             required: ["storage_id", "name"],
