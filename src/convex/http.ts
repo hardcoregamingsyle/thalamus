@@ -24,6 +24,7 @@ import {
 } from "./agentoverflowHttp";
 import { aoMcp, aoMcpOptions, aoMcpMethodNotAllowed } from "./agentoverflowMcp";
 import { sketchfabMcp, sketchfabMcpOptions, sketchfabMcpMethodNotAllowed } from "./sketchfabMcp";
+import { RELAY_PATH_PREFIX, relayMcp, relayMcpOptions, relayMcpMethodNotAllowed } from "./relay";
 import {
   aoPublicDoc,
   aoPublicOptions,
@@ -1377,6 +1378,13 @@ http.route({ path: "/sketchfab/mcp", method: "POST", handler: sketchfabMcp });
 http.route({ path: "/sketchfab/mcp", method: "OPTIONS", handler: sketchfabMcpOptions });
 http.route({ path: "/sketchfab/mcp", method: "GET", handler: sketchfabMcpMethodNotAllowed });
 http.route({ path: "/sketchfab/mcp", method: "DELETE", handler: sketchfabMcpMethodNotAllowed });
+
+// Session relay: a message line between two Claude sessions on different
+// accounts. The key is the last path segment — see relay.ts.
+http.route({ pathPrefix: RELAY_PATH_PREFIX, method: "POST", handler: relayMcp });
+http.route({ pathPrefix: RELAY_PATH_PREFIX, method: "OPTIONS", handler: relayMcpOptions });
+http.route({ pathPrefix: RELAY_PATH_PREFIX, method: "GET", handler: relayMcpMethodNotAllowed });
+http.route({ pathPrefix: RELAY_PATH_PREFIX, method: "DELETE", handler: relayMcpMethodNotAllowed });
 
 // Public SEO surface: crawlable doc payloads + sitemaps for the site's /q pages.
 http.route({ path: "/ao/public/doc", method: "GET", handler: aoPublicDoc });

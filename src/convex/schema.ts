@@ -918,6 +918,25 @@ const schema = defineSchema(
     })
       .index("by_user_and_date", ["userId", "dateKey"])
       .index("by_date", ["dateKey"]),
+
+    // Session relay (relay.ts): messages between two Claude sessions on
+    // different accounts. The MCP key in the URL decides which party a caller
+    // is; deliveredAt marks read, and a reply is a row whose `re` names it.
+    relayMessages: defineTable({
+      from: v.union(v.literal("web"), v.literal("lab")),
+      to: v.union(v.literal("web"), v.literal("lab")),
+      subject: v.string(),
+      body: v.string(),
+      re: v.optional(v.id("relayMessages")),
+      needsReply: v.boolean(),
+      createdAt: v.number(),
+      deliveredAt: v.optional(v.number()),
+    })
+      .index("by_to_and_delivered", ["to", "deliveredAt"])
+      .index("by_to_and_created", ["to", "createdAt"])
+      .index("by_from_and_created", ["from", "createdAt"])
+      .index("by_created", ["createdAt"])
+      .index("by_re_and_from", ["re", "from"]),
   },
   {
     // Validation is off so rows written under earlier schema revisions (notably

@@ -83,7 +83,7 @@ Notes:
 - **No hot reload.** `vite.config.ts` sets `server.hmr: false`.
 - **Dual lockfiles.** Both `bun.lock` and `package-lock.json` are committed. Cloudflare Pages deploys the frontend with `npm ci`; CI verifies `npm ci --dry-run` stays in sync.
 - **`src/convex/_generated/` is committed.** A fresh clone type-checks without running Convex; `npx convex dev` regenerates these files.
-- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 657 references against 335 exported functions (28 of them from the sibling repo).
+- **tsc cannot catch a wrong Convex function name.** The generated `api`/`internal` objects exceed TS instantiation depth and degrade to `any`, and three callers reach the backend by plain string — the shipped `.exe`, the AgentOverflow repo via `makeFunctionReference`, and crons. `bun run check-refs` is the only gate. It currently validates 661 references against 342 exported functions (28 of them from the sibling repo).
 - **Production deploys go through CI.** `.github/workflows/convex-deploy.yml` runs after CI passes on `main` and executes `npx convex deploy --yes` using the `CONVEX_DEPLOY_KEY` repo secret, then hits `POST /api/action` on `ai:guestSendMessage` as a smoke test. There is no local `convex login` on this machine.
 - **Desktop release CI** (`.github/workflows/release.yml`): a `v*` tag builds and attaches the bare `Thalamus.exe`. The installer (`ThalamusSetup.exe` / Inno-wrapped `Thalamus-Setup-*.exe`) is built locally via `thalamus-native/build.ps1` and uploaded by hand.
 
@@ -180,7 +180,7 @@ build output and this directory regardless of the dashboard's root setting.
 
 ### Backend (Convex — `src/convex/`)
 
-- 335 exported functions across ~50 modules plus `lib/`. `schema.ts` defines the tables (10-literal `conversations.mode` union among them); `schemaValidation: false` so legacy rows do not block deploys.
+- 342 exported functions across ~50 modules plus `lib/`. `schema.ts` defines the tables (10-literal `conversations.mode` union among them); `schemaValidation: false` so legacy rows do not block deploys.
 - **`src/convex/lib/`** holds pure helper modules (no Convex framework imports):
   - `agentCore.ts` — `FREE_UNLIMITED`, `callModel` (the router), `mapModelIdToOllama`, `calcAgentBucksForTier`, `performSearch`, `performScrape`. Re-exports `agentPrompts` (per-agent system prompts), `modePrompts` (`MODE_ADHD`, `MODE_SYSTEM_PROMPTS`, `adhdToTemperature`), `agentOutputParser`. The parser's canonical input is deliberately escape-free: files are raw `<<FILE "path">> … <<END>>` blocks (verbatim content; bodies are masked out of the op scan so op-shaped file text can never execute), everything else is a one-line JSON op (`{"op":"cmd",…}` and friends). The JSON document envelope, inline JSON file ops and legacy `<<TAG>>` markers still parse as compatibility fallbacks, but no prompt teaches them — the old "whole file in one JSON string" format is what produced the chronic `[REJECTED OPS]`/`[MALFORMED OP]` loops.
   - Provider clients: `ollamaClient.ts` (formerly `siliconflow.ts` — export names unchanged), `kimiClient.ts`, `zenClient.ts`, `orcaRouterClient.ts`, `openrouterClient.ts`, `deadlySignalsClient.ts`, `modelscopeClient.ts`, `modalClient.ts`.
@@ -386,6 +386,21 @@ add one to.
 
 `calcAgentBucksForTier` in `lib/agentCore.ts` branches on the provider prefix. `modelPricing` table is admin-editable but no billing path reads it. Spendable balance = `users.dailyAgentBucks` + `users.purchasedAgentBucks` + `creditBatches` (90-day expiry, soonest-first) — `users.agentBucksBalance` is not the spendable balance. Daily reset at 18:30 UTC (midnight IST) via `crons.ts` → `dailyReset.resetDailyAgentBucks` (10M AB per user). Every deduction is currently a no-op under `FREE_UNLIMITED`; purchases are off under `PAYMENTS_DISABLED`. The inbound Buy Me a Coffee webhook (`/bmac/webhook`) stays live so anyone who paid still gets credited.
 
+### Session relay
+
+`relay.ts` serves `/relay/mcp/<key>`: a stateless MCP server that carries
+messages between two Claude sessions the owner runs on different accounts in
+different organisations — `web` (this repo's work) and `lab` (Aphantix AI).
+Nothing account-scoped can do this: agent messaging stops at the account, and
+an artifact's shared store is organisation-internal, so an outside visitor can
+read it but never write. Each side attaches the same server as a connector with
+its own key. The key sits in the path because a claude.ai custom connector is a
+bare URL with no header slot; only salted SHA-256 hashes of the two keys are in
+`lib/relayProtocol.ts` (this repo is public), and an unknown key is a plain 404.
+Messages live in `relayMessages`. `needs_reply` is the loop-breaker between two
+polling sessions and `DAILY_SEND_CAP` bounds the damage if a model ignores it.
+No web UI and no desktop counterpart — it is agent-to-agent plumbing.
+
 ---
 
 ## 5. AgentOverflow
@@ -413,8 +428,8 @@ Second product on this same deployment: a Stack Overflow for AI agents. The sepa
 |---|---|---|
 | Types | `bun run type-check` | exit 0 |
 | Lint | `bun run lint` | 0 problems |
-| Convex refs | `bun run check-refs` | 657 refs / 335 functions resolve; exit 0 |
-| Tests | `bun test` | 24 suites green, 566 tests — including `seoMetadata` (FAQ JSON-LD pinned to `faq.ts`, sitemap paths pinned to real routes, one of each head singleton), `geoConsent` (the UK/EU-only consent gate), `commandWindow` (a command result must survive the agent's next message), `taskGraph` (the Planner's `dependencies` graph sorts into array order — never loses/duplicates a task, cycle- and bad-id-safe) `runScheduler` (which tasks may start now; a cancelled run dispatches nothing, and `stuck` never coexists with a non-empty `block`) and `parallelAgents` (no role prompt may teach a hand-off — the contract that keeps the parallel engine parallel) |
+| Convex refs | `bun run check-refs` | 661 refs / 342 functions resolve; exit 0 |
+| Tests | `bun test` | 25 suites green, 581 tests — including `seoMetadata` (FAQ JSON-LD pinned to `faq.ts`, sitemap paths pinned to real routes, one of each head singleton), `geoConsent` (the UK/EU-only consent gate), `commandWindow` (a command result must survive the agent's next message), `taskGraph` (the Planner's `dependencies` graph sorts into array order — never loses/duplicates a task, cycle- and bad-id-safe) `runScheduler` (which tasks may start now; a cancelled run dispatches nothing, and `stuck` never coexists with a non-empty `block`) `parallelAgents` (no role prompt may teach a hand-off — the contract that keeps the parallel engine parallel) and `relayProtocol` (a relay key resolves only through its salted hash; `needs_reply` is strictly boolean; the send cap is a rolling 24h) |
 | Web build | `bun run build` | green — `tsc -b && vite build` (cross-platform) |
 | Desktop | `dotnet build` both csproj | 0 warnings / 0 errors |
 | TODO markers in source | grep | 0 |
