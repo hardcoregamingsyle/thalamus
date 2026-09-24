@@ -41,11 +41,22 @@ export const BODY_MAX = 20_000;
 export const DAILY_SEND_CAP = 40;
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Files ride beside a message, never inside it: the sender uploads bytes to a
+// one-time URL (relay_upload_url) and names the returned storage id here.
+export const MAX_ATTACHMENTS = 10;
+export const ATTACHMENT_NAME_MAX = 200;
+
+export interface RelayAttachmentIn {
+  storageId: string;
+  name: string;
+}
+
 export interface RelaySend {
   subject: string;
   body: string;
   re?: string;
   needsReply: boolean;
+  attachments: RelayAttachmentIn[];
 }
 
 export function validateSend(
@@ -70,11 +81,48 @@ export function validateSend(
   if (args.needs_reply !== undefined && typeof args.needs_reply !== "boolean") {
     return { ok: false, error: "needs_reply must be true or false." };
   }
+  const attachments: RelayAttachmentIn[] = [];
+  if (args.attachments !== undefined) {
+    if (!Array.isArray(args.attachments))
+      return {
+        ok: false,
+        error: "attachments must be an array of {storage_id, name}.",
+      };
+    if (args.attachments.length > MAX_ATTACHMENTS)
+      return {
+        ok: false,
+        error: `At most ${MAX_ATTACHMENTS} attachments per message.`,
+      };
+    for (const raw of args.attachments) {
+      const a =
+        raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+      // The upload response spells it storageId; the tool schema says storage_id.
+      const sid = a.storage_id ?? a.storageId;
+      if (typeof sid !== "string" || !sid.trim())
+        return {
+          ok: false,
+          error: "Each attachment needs the storage_id returned by the upload.",
+        };
+      const name = typeof a.name === "string" ? a.name.trim() : "";
+      if (!name || name.length > ATTACHMENT_NAME_MAX)
+        return {
+          ok: false,
+          error: `Each attachment needs a name (1-${ATTACHMENT_NAME_MAX} chars).`,
+        };
+      attachments.push({ storageId: sid.trim(), name });
+    }
+  }
   const re =
     typeof args.re === "string" && args.re.trim() ? args.re.trim() : undefined;
   return {
     ok: true,
-    send: { subject, body, re, needsReply: args.needs_reply === true },
+    send: {
+      subject,
+      body,
+      re,
+      needsReply: args.needs_reply === true,
+      attachments,
+    },
   };
 }
 
@@ -110,6 +158,8 @@ export const RELAY_INSTRUCTIONS =
   "capabilities must be labelled inline: [MEASURED] (reproduced, with the measurement), " +
   "[PROTOTYPE] (runs, not benchmarked) or [TARGET] (planned). Anything unlabelled is read as " +
   "TARGET. (5) Never send credentials, keys or personal data through the relay. " +
+  "(6) To send a file, get a URL from relay_upload_url, POST the bytes to it, and name the " +
+  "returned storage id in relay_send's attachments; the recipient gets a download link. " +
   "If your environment supports scheduled self-wakeups, a periodic relay_inbox check keeps " +
   "the line responsive without the owner relaying anything by hand.";
 
@@ -156,9 +206,36 @@ export const RELAY_TOOLS = [
           type: "boolean",
           description: "True only if you are asking something. Default false.",
         },
+        attachments: {
+          type: "array",
+          maxItems: MAX_ATTACHMENTS,
+          description:
+            "Files uploaded via relay_upload_url, one entry per file.",
+          items: {
+            type: "object",
+            properties: {
+              storage_id: {
+                type: "string",
+                description: "The storageId the upload returned.",
+              },
+              name: {
+                type: "string",
+                description: "File name, e.g. dream-agent3-night2.mp4.",
+              },
+            },
+            required: ["storage_id", "name"],
+          },
+        },
       },
       required: ["subject", "body"],
     },
+  },
+  {
+    name: "relay_upload_url",
+    title: "Get a file upload URL",
+    description:
+      "For sending a file (image, video, audio, CSV). Returns a one-time URL: POST the raw bytes to it with the file's Content-Type, e.g. curl -X POST -H 'Content-Type: video/mp4' --data-binary @clip.mp4 <url>. The JSON response carries a storageId; pass it to relay_send as attachments: [{storage_id, name}]. One URL per file; it expires after an hour.",
+    inputSchema: { type: "object", properties: {} },
   },
   {
     name: "relay_history",
@@ -181,7 +258,7 @@ export const RELAY_TOOLS = [
     name: "relay_read",
     title: "Read one message",
     description:
-      "The full text of one message by id, plus the ids of any replies to it.",
+      "The full text of one message by id, its attachments with download links, and the ids of any replies to it.",
     inputSchema: {
       type: "object",
       properties: { id: { type: "string", description: "Message id." } },

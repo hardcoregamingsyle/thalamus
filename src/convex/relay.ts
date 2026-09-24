@@ -2,10 +2,11 @@ import {
   httpAction,
   internalMutation,
   internalQuery,
+  type QueryCtx,
 } from "./_generated/server";
 import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import {
   DAILY_SEND_CAP,
   DAY_MS,
@@ -49,6 +50,13 @@ type SendResult =
     }
   | { ok: false; error: string };
 
+interface AttachmentOut {
+  name: string;
+  content_type?: string;
+  size: number;
+  url: string | null;
+}
+
 interface RelayMessageOut {
   id: string;
   from: RelayParty;
@@ -57,6 +65,7 @@ interface RelayMessageOut {
   re?: string;
   needs_reply: boolean;
   createdAt: number;
+  attachments?: AttachmentOut[];
 }
 
 interface InboxResult {
@@ -77,6 +86,7 @@ const sendRef = makeFunctionReference<
     body: string;
     re?: string;
     needsReply: boolean;
+    attachments?: { storageId: string; name: string }[];
   },
   SendResult
 >("relay:sendMessage");
@@ -90,9 +100,10 @@ const historyRef = makeFunctionReference<
   { you: RelayParty; limit: number },
   {
     you: RelayParty;
-    messages: (Omit<RelayMessageOut, "body"> & {
+    messages: (Omit<RelayMessageOut, "body" | "attachments"> & {
       preview: string;
       truncated: boolean;
+      attachments?: string[];
     })[];
   }
 >("relay:history");
@@ -109,6 +120,9 @@ export const sendMessage = internalMutation({
     body: v.string(),
     re: v.optional(v.string()),
     needsReply: v.boolean(),
+    attachments: v.optional(
+      v.array(v.object({ storageId: v.string(), name: v.string() })),
+    ),
   },
   handler: async (ctx, args): Promise<SendResult> => {
     const now = Date.now();
@@ -135,6 +149,22 @@ export const sendMessage = internalMutation({
       if (!re || !(await ctx.db.get(re)))
         return { ok: false, error: `No message with id "${args.re}".` };
     }
+    const attachments: NonNullable<Doc<"relayMessages">["attachments"]> = [];
+    for (const a of args.attachments ?? []) {
+      const sid = ctx.db.system.normalizeId("_storage", a.storageId);
+      const file = sid ? await ctx.db.system.get(sid) : null;
+      if (!sid || !file)
+        return {
+          ok: false,
+          error: `No uploaded file with storage_id "${a.storageId}". Upload it via relay_upload_url first.`,
+        };
+      attachments.push({
+        storageId: sid,
+        name: a.name,
+        size: file.size,
+        ...(file.contentType ? { contentType: file.contentType } : {}),
+      });
+    }
     const to = otherParty(args.from);
     const id = await ctx.db.insert("relayMessages", {
       from: args.from,
@@ -142,6 +172,7 @@ export const sendMessage = internalMutation({
       subject: args.subject,
       body: args.body,
       ...(re ? { re } : {}),
+      ...(attachments.length ? { attachments } : {}),
       needsReply: args.needsReply,
       createdAt: now,
     });
@@ -154,6 +185,23 @@ export const sendMessage = internalMutation({
     };
   },
 });
+
+// Download links are minted on read rather than stored: a stored URL would
+// outlive a deleted file, and minting is cheap.
+async function attachmentsOut(
+  ctx: Pick<QueryCtx, "storage">,
+  m: Doc<"relayMessages">,
+): Promise<AttachmentOut[] | undefined> {
+  if (!m.attachments?.length) return undefined;
+  return Promise.all(
+    m.attachments.map(async (a) => ({
+      name: a.name,
+      content_type: a.contentType,
+      size: a.size,
+      url: await ctx.storage.getUrl(a.storageId),
+    })),
+  );
+}
 
 // A mutation, not a query: reading the inbox is what marks it read. The
 // awaiting_reply list is derived from replies actually sent, not from read
@@ -194,15 +242,18 @@ export const takeInbox = internalMutation({
 
     return {
       you,
-      unread: unread.map((m) => ({
-        id: m._id,
-        from: m.from,
-        subject: m.subject,
-        body: m.body,
-        re: m.re,
-        needs_reply: m.needsReply,
-        createdAt: m.createdAt,
-      })),
+      unread: await Promise.all(
+        unread.map(async (m) => ({
+          id: m._id,
+          from: m.from,
+          subject: m.subject,
+          body: m.body,
+          re: m.re,
+          needs_reply: m.needsReply,
+          createdAt: m.createdAt,
+          attachments: await attachmentsOut(ctx, m),
+        })),
+      ),
       more_unread: fresh.length > limit,
       awaiting_reply: awaiting.reverse(),
     };
@@ -228,6 +279,7 @@ export const history = internalQuery({
         createdAt: m.createdAt,
         preview: m.body.slice(0, PREVIEW_CHARS),
         truncated: m.body.length > PREVIEW_CHARS,
+        attachments: m.attachments?.map((a) => a.name),
       })),
     };
   },
@@ -253,6 +305,7 @@ export const readMessage = internalQuery({
         re: m.re,
         needs_reply: m.needsReply,
         createdAt: m.createdAt,
+        attachments: await attachmentsOut(ctx, m),
       },
       replies: replies.map((r) => r._id),
     };
@@ -400,16 +453,22 @@ export const relayMcp = httpAction(async (ctx, request) => {
         case "relay_send": {
           const checked = validateSend(args);
           if (!checked.ok) return errTool(id, checked.error);
-          const { subject, body, re, needsReply } = checked.send;
+          const { subject, body, re, needsReply, attachments } = checked.send;
           const sent = await ctx.runMutation(sendRef, {
             from: you,
             subject,
             body,
             needsReply,
             ...(re ? { re } : {}),
+            ...(attachments.length ? { attachments } : {}),
           });
           return sent.ok ? okTool(id, sent) : errTool(id, sent.error);
         }
+        case "relay_upload_url":
+          return okTool(id, {
+            upload_url: await ctx.storage.generateUploadUrl(),
+            how: 'POST the raw file bytes to upload_url with the file\'s Content-Type header. The JSON response is {"storageId": "..."}; pass it to relay_send as attachments: [{storage_id, name}]. Single use; expires after an hour.',
+          });
         case "relay_history":
           return okTool(
             id,

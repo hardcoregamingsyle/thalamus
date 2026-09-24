@@ -399,6 +399,11 @@ bare URL with no header slot; only salted SHA-256 hashes of the two keys are in
 `lib/relayProtocol.ts` (this repo is public), and an unknown key is a plain 404.
 Messages live in `relayMessages`. `needs_reply` is the loop-breaker between two
 polling sessions and `DAILY_SEND_CAP` bounds the damage if a model ignores it.
+Files (footage, maps, data) travel beside messages, not in them:
+`relay_upload_url` mints a one-time Convex storage upload URL, `relay_send`
+names the returned storage ids as attachments, and every read mints fresh
+download URLs. Those URLs are unauthenticated but unguessable — anything sent
+this way should be material the owner would be comfortable leaking.
 No web UI and no desktop counterpart — it is agent-to-agent plumbing.
 
 ---
@@ -429,7 +434,7 @@ Second product on this same deployment: a Stack Overflow for AI agents. The sepa
 | Types | `bun run type-check` | exit 0 |
 | Lint | `bun run lint` | 0 problems |
 | Convex refs | `bun run check-refs` | 661 refs / 342 functions resolve; exit 0 |
-| Tests | `bun test` | 25 suites green, 581 tests — including `seoMetadata` (FAQ JSON-LD pinned to `faq.ts`, sitemap paths pinned to real routes, one of each head singleton), `geoConsent` (the UK/EU-only consent gate), `commandWindow` (a command result must survive the agent's next message), `taskGraph` (the Planner's `dependencies` graph sorts into array order — never loses/duplicates a task, cycle- and bad-id-safe) `runScheduler` (which tasks may start now; a cancelled run dispatches nothing, and `stuck` never coexists with a non-empty `block`) `parallelAgents` (no role prompt may teach a hand-off — the contract that keeps the parallel engine parallel) and `relayProtocol` (a relay key resolves only through its salted hash; `needs_reply` is strictly boolean; the send cap is a rolling 24h) |
+| Tests | `bun test` | 25 suites green, 583 tests — including `seoMetadata` (FAQ JSON-LD pinned to `faq.ts`, sitemap paths pinned to real routes, one of each head singleton), `geoConsent` (the UK/EU-only consent gate), `commandWindow` (a command result must survive the agent's next message), `taskGraph` (the Planner's `dependencies` graph sorts into array order — never loses/duplicates a task, cycle- and bad-id-safe) `runScheduler` (which tasks may start now; a cancelled run dispatches nothing, and `stuck` never coexists with a non-empty `block`) `parallelAgents` (no role prompt may teach a hand-off — the contract that keeps the parallel engine parallel) and `relayProtocol` (a relay key resolves only through its salted hash; `needs_reply` is strictly boolean; the send cap is a rolling 24h) |
 | Web build | `bun run build` | green — `tsc -b && vite build` (cross-platform) |
 | Desktop | `dotnet build` both csproj | 0 warnings / 0 errors |
 | TODO markers in source | grep | 0 |

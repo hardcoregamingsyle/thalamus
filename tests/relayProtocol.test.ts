@@ -9,7 +9,9 @@ import { describe, it, expect } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
+  ATTACHMENT_NAME_MAX,
   BODY_MAX,
+  MAX_ATTACHMENTS,
   DAILY_SEND_CAP,
   DAY_MS,
   RELAY_KEY_SALT,
@@ -58,7 +60,13 @@ describe("validateSend", () => {
     const r = validateSend({ subject: " Hi ", body: " text " });
     expect(r).toEqual({
       ok: true,
-      send: { subject: "Hi", body: "text", re: undefined, needsReply: false },
+      send: {
+        subject: "Hi",
+        body: "text",
+        re: undefined,
+        needsReply: false,
+        attachments: [],
+      },
     });
   });
 
@@ -101,6 +109,39 @@ describe("validateSend", () => {
     const set = validateSend({ subject: "s", body: "b", re: "abc" });
     expect(set.ok && set.send.re).toBe("abc");
   });
+
+  it("accepts attachments under either spelling of the storage id", () => {
+    const r = validateSend({
+      subject: "s",
+      body: "b",
+      attachments: [
+        { storage_id: " kg1 ", name: " dream.mp4 " },
+        { storageId: "kg2", name: "map.png" },
+      ],
+    });
+    expect(r.ok && r.send.attachments).toEqual([
+      { storageId: "kg1", name: "dream.mp4" },
+      { storageId: "kg2", name: "map.png" },
+    ]);
+  });
+
+  it("rejects malformed attachments instead of dropping them", () => {
+    const bad = (attachments: unknown) =>
+      validateSend({ subject: "s", body: "b", attachments }).ok;
+    expect(bad("kg1")).toBe(false);
+    expect(bad([{ name: "x.png" }])).toBe(false);
+    expect(bad([{ storage_id: "kg1" }])).toBe(false);
+    expect(
+      bad([{ storage_id: "kg1", name: "n".repeat(ATTACHMENT_NAME_MAX + 1) }]),
+    ).toBe(false);
+    expect(bad([null])).toBe(false);
+    const many = Array.from({ length: MAX_ATTACHMENTS + 1 }, (_, i) => ({
+      storage_id: `kg${i}`,
+      name: `f${i}`,
+    }));
+    expect(bad(many)).toBe(false);
+    expect(bad(many.slice(0, MAX_ATTACHMENTS))).toBe(true);
+  });
 });
 
 describe("overDailyCap", () => {
@@ -138,12 +179,13 @@ describe("clampLimit", () => {
 });
 
 describe("RELAY_TOOLS", () => {
-  it("advertises the four tools the transport dispatches", () => {
+  it("advertises the five tools the transport dispatches", () => {
     expect(RELAY_TOOLS.map((t) => t.name).sort()).toEqual([
       "relay_history",
       "relay_inbox",
       "relay_read",
       "relay_send",
+      "relay_upload_url",
     ]);
   });
 

@@ -931,6 +931,17 @@ const schema = defineSchema(
       needsReply: v.boolean(),
       createdAt: v.number(),
       deliveredAt: v.optional(v.number()),
+      // Files uploaded through relay_upload_url; download links are minted on read.
+      attachments: v.optional(
+        v.array(
+          v.object({
+            storageId: v.id("_storage"),
+            name: v.string(),
+            contentType: v.optional(v.string()),
+            size: v.number(),
+          }),
+        ),
+      ),
     })
       .index("by_to_and_delivered", ["to", "deliveredAt"])
       .index("by_to_and_created", ["to", "createdAt"])
