@@ -1,6 +1,8 @@
 # Thalamus
 
-Thalamus is being rebuilt from scratch. The previous codebase — the React web app, the native Windows desktop app, and the Convex backend — has been removed from `main` and is preserved at the tag [`archive/pre-redo-2026-09`](https://github.com/hardcoregamingsyle/thalamus/tree/archive/pre-redo-2026-09).
+Thalamus is being rebuilt from scratch as a first-party AI provider: an OpenAI-compatible API, a developer console and a web chat app, serving the in-house Thalamus Sophon models. The design is in [docs/architecture.md](docs/architecture.md).
+
+The previous codebase — the React web app, the native Windows desktop app, and the Convex backend — has been removed from `main` and is preserved at the tag [`archive/pre-redo-2026-09`](https://github.com/hardcoregamingsyle/thalamus/tree/archive/pre-redo-2026-09).
 
 ## Production during the rebuild
 

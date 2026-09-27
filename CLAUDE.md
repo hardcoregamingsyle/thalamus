@@ -8,22 +8,17 @@ The governing tradeoff: quality over speed, correctness over shortcuts. Trivial 
 
 ## Current state: rebuild in progress
 
-`main` was emptied on 2026-09-26 for a from-scratch rebuild. The previous codebase is preserved at the annotated tag `archive/pre-redo-2026-09` (commit `7573801`). Restore a file with `git checkout archive/pre-redo-2026-09 -- <path>`; never restore from an older local checkout.
+Thalamus is being rebuilt as a first-party AI provider serving the in-house model family, Thalamus Sophon: an OpenAI-compatible API, a developer console and a web chat app, with a waitlist until the model can take external traffic. The accepted design is [`docs/architecture.md`](docs/architecture.md); the interface to the model server is [`docs/model-server.md`](docs/model-server.md). Read both before building anything.
 
-Production was not touched and still runs the archived code:
+The previous codebase is preserved at the annotated tag `archive/pre-redo-2026-09` (commit `7573801`). Restore a file with `git checkout archive/pre-redo-2026-09 -- <path>`; never restore from an older local checkout.
 
-- **Convex `befitting-wildebeest-866`** serves the old Thalamus functions, the entire AgentOverflow backend, and the session relay (`relay.ts`, `/relay/mcp/<key>`, used by live scheduled routines). The AgentOverflow site calls its functions by string name — the contract is `frontend/src/lib/thalamusApi.ts` in the sibling `agentoverflow` repo.
-- **Cloudflare Pages** builds production from `main` on every push. A failing build leaves the last good deployment live; the first successful build replaces it.
-- **GitHub Releases** — the shipped installer downloads `releases/latest/download/Thalamus.exe` and `releases/download/vm-bridge-v3.5.0/thalamus-vm-bridge-v3.5.0.exe`, and the shipped app reads `releases/latest` for its update check. Do not delete or rename existing Releases.
+Production still runs the archived code until each piece is replaced:
 
-`npx convex deploy` replaces a deployment's entire function, HTTP-route and cron set. Before the rebuild's first deploy to `befitting-wildebeest-866`, the new backend must carry, or deliberately retire with the owner's sign-off:
+- **Convex `befitting-wildebeest-866`** serves the old Thalamus functions, the AgentOverflow backend, the shared accounts and the session relay. Ownership moves to the `agentoverflow` repository (architecture §3); this repository holds no Convex code and must never deploy to it. `npx convex deploy` replaces a deployment's entire function, route and cron set.
+- **Cloudflare Pages** builds the old site from `main` on every push. A failing build leaves the last good deployment live; the first successful build replaces it.
+- **GitHub Releases** of the old desktop app are to be deleted once the owner confirms the list (architecture §11). Do not delete any before that confirmation.
 
-- the AgentOverflow closure: `agentoverflow*.ts`, `customAuth*`, `admin:adminLogin`, `analytics:getAnalyticsConfig`, the `/ao/*` HTTP routes, and the `refill agentoverflow credits` and `sync agentoverflow keys to vm` crons;
-- the session relay (`relay.ts`, `lib/relayProtocol.ts`, the `relayMessages` table);
-- the OAuth routes (`/auth/google`, `/auth/google/callback`, `/auth/github`, `/github/callback`), which are registered in the Google and GitHub OAuth apps;
-- row compatibility with existing tables, above all the shared `users` table and its AgentOverflow columns.
-
-Rotate `CONVEX_DEPLOY_KEY` before a new deploy workflow references it, and do not gate deploys on `workflow_run` with a `branches: [main]` filter — a fork PR from a branch named `main` matches it.
+The model is described publicly only as a non-transformer architecture. This repository is public: never describe the model's internals, size, training hardware or training data in any file, commit, comment or doc, and never claim performance, context length or memory capabilities until the model lab has published measured results.
 
 ---
 
@@ -36,11 +31,7 @@ Rotate `CONVEX_DEPLOY_KEY` before a new deploy workflow references it, and do no
 
 ### Best over fastest
 - Prefer the better-engineered approach when two exist.
-- Desktop software is natively built. Do not propose Electron, Tauri, or any web-shell packaging.
 - "Best" is not "over-engineered": no speculative features, no single-use abstractions, no unrequested flexibility.
-
-### Web/desktop parity
-Any user-facing change made to the website must ship to the desktop app in the same task. If a web change genuinely has no desktop counterpart (SEO copy, landing page, guest mode), say so explicitly rather than silently skipping the desktop side.
 
 ### Simplicity first
 Minimum code that solves the stated problem. If a 200-line change could be 50 lines, rewrite it.
@@ -63,7 +54,7 @@ Only fall back to a PR if `main` is branch-protected and rejects the push; do no
 
 ### Surgical changes
 - Match existing style. Do not "improve" adjacent code, comments, or formatting.
-- Update every dependent when modifying a file — including the sibling `agentoverflow` repo and the shipped desktop `.exe`.
+- Update every dependent when modifying a file — including the sibling `agentoverflow` repo.
 - Remove imports/variables/functions your change orphaned. Leave pre-existing dead code alone unless asked.
 - Every changed line must trace to the user's request.
 
@@ -79,5 +70,3 @@ Documentation (`README.md`, `docs/**`) and commit messages are written in a neut
 Commit format matches existing history: lowercase `scope: subject`, where scope is an area name (`convex`, `landing`, `desktop`, `ci`, `docs`, `seo`, `cleanup`, …). Subject is short, lowercase, sometimes with an em-dash clause. Bodies are plain prose explaining the why. No conventional-commit strictness, no emoji. Agent-authored commits carry a `Co-Authored-By` attribution trailer.
 
 Commit small and frequently, between tasks — not one giant thousand-line commit. Push to `main` directly; there is no PR flow on this repository.
-
-Website download links point at `github.com/hardcoregamingsyle/thalamus/releases/latest/download/Thalamus.exe`. Publishing a Release whose asset is named exactly `Thalamus.exe` is the whole job; only if the asset name changes must the web links change.
