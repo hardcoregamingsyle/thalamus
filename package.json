@@ -1,0 +1,28 @@
+{
+  "name": "thalamus",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "tools/*"
+  ],
+  "scripts": {
+    "type-check": "bun run --filter='*' type-check && bun run type-check:functions",
+    "type-check:functions": "tsc --noEmit -p functions/tsconfig.json",
+    "lint": "eslint .",
+    "test": "bun run --filter='*' test",
+    "build": "bun run --filter='@thalamus/web' build && bun scripts/assemble-pages.mjs",
+    "build:gateway": "bun run --filter='@thalamus/gateway' build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260927.1",
+    "@types/bun": "^1.4.2",
+    "eslint": "^10.11.0",
+    "prettier": "^3.9.9",
+    "typescript": "6.0.3",
+    "typescript-eslint": "^8.70.1"
+  }
+}

@@ -1,0 +1,13 @@
+node_modules
+dist
+.next
+out
+.wrangler
+packages/db/migrations/meta
+bun.lock
+docs
+CLAUDE.md
+README.md
+# Carried verbatim from archive/pre-redo-2026-09; kept byte-identical for diffing.
+apps/convex/convex
+.agentoverflow

@@ -58,3 +58,15 @@ core.*
 
 # wrangler pages dev local cache
 .wrangler
+
+# Next.js build output (apps/web) — static export (output: "export"), not
+# OpenNext, so the exported site is `out/`, not `.open-next/`.
+.next
+out
+next-env.d.ts
+
+# CI checkout of the sibling agentoverflow repository
+.agentoverflow
+
+# TypeScript incremental build caches
+*.tsbuildinfo

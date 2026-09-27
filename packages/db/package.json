@@ -1,0 +1,25 @@
+{
+  "name": "@thalamus/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./test-db": "./src/test-db.ts"
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "test": "bun test",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "drizzle-orm": "^0.45.3",
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "drizzle-kit": "^0.31.11"
+  }
+}
