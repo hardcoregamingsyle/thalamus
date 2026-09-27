@@ -51,7 +51,7 @@ describe("readChatCompletionStream", () => {
     const errors: string[] = [];
     await readChatCompletionStream(response, {
       onDelta: () => {},
-      onError: (message) => errors.push(message),
+      onError: (info) => errors.push(info.message),
     });
 
     expect(errors).toEqual(["The model is warming up."]);
@@ -63,7 +63,7 @@ describe("readChatCompletionStream", () => {
     const errors: string[] = [];
     await readChatCompletionStream(response, {
       onDelta: () => {},
-      onError: (message) => errors.push(message),
+      onError: (info) => errors.push(info.message),
     });
 
     expect(errors).toEqual(["Request failed (503)"]);
@@ -74,7 +74,7 @@ describe("readChatCompletionStream", () => {
     const errors: string[] = [];
     await readChatCompletionStream(response, {
       onDelta: () => {},
-      onError: (message) => errors.push(message),
+      onError: (info) => errors.push(info.message),
     });
     expect(errors).toEqual(["Empty response body"]);
   });

@@ -1,239 +1,476 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { ChatMessageRow, ConversationSummary } from "@/lib/types";
+import { ArrowDown } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { LogoMark } from "@/components/ui/Logo";
+import { EASE_OUT } from "@/components/ui/Reveal";
+import {
+  createConversation,
+  deleteConversation,
+  fetchConversation,
+  isAbortError,
+  listConversations,
+  postMessage,
+  postRegenerate,
+  warmChat,
+} from "@/lib/chat-api";
+import type { NoticeKind, TimelineItem } from "@/lib/chat-types";
+import { fetchMe } from "@/lib/me";
 import { readChatCompletionStream } from "@/lib/sse-client";
+import type { ConversationSummary, MeAccount, MeUser } from "@/lib/types";
+import { AccessCard } from "@/components/chat/AccessCard";
+import { Composer } from "@/components/chat/Composer";
+import { EmptyState } from "@/components/chat/EmptyState";
+import { Sidebar } from "@/components/chat/Sidebar";
+import { Timeline } from "@/components/chat/Timeline";
+import { TopBar } from "@/components/chat/TopBar";
 
-/** Required on every mutating call to the gateway (see docs/architecture.md). */
-const MUTATING_HEADERS = { "X-Requested-With": "thalamus" };
+type Phase = "loading" | "signed-out" | "denied" | "ready";
+type GenerationMode = { type: "message"; content: string } | { type: "regenerate" };
 
-async function fetchConversation(
-  id: string,
-): Promise<{ conversation: ConversationSummary; messages: ChatMessageRow[] } | null> {
-  const res = await fetch(`/api/conversations/${id}`);
-  if (!res.ok) return null;
-  return (await res.json()) as { conversation: ConversationSummary; messages: ChatMessageRow[] };
+function hasAccess(account: MeAccount | null): boolean {
+  return account?.status === "invited" || account?.status === "active";
 }
 
-export function ChatApp({ initialConversations }: { initialConversations: ConversationSummary[] }) {
-  const [conversations, setConversations] = useState(initialConversations);
+export function ChatApp() {
+  const router = useRouter();
+  const [phase, setPhase] = useState<Phase>("loading");
+  const [user, setUser] = useState<MeUser | null>(null);
+  const [account, setAccount] = useState<MeAccount | null>(null);
+  const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null);
+
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessageRow[]>([]);
+  const [items, setItems] = useState<TimelineItem[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [composerError, setComposerError] = useState<string | null>(null);
+  const [sidebarNotice, setSidebarNotice] = useState<string | null>(null);
+  const [showJump, setShowJump] = useState(false);
+
+  const activeIdRef = useRef<string | null>(null);
+  const atBottomRef = useRef(true);
+  const skipScrollAnimationRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    // Warm the model server's memory for this user ahead of a first message.
-    void fetch("/api/chat/warm", { method: "POST", headers: MUTATING_HEADERS });
+    activeIdRef.current = activeId;
+  }, [activeId]);
+
+  async function load() {
+    const me = await fetchMe();
+    if (!me.ok || !me.data.user) {
+      setPhase("signed-out");
+      router.replace("/auth");
+      return;
+    }
+
+    setUser(me.data.user);
+    setAccount(me.data.account);
+    setWaitlistPosition(me.data.waitlistPosition);
+
+    if (!hasAccess(me.data.account)) {
+      setPhase("denied");
+      return;
+    }
+
+    setConversations(await listConversations());
+    setPhase("ready");
+
+    const initial = new URLSearchParams(window.location.search).get("c");
+    if (initial) await openConversation(initial, false);
+  }
+
+  useEffect(() => {
+    // Mount only: this reads the URL's initial `?c=` once and establishes
+    // the session. Later navigation goes through the handlers below, which
+    // close over fresh state on every render.
+    void load();
   }, []);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages]);
+    if (!mobileNavOpen) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setMobileNavOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mobileNavOpen]);
 
-  async function selectConversation(id: string) {
-    setError(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !atBottomRef.current) return;
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: skipScrollAnimationRef.current ? "auto" : "smooth",
+    });
+    skipScrollAnimationRef.current = false;
+  }, [items]);
+
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const atBottom = distance < 96;
+    atBottomRef.current = atBottom;
+    setShowJump(!atBottom);
+  }
+
+  function jumpToLatest() {
+    const el = scrollRef.current;
+    if (!el) return;
+    atBottomRef.current = true;
+    setShowJump(false);
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }
+
+  async function openConversation(id: string | null, push: boolean) {
+    setMobileNavOpen(false);
+    setComposerError(null);
+    abortRef.current?.abort();
+    setStreaming(false);
+
+    if (!id) {
+      setActiveId(null);
+      setItems([]);
+      setInput("");
+      atBottomRef.current = true;
+      setShowJump(false);
+      if (push) window.history.pushState(null, "", "/chat");
+      return;
+    }
+
     const detail = await fetchConversation(id);
     if (!detail) {
-      setError("Couldn't load that conversation.");
+      setActiveId(null);
+      setItems([]);
+      if (push) window.history.pushState(null, "", "/chat");
       return;
     }
+
+    skipScrollAnimationRef.current = true;
+    atBottomRef.current = true;
+    setShowJump(false);
     setActiveId(id);
-    setMessages(detail.messages);
+    setItems(detail.messages.map((message) => ({ kind: "message" as const, message })));
+    setInput("");
+    if (push) window.history.pushState(null, "", `/chat?c=${id}`);
+    warmChat(id);
   }
 
-  function startNewChat() {
-    setActiveId(null);
-    setMessages([]);
-    setError(null);
-  }
-
-  async function deleteConversation(id: string) {
-    if (!window.confirm("Delete this conversation? This can't be undone.")) return;
-    const res = await fetch(`/api/conversations/${id}`, {
-      method: "DELETE",
-      headers: MUTATING_HEADERS,
-    });
-    if (!res.ok) {
-      setError("Couldn't delete that conversation.");
+  async function removeConversation(id: string) {
+    const result = await deleteConversation(id);
+    if (!result.ok) {
+      setSidebarNotice(result.error);
+      setTimeout(() => setSidebarNotice(null), 4000);
       return;
     }
-    setConversations((current) => current.filter((c) => c.id !== id));
-    if (activeId === id) startNewChat();
+    setConversations((cur) => cur.filter((c) => c.id !== id));
+    if (activeIdRef.current === id) await openConversation(null, true);
   }
 
-  async function streamInto(response: Response) {
-    setMessages((current) => [
-      ...current,
-      { id: "pending", role: "assistant", content: "", createdAt: new Date().toISOString() },
+  function touchConversation(id: string) {
+    setConversations((cur) => {
+      const idx = cur.findIndex((c) => c.id === id);
+      const row = cur[idx];
+      if (!row) return cur;
+      const next = cur.slice();
+      next.splice(idx, 1);
+      next.unshift({ ...row, updatedAt: new Date().toISOString() });
+      return next;
+    });
+  }
+
+  function appendNotice(kind: NoticeKind, text: string, onRetry?: () => void) {
+    setItems((cur) => [
+      ...cur,
+      { kind: "notice", id: crypto.randomUUID(), noticeKind: kind, text, onRetry },
     ]);
-    setStreaming(true);
-    await readChatCompletionStream(response, {
-      onDelta: (text) => {
-        setMessages((current) => {
-          const next = [...current];
-          const last = next[next.length - 1];
-          if (last && last.id === "pending") {
-            next[next.length - 1] = { ...last, content: last.content + text };
-          }
-          return next;
-        });
+  }
+
+  async function streamAssistantReply(conversationId: string, res: Response, mode: GenerationMode) {
+    const pendingId = crypto.randomUUID();
+    setItems((cur) => [
+      ...cur,
+      {
+        kind: "message",
+        message: {
+          id: pendingId,
+          role: "assistant",
+          content: "",
+          createdAt: new Date().toISOString(),
+        },
       },
-      onDone: () => setStreaming(false),
-      onError: (message) => {
+    ]);
+
+    await readChatCompletionStream(res, {
+      onDelta: (text) => {
+        setItems((cur) =>
+          cur.map((item) =>
+            item.kind === "message" && item.message.id === pendingId
+              ? { ...item, message: { ...item.message, content: item.message.content + text } }
+              : item,
+          ),
+        );
+      },
+      onDone: () => {
         setStreaming(false);
-        setError(message);
+        abortRef.current = null;
+        touchConversation(conversationId);
+      },
+      onAbort: () => {
+        setStreaming(false);
+        abortRef.current = null;
+        touchConversation(conversationId);
+      },
+      onError: (info) => {
+        setStreaming(false);
+        abortRef.current = null;
+        // Drop the pending bubble only if nothing streamed into it yet —
+        // a partial reply followed by a dropped connection is still worth
+        // keeping on screen.
+        setItems((cur) =>
+          cur.filter(
+            (item) =>
+              !(
+                item.kind === "message" &&
+                item.message.id === pendingId &&
+                item.message.content === ""
+              ),
+          ),
+        );
+
+        if (info.code === "model_unavailable") {
+          // conversations.ts checks `modelServerConfigured` before it ever
+          // inserts the user's message, so nothing was saved here.
+          appendNotice(
+            "model_unavailable",
+            "Thalamus Sophon isn't available yet. Try again later.",
+          );
+          return;
+        }
+
+        // A "stream"-stage failure means the 200 response had already
+        // started, which only happens after the user message is inserted —
+        // retrying a `message` send verbatim would duplicate it, so redo it
+        // as a regenerate instead.
+        const retryMode: GenerationMode =
+          info.stage === "stream" && mode.type === "message" ? { type: "regenerate" } : mode;
+        appendNotice("error", info.message, () => void runGeneration(conversationId, retryMode));
       },
     });
   }
 
-  async function sendMessage(event: FormEvent) {
-    event.preventDefault();
+  async function runGeneration(conversationId: string, mode: GenerationMode) {
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setStreaming(true);
+
+    let res: Response;
+    try {
+      res =
+        mode.type === "message"
+          ? await postMessage(conversationId, mode.content, controller.signal)
+          : await postRegenerate(conversationId, controller.signal);
+    } catch (err) {
+      setStreaming(false);
+      abortRef.current = null;
+      if (!isAbortError(err)) {
+        appendNotice(
+          "error",
+          "Couldn't reach Thalamus. Try again.",
+          () => void runGeneration(conversationId, mode),
+        );
+      }
+      return;
+    }
+
+    await streamAssistantReply(conversationId, res, mode);
+  }
+
+  async function sendMessage() {
     const content = input.trim();
     if (!content || streaming) return;
-    setError(null);
     setInput("");
+    setComposerError(null);
 
-    let conversationId = activeId;
+    let conversationId = activeIdRef.current;
     if (!conversationId) {
-      const res = await fetch("/api/conversations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...MUTATING_HEADERS },
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) {
-        setError("Couldn't start a new conversation.");
+      const title = content.length > 48 ? `${content.slice(0, 48).trimEnd()}…` : content;
+      const created = await createConversation(title);
+      if (!created.ok) {
+        setInput(content);
+        setComposerError(created.error);
         return;
       }
-      const { conversation: created } = (await res.json()) as { conversation: ConversationSummary };
-      conversationId = created.id;
-      setActiveId(created.id);
-      setConversations((current) => [created, ...current]);
+      conversationId = created.conversation.id;
+      setActiveId(conversationId);
+      setConversations((cur) => [created.conversation, ...cur]);
+      atBottomRef.current = true;
+      window.history.pushState(null, "", `/chat?c=${conversationId}`);
+      warmChat(conversationId);
     }
 
-    setMessages((current) => [
-      ...current,
-      { id: crypto.randomUUID(), role: "user", content, createdAt: new Date().toISOString() },
+    setItems((cur) => [
+      ...cur,
+      {
+        kind: "message",
+        message: {
+          id: crypto.randomUUID(),
+          role: "user",
+          content,
+          createdAt: new Date().toISOString(),
+        },
+      },
     ]);
-
-    const res = await fetch(`/api/conversations/${conversationId}/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...MUTATING_HEADERS },
-      body: JSON.stringify({ content }),
-    });
-    await streamInto(res);
+    touchConversation(conversationId);
+    await runGeneration(conversationId, { type: "message", content });
   }
 
-  async function regenerate() {
-    if (!activeId || streaming) return;
-    setError(null);
-    setMessages((current) =>
-      current[current.length - 1]?.role === "assistant" ? current.slice(0, -1) : current,
+  async function regenerateLast() {
+    const id = activeIdRef.current;
+    if (!id || streaming) return;
+    setItems((cur) => {
+      const last = cur[cur.length - 1];
+      return last?.kind === "message" && last.message.role === "assistant" ? cur.slice(0, -1) : cur;
+    });
+    await runGeneration(id, { type: "regenerate" });
+  }
+
+  function stopGenerating() {
+    abortRef.current?.abort();
+  }
+
+  if (phase === "loading" || phase === "signed-out") {
+    return (
+      <div className="flex h-dvh items-center justify-center bg-bg">
+        <LogoMark className="h-8 w-8 opacity-40" />
+      </div>
     );
-    const res = await fetch(`/api/conversations/${activeId}/regenerate`, {
-      method: "POST",
-      headers: MUTATING_HEADERS,
-    });
-    await streamInto(res);
   }
 
-  const lastIsAssistant = messages[messages.length - 1]?.role === "assistant";
+  const canChat = phase === "ready";
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-8.5rem)] max-w-4xl gap-4 px-4 py-6">
-      <aside className="hidden w-56 shrink-0 flex-col gap-2 sm:flex">
-        <button
-          type="button"
-          onClick={startNewChat}
-          className="rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-surface"
-        >
-          + New chat
-        </button>
-        <div className="flex-1 overflow-y-auto">
-          {conversations.map((c) => (
-            <div
-              key={c.id}
-              className={`group flex items-center justify-between rounded-md px-3 py-2 text-sm ${
-                activeId === c.id ? "bg-surface" : "hover:bg-surface"
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => void selectConversation(c.id)}
-                className="flex-1 truncate text-left"
-              >
-                {c.title ?? "Untitled"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void deleteConversation(c.id)}
-                aria-label="Delete conversation"
-                className="ml-2 hidden text-muted-foreground hover:text-danger group-hover:inline"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
+    <div className="flex h-dvh overflow-hidden bg-bg text-fg">
+      <aside className="hidden w-[264px] shrink-0 border-r border-border md:flex md:flex-col">
+        <Sidebar
+          conversations={conversations}
+          activeId={activeId}
+          onSelect={(id) => void openConversation(id, true)}
+          onNewChat={() => void openConversation(null, true)}
+          onDelete={(id) => void removeConversation(id)}
+          readOnly={!canChat}
+          user={user}
+          notice={sidebarNotice}
+        />
       </aside>
 
-      <section className="flex flex-1 flex-col">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto">
-          {messages.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Start a conversation below.</p>
-          ) : (
-            <div className="flex flex-col gap-4">
-              {messages.map((message, index) => (
-                <div key={message.id ?? index}>
-                  <p className="text-xs font-medium text-muted-foreground">
-                    {message.role === "user" ? "You" : "Thalamus"}
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm">{message.content}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {error ? (
-          <p role="alert" className="mt-2 text-sm text-danger">
-            {error}
-          </p>
+      <AnimatePresence>
+        {mobileNavOpen ? (
+          <>
+            <motion.div
+              key="backdrop"
+              className="fixed inset-0 z-40 bg-black/50 md:hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setMobileNavOpen(false)}
+            />
+            <motion.div
+              key="drawer"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Conversations"
+              className="fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] border-r border-border bg-bg-elevated md:hidden"
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ duration: 0.28, ease: EASE_OUT }}
+            >
+              <Sidebar
+                conversations={conversations}
+                activeId={activeId}
+                onSelect={(id) => void openConversation(id, true)}
+                onNewChat={() => void openConversation(null, true)}
+                onDelete={(id) => void removeConversation(id)}
+                readOnly={!canChat}
+                user={user}
+                notice={sidebarNotice}
+              />
+            </motion.div>
+          </>
         ) : null}
+      </AnimatePresence>
 
-        {lastIsAssistant && !streaming ? (
-          <button
-            type="button"
-            onClick={() => void regenerate()}
-            className="mt-2 self-start text-sm text-muted-foreground hover:underline"
-          >
-            Regenerate
-          </button>
-        ) : null}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar
+          onOpenMenu={() => setMobileNavOpen(true)}
+          onNewChat={() => void openConversation(null, true)}
+          showNewChat={canChat}
+        />
 
-        <form onSubmit={(event) => void sendMessage(event)} className="mt-4 flex gap-2">
-          <label htmlFor="chat-input" className="sr-only">
-            Message
-          </label>
-          <input
-            id="chat-input"
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            disabled={streaming}
-            placeholder="Message Thalamus"
-            className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm disabled:opacity-60"
+        {phase === "denied" ? (
+          <AccessCard
+            account={account}
+            waitlistPosition={waitlistPosition}
+            onJoined={() => void load()}
           />
-          <button
-            type="submit"
-            disabled={streaming || !input.trim()}
-            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground disabled:opacity-60"
-          >
-            {streaming ? "Sending…" : "Send"}
-          </button>
-        </form>
-      </section>
+        ) : !activeId ? (
+          <EmptyState
+            value={input}
+            onChange={setInput}
+            onSend={() => void sendMessage()}
+            onStop={stopGenerating}
+            streaming={streaming}
+            disabled={false}
+            error={composerError}
+          />
+        ) : (
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <Timeline
+              items={items}
+              streaming={streaming}
+              onRegenerate={() => void regenerateLast()}
+              scrollRef={scrollRef}
+              onScroll={handleScroll}
+            />
+            <AnimatePresence>
+              {showJump ? (
+                <motion.button
+                  type="button"
+                  onClick={jumpToLatest}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={{ duration: 0.2, ease: EASE_OUT }}
+                  className="absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border-strong bg-bg-elevated px-4 py-1.5 text-xs font-medium text-fg shadow-lg transition-colors hover:bg-surface-strong"
+                >
+                  <ArrowDown className="h-3 w-3" />
+                  Jump to latest
+                </motion.button>
+              ) : null}
+            </AnimatePresence>
+            <div className="bg-gradient-to-t from-bg via-bg to-transparent px-4 pb-4 pt-6">
+              <div className="mx-auto w-full max-w-3xl">
+                <Composer
+                  value={input}
+                  onChange={setInput}
+                  onSend={() => void sendMessage()}
+                  onStop={stopGenerating}
+                  streaming={streaming}
+                  disabled={false}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

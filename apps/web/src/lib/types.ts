@@ -12,7 +12,9 @@ export interface MeUser {
 export type AccountStatus = "none" | "waitlisted" | "invited" | "active" | "suspended";
 
 export interface MeAccount {
+  id: string;
   status: AccountStatus;
+  plan: string;
 }
 
 export interface MeResponse {
@@ -41,6 +43,10 @@ export interface ApiKeySummary {
 
 export interface ApiKeyCreated {
   id: string;
+  name: string | null;
+  last4: string;
+  createdAt: string;
+  /** Shown once, at creation — the gateway stores only its hash after this response. */
   key: string;
 }
 
@@ -71,15 +77,6 @@ export interface ChatMessageRow {
 export interface ConversationDetail {
   conversation: ConversationSummary;
   messages: ChatMessageRow[];
-}
-
-/** `{error:{message, code}}` — the /api/* error envelope (brief, "Errors"). */
-export interface ApiErrorBody {
-  error: {
-    message: string;
-    code: string;
-    waitlist_position?: number;
-  };
 }
 
 /** One `chat.completion.chunk` event as relayed by /api/conversations/:id/messages. */

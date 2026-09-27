@@ -1,11 +1,14 @@
 "use client";
 
+import { Inbox } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/Button";
+import { PageHeader } from "@/components/app/PageHeader";
+import { EmptyState } from "@/components/app/EmptyState";
+import { Skeleton } from "@/components/app/Skeleton";
+import { useMe } from "@/components/app/useMe";
 import type { AdminWaitlistRow } from "@/lib/types";
-import { fetchMe } from "@/lib/me";
-
-type LoadState = "loading" | "forbidden" | "ready";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -16,121 +19,119 @@ function formatDate(iso: string): string {
 }
 
 export default function AdminPage() {
+  const { me, loading: meLoading } = useMe();
   const router = useRouter();
-  const [state, setState] = useState<LoadState>("loading");
-  const [rows, setRows] = useState<AdminWaitlistRow[]>([]);
+  const isAdmin = me?.isAdmin ?? false;
+
+  const [rows, setRows] = useState<AdminWaitlistRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [invitingId, setInvitingId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    const me = await fetchMe();
-    if (!me.ok || !me.data.user) {
-      router.replace("/auth");
-      return;
-    }
-    if (!me.data.isAdmin) {
-      setState("forbidden");
-      return;
-    }
+  useEffect(() => {
+    if (!meLoading && !isAdmin) router.replace("/console");
+  }, [meLoading, isAdmin, router]);
 
-    const res = await fetch("/api/admin/waitlist");
-    if (!res.ok) {
-      setError("Couldn't load the waitlist. Try again.");
-      setState("ready");
-      return;
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/waitlist");
+      if (!res.ok) {
+        setError("Couldn't load the waitlist.");
+        return;
+      }
+      const data = (await res.json()) as { waitlist: AdminWaitlistRow[] };
+      setRows(data.waitlist);
+    } catch {
+      setError("Couldn't reach Thalamus.");
     }
-    const data = (await res.json()) as { waitlist: AdminWaitlistRow[] };
-    setRows(data.waitlist);
-    setState("ready");
-  }, [router]);
+  }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (isAdmin) void load();
+  }, [isAdmin, load]);
 
-  async function invite(accountId: string) {
-    setInvitingId(accountId);
+  async function invite(row: AdminWaitlistRow) {
+    setInvitingId(row.accountId);
     setError(null);
+    const previous = rows;
+    setRows((current) => (current ?? []).filter((r) => r.accountId !== row.accountId));
     try {
       const res = await fetch("/api/admin/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Requested-With": "thalamus" },
-        body: JSON.stringify({ accountId }),
+        body: JSON.stringify({ accountId: row.accountId }),
       });
       if (!res.ok) {
-        setError("Couldn't invite that account. Try again.");
-        return;
+        setRows(previous);
+        setError(`Couldn't invite ${row.email}. Try again.`);
       }
-      setRows((current) => current.filter((row) => row.accountId !== accountId));
     } catch {
+      setRows(previous);
       setError("Couldn't reach Thalamus. Try again.");
     } finally {
       setInvitingId(null);
     }
   }
 
-  if (state === "loading") {
-    return <div className="mx-auto max-w-4xl px-4 py-12" />;
-  }
-
-  if (state === "forbidden") {
+  if (meLoading || !isAdmin) {
     return (
-      <div className="mx-auto max-w-4xl px-4 py-12">
-        <h1 className="text-2xl font-semibold tracking-tight">Admin</h1>
-        <p className="mt-4 text-sm text-muted-foreground">
-          This page is only available to admin accounts.
-        </p>
+      <div>
+        <PageHeader title="Admin" />
+        <Skeleton className="h-64" />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-12">
-      <h1 className="text-2xl font-semibold tracking-tight">Waitlist</h1>
+    <div>
+      <PageHeader title="Admin" description="Invite accounts off the waitlist, in order." />
 
       {error ? (
-        <p role="alert" className="mt-4 text-sm text-danger">
+        <p role="alert" className="mb-4 text-sm text-danger">
           {error}
         </p>
       ) : null}
 
-      <table className="mt-6 w-full text-left text-sm">
-        <thead className="text-muted-foreground">
-          <tr className="border-b border-border">
-            <th className="py-2 font-normal">Position</th>
-            <th className="py-2 font-normal">Email</th>
-            <th className="py-2 font-normal">Joined</th>
-            <th className="py-2 font-normal" />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
-            <tr>
-              <td colSpan={4} className="py-4 text-muted-foreground">
-                The waitlist is empty.
-              </td>
-            </tr>
-          ) : (
-            rows.map((row) => (
-              <tr key={row.accountId} className="border-b border-border">
-                <td className="py-2">{row.position}</td>
-                <td className="py-2">{row.email}</td>
-                <td className="py-2">{formatDate(row.createdAt)}</td>
-                <td className="py-2 text-right">
-                  <button
-                    type="button"
-                    onClick={() => void invite(row.accountId)}
-                    disabled={invitingId === row.accountId}
-                    className="rounded-md border border-border px-3 py-1 hover:bg-surface disabled:opacity-60"
-                  >
-                    {invitingId === row.accountId ? "Inviting…" : "Invite"}
-                  </button>
-                </td>
+      {rows === null ? (
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-12" />
+          <Skeleton className="h-12" />
+          <Skeleton className="h-12" />
+        </div>
+      ) : rows.length === 0 ? (
+        <EmptyState icon={Inbox} message="The waitlist is empty." />
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border border-border">
+          <table className="w-full min-w-[480px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-border bg-surface text-fg-subtle">
+                <th className="px-4 py-2.5 font-medium">Position</th>
+                <th className="px-4 py-2.5 font-medium">Email</th>
+                <th className="px-4 py-2.5 font-medium">Joined</th>
+                <th className="px-4 py-2.5" />
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.accountId} className="border-b border-border last:border-b-0">
+                  <td className="px-4 py-3 text-fg-muted">{row.position}</td>
+                  <td className="px-4 py-3 text-fg">{row.email}</td>
+                  <td className="px-4 py-3 text-fg-muted">{formatDate(row.createdAt)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void invite(row)}
+                      disabled={invitingId === row.accountId}
+                    >
+                      {invitingId === row.accountId ? "Inviting…" : "Invite"}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
