@@ -1,0 +1,9 @@
+name = "thalamus"
+compatibility_date = "2026-09-27"
+pages_build_output_dir = "dist"
+
+# The Pages Functions in functions/api and functions/v1 forward straight to
+# this Worker unchanged — no api. subdomain, no network hop.
+[[services]]
+binding = "GATEWAY"
+service = "thalamus-gateway"

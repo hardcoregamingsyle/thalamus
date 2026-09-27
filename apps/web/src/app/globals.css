@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+:root {
+  --raw-background: #fcfcfb;
+  --raw-surface: #f4f3f0;
+  --raw-foreground: #0b0b0b;
+  --raw-muted-foreground: #52514e;
+  --raw-border: #e1e0d9;
+  --raw-accent: #2a78d6;
+  --raw-accent-foreground: #ffffff;
+  --raw-danger: #d03b3b;
+  --chart-bar: #6da7ec;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --raw-background: #0d0d0d;
+    --raw-surface: #1a1a19;
+    --raw-foreground: #ffffff;
+    --raw-muted-foreground: #c3c2b7;
+    --raw-border: #2c2c2a;
+    --raw-accent: #3987e5;
+    --raw-accent-foreground: #0b0b0b;
+    --raw-danger: #e66767;
+    --chart-bar: #5598e7;
+  }
+}
+
+@theme inline {
+  --color-background: var(--raw-background);
+  --color-surface: var(--raw-surface);
+  --color-foreground: var(--raw-foreground);
+  --color-muted-foreground: var(--raw-muted-foreground);
+  --color-border: var(--raw-border);
+  --color-accent: var(--raw-accent);
+  --color-accent-foreground: var(--raw-accent-foreground);
+  --color-danger: var(--raw-danger);
+}
+
+body {
+  background: var(--raw-background);
+  color: var(--raw-foreground);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+
+a {
+  color: var(--raw-accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--raw-accent);
+  outline-offset: 2px;
+}
+
+code,
+pre {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
