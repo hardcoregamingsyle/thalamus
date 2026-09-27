@@ -1,0 +1,36 @@
+name = "thalamus-gateway"
+main = "src/index.ts"
+compatibility_date = "2026-09-27"
+compatibility_flags = ["nodejs_compat"]
+
+# Reachable only through the Pages project's GATEWAY service binding
+# (thalamus.aphantic.skinticals.com/v1 and /api, forwarded from Pages
+# Functions) — no workers.dev subdomain and no routes of its own.
+workers_dev = false
+
+[observability]
+enabled = true
+
+# Secrets, set with `wrangler secret put` and never written here:
+#   DATABASE_URL        — Neon Postgres connection string
+#   MODEL_SERVER_URL    — empty/unset until the model lab's server exists
+#   MODEL_SERVER_SECRET — X-Thalamus-Signature HMAC secret (docs/model-server.md)
+#   USER_KEY_SECRET     — pseudonymous user_key HMAC secret
+#   ADMIN_TOKEN         — bearer token for the admin routes
+#   ADMIN_EMAILS        — comma-separated admin email allowlist
+[vars]
+CONVEX_URL = "https://befitting-wildebeest-866.convex.cloud"
+
+[[queues.producers]]
+binding = "USAGE_QUEUE"
+queue = "thalamus-usage"
+
+[[queues.consumers]]
+queue = "thalamus-usage"
+max_batch_size = 50
+max_batch_timeout = 5
+max_retries = 5
+
+[triggers]
+# Idle-session sweep (docs/architecture.md §6): every 5 minutes.
+crons = ["*/5 * * * *"]

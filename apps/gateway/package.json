@@ -1,0 +1,25 @@
+{
+  "name": "@thalamus/gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "bun test --timeout 20000",
+    "build": "wrangler deploy --dry-run --outdir=dist",
+    "dev": "wrangler dev"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "@thalamus/contract": "*",
+    "@thalamus/db": "*",
+    "drizzle-orm": "^0.45.3",
+    "hono": "^4.13.9",
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260927.1",
+    "@thalamus/mock-model-server": "*",
+    "wrangler": "^4.141.0"
+  }
+}
