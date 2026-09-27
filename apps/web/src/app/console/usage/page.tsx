@@ -197,6 +197,12 @@ export default function UsagePage() {
                 role="img"
                 aria-label={`${METRICS.find((m) => m.key === metric)?.label ?? "Usage"} per day, last ${DAYS} days`}
               >
+                <defs>
+                  <linearGradient id="usage-bar" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stopColor="var(--raw-grad-2)" />
+                    <stop offset="1" stopColor="var(--raw-grad-1)" />
+                  </linearGradient>
+                </defs>
                 {ticks.map((t) => (
                   <line
                     key={t}
@@ -219,7 +225,10 @@ export default function UsagePage() {
                       width={7}
                       height={barHeight}
                       rx={1.5}
-                      className={`transition-[fill,opacity] ${hover === i ? "fill-grad-2" : "fill-fg-subtle opacity-60"}`}
+                      fill="url(#usage-bar)"
+                      className={`transition-opacity duration-150 ${
+                        hover === null ? "opacity-75" : hover === i ? "opacity-100" : "opacity-30"
+                      }`}
                       onMouseEnter={() => setHover(i)}
                       onMouseLeave={() => setHover((current) => (current === i ? null : current))}
                     />
