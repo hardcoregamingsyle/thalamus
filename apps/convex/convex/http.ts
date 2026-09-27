@@ -82,16 +82,10 @@ http.route({
       const primary = Array.isArray(emails) ? emails.find((e) => e.primary && e.verified) ?? emails.find((e) => e.verified) : undefined;
       if (!primary) throw new Error("No verified email on this GitHub account");
 
-      // The `repo` scope requested below rides along on this same token, so
-      // signing in with GitHub connects repo access in the same step — save
-      // it onto the user record instead of discarding it after login.
-      const signInScopes = userRes.headers.get("x-oauth-scopes") ?? undefined;
       const session = await ctx.runMutation(internal.customAuthHelpers.createOAuthSession, {
         email: primary.email,
         name: ghUser.name || ghUser.login,
-        githubAccessToken: data.access_token,
         githubUsername: ghUser.login,
-        ...(signInScopes === undefined ? {} : { githubScopes: signInScopes }),
       });
       const sep = st.redirect.includes("?") ? "&" : "?";
       return new Response(null, {
@@ -238,12 +232,11 @@ http.route({
     await ctx.runMutation(internal.customAuthHelpers.createOAuthState, { state, redirect, provider: "github" });
 
     // Rides the app's single registered callback (/github/callback) with a
-    // login_ state prefix — see the login branch in that handler. Scope
-    // includes `repo` so signing in with GitHub also connects repo access —
-    // no separate "connect GitHub" step and no PAT needed.
+    // login_ state prefix — see the login branch in that handler. Sign-in needs
+    // only the verified email.
     const params = new URLSearchParams({
       client_id: clientId,
-      scope: "user:email repo",
+      scope: "user:email",
       state: `login_${state}`,
     });
     return new Response(null, {

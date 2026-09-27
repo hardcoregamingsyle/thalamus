@@ -276,6 +276,16 @@ export const checkDomainAbuse = internalAction({
 });
 
 // Send OTP - stores OTP immediately, schedules email in background
+// Uniform over 100000-999999: draws above the largest multiple of 900000 are
+// rejected so the modulo does not bias low codes.
+function randomSixDigitCode(): string {
+  const limit = 0x1_0000_0000 - (0x1_0000_0000 % 900000);
+  const buf = new Uint32Array(1);
+  do crypto.getRandomValues(buf);
+  while (buf[0] >= limit);
+  return String(100000 + (buf[0] % 900000));
+}
+
 export const sendOtp = action({
   args: { email: v.string() },
   handler: async (ctx, args): Promise<{ success: boolean }> => {
@@ -294,8 +304,9 @@ export const sendOtp = action({
       throw new Error("This email domain has been blocked due to abuse. If you believe this is a mistake, please contact support.");
     }
 
-    // Generate 6-digit OTP
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    // Generate a 6-digit OTP from the CSPRNG. Math.random is predictable enough that
+    // codes requested for one address could reveal codes sent to another.
+    const code = randomSixDigitCode();
     const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
 
     // Store OTP in database immediately (use normalized email)
