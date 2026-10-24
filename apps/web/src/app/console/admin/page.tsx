@@ -41,7 +41,7 @@ export default function AdminPage() {
       const data = (await res.json()) as { waitlist: AdminWaitlistRow[] };
       setRows(data.waitlist);
     } catch {
-      setError("Couldn't reach Thalamus.");
+      setError("Couldn't reach NAMELESS.");
     }
   }, []);
 
@@ -62,11 +62,17 @@ export default function AdminPage() {
       });
       if (!res.ok) {
         setRows(previous);
-        setError(`Couldn't invite ${row.email}. Try again.`);
+        setError(
+          res.status === 502
+            ? `A slot was granted to ${row.email}, but the notification failed. Retry the invite to send the email.`
+            : res.status === 503
+              ? "Configure the Brevo email credential and verified sender before inviting accounts."
+              : `Couldn't invite ${row.email}. Try again.`,
+        );
       }
     } catch {
       setRows(previous);
-      setError("Couldn't reach Thalamus. Try again.");
+      setError("Couldn't reach NAMELESS. Try again.");
     } finally {
       setInvitingId(null);
     }

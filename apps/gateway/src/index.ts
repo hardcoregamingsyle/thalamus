@@ -12,8 +12,11 @@ import { createModelServerClient } from "./lib/model-server-client.js";
 import { systemClock, type AppDeps, type UsageEvent } from "./types.js";
 import { processUsageBatch } from "./queue.js";
 import { sweepIdleSessions } from "./scheduled.js";
+import { createSlotNotifier } from "./lib/slot-notifier.js";
 
 export interface Env {
+  BREVO_EMAIL_SENDER?: string;
+  WAITLIST_EMAIL_FROM?: string;
   DATABASE_URL: string;
   CONVEX_URL: string;
   // Empty/unset until the model lab's server exists (docs/architecture.md,
@@ -32,6 +35,10 @@ let app: Hono | null = null;
 function getDeps(env: Env): AppDeps {
   if (!deps) {
     deps = {
+      slotNotifier:
+        env.BREVO_EMAIL_SENDER && env.WAITLIST_EMAIL_FROM
+          ? createSlotNotifier(env.BREVO_EMAIL_SENDER, env.WAITLIST_EMAIL_FROM)
+          : undefined,
       db: createNeonDb(env.DATABASE_URL),
       identity: createConvexIdentity(env.CONVEX_URL),
       // Left unset when MODEL_SERVER_URL is empty: unreachable in practice,

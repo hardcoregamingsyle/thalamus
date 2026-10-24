@@ -7,20 +7,24 @@ import { Reveal } from "@/components/ui/Reveal";
 
 const ITEMS = [
   {
-    q: "What is Thalamus Sophon?",
-    a: "A model built on a non-transformer architecture. Thalamus serves it through an OpenAI-compatible API, a developer console and a chat app.",
+    q: "What is NAMELESS?",
+    a: "An AI model built on our own architecture, currently in training. We’re working toward unlimited context, persistent memory, and more capable reasoning with much lower ongoing costs.",
   },
   {
-    q: "When can I use it?",
-    a: "Thalamus is in private beta. Join the waitlist; accounts are invited in the order they joined.",
+    q: "How do I join the waitlist?",
+    a: "Create an account with your email, Google, or GitHub. You’ll automatically join the waitlist. We’ll notify you by email when an early-access slot is available.",
   },
   {
-    q: "Does it work with the OpenAI SDK?",
-    a: "Yes. Set the base URL to https://thalamus.aphantic.skinticals.com/v1 and use a Thalamus API key. Streaming works the same way.",
+    q: "When will it launch?",
+    a: "There is no announced launch date. Slots will open as training, evaluation, and capacity allow. Your account shows your waitlist status.",
   },
   {
-    q: "What does it cost?",
-    a: "Nothing during the beta. Usage is rate-limited while the model is in private beta.",
+    q: "How fast will it be?",
+    a: "We’re prioritizing deeper reasoning, memory, and cost over response speed. Expect a slower pace than the assistants you may use today; measured results will follow evaluation.",
+  },
+  {
+    q: "What will it cost?",
+    a: "Our target is pennies compared with Claude, Gemini, and ChatGPT, especially for long conversations. Final pricing and comparisons will be shared after evaluation. Joining the waitlist is free.",
   },
 ];
 

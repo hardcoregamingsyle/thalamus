@@ -10,9 +10,9 @@ import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { fetchMe } from "@/lib/me";
 
 const LINKS = [
-  { href: "/chat", label: "Chat" },
-  { href: "/docs", label: "Docs" },
-  { href: "/console", label: "Console" },
+  { href: "/#vision", label: "The vision" },
+  { href: "/auth", label: "Early access" },
+  { href: "/console", label: "Your account" },
 ];
 
 export function SiteNav() {
@@ -29,7 +29,7 @@ export function SiteNav() {
   }, []);
 
   const cta = signedIn
-    ? { href: "/console", label: "Console" }
+    ? { href: "/console", label: "Your account" }
     : { href: "/auth", label: "Join waitlist" };
 
   return (

@@ -67,7 +67,7 @@ export default function UsagePage() {
       const data = (await res.json()) as { days: UsageRow[] };
       setRows(data.days);
     } catch {
-      setError("Couldn't reach Thalamus.");
+      setError("Couldn't reach NAMELESS.");
     }
   }, []);
 

@@ -4,7 +4,6 @@ import { ArrowRight } from "lucide-react";
 import { motion, useScroll, useTransform } from "motion/react";
 import { Aurora } from "@/components/site/Aurora";
 import { ButtonLink } from "@/components/ui/Button";
-import { ApiDemo } from "./ApiDemo";
 
 function Line({
   children,
@@ -44,9 +43,12 @@ export function Hero() {
 
       <div className="mx-auto max-w-5xl px-4 text-center sm:px-6">
         <h1 className="text-balance text-[2.5rem] font-semibold leading-[1.04] tracking-[-0.035em] text-fg sm:text-7xl md:text-[5.25rem]">
-          <Line delay={0.05}>A new kind of model.</Line>
+          <span className="mb-6 block text-sm font-medium uppercase tracking-[0.2em] text-fg-muted">
+            NAMELESS · Currently training
+          </span>
+          <Line delay={0.05}>Every conversation.</Line>
           <Line delay={0.18}>
-            <span className="text-gradient animate-shimmer">Not a transformer.</span>
+            <span className="text-gradient animate-shimmer">Nothing left behind.</span>
           </Line>
         </h1>
 
@@ -54,8 +56,8 @@ export function Hero() {
           style={{ animationDelay: "0.42s" }}
           className="animate-rise mx-auto mt-7 max-w-xl text-pretty text-base leading-relaxed text-fg-muted sm:text-lg"
         >
-          Thalamus Sophon runs on an architecture of its own, served through an OpenAI-compatible
-          API. Now in private beta.
+          An AI built on our own architecture. We’re working toward unlimited context, lasting
+          memory, and powerful reasoning at a fraction of today’s costs.
         </p>
 
         <div
@@ -66,8 +68,8 @@ export function Hero() {
             Join the waitlist
             <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
           </ButtonLink>
-          <ButtonLink href="/docs" size="lg" variant="secondary">
-            Read the docs
+          <ButtonLink href="#vision" size="lg" variant="secondary">
+            Explore the vision
           </ButtonLink>
         </div>
       </div>
@@ -76,7 +78,18 @@ export function Hero() {
         style={{ animationDelay: "0.7s", animationDuration: "1.1s" }}
         className="animate-rise [--rise:40px] mx-auto mt-20 max-w-5xl px-4 pb-24 sm:mt-24 sm:px-6"
       >
-        <ApiDemo />
+        <div className="rounded-3xl border border-border bg-surface px-6 py-10 text-center">
+          <p className="font-mono text-sm uppercase tracking-[0.16em] text-fg-subtle">
+            A different pace. A longer memory.
+          </p>
+          <p className="mx-auto mt-4 max-w-2xl text-xl leading-relaxed text-fg">
+            Less time repeating yourself. More room to think.
+          </p>
+          <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-fg-muted">
+            The model is still training. Create an account and you’re on the waitlist. We’ll email
+            you when a slot opens.
+          </p>
+        </div>
       </div>
     </section>
   );

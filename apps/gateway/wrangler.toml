@@ -12,6 +12,8 @@ workers_dev = false
 enabled = true
 
 # Secrets, set with `wrangler secret put` and never written here:
+#   BREVO_EMAIL_SENDER      — existing Brevo key for slot notifications
+#   WAITLIST_EMAIL_FROM — verified sender address
 #   DATABASE_URL        — Neon Postgres connection string
 #   MODEL_SERVER_URL    — empty/unset until the model lab's server exists
 #   MODEL_SERVER_SECRET — X-Thalamus-Signature HMAC secret (docs/model-server.md)

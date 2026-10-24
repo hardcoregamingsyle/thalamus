@@ -40,7 +40,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Menu className="h-[18px] w-[18px]" strokeWidth={1.75} />
         </button>
         <LogoMark className="h-5 w-5" />
-        <span className="text-[15px] font-semibold tracking-tight text-fg">Thalamus</span>
+        <span className="text-[15px] font-semibold tracking-tight text-fg">NAMELESS</span>
       </div>
 
       <div className="mx-auto flex max-w-[1440px]">

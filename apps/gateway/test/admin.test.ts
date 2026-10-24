@@ -93,3 +93,47 @@ describe("admin routes", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("slot notification retry", () => {
+  test("keeps failed notifications visible and removes them only after retry succeeds", async () => {
+    const h = await buildTestHarness();
+    h.identity.registerUser("notification-user", {
+      id: "notification-user",
+      email: "person@example.com",
+    });
+    const joinedRes = await h.app.request("/api/waitlist/join", {
+      method: "POST",
+      headers: { ...csrf, cookie: "th_session=notification-user" },
+      body: "{}",
+    });
+    const joined = await readJson<{ account: { id: string } }>(joinedRes);
+    const request = () =>
+      h.app.request("/api/admin/invite", {
+        method: "POST",
+        headers: { ...csrf, authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: JSON.stringify({ accountId: joined.account.id }),
+      });
+    h.deps.slotNotifier = undefined;
+    expect((await request()).status).toBe(503);
+    let attempts = 0;
+    h.deps.slotNotifier = {
+      async send(email) {
+        expect(email).toBe("person@example.com");
+        attempts += 1;
+        if (attempts === 1) throw new Error("provider unavailable");
+      },
+    };
+    expect((await request()).status).toBe(502);
+    const list = async () =>
+      readJson<{ waitlist: { accountId: string }[] }>(
+        await h.app.request("/api/admin/waitlist", {
+          headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+        }),
+      );
+    expect((await list()).waitlist.some((row) => row.accountId === joined.account.id)).toBe(true);
+    expect((await request()).status).toBe(200);
+    expect((await list()).waitlist.some((row) => row.accountId === joined.account.id)).toBe(false);
+    expect((await request()).status).toBe(200);
+    expect(attempts).toBe(2);
+  });
+});

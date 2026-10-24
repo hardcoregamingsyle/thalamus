@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/app/Skeleton";
 import { useMe } from "@/components/app/useMe";
 import type { UsageRow } from "@/lib/types";
 
-const BASE_URL = "https://thalamus.aphantic.skinticals.com/v1";
+const BASE_URL = "https://nameless.is/v1";
 const MODEL = "thalamus-sophon-1.0";
 
 const QUICKSTART_TABS: CodeTab[] = [
@@ -35,7 +35,7 @@ print(completion.choices[0].message.content)`,
     code: `import OpenAI from "openai";
 
 const client = new OpenAI({
-  apiKey: process.env.THALAMUS_API_KEY,
+  apiKey: process.env.NAMELESS_API_KEY,
   baseURL: "${BASE_URL}",
 });
 
@@ -104,7 +104,7 @@ export default function ConsolePage() {
       }
       reload();
     } catch {
-      setJoinError("Couldn't reach Thalamus. Try again.");
+      setJoinError("Couldn't reach NAMELESS. Try again.");
     } finally {
       setJoining(false);
     }
@@ -125,11 +125,11 @@ export default function ConsolePage() {
   if (!account) {
     return (
       <div>
-        <PageHeader title="Overview" description="Thalamus is in private beta." />
+        <PageHeader title="Overview" description="NAMELESS is currently training." />
         <div className="flex flex-col items-center gap-4 rounded-3xl border border-border bg-surface px-6 py-16 text-center">
           <h2 className="text-lg font-semibold tracking-tight text-fg">Join the waitlist</h2>
           <p className="max-w-sm text-[15px] text-fg-muted">
-            Accounts are invited in the order they joined.
+            We’ll email you when an early-access slot is available.
           </p>
           <Button onClick={() => void joinWaitlist()} disabled={joining}>
             {joining ? "Joining…" : "Join the waitlist"}
@@ -169,7 +169,7 @@ export default function ConsolePage() {
           </div>
           <h2 className="text-lg font-semibold tracking-tight text-fg">You&apos;re on the list</h2>
           <p className="max-w-sm text-[15px] text-fg-muted">
-            Accounts are invited in the order they joined.
+            We’ll email you when an early-access slot is available.
           </p>
         </div>
       </div>
@@ -198,7 +198,7 @@ export default function ConsolePage() {
     <div>
       <PageHeader
         title="Overview"
-        description="Keys, usage and a quickstart for the Thalamus API."
+        description="Keys, usage and a quickstart for the NAMELESS API."
       />
 
       <div className="grid gap-4 sm:grid-cols-2">

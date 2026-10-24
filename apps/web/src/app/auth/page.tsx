@@ -69,9 +69,11 @@ export default function AuthPage() {
         <div className="flex flex-col items-center text-center">
           <LogoMark className="h-9 w-9" />
           <h1 className="mt-5 text-2xl font-semibold tracking-tight text-fg">
-            Welcome to Thalamus
+            Welcome to NAMELESS
           </h1>
-          <p className="mt-1.5 text-[15px] text-fg-muted">Sign in or create an account.</p>
+          <p className="mt-1.5 text-[15px] text-fg-muted">
+            Create an account to join the waitlist automatically.
+          </p>
         </div>
 
         {oauthError ? (

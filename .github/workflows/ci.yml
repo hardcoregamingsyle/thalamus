@@ -76,7 +76,7 @@ jobs:
         working-directory: apps/gateway
         run: |
           node -e '
-            const names = ["DATABASE_URL", "MODEL_SERVER_URL", "MODEL_SERVER_SECRET", "USER_KEY_SECRET", "ADMIN_TOKEN", "ADMIN_EMAILS"];
+            const names = ["DATABASE_URL", "MODEL_SERVER_URL", "MODEL_SERVER_SECRET", "USER_KEY_SECRET", "ADMIN_TOKEN", "ADMIN_EMAILS", "BREVO_EMAIL_SENDER", "WAITLIST_EMAIL_FROM"];
             const out = {};
             for (const n of names) if (process.env[n]) out[n] = process.env[n];
             require("fs").writeFileSync(process.env.RUNNER_TEMP + "/gateway-secrets.json", JSON.stringify(out));
@@ -92,6 +92,8 @@ jobs:
           USER_KEY_SECRET: ${{ secrets.USER_KEY_SECRET }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
           ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
+          BREVO_EMAIL_SENDER: ${{ secrets.BREVO_EMAIL_SENDER }}
+          WAITLIST_EMAIL_FROM: ${{ vars.WAITLIST_EMAIL_FROM }}
 
       # `convex deploy` replaces the deployment's whole function, route and cron set,
       # so it runs only when apps/convex changed.

@@ -73,7 +73,7 @@ export function AuthFlow() {
       setCooldown(RESEND_COOLDOWN_SECONDS);
       setStep("code");
     } catch {
-      setError("Couldn't reach Thalamus. Try again.");
+      setError("Couldn't reach NAMELESS. Try again.");
     } finally {
       setPending(false);
     }
@@ -93,7 +93,7 @@ export function AuthFlow() {
       }
       router.push("/console");
     } catch {
-      setError("Couldn't reach Thalamus. Try again.");
+      setError("Couldn't reach NAMELESS. Try again.");
     } finally {
       setPending(false);
     }
@@ -110,7 +110,7 @@ export function AuthFlow() {
       }
       setCooldown(RESEND_COOLDOWN_SECONDS);
     } catch {
-      setError("Couldn't reach Thalamus. Try again.");
+      setError("Couldn't reach NAMELESS. Try again.");
     } finally {
       setResending(false);
     }

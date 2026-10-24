@@ -16,7 +16,7 @@ export default function TermsPage() {
       <p className="mt-3 text-sm text-fg-subtle">Last updated September 27, 2026</p>
       <div className="mt-10 max-w-2xl space-y-4 text-[15px] leading-relaxed text-fg-muted">
         <p>
-          This page is a placeholder. Thalamus's terms of service will be published before the
+          This page is a placeholder. NAMELESS's terms of service will be published before the
           product leaves private beta.
         </p>
       </div>

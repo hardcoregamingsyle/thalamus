@@ -50,7 +50,7 @@ export default function KeysPage() {
       const data = (await res.json()) as { keys: ApiKeySummary[] };
       setKeys(data.keys);
     } catch {
-      setListError("Couldn't reach Thalamus.");
+      setListError("Couldn't reach NAMELESS.");
     }
   }, []);
 
@@ -89,7 +89,7 @@ export default function KeysPage() {
         ...(current ?? []),
       ]);
     } catch {
-      setCreateError("Couldn't reach Thalamus. Try again.");
+      setCreateError("Couldn't reach NAMELESS. Try again.");
       setCreateState("idle");
     }
   }
@@ -124,7 +124,7 @@ export default function KeysPage() {
         setListError("Couldn't revoke that key. Try again.");
       }
     } catch {
-      setListError("Couldn't reach Thalamus. Try again.");
+      setListError("Couldn't reach NAMELESS. Try again.");
     } finally {
       setRevoking(false);
     }
@@ -152,7 +152,7 @@ export default function KeysPage() {
     <div>
       <PageHeader
         title="API keys"
-        description="Keys authenticate requests to the Thalamus API."
+        description="Keys authenticate requests to the NAMELESS API."
         action={
           <Button onClick={openCreate}>
             <Plus className="h-4 w-4" strokeWidth={2} />

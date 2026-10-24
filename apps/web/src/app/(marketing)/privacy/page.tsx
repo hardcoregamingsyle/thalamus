@@ -16,7 +16,7 @@ export default function PrivacyPage() {
       <p className="mt-3 text-sm text-fg-subtle">Last updated September 27, 2026</p>
       <div className="mt-10 max-w-2xl space-y-4 text-[15px] leading-relaxed text-fg-muted">
         <p>
-          This page is a placeholder. Thalamus's privacy policy will describe what account, usage
+          This page is a placeholder. NAMELESS's privacy policy will describe what account, usage
           and conversation data is collected, why, and how long it's kept, before the product leaves
           private beta.
         </p>

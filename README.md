@@ -1,8 +1,10 @@
-# Thalamus
+# NAMELESS
 
-Thalamus is a first-party AI provider serving the in-house Thalamus Sophon models, built on a non-transformer architecture: an OpenAI-compatible API, a developer console and a web chat app at [thalamus.aphantic.skinticals.com](https://thalamus.aphantic.skinticals.com). It is in private beta with a waitlist until the model can take external traffic.
+NAMELESS is an AI model under training on our own architecture. The site at `nameless.is` is a prelaunch waitlist: creating an account automatically enrolls the user, and an administrator grants a slot and sends an email notification.
 
-The design is in [docs/architecture.md](docs/architecture.md); the interface to the model server is [docs/model-server.md](docs/model-server.md).
+The product goals are unlimited context, persistent memory, stronger reasoning, and low ongoing costs, with response speed as a tradeoff. Measurements and final pricing remain pending evaluation.
+
+The preferred deployment is Cloudflare Pages. See [NAMELESS deployment](docs/nameless-deployment.md) for bindings, authentication, slot notifications, and deployment checks. The older architecture documents describe the existing backend; internal package names and API model identifiers remain compatible.
 
 ## Layout
 

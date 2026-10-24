@@ -105,6 +105,7 @@ export async function buildTestHarness(
   const usageEvents: UsageEvent[] = [];
 
   const deps: AppDeps = {
+    slotNotifier: { async send() {} },
     db,
     identity,
     modelServer: createModelServerClient({

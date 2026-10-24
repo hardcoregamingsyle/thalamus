@@ -1,24 +1,29 @@
 "use client";
 
-import { Code2, KeyRound, MessageCircle, type LucideIcon } from "lucide-react";
+import { Infinity, Brain, Coins, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import type { MouseEvent } from "react";
 import { Reveal } from "@/components/ui/Reveal";
 
 const PILLARS: { icon: LucideIcon; title: string; body: string; href: string }[] = [
   {
-    icon: Code2,
-    title: "API",
-    body: "OpenAI-compatible. Change the base URL, keep your code.",
-    href: "/docs",
+    icon: Infinity,
+    title: "Unlimited context",
+    body: "Our goal: conversations without a context ceiling, without rereading the entire history at every turn.",
+    href: "/auth",
   },
   {
-    icon: MessageCircle,
-    title: "Chat",
-    body: "Talk to it directly, right in the browser.",
-    href: "/chat",
+    icon: Brain,
+    title: "Memory that stays",
+    body: "Designed to carry what you share forward, so you can pick up where you left off.",
+    href: "/auth",
   },
-  { icon: KeyRound, title: "Console", body: "Keys and usage, all in one place.", href: "/console" },
+  {
+    icon: Coins,
+    title: "Lower ongoing cost",
+    body: "Targeting pennies compared with today’s leading assistants. Final pricing follows training and evaluation.",
+    href: "/auth",
+  },
 ];
 
 function track(e: MouseEvent<HTMLAnchorElement>) {
@@ -29,10 +34,10 @@ function track(e: MouseEvent<HTMLAnchorElement>) {
 
 export function Pillars() {
   return (
-    <section className="mx-auto max-w-6xl px-4 py-24 sm:px-6 sm:py-32">
+    <section id="vision" className="mx-auto max-w-6xl px-4 py-24 sm:px-6 sm:py-32">
       <Reveal>
         <h2 className="text-center text-3xl font-semibold tracking-[-0.03em] text-fg sm:text-5xl">
-          One model. Three ways in.
+          Built for the long conversation.
         </h2>
       </Reveal>
       <div className="mt-14 grid gap-4 md:grid-cols-3">

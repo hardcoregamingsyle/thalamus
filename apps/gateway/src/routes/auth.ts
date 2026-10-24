@@ -8,6 +8,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { AppDeps } from "../types.js";
 import { apiError } from "../lib/api-error.js";
 import { jsonStatus } from "../lib/http.js";
+import { joinWaitlist } from "../lib/accounts.js";
 import {
   createAuthCaches,
   resolveCookieSession,
@@ -43,13 +44,17 @@ export function createAuthRoutes(deps: AppDeps): Hono {
     const code = typeof body?.code === "string" ? body.code : null;
     if (!email || !code) return jsonStatus(c, apiError("`email` and `code` are required"), 400);
 
+    let result;
     try {
-      const result = await deps.identity.verifyOtp(email, code);
-      setSessionCookie(c, result.token);
-      return c.json({ ok: true, isNewUser: result.isNewUser });
+      result = await deps.identity.verifyOtp(email, code);
     } catch {
       return jsonStatus(c, apiError("invalid or expired code"), 401);
     }
+    const user = await deps.identity.getUserByToken(result.token);
+    if (!user) return jsonStatus(c, apiError("invalid session token"), 401);
+    await joinWaitlist(deps.db, { convexUserId: user.id, email: user.email, source: "signup" });
+    setSessionCookie(c, result.token);
+    return c.json({ ok: true, isNewUser: result.isNewUser });
   });
 
   app.post("/session", async (c) => {
@@ -60,6 +65,11 @@ export function createAuthRoutes(deps: AppDeps): Hono {
     const session = await resolveCookieSession(deps.db, deps.identity, deps.clock, caches, token);
     if (!session) return jsonStatus(c, apiError("invalid session token"), 401);
 
+    await joinWaitlist(deps.db, {
+      convexUserId: session.user.id,
+      email: session.user.email,
+      source: "signup",
+    });
     setSessionCookie(c, token);
     return c.json({ ok: true });
   });

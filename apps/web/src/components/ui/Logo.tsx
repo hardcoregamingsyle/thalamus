@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { useId } from "react";
 
-// The mark is a theta: a ring with a bar through it, in the brand gradient.
+// The NAMELESS monogram uses the brand gradient.
 export function LogoMark({ className = "h-6 w-6" }: { className?: string }) {
   const id = useId();
   return (
@@ -13,25 +13,23 @@ export function LogoMark({ className = "h-6 w-6" }: { className?: string }) {
           <stop offset="1" stopColor="var(--raw-grad-3)" />
         </linearGradient>
       </defs>
-      <ellipse
-        cx="16"
-        cy="16"
-        rx="10"
-        ry="12.5"
+      <path
+        d="M7 25V7l18 18V7"
         fill="none"
         stroke={`url(#${id})`}
         strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
-      <rect x="7.5" y="14.5" width="17" height="3" rx="1.5" fill={`url(#${id})`} />
     </svg>
   );
 }
 
 export function Logo({ href = "/" }: { href?: string }) {
   return (
-    <Link href={href} className="flex items-center gap-2.5 rounded-md" aria-label="Thalamus home">
+    <Link href={href} className="flex items-center gap-2.5 rounded-md" aria-label="NAMELESS home">
       <LogoMark />
-      <span className="text-[15px] font-semibold tracking-tight text-fg">Thalamus</span>
+      <span className="text-[15px] font-semibold tracking-tight text-fg">NAMELESS</span>
     </Link>
   );
 }

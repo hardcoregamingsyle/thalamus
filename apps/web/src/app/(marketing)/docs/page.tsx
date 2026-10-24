@@ -7,7 +7,7 @@ import { CodeBlock, type CodeTab } from "@/components/ui/CodeBlock";
 
 export const metadata: Metadata = {
   title: "Docs",
-  description: "API reference for the Thalamus OpenAI-compatible chat-completions API.",
+  description: "API reference for the NAMELESS OpenAI-compatible chat-completions API.",
 };
 
 const SECTIONS: DocsSectionMeta[] = [
@@ -22,7 +22,7 @@ const SECTIONS: DocsSectionMeta[] = [
   { id: "rate-limits", label: "Rate limits" },
 ];
 
-const BASE_URL = "https://thalamus.aphantic.skinticals.com/v1";
+const BASE_URL = "https://nameless.is/v1";
 
 const QUICKSTART_TABS: CodeTab[] = [
   {
@@ -48,7 +48,7 @@ print(response.choices[0].message.content)`,
 
 const client = new OpenAI({
   baseURL: "${BASE_URL}",
-  apiKey: process.env.THALAMUS_API_KEY,
+  apiKey: process.env.NAMELESS_API_KEY,
 });
 
 const response = await client.chat.completions.create({
@@ -61,7 +61,7 @@ console.log(response.choices[0].message.content);`,
     label: "curl",
     lang: "bash",
     code: `curl ${BASE_URL}/chat/completions \\
-  -H "Authorization: Bearer $THALAMUS_API_KEY" \\
+  -H "Authorization: Bearer $NAMELESS_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "thalamus-sophon-1.0",
@@ -75,7 +75,7 @@ const MODELS_TABS: CodeTab[] = [
     label: "curl",
     lang: "bash",
     code: `curl ${BASE_URL}/models \\
-  -H "Authorization: Bearer $THALAMUS_API_KEY"`,
+  -H "Authorization: Bearer $NAMELESS_API_KEY"`,
   },
   {
     label: "Response",
@@ -151,7 +151,7 @@ for await (const chunk of stream) {
     label: "curl",
     lang: "bash",
     code: `curl ${BASE_URL}/chat/completions \\
-  -H "Authorization: Bearer $THALAMUS_API_KEY" \\
+  -H "Authorization: Bearer $NAMELESS_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "thalamus-sophon-1.0",
@@ -190,7 +190,7 @@ export default function DocsPage() {
     <DocsShell sections={SECTIONS}>
       <DocsSection id="overview" title="Overview">
         <p>
-          Thalamus serves Thalamus Sophon, a model built on a non-transformer architecture, through
+          NAMELESS serves NAMELESS, a model built on a non-transformer architecture, through
           an API compatible with the OpenAI chat-completions shape. Point any OpenAI SDK at the base
           URL below and it works unmodified, streaming included.
         </p>
@@ -215,7 +215,7 @@ export default function DocsPage() {
 
       <DocsSection id="authentication" title="Authentication">
         <p>
-          Create an API key in the console. The raw value is shown once — Thalamus stores only its
+          Create an API key in the console. The raw value is shown once — NAMELESS stores only its
           hash. Send it as a bearer token on every request:
         </p>
         <CodeBlock title="Header" tabs={[{ label: "Header", lang: "text", code: "Authorization: Bearer th_..." }]} />
@@ -224,7 +224,7 @@ export default function DocsPage() {
 
       <DocsSection id="models" title="Models">
         <p>
-          <Code>GET /v1/models</Code> lists the models an account may use. Thalamus serves exactly
+          <Code>GET /v1/models</Code> lists the models an account may use. NAMELESS serves exactly
           one and never routes to a third-party model.
         </p>
         <CodeBlock tabs={MODELS_TABS} />
@@ -256,7 +256,7 @@ export default function DocsPage() {
               <Code key="session_id">session_id</Code>,
               "string",
               "—",
-              "Explicit session mode. Can also be sent as X-Thalamus-Session-Id — see Sessions.",
+              "Explicit session mode. Can also be sent as X-NAMELESS-Session-Id — see Sessions.",
             ],
           ]}
         />
@@ -265,7 +265,7 @@ export default function DocsPage() {
           <Code>usage.prompt_tokens</Code> and <Code>usage.completion_tokens</Code> are{" "}
           <Code>ceil(characters / 4)</Code>, provided for SDK compatibility — billing and rate
           limits are both in characters. Every response, streamed or not, carries{" "}
-          <Code>X-Thalamus-Session-Id</Code>, the id of the session the call resolved to.
+          <Code>X-NAMELESS-Session-Id</Code>, the id of the session the call resolved to.
         </p>
       </DocsSection>
 
@@ -292,7 +292,7 @@ export default function DocsPage() {
 
         <h3 className="mt-2 text-base font-semibold text-fg">Automatic continuation</h3>
         <p>
-          Send the full transcript, as the SDK already does. Thalamus hashes the resent messages and
+          Send the full transcript, as the SDK already does. NAMELESS hashes the resent messages and
           matches them against the account's open sessions for that end user: a match on the latest
           hash means everything after it is a new turn; a match on the state just before the last
           reply, with no new user message, is a regenerate of that reply; no match — or an earlier
@@ -301,7 +301,7 @@ export default function DocsPage() {
 
         <h3 className="mt-2 text-base font-semibold text-fg">Explicit session</h3>
         <p>
-          Pass <Code>session_id</Code>, in the body or as <Code>X-Thalamus-Session-Id</Code>, to
+          Pass <Code>session_id</Code>, in the body or as <Code>X-NAMELESS-Session-Id</Code>, to
           skip that matching. <Code>messages</Code> must then hold only the new turns. The response
           returns the resolved id in the same header either way.
         </p>

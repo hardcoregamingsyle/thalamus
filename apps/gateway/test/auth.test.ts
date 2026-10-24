@@ -52,8 +52,14 @@ describe("email OTP sign-in", () => {
     const cookie = (setCookie.split(";")[0] as string).trim();
     const meRes = await h.app.request("/api/me", { headers: { cookie } });
     expect(meRes.status).toBe(200);
-    const me = await readJson<{ user: { email: string } }>(meRes);
+    const me = await readJson<{
+      user: { email: string };
+      account: { status: string };
+      waitlistPosition: number;
+    }>(meRes);
     expect(me.user.email).toBe("person@example.com");
+    expect(me.account.status).toBe("waitlisted");
+    expect(me.waitlistPosition).toBe(1);
   });
 
   test("wrong code is rejected", async () => {
@@ -113,6 +119,18 @@ describe("POST /api/session (OAuth callback exchange)", () => {
     });
     expect(res.status).toBe(200);
     expect(res.headers.get("set-cookie")).toContain("th_session=oauth-token-1");
+    const meRes = await h.app.request("/api/me", {
+      headers: { cookie: "th_session=oauth-token-1" },
+    });
+    const me = await readJson<{ account: { status: string }; waitlistPosition: number }>(meRes);
+    expect(me.account.status).toBe("waitlisted");
+    expect(me.waitlistPosition).toBe(1);
+    const again = await h.app.request("/api/session", {
+      method: "POST",
+      headers: csrf(),
+      body: JSON.stringify({ token: "oauth-token-1" }),
+    });
+    expect(again.status).toBe(200);
   });
 
   test("an unrecognized token is rejected", async () => {

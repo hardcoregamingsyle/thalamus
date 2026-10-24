@@ -7,7 +7,7 @@ import { highlight } from "@/lib/highlight";
 const CODE = `from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://thalamus.aphantic.skinticals.com/v1",
+    base_url="https://nameless.is/v1",
     api_key="th_...",
 )
 
@@ -19,7 +19,7 @@ stream = client.chat.completions.create(
 for chunk in stream:
     print(chunk.choices[0].delta.content or "", end="")`;
 
-const REPLY = ["Hello", " from", " Thalamus", " Sophon."];
+const REPLY = ["Hello", " from", " NAMELESS."];
 
 type Phase = "typing" | "running" | "streaming" | "done";
 
@@ -99,7 +99,7 @@ export function ApiDemo() {
         </div>
         <div className="grid md:grid-cols-[1.5fr_1fr]">
           <pre
-            aria-label="Example: calling Thalamus with the OpenAI Python SDK"
+            aria-label="Example: calling NAMELESS with the OpenAI Python SDK"
             className="min-h-[330px] overflow-hidden whitespace-pre-wrap break-all p-5 font-mono text-[12.5px] leading-[1.75] text-white/85 sm:p-6"
           >
             <code>

@@ -66,7 +66,7 @@ export async function createConversation(
     const data = (await res.json()) as { conversation: ConversationSummary };
     return { ok: true, conversation: data.conversation };
   } catch {
-    return { ok: false, error: "Couldn't reach Thalamus. Try again." };
+    return { ok: false, error: "Couldn't reach NAMELESS. Try again." };
   }
 }
 
@@ -81,7 +81,7 @@ export async function deleteConversation(id: string): Promise<{ ok: true } | Cha
     }
     return { ok: true };
   } catch {
-    return { ok: false, error: "Couldn't reach Thalamus. Try again." };
+    return { ok: false, error: "Couldn't reach NAMELESS. Try again." };
   }
 }
 
@@ -127,7 +127,7 @@ export async function joinWaitlist(): Promise<{ ok: true } | ChatApiFailure> {
     }
     return { ok: true };
   } catch {
-    return { ok: false, error: "Couldn't reach Thalamus. Try again." };
+    return { ok: false, error: "Couldn't reach NAMELESS. Try again." };
   }
 }
 

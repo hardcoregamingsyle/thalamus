@@ -59,8 +59,8 @@
   --color-grad-2: var(--raw-grad-2);
   --color-grad-3: var(--raw-grad-3);
   --color-code-bg: var(--raw-code-bg);
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains), ui-monospace, "SFMono-Regular", monospace;
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", monospace;
   --animate-caret: caret 1.05s steps(1) infinite;
   --animate-shimmer: shimmer 6s linear infinite;
   --animate-rise: rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;

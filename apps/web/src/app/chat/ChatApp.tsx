@@ -247,10 +247,7 @@ export function ChatApp() {
         if (info.code === "model_unavailable") {
           // conversations.ts checks `modelServerConfigured` before it ever
           // inserts the user's message, so nothing was saved here.
-          appendNotice(
-            "model_unavailable",
-            "Thalamus Sophon isn't available yet. Try again later.",
-          );
+          appendNotice("model_unavailable", "NAMELESS isn't available yet. Try again later.");
           return;
         }
 
@@ -282,7 +279,7 @@ export function ChatApp() {
       if (!isAbortError(err)) {
         appendNotice(
           "error",
-          "Couldn't reach Thalamus. Try again.",
+          "Couldn't reach NAMELESS. Try again.",
           () => void runGeneration(conversationId, mode),
         );
       }

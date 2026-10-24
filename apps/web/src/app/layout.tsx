@@ -1,21 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
-const jetbrains = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-jetbrains",
-  display: "swap",
-});
-
 export const metadata: Metadata = {
-  metadataBase: new URL("https://thalamus.aphantic.skinticals.com"),
-  title: { default: "Thalamus", template: "%s — Thalamus" },
+  metadataBase: new URL("https://nameless.is"),
+  title: { default: "NAMELESS", template: "%s — NAMELESS" },
   description:
-    "Thalamus Sophon is a model built on a non-transformer architecture, served through an OpenAI-compatible API, a developer console and a chat app.",
-  openGraph: { title: "Thalamus", type: "website" },
+    "NAMELESS is an AI model training on our own architecture. Create an account to join the waitlist for early access.",
+  openGraph: { title: "NAMELESS", type: "website", url: "/" },
 };
 
 export const viewport: Viewport = {
@@ -28,7 +20,7 @@ const themeScript = `try{if(localStorage.getItem("theme")==="light")document.doc
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrains.variable}`} suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <body className="min-h-dvh">
         <Script id="theme" strategy="beforeInteractive">
           {themeScript}

@@ -98,6 +98,8 @@ export interface AppConfig {
 }
 
 export interface AppDeps {
+  /** Optional until a verified email sender is configured. Invites fail closed without it. */
+  slotNotifier?: { send(email: string, accountId: string): Promise<void> };
   db: AppDb;
   identity: Identity;
   modelServer: ModelServerClient;

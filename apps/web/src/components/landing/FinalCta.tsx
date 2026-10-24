@@ -16,7 +16,7 @@ export function FinalCta() {
           Get in early.
         </h2>
         <p className="mt-5 text-base text-fg-muted sm:text-lg">
-          Private beta. Invites go out in order.
+          Create an account. Join the waitlist. Get an email when your slot opens.
         </p>
         <ButtonLink href="/auth" size="lg" className="mt-10">
           Join the waitlist

@@ -26,7 +26,7 @@ export function SiteFooter() {
         <div className="max-w-xs">
           <Logo />
           <p className="mt-4 text-sm leading-relaxed text-fg-subtle">
-            A model built on a non-transformer architecture.
+            Our own architecture. A longer memory. Currently training.
           </p>
         </div>
         <div className="flex gap-16">
@@ -52,7 +52,7 @@ export function SiteFooter() {
         </div>
       </div>
       <div className="mx-auto max-w-6xl px-4 pb-10 text-xs text-fg-subtle sm:px-6">
-        © 2026 Thalamus
+        © 2026 NAMELESS
       </div>
     </footer>
   );

@@ -56,7 +56,7 @@ export function Composer({
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={handleKeyDown}
           disabled={disabled || streaming}
-          placeholder="Message Thalamus"
+          placeholder="Message NAMELESS"
           className="max-h-48 min-h-[24px] flex-1 resize-none bg-transparent py-1 text-[15px] leading-6 text-fg placeholder:text-fg-subtle focus:outline-none disabled:opacity-50"
         />
         {streaming ? (
@@ -82,9 +82,7 @@ export function Composer({
           </button>
         )}
       </div>
-      <p className="mt-2.5 px-1 text-center text-xs text-fg-subtle">
-        Thalamus Sophon is in private beta.
-      </p>
+      <p className="mt-2.5 px-1 text-center text-xs text-fg-subtle">NAMELESS is in early access.</p>
     </div>
   );
 }

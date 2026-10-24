@@ -38,12 +38,45 @@ export function createAdminRoutes(deps: AppDeps): Hono {
     const accountId = typeof body?.accountId === "string" ? body.accountId : null;
     if (!accountId) return jsonStatus(c, apiError("`accountId` is required"), 400);
 
+    const [entry] = await deps.db
+      .select({ account: accounts, invitation: waitlist })
+      .from(accounts)
+      .leftJoin(waitlist, eq(accounts.convexUserId, waitlist.convexUserId))
+      .where(eq(accounts.id, accountId))
+      .limit(1);
+    if (!entry) return jsonStatus(c, apiError("account not found"), 404);
+    if (entry.invitation?.invitedAt) {
+      return c.json({ account: { id: entry.account.id, status: entry.account.status } });
+    }
+    if (!entry.invitation || entry.invitation.email.endsWith("@unknown.invalid")) {
+      return jsonStatus(c, apiError("account has no waitlist email"), 409);
+    }
+    if (!deps.slotNotifier) {
+      return jsonStatus(
+        c,
+        apiError("configure the waitlist email sender before inviting accounts"),
+        503,
+      );
+    }
+
     const [account] = await deps.db
       .update(accounts)
       .set({ status: "invited", updatedAt: deps.clock.now() })
       .where(eq(accounts.id, accountId))
       .returning();
     if (!account) return jsonStatus(c, apiError("account not found"), 404);
+
+    // Keep invitedAt unset until delivery is accepted. A failure remains in the
+    // admin list so retrying can finish notification without losing the slot.
+    try {
+      await deps.slotNotifier.send(entry.invitation.email, account.id);
+    } catch {
+      return jsonStatus(
+        c,
+        apiError("slot granted; email failed. Retry the invite to send notification"),
+        502,
+      );
+    }
 
     await deps.db
       .update(waitlist)

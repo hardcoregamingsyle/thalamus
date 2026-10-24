@@ -1,67 +1,32 @@
-import { highlight } from "@/lib/highlight";
 import { Reveal } from "@/components/ui/Reveal";
-
-const LINES: { kind: " " | "-" | "+"; text: string }[] = [
-  { kind: " ", text: "client = OpenAI(" },
-  { kind: "-", text: '    base_url="https://api.openai.com/v1",' },
-  { kind: "+", text: '    base_url="https://thalamus.aphantic.skinticals.com/v1",' },
-  { kind: "-", text: '    api_key=os.environ["OPENAI_API_KEY"],' },
-  { kind: "+", text: '    api_key=os.environ["THALAMUS_API_KEY"],' },
-  { kind: " ", text: ")" },
-];
 
 export function SwitchSection() {
   return (
-    <section className="mx-auto grid max-w-6xl items-center gap-12 px-4 py-24 sm:px-6 sm:py-32 lg:grid-cols-[1fr_1.25fr] [&>*]:min-w-0">
+    <section className="mx-auto grid max-w-6xl items-center gap-12 px-4 py-24 sm:px-6 sm:py-32 lg:grid-cols-2">
       <Reveal>
-        <h2 className="text-3xl font-semibold tracking-[-0.03em] text-fg sm:text-5xl">
-          Switch in <span className="text-gradient">two lines.</span>
+        <p className="text-sm uppercase tracking-[0.16em] text-fg-subtle">Our own architecture</p>
+        <h2 className="mt-5 text-3xl font-semibold tracking-[-0.03em] text-fg sm:text-5xl">
+          More room to think.
+          <br />
+          <span className="text-gradient">A different tradeoff.</span>
         </h2>
-        <p className="mt-5 max-w-md text-base leading-relaxed text-fg-muted sm:text-lg">
-          Already on the OpenAI SDK? Point it at Thalamus. Streaming, messages and errors work the
-          way you expect.
+        <p className="mt-5 text-base leading-relaxed text-fg-muted">
+          We’re prioritizing reasoning, persistent memory, and low ongoing costs over fast replies.
+          NAMELESS is being designed for work that deserves more than a quick answer.
         </p>
       </Reveal>
       <Reveal delay={0.1}>
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-code-bg shadow-2xl shadow-black/40">
-          <div className="border-b border-white/[0.07] px-4 py-3 font-mono text-xs text-white/40">
-            app.py
-          </div>
-          <pre className="overflow-x-auto py-4 font-mono text-[12.5px] leading-[1.9]">
-            {LINES.map((l, i) => (
-              <div
-                key={i}
-                className={`flex px-4 ${
-                  l.kind === "+"
-                    ? "bg-[#6ee7b7]/[0.08]"
-                    : l.kind === "-"
-                      ? "bg-[#f87171]/[0.07] opacity-60"
-                      : ""
-                }`}
-              >
-                <span
-                  className={`w-6 shrink-0 select-none ${
-                    l.kind === "+"
-                      ? "text-[#6ee7b7]"
-                      : l.kind === "-"
-                        ? "text-[#f87171]"
-                        : "text-white/20"
-                  }`}
-                >
-                  {l.kind}
-                </span>
-                <code
-                  className={
-                    l.kind === "-"
-                      ? "text-white/60 line-through decoration-white/20"
-                      : "text-white/85"
-                  }
-                >
-                  {highlight(l.text, "python")}
-                </code>
-              </div>
-            ))}
-          </pre>
+        <div className="rounded-3xl border border-border bg-surface p-8 sm:p-10">
+          <h3 className="text-xl font-semibold text-fg">Still training. Built with intent.</h3>
+          <p className="mt-4 leading-relaxed text-fg-muted">
+            Unlimited context and memory that carries across conversations are the goals. By
+            avoiding repeated processing of the entire conversation, we aim to keep the cost of
+            continuing it extremely low.
+          </p>
+          <p className="mt-5 text-sm leading-relaxed text-fg-subtle">
+            Capabilities, limits, speed, and pricing will be published after evaluation. Comparisons
+            with Claude, Gemini, and ChatGPT are targets, not measured results.
+          </p>
         </div>
       </Reveal>
     </section>
