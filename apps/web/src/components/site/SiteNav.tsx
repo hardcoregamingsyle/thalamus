@@ -1,6 +1,5 @@
 "use client";
 
-import { AnimatePresence, motion } from "motion/react";
 import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -71,33 +70,25 @@ export function SiteNav() {
           </button>
         </div>
       </nav>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.25 }}
-            className="overflow-hidden md:hidden"
-          >
-            <div className="flex flex-col gap-1 px-4 pb-5 pt-1">
-              {LINKS.map((l) => (
-                <Link
-                  key={l.href}
-                  href={l.href}
-                  onClick={() => setOpen(false)}
-                  className="rounded-xl px-3 py-3 text-[15px] text-fg-muted hover:bg-surface-strong hover:text-fg"
-                >
-                  {l.label}
-                </Link>
-              ))}
-              <ButtonLink href={cta.href} className="mt-2" onClick={() => setOpen(false)}>
-                {cta.label}
-              </ButtonLink>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {open && (
+        <div className="overflow-hidden md:hidden">
+          <div className="flex flex-col gap-1 px-4 pb-5 pt-1">
+            {LINKS.map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                onClick={() => setOpen(false)}
+                className="rounded-xl px-3 py-3 text-[15px] text-fg-muted hover:bg-surface-strong hover:text-fg"
+              >
+                {l.label}
+              </Link>
+            ))}
+            <ButtonLink href={cta.href} className="mt-2" onClick={() => setOpen(false)}>
+              {cta.label}
+            </ButtonLink>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

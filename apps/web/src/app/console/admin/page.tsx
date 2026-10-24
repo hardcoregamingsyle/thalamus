@@ -23,6 +23,8 @@ export default function AdminPage() {
   const router = useRouter();
   const isAdmin = me?.isAdmin ?? false;
 
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingRows, setLoadingRows] = useState(false);
   const [rows, setRows] = useState<AdminWaitlistRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [invitingId, setInvitingId] = useState<string | null>(null);
@@ -31,17 +33,27 @@ export default function AdminPage() {
     if (!meLoading && !isAdmin) router.replace("/console");
   }, [meLoading, isAdmin, router]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (cursor: string | null = null) => {
+    setLoadingRows(true);
     try {
-      const res = await fetch("/api/admin/waitlist");
+      const res = await fetch(
+        `/api/admin/waitlist${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+      );
       if (!res.ok) {
         setError("Couldn't load the waitlist.");
         return;
       }
-      const data = (await res.json()) as { waitlist: AdminWaitlistRow[] };
-      setRows(data.waitlist);
+      const data = (await res.json()) as {
+        waitlist: AdminWaitlistRow[];
+        continueCursor: string;
+        isDone: boolean;
+      };
+      setRows((current) => (cursor ? [...(current ?? []), ...data.waitlist] : data.waitlist));
+      setNextCursor(data.isDone ? null : data.continueCursor);
     } catch {
       setError("Couldn't reach NAMELESS.");
+    } finally {
+      setLoadingRows(false);
     }
   }, []);
 
@@ -52,8 +64,6 @@ export default function AdminPage() {
   async function invite(row: AdminWaitlistRow) {
     setInvitingId(row.accountId);
     setError(null);
-    const previous = rows;
-    setRows((current) => (current ?? []).filter((r) => r.accountId !== row.accountId));
     try {
       const res = await fetch("/api/admin/invite", {
         method: "POST",
@@ -61,17 +71,15 @@ export default function AdminPage() {
         body: JSON.stringify({ accountId: row.accountId }),
       });
       if (!res.ok) {
-        setRows(previous);
         setError(
-          res.status === 502
-            ? `A slot was granted to ${row.email}, but the notification failed. Retry the invite to send the email.`
-            : res.status === 503
-              ? "Configure the Brevo email credential and verified sender before inviting accounts."
-              : `Couldn't invite ${row.email}. Try again.`,
+          res.status === 503
+            ? "Configure the existing Brevo credential in Convex before inviting accounts."
+            : `Couldn't invite ${row.email}. Try again.`,
         );
+      } else {
+        await load();
       }
     } catch {
-      setRows(previous);
       setError("Couldn't reach NAMELESS. Try again.");
     } finally {
       setInvitingId(null);
@@ -89,7 +97,19 @@ export default function AdminPage() {
 
   return (
     <div>
-      <PageHeader title="Admin" description="Invite accounts off the waitlist, in order." />
+      <PageHeader
+        title="Admin"
+        description="Invite accounts and track slot notification delivery."
+      />
+      <Button
+        variant="secondary"
+        size="sm"
+        disabled={loadingRows}
+        onClick={() => void load()}
+        className="mb-4"
+      >
+        {loadingRows ? "Refreshing…" : "Refresh delivery status"}
+      </Button>
 
       {error ? (
         <p role="alert" className="mb-4 text-sm text-danger">
@@ -127,9 +147,17 @@ export default function AdminPage() {
                       size="sm"
                       variant="secondary"
                       onClick={() => void invite(row)}
-                      disabled={invitingId === row.accountId}
+                      disabled={
+                        invitingId === row.accountId || row.notificationStatus === "pending"
+                      }
                     >
-                      {invitingId === row.accountId ? "Inviting…" : "Invite"}
+                      {invitingId === row.accountId
+                        ? "Inviting…"
+                        : row.notificationStatus === "pending"
+                          ? "Email queued"
+                          : row.notificationStatus === "failed"
+                            ? "Retry email"
+                            : "Invite"}
                     </Button>
                   </td>
                 </tr>
@@ -137,6 +165,16 @@ export default function AdminPage() {
             </tbody>
           </table>
         </div>
+      )}
+      {nextCursor && (
+        <Button
+          className="mt-4"
+          variant="secondary"
+          disabled={loadingRows}
+          onClick={() => void load(nextCursor)}
+        >
+          Load more
+        </Button>
       )}
     </div>
   );

@@ -1,72 +1,21 @@
-# C# build artifacts
-thalamus-native/ThalamusApp/bin/
-thalamus-native/ThalamusApp/obj/
-thalamus-native/ThalamusInstaller/bin/
-thalamus-native/ThalamusInstaller/obj/
-thalamus-native/installer-build/
-qemu-bridge/builds/
-isolate/
-thalamus-native/installer-build
-
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-bun-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
+node_modules/
+dist/
+.next/
+out/
+.wrangler/
+next-env.d.ts
+*.tsbuildinfo
 *.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# Deployment scripts with secrets — never commit these
-deploy-convex.sh
-*.deploy.sh
-convex-prod.ps1
-
-# scripts/study-eval.ts output — transcripts can embed session tokens
-eval-results/
-
-# Claude Code local state — only the shared settings file is tracked
-.claude/*
-!.claude/settings.json
-
-# Env files. *.local already covers .env.local, but the sync scripts run
-# `git add -A`, so spell out the rest before a stray .env gets pushed public.
+*.log
+logs/
 .env
 .env.*
 !.env.example
-
-# Core dumps (a 70MB one got committed once — never again)
+.vscode/
+.idea/
+.DS_Store
+.claude/*
+!.claude/settings.json
 core
 core.*
 *.core
-
-# wrangler pages dev local cache
-.wrangler
-
-# Next.js build output (apps/web) — static export (output: "export"), not
-# OpenNext, so the exported site is `out/`, not `.open-next/`.
-.next
-out
-next-env.d.ts
-
-# CI checkout of the sibling agentoverflow repository
-.agentoverflow
-
-# TypeScript incremental build caches
-*.tsbuildinfo

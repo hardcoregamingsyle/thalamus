@@ -3,9 +3,7 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "apps/*",
-    "packages/*",
-    "tools/*"
+    "apps/*"
   ],
   "scripts": {
     "type-check": "bun run --filter='*' type-check && bun run type-check:functions",
@@ -13,7 +11,6 @@
     "lint": "eslint .",
     "test": "bun run --filter='*' test",
     "build": "bun run --filter='@thalamus/web' build && bun scripts/assemble-pages.mjs",
-    "build:gateway": "bun run --filter='@thalamus/gateway' build",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

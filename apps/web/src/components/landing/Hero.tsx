@@ -1,7 +1,4 @@
-"use client";
-
 import { ArrowRight } from "lucide-react";
-import { motion, useScroll, useTransform } from "motion/react";
 import { Aurora } from "@/components/site/Aurora";
 import { ButtonLink } from "@/components/ui/Button";
 
@@ -27,19 +24,13 @@ function Line({
 }
 
 export function Hero() {
-  const { scrollY } = useScroll();
-  const auroraOpacity = useTransform(scrollY, [0, 700], [1, 0.25]);
-
   return (
     <section className="relative isolate overflow-hidden pt-32 sm:pt-40">
-      <motion.div
-        style={{ opacity: auroraOpacity }}
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[1000px]"
-      >
+      <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[1000px]">
         <Aurora className="h-full w-full scale-110 blur-[56px]" />
         <div className="bg-grid absolute inset-0 opacity-60" />
         <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-b from-transparent to-bg" />
-      </motion.div>
+      </div>
 
       <div className="mx-auto max-w-5xl px-4 text-center sm:px-6">
         <h1 className="text-balance text-[2.5rem] font-semibold leading-[1.04] tracking-[-0.035em] text-fg sm:text-7xl md:text-[5.25rem]">

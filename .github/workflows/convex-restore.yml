@@ -1,15 +1,14 @@
 name: Convex restore
 
-# Redeploys the Convex backend from any ref, for rolling back a bad deploy. The default
-# is the archive tag, the last tree production ran before the rebuild. Dispatch-only:
-# nothing here runs on push.
+# Restore the NAMELESS Convex backend from an explicit, verified known-good ref.
+# This workflow is dispatch-only and never runs automatically.
+
 on:
   workflow_dispatch:
     inputs:
       ref:
         description: "Git ref to deploy (tag, branch or commit)"
         required: true
-        default: "archive/pre-redo-2026-09"
 
 permissions:
   contents: read
@@ -29,10 +28,8 @@ jobs:
         with:
           bun-version: "1.3.14"
       - run: bun install --frozen-lockfile
-      # The archived tree keeps Convex at the repo root; the rebuild keeps it in apps/convex.
       - name: Deploy
-        run: |
-          if [ -f apps/convex/convex.json ]; then cd apps/convex; fi
-          bunx convex deploy --yes --message "restore ${{ inputs.ref }}"
+        working-directory: apps/convex
+        run: bunx convex deploy --yes --message "restore ${{ inputs.ref }}"
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}

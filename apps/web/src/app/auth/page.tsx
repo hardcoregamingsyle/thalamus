@@ -5,7 +5,8 @@ import { buttonClass } from "@/components/ui/Button";
 import { LogoMark } from "@/components/ui/Logo";
 import { AuthFlow } from "./AuthFlow";
 
-const CONVEX_SITE = "https://befitting-wildebeest-866.convex.site";
+const CONVEX_SITE =
+  process.env.NEXT_PUBLIC_CONVEX_SITE_URL ?? "https://befitting-wildebeest-866.convex.site";
 
 const OAUTH_ERROR_MESSAGES: Record<string, string> = {
   missing_token: "Sign-in didn't complete. Try again.",

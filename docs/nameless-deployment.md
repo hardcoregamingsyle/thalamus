@@ -1,31 +1,35 @@
-# NAMELESS on Cloudflare Pages
+# NAMELESS: Cloudflare Pages and Convex
 
-The public site is NAMELESS at `https://nameless.is`. The model is still training; the landing page presents context, memory, reasoning, and cost as development goals. Signup is free and automatically creates a waitlisted account after successful email-code or OAuth authentication. Existing invited and active accounts keep their access.
+NAMELESS at `https://nameless.is` is a prelaunch waitlist. The model is still training. Account signup automatically joins the waitlist; administrators reserve slots and Convex schedules notification emails.
 
-## Build and hosting
+## Deployment target
 
-Use Node 22 or newer and Bun 1.3.14. From the repository root run `bun install --frozen-lockfile`, then `bun run build`. Cloudflare Pages builds with `npm ci` followed by `bun run build`; publish the generated `dist/` directory with the root `functions/` directory. The Pages project name in `wrangler.toml` is `nameless`. Set up the custom domain `nameless.is` in Pages; DNS and domain ownership must be configured in Cloudflare.
+The confirmed target is the existing `befitting-wildebeest-866` deployment. The owner has chosen to reuse it for NAMELESS and retire AgentOverflow. This source cleanup removes AgentOverflow and relay functions, routes, crons, model-provider clients, API keys, and product logic. Deploying the cleaned backend disables those retired endpoints.
 
-The frontend uses system fonts so builds require no Google Fonts connection. The existing internal Worker and workspace names remain unchanged to preserve service and protocol compatibility.
+The cleanup contains no deletion of stored production documents. Optional legacy profile fields remain in the users validator so existing accounts continue to validate. Old product tables are no longer declared or used; any removal of their stored records is a separate data operation. No external SQL waitlist data was accessible or imported; export and migrate any such entries before switching production traffic.
 
-Configure the Pages `GATEWAY` service binding to `thalamus-gateway`. Bundle the Worker with `bun run build:gateway`; deploying it is a separate operation from the Pages build. Do not deploy until the environment bindings are supplied. Existing GitHub deployment remains gated by `DEPLOY_ENABLED`.
+## Cloudflare Pages
 
-## Accounts and data
+Use Node 22 or newer and Bun 1.3.14. Install with `npm ci` or `bun install --frozen-lockfile`, build with `bun run build`, and publish `dist/`. Root `functions/` supplies the account proxy and OAuth callback. Configure custom domain `nameless.is` and its DNS records in Pages.
 
-The gateway requires a development or production Neon `DATABASE_URL`, depending on the environment, and the existing schema migrations from `packages/db`. Apply migrations only to the intended database. Existing Convex shared accounts remain the identity provider. Configure its `FRONTEND_URL` to `https://nameless.is` to allow the new OAuth callback origin. Google/GitHub provider configuration and the existing Convex email-code delivery must also work before public signup can be verified. The shared Convex deployment also serves AgentOverflow; retain its settings and functions.
+`wrangler.toml` names the Pages project `nameless`. Its `CONVEX_SITE_URL` selects the backend HTTP site; `NEXT_PUBLIC_CONVEX_SITE_URL` selects that same site for browser OAuth links at build time. Both default to the existing deployment. Override both for a separate or development backend. Remove obsolete GATEWAY bindings from Pages settings. No standalone Worker, Postgres, Neon, chat API, or model-server credential is required.
 
-The Worker also uses `USER_KEY_SECRET`, `ADMIN_TOKEN`, `ADMIN_EMAILS`, `MODEL_SERVER_SECRET`, and `CONVEX_URL` as documented in its configuration. Preserve existing production secrets. Leave `MODEL_SERVER_URL` unset while the model is training: generation remains unavailable and waitlisted accounts cannot use the product. Sign-in and waitlist enrollment can operate independently of the model server.
+System fonts, static CSS background effects, server-rendered landing content, native FAQ disclosure, and a native navigation dialog avoid external fonts, a WebGL render loop, and an animation runtime.
 
-## Slot notification
+## Convex accounts and database
 
-Set the Worker secret `BREVO_EMAIL_SENDER` (reuse the existing shared-account Brevo credential through secure deployment settings) and variable `WAITLIST_EMAIL_FROM` to a verified sender address in Brevo. Never commit the API key. For the existing GitHub deployment workflow, bind `BREVO_EMAIL_SENDER` as a repository secret and `WAITLIST_EMAIL_FROM` as a repository variable; the workflow syncs them to the Worker. Verify the sending domain through Brevo before sending real invitations. Both signup verification and slot notifications use the existing Brevo email service; the Worker needs its own secure binding to that credential.
+Configure `FRONTEND_URL=https://nameless.is` for the OAuth redirect allowlist. Retain the existing Google and GitHub provider credentials and registered Convex callback URLs, updating provider callbacks if moving deployments. Email-code authentication continues to use the existing Brevo service. Valid, unexpired sessions and non-banned users are required for waitlist access. Administrators have the existing `admin` role or an email listed in optional Convex `ADMIN_EMAILS`.
 
-An administrator signs in with an address listed in `ADMIN_EMAILS`, opens `/console/admin`, and chooses Invite when capacity is available. Without a configured notification sender, the operation returns 503 and leaves the account waitlisted. The invitation grants access and sends an email linking to `https://nameless.is/console`.
+Tables `namelessWaitlist` and `namelessCounters` store enrollment. Positions use a transactional counter, so concurrent signups do not scan the waitlist or receive duplicate positions. Administrator listings read an indexed page of at most 50 unsent entries. Cookies are HttpOnly, Secure, and SameSite=Lax; account responses are not cached. OTP resends have a 30-second cooldown; five incorrect verification attempts lock a code until a new code is issued.
 
-If delivery is not accepted, the API returns 502 and the entry remains on the admin list for retry; the slot is already granted. After acceptance, the entry is removed. Repeated completed invitations do not send another email. Brevo requests include an account-specific idempotency key. Provider acceptance does not guarantee inbox delivery; monitor bounces and delivery in Brevo. The prelaunch does not automatically allocate slots: the administrator controls capacity.
+## Notifications
 
-## Verification
+Reuse Convex `BREVO_EMAIL_SENDER`; do not duplicate the credential in Pages or source. Optional `WAITLIST_EMAIL_FROM` selects a verified sender. The default is the existing sender address used before cleanup, with NAMELESS as the display name.
 
-Run `bun run type-check`, `bun run lint`, `bun run format:check`, `bun run test`, `bun run build`, and `bun run build:gateway`. The tests cover automatic enrollment for email/OAuth, notification payload and retry behavior, and the existing database, gateway, and model contracts without live credentials. For the reference gate, set `AGENTOVERFLOW_DIR` to the companion checkout and run `bun run --filter=@thalamus/convex check-refs`.
+Invitations and scheduled jobs persist atomically. Repeating an invitation while pending or sent does not create another job. Failed sends retry up to three times with delays, then remain visible for administrator retry. Refresh delivery status on `/console/admin`. Provider acceptance does not prove inbox delivery; monitor bounces in Brevo. Stable notification keys deduplicate provider retries within its supported window. Generation is not enabled by an invitation; the model remains in training.
 
-Before public launch, verify a real signup at `nameless.is`, confirm its waitlist status, invite a test account, and confirm the notification arrives and sign-in shows access. Those live checks require deployment credentials, a database, working shared authentication, and a verified email sender; local tests do not establish those services are configured.
+## Validation and publication
+
+Run `bun run type-check`, `bun run lint`, `bun run format:check`, `bun run test`, and `bun run build`. Convex tests use an in-memory backend without live credentials.
+
+GitHub backend deployment remains gated by `DEPLOY_ENABLED` and `CONVEX_DEPLOY_KEY`. Ensure that key targets the selected deployment before enabling the job. Pages publishes separately through its Git integration. Deploy the Convex functions before switching Pages traffic, then verify a real signup, waitlist status, invitation, and delivered email at `nameless.is`. Local tests do not establish successful production deployment or inbox delivery.

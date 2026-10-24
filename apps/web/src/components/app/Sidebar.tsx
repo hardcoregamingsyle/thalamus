@@ -1,15 +1,6 @@
 "use client";
 
-import {
-  BarChart3,
-  BookOpen,
-  KeyRound,
-  LayoutGrid,
-  LogOut,
-  MessageCircle,
-  ShieldCheck,
-  type LucideIcon,
-} from "lucide-react";
+import { LayoutGrid, LogOut, ShieldCheck, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -20,16 +11,7 @@ import { Skeleton } from "./Skeleton";
 
 type NavItem = { href: string; label: string; icon: LucideIcon };
 
-const PRIMARY: NavItem[] = [
-  { href: "/console", label: "Overview", icon: LayoutGrid },
-  { href: "/console/keys", label: "API keys", icon: KeyRound },
-  { href: "/console/usage", label: "Usage", icon: BarChart3 },
-];
-
-const SECONDARY: NavItem[] = [
-  { href: "/chat", label: "Chat", icon: MessageCircle },
-  { href: "/docs", label: "Docs", icon: BookOpen },
-];
+const PRIMARY: NavItem[] = [{ href: "/console", label: "Your waitlist status", icon: LayoutGrid }];
 
 function NavLink({
   item,
@@ -101,14 +83,6 @@ export function Sidebar({
           ))}
         </div>
         <div className="flex flex-col gap-1 border-t border-border pt-4">
-          {SECONDARY.map((item) => (
-            <NavLink
-              key={item.href}
-              item={item}
-              active={pathname === item.href}
-              onNavigate={onNavigate}
-            />
-          ))}
           {me?.isAdmin ? (
             <NavLink
               item={{ href: "/console/admin", label: "Admin", icon: ShieldCheck }}

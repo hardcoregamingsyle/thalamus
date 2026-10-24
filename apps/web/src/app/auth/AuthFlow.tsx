@@ -1,6 +1,5 @@
 "use client";
 
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useRouter } from "next/navigation";
 import {
   useEffect,
@@ -42,7 +41,6 @@ async function errorMessage(res: Response, fallback: string): Promise<string> {
 
 export function AuthFlow() {
   const router = useRouter();
-  const still = useReducedMotion();
   const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
 
   const [step, setStep] = useState<Step>("email");
@@ -150,98 +148,86 @@ export function AuthFlow() {
   }
 
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      <motion.div
-        key={step}
-        initial={still ? false : { opacity: 0, x: step === "code" ? 16 : -16 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={still ? { opacity: 0 } : { opacity: 0, x: step === "code" ? 16 : -16 }}
-        transition={{ duration: still ? 0.12 : 0.25, ease: [0.22, 1, 0.36, 1] }}
-      >
-        {step === "email" ? (
-          <form onSubmit={(event) => void sendCode(event)} className="flex flex-col gap-4">
-            <Input
-              label="Email"
-              type="email"
-              required
-              autoComplete="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              error={error ?? undefined}
-            />
-            <Button type="submit" size="lg" disabled={pending || !email} className="w-full">
-              {pending ? "Sending…" : "Continue"}
-            </Button>
-          </form>
-        ) : (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void verify(digits.join(""));
-            }}
-            className="flex flex-col gap-5"
-          >
-            <p className="text-sm text-fg-muted">
-              We sent a code to <span className="font-medium text-fg">{email}</span>.
+    <div>
+      {step === "email" ? (
+        <form onSubmit={(event) => void sendCode(event)} className="flex flex-col gap-4">
+          <Input
+            label="Email"
+            type="email"
+            required
+            autoComplete="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            error={error ?? undefined}
+          />
+          <Button type="submit" size="lg" disabled={pending || !email} className="w-full">
+            {pending ? "Sending…" : "Continue"}
+          </Button>
+        </form>
+      ) : (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void verify(digits.join(""));
+          }}
+          className="flex flex-col gap-5"
+        >
+          <p className="text-sm text-fg-muted">
+            We sent a code to <span className="font-medium text-fg">{email}</span>.
+          </p>
+          <div className="grid grid-cols-6 gap-2">
+            {digits.map((digit, index) => (
+              <input
+                key={index}
+                ref={(el) => {
+                  inputsRef.current[index] = el;
+                }}
+                value={digit}
+                onChange={(event) => handleDigitChange(index, event)}
+                onKeyDown={(event) => handleKeyDown(index, event)}
+                onPaste={handlePaste}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete={index === 0 ? "one-time-code" : "off"}
+                maxLength={1}
+                aria-label={`Digit ${index + 1} of ${CODE_LENGTH}`}
+                className="h-12 w-full min-w-0 rounded-xl border border-border-strong bg-surface text-center text-lg font-mono text-fg outline-none transition-colors focus:border-fg/30"
+              />
+            ))}
+          </div>
+          {error ? (
+            <p role="alert" className="text-sm text-danger">
+              {error}
             </p>
-            <div className="grid grid-cols-6 gap-2">
-              {digits.map((digit, index) => (
-                <input
-                  key={index}
-                  ref={(el) => {
-                    inputsRef.current[index] = el;
-                  }}
-                  value={digit}
-                  onChange={(event) => handleDigitChange(index, event)}
-                  onKeyDown={(event) => handleKeyDown(index, event)}
-                  onPaste={handlePaste}
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  autoComplete={index === 0 ? "one-time-code" : "off"}
-                  maxLength={1}
-                  aria-label={`Digit ${index + 1} of ${CODE_LENGTH}`}
-                  className="h-12 w-full min-w-0 rounded-xl border border-border-strong bg-surface text-center text-lg font-mono text-fg outline-none transition-colors focus:border-fg/30"
-                />
-              ))}
-            </div>
-            {error ? (
-              <p role="alert" className="text-sm text-danger">
-                {error}
-              </p>
-            ) : null}
-            <Button
-              type="submit"
-              size="lg"
-              disabled={pending || digits.some((d) => !d)}
-              className="w-full"
+          ) : null}
+          <Button
+            type="submit"
+            size="lg"
+            disabled={pending || digits.some((d) => !d)}
+            className="w-full"
+          >
+            {pending ? "Verifying…" : "Verify"}
+          </Button>
+          <div className="flex items-center justify-between text-[13px]">
+            <button
+              type="button"
+              onClick={backToEmail}
+              className="text-fg-muted transition-colors hover:text-fg"
             >
-              {pending ? "Verifying…" : "Verify"}
-            </Button>
-            <div className="flex items-center justify-between text-[13px]">
-              <button
-                type="button"
-                onClick={backToEmail}
-                className="text-fg-muted transition-colors hover:text-fg"
-              >
-                Use a different email
-              </button>
-              <button
-                type="button"
-                onClick={() => void resend()}
-                disabled={cooldown > 0 || resending}
-                className="text-fg-muted transition-colors hover:text-fg disabled:opacity-50"
-              >
-                {resending
-                  ? "Sending…"
-                  : cooldown > 0
-                    ? `Resend code (${cooldown}s)`
-                    : "Resend code"}
-              </button>
-            </div>
-          </form>
-        )}
-      </motion.div>
-    </AnimatePresence>
+              Use a different email
+            </button>
+            <button
+              type="button"
+              onClick={() => void resend()}
+              disabled={cooldown > 0 || resending}
+              className="text-fg-muted transition-colors hover:text-fg disabled:opacity-50"
+            >
+              {resending ? "Sending…" : cooldown > 0 ? `Resend code (${cooldown}s)` : "Resend code"}
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
   );
 }

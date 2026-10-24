@@ -5,19 +5,16 @@
   "type": "module",
   "scripts": {
     "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
-    "test": "bun test --pass-with-no-tests",
+    "test": "bun test test",
     "build": "next build",
     "dev": "next dev -p 5173"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "lucide-react": "^1.48.0",
-    "motion": "^13.4.4",
     "next": "^16.3.6",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {

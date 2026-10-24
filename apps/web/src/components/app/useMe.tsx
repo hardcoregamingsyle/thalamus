@@ -14,7 +14,7 @@ type MeState = {
 const MeContext = createContext<MeState | null>(null);
 
 // Loads GET /api/me once per app-shell mount and shares it with every page
-// underneath, so switching between /console/keys, /console/usage, etc. never
+// underneath, so switching between account and administration pages never
 // re-fetches the account. `reload()` re-runs it after a mutation (joining
 // the waitlist) that changes what /api/me itself would return.
 export function MeProvider({ children }: { children: ReactNode }) {

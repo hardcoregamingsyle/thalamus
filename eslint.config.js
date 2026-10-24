@@ -5,12 +5,10 @@ export default tseslint.config(
   {
     ignores: [
       "**/node_modules/**",
-      ".agentoverflow/**",
       "**/dist/**",
       "**/.next/**",
       "**/out/**",
       "**/.wrangler/**",
-      "packages/db/migrations/**",
       "apps/convex/convex/_generated/**",
       "docs/**",
     ],

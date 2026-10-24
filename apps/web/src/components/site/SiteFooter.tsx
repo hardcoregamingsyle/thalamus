@@ -4,11 +4,7 @@ import { Logo } from "@/components/ui/Logo";
 const COLUMNS = [
   {
     title: "Product",
-    links: [
-      { href: "/chat", label: "Chat" },
-      { href: "/console", label: "Console" },
-      { href: "/docs", label: "API docs" },
-    ],
+    links: [{ href: "/console", label: "Your waitlist status" }],
   },
   {
     title: "Company",

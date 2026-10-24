@@ -19,7 +19,6 @@
   --raw-grad-1: #6ee7b7;
   --raw-grad-2: #93c5fd;
   --raw-grad-3: #c4b5fd;
-  --raw-code-bg: #0a0c10;
   --raw-selection: rgb(147 197 253 / 0.3);
 }
 
@@ -39,7 +38,6 @@
   --raw-grad-1: #059669;
   --raw-grad-2: #2563eb;
   --raw-grad-3: #7c3aed;
-  --raw-code-bg: #0d0f13;
   --raw-selection: rgb(37 99 235 / 0.18);
 }
 
@@ -58,18 +56,10 @@
   --color-grad-1: var(--raw-grad-1);
   --color-grad-2: var(--raw-grad-2);
   --color-grad-3: var(--raw-grad-3);
-  --color-code-bg: var(--raw-code-bg);
   --font-sans: ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", monospace;
-  --animate-caret: caret 1.05s steps(1) infinite;
   --animate-shimmer: shimmer 6s linear infinite;
   --animate-rise: rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-@keyframes caret {
-  50% {
-    opacity: 0;
-  }
 }
 
 @keyframes rise {
@@ -127,13 +117,6 @@ body {
     background-clip: text;
     -webkit-background-clip: text;
     color: transparent;
-  }
-
-  .glass {
-    background: var(--raw-surface);
-    border: 1px solid var(--raw-border);
-    backdrop-filter: blur(20px) saturate(140%);
-    -webkit-backdrop-filter: blur(20px) saturate(140%);
   }
 
   /* Faint engineering grid, faded out toward the edges. */

@@ -6,15 +6,15 @@
   "scripts": {
     "dev": "convex dev",
     "codegen": "convex codegen",
-    "type-check": "tsc -p convex/tsconfig.json",
-    "check-refs": "node scripts/check-convex-refs.mjs"
+    "type-check": "tsc -p convex/tsconfig.json && tsc -p test/tsconfig.json",
+    "test": "bun test test"
   },
   "dependencies": {
-    "@convex-dev/auth": "^0.0.90",
     "convex": "^1.39.1"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "convex-test": "^0.0.65"
   }
 }
