@@ -1,6 +1,14 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { fetchMe } from "@/lib/me";
 import type { MeResponse } from "@/lib/types";
 
@@ -18,14 +26,17 @@ const MeContext = createContext<MeState | null>(null);
 // re-fetches the account. `reload()` re-runs it after a mutation (joining
 // the waitlist) that changes what /api/me itself would return.
 export function MeProvider({ children }: { children: ReactNode }) {
+  const requestVersion = useRef(0);
   const [me, setMe] = useState<MeResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  const load = useCallback(() => {
+  const load = useCallback((refresh = false) => {
+    const version = ++requestVersion.current;
     setLoading(true);
     setError(false);
-    void fetchMe().then((result) => {
+    void fetchMe({ refresh }).then((result) => {
+      if (version !== requestVersion.current) return;
       if (result.ok) setMe(result.data);
       else setError(true);
       setLoading(false);
@@ -34,11 +45,14 @@ export function MeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     load();
+    return () => {
+      requestVersion.current += 1;
+    };
   }, [load]);
 
-  return (
-    <MeContext.Provider value={{ me, loading, error, reload: load }}>{children}</MeContext.Provider>
-  );
+  const reload = useCallback(() => load(true), [load]);
+
+  return <MeContext.Provider value={{ me, loading, error, reload }}>{children}</MeContext.Provider>;
 }
 
 export function useMe(): MeState {

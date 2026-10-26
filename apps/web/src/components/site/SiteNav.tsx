@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import { ButtonLink } from "@/components/ui/Button";
 import { Logo } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
-import { fetchMe } from "@/lib/me";
 
 const LINKS = [
   { href: "/#vision", label: "The vision" },
@@ -17,19 +16,15 @@ const LINKS = [
 export function SiteNav() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
-  const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
-    void fetchMe().then((me) => setSignedIn(me.ok && me.data.user !== null));
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const cta = signedIn
-    ? { href: "/console", label: "Your account" }
-    : { href: "/auth", label: "Join waitlist" };
+  const cta = { href: "/auth", label: "Join waitlist" };
 
   return (
     <header

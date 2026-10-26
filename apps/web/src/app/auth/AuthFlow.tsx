@@ -42,6 +42,7 @@ async function errorMessage(res: Response, fallback: string): Promise<string> {
 export function AuthFlow() {
   const router = useRouter();
   const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
+  const requestInFlight = useRef(false);
 
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
@@ -59,6 +60,8 @@ export function AuthFlow() {
 
   async function sendCode(event: FormEvent) {
     event.preventDefault();
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
     setPending(true);
     setError(null);
     try {
@@ -73,12 +76,14 @@ export function AuthFlow() {
     } catch {
       setError("Couldn't reach NAMELESS. Try again.");
     } finally {
+      requestInFlight.current = false;
       setPending(false);
     }
   }
 
   async function verify(code: string) {
-    if (code.length !== CODE_LENGTH) return;
+    if (code.length !== CODE_LENGTH || requestInFlight.current) return;
+    requestInFlight.current = true;
     setPending(true);
     setError(null);
     try {
@@ -93,11 +98,14 @@ export function AuthFlow() {
     } catch {
       setError("Couldn't reach NAMELESS. Try again.");
     } finally {
+      requestInFlight.current = false;
       setPending(false);
     }
   }
 
   async function resend() {
+    if (requestInFlight.current || cooldown > 0) return;
+    requestInFlight.current = true;
     setResending(true);
     setError(null);
     try {
@@ -110,11 +118,13 @@ export function AuthFlow() {
     } catch {
       setError("Couldn't reach NAMELESS. Try again.");
     } finally {
+      requestInFlight.current = false;
       setResending(false);
     }
   }
 
   function backToEmail() {
+    if (requestInFlight.current) return;
     setStep("email");
     setDigits(Array(CODE_LENGTH).fill(""));
     setError(null);
@@ -154,6 +164,7 @@ export function AuthFlow() {
           <Input
             label="Email"
             type="email"
+            disabled={pending}
             required
             autoComplete="email"
             placeholder="you@example.com"
@@ -187,6 +198,7 @@ export function AuthFlow() {
                 onChange={(event) => handleDigitChange(index, event)}
                 onKeyDown={(event) => handleKeyDown(index, event)}
                 onPaste={handlePaste}
+                disabled={pending || resending}
                 inputMode="numeric"
                 pattern="[0-9]*"
                 autoComplete={index === 0 ? "one-time-code" : "off"}
@@ -204,7 +216,7 @@ export function AuthFlow() {
           <Button
             type="submit"
             size="lg"
-            disabled={pending || digits.some((d) => !d)}
+            disabled={pending || resending || digits.some((d) => !d)}
             className="w-full"
           >
             {pending ? "Verifying…" : "Verify"}
@@ -213,14 +225,15 @@ export function AuthFlow() {
             <button
               type="button"
               onClick={backToEmail}
-              className="text-fg-muted transition-colors hover:text-fg"
+              disabled={pending || resending}
+              className="text-fg-muted transition-colors hover:text-fg disabled:opacity-50"
             >
               Use a different email
             </button>
             <button
               type="button"
               onClick={() => void resend()}
-              disabled={cooldown > 0 || resending}
+              disabled={cooldown > 0 || pending || resending}
               className="text-fg-muted transition-colors hover:text-fg disabled:opacity-50"
             >
               {resending ? "Sending…" : cooldown > 0 ? `Resend code (${cooldown}s)` : "Resend code"}

@@ -4,7 +4,7 @@ import type { MeResponse } from "./types";
 
 export type MeResult = { ok: true; data: MeResponse } | { ok: false };
 
-export async function fetchMe(): Promise<MeResult> {
+async function requestMe(): Promise<MeResult> {
   try {
     const res = await fetch("/api/me");
     if (!res.ok) return { ok: false };
@@ -15,4 +15,18 @@ export async function fetchMe(): Promise<MeResult> {
     // rather than throwing and breaking the page.
     return { ok: false };
   }
+}
+
+// Share only pending reads. Explicit reloads after a mutation start a fresh
+// request, and settled account data is never cached across auth transitions.
+let inFlight: Promise<MeResult> | undefined;
+
+export function fetchMe({ refresh = false }: { refresh?: boolean } = {}): Promise<MeResult> {
+  if (inFlight && !refresh) return inFlight;
+  const request = requestMe();
+  inFlight = request;
+  void request.then(() => {
+    if (inFlight === request) inFlight = undefined;
+  });
+  return request;
 }

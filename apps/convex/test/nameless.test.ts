@@ -300,3 +300,14 @@ describe("scheduled slot email delivery", () => {
     ).toHaveLength(2);
   });
 });
+
+test("legacy account documents remain compatible with NAMELESS enrollment", async () => {
+  const { t, token, userId } = await setup();
+  // Rows written before the rebuild may carry profile fields outside today's
+  // validators. They must remain usable without destructive data cleanup.
+  const legacyProfile = { email: "person@example.com", legacyMigrationField: true };
+  await t.run((ctx) => ctx.db.patch(userId, legacyProfile));
+  const enrolled = await t.mutation(api.nameless.join, { token });
+  expect(enrolled.account.status).toBe("waitlisted");
+  expect((await t.query(api.nameless.me, { token })).user.email).toBe("person@example.com");
+});
